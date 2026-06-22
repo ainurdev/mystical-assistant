@@ -25,7 +25,7 @@ In the same change, **refactor** the 500-line single-file bot into a focused
 - No multi-user / multi-tenant support. Access is locked to `ALLOWED_CHAT_IDS`.
 - No persistent database. Jobs and state live in memory (same as today).
 - No named-tunnel / custom-domain setup. We use cloudflared quick tunnels.
-- No build step / framework for the frontend (plain HTML + JS).
+- No named-tunnel / custom-domain setup (quick tunnels only).
 
 ## 3. Decisions (from brainstorming)
 
@@ -35,7 +35,7 @@ In the same change, **refactor** the 500-line single-file bot into a focused
 | Hosting | **cloudflared quick tunnel**, started on launch; menu button auto-updated |
 | Progress | **Live progress stream** (`--output-format stream-json`) |
 | Auth | Validate Telegram signed `initData` (HMAC-SHA256 w/ bot token) + `ALLOWED_CHAT_IDS` |
-| Frontend | Single self-contained `index.html`, Telegram WebApp SDK, no build |
+| Frontend | **React + Vite + TanStack (Router + Query)**, built to static assets served by the bot |
 | Backend | Python **stdlib only** (`http.server.ThreadingHTTPServer`); images as base64 JSON |
 | Slash commands | Kept as-is (additive; the app does not remove them) |
 
@@ -70,8 +70,9 @@ bridge/
   tunnel.py     # quick-tunnel helpers (reused for preview AND the miniapp)
   dispatch.py   # on_message(), handle_callback()  (behavior identical to today)
   miniapp/
-    server.py   # HTTP routing, initData auth, JSON handlers, job polling
-    index.html  # single-page control panel
+    server.py   # HTTP routing, initData auth, JSON handlers, job polling, static serving
+    web/        # React + Vite + TanStack source (built to web/dist/, served by server.py)
+      index.html, vite.config.ts, package.json, src/…
 claude_telegram_bridge.py  # thin: build config, start miniapp, run Telegram loop
 ```
 
@@ -96,7 +97,7 @@ The validated `user.id` is the chat_id used for session/state keys.
 
 | Method / path | Body / query | Action |
 |---|---|---|
-| `GET /` | — | serve `index.html` |
+| `GET /` + `/assets/*` | — | serve built `web/dist/` (SPA: unknown non-`/api` paths → `index.html`) |
 | `GET /api/state` | — | `{project, server, preview_url, busy}` |
 | `GET /api/projects` | `?dir=` | list folders under `BASE_PATH` (same rules as browser) |
 | `POST /api/select` | `{dir}` | set `_active[chat]`, reset session |
@@ -149,16 +150,28 @@ The app encodes each attached image as a base64 data URL and includes them in th
 Limits: max ~8 images, max ~10 MB each (rejected with `413` otherwise).
 `.bridge_uploads/` is git-ignored.
 
-## 8. Frontend (`miniapp/index.html`)
+## 8. Frontend (`miniapp/web/` — React + Vite + TanStack)
 
-Single page, vanilla JS, loads `https://telegram.org/js/telegram-web-app.js`.
-On load: `WebApp.ready()`, capture `WebApp.initData`, theme from `WebApp.themeParams`.
-Three tabs:
+A Vite + React + TypeScript app using **TanStack Router** (tabs as routes) and
+**TanStack Query** (data fetching + polling). Built with `npm run build` to
+`web/dist/`, which `server.py` serves as static assets (Vite `base: '/'`). The
+`index.html` template loads `https://telegram.org/js/telegram-web-app.js`.
 
-- **Run** — project `<select>` (from `/api/projects`); prompt `<textarea>`; 📎 file
-  input (`accept=image/*`, multiple) with removable thumbnails; **Send**. Below: a
-  live stream pane rendering events as they arrive, then the final reply with
-  `time · $cost`.
+On boot: `WebApp.ready()`/`expand()`, capture `WebApp.initData`, derive CSS variables
+from `WebApp.themeParams` for dark/light. A shared `fetch` wrapper injects the
+`X-Telegram-Init-Data` header on every request; a typed API client wraps the
+endpoints. TanStack Query handles polling (`refetchInterval`) for the live run
+stream and the server logs.
+
+Three tabs (TanStack Router routes):
+
+- **Run** — a compact **folder navigator** at top (shows the current dir's
+  subfolders, tap to enter, "Use this folder" to select), backed by
+  `/api/projects?dir=` + `/api/select` — mirrors the bot's browser and handles the
+  nested `<org>/<repo>` layout; the chosen project is shown as a header chip. Then
+  prompt `<textarea>`; 📎 file input (`accept=image/*`, multiple) with removable
+  thumbnails; **Send**. Below: a live stream pane rendering events as they arrive,
+  then the final reply with `time · $cost`.
 - **Server** — command input (default `npm run dev`), Start/Stop, status, log tail
   (auto-refresh while tab active).
 - **Preview** — port input, Start/Stop, shows public URL with Open + Copy.
@@ -220,6 +233,11 @@ git-ignored because it holds the token.
    first (json) so shared logic is proven.
 3. Add `miniapp/server.py` (auth + state/projects/select/logs first — read paths).
 4. Add `/api/run` streaming + screenshots.
-5. Add `index.html` (Run tab → Server → Preview).
+5. Build the React + Vite + TanStack app (Run → Server → Preview tabs); `npm run build`
+   to `web/dist/`, served by `server.py`.
 6. Wire tunnel + menu button in the entry point.
 7. Manual e2e on the phone.
+
+> Build note: the Mini App requires `npm --prefix bridge/miniapp/web ci && npm --prefix
+> bridge/miniapp/web run build` before first run; `web/node_modules` and `web/dist` are
+> git-ignored.

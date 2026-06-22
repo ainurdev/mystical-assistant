@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+:root {
+  /* Fallback (dark) Telegram theme colors. telegram.ts overrides these
+     at runtime from window.Telegram.WebApp.themeParams. */
+  --tg-bg: #17212b;
+  --tg-text: #ffffff;
+  --tg-button: #5288c1;
+  --tg-button-text: #ffffff;
+  --tg-hint: #708499;
+  --tg-secondary-bg: #232e3c;
+  --tg-link: #6ab3f3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--tg-bg);
+  color: var(--tg-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+textarea,
+input {
+  font-family: inherit;
+}

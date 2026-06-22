@@ -9,3 +9,9 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Mini App frontend build artifacts
+bridge/miniapp/web/node_modules/
+bridge/miniapp/web/dist/
+bridge/miniapp/web/.vite/
+*.tsbuildinfo

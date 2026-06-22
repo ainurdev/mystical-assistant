@@ -1,0 +1,311 @@
+"""HTTP server for the Telegram Mini App.
+
+Serves the built React app (web/dist) and a small JSON API. Every /api/* request
+must carry a valid, signed Telegram `initData` (header X-Telegram-Init-Data) for a
+user in ALLOWED_CHAT_IDS — the same trust boundary as the bot's chat-id gate.
+"""
+
+import base64
+import binascii
+import hashlib
+import hmac
+import json
+import mimetypes
+import os
+import threading
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, unquote, urlparse
+
+from bridge import browser, config, devserver, runner, state, tunnel
+
+WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
+
+_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+        "image/webp": "webp", "image/gif": "gif"}
+
+
+def validate_init_data(init_data: str) -> int | None:
+    """Verify Telegram WebApp initData. Returns the user id if valid+allowed, else None."""
+    if not init_data:
+        return None
+    data: dict[str, str] = {}
+    for pair in init_data.split("&"):
+        if not pair:
+            continue
+        k, _, v = pair.partition("=")
+        data[k] = unquote(v)
+    recv_hash = data.pop("hash", None)
+    if not recv_hash:
+        return None
+    check = "\n".join(f"{k}={data[k]}" for k in sorted(data))
+    secret = hmac.new(b"WebAppData", config.TOKEN.encode(), hashlib.sha256).digest()
+    calc = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calc, recv_hash):
+        return None
+    try:
+        if time.time() - int(data.get("auth_date", "0")) > 86400:
+            return None
+    except ValueError:
+        return None
+    try:
+        uid = int(json.loads(data.get("user", "{}")).get("id"))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if config.ALLOWED_CHAT_IDS and uid not in config.ALLOWED_CHAT_IDS:
+        return None
+    return uid
+
+
+def _save_images(job_id: str, images: list) -> list[str]:
+    paths: list[str] = []
+    d = os.path.join(config.UPLOAD_DIR, job_id)
+    os.makedirs(d, exist_ok=True)
+    for i, durl in enumerate(images):
+        if not isinstance(durl, str) or "," not in durl:
+            continue
+        header, _, b64 = durl.partition(",")
+        mime = "image/png"
+        if header.startswith("data:") and ";" in header:
+            mime = header[5:].split(";")[0] or "image/png"
+        ext = _EXT.get(mime, "png")
+        try:
+            raw = base64.b64decode(b64)
+        except (binascii.Error, ValueError):
+            continue
+        if len(raw) > config.UPLOAD_MAX_MB * 1024 * 1024:
+            raise ValueError(f"image {i + 1} exceeds {config.UPLOAD_MAX_MB} MB")
+        p = os.path.join(d, f"shot{i + 1}.{ext}")
+        with open(p, "wb") as f:
+            f.write(raw)
+        paths.append(p)
+    return paths
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "ClaudeBridgeMiniApp"
+
+    # --- low-level helpers ---------------------------------------------------
+    def _send_bytes(self, data: bytes, code: int, ctype: str, cache: str = "no-cache"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", cache)
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except BrokenPipeError:
+            pass
+
+    def _json(self, obj: dict, code: int = 200):
+        self._send_bytes(json.dumps(obj).encode(), code, "application/json")
+
+    def _read_json(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            return json.loads(raw or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            return None
+
+    def _auth(self) -> int | None:
+        return validate_init_data(self.headers.get("X-Telegram-Init-Data", ""))
+
+    def log_message(self, *args):  # silence default stderr logging
+        pass
+
+    # --- routing -------------------------------------------------------------
+    def do_GET(self):
+        try:
+            u = urlparse(self.path)
+            path, qs = u.path, parse_qs(u.query)
+            if path.startswith("/api/"):
+                chat_id = self._auth()
+                if chat_id is None:
+                    return self._json({"error": "unauthorized"}, 401)
+                if path == "/api/state":
+                    return self._api_state(chat_id)
+                if path == "/api/projects":
+                    return self._api_projects(qs)
+                if path == "/api/logs":
+                    return self._api_logs(qs)
+                if path.startswith("/api/run/"):
+                    return self._api_run_poll(path[len("/api/run/"):], qs)
+                return self._json({"error": "not found"}, 404)
+            self._serve_static(path)
+        except Exception as e:  # noqa: BLE001
+            self._safe_500(e)
+
+    def do_POST(self):
+        try:
+            path = urlparse(self.path).path
+            if not path.startswith("/api/"):
+                return self._json({"error": "not found"}, 404)
+            chat_id = self._auth()
+            if chat_id is None:
+                return self._json({"error": "unauthorized"}, 401)
+            body = self._read_json()
+            if body is None:
+                return self._json({"error": "bad json"}, 400)
+            if path == "/api/select":
+                return self._api_select(chat_id, body)
+            if path == "/api/run":
+                return self._api_run(chat_id, body)
+            if path == "/api/server":
+                return self._api_server(chat_id, body)
+            if path == "/api/preview":
+                return self._api_preview(chat_id, body)
+            return self._json({"error": "not found"}, 404)
+        except Exception as e:  # noqa: BLE001
+            self._safe_500(e)
+
+    def _safe_500(self, e: Exception):
+        try:
+            self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- API handlers --------------------------------------------------------
+    def _api_state(self, chat_id: int):
+        pd = state.project_dir(chat_id)
+        self._json({
+            "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)} if pd else None,
+            "busy": state.busy_chat is not None,
+            "server": devserver.server_state(),
+            "preview": tunnel.tunnel_state(),
+        })
+
+    def _api_projects(self, qs):
+        relp = (qs.get("dir", [""])[0] or "").strip()
+        if relp in ("", "/"):
+            cur = config.BASE_PATH
+        else:
+            cur = os.path.realpath(os.path.join(config.BASE_PATH, relp.lstrip("/")))
+        if not browser.within_base(cur) or not os.path.isdir(cur):
+            cur = config.BASE_PATH
+        real = os.path.realpath(cur)
+        self._json({
+            "rel": browser.rel(cur),
+            "at_base": real == config.BASE_PATH,
+            "can_up": real != config.BASE_PATH,
+            "dirs": browser.list_dirs(cur),
+        })
+
+    def _api_select(self, chat_id: int, body: dict):
+        d = (body.get("dir") or "").strip()
+        cand = os.path.realpath(os.path.join(config.BASE_PATH, d.lstrip("/")))
+        if not browser.within_base(cand) or not os.path.isdir(cand):
+            return self._json({"error": "invalid dir"}, 400)
+        state.active[chat_id] = cand
+        state.sessions.pop(chat_id, None)
+        self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
+
+    def _api_run(self, chat_id: int, body: dict):
+        prompt = (body.get("prompt") or "").strip()
+        images = body.get("images") or []
+        if not prompt and not images:
+            return self._json({"error": "empty prompt"}, 400)
+        if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
+            return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
+        project_path = None
+        project = body.get("project")
+        if project:
+            cand = os.path.realpath(os.path.join(config.BASE_PATH, str(project).lstrip("/")))
+            if browser.within_base(cand) and os.path.isdir(cand):
+                project_path = cand
+        job_id = uuid.uuid4().hex
+        try:
+            paths = _save_images(job_id, images) if images else []
+        except ValueError as e:
+            runner._cleanup_uploads(job_id)
+            return self._json({"error": str(e)}, 413)
+        job = runner.start_streaming_job(chat_id, prompt, paths, project_path, job_id=job_id)
+        if job is None:
+            runner._cleanup_uploads(job_id)
+            return self._json({"error": "busy"}, 409)
+        self._json({"job_id": job.id})
+
+    def _api_run_poll(self, job_id: str, qs):
+        try:
+            cursor = int(qs.get("cursor", ["0"])[0])
+        except ValueError:
+            cursor = 0
+        job = runner.get_job(job_id)
+        if not job:
+            return self._json({"error": "not found"}, 404)
+        self._json(job.snapshot(cursor))
+
+    def _api_server(self, chat_id: int, body: dict):
+        action = body.get("action", "start")
+        if action == "stop":
+            msg = devserver.stop_server()
+        else:
+            cmd = (body.get("cmd") or "").strip() or config.START_CMD
+            msg = devserver.start_server(cmd, state.project_dir(chat_id))
+        self._json({"server": devserver.server_state(), "message": msg})
+
+    def _api_logs(self, qs):
+        try:
+            n = int(qs.get("n", ["200"])[0])
+        except ValueError:
+            n = 200
+        self._json({"lines": devserver.log_tail(n)})
+
+    def _api_preview(self, chat_id: int, body: dict):
+        action = body.get("action", "start")
+        if action == "stop":
+            msg = tunnel.stop_tunnel()
+        else:
+            try:
+                port = int(body.get("port") or config.PREVIEW_PORT)
+            except (ValueError, TypeError):
+                port = config.PREVIEW_PORT
+            _, msg = tunnel.start_tunnel(port)
+        self._json({"preview": tunnel.tunnel_state(), "message": msg})
+
+    # --- static (SPA) --------------------------------------------------------
+    def _serve_static(self, path: str):
+        if path in ("", "/"):
+            path = "/index.html"
+        fp = os.path.normpath(os.path.join(WEB_DIR, path.lstrip("/")))
+        if fp != WEB_DIR and not fp.startswith(WEB_DIR + os.sep):
+            return self._send_bytes(b"forbidden", 403, "text/plain")
+        cache = "no-cache"
+        if not os.path.isfile(fp):
+            fp = os.path.join(WEB_DIR, "index.html")  # SPA fallback
+            if not os.path.isfile(fp):
+                return self._send_bytes(
+                    b"Mini App not built. Run: "
+                    b"npm --prefix bridge/miniapp/web ci && "
+                    b"npm --prefix bridge/miniapp/web run build",
+                    503, "text/plain")
+        else:
+            if "/assets/" in path:
+                cache = "public, max-age=31536000, immutable"
+        ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
+        with open(fp, "rb") as f:
+            self._send_bytes(f.read(), 200, ctype, cache=cache)
+
+
+_httpd: ThreadingHTTPServer | None = None
+
+
+def web_built() -> bool:
+    return os.path.isfile(os.path.join(WEB_DIR, "index.html"))
+
+
+def start() -> ThreadingHTTPServer:
+    """Start the HTTP server thread on 127.0.0.1:MINIAPP_PORT."""
+    global _httpd
+    os.makedirs(config.UPLOAD_DIR, exist_ok=True)
+    _httpd = ThreadingHTTPServer(("127.0.0.1", config.MINIAPP_PORT), Handler)
+    threading.Thread(target=_httpd.serve_forever, daemon=True).start()
+    return _httpd
+
+
+def stop():
+    global _httpd
+    if _httpd is not None:
+        _httpd.shutdown()
+        _httpd = None
