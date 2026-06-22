@@ -272,6 +272,26 @@ def test_state_project_key_is_canonical_rel():
     assert state.project_key(424242).startswith("/")   # base or /rel
 
 
+def test_runner_journals_to_store():
+    s = store.create_session(555, "p5")
+    job = runner.Job("jx", 555, s["id"])
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "hey"}]}})
+    runner._handle_event(job, {"type": "result", "result": "ok",
+                               "total_cost_usd": 0.02, "session_id": "c1"})
+    runner._drain_journal()
+    evs = [e["type"] for e in store.transcript(s["id"])["events"]]
+    assert "text" in evs and "result" in evs
+
+
+def test_runner_job_without_session_does_not_journal():
+    job = runner.Job("nojournal", 555)            # no store session
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "hi"}]}})
+    runner._drain_journal()
+    assert job.events and job.store_session_id is None   # in-memory only, no error
+
+
 # --- interrupt --------------------------------------------------------------
 
 def test_interrupt_writes_control_request_and_marks_job():

@@ -9,6 +9,7 @@ Both serialize on state.busy so only one Claude run happens at a time.
 
 import json
 import os
+import queue
 import shlex
 import shutil
 import subprocess
@@ -16,9 +17,50 @@ import threading
 import time
 import uuid
 
-from bridge import config, state
+from bridge import config, pubsub, state, store
 from bridge.browser import rel
 from bridge.telegram import send, typing
+
+
+# ---------------------------------------------------------------------------
+# Journaling: persist + publish run events OFF the hot stdout loop
+# ---------------------------------------------------------------------------
+
+_journal_q: "queue.Queue[tuple[str, str, dict]]" = queue.Queue()
+_journal_thread: threading.Thread | None = None
+_journal_lock = threading.Lock()
+
+
+def _journal_one(item: tuple[str, str, dict]) -> None:
+    session_id, turn_id, ev = item
+    try:
+        seq = store.append_event(session_id, turn_id, ev)
+        pubsub.publish(f"session:{session_id}", {**ev, "seq": seq})
+    except Exception:  # noqa: BLE001  (never let journaling break a run)
+        pass
+
+
+def _journal_worker() -> None:
+    while True:
+        _journal_one(_journal_q.get())
+
+
+def _ensure_journal_thread() -> None:
+    global _journal_thread
+    with _journal_lock:
+        if _journal_thread is None:
+            _journal_thread = threading.Thread(target=_journal_worker, daemon=True)
+            _journal_thread.start()
+
+
+def _drain_journal() -> None:
+    """Synchronously process any queued journal items (used by tests)."""
+    while True:
+        try:
+            item = _journal_q.get_nowait()
+        except queue.Empty:
+            return
+        _journal_one(item)
 
 
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
@@ -51,9 +93,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--model", model]
     if effort:
         cmd += ["--effort", effort]
-    sid = claude_session_id or state.sessions.get(chat_id)
-    if sid:
-        cmd += ["--resume", sid]
+    if claude_session_id:
+        cmd += ["--resume", claude_session_id]
     if config.ASK_SYSTEM_PROMPT.strip():
         cmd += ["--append-system-prompt", config.ASK_SYSTEM_PROMPT]
     if not interactive and config.EXTRA_CLAUDE_ARGS.strip():
@@ -65,8 +106,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 # Blocking run (Telegram plain-text prompt)
 # ---------------------------------------------------------------------------
 
-def run_blocking(chat_id: int, prompt: str):
-    cmd = _base_cmd(prompt, chat_id, stream=False)
+def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None):
+    cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id)
     try:
         proc = subprocess.run(cmd, cwd=state.project_dir(chat_id), capture_output=True,
                               text=True, timeout=config.RUN_TIMEOUT)
@@ -95,9 +136,17 @@ def handle_task(chat_id: int, prompt: str):
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
-        result, sid, cost, is_error = run_blocking(chat_id, prompt)
+        session = store.ensure_session(chat_id, state.project_key(chat_id))
+        job_id = uuid.uuid4().hex
+        store.start_turn(session["id"], job_id, prompt, [])
+        result, sid, cost, is_error = run_blocking(
+            chat_id, prompt, resume_id=session["claude_session_id"])
+        store.append_event(session["id"], job_id,
+                           {"type": "result", "result": result, "cost": cost})
         if sid:
-            state.sessions[chat_id] = sid
+            store.set_claude_session_id(session["id"], sid)
+        store.finish_turn(job_id, "error" if is_error else "done", cost,
+                          int(time.time() - started))
         footer = f"\n\n— {int(time.time() - started)}s"
         if cost is not None:
             footer += f" · ${cost:.4f}"
@@ -116,9 +165,11 @@ INTERRUPT_KILL = 2.0    # seconds after SIGTERM before SIGKILL
 
 
 class Job:
-    def __init__(self, job_id: str, chat_id: int):
+    def __init__(self, job_id: str, chat_id: int, store_session_id: str | None = None):
         self.id = job_id
         self.chat_id = chat_id
+        self.store_session_id = store_session_id  # store session row (journaling target)
+        self.resume_id: str | None = None         # claude session id to --resume from
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
         self.result: str | None = None
@@ -136,6 +187,8 @@ class Job:
     def add(self, ev: dict):
         with self._lock:
             self.events.append(ev)
+        if self.store_session_id:
+            _journal_q.put((self.store_session_id, self.id, ev))
 
     def add_pending(self, entry: dict):
         with self._lock:
@@ -361,7 +414,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             full_prompt = ("The user attached screenshot(s); view them before "
                            "responding: " + ", ".join(image_paths) + "\n\n" + prompt)
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
-                        model=model, effort=effort)
+                        model=model, effort=effort, claude_session_id=job.resume_id)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -421,8 +474,10 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job._interrupt_timer.cancel()
         if job.elapsed is None:
             job.elapsed = int(time.time() - job.started)
-        if job.session_id:
-            state.sessions[job.chat_id] = job.session_id
+        if job.store_session_id:
+            if job.session_id:
+                store.set_claude_session_id(job.store_session_id, job.session_id)
+            store.finish_turn(job.id, job.status, job.cost, job.elapsed)
         job.clear_pending()
         job.close_stdin()
         _cleanup_uploads(job.id)
@@ -432,15 +487,29 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
 
 def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         project: str | None = None, job_id: str | None = None,
-                        model: str | None = None, effort: str | None = None) -> Job | None:
-    """Acquire the busy lock and start a streaming run. Returns None if busy."""
+                        model: str | None = None, effort: str | None = None,
+                        session_id: str | None = None) -> Job | None:
+    """Acquire the busy lock and start a streaming run. Returns None if busy.
+
+    Resolves (or creates) the store session for (chat_id, project) and records the
+    turn; --resume continuity comes from that session's claude_session_id."""
     if not state.busy.acquire(blocking=False):
         return None
-    state.busy_chat = chat_id
-    job = Job(job_id or uuid.uuid4().hex, chat_id)
-    _register(job)
-    cwd = project or state.project_dir(chat_id)
-    threading.Thread(target=_run_streaming,
-                     args=(job, prompt, image_paths, cwd, model, effort),
-                     daemon=True).start()
-    return job
+    try:
+        state.busy_chat = chat_id
+        cwd = project or state.project_dir(chat_id)
+        session = store.ensure_session(chat_id, rel(cwd), session_id)
+        job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
+        job.resume_id = session["claude_session_id"]
+        _register(job)
+        store.start_turn(session["id"], job.id, prompt,
+                         [os.path.basename(p) for p in image_paths])
+        _ensure_journal_thread()
+        threading.Thread(target=_run_streaming,
+                         args=(job, prompt, image_paths, cwd, model, effort),
+                         daemon=True).start()
+        return job
+    except BaseException:
+        state.busy_chat = None
+        state.busy.release()
+        raise
