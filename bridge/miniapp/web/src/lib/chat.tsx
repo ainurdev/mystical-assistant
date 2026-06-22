@@ -8,7 +8,15 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "./api";
-import type { AnswerSelection, PendingRequest, RunEvent, RunStatus } from "./api";
+import type {
+  AnswerSelection,
+  EffortLevel,
+  ModelId,
+  PendingRequest,
+  RunEvent,
+  RunStatus,
+} from "./api";
+import { usePersistentState } from "./persistentState";
 
 const KEY = "miniapp:chat:v1";
 
@@ -132,7 +140,12 @@ export interface ChatContextValue {
   isRunning: boolean;
   pending: PendingRequest[];
   sendError: ApiError | null;
+  model: ModelId;
+  setModel: (m: ModelId) => void;
+  effort: EffortLevel | "";
+  setEffort: (e: EffortLevel | "") => void;
   send: () => Promise<void>;
+  stop: () => Promise<void>;
   respond: (
     requestId: string,
     opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
@@ -145,6 +158,11 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ChatState>(load);
   const [sendError, setSendError] = useState<ApiError | null>(null);
+  const [model, setModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
+  const [effort, setEffort] = usePersistentState<EffortLevel | "">(
+    "miniapp:effort:v1",
+    "",
+  );
   const fileIdRef = useRef(0);
 
   useEffect(() => persist(state), [state]);
@@ -209,7 +227,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const project = stateQuery.data?.project?.rel;
     setSendError(null);
     try {
-      const res = await api.run(text, attachments.map((a) => a.dataUrl), project, fresh);
+      const res = await api.run(
+        text,
+        attachments.map((a) => a.dataUrl),
+        project,
+        fresh,
+        model,
+        effort || undefined,
+      );
       setState((prev) => ({
         ...prev,
         draft: "",
@@ -249,6 +274,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setState((prev) => applySnapshot(prev, jobId, res));
   }
 
+  async function stop() {
+    if (!activeTurn) return;
+    const jobId = activeTurn.jobId;
+    try {
+      const res = await api.interrupt(jobId, activeTurn.cursor);
+      setState((prev) => applySnapshot(prev, jobId, res));
+    } catch (e) {
+      // 404 (job gone) / 409 (already finished): the poll reconciles state.
+      if (e instanceof ApiError && e.status === 404) {
+        setState((prev) => markStale(prev, jobId));
+      }
+    }
+  }
+
   function newChat() {
     setSendError(null);
     setState((prev) => ({ ...EMPTY, draft: prev.draft, draftAttachments: prev.draftAttachments }));
@@ -265,7 +304,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     isRunning,
     pending,
     sendError,
+    model,
+    setModel,
+    effort,
+    setEffort,
     send,
+    stop,
     respond,
     newChat,
   };

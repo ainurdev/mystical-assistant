@@ -17,7 +17,7 @@ function RunPage() {
   }, [eventCount, turns.length]);
 
   return (
-    <div className="space-y-4 pb-28">
+    <div className="space-y-4 pb-44">
       {turns.length === 0 && (
         <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">
           Start a conversation with Claude.

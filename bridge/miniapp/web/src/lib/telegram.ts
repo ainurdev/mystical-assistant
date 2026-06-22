@@ -1,23 +1,12 @@
 // Minimal typings for the subset of the Telegram WebApp API we use.
 // (telegram-web-app.js is loaded via a <script> tag in index.html.)
 
-export interface TelegramThemeParams {
-  bg_color?: string;
-  text_color?: string;
-  hint_color?: string;
-  link_color?: string;
-  button_color?: string;
-  button_text_color?: string;
-  secondary_bg_color?: string;
-}
-
 export interface TelegramWebApp {
   initData: string;
-  themeParams: TelegramThemeParams;
-  colorScheme: "light" | "dark";
   ready: () => void;
   expand: () => void;
-  onEvent: (event: string, handler: () => void) => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
 }
 
 declare global {
@@ -35,29 +24,19 @@ export function getInitData(): string {
   return getWebApp()?.initData ?? "";
 }
 
-function setVar(name: string, value: string | undefined) {
-  if (value) document.documentElement.style.setProperty(name, value);
-}
+/** Our fixed brand background — keep in sync with --tg-bg in index.css. */
+const BRAND_BG = "#130d20";
 
-/** Map Telegram themeParams onto our CSS variables. Falls back to defaults. */
-export function applyTheme() {
-  const params = getWebApp()?.themeParams;
-  if (!params) return;
-  setVar("--tg-bg", params.bg_color);
-  setVar("--tg-text", params.text_color);
-  setVar("--tg-button", params.button_color);
-  setVar("--tg-button-text", params.button_text_color);
-  setVar("--tg-hint", params.hint_color);
-  setVar("--tg-secondary-bg", params.secondary_bg_color);
-  setVar("--tg-link", params.link_color);
-}
-
-/** Boot the Telegram WebApp: ready/expand, apply theme, watch for changes. */
+/**
+ * Boot the Telegram WebApp. The Mini App ships its own fixed violet theme
+ * (see index.css), so instead of mapping Telegram's themeParams onto our
+ * palette we push our background color onto Telegram's surrounding chrome.
+ */
 export function initTelegram() {
   const wa = getWebApp();
   if (!wa) return;
   wa.ready();
   wa.expand();
-  applyTheme();
-  wa.onEvent("themeChanged", applyTheme);
+  wa.setHeaderColor?.(BRAND_BG);
+  wa.setBackgroundColor?.(BRAND_BG);
 }

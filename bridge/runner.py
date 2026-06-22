@@ -22,7 +22,8 @@ from bridge.telegram import send, typing
 
 
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
-              interactive: bool = False) -> list[str]:
+              interactive: bool = False, model: str | None = None,
+              effort: str | None = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -30,6 +31,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     routed back to us via `--permission-prompt-tool stdio`, and we run in an
     asking permission mode so tool use surfaces Allow/Deny cards. The bot's
     plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS.
+
+    model/effort (interactive only) map to `--model`/`--effort`; the server
+    validates them before they reach here.
     """
     fmt = "stream-json" if stream else "json"
     cmd = ["claude", "-p"]
@@ -42,6 +46,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--input-format", "stream-json",
                 "--permission-mode", config.MINIAPP_PERMISSION_MODE,
                 "--permission-prompt-tool", "stdio"]
+    if model:
+        cmd += ["--model", model]
+    if effort:
+        cmd += ["--effort", effort]
     sid = state.sessions.get(chat_id)
     if sid:
         cmd += ["--resume", sid]
@@ -102,6 +110,10 @@ def handle_task(chat_id: int, prompt: str):
 # Streaming jobs (Mini App)
 # ---------------------------------------------------------------------------
 
+INTERRUPT_GRACE = 5.0   # seconds to wait for a graceful interrupt before SIGTERM
+INTERRUPT_KILL = 2.0    # seconds after SIGTERM before SIGKILL
+
+
 class Job:
     def __init__(self, job_id: str, chat_id: int):
         self.id = job_id
@@ -115,6 +127,8 @@ class Job:
         self.elapsed: int | None = None
         self.proc = None                 # subprocess.Popen, for control responses
         self.pending: list[dict] = []    # unresolved can_use_tool requests
+        self.interrupted = False         # user pressed Stop
+        self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
 
@@ -152,6 +166,43 @@ class Job:
                 if not proc.stdin.closed:
                     proc.stdin.close()
             except (BrokenPipeError, ValueError, OSError):
+                pass
+
+    def interrupt(self) -> bool:
+        """Stop the current turn: ask Claude to interrupt over the control
+        channel, then escalate to SIGTERM/SIGKILL if it doesn't exit. The
+        session is preserved, so the next message resumes. Returns False if the
+        job is not running."""
+        proc = self.proc
+        if self.status != "running" or proc is None:
+            return False
+        self.interrupted = True
+        self._write_stdin({"type": "control_request",
+                           "request_id": uuid.uuid4().hex,
+                           "request": {"subtype": "interrupt"}})
+        self._interrupt_timer = threading.Timer(INTERRUPT_GRACE, self._escalate)
+        self._interrupt_timer.daemon = True
+        self._interrupt_timer.start()
+        return True
+
+    def _escalate(self):
+        proc = self.proc
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+        except (OSError, ValueError):
+            pass
+        killer = threading.Timer(INTERRUPT_KILL, self._kill_if_alive)
+        killer.daemon = True
+        killer.start()
+
+    def _kill_if_alive(self):
+        proc = self.proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.kill()
+            except (OSError, ValueError):
                 pass
 
     def respond(self, request_id: str, *, behavior: str = "allow",
@@ -288,7 +339,8 @@ def _handle_event(job: Job, d: dict):
         job.cost = d.get("total_cost_usd")
         if d.get("session_id"):
             job.session_id = d["session_id"]
-        job.status = "error" if d.get("is_error") else "done"
+        # An interrupted turn may report is_error; treat it as a clean stop.
+        job.status = "error" if (d.get("is_error") and not job.interrupted) else "done"
         job.elapsed = int(time.time() - job.started)
         job.add({"type": "result", "result": job.result,
                  "cost": job.cost, "elapsed": job.elapsed})
@@ -299,14 +351,16 @@ def _cleanup_uploads(job_id: str):
     shutil.rmtree(d, ignore_errors=True)
 
 
-def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str):
+def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
+                   model: str | None = None, effort: str | None = None):
     proc = None
     try:
         full_prompt = prompt
         if image_paths:
             full_prompt = ("The user attached screenshot(s); view them before "
                            "responding: " + ", ".join(image_paths) + "\n\n" + prompt)
-        cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True)
+        cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
+                        model=model, effort=effort)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -346,7 +400,13 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str):
         proc.wait()
         timer.cancel()
 
-        if job.status == "running":
+        if job.interrupted:
+            # Stopped by the user (graceful interrupt or kill): finalize cleanly
+            # and mark the turn so the transcript shows it was stopped.
+            if job.status == "running":
+                job.status = "done"
+            job.add({"type": "stopped"})
+        elif job.status == "running":
             # No terminal result event — surface stderr / exit code.
             err = (proc.stderr.read() if proc.stderr else "").strip()
             job.add({"type": "error",
@@ -356,6 +416,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str):
         job.add({"type": "error", "message": str(e)})
         job.status = "error"
     finally:
+        if job._interrupt_timer:
+            job._interrupt_timer.cancel()
         if job.elapsed is None:
             job.elapsed = int(time.time() - job.started)
         if job.session_id:
@@ -368,7 +430,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str):
 
 
 def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
-                        project: str | None = None, job_id: str | None = None) -> Job | None:
+                        project: str | None = None, job_id: str | None = None,
+                        model: str | None = None, effort: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy."""
     if not state.busy.acquire(blocking=False):
         return None
@@ -377,5 +440,6 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     _register(job)
     cwd = project or state.project_dir(chat_id)
     threading.Thread(target=_run_streaming,
-                     args=(job, prompt, image_paths, cwd), daemon=True).start()
+                     args=(job, prompt, image_paths, cwd, model, effort),
+                     daemon=True).start()
     return job

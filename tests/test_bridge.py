@@ -18,7 +18,8 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
 
 from bridge import config, runner                       # noqa: E402
-from bridge.miniapp.server import validate_init_data     # noqa: E402
+from bridge.miniapp.server import (                       # noqa: E402
+    validate_init_data, normalize_model_effort)
 
 
 def make_init_data(token, user_id, auth_date=None, tamper=False):
@@ -130,6 +131,19 @@ class _FakeStdin:
 class _FakeProc:
     def __init__(self):
         self.stdin = _FakeStdin()
+        self.terminated = False
+        self.killed = False
+        self._returncode = None
+
+    def poll(self):
+        return self._returncode
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.killed = True
+        self._returncode = -9
 
 
 def _last_sent(job):
@@ -226,6 +240,72 @@ def test_blocking_base_cmd_unchanged():
     assert cmd[:3] == ["claude", "-p", "hi"]
     assert "--input-format" not in cmd
     assert "--permission-prompt-tool" not in cmd
+
+
+# --- model / effort flags ---------------------------------------------------
+
+def test_base_cmd_model_and_effort():
+    cmd = runner._base_cmd("p", 555, stream=True, interactive=True,
+                           model="opus", effort="high")
+    assert cmd[cmd.index("--model") + 1] == "opus"
+    assert cmd[cmd.index("--effort") + 1] == "high"
+
+
+def test_base_cmd_omits_model_effort_by_default():
+    cmd = runner._base_cmd("p", 555, stream=True, interactive=True)
+    assert "--model" not in cmd
+    assert "--effort" not in cmd
+
+
+# --- interrupt --------------------------------------------------------------
+
+def test_interrupt_writes_control_request_and_marks_job():
+    job = runner.Job("i1", 555)
+    job.proc = _FakeProc()
+    assert job.interrupt() is True
+    assert job.interrupted is True
+    if job._interrupt_timer:
+        job._interrupt_timer.cancel()
+    sent = _last_sent(job)
+    assert sent["type"] == "control_request"
+    assert sent["request"]["subtype"] == "interrupt"
+
+
+def test_interrupt_not_running_returns_false():
+    job = runner.Job("i2", 555)
+    job.proc = _FakeProc()
+    job.status = "done"
+    assert job.interrupt() is False
+
+
+def test_interrupt_no_proc_returns_false():
+    job = runner.Job("i3", 555)
+    assert job.interrupt() is False
+
+
+def test_interrupted_result_is_not_error():
+    job = runner.Job("i4", 555)
+    job.interrupted = True
+    runner._handle_event(job, {"type": "result", "result": "partial", "is_error": True})
+    assert job.status == "done"
+
+
+# --- model/effort request validation ----------------------------------------
+
+def test_normalize_model_effort_valid():
+    assert normalize_model_effort("opus", "high") == (True, "opus", "high")
+
+
+def test_normalize_model_effort_blank_dropped():
+    assert normalize_model_effort("", "") == (True, None, None)
+
+
+def test_normalize_model_effort_unknown_model_rejected():
+    assert normalize_model_effort("gpt-5", "high") == (False, None, None)
+
+
+def test_normalize_model_effort_unknown_effort_dropped():
+    assert normalize_model_effort("opus", "ultra") == (True, "opus", None)
 
 
 if __name__ == "__main__":

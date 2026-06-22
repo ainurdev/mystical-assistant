@@ -66,10 +66,14 @@ export type RunEvent =
   | { type: "tool_done" }
   | { type: "result"; result: string; cost: number; elapsed: number }
   | { type: "error"; message: string }
+  | { type: "stopped" }
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+
+export type ModelId = "opus" | "sonnet" | "haiku";
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface PendingRequest {
   request_id: string;
@@ -187,16 +191,29 @@ export const api = {
   select: (dir: string) =>
     request<SelectResponse>("/api/select", { method: "POST", body: { dir } }),
 
-  run: (prompt: string, images: string[], project?: string, fresh?: boolean) =>
+  run: (
+    prompt: string,
+    images: string[],
+    project?: string,
+    fresh?: boolean,
+    model?: string,
+    effort?: string,
+  ) =>
     request<RunStartResponse>("/api/run", {
       method: "POST",
-      body: { prompt, images, project, fresh },
+      body: { prompt, images, project, fresh, model, effort },
     }),
 
   runStatus: (jobId: string, cursor: number) =>
     request<RunStatus>(
       `/api/run/${encodeURIComponent(jobId)}?cursor=${cursor}`,
     ),
+
+  interrupt: (jobId: string, cursor: number) =>
+    request<RunStatus>(`/api/run/${encodeURIComponent(jobId)}/interrupt`, {
+      method: "POST",
+      body: { cursor },
+    }),
 
   respond: (jobId: string, body: RespondBody) =>
     request<RunStatus>(`/api/run/${encodeURIComponent(jobId)}/respond`, {

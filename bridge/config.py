@@ -26,6 +26,12 @@ EXTRA_CLAUDE_ARGS = os.environ.get("EXTRA_CLAUDE_ARGS", "--permission-mode accep
 # stream-json control protocol). Use "acceptEdits"/"bypassPermissions" to ask less.
 MINIAPP_PERMISSION_MODE = os.environ.get("MINIAPP_PERMISSION_MODE", "default")
 
+# Model/effort the Mini App chat may request per message (passed as `claude
+# --model`/`--effort`). The frontend pickers must stay within these; the server
+# rejects an unknown model and drops an unknown effort.
+MINIAPP_MODELS = {"opus", "sonnet", "haiku"}
+MINIAPP_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+
 # Appended to Claude's system prompt so it asks instead of guessing. Set empty
 # to disable.
 ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (

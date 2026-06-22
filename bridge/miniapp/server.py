@@ -58,6 +58,19 @@ def validate_init_data(init_data: str) -> int | None:
     return uid
 
 
+def normalize_model_effort(model, effort) -> tuple[bool, str | None, str | None]:
+    """Validate a run's requested model/effort. Returns (ok, model, effort):
+    ok=False means an unknown model (the caller should 400). A blank model or
+    effort becomes None (use the CLI default); an unknown effort is dropped."""
+    m = (model or "").strip() or None
+    e = (effort or "").strip() or None
+    if m is not None and m not in config.MINIAPP_MODELS:
+        return False, None, None
+    if e is not None and e not in config.MINIAPP_EFFORTS:
+        e = None
+    return True, m, e
+
+
 def _save_images(job_id: str, images: list) -> list[str]:
     paths: list[str] = []
     d = os.path.join(config.UPLOAD_DIR, job_id)
@@ -153,6 +166,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
                     path[len("/api/run/"):-len("/respond")], body)
+            if path.startswith("/api/run/") and path.endswith("/interrupt"):
+                return self._api_run_interrupt(
+                    path[len("/api/run/"):-len("/interrupt")], body)
             if path == "/api/run":
                 return self._api_run(chat_id, body)
             if path == "/api/server":
@@ -217,6 +233,9 @@ class Handler(BaseHTTPRequestHandler):
             cand = os.path.realpath(os.path.join(config.BASE_PATH, str(project).lstrip("/")))
             if browser.within_base(cand) and os.path.isdir(cand):
                 project_path = cand
+        ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
+        if not ok:
+            return self._json({"error": "invalid model"}, 400)
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []
@@ -226,7 +245,8 @@ class Handler(BaseHTTPRequestHandler):
         if body.get("fresh"):
             # First message of a new chat: don't --resume the prior session.
             state.sessions.pop(chat_id, None)
-        job = runner.start_streaming_job(chat_id, prompt, paths, project_path, job_id=job_id)
+        job = runner.start_streaming_job(chat_id, prompt, paths, project_path,
+                                         job_id=job_id, model=model, effort=effort)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
@@ -254,6 +274,20 @@ class Handler(BaseHTTPRequestHandler):
         ok = job.respond(request_id, behavior=behavior, answers=body.get("answers"))
         if not ok:
             return self._json({"error": "no such pending request"}, 409)
+        try:
+            cursor = int(body.get("cursor") or 0)
+        except (ValueError, TypeError):
+            cursor = 0
+        self._json(job.snapshot(cursor))
+
+    def _api_run_interrupt(self, job_id: str, body: dict):
+        """Stop a running turn. The session is preserved, so the next message
+        resumes the conversation."""
+        job = runner.get_job(job_id)
+        if not job:
+            return self._json({"error": "not found"}, 404)
+        if not job.interrupt():
+            return self._json({"error": "not running"}, 409)
         try:
             cursor = int(body.get("cursor") or 0)
         except (ValueError, TypeError):

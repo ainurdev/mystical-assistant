@@ -1,6 +1,35 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square } from "lucide-react";
 import { useChat } from "../lib/chat";
+import type { EffortLevel, ModelId } from "../lib/api";
 import { Button } from "./ui";
+import { Textarea } from "./ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "./ui/dropdown-menu";
+
+const MODELS: { id: ModelId; label: string }[] = [
+  { id: "opus", label: "Opus 4.8" },
+  { id: "sonnet", label: "Sonnet 4.6" },
+  { id: "haiku", label: "Haiku 4.5" },
+];
+
+const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
+  { id: "", label: "Auto" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "xhigh", label: "Extra high" },
+  { id: "max", label: "Max" },
+];
+
+const chipClass =
+  "inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/60 px-2.5 py-1.5 text-xs font-medium text-foreground outline-none transition-colors active:opacity-70 focus-visible:ring-2 focus-visible:ring-ring";
 
 export function Composer() {
   const {
@@ -10,16 +39,76 @@ export function Composer() {
     addAttachments,
     removeAttachment,
     send,
+    stop,
     isRunning,
     pending,
+    model,
+    setModel,
+    effort,
+    setEffort,
   } = useChat();
   const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Grow the textarea with its content, up to ~6 rows.
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+  }, [draft]);
 
   const blocked = isRunning || pending.length > 0;
   const sendDisabled = blocked || draft.trim().length === 0;
+  const modelLabel = MODELS.find((m) => m.id === model)?.label ?? model;
+  const effortLabel = EFFORTS.find((e) => e.id === effort)?.label ?? "Auto";
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-10 mx-auto max-w-screen-sm border-t border-white/5 bg-[var(--tg-bg)] px-3 py-2">
+    <div className="fixed inset-x-0 bottom-0 z-10 mx-auto max-w-screen-sm border-t border-border bg-[var(--tg-bg)] px-3 pb-3 pt-2">
+      {/* model / effort toolbar */}
+      <div className="mb-2 flex items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger className={chipClass} aria-label="Model">
+            <Sparkles size={13} className="text-[var(--brand-soft)]" aria-hidden />
+            {modelLabel}
+            <ChevronDown size={13} className="text-muted-foreground" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Model</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={model}
+              onValueChange={(v) => setModel(v as ModelId)}
+            >
+              {MODELS.map((m) => (
+                <DropdownMenuRadioItem key={m.id} value={m.id}>
+                  {m.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger className={chipClass} aria-label="Effort">
+            Effort: {effortLabel}
+            <ChevronDown size={13} className="text-muted-foreground" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Reasoning effort</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={effort || "auto"}
+              onValueChange={(v) => setEffort(v === "auto" ? "" : (v as EffortLevel))}
+            >
+              {EFFORTS.map((e) => (
+                <DropdownMenuRadioItem key={e.id || "auto"} value={e.id || "auto"}>
+                  {e.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {draftAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {draftAttachments.map((a) => (
@@ -31,16 +120,32 @@ export function Composer() {
               />
               <button
                 onClick={() => removeAttachment(a.id)}
-                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs text-white"
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white"
                 aria-label={`Remove ${a.name}`}
               >
-                ×
+                <X size={12} aria-hidden />
               </button>
             </div>
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2">
+
+      <Textarea
+        ref={taRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !blocked) {
+            e.preventDefault();
+            void send();
+          }
+        }}
+        placeholder={isRunning ? "Add details, then Stop to send…" : "Message Claude…"}
+        rows={1}
+        className="max-h-[168px] resize-none overflow-y-auto"
+      />
+
+      <div className="mt-2 flex items-center justify-between">
         <input
           ref={fileRef}
           type="file"
@@ -53,34 +158,39 @@ export function Composer() {
           }}
         />
         <Button
-          variant="secondary"
-          className="shrink-0 px-3"
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-full text-muted-foreground"
           onClick={() => fileRef.current?.click()}
           aria-label="Attach images"
         >
-          📎
+          <Paperclip size={18} aria-hidden />
         </Button>
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          placeholder={blocked ? "Working…" : "Message Claude…"}
-          rows={1}
-          className="max-h-32 flex-1 resize-none rounded-xl bg-[var(--tg-secondary-bg)] px-3 py-2 text-sm outline-none placeholder:text-[var(--tg-hint)]"
-        />
-        <Button
-          className="shrink-0 px-3"
-          disabled={sendDisabled}
-          onClick={() => void send()}
-          aria-label="Send"
-        >
-          ↑
-        </Button>
+
+        {isRunning ? (
+          <Button
+            type="button"
+            variant="destructive"
+            size="icon"
+            className="h-10 w-10 rounded-full"
+            onClick={() => void stop()}
+            aria-label="Stop"
+          >
+            <Square size={15} fill="currentColor" aria-hidden />
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="icon"
+            className="h-10 w-10 rounded-full shadow-[0_0_18px_var(--brand-glow)] disabled:shadow-none"
+            disabled={sendDisabled}
+            onClick={() => void send()}
+            aria-label="Send"
+          >
+            <ArrowUp size={18} aria-hidden />
+          </Button>
+        )}
       </div>
     </div>
   );

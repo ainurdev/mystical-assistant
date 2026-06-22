@@ -1,24 +1,38 @@
+import {
+  Pencil,
+  BookOpen,
+  Terminal,
+  Search,
+  Wrench,
+  TriangleAlert,
+  CircleStop,
+} from "lucide-react";
 import type { AnswerSelection, PendingRequest, RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 
 // Map a few common tool names to icons; default to a wrench.
-function toolIcon(name: string): string {
+function ToolIcon({ name }: { name: string }) {
+  const props = {
+    size: 13,
+    className: "shrink-0 text-[var(--brand-soft)]",
+    "aria-hidden": true,
+  } as const;
   switch (name) {
     case "Edit":
     case "Write":
     case "MultiEdit":
-      return "✏️";
+      return <Pencil {...props} />;
     case "Read":
-      return "📖";
+      return <BookOpen {...props} />;
     case "Bash":
-      return "🔧";
+      return <Terminal {...props} />;
     case "Grep":
     case "Glob":
-      return "🔎";
+      return <Search {...props} />;
     default:
-      return "🔧";
+      return <Wrench {...props} />;
   }
 }
 
@@ -79,9 +93,15 @@ export function RunStream({
             );
           case "tool":
             return (
-              <div key={i} className="font-mono text-xs text-[var(--tg-hint)]">
-                {toolIcon(event.name)} {event.name}
-                {event.summary ? `: ${event.summary}` : ""}
+              <div
+                key={i}
+                className="flex items-center gap-1.5 font-mono text-xs text-[var(--tg-hint)]"
+              >
+                <ToolIcon name={event.name} />
+                <span className="min-w-0 break-all">
+                  {event.name}
+                  {event.summary ? `: ${event.summary}` : ""}
+                </span>
               </div>
             );
           case "tool_done":
@@ -99,9 +119,10 @@ export function RunStream({
             return (
               <div
                 key={i}
-                className="rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
+                className="flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
               >
-                ⚠️ {event.message}
+                <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
+                <span>{event.message}</span>
               </div>
             );
           case "permission":
@@ -125,6 +146,20 @@ export function RunStream({
                 answered={qAnswered.get(event.request_id)}
                 onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
               />
+            );
+          case "stopped":
+            return (
+              <div
+                key={i}
+                className="flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
+              >
+                <CircleStop
+                  size={14}
+                  className="shrink-0 text-[var(--brand-soft)]"
+                  aria-hidden
+                />
+                <span>Stopped — send a message to continue.</span>
+              </div>
             );
           case "permission_resolved":
           case "question_answered":

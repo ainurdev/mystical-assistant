@@ -1,3 +1,4 @@
+import { Wrench, Check, X } from "lucide-react";
 import { Button, Card } from "./ui";
 
 export function PermissionCard({
@@ -17,8 +18,15 @@ export function PermissionCard({
 }) {
   return (
     <Card className="space-y-2 border border-[var(--tg-button)]/30">
-      <div className="text-sm font-medium">
-        🔧 Allow <span className="font-semibold">{toolName}</span>?
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        <Wrench
+          size={15}
+          className="shrink-0 text-[var(--brand-soft)]"
+          aria-hidden
+        />
+        <span>
+          Allow <span className="font-semibold">{toolName}</span>?
+        </span>
       </div>
       {summary && (
         <div className="break-all font-mono text-xs text-[var(--tg-hint)]">{summary}</div>
@@ -33,8 +41,18 @@ export function PermissionCard({
           </Button>
         </div>
       ) : (
-        <div className="text-xs text-[var(--tg-hint)]">
-          {resolved === "allow" ? "✓ Allowed" : resolved === "deny" ? "✕ Denied" : "—"}
+        <div className="flex items-center gap-1 text-xs text-[var(--tg-hint)]">
+          {resolved === "allow" ? (
+            <>
+              <Check size={13} className="text-green-400" aria-hidden /> Allowed
+            </>
+          ) : resolved === "deny" ? (
+            <>
+              <X size={13} className="text-red-400" aria-hidden /> Denied
+            </>
+          ) : (
+            "—"
+          )}
         </div>
       )}
     </Card>

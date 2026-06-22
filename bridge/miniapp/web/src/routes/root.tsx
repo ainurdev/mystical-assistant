@@ -6,14 +6,23 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Sparkles,
+  ChevronUp,
+  ChevronDown,
+  SquarePen,
+  MessagesSquare,
+  TerminalSquare,
+  MonitorPlay,
+} from "lucide-react";
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
 import { FolderNavigator } from "../components/FolderNavigator";
 
 const tabs = [
-  { to: "/", label: "Run" },
-  { to: "/server", label: "Server" },
-  { to: "/preview", label: "Preview" },
+  { to: "/", label: "Run", icon: MessagesSquare },
+  { to: "/server", label: "Server", icon: TerminalSquare },
+  { to: "/preview", label: "Preview", icon: MonitorPlay },
 ] as const;
 
 function HeaderBar({
@@ -33,13 +42,17 @@ function HeaderBar({
   const { newChat, isRunning, turns } = useChat();
 
   return (
-    <header className="sticky top-0 z-10 border-b border-white/5 bg-[var(--tg-bg)] px-3 pb-2 pt-2">
+    <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--tg-bg)] px-3 pb-2 pt-2">
       <div className="flex items-center gap-2">
         <button
           onClick={onTogglePicker}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left active:opacity-70"
         >
-          <span aria-hidden>⚡</span>
+          <Sparkles
+            size={16}
+            className="shrink-0 text-[var(--brand-soft)]"
+            aria-hidden
+          />
           <span className="truncate text-sm font-semibold">
             {project ? project.name : "No project"}
           </span>
@@ -48,17 +61,24 @@ function HeaderBar({
               busy
             </span>
           )}
-          <span className="text-xs text-[var(--tg-hint)]" aria-hidden>
-            {pickerOpen ? "▲" : "▼"}
-          </span>
+          {pickerOpen ? (
+            <ChevronUp size={14} className="text-[var(--tg-hint)]" aria-hidden />
+          ) : (
+            <ChevronDown
+              size={14}
+              className="text-[var(--tg-hint)]"
+              aria-hidden
+            />
+          )}
         </button>
         {pathname === "/" && turns.length > 0 && (
           <button
             onClick={newChat}
             disabled={isRunning}
-            className="shrink-0 rounded-lg bg-[var(--tg-secondary-bg)] px-3 py-1.5 text-xs disabled:opacity-40"
+            className="flex shrink-0 items-center gap-1 rounded-lg bg-[var(--tg-secondary-bg)] px-3 py-1.5 text-xs disabled:opacity-40"
           >
-            ＋ New
+            <SquarePen size={14} aria-hidden />
+            New
           </button>
         )}
       </div>
@@ -66,16 +86,18 @@ function HeaderBar({
       <nav className="mt-2 flex gap-1 rounded-xl bg-[var(--tg-secondary-bg)] p-1">
         {tabs.map((tab) => {
           const active = pathname === tab.to;
+          const Icon = tab.icon;
           return (
             <Link
               key={tab.to}
               to={tab.to}
-              className={`flex-1 rounded-lg py-1.5 text-center text-sm font-medium active:opacity-70 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-center text-sm font-medium active:opacity-70 ${
                 active
-                  ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
+                  ? "bg-[var(--tg-button)] text-[var(--tg-button-text)] shadow-[0_0_16px_var(--brand-glow)]"
                   : "text-[var(--tg-hint)]"
               }`}
             >
+              <Icon size={14} aria-hidden />
               {tab.label}
             </Link>
           );

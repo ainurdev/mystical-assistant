@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Folder, ArrowUp } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { Button, Card, Banner } from "./ui";
 
@@ -57,10 +58,11 @@ export function FolderNavigator({ onSelected }: { onSelected?: () => void } = {}
         {data?.can_up && (
           <Button
             variant="secondary"
-            className="shrink-0 px-3 py-1.5"
+            className="flex shrink-0 items-center gap-1 px-3 py-1.5"
             onClick={() => setDir(parentOf(currentRel))}
           >
-            ↑ Up
+            <ArrowUp size={14} aria-hidden />
+            Up
           </Button>
         )}
       </div>
@@ -78,7 +80,11 @@ export function FolderNavigator({ onSelected }: { onSelected?: () => void } = {}
             onClick={() => setDir(joinRel(currentRel, name))}
             className="flex w-full items-center gap-2 rounded-lg bg-[var(--tg-bg)] px-3 py-2 text-left text-sm active:opacity-70"
           >
-            <span aria-hidden>📁</span>
+            <Folder
+              size={16}
+              className="shrink-0 text-[var(--brand-soft)]"
+              aria-hidden
+            />
             <span className="truncate">{name}</span>
           </button>
         ))}
