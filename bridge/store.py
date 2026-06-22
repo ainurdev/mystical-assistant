@@ -124,6 +124,16 @@ def latest_session(chat_id: int, project: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def list_sessions_all(chat_id: int, include_archived: bool = False) -> list[dict]:
+    """Every session for a chat across all projects (dashboard sidebar tree)."""
+    q = "SELECT * FROM sessions WHERE chat_id=?"
+    if not include_archived:
+        q += " AND archived=0"
+    q += " ORDER BY project, updated DESC"
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute(q, (chat_id,)).fetchall()]
+
+
 def ensure_session(chat_id: int, project: str, session_id: str | None = None) -> dict:
     """Resolve a session: a valid given id for this chat, else the latest for the
     project, else a fresh one."""

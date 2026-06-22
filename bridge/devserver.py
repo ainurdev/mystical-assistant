@@ -7,7 +7,7 @@ import threading
 import time
 from collections import deque
 
-from bridge import config, state
+from bridge import config, pubsub, state
 from bridge.browser import rel
 from bridge.telegram import send
 
@@ -25,7 +25,9 @@ def _server_alive() -> bool:
 def _server_reader(proc: subprocess.Popen):
     if proc.stdout:
         for line in proc.stdout:
-            _server_log.append(line.rstrip("\n"))
+            line = line.rstrip("\n")
+            _server_log.append(line)
+            pubsub.publish("logs", {"line": line})
 
 
 def start_server(cmd: str, cwd: str) -> str:

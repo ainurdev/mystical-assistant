@@ -1,6 +1,7 @@
 """Configuration (override via environment variables). See SECURITY notes in README."""
 
 import os
+import secrets
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
@@ -78,3 +79,15 @@ UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")
 # SQLite source of truth for conversations (sessions/turns/events). Lives in
 # $HOME (outside the repo), git-ignored, mode 600.
 BRIDGE_DB = os.path.expanduser(os.environ.get("BRIDGE_DB", "~/.bridge_state/bridge.db"))
+
+# --- Desktop dashboard (localhost-only, NEVER tunneled) ----------------------
+# A second HTTP server bound to 127.0.0.1 that is a full-parity Claude client +
+# live log viewer. Because any web page can POST to 127.0.0.1, requests are gated
+# on a Host allow-list (anti DNS-rebinding) and state-changing requests require
+# DASH_TOKEN (anti CSRF). The dashboard acts as DASH_CHAT_ID's sessions.
+DASH_ENABLE = os.environ.get("DASH_ENABLE", "1").lower() not in ("0", "false", "no", "")
+DASH_HOST = "127.0.0.1"
+DASH_PORT = int(os.environ.get("DASH_PORT", "8790"))
+DASH_TOKEN = os.environ.get("DASH_TOKEN") or secrets.token_urlsafe(24)
+DASH_CHAT_ID = int(os.environ.get("DASH_CHAT_ID", "0")) or (
+    min(ALLOWED_CHAT_IDS) if ALLOWED_CHAT_IDS else 0)

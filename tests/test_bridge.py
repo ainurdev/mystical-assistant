@@ -296,7 +296,34 @@ def test_session_brief_shape():
     from bridge.miniapp.server import _session_brief
     s = store.create_session(555, "p6")
     b = _session_brief(s)
-    assert set(b) == {"id", "title", "updated", "archived"} and b["id"] == s["id"]
+    assert set(b) == {"id", "title", "project", "updated", "archived"}
+    assert b["id"] == s["id"] and b["project"] == "p6"
+
+
+def test_store_list_sessions_all():
+    store.create_session(900, "a")
+    store.create_session(900, "b")
+    projs = {s["project"] for s in store.list_sessions_all(900)}
+    assert {"a", "b"} <= projs
+
+
+# --- dashboard security ------------------------------------------------------
+
+def test_tunnel_refuses_reserved_ports():
+    from bridge import tunnel
+    url, msg = tunnel.start_tunnel(config.DASH_PORT)
+    assert url is None and "reserved" in msg.lower()
+    url2, _ = tunnel.start_tunnel(config.MINIAPP_PORT)
+    assert url2 is None
+
+
+def test_dashboard_security_helpers():
+    from bridge.dashboard import server as dash
+    assert dash._tok_ok(config.DASH_TOKEN) is True
+    assert dash._tok_ok("nope") is False
+    assert dash._tok_ok("") is False
+    assert f"127.0.0.1:{config.DASH_PORT}" in dash._HOSTS
+    assert f"http://localhost:{config.DASH_PORT}" in dash._ORIGINS
 
 
 def test_handle_task_journals_bot_turn():

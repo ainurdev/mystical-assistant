@@ -72,8 +72,8 @@ def normalize_model_effort(model, effort) -> tuple[bool, str | None, str | None]
 
 
 def _session_brief(s: dict) -> dict:
-    return {"id": s["id"], "title": s["title"], "updated": s["updated"],
-            "archived": s["archived"]}
+    return {"id": s["id"], "title": s["title"], "project": s["project"],
+            "updated": s["updated"], "archived": s["archived"]}
 
 
 def _save_images(job_id: str, images: list) -> list[str]:

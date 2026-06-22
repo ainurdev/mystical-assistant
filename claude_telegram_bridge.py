@@ -31,7 +31,7 @@ import json
 import os
 import sys
 
-from bridge import config, devserver, state, tunnel
+from bridge import config, devserver, pubsub, state, store, tunnel
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -60,12 +60,29 @@ def _setup_miniapp():
     print(f"Mini App live: {url}")
 
 
+def _setup_dashboard():
+    if not config.DASH_ENABLE:
+        return
+    from bridge.dashboard import server as dash
+    if not dash.web_built():
+        print("⚠️  Dashboard UI not built — run:\n"
+              "    npm --prefix bridge/dashboard/web ci && "
+              "npm --prefix bridge/dashboard/web run build")
+    dash.start()
+    print(f"Dashboard (localhost only): http://{config.DASH_HOST}:{config.DASH_PORT}/"
+          f"?token={config.DASH_TOKEN}")
+
+
 def _shutdown():
     tunnel.stop_tunnel()
     devserver.stop_server()
     if config.MINIAPP_ENABLE:
         from bridge.miniapp import server as miniapp
         miniapp.stop()
+    if config.DASH_ENABLE:
+        from bridge.dashboard import server as dash
+        dash.stop()
+    pubsub.shutdown()
     if state.miniapp_tunnel_proc and state.miniapp_tunnel_proc.poll() is None:
         state.miniapp_tunnel_proc.terminate()
 
@@ -79,10 +96,12 @@ def main():
     if not me:
         sys.exit("Could not reach Telegram. Check the token / network.")
     print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
+    store.init()
     if not config.ALLOWED_CHAT_IDS:
         print("⚠️  No ALLOWED_CHAT_IDS — DISCOVERY mode (won't execute Claude).")
     else:
         _setup_miniapp()
+        _setup_dashboard()
 
     offset = 0
     try:

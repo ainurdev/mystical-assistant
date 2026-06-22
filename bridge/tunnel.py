@@ -139,6 +139,11 @@ def _stop_tunnel_locked():
 
 def start_tunnel(port: int):
     """Start the named preview tunnel pointing PREVIEW_HOSTNAME at `port`."""
+    if port in (config.MINIAPP_PORT, config.DASH_PORT):
+        return (None, f"❌ Refusing to tunnel reserved port {port} "
+                      "(Mini App / dashboard must never be public).")
+    if not 1 <= port <= 65535:
+        return (None, f"❌ Invalid port {port}.")
     global _tunnel_proc, _tunnel_url, _tunnel_port
     with _tunnel_lock:
         if not os.path.isfile(config.TUNNEL_CREDENTIALS_FILE):
