@@ -41,6 +41,35 @@ export interface SelectResponse {
 
 export interface RunStartResponse {
   job_id: string;
+  session_id: string;
+}
+
+export interface SessionBrief {
+  id: string;
+  title: string | null;
+  project: string;
+  updated: number;
+  archived: number;
+}
+
+export interface StoreTurn {
+  id: string;
+  seq: number;
+  prompt: string;
+  attachments: string[];
+  status: "running" | "done" | "error";
+  cost: number | null;
+  elapsed: number | null;
+  started: number;
+}
+
+export type StoreEvent = RunEvent & { seq: number; turn_id: string };
+
+export interface Transcript {
+  session: (SessionBrief & { claude_session_id: string | null; created: number }) | null;
+  turns: StoreTurn[];
+  events: StoreEvent[];
+  next_cursor: number;
 }
 
 export interface QuestionOption {
@@ -194,14 +223,34 @@ export const api = {
   run: (
     prompt: string,
     images: string[],
-    project?: string,
-    fresh?: boolean,
+    project: string | undefined,
+    sessionId: string,
     model?: string,
     effort?: string,
   ) =>
     request<RunStartResponse>("/api/run", {
       method: "POST",
-      body: { prompt, images, project, fresh, model, effort },
+      body: { prompt, images, project, session_id: sessionId, model, effort },
+    }),
+
+  listSessions: (project: string) =>
+    request<{ sessions: SessionBrief[] }>(
+      `/api/sessions?project=${encodeURIComponent(project)}`,
+    ),
+
+  createSession: (project: string) =>
+    request<{ session: SessionBrief }>("/api/sessions", {
+      method: "POST",
+      body: { project },
+    }),
+
+  getSession: (id: string, cursor: number) =>
+    request<Transcript>(`/api/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+
+  archiveSession: (id: string) =>
+    request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/archive`, {
+      method: "POST",
+      body: {},
     }),
 
   runStatus: (jobId: string, cursor: number) =>

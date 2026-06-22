@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "./api";
 import type {
   AnswerSelection,
@@ -14,72 +14,27 @@ import type {
   ModelId,
   PendingRequest,
   RunEvent,
-  RunStatus,
+  SessionBrief,
+  Transcript,
 } from "./api";
 import { usePersistentState } from "./persistentState";
-
-const KEY = "miniapp:chat:v1";
 
 export interface Attachment {
   id: string;
   name: string;
-  dataUrl: string;
+  dataUrl?: string; // present for just-attached images; absent for loaded history
 }
 
 export interface Turn {
-  id: string;
+  id: string; // == store turn id == job id
   prompt: string;
   attachments: Attachment[];
   jobId: string;
   events: RunEvent[];
-  cursor: number;
+  cursor: number; // unused under the transcript model; kept for the view's shape
   status: "running" | "done" | "error";
   pending: PendingRequest[];
-  stale?: boolean; // job vanished after a bridge restart
-}
-
-interface ChatState {
-  turns: Turn[];
-  draft: string;
-  draftAttachments: Attachment[];
-}
-
-const EMPTY: ChatState = { turns: [], draft: "", draftAttachments: [] };
-
-function load(): ChatState {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<ChatState>;
-      if (parsed && Array.isArray(parsed.turns)) {
-        return { ...EMPTY, ...parsed, draftAttachments: parsed.draftAttachments ?? [] };
-      }
-    }
-  } catch {
-    // corrupt / unavailable — start fresh
-  }
-  return EMPTY;
-}
-
-/** Persist chat state. On a quota error, retry without image attachments
- *  (transcript text is worth more than previews); if still failing, skip. */
-function persist(state: ChatState) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state));
-    return;
-  } catch {
-    /* fall through to slim retry */
-  }
-  try {
-    const slim: ChatState = {
-      ...state,
-      draftAttachments: [],
-      turns: state.turns.map((t) => ({ ...t, attachments: [] })),
-    };
-    localStorage.setItem(KEY, JSON.stringify(slim));
-  } catch {
-    // give up — in-memory only
-  }
+  stale?: boolean;
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -91,42 +46,82 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Merge a poll/respond snapshot into a turn, robust against overlapping
- *  responses (poll and a respond() can both fetch from the same cursor). */
-function applySnapshot(prev: ChatState, jobId: string, res: RunStatus): ChatState {
-  let changed = false;
-  const resPending = res.pending ?? [];
-  const turns = prev.turns.map((t) => {
-    if (t.jobId !== jobId) return t;
-    const respStart = res.next_cursor - res.events.length;
-    const skip = Math.max(0, t.cursor - respStart);
-    const fresh = res.events.slice(skip);
-    const newCursor = Math.max(t.cursor, res.next_cursor);
-    const samePending =
-      t.pending.length === resPending.length &&
-      t.pending.every((p, i) => p.request_id === resPending[i]?.request_id);
-    if (!fresh.length && newCursor === t.cursor && t.status === res.status && samePending) {
-      return t; // nothing new — keep the same reference
-    }
-    changed = true;
-    return {
-      ...t,
-      events: fresh.length ? [...t.events, ...fresh] : t.events,
-      cursor: newCursor,
-      status: res.status,
-      pending: resPending,
-    };
-  });
-  return changed ? { ...prev, turns } : prev;
+/** Unresolved permission/question events are the actionable pending requests
+ *  (derived from the transcript, so no separate live "pending" list is needed). */
+function derivePending(events: RunEvent[]): PendingRequest[] {
+  const resolved = new Set<string>();
+  for (const e of events) {
+    if (e.type === "permission_resolved" || e.type === "question_answered")
+      resolved.add(e.request_id);
+  }
+  const out: PendingRequest[] = [];
+  for (const e of events) {
+    if (e.type === "permission" && !resolved.has(e.request_id))
+      out.push({
+        request_id: e.request_id,
+        kind: "permission",
+        tool_name: e.tool_name,
+        summary: e.summary,
+      });
+    else if (e.type === "question" && !resolved.has(e.request_id))
+      out.push({
+        request_id: e.request_id,
+        kind: "question",
+        tool_name: "AskUserQuestion",
+        questions: e.questions,
+      });
+  }
+  return out;
 }
 
-function markStale(prev: ChatState, jobId: string): ChatState {
-  return {
-    ...prev,
-    turns: prev.turns.map((t) =>
-      t.jobId === jobId ? { ...t, status: "error", stale: true, pending: [] } : t,
-    ),
-  };
+function seqOf(e: RunEvent): number | undefined {
+  return (e as { seq?: number }).seq;
+}
+
+/** Merge a transcript (full turn list + event delta) into the current turns,
+ *  upserting turns by id and appending events by session-level seq. Everything
+ *  is seq-keyed, so the active turn never mixes cursor spaces (and an optimistic
+ *  turn already present by job id is updated, never duplicated). */
+function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
+  const map = new Map<string, Turn>(prev.map((x) => [x.id, x]));
+  const storeSeq = new Map<string, number>();
+
+  for (const st of t.turns) {
+    storeSeq.set(st.id, st.seq);
+    const ex = map.get(st.id);
+    if (ex) {
+      map.set(st.id, { ...ex, status: st.status, prompt: ex.prompt || st.prompt });
+    } else {
+      map.set(st.id, {
+        id: st.id,
+        prompt: st.prompt,
+        attachments: [], // history image blobs aren't persisted
+        jobId: st.id,
+        events: [],
+        cursor: 0,
+        status: st.status,
+        pending: [],
+      });
+    }
+  }
+
+  for (const ev of t.events) {
+    const turn = map.get(ev.turn_id);
+    if (!turn) continue;
+    if (turn.events.some((e) => seqOf(e) === ev.seq)) continue;
+    map.set(ev.turn_id, { ...turn, events: [...turn.events, ev] });
+  }
+
+  const out = [...map.values()].map((turn) => ({
+    ...turn,
+    pending: derivePending(turn.events),
+  }));
+  out.sort(
+    (a, b) =>
+      (storeSeq.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (storeSeq.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  );
+  return out;
 }
 
 export interface ChatContextValue {
@@ -144,63 +139,93 @@ export interface ChatContextValue {
   setModel: (m: ModelId) => void;
   effort: EffortLevel | "";
   setEffort: (e: EffortLevel | "") => void;
+  sessions: SessionBrief[];
+  sessionId: string | null;
+  selectSession: (id: string) => void;
   send: () => Promise<void>;
   stop: () => Promise<void>;
   respond: (
     requestId: string,
     opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
   ) => Promise<void>;
-  newChat: () => void;
+  newChat: () => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ChatState>(load);
+  const qc = useQueryClient();
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [draft, setDraft] = useState("");
+  const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [sendError, setSendError] = useState<ApiError | null>(null);
+  const [sessions, setSessions] = useState<SessionBrief[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [model, setModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
-  const [effort, setEffort] = usePersistentState<EffortLevel | "">(
-    "miniapp:effort:v1",
-    "",
-  );
+  const [effort, setEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
   const fileIdRef = useRef(0);
-
-  useEffect(() => persist(state), [state]);
+  const seqRef = useRef(0);
 
   const stateQuery = useQuery({
     queryKey: ["state"],
     queryFn: () => api.getState(),
     refetchInterval: 5000,
   });
+  const project = stateQuery.data?.project?.rel ?? null;
 
-  const lastTurn = state.turns.length ? state.turns[state.turns.length - 1] : null;
+  const lastTurn = turns.length ? turns[turns.length - 1] : null;
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;
-  const activeJobId = activeTurn?.jobId ?? null;
-  const cursor = activeTurn?.cursor ?? 0;
-
-  // Poll the active turn. Mounted in Layout, so it survives tab navigation.
-  useQuery({
-    queryKey: ["run", activeJobId, cursor],
-    queryFn: async () => {
-      try {
-        const res = await api.runStatus(activeJobId as string, cursor);
-        setState((prev) => applySnapshot(prev, activeJobId as string, res));
-        return res;
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 404) {
-          setState((prev) => markStale(prev, activeJobId as string));
-          return { status: "error", events: [], next_cursor: cursor, pending: [] } as RunStatus;
-        }
-        throw e;
-      }
-    },
-    enabled: activeJobId !== null,
-    refetchInterval: (query) =>
-      query.state.data?.status === "running" ? 1500 : false,
-  });
-
   const isRunning = activeTurn !== null;
   const pending = activeTurn?.pending ?? [];
+
+  function openSession(id: string) {
+    seqRef.current = 0;
+    setTurns([]);
+    setSessionId(id);
+  }
+
+  function refresh() {
+    if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
+  }
+
+  // Resolve the current session for the active project (latest, or create one).
+  useEffect(() => {
+    if (!project) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { sessions: list } = await api.listSessions(project);
+        if (cancelled) return;
+        if (list.length) {
+          setSessions(list);
+          openSession(list[0].id);
+        } else {
+          const { session } = await api.createSession(project);
+          if (cancelled) return;
+          setSessions([session]);
+          openSession(session.id);
+        }
+      } catch {
+        /* leave current state */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project]);
+
+  // Load + live-poll the current session's transcript (session-seq cursor).
+  useQuery({
+    queryKey: ["transcript", sessionId],
+    enabled: sessionId !== null,
+    queryFn: async () => {
+      const t = await api.getSession(sessionId as string, seqRef.current);
+      setTurns((prev) => mergeDelta(prev, t));
+      seqRef.current = t.next_cursor;
+      return t;
+    },
+    refetchInterval: isRunning ? 1500 : false,
+  });
 
   async function addAttachments(files: FileList | null) {
     if (!files) return;
@@ -209,50 +234,43 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const dataUrl = await readAsDataUrl(file);
       added.push({ id: `att-${fileIdRef.current++}-${file.name}`, name: file.name, dataUrl });
     }
-    setState((prev) => ({ ...prev, draftAttachments: [...prev.draftAttachments, ...added] }));
+    setDraftAttachments((prev) => [...prev, ...added]);
   }
 
   function removeAttachment(id: string) {
-    setState((prev) => ({
-      ...prev,
-      draftAttachments: prev.draftAttachments.filter((a) => a.id !== id),
-    }));
+    setDraftAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   async function send() {
-    const text = state.draft.trim();
-    if (!text || isRunning || pending.length > 0) return;
-    const attachments = state.draftAttachments;
-    const fresh = state.turns.length === 0;
-    const project = stateQuery.data?.project?.rel;
+    const text = draft.trim();
+    if (!text || isRunning || pending.length > 0 || !sessionId) return;
+    const attachments = draftAttachments;
     setSendError(null);
     try {
       const res = await api.run(
         text,
-        attachments.map((a) => a.dataUrl),
-        project,
-        fresh,
+        attachments.map((a) => a.dataUrl ?? "").filter(Boolean),
+        project ?? undefined,
+        sessionId,
         model,
         effort || undefined,
       );
-      setState((prev) => ({
+      setDraft("");
+      setDraftAttachments([]);
+      setTurns((prev) => [
         ...prev,
-        draft: "",
-        draftAttachments: [],
-        turns: [
-          ...prev.turns,
-          {
-            id: res.job_id,
-            prompt: text,
-            attachments,
-            jobId: res.job_id,
-            events: [],
-            cursor: 0,
-            status: "running",
-            pending: [],
-          },
-        ],
-      }));
+        {
+          id: res.job_id,
+          prompt: text,
+          attachments,
+          jobId: res.job_id,
+          events: [],
+          cursor: 0,
+          status: "running",
+          pending: [],
+        },
+      ]);
+      refresh();
     } catch (e) {
       if (e instanceof ApiError) setSendError(e);
       else setSendError(new ApiError(0, "Failed to start run."));
@@ -264,40 +282,50 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
   ) {
     if (!activeTurn) return;
-    const jobId = activeTurn.jobId;
-    const res = await api.respond(jobId, {
-      request_id: requestId,
-      behavior: opts.behavior,
-      answers: opts.answers,
-      cursor: activeTurn.cursor,
-    });
-    setState((prev) => applySnapshot(prev, jobId, res));
+    try {
+      await api.respond(activeTurn.id, {
+        request_id: requestId,
+        behavior: opts.behavior,
+        answers: opts.answers,
+      });
+    } catch {
+      /* the poll reconciles */
+    }
+    refresh();
   }
 
   async function stop() {
     if (!activeTurn) return;
-    const jobId = activeTurn.jobId;
     try {
-      const res = await api.interrupt(jobId, activeTurn.cursor);
-      setState((prev) => applySnapshot(prev, jobId, res));
-    } catch (e) {
-      // 404 (job gone) / 409 (already finished): the poll reconciles state.
-      if (e instanceof ApiError && e.status === 404) {
-        setState((prev) => markStale(prev, jobId));
-      }
+      await api.interrupt(activeTurn.id, 0);
+    } catch {
+      /* 404/409: the poll reconciles */
+    }
+    refresh();
+  }
+
+  async function newChat() {
+    if (!project) return;
+    setSendError(null);
+    try {
+      const { session } = await api.createSession(project);
+      setSessions((prev) => [session, ...prev]);
+      openSession(session.id);
+    } catch {
+      /* ignore */
     }
   }
 
-  function newChat() {
-    setSendError(null);
-    setState((prev) => ({ ...EMPTY, draft: prev.draft, draftAttachments: prev.draftAttachments }));
+  function selectSession(id: string) {
+    if (id === sessionId) return;
+    openSession(id);
   }
 
   const value: ChatContextValue = {
-    turns: state.turns,
-    draft: state.draft,
-    setDraft: (v) => setState((prev) => ({ ...prev, draft: v })),
-    draftAttachments: state.draftAttachments,
+    turns,
+    draft,
+    setDraft,
+    draftAttachments,
     addAttachments,
     removeAttachment,
     activeTurn,
@@ -308,6 +336,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setModel,
     effort,
     setEffort,
+    sessions,
+    sessionId,
+    selectSession,
     send,
     stop,
     respond,

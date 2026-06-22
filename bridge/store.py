@@ -78,6 +78,9 @@ def init() -> None:
             pass
     with closing(_connect()) as c:
         c.executescript(_SCHEMA)
+        # Any turn still 'running' at startup is orphaned (the bridge restarted);
+        # mark it errored so the UI doesn't poll a dead job forever.
+        c.execute("UPDATE turns SET status='error' WHERE status='running'")
     for suffix in ("", "-wal", "-shm"):
         p = path + suffix
         if os.path.exists(p):
