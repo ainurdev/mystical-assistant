@@ -24,8 +24,10 @@ In the same change, **refactor** the 500-line single-file bot into a focused
   Claude Code subscription login (unchanged from today).
 - No multi-user / multi-tenant support. Access is locked to `ALLOWED_CHAT_IDS`.
 - No persistent database. Jobs and state live in memory (same as today).
-- No named-tunnel / custom-domain setup. We use cloudflared quick tunnels.
-- No named-tunnel / custom-domain setup (quick tunnels only).
+- No named-tunnel / custom-domain setup; quick tunnels only. **(Superseded for
+  `/preview` — it now uses a stable named tunnel: see
+  `2026-06-22-preview-named-tunnel.md`. The Mini App panel tunnel is still a quick
+  tunnel.)**
 
 ## 3. Decisions (from brainstorming)
 

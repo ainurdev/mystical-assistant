@@ -35,6 +35,20 @@ PREVIEW_PORT = int(os.environ.get("PREVIEW_PORT", "3000"))    # default dev port
 START_CMD = os.environ.get("START_CMD", "npm run dev")        # default /server cmd
 CLOUDFLARED_BIN = os.environ.get("CLOUDFLARED_BIN", "cloudflared")
 
+# --- Named preview tunnel ----------------------------------------------------
+# /preview runs a *named* Cloudflare Tunnel so the public URL is stable
+# (https://PREVIEW_HOSTNAME) instead of a random *.trycloudflare.com link. The
+# tunnel + DNS are provisioned once via the Cloudflare API; the credentials file
+# (git-ignored, in $HOME) lets cloudflared run it locally. The Mini App control
+# panel still uses an ephemeral quick tunnel (see tunnel.open_quick_tunnel).
+PREVIEW_HOSTNAME = os.environ.get("PREVIEW_HOSTNAME", "preview.mhzrerfani.dev")
+TUNNEL_NAME = os.environ.get("TUNNEL_NAME", "mystical-preview")
+TUNNEL_ID = os.environ.get("TUNNEL_ID", "612b1ee2-693c-4640-a3ed-133adce0da6b")
+TUNNEL_CREDENTIALS_FILE = os.path.expanduser(os.environ.get(
+    "TUNNEL_CREDENTIALS_FILE", "~/.cloudflared/mystical-preview.json"))
+TUNNEL_CONFIG_FILE = os.path.expanduser(os.environ.get(
+    "TUNNEL_CONFIG_FILE", "~/.cloudflared/mystical-preview-config.yml"))
+
 POLL_TIMEOUT = 30
 API = f"https://api.telegram.org/bot{TOKEN}"
 TG_MAX = 4000
