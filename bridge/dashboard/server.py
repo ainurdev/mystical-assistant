@@ -138,6 +138,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"rel": browser.rel(cur), "at_base": real == config.BASE_PATH,
                                "can_up": real != config.BASE_PATH,
                                "dirs": browser.list_dirs(cur)})
+        if path == "/local/history":
+            archived = qs.get("archived", ["0"])[0] == "1"
+            return self._json({"sessions": store.history(chat, include_archived=archived)})
         if path == "/local/running":
             return self._json({"external": machine.list_running(),
                                "bridge_running": store.running_session_ids(chat)})

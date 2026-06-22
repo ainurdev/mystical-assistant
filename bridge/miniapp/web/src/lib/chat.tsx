@@ -142,6 +142,7 @@ export interface ChatContextValue {
   sessions: SessionBrief[];
   sessionId: string | null;
   selectSession: (id: string) => void;
+  openSessionInProject: (project: string, id: string) => Promise<void>;
   send: () => Promise<void>;
   stop: () => Promise<void>;
   respond: (
@@ -165,6 +166,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [effort, setEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
+  const sessionIdRef = useRef<string | null>(null); // current session, for stale-free reads
 
   const stateQuery = useQuery({
     queryKey: ["state"],
@@ -180,8 +182,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   function openSession(id: string) {
     seqRef.current = 0;
+    sessionIdRef.current = id;
     setTurns([]);
     setSessionId(id);
+  }
+
+  // Open a session that may live in a different repo: switch the active project
+  // first (so a resume runs in the right cwd), then load it by id. The transcript
+  // poll keys off the id, so it loads regardless of the active project.
+  async function openSessionInProject(proj: string, id: string) {
+    openSession(id);
+    try {
+      await api.select(proj);
+    } catch {
+      return; // repo gone/invalid: transcript still viewable, project unchanged
+    }
+    void qc.invalidateQueries({ queryKey: ["state"] });
   }
 
   function refresh() {
@@ -196,8 +212,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         const { sessions: list } = await api.listSessions(project);
         if (cancelled) return;
+        setSessions(list);
+        // Keep an explicitly-opened session (e.g. from History) when the active
+        // project changes; only auto-resolve when the current one isn't here.
+        if (sessionIdRef.current && list.some((s) => s.id === sessionIdRef.current))
+          return;
         if (list.length) {
-          setSessions(list);
           openSession(list[0].id);
         } else {
           const { session } = await api.createSession(project);
@@ -339,6 +359,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sessions,
     sessionId,
     selectSession,
+    openSessionInProject,
     send,
     stop,
     respond,

@@ -509,6 +509,45 @@ def test_store_running_session_ids():
     assert store.running_session_ids(424243) == []           # scoped by chat
 
 
+# --- per-repo history + model capture ---------------------------------------
+
+def test_store_history_aggregates():
+    s = store.create_session(557, "hrepo")
+    store.start_turn(s["id"], "h1", "first", [], model="opus")
+    store.finish_turn("h1", "done", 0.02, 5)
+    store.start_turn(s["id"], "h2", "second", [], model="sonnet")
+    store.finish_turn("h2", "done", 0.03, 7)
+    row = next(r for r in store.history(557) if r["id"] == s["id"])
+    assert row["turn_count"] == 2
+    assert abs(row["total_cost"] - 0.05) < 1e-9
+    assert row["models"] == ["opus", "sonnet"]            # sorted, distinct
+    assert row["project"] == "hrepo"
+    assert row["last_activity"] >= row["created"]
+
+
+def test_store_history_excludes_archived_by_default():
+    s = store.create_session(558, "arepo")
+    store.start_turn(s["id"], "a1", "x", [])
+    store.archive(s["id"])
+    assert all(r["id"] != s["id"] for r in store.history(558))
+    assert any(r["id"] == s["id"] for r in store.history(558, include_archived=True))
+
+
+def test_store_history_session_with_no_turns():
+    s = store.create_session(560, "empty")
+    row = next(r for r in store.history(560) if r["id"] == s["id"])
+    assert row["turn_count"] == 0 and row["total_cost"] == 0 and row["models"] == []
+    assert row["last_activity"] == s["updated"]            # falls back to session.updated
+
+
+def test_store_init_idempotent_and_model_persisted():
+    store.init()                                           # second call must not raise
+    s = store.create_session(559, "mrepo")
+    store.start_turn(s["id"], "m1", "x", [], model="haiku")
+    row = next(r for r in store.history(559) if r["id"] == s["id"])
+    assert row["models"] == ["haiku"]                      # migration applied, model stored
+
+
 # --- pubsub -----------------------------------------------------------------
 
 def test_pubsub_basic_and_overflow():

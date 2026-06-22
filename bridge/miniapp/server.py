@@ -148,6 +148,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_projects(qs)
                 if path == "/api/logs":
                     return self._api_logs(qs)
+                if path == "/api/history":
+                    return self._api_history(chat_id, qs)
                 if path == "/api/running":
                     return self._api_running(chat_id)
                 if path == "/api/usage":
@@ -278,6 +280,10 @@ class Handler(BaseHTTPRequestHandler):
         if not job:
             return self._json({"error": "not found"}, 404)
         self._json(job.snapshot(cursor))
+
+    def _api_history(self, chat_id: int, qs):
+        archived = qs.get("archived", ["0"])[0] == "1"
+        self._json({"sessions": store.history(chat_id, include_archived=archived)})
 
     def _api_running(self, chat_id: int):
         self._json({"external": machine.list_running(),

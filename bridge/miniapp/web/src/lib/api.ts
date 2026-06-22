@@ -162,6 +162,20 @@ export interface RunningInfo {
   bridge_running: string[]; // store session ids with an in-flight turn
 }
 
+// Per-repo history: a session enriched with aggregates from its turns.
+export interface EnrichedSession {
+  id: string;
+  title: string | null;
+  project: string;
+  created: number;
+  updated: number;
+  archived: number;
+  turn_count: number;
+  total_cost: number;
+  last_activity: number;
+  models: string[];
+}
+
 // Claude usage — only computed percentages / reset times (no token, ever).
 export interface UsageBucket {
   percent: number;
@@ -276,6 +290,11 @@ export const api = {
   getRunning: () => request<RunningInfo>("/api/running"),
 
   getUsage: () => request<UsageInfo>("/api/usage"),
+
+  getHistory: (archived = false) =>
+    request<{ sessions: EnrichedSession[] }>(
+      `/api/history${archived ? "?archived=1" : ""}`,
+    ),
 
   listSessions: (project: string) =>
     request<{ sessions: SessionBrief[] }>(

@@ -503,7 +503,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.resume_id = session["claude_session_id"]
         _register(job)
         store.start_turn(session["id"], job.id, prompt,
-                         [os.path.basename(p) for p in image_paths])
+                         [os.path.basename(p) for p in image_paths], model=model)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort),

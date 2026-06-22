@@ -6,6 +6,7 @@ import {
   type AnswerSelection,
   type DashState,
   type EffortLevel,
+  type EnrichedSession,
   type ModelId,
   type SessionBrief,
 } from "./api";
@@ -13,6 +14,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { Sidebar } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
+import { HistoryView } from "./components/HistoryView";
 import { Logs } from "./components/Logs";
 
 export function App() {
@@ -24,6 +26,7 @@ export function App() {
   const [model, setModel] = useState<ModelId>("opus");
   const [effort, setEffort] = useState<EffortLevel | "">("");
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"chat" | "history">("chat");
   const seqRef = useRef(0);
 
   const active = activeOf(turns);
@@ -162,6 +165,20 @@ export function App() {
     }
   }
 
+  // Resume any session from History: switch the active project first (so the
+  // next message resumes in the right cwd), then open it and return to chat.
+  async function openFromHistory(s: EnrichedSession) {
+    try {
+      await api.select(s.project);
+      setState(await api.state());
+    } catch {
+      /* repo gone: transcript still viewable, project unchanged */
+    }
+    await loadSessions();
+    openSession(s.id);
+    setView("chat");
+  }
+
   if (!TOKEN) {
     return (
       <div className="p-8 text-center text-sm text-zinc-400">
@@ -183,7 +200,22 @@ export function App() {
       />
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
-          <div className="text-sm font-semibold">{state?.project?.name ?? "Claude Bridge"}</div>
+          <div className="flex items-center gap-3">
+            <div className="text-sm font-semibold">{state?.project?.name ?? "Claude Bridge"}</div>
+            <div className="flex items-center gap-0.5 rounded-lg bg-zinc-800 p-0.5 text-xs">
+              {(["chat", "history"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`rounded px-2 py-0.5 capitalize ${
+                    view === v ? "bg-indigo-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-2 text-xs text-zinc-400">
             {state?.busy && (
               <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-white">busy</span>
@@ -191,26 +223,34 @@ export function App() {
             <ServerControls state={state} />
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          <Transcript
-            turns={turns}
-            activeId={active?.id ?? null}
-            onRespond={(rid, o) => void respond(rid, o)}
-          />
-          {error && (
-            <div className="mt-2 rounded bg-red-500/15 px-2 py-1 text-sm text-red-300">{error}</div>
-          )}
-        </div>
-        <Composer
-          disabled={running || pendingCount > 0}
-          running={running}
-          model={model}
-          effort={effort}
-          onModel={setModel}
-          onEffort={setEffort}
-          onSend={(t, i) => void send(t, i)}
-          onStop={() => void stop()}
-        />
+        {view === "history" ? (
+          <HistoryView onOpen={(s) => void openFromHistory(s)} />
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              <Transcript
+                turns={turns}
+                activeId={active?.id ?? null}
+                onRespond={(rid, o) => void respond(rid, o)}
+              />
+              {error && (
+                <div className="mt-2 rounded bg-red-500/15 px-2 py-1 text-sm text-red-300">
+                  {error}
+                </div>
+              )}
+            </div>
+            <Composer
+              disabled={running || pendingCount > 0}
+              running={running}
+              model={model}
+              effort={effort}
+              onModel={setModel}
+              onEffort={setEffort}
+              onSend={(t, i) => void send(t, i)}
+              onStop={() => void stop()}
+            />
+          </>
+        )}
       </main>
       <section className="hidden w-96 shrink-0 border-l border-zinc-800 lg:flex lg:flex-col">
         <Logs lines={logs} />

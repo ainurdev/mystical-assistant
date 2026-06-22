@@ -105,6 +105,18 @@ export interface RunningInfo {
   external: RunningSession[];
   bridge_running: string[];
 }
+export interface EnrichedSession {
+  id: string;
+  title: string | null;
+  project: string;
+  created: number;
+  updated: number;
+  archived: number;
+  turn_count: number;
+  total_cost: number;
+  last_activity: number;
+  models: string[];
+}
 export interface UsageBucket {
   percent: number;
   resets_at: string | null;
@@ -188,6 +200,10 @@ export const api = {
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
   running: () => req<RunningInfo>("/local/running"),
   usage: () => req<UsageInfo>("/local/usage"),
+  history: (archived = false) =>
+    req<{ sessions: EnrichedSession[] }>(
+      `/local/history${archived ? "?archived=1" : ""}`,
+    ),
 };
 
 /** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */

@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS turns (
   status      TEXT NOT NULL,
   cost        REAL,
   elapsed     INTEGER,
-  started     REAL NOT NULL
+  started     REAL NOT NULL,
+  model       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 
@@ -78,6 +79,10 @@ def init() -> None:
             pass
     with closing(_connect()) as c:
         c.executescript(_SCHEMA)
+        # Migration for DBs created before turns.model existed (idempotent).
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(turns)").fetchall()}
+        if "model" not in cols:
+            c.execute("ALTER TABLE turns ADD COLUMN model TEXT")
         # Any turn still 'running' at startup is orphaned (the bridge restarted);
         # mark it errored so the UI doesn't poll a dead job forever.
         c.execute("UPDATE turns SET status='error' WHERE status='running'")
@@ -174,7 +179,7 @@ def archive(session_id: str, archived: bool = True) -> None:
 # --- turns + events ---------------------------------------------------------
 
 def start_turn(session_id: str, turn_id: str, prompt: str,
-               attachments: list[str] | None) -> None:
+               attachments: list[str] | None, model: str | None = None) -> None:
     now = time.time()
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
@@ -182,9 +187,9 @@ def start_turn(session_id: str, turn_id: str, prompt: str,
                         (session_id,)).fetchone()["n"]
         c.execute(
             "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-            "elapsed,started) VALUES(?,?,?,?,?,?,?,?,?)",
+            "elapsed,started,model) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (turn_id, session_id, seq, prompt, json.dumps(attachments or []),
-             "running", None, None, now))
+             "running", None, None, now, model))
         c.execute("UPDATE sessions SET updated=? WHERE id=?", (now, session_id))
         cur = c.execute("SELECT title FROM sessions WHERE id=?", (session_id,)).fetchone()
         if cur is not None and not cur["title"]:
@@ -210,6 +215,29 @@ def finish_turn(turn_id: str, status: str, cost: float | None, elapsed: int | No
     with closing(_connect()) as c:
         c.execute("UPDATE turns SET status=?, cost=?, elapsed=? WHERE id=?",
                   (status, cost, elapsed, turn_id))
+
+
+def history(chat_id: int, include_archived: bool = False) -> list[dict]:
+    """Per-repo session rollup: one row per session with aggregates joined from
+    its turns — turn_count, total_cost, last_activity, and distinct models used.
+    Newest activity first."""
+    q = ("SELECT s.id, s.title, s.project, s.created, s.updated, s.archived, "
+         "COUNT(t.id) AS turn_count, "
+         "COALESCE(SUM(t.cost), 0) AS total_cost, "
+         "COALESCE(MAX(t.started), s.updated) AS last_activity, "
+         "GROUP_CONCAT(DISTINCT t.model) AS models "
+         "FROM sessions s LEFT JOIN turns t ON t.session_id = s.id "
+         "WHERE s.chat_id=?")
+    if not include_archived:
+        q += " AND s.archived=0"
+    q += " GROUP BY s.id ORDER BY last_activity DESC"
+    rows = []
+    with closing(_connect()) as c:
+        for r in c.execute(q, (chat_id,)).fetchall():
+            d = dict(r)
+            d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
+            rows.append(d)
+    return rows
 
 
 def running_session_ids(chat_id: int) -> list[str]:
