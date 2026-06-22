@@ -261,6 +261,17 @@ def test_base_cmd_omits_model_effort_by_default():
     assert "--effort" not in cmd
 
 
+def test_base_cmd_resumes_when_session_id():
+    cmd = runner._base_cmd("p", 555, stream=True, interactive=True,
+                           claude_session_id="abc123")
+    assert cmd[cmd.index("--resume") + 1] == "abc123"
+
+
+def test_state_project_key_is_canonical_rel():
+    from bridge import state
+    assert state.project_key(424242).startswith("/")   # base or /rel
+
+
 # --- interrupt --------------------------------------------------------------
 
 def test_interrupt_writes_control_request_and_marks_job():

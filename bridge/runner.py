@@ -23,7 +23,8 @@ from bridge.telegram import send, typing
 
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
-              effort: str | None = None) -> list[str]:
+              effort: str | None = None,
+              claude_session_id: str | None = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -50,7 +51,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--model", model]
     if effort:
         cmd += ["--effort", effort]
-    sid = state.sessions.get(chat_id)
+    sid = claude_session_id or state.sessions.get(chat_id)
     if sid:
         cmd += ["--resume", sid]
     if config.ASK_SYSTEM_PROMPT.strip():

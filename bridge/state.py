@@ -22,3 +22,10 @@ miniapp_tunnel_proc = None                 # subprocess.Popen for the Mini App t
 def project_dir(chat_id: int) -> str:
     """The directory Claude runs in for a chat: selected project, else default/base."""
     return active.get(chat_id) or config.DEFAULT_PROJECT or config.BASE_PATH
+
+
+def project_key(chat_id: int) -> str:
+    """Canonical per-project session key: the active project's path relative to
+    BASE_PATH (e.g. "/" or "/org/repo"). Used to key store sessions by project."""
+    from bridge.browser import rel  # lazy: browser imports state
+    return rel(project_dir(chat_id))
