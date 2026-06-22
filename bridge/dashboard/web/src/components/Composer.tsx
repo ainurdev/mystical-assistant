@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { EffortLevel, ModelId } from "../api";
+import { UsageStrip } from "./UsageStrip";
 
 const MODELS: ModelId[] = ["opus", "sonnet", "haiku"];
 const EFFORTS: (EffortLevel | "")[] = ["", "low", "medium", "high", "xhigh", "max"];
@@ -45,6 +46,7 @@ export function Composer({
 
   return (
     <div className="border-t border-zinc-800 bg-zinc-900/60 p-3">
+      <UsageStrip />
       {images.length > 0 && (
         <div className="mb-2 flex gap-2">
           {images.map((src, i) => (

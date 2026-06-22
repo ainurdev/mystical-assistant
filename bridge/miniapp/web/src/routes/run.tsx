@@ -4,6 +4,7 @@ import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
+import { RunningNow } from "../components/RunningNow";
 import { Banner } from "../components/ui";
 
 function RunPage() {
@@ -18,6 +19,8 @@ function RunPage() {
 
   return (
     <div className="space-y-4 pb-44">
+      <RunningNow />
+
       {turns.length === 0 && (
         <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">
           Start a conversation with Claude.

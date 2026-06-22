@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
-from bridge import browser, config, devserver, pubsub, runner, state, store, tunnel
+from bridge import browser, config, devserver, machine, pubsub, runner, state, store, tunnel, usage
 from bridge.miniapp.server import _save_images, _session_brief, normalize_model_effort
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -138,6 +138,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"rel": browser.rel(cur), "at_base": real == config.BASE_PATH,
                                "can_up": real != config.BASE_PATH,
                                "dirs": browser.list_dirs(cur)})
+        if path == "/local/running":
+            return self._json({"external": machine.list_running(),
+                               "bridge_running": store.running_session_ids(chat)})
+        if path == "/local/usage":
+            return self._json(usage.get_usage())
         if path == "/local/sessions":
             project = qs.get("project", [None])[0]
             rows = (store.list_sessions(chat, project) if project is not None

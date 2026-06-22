@@ -18,7 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import browser, config, devserver, runner, state, store, tunnel
+from bridge import browser, config, devserver, machine, runner, state, store, tunnel, usage
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -148,6 +148,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_projects(qs)
                 if path == "/api/logs":
                     return self._api_logs(qs)
+                if path == "/api/running":
+                    return self._api_running(chat_id)
+                if path == "/api/usage":
+                    return self._json(usage.get_usage())
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
                 if path.startswith("/api/sessions/"):
@@ -274,6 +278,10 @@ class Handler(BaseHTTPRequestHandler):
         if not job:
             return self._json({"error": "not found"}, 404)
         self._json(job.snapshot(cursor))
+
+    def _api_running(self, chat_id: int):
+        self._json({"external": machine.list_running(),
+                    "bridge_running": store.running_session_ids(chat_id)})
 
     def _api_sessions_list(self, chat_id: int, qs):
         project = (qs.get("project", [""])[0] or "").strip()

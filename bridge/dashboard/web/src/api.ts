@@ -90,6 +90,40 @@ export interface ProjectsListing {
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
+export type RunningSource = "bridge" | "vscode" | "cli" | "sdk" | string;
+export interface RunningSession {
+  session_id: string;
+  pid: number;
+  project: string;
+  cwd: string;
+  source: RunningSource;
+  started: number | null; // epoch seconds
+  status: string | null;
+  waiting_for: string | null;
+}
+export interface RunningInfo {
+  external: RunningSession[];
+  bridge_running: string[];
+}
+export interface UsageBucket {
+  percent: number;
+  resets_at: string | null;
+  severity: string;
+}
+export interface UsageInfo {
+  available: boolean;
+  five_hour?: UsageBucket | null;
+  seven_day?: UsageBucket | null;
+  limits?: {
+    kind: string;
+    group: string;
+    percent: number;
+    severity: string;
+    resets_at: string | null;
+    is_active: boolean;
+  }[];
+}
+
 async function req<T>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
@@ -152,6 +186,8 @@ export const api = {
     req<{ message: string }>("/local/preview", { method: "POST", body: { action, port } }),
   select: (dir: string) =>
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
+  running: () => req<RunningInfo>("/local/running"),
+  usage: () => req<UsageInfo>("/local/usage"),
 };
 
 /** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */

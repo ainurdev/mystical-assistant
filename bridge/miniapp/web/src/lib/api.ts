@@ -143,6 +143,46 @@ export interface PreviewActionResponse {
   message: string;
 }
 
+// Machine-wide running sessions (external clients) + this chat's live bridge runs.
+export type RunningSource = "bridge" | "vscode" | "cli" | "sdk" | string;
+
+export interface RunningSession {
+  session_id: string;
+  pid: number;
+  project: string;
+  cwd: string;
+  source: RunningSource;
+  started: number | null; // epoch seconds
+  status: string | null;
+  waiting_for: string | null;
+}
+
+export interface RunningInfo {
+  external: RunningSession[];
+  bridge_running: string[]; // store session ids with an in-flight turn
+}
+
+// Claude usage — only computed percentages / reset times (no token, ever).
+export interface UsageBucket {
+  percent: number;
+  resets_at: string | null;
+  severity: string;
+}
+
+export interface UsageInfo {
+  available: boolean;
+  five_hour?: UsageBucket | null;
+  seven_day?: UsageBucket | null;
+  limits?: {
+    kind: string;
+    group: string;
+    percent: number;
+    severity: string;
+    resets_at: string | null;
+    is_active: boolean;
+  }[];
+}
+
 // ---------------------------------------------------------------------------
 // Error type so the UI can distinguish auth / busy / generic failures.
 // ---------------------------------------------------------------------------
@@ -232,6 +272,10 @@ export const api = {
       method: "POST",
       body: { prompt, images, project, session_id: sessionId, model, effort },
     }),
+
+  getRunning: () => request<RunningInfo>("/api/running"),
+
+  getUsage: () => request<UsageInfo>("/api/usage"),
 
   listSessions: (project: string) =>
     request<{ sessions: SessionBrief[] }>(

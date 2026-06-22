@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, type ProjectsListing, type SessionBrief } from "../api";
+import { api, type ProjectsListing, type RunningSession, type SessionBrief } from "../api";
+import { RunningNow } from "./RunningNow";
 
 export function Sidebar({
   projectRel,
@@ -18,6 +19,29 @@ export function Sidebar({
 }) {
   const [listing, setListing] = useState<ProjectsListing | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  const [external, setExternal] = useState<RunningSession[]>([]);
+  const [bridgeIds, setBridgeIds] = useState<Set<string>>(new Set());
+
+  // Machine-wide running sessions: powers the panel and the per-session dots.
+  useEffect(() => {
+    let live = true;
+    const tick = async () => {
+      try {
+        const r = await api.running();
+        if (!live) return;
+        setExternal(r.external);
+        setBridgeIds(new Set(r.bridge_running));
+      } catch {
+        /* ignore */
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 4000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, []);
 
   async function load(dir: string) {
     try {
@@ -100,6 +124,12 @@ export function Sidebar({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
+        <RunningNow
+          external={external}
+          bridgeIds={bridgeIds}
+          sessions={sessions}
+          onSelect={onSelectSession}
+        />
         {[...byProject.entries()].map(([proj, ss]) => (
           <div key={proj} className="mb-3">
             <div className="px-1 py-1 text-[11px] uppercase tracking-wide text-zinc-500" title={proj}>
@@ -109,11 +139,17 @@ export function Sidebar({
               <button
                 key={s.id}
                 onClick={() => onSelectSession(s.id)}
-                className={`block w-full truncate rounded-md px-2 py-1.5 text-left text-sm ${
+                className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm ${
                   s.id === selectedId ? "bg-indigo-600/30 text-white" : "hover:bg-zinc-800"
                 }`}
               >
-                {s.title || "New chat"}
+                {bridgeIds.has(s.id) && (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"
+                    aria-label="running"
+                  />
+                )}
+                <span className="truncate">{s.title || "New chat"}</span>
               </button>
             ))}
           </div>

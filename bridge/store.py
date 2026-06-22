@@ -212,6 +212,18 @@ def finish_turn(turn_id: str, status: str, cost: float | None, elapsed: int | No
                   (status, cost, elapsed, turn_id))
 
 
+def running_session_ids(chat_id: int) -> list[str]:
+    """Session ids (for this chat) with an in-flight turn — drives the dashboard's
+    'running' badge. A running turn means a live bridge job (orphans are reset to
+    'error' on startup, and the busy lock forbids concurrent turns)."""
+    with closing(_connect()) as c:
+        rows = c.execute(
+            "SELECT DISTINCT t.session_id FROM turns t "
+            "JOIN sessions s ON s.id=t.session_id "
+            "WHERE s.chat_id=? AND t.status='running'", (chat_id,)).fetchall()
+    return [r["session_id"] for r in rows]
+
+
 def transcript(session_id: str, cursor: int = 0) -> dict:
     """Session + its turns + events with seq >= cursor. `next_cursor` is the seq
     to pass next time to get only newer events."""

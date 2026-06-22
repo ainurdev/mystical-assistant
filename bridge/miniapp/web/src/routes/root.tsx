@@ -39,6 +39,12 @@ function HeaderBar({
     refetchInterval: 5000,
   });
   const project = state.data?.project;
+  const running = useQuery({
+    queryKey: ["running"],
+    queryFn: () => api.getRunning(),
+    refetchInterval: 4000,
+  });
+  const runningIds = new Set(running.data?.bridge_running ?? []);
   const { newChat, isRunning, sessions, sessionId, selectSession } = useChat();
 
   return (
@@ -83,7 +89,7 @@ function HeaderBar({
               >
                 {sessions.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.title || "New chat"}
+                    {(runningIds.has(s.id) ? "● " : "") + (s.title || "New chat")}
                   </option>
                 ))}
               </select>

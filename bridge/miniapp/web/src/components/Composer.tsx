@@ -4,6 +4,7 @@ import { useChat } from "../lib/chat";
 import type { EffortLevel, ModelId } from "../lib/api";
 import { Button } from "./ui";
 import { Textarea } from "./ui/textarea";
+import { UsageStrip } from "./UsageStrip";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -65,6 +66,7 @@ export function Composer() {
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-10 mx-auto max-w-screen-sm border-t border-border bg-[var(--tg-bg)] px-3 pb-3 pt-2">
+      <UsageStrip />
       {/* model / effort toolbar */}
       <div className="mb-2 flex items-center gap-2">
         <DropdownMenu>

@@ -19,7 +19,7 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
 os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
-from bridge import config, pubsub, runner, store          # noqa: E402
+from bridge import config, machine, pubsub, runner, store, usage   # noqa: E402
 from bridge.miniapp.server import (                       # noqa: E402
     validate_init_data, normalize_model_effort)
 
@@ -434,6 +434,79 @@ def test_store_turns_events_transcript():
     assert t["next_cursor"] == 2 and t["turns"][0]["status"] == "done"
     assert t["turns"][0]["attachments"] == []
     assert store.transcript(s["id"], cursor=1)["events"][0]["type"] == "result"
+
+
+# --- machine: running external sessions -------------------------------------
+
+def test_machine_row_vscode_presence_only():
+    row = machine._row({"sessionId": "s1", "pid": 4242, "cwd": "/proj/foo",
+                        "startedAt": 1782065470782, "entrypoint": "claude-vscode"})
+    assert row["source"] == "vscode" and row["project"] == "foo"
+    assert row["status"] is None and row["waiting_for"] is None
+    assert abs(row["started"] - 1782065470.782) < 1          # ms -> s
+
+
+def test_machine_row_cli_status_and_home_shortened():
+    home = os.path.expanduser("~")
+    row = machine._row({"sessionId": "s", "pid": 1, "cwd": home + "/code/x",
+                        "startedAt": 1782065470782, "entrypoint": "cli",
+                        "status": "waiting", "waitingFor": "dialog open"})
+    assert row["cwd"] == "~/code/x" and row["source"] == "cli"
+    assert row["status"] == "waiting" and row["waiting_for"] == "dialog open"
+
+
+def test_machine_row_skips_incomplete():
+    assert machine._row({"pid": 1}) is None                  # no sessionId
+    assert machine._row({"sessionId": "s"}) is None          # no pid
+
+
+def test_machine_alive():
+    assert machine._alive(os.getpid()) is True
+    assert machine._alive(2_000_000_000) is False
+    assert machine._alive("nope") is False
+
+
+# --- usage normalization ----------------------------------------------------
+
+_USAGE_SAMPLE = {
+    "five_hour": {"utilization": 28.0, "resets_at": "2026-06-23T01:49:59+00:00"},
+    "seven_day": {"utilization": 51.4, "resets_at": "2026-06-24T11:59:59+00:00"},
+    "limits": [
+        {"kind": "session", "group": "session", "percent": 28, "severity": "normal",
+         "resets_at": "2026-06-23T01:49:59+00:00", "is_active": False, "scope": None},
+        {"kind": "weekly_all", "group": "weekly", "percent": 51, "severity": "warning",
+         "resets_at": "2026-06-24T11:59:59+00:00", "is_active": True, "scope": None},
+    ],
+}
+
+
+def test_usage_normalize():
+    u = usage._normalize(_USAGE_SAMPLE)
+    assert u["available"] is True
+    assert u["five_hour"] == {"percent": 28, "resets_at": "2026-06-23T01:49:59+00:00",
+                              "severity": "normal"}
+    assert u["seven_day"]["percent"] == 51 and u["seven_day"]["severity"] == "warning"
+    assert all(set(l) == {"kind", "group", "percent", "severity", "resets_at",
+                          "is_active"} for l in u["limits"])   # 'scope' dropped
+
+
+def test_usage_normalize_missing_buckets():
+    u = usage._normalize({"limits": []})
+    assert u["available"] is True
+    assert u["five_hour"] is None and u["seven_day"] is None
+
+
+# --- store: running session ids (badge) -------------------------------------
+
+def test_store_running_session_ids():
+    s = store.create_session(556, "rp")
+    other = store.create_session(556, "rp")
+    store.start_turn(s["id"], "rt1", "go", [])               # leaves status 'running'
+    store.start_turn(other["id"], "rt2", "go", [])
+    store.finish_turn("rt2", "done", 0.0, 1)
+    ids = store.running_session_ids(556)
+    assert s["id"] in ids and other["id"] not in ids
+    assert store.running_session_ids(424243) == []           # scoped by chat
 
 
 # --- pubsub -----------------------------------------------------------------
