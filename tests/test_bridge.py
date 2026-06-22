@@ -292,6 +292,13 @@ def test_runner_job_without_session_does_not_journal():
     assert job.events and job.store_session_id is None   # in-memory only, no error
 
 
+def test_session_brief_shape():
+    from bridge.miniapp.server import _session_brief
+    s = store.create_session(555, "p6")
+    b = _session_brief(s)
+    assert set(b) == {"id", "title", "updated", "archived"} and b["id"] == s["id"]
+
+
 # --- interrupt --------------------------------------------------------------
 
 def test_interrupt_writes_control_request_and_marks_job():

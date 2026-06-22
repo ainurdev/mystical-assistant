@@ -18,7 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import browser, config, devserver, runner, state, tunnel
+from bridge import browser, config, devserver, runner, state, store, tunnel
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -69,6 +69,11 @@ def normalize_model_effort(model, effort) -> tuple[bool, str | None, str | None]
     if e is not None and e not in config.MINIAPP_EFFORTS:
         e = None
     return True, m, e
+
+
+def _session_brief(s: dict) -> dict:
+    return {"id": s["id"], "title": s["title"], "updated": s["updated"],
+            "archived": s["archived"]}
 
 
 def _save_images(job_id: str, images: list) -> list[str]:
@@ -143,6 +148,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_projects(qs)
                 if path == "/api/logs":
                     return self._api_logs(qs)
+                if path == "/api/sessions":
+                    return self._api_sessions_list(chat_id, qs)
+                if path.startswith("/api/sessions/"):
+                    return self._api_session_get(
+                        chat_id, path[len("/api/sessions/"):], qs)
                 if path.startswith("/api/run/"):
                     return self._api_run_poll(path[len("/api/run/"):], qs)
                 return self._json({"error": "not found"}, 404)
@@ -163,6 +173,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "bad json"}, 400)
             if path == "/api/select":
                 return self._api_select(chat_id, body)
+            if path == "/api/sessions":
+                return self._api_sessions_create(chat_id, body)
+            if path.startswith("/api/sessions/") and path.endswith("/archive"):
+                return self._api_session_archive(
+                    chat_id, path[len("/api/sessions/"):-len("/archive")], body)
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
                     path[len("/api/run/"):-len("/respond")], body)
@@ -217,7 +232,6 @@ class Handler(BaseHTTPRequestHandler):
         if not browser.within_base(cand) or not os.path.isdir(cand):
             return self._json({"error": "invalid dir"}, 400)
         state.active[chat_id] = cand
-        state.sessions.pop(chat_id, None)
         self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
 
     def _api_run(self, chat_id: int, body: dict):
@@ -236,21 +250,20 @@ class Handler(BaseHTTPRequestHandler):
         ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
         if not ok:
             return self._json({"error": "invalid model"}, 400)
+        session_id = (body.get("session_id") or "").strip() or None
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []
         except ValueError as e:
             runner._cleanup_uploads(job_id)
             return self._json({"error": str(e)}, 413)
-        if body.get("fresh"):
-            # First message of a new chat: don't --resume the prior session.
-            state.sessions.pop(chat_id, None)
         job = runner.start_streaming_job(chat_id, prompt, paths, project_path,
-                                         job_id=job_id, model=model, effort=effort)
+                                         job_id=job_id, model=model, effort=effort,
+                                         session_id=session_id)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
-        self._json({"job_id": job.id})
+        self._json({"job_id": job.id, "session_id": job.store_session_id})
 
     def _api_run_poll(self, job_id: str, qs):
         try:
@@ -261,6 +274,33 @@ class Handler(BaseHTTPRequestHandler):
         if not job:
             return self._json({"error": "not found"}, 404)
         self._json(job.snapshot(cursor))
+
+    def _api_sessions_list(self, chat_id: int, qs):
+        project = (qs.get("project", [""])[0] or "").strip()
+        self._json({"sessions": [_session_brief(s)
+                                 for s in store.list_sessions(chat_id, project)]})
+
+    def _api_sessions_create(self, chat_id: int, body: dict):
+        project = (body.get("project") or "").strip()
+        self._json({"session": _session_brief(store.create_session(chat_id, project))})
+
+    def _api_session_get(self, chat_id: int, rest: str, qs):
+        sid = rest.split("/")[0]
+        s = store.get_session(sid)
+        if not s or s["chat_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        try:
+            cursor = int(qs.get("cursor", ["0"])[0])
+        except ValueError:
+            cursor = 0
+        self._json(store.transcript(sid, cursor))
+
+    def _api_session_archive(self, chat_id: int, sid: str, body: dict):
+        s = store.get_session(sid)
+        if not s or s["chat_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        store.archive(sid)
+        self._json({"ok": True})
 
     def _api_run_respond(self, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""
