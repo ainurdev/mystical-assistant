@@ -12,16 +12,24 @@ From your phone:
   - /server     start the project's dev server   · /logs   recent output
   - /preview    public link to the running server · <message> prompt Claude Code
 
-Configure via run.sh (TELEGRAM_BOT_TOKEN, BASE_PATH, ALLOWED_CHAT_IDS,
-EXTRA_CLAUDE_ARGS, …). Design: docs/superpowers/specs/2026-06-22-telegram-miniapp-design.md
+On your machine (printed on startup, localhost only, never tunneled):
+  - Dashboard at http://127.0.0.1:8790/?token=… — a full desktop Claude client
+    (per-project sessions, prompts + cards, model/effort, server/preview controls)
+    with live per-session/project Claude streams and dev-server logs side by side.
+
+Conversations are the single source of truth in a SQLite store (~/.bridge_state/),
+shared by the bot, the Mini App, and the dashboard. Configure via run.sh
+(TELEGRAM_BOT_TOKEN, BASE_PATH, ALLOWED_CHAT_IDS, EXTRA_CLAUDE_ARGS, DASH_PORT, …).
+Design: docs/superpowers/specs/2026-06-23-unified-sessions-dashboard-design.md
 
 Requirements
 ------------
 - Python 3.9+, `pip install requests`
 - `claude` CLI installed and logged in (auth is reused; no API key).
 - `cloudflared` for /preview and the Mini App tunnel.
-- Mini App UI built once:
-    npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build
+- Mini App + Dashboard UIs built once:
+    npm --prefix bridge/miniapp/web ci   && npm --prefix bridge/miniapp/web run build
+    npm --prefix bridge/dashboard/web ci && npm --prefix bridge/dashboard/web run build
 - POSIX (macOS / Linux) for /server process-group control.
 
 >>> Read the SECURITY section at the bottom before exposing this. <<<

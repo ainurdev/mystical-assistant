@@ -1,0 +1,169 @@
+// The dashboard server hands out a per-process token in the URL the user opens
+// (http://127.0.0.1:8790/?token=...). We keep it and send it on every
+// state-changing request (X-Dash-Token) and on SSE streams (?token=). Cross-origin
+// pages can't read it, which (with the server's Host allow-list) is the CSRF defense.
+const params = new URLSearchParams(location.search);
+export const TOKEN = params.get("token") ?? "";
+
+export interface Project {
+  rel: string;
+  name: string;
+}
+export interface SessionBrief {
+  id: string;
+  title: string | null;
+  project: string;
+  updated: number;
+  archived: number;
+}
+export interface StoreTurn {
+  id: string;
+  seq: number;
+  prompt: string;
+  attachments: string[];
+  status: "running" | "done" | "error";
+  cost: number | null;
+  elapsed: number | null;
+  started: number;
+}
+
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+export interface Question {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiSelect?: boolean;
+}
+export interface AnswerSelection {
+  header: string;
+  labels: string[];
+}
+
+export type RunEvent =
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string; summary: string }
+  | { type: "tool_done" }
+  | { type: "result"; result: string; cost: number; elapsed: number }
+  | { type: "error"; message: string }
+  | { type: "stopped" }
+  | { type: "permission"; request_id: string; tool_name: string; summary: string }
+  | { type: "question"; request_id: string; questions: Question[] }
+  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+
+export type StoreEvent = RunEvent & { seq: number; turn_id: string };
+
+export interface Transcript {
+  session: SessionBrief | null;
+  turns: StoreTurn[];
+  events: StoreEvent[];
+  next_cursor: number;
+}
+
+export interface ServerInfo {
+  status: "running" | "exited" | "not started";
+  cmd: string | null;
+  dir: string | null;
+  pid: number | null;
+}
+export interface PreviewInfo {
+  url: string | null;
+  port: number | null;
+}
+export interface DashState {
+  project: Project | null;
+  busy: boolean;
+  busy_chat: number | null;
+  server: ServerInfo;
+  preview: PreviewInfo;
+}
+export interface ProjectsListing {
+  rel: string;
+  at_base: boolean;
+  can_up: boolean;
+  dirs: string[];
+}
+
+export type ModelId = "opus" | "sonnet" | "haiku";
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+async function req<T>(
+  path: string,
+  opts: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (opts.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    headers["X-Dash-Token"] = TOKEN;
+  }
+  const res = await fetch(path, {
+    method: opts.method ?? "GET",
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const d = await res.json();
+      if (d && typeof d.error === "string") msg = d.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  return (await res.json()) as T;
+}
+
+export interface RunBody {
+  prompt: string;
+  images: string[];
+  project?: string;
+  session_id: string;
+  model?: string;
+  effort?: string;
+}
+
+export const api = {
+  state: () => req<DashState>("/local/state"),
+  projects: (dir?: string) =>
+    req<ProjectsListing>(`/local/projects${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`),
+  sessions: (project?: string) =>
+    req<{ sessions: SessionBrief[] }>(
+      `/local/sessions${project !== undefined ? `?project=${encodeURIComponent(project)}` : ""}`,
+    ),
+  transcript: (id: string, cursor: number) =>
+    req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+  createSession: (project: string) =>
+    req<{ session: SessionBrief }>("/local/sessions", { method: "POST", body: { project } }),
+  run: (body: RunBody) =>
+    req<{ job_id: string; session_id: string }>("/local/run", { method: "POST", body }),
+  respond: (
+    jobId: string,
+    body: { request_id: string; behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+  ) => req(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
+  interrupt: (jobId: string) =>
+    req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
+  server: (action: "start" | "stop", cmd?: string) =>
+    req<{ message: string }>("/local/server", { method: "POST", body: { action, cmd } }),
+  preview: (action: "start" | "stop", port?: number) =>
+    req<{ message: string }>("/local/preview", { method: "POST", body: { action, port } }),
+  select: (dir: string) =>
+    req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
+};
+
+/** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */
+export function logStream(onLine: (line: string) => void): () => void {
+  const es = new EventSource(`/local/stream/logs?token=${encodeURIComponent(TOKEN)}`);
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (typeof d.line === "string") onLine(d.line);
+    } catch {
+      /* ignore */
+    }
+  };
+  return () => es.close();
+}

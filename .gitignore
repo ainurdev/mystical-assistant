@@ -15,3 +15,11 @@ bridge/miniapp/web/node_modules/
 bridge/miniapp/web/dist/
 bridge/miniapp/web/.vite/
 *.tsbuildinfo
+
+# Dashboard frontend build artifacts
+bridge/dashboard/web/node_modules/
+bridge/dashboard/web/dist/
+bridge/dashboard/web/.vite/
+
+# Session store (default lives in $HOME; ignore any local copy)
+.bridge_state/
