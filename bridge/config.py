@@ -16,10 +16,15 @@ ALLOWED_CHAT_IDS = {
     int(x) for x in os.environ.get("ALLOWED_CHAT_IDS", "").replace(" ", "").split(",") if x
 }
 
-# Permission posture for `claude -p`. See SECURITY notes.
+# Permission posture for the bot's plain-text path (`claude -p`). See SECURITY notes.
 #   --permission-mode acceptEdits     (default) edits files, limited
 #   --dangerously-skip-permissions    full autonomy incl. running commands
 EXTRA_CLAUDE_ARGS = os.environ.get("EXTRA_CLAUDE_ARGS", "--permission-mode acceptEdits")
+
+# Permission mode for the interactive Mini App chat. "default" makes Claude ask
+# before permissioned tools, surfacing Allow/Deny cards in the chat (the
+# stream-json control protocol). Use "acceptEdits"/"bypassPermissions" to ask less.
+MINIAPP_PERMISSION_MODE = os.environ.get("MINIAPP_PERMISSION_MODE", "default")
 
 # Appended to Claude's system prompt so it asks instead of guessing. Set empty
 # to disable.

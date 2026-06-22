@@ -3,11 +3,12 @@ import { createRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { rootRoute } from "./root";
 import { api, ApiError } from "../lib/api";
+import { usePersistentState } from "../lib/persistentState";
 import { Button, Card, Banner } from "../components/ui";
 
 function PreviewPage() {
   const queryClient = useQueryClient();
-  const [port, setPort] = useState(3000);
+  const [port, setPort] = usePersistentState("miniapp:preview-port:v1", 3000);
   const [copied, setCopied] = useState(false);
 
   const state = useQuery({

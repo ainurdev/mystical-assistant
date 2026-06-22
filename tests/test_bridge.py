@@ -106,7 +106,126 @@ def test_job_snapshot_cursor():
     assert snap["events"] == [{"type": "text", "text": "b"}]
     assert snap["next_cursor"] == 2
     assert snap["status"] == "running"
+    assert snap["pending"] == []
     assert "result" not in snap
+
+
+# --- interactive control protocol (permissions + questions) -----------------
+
+class _FakeStdin:
+    def __init__(self):
+        self.data: list[str] = []
+        self.closed = False
+
+    def write(self, s):
+        self.data.append(s)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeProc:
+    def __init__(self):
+        self.stdin = _FakeStdin()
+
+
+def _last_sent(job):
+    return json.loads(job.proc.stdin.data[-1])
+
+
+def test_permission_request_and_allow():
+    job = runner.Job("p1", 555)
+    job.proc = _FakeProc()
+    runner._handle_control_request(job, {
+        "type": "control_request", "request_id": "r1",
+        "request": {"subtype": "can_use_tool", "tool_name": "Write",
+                    "input": {"file_path": "a.ts", "content": "x"}}})
+    assert len(job.pending) == 1 and job.pending[0]["kind"] == "permission"
+    ev = [e for e in job.events if e["type"] == "permission"][0]
+    assert ev["request_id"] == "r1" and ev["tool_name"] == "Write"
+
+    assert job.respond("r1", behavior="allow") is True
+    assert job.pending == []
+    sent = _last_sent(job)
+    assert sent["type"] == "control_response"
+    assert sent["response"]["request_id"] == "r1"
+    assert sent["response"]["response"] == {
+        "behavior": "allow", "updatedInput": {"file_path": "a.ts", "content": "x"}}
+    assert any(e["type"] == "permission_resolved" and e["behavior"] == "allow"
+               for e in job.events)
+
+
+def test_permission_deny():
+    job = runner.Job("p2", 555)
+    job.proc = _FakeProc()
+    runner._handle_control_request(job, {
+        "request_id": "r", "request": {"subtype": "can_use_tool", "tool_name": "Bash",
+                                        "input": {"command": "rm -rf /"}}})
+    assert job.respond("r", behavior="deny") is True
+    resp = _last_sent(job)["response"]["response"]
+    assert resp["behavior"] == "deny" and resp["message"]
+
+
+def test_question_request_and_answer():
+    job = runner.Job("q1", 555)
+    job.proc = _FakeProc()
+    runner._handle_control_request(job, {
+        "request_id": "r2", "request": {
+            "subtype": "can_use_tool", "tool_name": "AskUserQuestion",
+            "input": {"questions": [{
+                "question": "Fav color?", "header": "Color", "multiSelect": False,
+                "options": [{"label": "Red", "description": ""},
+                            {"label": "Blue", "description": ""}]}]}}})
+    assert job.pending[0]["kind"] == "question"
+    qev = [e for e in job.events if e["type"] == "question"][0]
+    assert qev["questions"][0]["header"] == "Color"
+
+    assert job.respond("r2", answers=[{"header": "Color", "labels": ["Blue"]}]) is True
+    resp = _last_sent(job)["response"]["response"]
+    assert resp["behavior"] == "deny" and "Blue" in resp["message"]
+    assert any(e["type"] == "question_answered" for e in job.events)
+
+
+def test_respond_unknown_request_returns_false():
+    job = runner.Job("u1", 555)
+    job.proc = _FakeProc()
+    assert job.respond("nope", behavior="allow") is False
+
+
+def test_snapshot_includes_pending():
+    job = runner.Job("s1", 555)
+    job.proc = _FakeProc()
+    runner._handle_control_request(job, {
+        "request_id": "r", "request": {"subtype": "can_use_tool", "tool_name": "Edit",
+                                        "input": {"file_path": "x"}}})
+    snap = job.snapshot(0)
+    assert len(snap["pending"]) == 1 and snap["pending"][0]["request_id"] == "r"
+
+
+def test_format_answers_multiselect():
+    msg = runner._format_answers(
+        [{"header": "Features", "question": "Which?"}],
+        [{"header": "Features", "labels": ["Auth", "Billing"]}])
+    assert "Features" in msg and "Auth, Billing" in msg
+
+
+def test_interactive_base_cmd():
+    cmd = runner._base_cmd("hello-prompt", 555, stream=True, interactive=True)
+    assert "--input-format" in cmd and "stream-json" in cmd
+    assert "--permission-prompt-tool" in cmd and "stdio" in cmd
+    assert "--permission-mode" in cmd
+    assert "hello-prompt" not in cmd          # prompt goes via stdin, not argv
+    assert "acceptEdits" not in cmd            # EXTRA_CLAUDE_ARGS skipped
+
+
+def test_blocking_base_cmd_unchanged():
+    cmd = runner._base_cmd("hi", 555, stream=False)
+    assert cmd[:3] == ["claude", "-p", "hi"]
+    assert "--input-format" not in cmd
+    assert "--permission-prompt-tool" not in cmd
 
 
 if __name__ == "__main__":

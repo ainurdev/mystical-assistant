@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   createRootRoute,
   Outlet,
@@ -6,69 +7,103 @@ import {
 } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { ChatProvider, useChat } from "../lib/chat";
+import { FolderNavigator } from "../components/FolderNavigator";
 
 const tabs = [
-  { to: "/", label: "Run", icon: "▶️" },
-  { to: "/server", label: "Server", icon: "🖥️" },
-  { to: "/preview", label: "Preview", icon: "🌐" },
+  { to: "/", label: "Run" },
+  { to: "/server", label: "Server" },
+  { to: "/preview", label: "Preview" },
 ] as const;
 
-function ProjectChip() {
+function HeaderBar({
+  pickerOpen,
+  onTogglePicker,
+}: {
+  pickerOpen: boolean;
+  onTogglePicker: () => void;
+}) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const state = useQuery({
     queryKey: ["state"],
     queryFn: () => api.getState(),
     refetchInterval: 5000,
   });
   const project = state.data?.project;
+  const { newChat, isRunning, turns } = useChat();
+
   return (
-    <div className="flex items-center gap-2 truncate">
-      <span className="text-base" aria-hidden>
-        ⚡
-      </span>
-      <span className="truncate text-sm font-semibold">
-        {project ? project.name : "No project"}
-      </span>
-      {state.data?.busy && (
-        <span className="rounded-full bg-[var(--tg-button)] px-2 py-0.5 text-[10px] text-[var(--tg-button-text)]">
-          busy
-        </span>
-      )}
-    </div>
-  );
-}
+    <header className="sticky top-0 z-10 border-b border-white/5 bg-[var(--tg-bg)] px-3 pb-2 pt-2">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onTogglePicker}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left active:opacity-70"
+        >
+          <span aria-hidden>⚡</span>
+          <span className="truncate text-sm font-semibold">
+            {project ? project.name : "No project"}
+          </span>
+          {state.data?.busy && (
+            <span className="rounded-full bg-[var(--tg-button)] px-2 py-0.5 text-[10px] text-[var(--tg-button-text)]">
+              busy
+            </span>
+          )}
+          <span className="text-xs text-[var(--tg-hint)]" aria-hidden>
+            {pickerOpen ? "▲" : "▼"}
+          </span>
+        </button>
+        {pathname === "/" && turns.length > 0 && (
+          <button
+            onClick={newChat}
+            disabled={isRunning}
+            className="shrink-0 rounded-lg bg-[var(--tg-secondary-bg)] px-3 py-1.5 text-xs disabled:opacity-40"
+          >
+            ＋ New
+          </button>
+        )}
+      </div>
 
-function Layout() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  return (
-    <div className="mx-auto flex h-full max-w-screen-sm flex-col">
-      <header className="sticky top-0 z-10 border-b border-white/5 bg-[var(--tg-bg)] px-4 py-3">
-        <ProjectChip />
-      </header>
-
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-24">
-        <Outlet />
-      </main>
-
-      <nav className="fixed inset-x-0 bottom-0 z-10 mx-auto flex max-w-screen-sm border-t border-white/5 bg-[var(--tg-bg)]">
+      <nav className="mt-2 flex gap-1 rounded-xl bg-[var(--tg-secondary-bg)] p-1">
         {tabs.map((tab) => {
           const active = pathname === tab.to;
           return (
             <Link
               key={tab.to}
               to={tab.to}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-3 text-xs ${
-                active ? "text-[var(--tg-button)]" : "text-[var(--tg-hint)]"
+              className={`flex-1 rounded-lg py-1.5 text-center text-sm font-medium active:opacity-70 ${
+                active
+                  ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
+                  : "text-[var(--tg-hint)]"
               }`}
             >
-              <span className="text-lg" aria-hidden>
-                {tab.icon}
-              </span>
               {tab.label}
             </Link>
           );
         })}
       </nav>
-    </div>
+    </header>
+  );
+}
+
+function Layout() {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  return (
+    <ChatProvider>
+      <div className="mx-auto flex h-full max-w-screen-sm flex-col">
+        <HeaderBar
+          pickerOpen={pickerOpen}
+          onTogglePicker={() => setPickerOpen((v) => !v)}
+        />
+        {pickerOpen && (
+          <div className="border-b border-white/5 bg-[var(--tg-bg)] px-3 py-2">
+            <FolderNavigator onSelected={() => setPickerOpen(false)} />
+          </div>
+        )}
+        <main className="flex-1 overflow-y-auto px-4 py-4">
+          <Outlet />
+        </main>
+      </div>
+    </ChatProvider>
   );
 }
 

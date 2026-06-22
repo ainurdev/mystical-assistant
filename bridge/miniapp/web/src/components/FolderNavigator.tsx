@@ -17,7 +17,7 @@ function joinRel(rel: string, child: string): string {
   return `${rel.replace(/\/+$/, "")}/${child}`;
 }
 
-export function FolderNavigator() {
+export function FolderNavigator({ onSelected }: { onSelected?: () => void } = {}) {
   const queryClient = useQueryClient();
   const [dir, setDir] = useState<string>("");
 
@@ -30,6 +30,7 @@ export function FolderNavigator() {
     mutationFn: (rel: string) => api.select(rel),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["state"] });
+      onSelected?.();
     },
   });
 

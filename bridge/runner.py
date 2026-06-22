@@ -21,17 +21,33 @@ from bridge.browser import rel
 from bridge.telegram import send, typing
 
 
-def _base_cmd(prompt: str, chat_id: int, stream: bool) -> list[str]:
+def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
+              interactive: bool = False) -> list[str]:
+    """Build the `claude` argv.
+
+    interactive=True (Mini App chat) drives Claude over the stream-json control
+    protocol: the prompt is delivered on stdin (not as an arg), permissions are
+    routed back to us via `--permission-prompt-tool stdio`, and we run in an
+    asking permission mode so tool use surfaces Allow/Deny cards. The bot's
+    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS.
+    """
     fmt = "stream-json" if stream else "json"
-    cmd = ["claude", "-p", prompt, "--output-format", fmt]
+    cmd = ["claude", "-p"]
+    if not interactive:
+        cmd.append(prompt)  # text input as an arg
+    cmd += ["--output-format", fmt]
     if stream:
         cmd.append("--verbose")  # required with stream-json in -p mode
+    if interactive:
+        cmd += ["--input-format", "stream-json",
+                "--permission-mode", config.MINIAPP_PERMISSION_MODE,
+                "--permission-prompt-tool", "stdio"]
     sid = state.sessions.get(chat_id)
     if sid:
         cmd += ["--resume", sid]
     if config.ASK_SYSTEM_PROMPT.strip():
         cmd += ["--append-system-prompt", config.ASK_SYSTEM_PROMPT]
-    if config.EXTRA_CLAUDE_ARGS.strip():
+    if not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd
 
@@ -97,11 +113,74 @@ class Job:
         self.session_id: str | None = None
         self.started = time.time()
         self.elapsed: int | None = None
+        self.proc = None                 # subprocess.Popen, for control responses
+        self.pending: list[dict] = []    # unresolved can_use_tool requests
         self._lock = threading.Lock()
+        self._stdin_lock = threading.Lock()
 
     def add(self, ev: dict):
         with self._lock:
             self.events.append(ev)
+
+    def add_pending(self, entry: dict):
+        with self._lock:
+            self.pending.append(entry)
+
+    def clear_pending(self):
+        with self._lock:
+            self.pending = []
+
+    def _write_stdin(self, obj: dict):
+        """Write one JSON line to the live process's stdin (control channel)."""
+        proc = self.proc
+        if proc is None or proc.stdin is None:
+            return
+        line = json.dumps(obj) + "\n"
+        with self._stdin_lock:
+            try:
+                proc.stdin.write(line)
+                proc.stdin.flush()
+            except (BrokenPipeError, ValueError, OSError):
+                pass
+
+    def close_stdin(self):
+        proc = self.proc
+        if proc is None or proc.stdin is None:
+            return
+        with self._stdin_lock:
+            try:
+                if not proc.stdin.closed:
+                    proc.stdin.close()
+            except (BrokenPipeError, ValueError, OSError):
+                pass
+
+    def respond(self, request_id: str, *, behavior: str = "allow",
+                message: str | None = None, answers: list | None = None) -> bool:
+        """Answer a pending can_use_tool request. Returns False if unknown."""
+        with self._lock:
+            entry = next((p for p in self.pending if p["request_id"] == request_id), None)
+            if entry is None:
+                return False
+            self.pending = [p for p in self.pending if p["request_id"] != request_id]
+
+        if entry["kind"] == "question":
+            resp = {"behavior": "deny",
+                    "message": _format_answers(entry.get("questions", []), answers or [])}
+            self.add({"type": "question_answered", "request_id": request_id,
+                      "answers": answers or []})
+        elif behavior == "allow":
+            resp = {"behavior": "allow", "updatedInput": entry.get("input", {})}
+            self.add({"type": "permission_resolved", "request_id": request_id,
+                      "behavior": "allow"})
+        else:
+            resp = {"behavior": "deny",
+                    "message": message or "The user declined this action."}
+            self.add({"type": "permission_resolved", "request_id": request_id,
+                      "behavior": "deny"})
+
+        self._write_stdin({"type": "control_response", "response": {
+            "subtype": "success", "request_id": request_id, "response": resp}})
+        return True
 
     def snapshot(self, cursor: int) -> dict:
         with self._lock:
@@ -109,6 +188,7 @@ class Job:
                 "status": self.status,
                 "events": self.events[cursor:],
                 "next_cursor": len(self.events),
+                "pending": list(self.pending),
             }
             if self.status != "running":
                 out.update(result=self.result, cost=self.cost,
@@ -143,6 +223,44 @@ def _summarize_tool(name: str, inp: dict) -> str:
         if inp.get(key):
             return str(inp[key])[:120]
     return ""
+
+
+def _format_answers(questions: list, answers: list) -> str:
+    """Turn the user's AskUserQuestion selections into a message Claude reads as
+    the tool result (we feed it via a `deny` whose message is the answer)."""
+    by_header = {a.get("header"): a.get("labels", []) for a in answers if isinstance(a, dict)}
+    parts: list[str] = []
+    for q in questions:
+        header = q.get("header") or q.get("question") or ""
+        labels = by_header.get(header)
+        if labels is None and len(answers) == 1 and len(questions) == 1:
+            labels = answers[0].get("labels", []) if isinstance(answers[0], dict) else []
+        if labels:
+            parts.append(f'For "{header}": {", ".join(labels)}')
+    if not parts:
+        return "The user did not select an option."
+    return "The user answered. " + "; ".join(parts)
+
+
+def _handle_control_request(job: Job, obj: dict):
+    """A `can_use_tool` request: queue it as pending and surface a transcript
+    event (a permission card, or a question card for AskUserQuestion)."""
+    req = obj.get("request", {})
+    if req.get("subtype") != "can_use_tool":
+        return  # other control subtypes need no response from us
+    rid = obj.get("request_id")
+    tool = req.get("tool_name", "tool")
+    if tool == "AskUserQuestion":
+        questions = (req.get("input") or {}).get("questions", [])
+        job.add_pending({"request_id": rid, "kind": "question",
+                         "tool_name": tool, "questions": questions})
+        job.add({"type": "question", "request_id": rid, "questions": questions})
+    else:
+        summary = _summarize_tool(tool, req.get("input", {}))
+        job.add_pending({"request_id": rid, "kind": "permission", "tool_name": tool,
+                         "summary": summary, "input": req.get("input", {})})
+        job.add({"type": "permission", "request_id": rid,
+                 "tool_name": tool, "summary": summary})
 
 
 def _handle_event(job: Job, d: dict):
@@ -188,19 +306,25 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str):
         if image_paths:
             full_prompt = ("The user attached screenshot(s); view them before "
                            "responding: " + ", ".join(image_paths) + "\n\n" + prompt)
-        cmd = _base_cmd(full_prompt, job.chat_id, stream=True)
+        cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True)
         try:
-            proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, bufsize=1)
+            proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, bufsize=1)
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
             return
+        job.proc = proc
 
         # Watchdog: kill the run if it exceeds RUN_TIMEOUT.
         timer = threading.Timer(config.RUN_TIMEOUT, proc.kill)
         timer.daemon = True
         timer.start()
+
+        # Deliver the prompt on stdin as a stream-json user message.
+        job._write_stdin({"type": "user",
+                          "message": {"role": "user", "content": full_prompt}})
 
         assert proc.stdout is not None
         for line in proc.stdout:
@@ -211,7 +335,14 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str):
                 d = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if d.get("type") == "control_request":
+                _handle_control_request(job, d)
+                continue
             _handle_event(job, d)
+            if d.get("type") == "result":
+                # Turn finished; close stdin so the stream-json process exits
+                # (it otherwise stays alive awaiting more input).
+                job.close_stdin()
         proc.wait()
         timer.cancel()
 
@@ -229,6 +360,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str):
             job.elapsed = int(time.time() - job.started)
         if job.session_id:
             state.sessions[job.chat_id] = job.session_id
+        job.clear_pending()
+        job.close_stdin()
         _cleanup_uploads(job.id)
         state.busy_chat = None
         state.busy.release()

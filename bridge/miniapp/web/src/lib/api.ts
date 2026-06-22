@@ -43,21 +43,58 @@ export interface RunStartResponse {
   job_id: string;
 }
 
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface Question {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiSelect?: boolean;
+}
+
+export interface AnswerSelection {
+  header: string;
+  labels: string[];
+}
+
 export type RunEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; summary: string }
   | { type: "tool_done" }
   | { type: "result"; result: string; cost: number; elapsed: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "permission"; request_id: string; tool_name: string; summary: string }
+  | { type: "question"; request_id: string; questions: Question[] }
+  | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+
+export interface PendingRequest {
+  request_id: string;
+  kind: "permission" | "question";
+  tool_name: string;
+  summary?: string;
+  questions?: Question[];
+}
 
 export interface RunStatus {
   status: "running" | "done" | "error";
   events: RunEvent[];
   next_cursor: number;
+  pending: PendingRequest[];
   result?: string;
   cost?: number;
   elapsed?: number;
   session_id?: string;
+}
+
+export interface RespondBody {
+  request_id: string;
+  behavior?: "allow" | "deny";
+  answers?: AnswerSelection[];
+  cursor?: number;
 }
 
 export interface ServerActionResponse {
@@ -150,16 +187,22 @@ export const api = {
   select: (dir: string) =>
     request<SelectResponse>("/api/select", { method: "POST", body: { dir } }),
 
-  run: (prompt: string, images: string[], project?: string) =>
+  run: (prompt: string, images: string[], project?: string, fresh?: boolean) =>
     request<RunStartResponse>("/api/run", {
       method: "POST",
-      body: { prompt, images, project },
+      body: { prompt, images, project, fresh },
     }),
 
   runStatus: (jobId: string, cursor: number) =>
     request<RunStatus>(
       `/api/run/${encodeURIComponent(jobId)}?cursor=${cursor}`,
     ),
+
+  respond: (jobId: string, body: RespondBody) =>
+    request<RunStatus>(`/api/run/${encodeURIComponent(jobId)}/respond`, {
+      method: "POST",
+      body,
+    }),
 
   server: (action: "start" | "stop", cmd?: string) =>
     request<ServerActionResponse>("/api/server", {

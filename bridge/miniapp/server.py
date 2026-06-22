@@ -150,6 +150,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "bad json"}, 400)
             if path == "/api/select":
                 return self._api_select(chat_id, body)
+            if path.startswith("/api/run/") and path.endswith("/respond"):
+                return self._api_run_respond(
+                    path[len("/api/run/"):-len("/respond")], body)
             if path == "/api/run":
                 return self._api_run(chat_id, body)
             if path == "/api/server":
@@ -220,6 +223,9 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             runner._cleanup_uploads(job_id)
             return self._json({"error": str(e)}, 413)
+        if body.get("fresh"):
+            # First message of a new chat: don't --resume the prior session.
+            state.sessions.pop(chat_id, None)
         job = runner.start_streaming_job(chat_id, prompt, paths, project_path, job_id=job_id)
         if job is None:
             runner._cleanup_uploads(job_id)
@@ -234,6 +240,24 @@ class Handler(BaseHTTPRequestHandler):
         job = runner.get_job(job_id)
         if not job:
             return self._json({"error": "not found"}, 404)
+        self._json(job.snapshot(cursor))
+
+    def _api_run_respond(self, job_id: str, body: dict):
+        """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""
+        job = runner.get_job(job_id)
+        if not job:
+            return self._json({"error": "not found"}, 404)
+        request_id = (body.get("request_id") or "").strip()
+        if not request_id:
+            return self._json({"error": "missing request_id"}, 400)
+        behavior = "deny" if body.get("behavior") == "deny" else "allow"
+        ok = job.respond(request_id, behavior=behavior, answers=body.get("answers"))
+        if not ok:
+            return self._json({"error": "no such pending request"}, 409)
+        try:
+            cursor = int(body.get("cursor") or 0)
+        except (ValueError, TypeError):
+            cursor = 0
         self._json(job.snapshot(cursor))
 
     def _api_server(self, chat_id: int, body: dict):

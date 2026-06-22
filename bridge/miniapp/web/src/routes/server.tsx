@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { createRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { rootRoute } from "./root";
 import { api, ApiError } from "../lib/api";
+import { usePersistentState } from "../lib/persistentState";
 import { Button, Card, Banner, StatusDot } from "../components/ui";
 
 function ServerPage() {
   const queryClient = useQueryClient();
-  const [cmd, setCmd] = useState("npm run dev");
+  const [cmd, setCmd] = usePersistentState("miniapp:server-cmd:v1", "npm run dev");
   const logRef = useRef<HTMLPreElement>(null);
 
   const state = useQuery({
