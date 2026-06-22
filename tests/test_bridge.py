@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import sys
+import tempfile
 import time
 import urllib.parse
 
@@ -16,10 +17,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
+os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
-from bridge import config, runner                       # noqa: E402
+from bridge import config, pubsub, runner, store          # noqa: E402
 from bridge.miniapp.server import (                       # noqa: E402
     validate_init_data, normalize_model_effort)
+
+store.init()
 
 
 def make_init_data(token, user_id, auth_date=None, tamper=False):
@@ -306,6 +310,60 @@ def test_normalize_model_effort_unknown_model_rejected():
 
 def test_normalize_model_effort_unknown_effort_dropped():
     assert normalize_model_effort("opus", "ultra") == (True, "opus", None)
+
+
+# --- session store ----------------------------------------------------------
+
+def test_store_create_and_get_session():
+    s = store.create_session(555, "org/repo")
+    assert s["chat_id"] == 555 and s["project"] == "org/repo" and s["archived"] == 0
+    got = store.get_session(s["id"])
+    assert got["id"] == s["id"] and got["claude_session_id"] is None
+
+
+def test_store_latest_and_ensure():
+    a = store.create_session(555, "p1")
+    b = store.create_session(555, "p1")
+    assert store.latest_session(555, "p1")["id"] == b["id"]
+    assert store.ensure_session(555, "p1", a["id"])["id"] == a["id"]
+    assert store.ensure_session(555, "p2")["project"] == "p2"   # creates one
+
+
+def test_store_archive_and_resume_id():
+    s = store.create_session(555, "p3")
+    store.set_claude_session_id(s["id"], "claude-xyz")
+    store.archive(s["id"])
+    assert store.get_session(s["id"])["claude_session_id"] == "claude-xyz"
+    assert store.get_session(s["id"])["archived"] == 1
+    assert all(x["id"] != s["id"] for x in store.list_sessions(555, "p3"))
+
+
+def test_store_turns_events_transcript():
+    s = store.create_session(555, "p4")
+    store.start_turn(s["id"], "job1", "hello world", [])
+    assert store.get_session(s["id"])["title"]              # auto-titled
+    seq0 = store.append_event(s["id"], "job1", {"type": "text", "text": "hi"})
+    seq1 = store.append_event(s["id"], "job1", {"type": "result", "result": "done"})
+    assert (seq0, seq1) == (0, 1)
+    store.finish_turn("job1", "done", 0.01, 3)
+    t = store.transcript(s["id"], cursor=0)
+    assert [e["type"] for e in t["events"]] == ["text", "result"]
+    assert t["next_cursor"] == 2 and t["turns"][0]["status"] == "done"
+    assert t["turns"][0]["attachments"] == []
+    assert store.transcript(s["id"], cursor=1)["events"][0]["type"] == "result"
+
+
+# --- pubsub -----------------------------------------------------------------
+
+def test_pubsub_basic_and_overflow():
+    q = pubsub.subscribe("t1")
+    pubsub.publish("t1", {"n": 1})
+    assert q.get_nowait() == {"n": 1}
+    for i in range(600):
+        pubsub.publish("t1", {"n": i})
+    assert q.get_nowait() is pubsub.RESYNC      # backlog collapsed to a resync
+    pubsub.unsubscribe("t1", q)
+    pubsub.publish("t1", {"n": 2})              # no subscribers -> no error
 
 
 if __name__ == "__main__":

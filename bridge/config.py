@@ -73,3 +73,8 @@ MINIAPP_PORT = int(os.environ.get("MINIAPP_PORT", "8787"))   # local HTTP bind p
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")
+
+# --- Session store -----------------------------------------------------------
+# SQLite source of truth for conversations (sessions/turns/events). Lives in
+# $HOME (outside the repo), git-ignored, mode 600.
+BRIDGE_DB = os.path.expanduser(os.environ.get("BRIDGE_DB", "~/.bridge_state/bridge.db"))
