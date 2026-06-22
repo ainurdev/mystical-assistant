@@ -8,7 +8,6 @@ import threading
 
 from bridge import config
 
-sessions: dict[int, str] = {}    # chat_id -> Claude session_id
 active: dict[int, str] = {}      # chat_id -> selected project path
 browse: dict[int, str] = {}      # chat_id -> current browser directory
 

@@ -299,6 +299,24 @@ def test_session_brief_shape():
     assert set(b) == {"id", "title", "updated", "archived"} and b["id"] == s["id"]
 
 
+def test_handle_task_journals_bot_turn():
+    from bridge import state
+    state.active[777] = "/tmp"                       # BASE_PATH=/tmp -> project_key "/"
+    orig = (runner.send, runner.typing, runner.run_blocking)
+    runner.send = lambda *a, **k: None
+    runner.typing = lambda *a, **k: None
+    runner.run_blocking = lambda chat_id, prompt, resume_id=None: ("answer", "claude-sid", 0.01, False)
+    state.busy.acquire()                             # handle_task assumes caller holds busy
+    state.busy_chat = 777
+    try:
+        runner.handle_task(777, "do the thing")
+    finally:
+        runner.send, runner.typing, runner.run_blocking = orig
+    s = store.latest_session(777, state.project_key(777))
+    assert s and s["claude_session_id"] == "claude-sid"
+    assert "result" in [e["type"] for e in store.transcript(s["id"])["events"]]
+
+
 # --- interrupt --------------------------------------------------------------
 
 def test_interrupt_writes_control_request_and_marks_job():

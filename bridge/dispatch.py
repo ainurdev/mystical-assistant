@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 
-from bridge import config, state
+from bridge import config, state, store
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -70,7 +70,7 @@ def on_message(msg: dict):
         _open_app(chat_id)
         return
     if text == "/new":
-        state.sessions.pop(chat_id, None)
+        store.create_session(chat_id, state.project_key(chat_id))
         send(chat_id, "🆕 Fresh Claude session.")
         return
     if cmd0 == "/server":
@@ -90,7 +90,8 @@ def on_message(msg: dict):
         st = f"busy with chat {state.busy_chat}" if state.busy_chat else "idle"
         ts = tunnel_state()
         tunnel = f"{ts['url']} (port {ts['port']})" if ts["url"] else "none"
-        sid = state.sessions.get(chat_id, "none yet")
+        s = store.latest_session(chat_id, state.project_key(chat_id))
+        sid = (s["title"] or s["id"][:8]) if s else "none yet"
         app = state.miniapp_url or "off"
         send(chat_id, f"Project: {rel(state.project_dir(chat_id))}\nClaude: {st}\n"
                       f"Server: {server_status()}\nPreview: {tunnel}\n"
@@ -135,8 +136,7 @@ def handle_callback(cb: dict):
         edit(chat_id, msg_id, text, kb)
 
     elif data == "use":
-        state.active[chat_id] = cur
-        state.sessions.pop(chat_id, None)   # fresh Claude session for the new project
+        state.active[chat_id] = cur   # per-project sessions resolve on first message
         answer_cb(cb["id"], "Selected ✅")
         edit(chat_id, msg_id, f"✅ Active project: {rel(cur)}")
         send(chat_id,
