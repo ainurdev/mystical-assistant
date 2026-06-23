@@ -14,7 +14,24 @@ import json
 import os
 
 SESSIONS_DIR = os.path.expanduser("~/.claude/sessions")
+PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 _HOME = os.path.expanduser("~")
+
+
+def _transcript_mtime(session_id: str, cwd: str) -> float | None:
+    """mtime of the session's transcript JSONL, the truest 'last activity' signal.
+
+    Claude Code appends to `~/.claude/projects/<enc>/<sessionId>.jsonl` on every
+    turn, where <enc> is the cwd with `/`, `.`, `_` collapsed to `-`. The session
+    registry file (in SESSIONS_DIR) is frozen at start for VS Code, so its mtime
+    is useless for activity; the transcript is the reliable source. None if absent."""
+    if not session_id or not cwd:
+        return None
+    enc = cwd.replace("/", "-").replace(".", "-").replace("_", "-")
+    try:
+        return os.path.getmtime(os.path.join(PROJECTS_DIR, enc, f"{session_id}.jsonl"))
+    except OSError:
+        return None
 
 
 def _alive(pid) -> bool:
@@ -90,8 +107,9 @@ def list_running() -> list[dict]:
     for name in names:
         if not name.endswith(".json"):
             continue
+        path = os.path.join(SESSIONS_DIR, name)
         try:
-            with open(os.path.join(SESSIONS_DIR, name)) as f:
+            with open(path) as f:
                 raw = json.load(f)
         except (OSError, ValueError):
             continue
@@ -99,6 +117,15 @@ def list_running() -> list[dict]:
             continue
         row = _row(raw)
         if row:
+            # "last activity" = newest of the transcript mtime (real per-turn
+            # signal) and the registry mtime (CLI updates it; VS Code freezes it
+            # at start). Drives the dashboard's idle / 30-min-window logic.
+            try:
+                reg = os.path.getmtime(path)
+            except OSError:
+                reg = row["started"] or 0.0
+            tx = _transcript_mtime(row["session_id"], raw.get("cwd") or "")
+            row["last_active"] = max(reg, tx) if tx is not None else reg
             out.append(row)
     out.sort(key=lambda r: r["started"] or 0, reverse=True)
     return out

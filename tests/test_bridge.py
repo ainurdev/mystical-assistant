@@ -466,6 +466,49 @@ def test_machine_alive():
     assert machine._alive("nope") is False
 
 
+def test_machine_transcript_mtime():
+    with tempfile.TemporaryDirectory() as d:
+        old = machine.PROJECTS_DIR
+        machine.PROJECTS_DIR = d
+        try:
+            cwd = "/home/u/projects/my_app.v2"  # '/', '_', '.' all collapse to '-'
+            enc = "-home-u-projects-my-app-v2"
+            os.makedirs(os.path.join(d, enc))
+            tx = os.path.join(d, enc, "sid123.jsonl")
+            open(tx, "w").close()
+            os.utime(tx, (1000.0, 12345.0))
+            assert machine._transcript_mtime("sid123", cwd) == 12345.0
+            assert machine._transcript_mtime("missing", cwd) is None
+            assert machine._transcript_mtime("", cwd) is None
+        finally:
+            machine.PROJECTS_DIR = old
+
+
+def test_machine_last_active_prefers_transcript_over_frozen_registry():
+    # The bug: VS Code freezes its registry file at start, so its mtime is stale.
+    # last_active must come from the transcript (appended to on every turn).
+    with tempfile.TemporaryDirectory() as sd, tempfile.TemporaryDirectory() as pd:
+        old_s, old_p = machine.SESSIONS_DIR, machine.PROJECTS_DIR
+        machine.SESSIONS_DIR, machine.PROJECTS_DIR = sd, pd
+        try:
+            cwd, sid = "/home/u/proj/app", "abc"
+            reg = os.path.join(sd, f"{os.getpid()}.json")  # this pid is alive
+            with open(reg, "w") as f:
+                json.dump({"pid": os.getpid(), "sessionId": sid, "cwd": cwd,
+                           "startedAt": 1782000000000, "entrypoint": "claude-vscode"}, f)
+            os.utime(reg, (1000.0, 1000.0))                # registry "frozen at start"
+            enc = "-home-u-proj-app"
+            os.makedirs(os.path.join(pd, enc))
+            tx = os.path.join(pd, enc, f"{sid}.jsonl")
+            open(tx, "w").close()
+            os.utime(tx, (5000.0, 5000.0))                 # transcript is newer
+            rows = machine.list_running()
+            assert len(rows) == 1
+            assert rows[0]["last_active"] == 5000.0        # transcript wins, not 1000
+        finally:
+            machine.SESSIONS_DIR, machine.PROJECTS_DIR = old_s, old_p
+
+
 # --- usage normalization ----------------------------------------------------
 
 _USAGE_SAMPLE = {

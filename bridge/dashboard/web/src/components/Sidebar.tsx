@@ -31,6 +31,16 @@ export function Sidebar({
   onBrowsingChange: (v: boolean) => void;
 }) {
   const [listing, setListing] = useState<ProjectsListing | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleProject(proj: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(proj)) next.delete(proj);
+      else next.add(proj);
+      return next;
+    });
+  }
 
   async function load(dir: string) {
     try {
@@ -64,6 +74,14 @@ export function Sidebar({
 
   // Active sessions: bridge runs (clickable) + external (read-only).
   const bridgeRows = sessions.filter((s) => bridgeIds.has(s.id));
+
+  // External sessions: running, waiting, or idle — but drop anything inactive for
+  // more than 30 min (last_active is the file-mtime activity signal).
+  const now = Date.now() / 1000;
+  const activeExternal = external.filter((r) => {
+    const t = r.last_active ?? r.started;
+    return t == null || now - t <= 30 * 60;
+  });
 
   return (
     <aside className="flex h-full w-[312px] shrink-0 flex-col border-r border-panel-border bg-panel">
@@ -127,7 +145,7 @@ export function Sidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
-        {(bridgeRows.length > 0 || external.length > 0) && (
+        {(bridgeRows.length > 0 || activeExternal.length > 0) && (
           <>
             <SectionLabel pulse>Active sessions</SectionLabel>
             {bridgeRows.map((s) => {
@@ -154,30 +172,39 @@ export function Sidebar({
                 </button>
               );
             })}
-            {external.map((r) => (
-              <div
-                key={r.session_id}
-                title={r.cwd}
-                className="mb-0.5 flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left"
-              >
-                <SurfaceTag surf={surfaceFor(r.source)} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12.5px] text-foreground">{r.project}</span>
-                  <span className="block font-mono text-[10.5px] text-muted-2">
-                    {r.source} · {ago(r.started)}
+            {activeExternal.map((r) => {
+              const st = externalStatus(r);
+              return (
+                <div
+                  key={r.session_id}
+                  title={r.cwd}
+                  className="mb-0.5 flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left"
+                >
+                  <SurfaceTag surf={surfaceFor(r.source)} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12.5px] text-foreground">{r.project}</span>
+                    <span className="block font-mono text-[10.5px] text-muted-2">
+                      {r.source} · {ago(r.last_active ?? r.started)}
+                    </span>
                   </span>
-                </span>
-                <StatusTag
-                  color={r.status === "waiting" ? "var(--warning)" : "var(--success)"}
-                  label={r.status === "waiting" ? "waiting" : "running"}
-                />
-              </div>
-            ))}
+                  <StatusTag color={st.color} label={st.label} />
+                </div>
+              );
+            })}
           </>
         )}
 
         <SectionLabel>Recent chats</SectionLabel>
-        {[...byProject.entries()].map(([proj, ss]) => (
+        {[...byProject.entries()].map(([proj, ss]) => {
+          const isOpen = expanded.has(proj);
+          // Always show: latest (index 0), anything running/waiting, and the selected one.
+          const pinned = ss.filter(
+            (s, i) =>
+              i === 0 || bridgeIds.has(s.id) || awaiting.has(s.id) || s.id === selectedId,
+          );
+          const visible = isOpen ? ss : pinned;
+          const hidden = ss.length - pinned.length;
+          return (
           <div key={proj} className="mb-2.5">
             <div className="flex items-center justify-between px-1.5 py-1">
               <span className="truncate font-mono text-[10.5px] text-muted-foreground" title={proj}>
@@ -209,7 +236,7 @@ export function Sidebar({
                 </div>
               );
             })()}
-            {ss.map((s) => {
+            {visible.map((s) => {
               const on = s.id === selectedId;
               const running = bridgeIds.has(s.id);
               return (
@@ -236,8 +263,17 @@ export function Sidebar({
                 </button>
               );
             })}
+            {hidden > 0 && (
+              <button
+                onClick={() => toggleProject(proj)}
+                className="mb-1 w-full px-2.5 py-1 text-left font-mono text-[10.5px] text-muted-2 hover:text-foreground"
+              >
+                {isOpen ? "show less" : `show ${hidden} more`}
+              </button>
+            )}
           </div>
-        ))}
+          );
+        })}
         {sessions.length === 0 && (
           <div className="p-3 text-xs text-muted-foreground">No sessions yet.</div>
         )}
@@ -264,6 +300,15 @@ function SurfaceTag({ surf }: { surf: Surface }) {
       {surf.code}
     </span>
   );
+}
+
+// Running (turn in flight) / waiting (blocked on you) / idle (alive but quiet).
+// status/waiting_for only exist for terminal CLI sessions; VS Code is idle.
+function externalStatus(r: RunningSession): { label: string; color: string } {
+  if (r.status === "waiting" || r.waiting_for)
+    return { label: "waiting", color: "var(--warning)" };
+  if (r.status === "running") return { label: "running", color: "var(--success)" };
+  return { label: "idle", color: "var(--muted-2)" };
 }
 
 function StatusTag({ color, label }: { color: string; label: string }) {

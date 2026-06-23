@@ -142,6 +142,7 @@ export interface RunningSession {
   cwd: string;
   source: RunningSource;
   started: number | null; // epoch seconds
+  last_active: number | null; // epoch seconds — file mtime, activity signal
   status: string | null;
   waiting_for: string | null;
 }

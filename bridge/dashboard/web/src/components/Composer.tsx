@@ -28,15 +28,22 @@ export function Composer({
 }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  function addFiles(files: FileList | null) {
+  function addFiles(files: FileList | File[] | null) {
     if (!files) return;
     Array.from(files).forEach((f) => {
       const r = new FileReader();
       r.onload = () => setImages((prev) => [...prev, r.result as string]);
       r.readAsDataURL(f);
     });
+  }
+  function imagesFrom(items: DataTransferItemList | undefined): File[] {
+    return Array.from(items ?? [])
+      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null);
   }
   function submit() {
     const t = text.trim();
@@ -57,7 +64,24 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className="rounded-[14px] border border-input bg-[#161220] p-3.5">
+        <div
+          className={`rounded-[14px] border bg-[#161220] p-3.5 ${
+            dragging ? "border-brand-soft" : "border-input"
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!dragging) setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const imgs = Array.from(e.dataTransfer.files).filter((f) =>
+              f.type.startsWith("image/"),
+            );
+            if (imgs.length) addFiles(imgs);
+          }}
+        >
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -65,6 +89,13 @@ export function Composer({
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 submit();
+              }
+            }}
+            onPaste={(e) => {
+              const imgs = imagesFrom(e.clipboardData?.items);
+              if (imgs.length) {
+                e.preventDefault();
+                addFiles(imgs);
               }
             }}
             placeholder={disabled ? "Working…" : "Message Claude — describe a change, paste an error, or run a command…"}

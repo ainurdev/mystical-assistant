@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { AnswerSelection, RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
+import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 
@@ -49,7 +50,7 @@ function FinalResult({
     <div className="flex max-w-[92%] gap-3 rounded-xl border border-[#2a2540] bg-card px-4 py-3.5">
       <span className="w-2 shrink-0 rounded-[5px] bg-gradient-to-b from-brand-soft to-success" />
       <div className="min-w-0">
-        <div className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-card-foreground">{result}</div>
+        <Markdown className="text-[13.5px] leading-relaxed text-card-foreground">{result}</Markdown>
         {(typeof elapsed === "number" || typeof cost === "number") && (
           <div className="mt-1.5 text-xs text-muted-2">
             {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
@@ -90,9 +91,9 @@ export function RunStream({
         switch (event.type) {
           case "text":
             return (
-              <div key={i} className="max-w-[92%] text-[14px] leading-[1.62] text-card-foreground">
+              <Markdown key={i} className="max-w-[92%] text-[14px] leading-[1.62] text-card-foreground">
                 {event.text}
-              </div>
+              </Markdown>
             );
           case "tool":
             return (

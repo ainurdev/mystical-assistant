@@ -45,6 +45,8 @@ export function App() {
   const [browsing, setBrowsing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const seqRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollRef = useRef(false);
 
   const active = activeOf(turns);
   const running = active !== null;
@@ -55,6 +57,7 @@ export function App() {
 
   function openSession(id: string) {
     seqRef.current = 0;
+    pendingScrollRef.current = true; // jump to latest once this session's turns load
     setTurns([]);
     setSessionId(id);
   }
@@ -127,6 +130,14 @@ export function App() {
       clearInterval(id);
     };
   }, [sessionId]);
+
+  // When a session is opened, jump to the latest message once its turns load.
+  useEffect(() => {
+    if (!pendingScrollRef.current || turns.length === 0) return;
+    pendingScrollRef.current = false;
+    const el = scrollRef.current;
+    if (el) requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight }));
+  }, [turns]);
 
   // Live dev-server logs (SSE).
   useEffect(() => logStream((line) => setLogs((prev) => [...prev.slice(-2000), line])), []);
@@ -361,7 +372,7 @@ export function App() {
               model={model}
               turnCount={turns.length}
             />
-            <div className="flex-1 overflow-y-auto py-6">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
               <Transcript
                 turns={turns}
                 activeId={active?.id ?? null}
