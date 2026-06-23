@@ -14,6 +14,7 @@ export function Header({
   state,
   onServer,
   onPreview,
+  onOpenPalette,
 }: {
   projectName: string;
   view: "chat" | "history";
@@ -22,6 +23,7 @@ export function Header({
   state: DashState | null;
   onServer: () => void;
   onPreview: () => void;
+  onOpenPalette: () => void;
 }) {
   const serverRunning = state?.server.status === "running";
   const previewUrl = state?.preview.url ?? null;
@@ -89,7 +91,8 @@ export function Header({
       <div className="h-6 w-px bg-border" />
 
       <button
-        title="Command palette (coming soon)"
+        onClick={onOpenPalette}
+        title="Search & commands (⌘K)"
         className="flex items-center gap-2.5 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12.5px] text-muted-foreground hover:bg-accent"
       >
         <Search size={13} aria-hidden />

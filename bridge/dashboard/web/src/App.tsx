@@ -24,6 +24,7 @@ import { Composer } from "./components/Composer";
 import { HistoryView } from "./components/HistoryView";
 import { Logs } from "./components/Logs";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
+import { CommandPalette, type Command } from "./components/CommandPalette";
 
 export function App() {
   const [state, setState] = useState<DashState | null>(null);
@@ -42,6 +43,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState("git");
   const [diffFile, setDiffFile] = useState<{ project: string; path: string } | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const seqRef = useRef(0);
 
   const active = activeOf(turns);
@@ -128,6 +130,20 @@ export function App() {
 
   // Live dev-server logs (SSE).
   useEffect(() => logStream((line) => setLogs((prev) => [...prev.slice(-2000), line])), []);
+
+  // ⌘K / Ctrl-K toggles the command palette; Esc closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      } else if (e.key === "Escape") {
+        setPaletteOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Machine-wide running sessions: powers the sidebar dots + header VS chip.
   useEffect(() => {
@@ -247,6 +263,38 @@ export function App() {
     );
   }
 
+  const serverRunning = state?.server.status === "running";
+  const previewOpen = !!state?.preview.url;
+  const commands: Command[] = [
+    { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => void newSession() },
+    { id: "switch-project", label: "Switch project…", group: "Session", icon: "⇄", run: () => setBrowsing(true) },
+    { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
+    { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
+    {
+      id: "server",
+      label: serverRunning ? "Stop dev server" : "Start dev server",
+      group: "Server",
+      icon: "▸",
+      run: () => void api.server(serverRunning ? "stop" : "start").catch(() => {}),
+    },
+    {
+      id: "preview",
+      label: previewOpen ? "Stop preview" : "Open preview",
+      group: "Server",
+      icon: "◰",
+      run: () => void api.preview(previewOpen ? "stop" : "start").catch(() => {}),
+    },
+    { id: "tab-git", label: "Open Git", group: "Panel", icon: "⎇", run: () => setActiveTab("git") },
+    { id: "tab-issues", label: "Open GitHub issues", group: "Panel", icon: "◉", run: () => setActiveTab("issues") },
+    { id: "tab-diff", label: "View changes (diff)", group: "Panel", icon: "±", run: () => setActiveTab("diff") },
+    { id: "tab-logs", label: "Open logs", group: "Panel", icon: "≣", run: () => setActiveTab("logs") },
+    { id: "git-commit", label: "Git: commit changes…", group: "Git", icon: "✓", run: () => setActiveTab("git") },
+    { id: "git-push", label: "Git: push to origin…", group: "Git", icon: "↑", run: () => setActiveTab("git") },
+    { id: "model-opus", label: "Use Opus", group: "Model", icon: "⌥", run: () => setModel("opus") },
+    { id: "model-sonnet", label: "Use Sonnet", group: "Model", icon: "⌥", run: () => setModel("sonnet") },
+    { id: "model-haiku", label: "Use Haiku", group: "Model", icon: "⌥", run: () => setModel("haiku") },
+  ];
+
   const panelTabs: PanelTab[] = [
     {
       id: "git",
@@ -285,6 +333,7 @@ export function App() {
         onPreview={() =>
           void api.preview(state?.preview.url ? "stop" : "start").catch(() => {})
         }
+        onOpenPalette={() => setPaletteOpen(true)}
       />
       <div className="flex min-h-0 flex-1">
         <Sidebar
@@ -340,6 +389,11 @@ export function App() {
         </main>
         <RightPanel tabs={panelTabs} activeId={activeTab} onActiveChange={setActiveTab} />
       </div>
+      <CommandPalette
+        open={paletteOpen}
+        commands={commands}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   );
 }
