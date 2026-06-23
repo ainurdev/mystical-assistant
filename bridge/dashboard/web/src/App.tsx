@@ -17,6 +17,7 @@ import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
 import { GitTab } from "./components/GitTab";
+import { DiffTab } from "./components/DiffTab";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
 import { HistoryView } from "./components/HistoryView";
@@ -263,15 +264,7 @@ export function App() {
         />
       ),
     },
-    {
-      id: "diff",
-      label: "Diff",
-      render: () => (
-        <div className="p-4 text-xs text-muted-foreground">
-          Select a changed file in the Git tab.
-        </div>
-      ),
-    },
+    { id: "diff", label: "Diff", render: () => <DiffTab file={diffFile} /> },
     { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
   ];
 
