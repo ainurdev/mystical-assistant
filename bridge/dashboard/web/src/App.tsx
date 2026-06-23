@@ -29,6 +29,7 @@ import { ContextMatrixPanel } from "./components/hud/ContextMatrixPanel";
 import { ProjectsPanel } from "./components/hud/ProjectsPanel";
 import { SessionsPanel } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
+import { BootIntro } from "./components/hud/BootIntro";
 
 export function App() {
   const [state, setState] = useState<DashState | null>(null);
@@ -48,6 +49,7 @@ export function App() {
   const [diffFile, setDiffFile] = useState<{ project: string; path: string } | null>(null);
   const [browsing, setBrowsing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [booting, setBooting] = useState(true);
   const seqRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef(false);
@@ -354,6 +356,7 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {booting && <BootIntro onDone={() => setBooting(false)} />}
       <div className="crt" />
       <div className="sweep" />
       <Strip host={location.host} />
