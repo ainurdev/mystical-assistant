@@ -50,6 +50,9 @@ export function App() {
   const [browsing, setBrowsing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [booting, setBooting] = useState(true);
+  // Dashboard mounts only as the boot intro fades, so its panel entrance
+  // animations (boot/drawline/mfadeup) play on reveal, per the design.
+  const [showDashboard, setShowDashboard] = useState(false);
   const seqRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef(false);
@@ -356,13 +359,23 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {booting && <BootIntro onDone={() => setBooting(false)} />}
-      <div className="crt" />
-      <div className="sweep" />
-      <Strip host={location.host} />
+      {booting && (
+        <BootIntro
+          onReveal={() => setShowDashboard(true)}
+          onDone={() => {
+            setShowDashboard(true);
+            setBooting(false);
+          }}
+        />
+      )}
+      {showDashboard && (
+        <>
+          <div className="crt" />
+          <div className="sweep" />
+          <Strip host={location.host} />
 
-      <div
-        className="grid min-h-0 flex-1 gap-[13px] p-[13px]"
+          <div
+            className="grid min-h-0 flex-1 gap-[13px] p-[13px]"
         style={{ gridTemplateColumns: "344px minmax(0,1fr) 368px" }}
       >
         {/* LEFT */}
@@ -438,7 +451,9 @@ export function App() {
         changes={activeBadge?.dirty ?? 0}
         onPalette={() => setPaletteOpen(true)}
       />
-      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+          <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+        </>
+      )}
     </div>
   );
 }

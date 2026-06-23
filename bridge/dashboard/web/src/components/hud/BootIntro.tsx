@@ -8,11 +8,22 @@ const LINES: { label: string; status: string; color: string }[] = [
   { label: "AUTH · REUSE CLAUDE LOGIN", status: "OK", color: "var(--success)" },
 ];
 
-export function BootIntro({ onDone }: { onDone: () => void }) {
+export function BootIntro({
+  onReveal,
+  onDone,
+}: {
+  onReveal: () => void;
+  onDone: () => void;
+}) {
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
-    const fade = setTimeout(() => setLeaving(true), 3050);
+    // Reveal the dashboard beneath as the intro begins fading, so its panel
+    // entrance animations play during the crossfade.
+    const fade = setTimeout(() => {
+      setLeaving(true);
+      onReveal();
+    }, 3050);
     const done = setTimeout(onDone, 3550);
     const skip = () => onDone();
     window.addEventListener("keydown", skip);
@@ -21,7 +32,7 @@ export function BootIntro({ onDone }: { onDone: () => void }) {
       clearTimeout(done);
       window.removeEventListener("keydown", skip);
     };
-  }, [onDone]);
+  }, [onReveal, onDone]);
 
   return (
     <div
