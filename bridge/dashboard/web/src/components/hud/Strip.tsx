@@ -1,3 +1,5 @@
+import { ThemeSwitcher } from "./ThemeSwitcher";
+
 export function Strip({ host }: { host: string }) {
   return (
     <div
@@ -14,6 +16,7 @@ export function Strip({ host }: { host: string }) {
         />
         BRIDGE ONLINE · {host}
       </span>
+      <ThemeSwitcher />
       <span className="text-[11px] tracking-[2px] text-muted-2">MAIN SHELL</span>
     </div>
   );
