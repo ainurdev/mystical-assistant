@@ -157,6 +157,31 @@ def test_first_user_text_strips_inline_leading_tag():
     assert T.first_user_text(_write(recs)) == "please do the thing"
 
 
+def test_askuserquestion_renders_as_question_event_with_answer():
+    recs = [
+        {"type": "user", "uuid": "t1", "message": {"role": "user", "content": "pick one"}},
+        {"type": "assistant", "uuid": "a1", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_1", "name": "AskUserQuestion", "input": {
+                "questions": [{"header": "Color", "question": "Fav color?",
+                               "multiSelect": False, "options": [
+                                   {"label": "Red", "description": "warm"},
+                                   {"label": "Blue", "description": "cool"}]}]}}]}},
+        {"type": "user", "uuid": "tr1", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1",
+             "content": "The user selected: Blue"}]}},
+    ]
+    out = T.parse_jsonl(_write(recs))
+    q = next(e for e in out["events"] if e["type"] == "question")
+    assert q["request_id"] == "toolu_1"
+    assert q["questions"][0]["header"] == "Color"
+    assert [o["label"] for o in q["questions"][0]["options"]] == ["Red", "Blue"]
+    qa = next(e for e in out["events"] if e["type"] == "question_answered")
+    assert qa["request_id"] == "toolu_1" and qa["answers"] == [{"header": "Color", "labels": ["Blue"]}]
+    # AskUserQuestion must NOT also surface as a generic tool row
+    assert all(not (e["type"] == "tool" and e.get("name") == "AskUserQuestion")
+               for e in out["events"])
+
+
 def test_user_tool_result_is_not_a_new_turn():
     # A user record whose content is only tool_result blocks must not open a turn.
     recs = [

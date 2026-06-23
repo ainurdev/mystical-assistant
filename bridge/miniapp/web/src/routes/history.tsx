@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, CircleHelp } from "lucide-react";
 import { rootRoute } from "./root";
 import { api, type EnrichedSession } from "../lib/api";
 import { useChat } from "../lib/chat";
@@ -43,6 +43,7 @@ function HistoryPage() {
     refetchInterval: 4000,
   });
   const runningIds = new Set(running.data?.bridge_running ?? []);
+  const awaitingIds = new Set((running.data?.awaiting ?? []).map((a) => a.session_id));
 
   // Filter, group by repo, sort within + across groups.
   const groups = useMemo(() => {
@@ -141,9 +142,15 @@ function HistoryPage() {
               className="flex w-full flex-col gap-0.5 rounded-xl border border-[var(--border)] bg-[var(--tg-secondary-bg)] px-3 py-2 text-left active:opacity-70"
             >
               <div className="flex items-center gap-2">
-                {runningIds.has(s.id) && (
+                {awaitingIds.has(s.id) ? (
+                  <CircleHelp
+                    size={13}
+                    className="shrink-0 text-amber-400 motion-safe:animate-pulse"
+                    aria-label="waiting for your answer"
+                  />
+                ) : runningIds.has(s.id) ? (
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                )}
+                ) : null}
                 <span className="min-w-0 flex-1 truncate text-sm">
                   {s.title || "New chat"}
                   {s.archived ? " (archived)" : ""}

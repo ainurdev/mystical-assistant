@@ -165,9 +165,14 @@ export interface RunningSession {
   waiting_for: string | null;
 }
 
+export interface AwaitingSession {
+  session_id: string;
+  kind: "question" | "permission";
+}
 export interface RunningInfo {
   external: RunningSession[];
   bridge_running: string[]; // store session ids with an in-flight turn
+  awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
 }
 
 // Per-repo history: a session enriched with aggregates from its turns.

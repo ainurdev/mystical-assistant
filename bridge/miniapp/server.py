@@ -323,7 +323,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_running(self, chat_id: int):
         self._json({"external": machine.list_running(),
-                    "bridge_running": store.running_session_ids(chat_id)})
+                    "bridge_running": store.running_session_ids(chat_id),
+                    "awaiting": runner.awaiting_input()})
 
     def _api_sessions_list(self, chat_id: int, qs):
         native.refresh(chat_id)            # surface VSCode sessions started since last poll

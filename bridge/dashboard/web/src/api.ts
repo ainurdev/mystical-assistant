@@ -102,9 +102,14 @@ export interface RunningSession {
   status: string | null;
   waiting_for: string | null;
 }
+export interface AwaitingSession {
+  session_id: string;
+  kind: "question" | "permission";
+}
 export interface RunningInfo {
   external: RunningSession[];
   bridge_running: string[];
+  awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
 }
 export interface EnrichedSession {
   id: string;

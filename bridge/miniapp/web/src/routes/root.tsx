@@ -47,6 +47,7 @@ function HeaderBar({
     refetchInterval: 4000,
   });
   const runningIds = new Set(running.data?.bridge_running ?? []);
+  const awaitingIds = new Set((running.data?.awaiting ?? []).map((a) => a.session_id));
   const { newChat, isRunning, sessions, sessionId, selectSession } = useChat();
 
   return (
@@ -91,7 +92,8 @@ function HeaderBar({
               >
                 {sessions.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {(runningIds.has(s.id) ? "● " : "") + (s.title || "New chat")}
+                    {(awaitingIds.has(s.id) ? "❓ " : runningIds.has(s.id) ? "● " : "") +
+                      (s.title || "New chat")}
                   </option>
                 ))}
               </select>

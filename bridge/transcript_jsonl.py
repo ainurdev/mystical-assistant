@@ -76,6 +76,26 @@ def _is_tool_result(content) -> bool:
         isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
 
 
+def _answers_from_result(questions: list, content) -> list:
+    """Best-effort: which prepared answers the user picked, by matching option
+    labels against the AskUserQuestion tool_result text (native JSONL records no
+    structured selection). Unmatched questions are left unhighlighted."""
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        text = "\n".join(b.get("text", "") for b in content
+                         if isinstance(b, dict) and b.get("type") == "text")
+    else:
+        text = ""
+    out = []
+    for q in questions:
+        labels = [o.get("label") for o in q.get("options", []) if isinstance(o, dict)]
+        chosen = [l for l in labels if l and l in text]
+        if chosen:
+            out.append({"header": q.get("header"), "labels": chosen})
+    return out
+
+
 def first_user_text(path: str) -> str | None:
     """Cheap title source: the first real user prompt in a transcript (used by the
     discovery scanner). Returns None if none found."""
@@ -129,6 +149,7 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
     turns: list[dict] = []
     events: list[dict] = []
     state = {"seq": 0, "turn": None}
+    aq: dict = {}   # AskUserQuestion request_id -> its questions, to pair with the answer
 
     def emit(ev: dict):
         cur = state["turn"]
@@ -167,7 +188,15 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
             content = msg.get("content")
             if t == "user":
                 if _is_tool_result(content):
-                    emit({"type": "tool_done"})
+                    for b in content:
+                        if not (isinstance(b, dict) and b.get("type") == "tool_result"):
+                            continue
+                        rid = b.get("tool_use_id")
+                        if rid in aq:   # the answer to an AskUserQuestion
+                            emit({"type": "question_answered", "request_id": rid,
+                                  "answers": _answers_from_result(aq[rid], b.get("content"))})
+                        else:
+                            emit({"type": "tool_done"})
                 else:
                     open_turn(rec, _text_of(content))
             elif t == "assistant":
@@ -185,8 +214,14 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
                             emit({"type": "text", "text": txt})
                     elif bt == "tool_use":
                         name = b.get("name", "tool")
-                        emit({"type": "tool", "name": name,
-                              "summary": _summarize_tool(name, b.get("input", {}))})
+                        if name == "AskUserQuestion":
+                            qs = (b.get("input") or {}).get("questions") or []
+                            rid = b.get("id") or f"aq{state['seq']}"
+                            aq[rid] = qs
+                            emit({"type": "question", "request_id": rid, "questions": qs})
+                        else:
+                            emit({"type": "tool", "name": name,
+                                  "summary": _summarize_tool(name, b.get("input", {}))})
             # other record types (queue-operation, mode, file-history-snapshot,
             # last-prompt, attachment, ...) carry no transcript content -> skipped
     next_cursor = state["seq"] if state["seq"] > cursor else cursor

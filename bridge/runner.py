@@ -311,6 +311,20 @@ def get_job(job_id: str) -> Job | None:
         return _jobs.get(job_id)
 
 
+def awaiting_input() -> list[dict]:
+    """Store-session ids whose live job is blocked on user input, with the kind
+    ('question' | 'permission') — drives the 'waiting on you' indicator in the
+    session lists. A question takes precedence if both are pending."""
+    out: list[dict] = []
+    with _jobs_lock:
+        for j in _jobs.values():
+            if j.status == "running" and j.pending and j.store_session_id:
+                kinds = {p.get("kind") for p in j.pending}
+                out.append({"session_id": j.store_session_id,
+                            "kind": "question" if "question" in kinds else "permission"})
+    return out
+
+
 def _register(job: Job):
     with _jobs_lock:
         _jobs[job.id] = job

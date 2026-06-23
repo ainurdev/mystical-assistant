@@ -18,14 +18,37 @@ export function QuestionCard({
   const [sel, setSel] = useState<Record<string, string[]>>({});
 
   if (!active) {
+    // Resolved / historical: still show the prepared answers as buttons, with the
+    // chosen one(s) highlighted (matches Claude Code's answered-question look).
     return (
-      <Card className="space-y-1 border border-[var(--tg-button)]/30">
+      <Card className="space-y-3 border border-[var(--tg-button)]/30">
         {questions.map((q) => {
-          const a = answered?.find((x) => x.header === q.header);
+          const chosen = answered?.find((x) => x.header === q.header)?.labels ?? [];
           return (
-            <div key={q.header} className="text-sm">
-              <span className="text-[var(--tg-hint)]">{q.question} </span>
-              <span className="font-medium">{a ? a.labels.join(", ") : "—"}</span>
+            <div key={q.header} className="space-y-1.5">
+              <div className="text-sm font-medium">{q.question}</div>
+              <div className="flex flex-col gap-1.5">
+                {q.options.map((o) => {
+                  const picked = chosen.includes(o.label);
+                  return (
+                    <div
+                      key={o.label}
+                      className={`rounded-lg px-3 py-2 text-left text-sm ${
+                        picked
+                          ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
+                          : "bg-[var(--tg-bg)] opacity-60"
+                      }`}
+                    >
+                      <div className="font-medium">{o.label}</div>
+                      {o.description && (
+                        <div className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}>
+                          {o.description}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           );
         })}

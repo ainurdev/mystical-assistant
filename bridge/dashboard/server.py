@@ -148,7 +148,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"sessions": store.history(chat, include_archived=archived)})
         if path == "/local/running":
             return self._json({"external": machine.list_running(),
-                               "bridge_running": store.running_session_ids(chat)})
+                               "bridge_running": store.running_session_ids(chat),
+                               "awaiting": runner.awaiting_input()})
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/sessions":
