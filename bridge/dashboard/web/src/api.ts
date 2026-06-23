@@ -80,6 +80,7 @@ export interface DashState {
   busy_chat: number | null;
   server: ServerInfo;
   preview: PreviewInfo;
+  permission_mode?: string | null;
 }
 export interface ProjectsListing {
   rel: string;

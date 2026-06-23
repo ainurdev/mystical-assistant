@@ -8,9 +8,11 @@ import {
   type EffortLevel,
   type EnrichedSession,
   type ModelId,
+  type RunningSession,
   type SessionBrief,
 } from "./api";
 import { activeOf, mergeDelta, type Turn } from "./chat";
+import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
@@ -27,11 +29,15 @@ export function App() {
   const [effort, setEffort] = useState<EffortLevel | "">("");
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"chat" | "history">("chat");
+  const [external, setExternal] = useState<RunningSession[]>([]);
+  const [bridgeIds, setBridgeIds] = useState<Set<string>>(new Set());
+  const [awaiting, setAwaiting] = useState<Map<string, "question" | "permission">>(new Map());
   const seqRef = useRef(0);
 
   const active = activeOf(turns);
   const running = active !== null;
   const pendingCount = active?.pending.length ?? 0;
+  const vscodeLive = external.some((r) => r.source === "vscode");
 
   function openSession(id: string) {
     seqRef.current = 0;
@@ -110,6 +116,28 @@ export function App() {
 
   // Live dev-server logs (SSE).
   useEffect(() => logStream((line) => setLogs((prev) => [...prev.slice(-2000), line])), []);
+
+  // Machine-wide running sessions: powers the sidebar dots + header VS chip.
+  useEffect(() => {
+    let live = true;
+    const tick = async () => {
+      try {
+        const r = await api.running();
+        if (!live) return;
+        setExternal(r.external);
+        setBridgeIds(new Set(r.bridge_running));
+        setAwaiting(new Map((r.awaiting ?? []).map((a) => [a.session_id, a.kind])));
+      } catch {
+        /* ignore */
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 4000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, []);
 
   async function send(text: string, images: string[]) {
     if (!sessionId) return;
@@ -199,30 +227,19 @@ export function App() {
         onProjectChanged={() => void loadSessions()}
       />
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border px-4 py-2">
-          <div className="flex items-center gap-3">
-            <div className="text-sm font-semibold">{state?.project?.name ?? "Claude Bridge"}</div>
-            <div className="flex items-center gap-0.5 rounded-lg bg-secondary p-0.5 text-xs">
-              {(["chat", "history"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`rounded px-2 py-0.5 capitalize ${
-                    view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {state?.busy && (
-              <span className="rounded-full bg-primary px-2 py-0.5 text-primary-foreground">busy</span>
-            )}
-            <ServerControls state={state} />
-          </div>
-        </header>
+        <Header
+          projectName={state?.project?.name ?? ""}
+          view={view}
+          onView={setView}
+          vscodeLive={vscodeLive}
+          state={state}
+          onServer={() =>
+            void api.server(state?.server.status === "running" ? "stop" : "start").catch(() => {})
+          }
+          onPreview={() =>
+            void api.preview(state?.preview.url ? "stop" : "start").catch(() => {})
+          }
+        />
         {view === "history" ? (
           <HistoryView onOpen={(s) => void openFromHistory(s)} />
         ) : (
@@ -255,32 +272,6 @@ export function App() {
       <section className="hidden w-96 shrink-0 border-l border-border lg:flex lg:flex-col">
         <Logs lines={logs} />
       </section>
-    </div>
-  );
-}
-
-function ServerControls({ state }: { state: DashState | null }) {
-  const running = state?.server.status === "running";
-  const previewUrl = state?.preview.url;
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        className="rounded bg-secondary px-2 py-1 hover:bg-accent"
-        onClick={() => void api.server(running ? "stop" : "start").catch(() => {})}
-      >
-        {running ? "Stop server" : "Start server"}
-      </button>
-      <button
-        className="rounded bg-secondary px-2 py-1 hover:bg-accent"
-        onClick={() => void api.preview(previewUrl ? "stop" : "start").catch(() => {})}
-      >
-        {previewUrl ? "Stop preview" : "Preview"}
-      </button>
-      {previewUrl && (
-        <a href={previewUrl} target="_blank" rel="noreferrer" className="text-[var(--brand-soft)] hover:underline">
-          open
-        </a>
-      )}
     </div>
   );
 }
