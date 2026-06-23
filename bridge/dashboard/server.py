@@ -22,8 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
-from bridge import (browser, config, devserver, git, machine, native, pubsub,
-                    runner, state, store, tunnel, usage)
+from bridge import (browser, config, devserver, git, github, machine, native,
+                    pubsub, runner, state, store, tunnel, usage)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -209,6 +209,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             fpath = qs.get("path", [""])[0]
             return self._json({"path": fpath, "diff": git.diff(abs_p, fpath)})
+        if path == "/local/github/issues":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(github.issues(abs_p))
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -253,6 +258,16 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             ok, output = git.push(abs_p)
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/github/issue":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            title = (body.get("title") or "").strip()[:256]
+            if not title:
+                return self._json({"error": "empty title"}, 400)
+            body_text = (body.get("body") or "")[:65536]
+            ok, output = github.create_issue(abs_p, title, body_text)
             return self._json({"ok": ok, "output": output})
         return self._json({"error": "not found"}, 404)
 
