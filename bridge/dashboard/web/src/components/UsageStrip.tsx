@@ -50,7 +50,7 @@ export function ContextStrip({ permissionMode }: { permissionMode?: string | nul
       {left !== null && (
         <div className="flex flex-1 items-center gap-2">
           <span className="text-muted-foreground">context</span>
-          <div className="h-[5px] max-w-[160px] flex-1 overflow-hidden rounded-[3px] bg-panel-border">
+          <div className="h-[5px] max-w-[160px] flex-1 overflow-hidden rounded-[3px] bg-[rgba(127,233,216,.12)]">
             <div
               className="h-full rounded-[3px] bg-gradient-to-r from-success to-brand-soft"
               style={{ width: `${left}%` }}

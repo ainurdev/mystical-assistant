@@ -138,6 +138,7 @@ function Layout() {
   const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <ChatProvider>
+      <div className="crt" />
       <div className="mx-auto flex h-full max-w-screen-sm flex-col">
         <HeaderBar
           pickerOpen={pickerOpen}

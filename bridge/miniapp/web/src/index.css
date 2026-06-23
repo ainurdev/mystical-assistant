@@ -17,6 +17,7 @@
   --brand: #7fe9d8;
   --brand-soft: #7fe9d8;
   --brand-bright: #dff8f2;
+  --brand-glow: rgba(127, 233, 216, 0.25);
 
   --secondary: rgba(127, 233, 216, 0.08);
   --secondary-foreground: #bfe6de;
