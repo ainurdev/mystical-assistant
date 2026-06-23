@@ -73,26 +73,26 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/50">
-      <div className="border-b border-zinc-800 p-3">
+    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-card">
+      <div className="border-b border-border p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="truncate text-sm font-semibold" title={projectRel ?? ""}>
             {projectRel ?? "No project"}
           </div>
           <button
-            className="shrink-0 text-xs text-zinc-400 hover:text-zinc-200"
+            className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setBrowsing((v) => !v)}
           >
             {browsing ? "close" : "change"}
           </button>
         </div>
         {browsing && listing && (
-          <div className="mb-2 rounded-md border border-zinc-800 p-2 text-xs">
-            <div className="mb-1 font-mono text-zinc-400">{listing.rel}</div>
+          <div className="mb-2 rounded-md border border-border p-2 text-xs">
+            <div className="mb-1 font-mono text-muted-foreground">{listing.rel}</div>
             <div className="max-h-40 space-y-0.5 overflow-y-auto">
               {listing.can_up && (
                 <button
-                  className="block w-full text-left text-zinc-400 hover:text-zinc-100"
+                  className="block w-full text-left text-muted-foreground hover:text-foreground"
                   onClick={() => void load(listing.rel.replace(/\/[^/]+$/, "") || "/")}
                 >
                   ⬆ ..
@@ -101,7 +101,7 @@ export function Sidebar({
               {listing.dirs.map((d) => (
                 <button
                   key={d}
-                  className="block w-full truncate text-left hover:text-zinc-100"
+                  className="block w-full truncate text-left hover:text-foreground"
                   onClick={() => void load(listing.rel === "/" ? `/${d}` : `${listing.rel}/${d}`)}
                 >
                   📁 {d}
@@ -109,7 +109,7 @@ export function Sidebar({
               ))}
             </div>
             <button
-              className="mt-2 w-full rounded bg-indigo-600 py-1 hover:bg-indigo-500"
+              className="mt-2 w-full rounded bg-primary py-1 text-primary-foreground hover:opacity-90"
               onClick={() => void useFolder()}
             >
               Use {listing.rel}
@@ -117,7 +117,7 @@ export function Sidebar({
           </div>
         )}
         <button
-          className="w-full rounded-md bg-zinc-800 py-1.5 text-xs hover:bg-zinc-700"
+          className="w-full rounded-md bg-secondary py-1.5 text-xs hover:bg-accent"
           onClick={onNewSession}
         >
           ＋ New chat
@@ -132,7 +132,7 @@ export function Sidebar({
         />
         {[...byProject.entries()].map(([proj, ss]) => (
           <div key={proj} className="mb-3">
-            <div className="px-1 py-1 text-[11px] uppercase tracking-wide text-zinc-500" title={proj}>
+            <div className="px-1 py-1 text-[11px] uppercase tracking-wide text-muted-foreground" title={proj}>
               {proj}
             </div>
             {ss.map((s) => (
@@ -140,7 +140,7 @@ export function Sidebar({
                 key={s.id}
                 onClick={() => onSelectSession(s.id)}
                 className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm ${
-                  s.id === selectedId ? "bg-indigo-600/30 text-white" : "hover:bg-zinc-800"
+                  s.id === selectedId ? "bg-primary/15 text-foreground" : "hover:bg-accent"
                 }`}
               >
                 {bridgeIds.has(s.id) && (
@@ -154,7 +154,7 @@ export function Sidebar({
             ))}
           </div>
         ))}
-        {sessions.length === 0 && <div className="p-3 text-xs text-zinc-500">No sessions yet.</div>}
+        {sessions.length === 0 && <div className="p-3 text-xs text-muted-foreground">No sessions yet.</div>}
       </div>
     </aside>
   );

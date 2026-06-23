@@ -181,7 +181,7 @@ export function App() {
 
   if (!TOKEN) {
     return (
-      <div className="p-8 text-center text-sm text-zinc-400">
+      <div className="p-8 text-center text-sm text-muted-foreground">
         Missing token. Open the dashboard via the URL the bridge printed (it includes
         <span className="font-mono"> ?token=…</span>).
       </div>
@@ -199,16 +199,16 @@ export function App() {
         onProjectChanged={() => void loadSessions()}
       />
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
+        <header className="flex items-center justify-between border-b border-border px-4 py-2">
           <div className="flex items-center gap-3">
             <div className="text-sm font-semibold">{state?.project?.name ?? "Claude Bridge"}</div>
-            <div className="flex items-center gap-0.5 rounded-lg bg-zinc-800 p-0.5 text-xs">
+            <div className="flex items-center gap-0.5 rounded-lg bg-secondary p-0.5 text-xs">
               {(["chat", "history"] as const).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
                   className={`rounded px-2 py-0.5 capitalize ${
-                    view === v ? "bg-indigo-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+                    view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {v}
@@ -216,9 +216,9 @@ export function App() {
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {state?.busy && (
-              <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-white">busy</span>
+              <span className="rounded-full bg-primary px-2 py-0.5 text-primary-foreground">busy</span>
             )}
             <ServerControls state={state} />
           </div>
@@ -252,7 +252,7 @@ export function App() {
           </>
         )}
       </main>
-      <section className="hidden w-96 shrink-0 border-l border-zinc-800 lg:flex lg:flex-col">
+      <section className="hidden w-96 shrink-0 border-l border-border lg:flex lg:flex-col">
         <Logs lines={logs} />
       </section>
     </div>
@@ -265,19 +265,19 @@ function ServerControls({ state }: { state: DashState | null }) {
   return (
     <div className="flex items-center gap-2">
       <button
-        className="rounded bg-zinc-800 px-2 py-1 hover:bg-zinc-700"
+        className="rounded bg-secondary px-2 py-1 hover:bg-accent"
         onClick={() => void api.server(running ? "stop" : "start").catch(() => {})}
       >
         {running ? "Stop server" : "Start server"}
       </button>
       <button
-        className="rounded bg-zinc-800 px-2 py-1 hover:bg-zinc-700"
+        className="rounded bg-secondary px-2 py-1 hover:bg-accent"
         onClick={() => void api.preview(previewUrl ? "stop" : "start").catch(() => {})}
       >
         {previewUrl ? "Stop preview" : "Preview"}
       </button>
       {previewUrl && (
-        <a href={previewUrl} target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">
+        <a href={previewUrl} target="_blank" rel="noreferrer" className="text-[var(--brand-soft)] hover:underline">
           open
         </a>
       )}

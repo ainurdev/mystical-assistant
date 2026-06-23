@@ -98,25 +98,25 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-2 text-xs">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs">
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter repos & chats…"
-          className="w-64 rounded bg-zinc-800 px-2 py-1 outline-none placeholder:text-zinc-500"
+          className="w-64 rounded bg-secondary px-2 py-1 outline-none placeholder:text-muted-foreground"
         />
         {(["recent", "cost"] as Sort[]).map((s) => (
           <button
             key={s}
             onClick={() => setSort(s)}
             className={`rounded px-2 py-1 ${
-              sort === s ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400"
+              sort === s ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
             }`}
           >
             {s === "recent" ? "Recent" : "Cost"}
           </button>
         ))}
-        <label className="ml-auto flex items-center gap-1.5 text-zinc-400">
+        <label className="ml-auto flex items-center gap-1.5 text-muted-foreground">
           <input
             type="checkbox"
             checked={showArchived}
@@ -128,7 +128,7 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {groups.length === 0 && (
-          <div className="p-8 text-center text-sm text-zinc-500">No chats yet.</div>
+          <div className="p-8 text-center text-sm text-muted-foreground">No chats yet.</div>
         )}
         {groups.map((g) => (
           <div key={g.repo} className="mb-5">
@@ -136,7 +136,7 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
               <span className="truncate text-sm font-semibold" title={g.repo}>
                 {g.repo}
               </span>
-              <span className="shrink-0 text-xs text-zinc-500">
+              <span className="shrink-0 text-xs text-muted-foreground">
                 {g.ss.length} {g.ss.length === 1 ? "chat" : "chats"} · $
                 {g.cost.toFixed(2)} · {ago(g.last)}
               </span>
@@ -146,7 +146,7 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                 <button
                   key={s.id}
                   onClick={() => onOpen(s)}
-                  className="flex w-full flex-col gap-0.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-left hover:bg-zinc-800/60"
+                  className="flex w-full flex-col gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left hover:bg-accent"
                 >
                   <div className="flex items-center gap-2">
                     {running.has(s.id) && (
@@ -157,12 +157,12 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                       {s.archived ? " (archived)" : ""}
                     </span>
                     {originLabel(s.origin) && (
-                      <span className="shrink-0 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] text-indigo-300">
+                      <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-[var(--brand-soft)]">
                         {originLabel(s.origin)}
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-xs text-muted-foreground">
                     {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"} · $
                     {s.total_cost.toFixed(2)}
                     {s.models.length ? ` · ${s.models.join(", ")}` : ""} ·{" "}

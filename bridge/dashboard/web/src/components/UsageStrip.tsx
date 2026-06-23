@@ -11,7 +11,7 @@ function fmtReset(iso: string | null | undefined): string {
 function sevColor(sev: string | undefined): string {
   if (sev === "critical" || sev === "exceeded") return "text-red-400";
   if (sev && sev !== "normal") return "text-amber-400";
-  return "text-zinc-500";
+  return "text-muted-foreground";
 }
 
 /** Slim Claude-usage line above the composer: `5h 31% · resets 6:49 AM · Wk 52%`. */
@@ -47,7 +47,7 @@ export function UsageStrip() {
           5h {fh.percent}%{fh.resets_at ? ` · resets ${fmtReset(fh.resets_at)}` : ""}
         </span>
       )}
-      {fh && sd && <span className="text-zinc-600">·</span>}
+      {fh && sd && <span className="text-muted-foreground">·</span>}
       {sd && <span className={sevColor(sd.severity)}>Wk {sd.percent}%</span>}
     </div>
   );

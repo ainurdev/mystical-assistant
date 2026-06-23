@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { EffortLevel, ModelId } from "../api";
 import { UsageStrip } from "./UsageStrip";
+import { Button } from "./ui";
 
 const MODELS: ModelId[] = ["opus", "sonnet", "haiku"];
 const EFFORTS: (EffortLevel | "")[] = ["", "low", "medium", "high", "xhigh", "max"];
@@ -45,7 +46,7 @@ export function Composer({
   }
 
   return (
-    <div className="border-t border-zinc-800 bg-zinc-900/60 p-3">
+    <div className="border-t border-border bg-card p-3">
       <UsageStrip />
       {images.length > 0 && (
         <div className="mb-2 flex gap-2">
@@ -58,7 +59,7 @@ export function Composer({
         <select
           value={model}
           onChange={(e) => onModel(e.target.value as ModelId)}
-          className="rounded bg-zinc-800 px-2 py-1"
+          className="rounded bg-secondary px-2 py-1"
         >
           {MODELS.map((m) => (
             <option key={m} value={m}>
@@ -69,7 +70,7 @@ export function Composer({
         <select
           value={effort}
           onChange={(e) => onEffort(e.target.value as EffortLevel | "")}
-          className="rounded bg-zinc-800 px-2 py-1"
+          className="rounded bg-secondary px-2 py-1"
         >
           {EFFORTS.map((e) => (
             <option key={e} value={e}>
@@ -89,7 +90,7 @@ export function Composer({
           }}
         />
         <button
-          className="rounded bg-zinc-800 px-2 py-1 hover:bg-zinc-700"
+          className="rounded bg-secondary px-2 py-1 hover:bg-accent"
           onClick={() => fileRef.current?.click()}
         >
           📎
@@ -107,7 +108,7 @@ export function Composer({
           }}
           placeholder={disabled ? "Working…" : "Message Claude…"}
           rows={2}
-          className="max-h-40 flex-1 resize-none rounded-lg bg-zinc-800 px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+          className="max-h-40 flex-1 resize-none rounded-lg bg-secondary px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
         />
         {running ? (
           <button
@@ -117,13 +118,13 @@ export function Composer({
             Stop
           </button>
         ) : (
-          <button
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500 disabled:opacity-50"
+          <Button
+            variant="primary"
             disabled={disabled || !text.trim()}
             onClick={submit}
           >
             Send
-          </button>
+          </Button>
         )}
       </div>
     </div>
