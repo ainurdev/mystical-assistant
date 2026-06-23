@@ -54,6 +54,8 @@ export function App() {
   // animations (boot/drawline/mfadeup) play on reveal, per the design.
   const [showDashboard, setShowDashboard] = useState(false);
   const seqRef = useRef(0);
+  // Turns started from this client this session — their results "type" in live.
+  const liveTurns = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef(false);
 
@@ -234,6 +236,7 @@ export function App() {
         model,
         effort: effort || undefined,
       });
+      liveTurns.current.add(res.job_id);
       setTurns((prev) => [
         ...prev,
         { id: res.job_id, prompt: text, events: [], status: "running", pending: [] },
@@ -415,6 +418,7 @@ export function App() {
           error={error}
           scrollRef={scrollRef}
           onOpenFromHistory={(s) => void openFromHistory(s)}
+          liveTurns={liveTurns.current}
           composer={
             <Composer
               disabled={running || pendingCount > 0}

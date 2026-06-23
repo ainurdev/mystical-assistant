@@ -1,9 +1,59 @@
+import { useEffect, useState } from "react";
 import { TriangleAlert, CircleStop } from "lucide-react";
 import type { AnswerSelection, RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+
+// Result blocks already "printed" this session — guards against re-typing when a
+// session is reopened or the transcript re-renders.
+const typedResults = new Set<string>();
+
+/** Types `text` out left-to-right (plain) the first time a live result lands,
+ *  then swaps to formatted Markdown. Non-live results render instantly. */
+function Typewriter({
+  text,
+  animate,
+  idKey,
+  className,
+}: {
+  text: string;
+  animate: boolean;
+  idKey: string;
+  className?: string;
+}) {
+  const [n, setN] = useState(() => (animate && !typedResults.has(idKey) ? 0 : text.length));
+
+  useEffect(() => {
+    if (n >= text.length) return;
+    typedResults.add(idKey);
+    const step = Math.max(1, Math.ceil(text.length / 60)); // ~60 frames ≈ 2.1s, capped
+    const id = setInterval(() => {
+      setN((p) => {
+        const next = p + step;
+        if (next >= text.length) {
+          clearInterval(id);
+          return text.length;
+        }
+        return next;
+      });
+    }, 35);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (n >= text.length) return <Markdown className={className}>{text}</Markdown>;
+  return (
+    <div className={`${className ?? ""} whitespace-pre-wrap break-words`}>
+      {text.slice(0, n)}
+      <span
+        className="ml-px inline-block h-[1em] w-[7px] translate-y-[2px] bg-primary align-middle"
+        style={{ animation: "caret 1s steps(1) infinite" }}
+      />
+    </div>
+  );
+}
 
 // Tool-tag colors (HUD terminal). Mirrors the design's BASH/READ/WRITE accents.
 function toolTag(name: string): { color: string; border: string } {
@@ -18,18 +68,26 @@ function FinalResult({
   result,
   elapsed,
   cost,
+  animate,
+  idKey,
 }: {
   result: string;
   elapsed?: number;
   cost?: number;
+  animate: boolean;
+  idKey: string;
 }) {
+  const flash = animate && !typedResults.has(idKey);
   return (
-    <div className="my-2 ml-[18px] border border-[rgba(143,217,168,.28)] bg-[rgba(143,217,168,.04)]">
+    <div
+      className="my-2 ml-[18px] border border-[rgba(143,217,168,.28)] bg-[rgba(143,217,168,.04)]"
+      style={flash ? { animation: "resultflash 1.2s ease both" } : undefined}
+    >
       <div className="border-b border-[rgba(143,217,168,.18)] px-3 py-1.5 text-[9.5px] tracking-[2px] text-success">
         RESULT // OK
       </div>
       <div className="px-3 py-2.5">
-        <Markdown className="leading-relaxed text-[#c4e8df]">{result}</Markdown>
+        <Typewriter text={result} animate={animate} idKey={idKey} className="leading-relaxed text-[#c4e8df]" />
         {(typeof elapsed === "number" || typeof cost === "number") && (
           <div className="mt-1.5 text-[10px] tracking-[1px] text-muted-2">
             {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
@@ -51,10 +109,14 @@ export function RunStream({
   events,
   pending = [],
   onRespond,
+  animate = false,
+  turnId = "",
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
+  animate?: boolean;
+  turnId?: string;
 }) {
   const pendingIds = new Set(pending.map((p) => p.request_id));
   const permResolved = new Map<string, "allow" | "deny">();
@@ -102,6 +164,8 @@ export function RunStream({
                 result={event.result}
                 elapsed={event.elapsed}
                 cost={event.cost}
+                animate={animate}
+                idKey={`${turnId}:${i}`}
               />
             );
           case "error":

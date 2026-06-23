@@ -239,6 +239,8 @@ body {
 @keyframes bootline { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
 @keyframes barfill { from { width: 0; } to { width: 100%; } }
 @keyframes tickfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
+@keyframes resultflash { 0% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45); filter: brightness(1.7); } 100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); filter: none; } }
 
 textarea,
 input {

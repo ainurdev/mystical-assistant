@@ -1,6 +1,7 @@
 import type { AnswerSelection } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import { RunStream } from "./RunStream";
+import { WorkingIndicator } from "./hud/WorkingIndicator";
 
 type Respond = (
   requestId: string,
@@ -11,10 +12,12 @@ export function Transcript({
   turns,
   activeId,
   onRespond,
+  liveTurns,
 }: {
   turns: Turn[];
   activeId: string | null;
   onRespond: Respond;
+  liveTurns?: Set<string>;
 }) {
   if (!turns.length) {
     return (
@@ -43,11 +46,11 @@ export function Transcript({
                 events={turn.events}
                 pending={turn.pending as PendingRequest[]}
                 onRespond={isActive ? onRespond : undefined}
+                animate={liveTurns?.has(turn.id) ?? false}
+                turnId={turn.id}
               />
             )}
-            {working && (
-              <div className="pl-[18px] text-[11px] tracking-[1px] text-muted-2">// working…</div>
-            )}
+            {working && <WorkingIndicator />}
           </div>
         );
       })}
