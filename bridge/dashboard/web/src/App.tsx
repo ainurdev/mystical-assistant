@@ -17,6 +17,7 @@ import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
 import { GitTab } from "./components/GitTab";
+import { IssuesTab } from "./components/IssuesTab";
 import { DiffTab } from "./components/DiffTab";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
@@ -264,6 +265,7 @@ export function App() {
         />
       ),
     },
+    { id: "issues", label: "Issues", render: () => <IssuesTab project={activeProject} /> },
     { id: "diff", label: "Diff", render: () => <DiffTab file={diffFile} /> },
     { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
   ];
