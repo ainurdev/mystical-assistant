@@ -80,6 +80,14 @@ def _row(raw: dict) -> dict | None:
     }
 
 
+def is_live(session_id: str) -> bool:
+    """True iff an external interactive Claude session with this id is running now
+    (used to block resuming a session that's currently open in VSCode/terminal)."""
+    if not session_id:
+        return False
+    return any(r["session_id"] == session_id for r in list_running())
+
+
 def list_running() -> list[dict]:
     """Every live external session, newest first."""
     out: list[dict] = []

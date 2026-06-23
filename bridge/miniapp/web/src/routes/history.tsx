@@ -19,6 +19,12 @@ function ago(sec: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// Where a session started, for the surface badge (null = bridge default / unknown).
+function originLabel(o?: string | null): string | null {
+  return { vscode: "VS Code", terminal: "Terminal", dashboard: "Desktop",
+           miniapp: "Phone", bot: "Bot" }[o ?? ""] ?? null;
+}
+
 function HistoryPage() {
   const navigate = useNavigate();
   const { openSessionInProject } = useChat();
@@ -142,6 +148,11 @@ function HistoryPage() {
                   {s.title || "New chat"}
                   {s.archived ? " (archived)" : ""}
                 </span>
+                {originLabel(s.origin) && (
+                  <span className="shrink-0 rounded bg-[var(--tg-button)]/15 px-1.5 py-0.5 text-[10px] text-[var(--tg-hint)]">
+                    {originLabel(s.origin)}
+                  </span>
+                )}
               </div>
               <div className="text-[11px] text-[var(--tg-hint)]">
                 {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"} · $

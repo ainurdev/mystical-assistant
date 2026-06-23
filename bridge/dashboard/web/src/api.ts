@@ -15,6 +15,7 @@ export interface SessionBrief {
   project: string;
   updated: number;
   archived: number;
+  origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
 }
 export interface StoreTurn {
   id: string;
@@ -109,6 +110,7 @@ export interface EnrichedSession {
   id: string;
   title: string | null;
   project: string;
+  origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   created: number;
   updated: number;
   archived: number;

@@ -296,7 +296,7 @@ def test_session_brief_shape():
     from bridge.miniapp.server import _session_brief
     s = store.create_session(555, "p6")
     b = _session_brief(s)
-    assert set(b) == {"id", "title", "project", "updated", "archived"}
+    assert set(b) == {"id", "title", "project", "updated", "archived", "origin"}
     assert b["id"] == s["id"] and b["project"] == "p6"
 
 
@@ -466,6 +466,17 @@ def test_machine_alive():
     assert machine._alive("nope") is False
 
 
+def test_machine_is_live():
+    orig = machine.list_running
+    machine.list_running = lambda: [{"session_id": "abc"}]
+    try:
+        assert machine.is_live("abc") is True
+        assert machine.is_live("xyz") is False
+        assert machine.is_live("") is False
+    finally:
+        machine.list_running = orig
+
+
 # --- usage normalization ----------------------------------------------------
 
 _USAGE_SAMPLE = {
@@ -559,6 +570,171 @@ def test_pubsub_basic_and_overflow():
     assert q.get_nowait() is pubsub.RESYNC      # backlog collapsed to a resync
     pubsub.unsubscribe("t1", q)
     pubsub.publish("t1", {"n": 2})              # no subscribers -> no error
+
+
+# --- cross-surface continuity: store extensions -----------------------------
+
+def test_store_migration_adds_origin_cwd_permission_columns():
+    import sqlite3
+    store.init()                                            # idempotent
+    con = sqlite3.connect(config.BRIDGE_DB)
+    cols = {r[1] for r in con.execute("PRAGMA table_info(sessions)").fetchall()}
+    con.close()
+    assert {"origin", "cwd", "permission_mode"} <= cols
+
+
+def test_store_create_session_records_origin_cwd_permission():
+    s = store.create_session(561, "proj", origin="dashboard", cwd="/tmp/proj",
+                             permission_mode="bypassPermissions")
+    assert s["origin"] == "dashboard"
+    assert s["cwd"] == "/tmp/proj"
+    assert s["permission_mode"] == "bypassPermissions"
+
+
+def test_store_create_session_defaults_new_columns_to_none():
+    s = store.create_session(561, "proj2")
+    assert s["origin"] is None and s["cwd"] is None and s["permission_mode"] is None
+
+
+def test_store_upsert_native_session_creates_row_keyed_by_uuid():
+    uid = "11111111-2222-3333-4444-555555555555"
+    s = store.upsert_native_session(uid, 562, "/np", "/tmp/np", title="hi there")
+    assert s["id"] == uid and s["claude_session_id"] == uid
+    assert s["origin"] == "vscode" and s["cwd"] == "/tmp/np"
+    assert s["project"] == "/np" and s["title"] == "hi there"
+    assert store.get_by_claude_session_id(uid)["id"] == uid
+
+
+def test_store_upsert_native_session_dedups_and_refreshes():
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    store.upsert_native_session(uid, 563, "/np", "/tmp/np", title="first", updated=100.0)
+    store.upsert_native_session(uid, 563, "/np", "/tmp/np", title="ignored", updated=200.0)
+    rows = [r for r in store.list_sessions_all(563) if r["claude_session_id"] == uid]
+    assert len(rows) == 1                                   # no duplicate row
+    assert rows[0]["updated"] == 200.0                      # mtime refreshed
+    assert rows[0]["title"] == "first"                      # user/first-msg title preserved
+
+
+def test_store_upsert_native_refreshes_noise_title():
+    uid = "noise-uuid-1"
+    store.upsert_native_session(uid, 565, "/p", "/tmp",
+                                title="<ide_opened_file>x</ide_opened_file>")
+    store.upsert_native_session(uid, 565, "/p", "/tmp", title="clean prompt")
+    rows = [r for r in store.list_sessions_all(565) if r["claude_session_id"] == uid]
+    assert rows[0]["title"] == "clean prompt"      # tag-noise title healed on rescan
+
+
+def test_store_set_permission_mode_and_cwd():
+    s = store.create_session(564, "pp")
+    store.set_permission_mode(s["id"], "bypassPermissions")
+    store.set_cwd(s["id"], "/tmp/pp")
+    g = store.get_session(s["id"])
+    assert g["permission_mode"] == "bypassPermissions" and g["cwd"] == "/tmp/pp"
+
+
+def test_ensure_session_create_passes_origin_cwd_permission():
+    s = store.ensure_session(570, "/newproj", None, origin="dashboard",
+                             cwd="/tmp/newproj", permission_mode="bypassPermissions")
+    assert s["origin"] == "dashboard" and s["cwd"] == "/tmp/newproj"
+    assert s["permission_mode"] == "bypassPermissions"
+
+
+def test_ensure_session_existing_ignores_create_args():
+    a = store.create_session(571, "/p")
+    s = store.ensure_session(571, "/p", a["id"], origin="miniapp", permission_mode="plan")
+    assert s["id"] == a["id"] and s["origin"] is None        # existing row untouched
+
+
+# --- runner: cross-surface run context (cwd + permission per session) --------
+
+def test_resolve_context_new_session_gets_surface_default_permission():
+    sess, cwd, perm = runner._resolve_run_context(
+        572, "/tmp/ctxnew", session_id=None, permission_mode=None, origin="dashboard")
+    assert sess["permission_mode"] == config.NEW_SESSION_PERMISSION_MODE
+    assert perm == config.NEW_SESSION_PERMISSION_MODE
+    assert cwd == "/tmp/ctxnew" and sess["cwd"] == "/tmp/ctxnew"
+    assert sess["origin"] == "dashboard"
+
+
+def test_resolve_context_resumes_session_with_its_own_cwd_and_permission():
+    s = store.create_session(573, "/proj", origin="vscode", cwd="/tmp/realdir",
+                             permission_mode="plan")
+    sess, cwd, perm = runner._resolve_run_context(
+        573, "/tmp/other", session_id=s["id"], permission_mode=None, origin="miniapp")
+    assert sess["id"] == s["id"]
+    assert cwd == "/tmp/realdir"               # the session's own cwd, not the chat's
+    assert perm == "plan"                      # the session's stored permission
+
+
+def test_resolve_context_explicit_permission_overrides_session():
+    s = store.create_session(574, "/proj", cwd="/tmp/d", permission_mode="plan")
+    _, _, perm = runner._resolve_run_context(
+        574, "/tmp/d", session_id=s["id"], permission_mode="acceptEdits", origin="miniapp")
+    assert perm == "acceptEdits"
+
+
+# --- adopt-on-continue (native session -> store) ----------------------------
+
+def test_store_set_origin():
+    s = store.create_session(580, "/p", origin="vscode")
+    store.set_origin(s["id"], "bridge")
+    assert store.get_session(s["id"])["origin"] == "bridge"
+
+
+def test_store_import_transcript_loads_turns_events_idempotent():
+    s = store.create_session(581, "/p")
+    turns = [{"id": "u1", "seq": 0, "prompt": "hi", "attachments": [], "status": "done",
+              "cost": None, "elapsed": None, "started": 1.0, "model": "opus"}]
+    events = [{"type": "text", "text": "yo", "seq": 0, "turn_id": "u1"}]
+    assert store.import_transcript(s["id"], turns, events) is True
+    t = store.transcript(s["id"])
+    assert [x["id"] for x in t["turns"]] == ["u1"]
+    assert t["turns"][0]["prompt"] == "hi" and t["turns"][0]["model"] == "opus"
+    assert [e["type"] for e in t["events"]] == ["text"]
+    assert store.import_transcript(s["id"], turns, events) is False   # idempotent no-op
+    assert len(store.transcript(s["id"])["turns"]) == 1
+
+
+def test_transcript_for_bridge_falls_back_to_jsonl_when_store_empty():
+    import tempfile
+    from bridge import transcript_jsonl as _T
+    from bridge.miniapp.server import transcript_for
+    root = tempfile.mkdtemp()
+    _T.PROJECTS_DIR = root
+    uid = "fallback-uuid-1"
+    sub = os.path.join(root, "p")
+    os.makedirs(sub)
+    with open(os.path.join(sub, uid + ".jsonl"), "w") as f:
+        f.write(json.dumps({"type": "user", "uuid": "x1", "cwd": "/tmp",
+                            "message": {"role": "user", "content": "jsonl only"}}) + "\n")
+    s = store.create_session(590, "/p")                 # origin None, empty store turns
+    store.set_claude_session_id(s["id"], uid)
+    t = transcript_for(store.get_session(s["id"]))
+    assert any(x["prompt"] == "jsonl only" for x in t["turns"])   # fell back to JSONL
+
+
+def test_resolve_context_adopts_native_session_into_store():
+    import tempfile
+    from bridge import transcript_jsonl as _T
+    root = tempfile.mkdtemp()
+    _T.PROJECTS_DIR = root
+    uid = "adopt-uuid-1"
+    sub = os.path.join(root, "p")
+    os.makedirs(sub)
+    with open(os.path.join(sub, uid + ".jsonl"), "w") as f:
+        f.write(json.dumps({"type": "user", "uuid": "j1", "cwd": "/tmp/realcwd",
+                            "message": {"role": "user", "content": "orig vscode msg"}}) + "\n")
+        f.write(json.dumps({"type": "assistant", "uuid": "j2", "message": {
+            "role": "assistant", "content": [{"type": "text", "text": "vscode reply"}]}}) + "\n")
+    s = store.create_session(582, "/p", origin="vscode", cwd="/tmp/realcwd")
+    store.set_claude_session_id(s["id"], uid)
+    sess, cwd, perm = runner._resolve_run_context(
+        582, "/tmp/other", session_id=s["id"], permission_mode=None, origin="miniapp")
+    assert sess["origin"] == "bridge"                          # adopted into the store
+    assert cwd == "/tmp/realcwd"                               # native cwd preserved
+    assert perm == config.NEW_SESSION_PERMISSION_MODE          # continued from miniapp -> full
+    tr = store.transcript(s["id"])
+    assert any(t["prompt"] == "orig vscode msg" for t in tr["turns"])   # history imported
 
 
 if __name__ == "__main__":

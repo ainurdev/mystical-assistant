@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   title             TEXT,
   created           REAL NOT NULL,
   updated           REAL NOT NULL,
-  archived          INTEGER NOT NULL DEFAULT 0
+  archived          INTEGER NOT NULL DEFAULT 0,
+  origin            TEXT,
+  cwd               TEXT,
+  permission_mode   TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -83,6 +86,11 @@ def init() -> None:
         cols = {r["name"] for r in c.execute("PRAGMA table_info(turns)").fetchall()}
         if "model" not in cols:
             c.execute("ALTER TABLE turns ADD COLUMN model TEXT")
+        # Cross-surface continuity columns (idempotent; old DBs predate them).
+        scols = {r["name"] for r in c.execute("PRAGMA table_info(sessions)").fetchall()}
+        for col in ("origin", "cwd", "permission_mode"):
+            if col not in scols:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
         # Any turn still 'running' at startup is orphaned (the bridge restarted);
         # mark it errored so the UI doesn't poll a dead job forever.
         c.execute("UPDATE turns SET status='error' WHERE status='running'")
@@ -101,14 +109,17 @@ def _row(r) -> dict | None:
 
 # --- sessions ---------------------------------------------------------------
 
-def create_session(chat_id: int, project: str, *, session_id: str | None = None) -> dict:
+def create_session(chat_id: int, project: str, *, session_id: str | None = None,
+                   origin: str | None = None, cwd: str | None = None,
+                   permission_mode: str | None = None) -> dict:
     sid = session_id or uuid.uuid4().hex
     now = time.time()
     with closing(_connect()) as c:
         c.execute(
             "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"
-            "created,updated,archived) VALUES(?,?,?,?,?,?,?,0)",
-            (sid, chat_id, project, None, None, now, now))
+            "created,updated,archived,origin,cwd,permission_mode) "
+            "VALUES(?,?,?,?,?,?,?,0,?,?,?)",
+            (sid, chat_id, project, None, None, now, now, origin, cwd, permission_mode))
     return get_session(sid)
 
 
@@ -116,6 +127,43 @@ def get_session(session_id: str) -> dict | None:
     with closing(_connect()) as c:
         return _row(c.execute("SELECT * FROM sessions WHERE id=?",
                               (session_id,)).fetchone())
+
+
+def get_by_claude_session_id(claude_sid: str) -> dict | None:
+    """Reverse lookup: the bridge session row carrying this Claude native UUID.
+    The join from Claude's world back into ours (drives native-session dedup)."""
+    with closing(_connect()) as c:
+        return _row(c.execute(
+            "SELECT * FROM sessions WHERE claude_session_id=? ORDER BY updated DESC LIMIT 1",
+            (claude_sid,)).fetchone())
+
+
+def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str, *,
+                          title: str | None = None, updated: float | None = None,
+                          origin: str = "vscode") -> dict:
+    """Index a native (VSCode/terminal) Claude session by its UUID so it appears in
+    the unified list and is resumable. The row id IS the native UUID. Dedups on
+    claude_session_id: on re-scan it refreshes `updated` (monotonically) and
+    backfills `cwd`, but preserves an existing title and origin — so a bridge-run
+    session whose JSONL the scanner re-encounters is not reclassified."""
+    now = updated if updated is not None else time.time()
+    existing = get_by_claude_session_id(claude_sid)
+    with closing(_connect()) as c:
+        if existing:
+            # Refresh mtime/cwd; keep an existing human title but heal auto-titles
+            # that captured a leading system tag (e.g. <ide_opened_file>…).
+            c.execute(
+                "UPDATE sessions SET updated=MAX(updated, ?), cwd=COALESCE(cwd, ?), "
+                "title=CASE WHEN title IS NULL OR title='' OR title LIKE '<%' "
+                "THEN ? ELSE title END WHERE id=?",
+                (now, cwd, title, existing["id"]))
+            return get_session(existing["id"])
+        c.execute(
+            "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"
+            "created,updated,archived,origin,cwd,permission_mode) "
+            "VALUES(?,?,?,?,?,?,?,0,?,?,?)",
+            (claude_sid, chat_id, project, claude_sid, title, now, now, origin, cwd, None))
+    return get_session(claude_sid)
 
 
 def list_sessions(chat_id: int, project: str, include_archived: bool = False) -> list[dict]:
@@ -142,20 +190,39 @@ def list_sessions_all(chat_id: int, include_archived: bool = False) -> list[dict
         return [dict(r) for r in c.execute(q, (chat_id,)).fetchall()]
 
 
-def ensure_session(chat_id: int, project: str, session_id: str | None = None) -> dict:
+def ensure_session(chat_id: int, project: str, session_id: str | None = None, *,
+                   origin: str | None = None, cwd: str | None = None,
+                   permission_mode: str | None = None) -> dict:
     """Resolve a session: a valid given id for this chat, else the latest for the
-    project, else a fresh one."""
+    project, else a fresh one. The origin/cwd/permission_mode are applied ONLY
+    when a new session is created (resuming an existing one leaves it untouched)."""
     if session_id:
         s = get_session(session_id)
         if s and s["chat_id"] == chat_id:
             return s
-    return latest_session(chat_id, project) or create_session(chat_id, project)
+    return latest_session(chat_id, project) or create_session(
+        chat_id, project, origin=origin, cwd=cwd, permission_mode=permission_mode)
 
 
 def set_claude_session_id(session_id: str, claude_sid: str | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET claude_session_id=?, updated=? WHERE id=?",
                   (claude_sid, time.time(), session_id))
+
+
+def set_permission_mode(session_id: str, mode: str | None) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET permission_mode=? WHERE id=?", (mode, session_id))
+
+
+def set_cwd(session_id: str, cwd: str | None) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET cwd=? WHERE id=?", (cwd, session_id))
+
+
+def set_origin(session_id: str, origin: str | None) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET origin=? WHERE id=?", (origin, session_id))
 
 
 def set_title(session_id: str, title: str) -> None:
@@ -217,11 +284,41 @@ def finish_turn(turn_id: str, status: str, cost: float | None, elapsed: int | No
                   (status, cost, elapsed, turn_id))
 
 
+def import_transcript(session_id: str, turns: list[dict], events: list[dict]) -> bool:
+    """Bulk-load a translated transcript (turns + events) into the store. Used to
+    ADOPT a native session on its first bridge continuation, so its full prior
+    history renders from the store alongside new turns. Idempotent: a no-op (and
+    returns False) if the session already has turns."""
+    with closing(_connect()) as c:
+        c.execute("BEGIN IMMEDIATE")
+        have = c.execute("SELECT COUNT(*) n FROM turns WHERE session_id=?",
+                         (session_id,)).fetchone()["n"]
+        if have:
+            c.execute("COMMIT")
+            return False
+        for t in turns:
+            c.execute(
+                "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
+                "elapsed,started,model) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (t["id"], session_id, t["seq"], t.get("prompt", ""),
+                 json.dumps(t.get("attachments") or []), t.get("status", "done"),
+                 t.get("cost"), t.get("elapsed"), t.get("started") or time.time(),
+                 t.get("model")))
+        for e in events:
+            payload = {k: v for k, v in e.items() if k not in ("seq", "turn_id")}
+            c.execute("INSERT INTO events(session_id,turn_id,seq,type,payload,ts) "
+                      "VALUES(?,?,?,?,?,?)",
+                      (session_id, e["turn_id"], e["seq"], e.get("type", ""),
+                       json.dumps(payload), e.get("ts") or time.time()))
+        c.execute("COMMIT")
+    return True
+
+
 def history(chat_id: int, include_archived: bool = False) -> list[dict]:
     """Per-repo session rollup: one row per session with aggregates joined from
     its turns — turn_count, total_cost, last_activity, and distinct models used.
     Newest activity first."""
-    q = ("SELECT s.id, s.title, s.project, s.created, s.updated, s.archived, "
+    q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.cost), 0) AS total_cost, "
          "COALESCE(MAX(t.started), s.updated) AS last_activity, "

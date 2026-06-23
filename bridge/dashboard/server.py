@@ -22,8 +22,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
-from bridge import browser, config, devserver, machine, pubsub, runner, state, store, tunnel, usage
-from bridge.miniapp.server import _save_images, _session_brief, normalize_model_effort
+from bridge import (browser, config, devserver, machine, native, pubsub, runner,
+                    state, store, tunnel, usage)
+from bridge.miniapp.server import (_resume_blocked_live, _save_images, _session_brief,
+                                   normalize_model_effort, normalize_permission_mode,
+                                   transcript_for)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 _HOSTS = {f"127.0.0.1:{config.DASH_PORT}", f"localhost:{config.DASH_PORT}",
@@ -127,7 +130,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({
                 "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)},
                 "busy": state.busy_chat is not None, "busy_chat": state.busy_chat,
-                "server": devserver.server_state(), "preview": tunnel.tunnel_state()})
+                "server": devserver.server_state(), "preview": tunnel.tunnel_state(),
+                "permission_mode": config.MINIAPP_PERMISSION_MODE})
         if path == "/local/projects":
             relp = (qs.get("dir", [""])[0] or "").strip()
             cur = config.BASE_PATH if relp in ("", "/") else os.path.realpath(
@@ -139,6 +143,7 @@ class Handler(BaseHTTPRequestHandler):
                                "can_up": real != config.BASE_PATH,
                                "dirs": browser.list_dirs(cur)})
         if path == "/local/history":
+            native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
             return self._json({"sessions": store.history(chat, include_archived=archived)})
         if path == "/local/running":
@@ -147,6 +152,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/sessions":
+            native.refresh(chat)           # surface VSCode sessions started since last poll
             project = qs.get("project", [None])[0]
             rows = (store.list_sessions(chat, project) if project is not None
                     else store.list_sessions_all(chat))
@@ -160,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = int(qs.get("cursor", ["0"])[0])
             except ValueError:
                 cursor = 0
-            return self._json(store.transcript(sid, cursor))
+            return self._json(transcript_for(s, cursor))
         if path.startswith("/local/run/"):
             job = runner.get_job(path[len("/local/run/"):])
             if not job:
@@ -195,7 +201,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._select(chat, body)
         if path == "/local/sessions":
             project = (body.get("project") or "").strip()
-            return self._json({"session": _session_brief(store.create_session(chat, project))})
+            cwd = _abs_project(project) or state.project_dir(chat)
+            s = store.create_session(chat, project, origin="dashboard", cwd=cwd,
+                                     permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+            return self._json({"session": _session_brief(s)})
         if path.startswith("/local/sessions/") and path.endswith("/archive"):
             sid = path[len("/local/sessions/"):-len("/archive")]
             s = store.get_session(sid)
@@ -216,7 +225,12 @@ class Handler(BaseHTTPRequestHandler):
         ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
         if not ok:
             return self._json({"error": "invalid model"}, 400)
+        permission_mode = normalize_permission_mode(body.get("permission_mode"))
         session_id = (body.get("session_id") or "").strip() or None
+        if _resume_blocked_live(session_id):
+            return self._json({"error": "This session is open in VSCode right now — "
+                                        "finish or close it there to continue here.",
+                               "code": "live_elsewhere"}, 409)
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []
@@ -224,7 +238,9 @@ class Handler(BaseHTTPRequestHandler):
             runner._cleanup_uploads(job_id)
             return self._json({"error": str(e)}, 413)
         job = runner.start_streaming_job(chat, prompt, paths, project_path, job_id=job_id,
-                                         model=model, effort=effort, session_id=session_id)
+                                         model=model, effort=effort,
+                                         permission_mode=permission_mode,
+                                         session_id=session_id, origin="dashboard")
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)

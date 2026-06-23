@@ -14,6 +14,12 @@ function ago(sec: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// Where a session started, for the surface badge (null = bridge default / unknown).
+function originLabel(o?: string | null): string | null {
+  return { vscode: "VS Code", terminal: "Terminal", dashboard: "Desktop",
+           miniapp: "Phone", bot: "Bot" }[o ?? ""] ?? null;
+}
+
 /** Full-width per-repo history: every session grouped by repo with aggregates.
  *  Clicking a session resumes it (onOpen switches the active project first). */
 export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }) {
@@ -150,6 +156,11 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                       {s.title || "New chat"}
                       {s.archived ? " (archived)" : ""}
                     </span>
+                    {originLabel(s.origin) && (
+                      <span className="shrink-0 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] text-indigo-300">
+                        {originLabel(s.origin)}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-zinc-500">
                     {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"} · $

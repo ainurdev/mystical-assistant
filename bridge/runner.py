@@ -17,7 +17,7 @@ import threading
 import time
 import uuid
 
-from bridge import config, pubsub, state, store
+from bridge import config, pubsub, state, store, transcript_jsonl
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -65,7 +65,7 @@ def _drain_journal() -> None:
 
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
-              effort: str | None = None,
+              effort: str | None = None, permission_mode: str | None = None,
               claude_session_id: str | None = None) -> list[str]:
     """Build the `claude` argv.
 
@@ -87,7 +87,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd.append("--verbose")  # required with stream-json in -p mode
     if interactive:
         cmd += ["--input-format", "stream-json",
-                "--permission-mode", config.MINIAPP_PERMISSION_MODE,
+                "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
                 "--permission-prompt-tool", "stdio"]
     if model:
         cmd += ["--model", model]
@@ -406,7 +406,8 @@ def _cleanup_uploads(job_id: str):
 
 
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
-                   model: str | None = None, effort: str | None = None):
+                   model: str | None = None, effort: str | None = None,
+                   permission_mode: str | None = None):
     proc = None
     try:
         full_prompt = prompt
@@ -414,7 +415,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             full_prompt = ("The user attached screenshot(s); view them before "
                            "responding: " + ", ".join(image_paths) + "\n\n" + prompt)
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
-                        model=model, effort=effort, claude_session_id=job.resume_id)
+                        model=model, effort=effort, permission_mode=permission_mode,
+                        claude_session_id=job.resume_id)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -485,20 +487,73 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         state.busy.release()
 
 
+_FULL_PERM_ORIGINS = {"dashboard", "miniapp"}
+
+
+def _surface_default_permission(origin: str | None) -> str | None:
+    """New sessions from the desktop dashboard / Mini App default to full autonomy."""
+    return config.NEW_SESSION_PERMISSION_MODE if origin in _FULL_PERM_ORIGINS else None
+
+
+def _adopt_native(session: dict, origin: str | None) -> None:
+    """Move a session that started in VSCode/terminal under the bridge's store on
+    its first continuation: import its JSONL transcript once (so the full prior
+    history renders from the store next to new turns), give it the continuing
+    surface's permission posture, and mark it bridge-origin. Resume continuity
+    (claude_session_id) and cwd are preserved."""
+    path = transcript_jsonl.find_transcript(session.get("claude_session_id"))
+    if path:
+        data = transcript_jsonl.parse_jsonl(path)
+        store.import_transcript(session["id"], data["turns"], data["events"])
+    if not session.get("permission_mode"):
+        store.set_permission_mode(session["id"], _surface_default_permission(origin))
+    store.set_origin(session["id"], "bridge")
+
+
+def _resolve_run_context(chat_id: int, project_dir: str, *, session_id: str | None,
+                         permission_mode: str | None, origin: str | None):
+    """Resolve the store session plus the cwd + permission to run it with.
+
+    A specific session (started in VSCode, or living in another project) carries
+    its OWN cwd and permission posture, so continuing it from any surface runs in
+    the right directory with the right autonomy. A native session is adopted into
+    the store on first continuation. New sessions inherit the surface default
+    permission. Returns (session, cwd, permission_mode)."""
+    session = store.ensure_session(
+        chat_id, rel(project_dir), session_id, origin=origin, cwd=project_dir,
+        permission_mode=permission_mode or _surface_default_permission(origin))
+    if session.get("origin") in ("vscode", "terminal"):
+        _adopt_native(session, origin)
+        session = store.get_session(session["id"])
+    cwd = session.get("cwd")
+    if not cwd and session.get("claude_session_id"):
+        path = transcript_jsonl.find_transcript(session["claude_session_id"])
+        cwd = transcript_jsonl.recover_cwd(path) if path else None
+    cwd = cwd or project_dir
+    if not session.get("cwd"):
+        store.set_cwd(session["id"], cwd)
+    return session, cwd, (permission_mode or session.get("permission_mode"))
+
+
 def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         project: str | None = None, job_id: str | None = None,
                         model: str | None = None, effort: str | None = None,
-                        session_id: str | None = None) -> Job | None:
+                        permission_mode: str | None = None,
+                        session_id: str | None = None,
+                        origin: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
-    Resolves (or creates) the store session for (chat_id, project) and records the
-    turn; --resume continuity comes from that session's claude_session_id."""
+    Resolves (or creates) the store session and runs it in the session's own cwd
+    with its own permission posture; --resume continuity comes from that session's
+    claude_session_id. `origin` marks where a newly-created session started."""
     if not state.busy.acquire(blocking=False):
         return None
     try:
         state.busy_chat = chat_id
-        cwd = project or state.project_dir(chat_id)
-        session = store.ensure_session(chat_id, rel(cwd), session_id)
+        project_dir = project or state.project_dir(chat_id)
+        session, cwd, perm = _resolve_run_context(
+            chat_id, project_dir, session_id=session_id,
+            permission_mode=permission_mode, origin=origin)
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.resume_id = session["claude_session_id"]
         _register(job)
@@ -506,7 +561,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                          [os.path.basename(p) for p in image_paths], model=model)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
-                         args=(job, prompt, image_paths, cwd, model, effort),
+                         args=(job, prompt, image_paths, cwd, model, effort, perm),
                          daemon=True).start()
         return job
     except BaseException:

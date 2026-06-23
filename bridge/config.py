@@ -22,16 +22,28 @@ ALLOWED_CHAT_IDS = {
 #   --dangerously-skip-permissions    full autonomy incl. running commands
 EXTRA_CLAUDE_ARGS = os.environ.get("EXTRA_CLAUDE_ARGS", "--permission-mode acceptEdits")
 
-# Permission mode for the interactive Mini App chat. "default" makes Claude ask
-# before permissioned tools, surfacing Allow/Deny cards in the chat (the
-# stream-json control protocol). Use "acceptEdits"/"bypassPermissions" to ask less.
-MINIAPP_PERMISSION_MODE = os.environ.get("MINIAPP_PERMISSION_MODE", "default")
+# Default permission ("operating") mode for the interactive chat clients when a
+# run doesn't request one. Clients pick per-chat from MINIAPP_PERMISSION_MODES.
+# "bypassPermissions" runs fully autonomously (never asks); "default" makes Claude
+# ask before permissioned tools, surfacing Allow/Deny cards (stream-json control
+# protocol); "auto" lets Claude's classifier decide; "plan" plans without editing.
+MINIAPP_PERMISSION_MODE = os.environ.get("MINIAPP_PERMISSION_MODE", "auto")
 
 # Model/effort the Mini App chat may request per message (passed as `claude
 # --model`/`--effort`). The frontend pickers must stay within these; the server
 # rejects an unknown model and drops an unknown effort.
 MINIAPP_MODELS = {"opus", "sonnet", "haiku"}
 MINIAPP_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+# Permission/operating modes the chat clients may request per message (passed as
+# `claude --permission-mode`); the server rejects anything outside this set.
+MINIAPP_PERMISSION_MODES = {"auto", "plan", "acceptEdits", "bypassPermissions", "default"}
+
+# Sessions started from the desktop dashboard or the Mini App are created with
+# this permission mode, persisted on the session, so continuing them from any
+# surface stays fully autonomous (no Allow/Deny prompts). A per-message pick can
+# still override a single run. The bot path is unaffected (it uses
+# EXTRA_CLAUDE_ARGS). See the cross-surface-session-continuity design.
+NEW_SESSION_PERMISSION_MODE = os.environ.get("NEW_SESSION_PERMISSION_MODE", "bypassPermissions")
 
 # Appended to Claude's system prompt so it asks instead of guessing. Set empty
 # to disable.

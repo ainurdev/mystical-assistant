@@ -18,7 +18,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import browser, config, devserver, machine, runner, state, store, tunnel, usage
+from bridge import (browser, config, devserver, machine, native, runner, state,
+                    store, transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -71,9 +72,49 @@ def normalize_model_effort(model, effort) -> tuple[bool, str | None, str | None]
     return True, m, e
 
 
+def normalize_permission_mode(mode) -> str | None:
+    """Validate a run's requested permission/operating mode. Unknown or blank ->
+    None, so the caller falls back to config.MINIAPP_PERMISSION_MODE."""
+    m = (mode or "").strip() or None
+    if m is not None and m not in config.MINIAPP_PERMISSION_MODES:
+        return None
+    return m
+
+
 def _session_brief(s: dict) -> dict:
     return {"id": s["id"], "title": s["title"], "project": s["project"],
-            "updated": s["updated"], "archived": s["archived"]}
+            "updated": s["updated"], "archived": s["archived"],
+            "origin": s.get("origin")}
+
+
+def transcript_for(session: dict, cursor: int = 0) -> dict:
+    """Unified transcript loader. A session that still lives only as native JSONL
+    (started in VSCode and not yet continued through the bridge) renders from that
+    JSONL on demand; everything else renders from the store. Same shape either way."""
+    if session.get("origin") in ("vscode", "terminal"):
+        path = transcript_jsonl.find_transcript(session.get("claude_session_id"))
+        data = (transcript_jsonl.parse_jsonl(path, cursor) if path
+                else {"turns": [], "events": [], "next_cursor": cursor})
+        return {"session": session, **data}
+    data = store.transcript(session["id"], cursor)
+    # Fallback: a bridge row whose conversation actually lives in the native JSONL
+    # (shares a claude_session_id but was never journaled) -> render from JSONL.
+    if not data["turns"] and session.get("claude_session_id"):
+        path = transcript_jsonl.find_transcript(session["claude_session_id"])
+        if path:
+            jdata = transcript_jsonl.parse_jsonl(path, cursor)
+            if jdata["turns"]:
+                return {"session": session, **jdata}
+    return data
+
+
+def _resume_blocked_live(session_id: str | None) -> bool:
+    """True if resuming should be refused because the session is open in
+    VSCode/terminal right now (avoid two writers appending to one transcript)."""
+    if not session_id:
+        return False
+    s = store.get_session(session_id)
+    return bool(s and s.get("claude_session_id") and machine.is_live(s["claude_session_id"]))
 
 
 def _save_images(job_id: str, images: list) -> list[str]:
@@ -214,6 +255,7 @@ class Handler(BaseHTTPRequestHandler):
             "busy": state.busy_chat is not None,
             "server": devserver.server_state(),
             "preview": tunnel.tunnel_state(),
+            "permission_mode": config.MINIAPP_PERMISSION_MODE,
         })
 
     def _api_projects(self, qs):
@@ -256,7 +298,12 @@ class Handler(BaseHTTPRequestHandler):
         ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
         if not ok:
             return self._json({"error": "invalid model"}, 400)
+        permission_mode = normalize_permission_mode(body.get("permission_mode"))
         session_id = (body.get("session_id") or "").strip() or None
+        if _resume_blocked_live(session_id):
+            return self._json({"error": "This session is open in VSCode right now — "
+                                        "finish or close it there to continue here.",
+                               "code": "live_elsewhere"}, 409)
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []
@@ -265,7 +312,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": str(e)}, 413)
         job = runner.start_streaming_job(chat_id, prompt, paths, project_path,
                                          job_id=job_id, model=model, effort=effort,
-                                         session_id=session_id)
+                                         permission_mode=permission_mode,
+                                         session_id=session_id, origin="miniapp")
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
@@ -282,6 +330,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(job.snapshot(cursor))
 
     def _api_history(self, chat_id: int, qs):
+        native.refresh(chat_id)            # surface VSCode sessions in the history view
         archived = qs.get("archived", ["0"])[0] == "1"
         self._json({"sessions": store.history(chat_id, include_archived=archived)})
 
@@ -290,13 +339,20 @@ class Handler(BaseHTTPRequestHandler):
                     "bridge_running": store.running_session_ids(chat_id)})
 
     def _api_sessions_list(self, chat_id: int, qs):
+        native.refresh(chat_id)            # surface VSCode sessions started since last poll
         project = (qs.get("project", [""])[0] or "").strip()
-        self._json({"sessions": [_session_brief(s)
-                                 for s in store.list_sessions(chat_id, project)]})
+        rows = (store.list_sessions(chat_id, project) if project
+                else store.list_sessions_all(chat_id))    # no project -> all sessions
+        self._json({"sessions": [_session_brief(s) for s in rows]})
 
     def _api_sessions_create(self, chat_id: int, body: dict):
         project = (body.get("project") or "").strip()
-        self._json({"session": _session_brief(store.create_session(chat_id, project))})
+        cand = os.path.realpath(os.path.join(config.BASE_PATH, project.lstrip("/")))
+        cwd = (cand if browser.within_base(cand) and os.path.isdir(cand)
+               else state.project_dir(chat_id))
+        s = store.create_session(chat_id, project, origin="miniapp", cwd=cwd,
+                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+        self._json({"session": _session_brief(s)})
 
     def _api_session_get(self, chat_id: int, rest: str, qs):
         sid = rest.split("/")[0]
@@ -307,7 +363,7 @@ class Handler(BaseHTTPRequestHandler):
             cursor = int(qs.get("cursor", ["0"])[0])
         except ValueError:
             cursor = 0
-        self._json(store.transcript(sid, cursor))
+        self._json(transcript_for(s, cursor))
 
     def _api_session_archive(self, chat_id: int, sid: str, body: dict):
         s = store.get_session(sid)
