@@ -131,7 +131,7 @@ export function GitTab({
           <button
             onClick={() => void commit()}
             disabled={busy || !msg.trim()}
-            className="flex-1 rounded-lg border border-brand-soft bg-primary px-2 py-2 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex-1 rounded-lg border border-primary bg-[rgba(127,233,216,.12)] px-2 py-2 text-[12.5px] font-semibold text-foreground-bright hover:bg-[rgba(127,233,216,.22)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Commit all
           </button>

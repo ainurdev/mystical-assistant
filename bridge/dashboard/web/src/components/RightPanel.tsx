@@ -24,23 +24,26 @@ export function RightPanel({
   };
   const current = tabs.find((t) => t.id === active) ?? tabs[0];
   return (
-    <aside className="flex min-h-0 w-[372px] shrink-0 flex-col border-l border-panel-border bg-panel">
-      <div className="flex shrink-0 gap-0.5 border-b border-border px-3 pt-2.5">
+    <div
+      className="panel flex min-h-0 flex-1 flex-col border border-border bg-panel"
+      style={{ animation: "boot .5s ease both .2s" }}
+    >
+      <div className="flex flex-none border-b border-border">
         {tabs.map((t) => {
           const on = t.id === current?.id;
           return (
             <button
               key={t.id}
               onClick={() => setActive(t.id)}
-              className={`flex items-center gap-1.5 rounded-t-lg border-b-2 px-3 py-2 text-[12.5px] font-medium ${
+              className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-1 py-[11px] text-[10.5px] tracking-[1.5px] hover:bg-accent ${
                 on
-                  ? "border-brand-soft text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "border-primary bg-[rgba(127,233,216,.06)] text-foreground-bright"
+                  : "border-transparent text-muted-2"
               }`}
             >
-              {t.label}
+              {t.label.toUpperCase()}
               {t.badge ? (
-                <span className="rounded-md bg-primary/15 px-1.5 font-mono text-[10px] text-brand-soft">
+                <span className="border border-[rgba(127,233,216,.4)] px-[5px] text-[9px] text-primary">
                   {t.badge}
                 </span>
               ) : null}
@@ -49,6 +52,6 @@ export function RightPanel({
         })}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{current?.render()}</div>
-    </aside>
+    </div>
   );
 }

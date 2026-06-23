@@ -13,7 +13,7 @@ export function Logs({ lines }: { lines: string[] }) {
       </div>
       <div
         ref={ref}
-        className="min-h-0 flex-1 overflow-y-auto rounded-[9px] border border-border bg-[#100d18] p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
+        className="min-h-0 flex-1 overflow-y-auto rounded-[9px] border border-border bg-[rgba(0,0,0,.25)] p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
       >
         {lines.length === 0 ? (
           <div className="text-muted-2">no output</div>
