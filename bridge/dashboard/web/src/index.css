@@ -69,9 +69,9 @@
   --radius: 0;
 }
 
-[data-theme="amber"]  { --accent-rgb: 232 184 115; --primary: #e8b873; --foreground: #ddc7a0; --foreground-bright: #ffeccb; }
-[data-theme="green"]  { --accent-rgb: 110 231 135; --primary: #6ee787; --foreground: #b6e6c1; --foreground-bright: #d6ffdf; }
-[data-theme="violet"] { --accent-rgb: 185 166 255; --primary: #b9a6ff; --foreground: #d4caf7; --foreground-bright: #efe9ff; }
+[data-theme="green"]   { --accent-rgb: 95 221 143;  --primary: #5fdd8f; --foreground: #aee0bd; --foreground-bright: #d6ffe1; }
+[data-theme="amber"]   { --accent-rgb: 232 176 74;  --primary: #e8b04a; --foreground: #e6cf9c; --foreground-bright: #ffe7b0; }
+[data-theme="magenta"] { --accent-rgb: 255 122 217; --primary: #ff7ad9; --foreground: #f1c2e6; --foreground-bright: #ffd9f3; }
 
 @theme inline {
   --radius-sm: 0px;
@@ -230,6 +230,15 @@ body {
 @keyframes grow { from { width: 0; } }
 @keyframes twinkle { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 @keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes introspin { to { transform: rotate(360deg); } }
+@keyframes introspinr { to { transform: rotate(-360deg); } }
+@keyframes introdraw { from { stroke-dashoffset: 280; } to { stroke-dashoffset: 0; } }
+@keyframes intropop { 0% { transform: scale(0.55); filter: brightness(3.4); opacity: 0; } 55% { opacity: 1; } 100% { transform: none; filter: none; opacity: 1; } }
+@keyframes introdiamond { 0% { transform: rotate(45deg) scale(0); opacity: 0; } 100% { transform: rotate(45deg) scale(1); opacity: 1; } }
+@keyframes wordflick { 0% { filter: brightness(0.15); } 7% { filter: brightness(2.6); } 11% { filter: brightness(0.4); } 19% { filter: brightness(1.9); } 28% { filter: brightness(0.7); } 36% { filter: none; } 100% { filter: none; } }
+@keyframes bootline { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@keyframes barfill { from { width: 0; } to { width: 100%; } }
+@keyframes tickfade { from { opacity: 0; } to { opacity: 1; } }
 
 textarea,
 input {

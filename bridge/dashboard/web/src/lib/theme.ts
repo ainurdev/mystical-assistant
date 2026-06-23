@@ -1,5 +1,5 @@
-export type Phosphor = "teal" | "amber" | "green" | "violet";
-export const THEMES: Phosphor[] = ["teal", "amber", "green", "violet"];
+export type Phosphor = "aqua" | "green" | "amber" | "magenta";
+export const THEMES: Phosphor[] = ["aqua", "green", "amber", "magenta"];
 const KEY = "hud-theme";
 
 export function getTheme(): Phosphor {
@@ -9,12 +9,12 @@ export function getTheme(): Phosphor {
   } catch {
     /* ignore */
   }
-  return "teal";
+  return "aqua";
 }
 
 export function applyTheme(t: Phosphor): void {
   const el = document.documentElement;
-  if (t === "teal") el.removeAttribute("data-theme");
+  if (t === "aqua") el.removeAttribute("data-theme");
   else el.dataset.theme = t;
   try {
     localStorage.setItem(KEY, t);

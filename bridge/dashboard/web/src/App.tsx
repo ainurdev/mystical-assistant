@@ -436,7 +436,6 @@ export function App() {
         mount={state?.project?.rel ?? "/"}
         repo={activeProject ?? "—"}
         changes={activeBadge?.dirty ?? 0}
-        contextPct={null}
         onPalette={() => setPaletteOpen(true)}
       />
       <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />

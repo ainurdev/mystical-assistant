@@ -65,9 +65,9 @@
   --radius: 0;
 }
 
-[data-theme="amber"]  { --accent-rgb: 232 184 115; --primary: #e8b873; --foreground: #ddc7a0; --foreground-bright: #ffeccb; }
-[data-theme="green"]  { --accent-rgb: 110 231 135; --primary: #6ee787; --foreground: #b6e6c1; --foreground-bright: #d6ffdf; }
-[data-theme="violet"] { --accent-rgb: 185 166 255; --primary: #b9a6ff; --foreground: #d4caf7; --foreground-bright: #efe9ff; }
+[data-theme="green"]   { --accent-rgb: 95 221 143;  --primary: #5fdd8f; --foreground: #aee0bd; --foreground-bright: #d6ffe1; }
+[data-theme="amber"]   { --accent-rgb: 232 176 74;  --primary: #e8b04a; --foreground: #e6cf9c; --foreground-bright: #ffe7b0; }
+[data-theme="magenta"] { --accent-rgb: 255 122 217; --primary: #ff7ad9; --foreground: #f1c2e6; --foreground-bright: #ffd9f3; }
 
 @theme inline {
   --radius-sm: 0px;

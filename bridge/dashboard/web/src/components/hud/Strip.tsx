@@ -1,11 +1,13 @@
+import { Logo } from "./Logo";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
 export function Strip({ host }: { host: string }) {
   return (
     <div
-      className="flex flex-none items-center gap-3.5 border-b border-border px-4 py-[7px]"
+      className="flex flex-none items-center gap-[11px] border-b border-border px-4 py-[7px]"
       style={{ animation: "flicker .8s ease both" }}
     >
+      <Logo size={22} />
       <span className="glow text-[12px] tracking-[3px] text-primary">MYSTICAL//ASSISTANT</span>
       <span className="text-[11px] tracking-[2px] text-muted-2">REMOTE DEV BRIDGE</span>
       <span className="flex-1" />
@@ -16,7 +18,9 @@ export function Strip({ host }: { host: string }) {
         />
         BRIDGE ONLINE · {host}
       </span>
+      <span className="h-[18px] w-px bg-border" />
       <ThemeSwitcher />
+      <span className="h-[18px] w-px bg-border" />
       <span className="text-[11px] tracking-[2px] text-muted-2">MAIN SHELL</span>
     </div>
   );
