@@ -14,6 +14,8 @@ export function Sidebar({
   bridgeIds,
   awaiting,
   gitBadges,
+  browsing,
+  onBrowsingChange,
 }: {
   projectRel: string | null;
   sessions: SessionBrief[];
@@ -25,9 +27,10 @@ export function Sidebar({
   bridgeIds: Set<string>;
   awaiting: Map<string, "question" | "permission">;
   gitBadges: Map<string, GitBadge>;
+  browsing: boolean;
+  onBrowsingChange: (v: boolean) => void;
 }) {
   const [listing, setListing] = useState<ProjectsListing | null>(null);
-  const [browsing, setBrowsing] = useState(false);
 
   async function load(dir: string) {
     try {
@@ -44,7 +47,7 @@ export function Sidebar({
     if (!listing) return;
     try {
       await api.select(listing.rel);
-      setBrowsing(false);
+      onBrowsingChange(false);
       onProjectChanged();
     } catch {
       /* ignore */
@@ -67,7 +70,7 @@ export function Sidebar({
       <div className="relative shrink-0 p-3.5 pb-2.5">
         <div className="mb-3 flex items-center justify-between gap-2">
           <button
-            onClick={() => setBrowsing((v) => !v)}
+            onClick={() => onBrowsingChange(!browsing)}
             className="flex min-w-0 items-center gap-2"
             title={projectRel ?? ""}
           >
@@ -77,7 +80,7 @@ export function Sidebar({
             <ChevronDown size={12} className="shrink-0 text-muted-2" aria-hidden />
           </button>
           <button
-            onClick={() => setBrowsing((v) => !v)}
+            onClick={() => onBrowsingChange(!browsing)}
             className="shrink-0 text-xs text-brand-soft hover:text-foreground"
           >
             {browsing ? "close" : "change"}

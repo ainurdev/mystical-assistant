@@ -41,6 +41,7 @@ export function App() {
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [activeTab, setActiveTab] = useState("git");
   const [diffFile, setDiffFile] = useState<{ project: string; path: string } | null>(null);
+  const [browsing, setBrowsing] = useState(false);
   const seqRef = useRef(0);
 
   const active = activeOf(turns);
@@ -297,6 +298,8 @@ export function App() {
           bridgeIds={bridgeIds}
           awaiting={awaiting}
           gitBadges={gitBadges}
+          browsing={browsing}
+          onBrowsingChange={setBrowsing}
         />
         <main className="flex min-w-0 flex-1 flex-col bg-background">
           {view === "history" ? (
