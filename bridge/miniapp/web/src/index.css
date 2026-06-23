@@ -2,81 +2,73 @@
 
 :root {
   color-scheme: dark;
+  /* === HUD identity (dashboard + Mini App). Keep BOTH index.css in sync. === */
+  --background: #060a0a;
+  --panel: rgba(9, 16, 16, 0.5);
+  --card: rgba(7, 13, 13, 0.6);
+  --card-foreground: #bfe6de;
+  --popover: rgba(7, 13, 13, 0.97);
+  --popover-foreground: #dff8f2;
+  --foreground: #bfe6de;
+  --foreground-bright: #dff8f2;
 
-  /* === Mystical — shared identity (dashboard + Mini App). Keep BOTH index.css
-     files' :root and @theme blocks in sync, names AND values. === */
+  --primary: #7fe9d8;
+  --primary-foreground: #060a0a;
+  --brand: #7fe9d8;
+  --brand-soft: #7fe9d8;
+  --brand-bright: #dff8f2;
 
-  /* Surfaces */
-  --background: #0e0c14;
-  --foreground: #e9e7f0;
-  --panel: #120f1a;
-  --panel-border: #221d30;
-  --card: #15121f;
-  --card-foreground: #e9e7f0;
-  --popover: #1a1527;
-  --popover-foreground: #e9e7f0;
+  --secondary: rgba(127, 233, 216, 0.08);
+  --secondary-foreground: #bfe6de;
+  --muted: rgba(127, 233, 216, 0.05);
+  --muted-foreground: #6f938d;
+  --muted-2: #3c544f;
+  --accent: rgba(127, 233, 216, 0.08);
+  --accent-foreground: #dff8f2;
 
-  /* Brand */
-  --primary: #7458ff;
-  --primary-foreground: #ffffff;
-  --brand: #7458ff;
-  --brand-strong: #6a47ff;
-  --brand-soft: #8b6dff;
-  --brand-glow: rgba(124, 88, 255, 0.26);
+  --success: #8fd9a8;
+  --warning: #e3c279;
+  --danger: #e0897a;
+  --destructive: #e0897a;
+  --destructive-foreground: #060a0a;
+  --violet: #b9a6ff;
+  --blue: #6fb5ff;
 
-  /* Secondary / muted */
-  --secondary: #1c1729;
-  --secondary-foreground: #e9e7f0;
-  --muted: #181423;
-  --muted-foreground: #9c95b0;
-  --muted-2: #6a6380;
-  --accent: #1a1527;
-  --accent-foreground: #e9e7f0;
+  --surface-vs: #7fe9d8;  --surface-vs-bg: rgba(127, 233, 216, 0.08);
+  --surface-tg: #6fb5ff;  --surface-tg-bg: rgba(111, 181, 255, 0.06);
+  --surface-ma: #b9a6ff;  --surface-ma-bg: rgba(185, 166, 255, 0.06);
+  --surface-web: #8fd9a8; --surface-web-bg: rgba(143, 217, 168, 0.06);
 
-  /* Status */
-  --success: #5ad18c;
-  --warning: #e2b15a;
-  --danger: #e5736b;
-  --destructive: #e5736b;
-  --destructive-foreground: #ffffff;
+  --border: rgba(127, 233, 216, 0.16);
+  --border-bright: rgba(127, 233, 216, 0.4);
+  --input: rgba(127, 233, 216, 0.2);
+  --ring: #7fe9d8;
 
-  /* Surface chips */
-  --surface-vs: #8b6dff;  --surface-vs-bg: rgba(139, 109, 255, 0.14);
-  --surface-tg: #6fb5ff;  --surface-tg-bg: rgba(111, 181, 255, 0.13);
-  --surface-ma: #b08bff;  --surface-ma-bg: rgba(176, 139, 255, 0.13);
-  --surface-web: #5ad18c; --surface-web-bg: rgba(90, 209, 140, 0.13);
-
-  /* Borders / inputs / focus */
-  --border: #241f33;
-  --input: #2e2742;
-  --ring: #8b6dff;
-
-  /* Legacy tg-* aliases (still referenced by some shared components) */
   --tg-bg: var(--background);
   --tg-text: var(--foreground);
   --tg-hint: var(--muted-foreground);
   --tg-secondary-bg: var(--card);
   --tg-button: var(--primary);
   --tg-button-text: var(--primary-foreground);
-  --tg-link: var(--brand-soft);
-  --surface-2: var(--popover);
+  --tg-link: var(--primary);
+  --surface-2: var(--panel);
 
-  --radius: 0.7rem;
+  --radius: 0;
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
 
-  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-foreground-bright: var(--foreground-bright);
   --color-panel: var(--panel);
-  --color-panel-border: var(--panel-border);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -95,11 +87,15 @@
   --color-danger: var(--danger);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-violet: var(--violet);
+  --color-blue: var(--blue);
   --color-border: var(--border);
+  --color-border-bright: var(--border-bright);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-brand: var(--brand);
   --color-brand-soft: var(--brand-soft);
+  --color-brand-bright: var(--brand-bright);
   --color-surface-vs: var(--surface-vs);
   --color-surface-tg: var(--surface-tg);
   --color-surface-ma: var(--surface-ma);
@@ -114,27 +110,10 @@ body,
 
 body {
   margin: 0;
-  background-color: var(--background);
+  background: #060a0a;
   color: var(--foreground);
-  font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
+  font-family: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
   -webkit-font-smoothing: antialiased;
-}
-
-/* Signature: a quiet violet aura that pools toward the top of the view, giving
-   the chat a soft cosmic glow without competing with the content. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 60vh;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(
-    120% 70% at 50% -10%,
-    var(--brand-glow),
-    transparent 60%
-  );
 }
 
 #root {
@@ -142,7 +121,79 @@ body::before {
   z-index: 1;
 }
 
+::selection {
+  background: rgba(127, 233, 216, 0.25);
+  color: #eafffb;
+}
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(127, 233, 216, 0.22);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 233, 216, 0.4);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(127, 233, 216, 0.22) transparent;
+}
+
 textarea,
 input {
   font-family: inherit;
 }
+
+/* HUD primitives */
+.glow {
+  text-shadow: 0 0 8px rgba(127, 233, 216, 0.35);
+}
+.panel {
+  position: relative;
+}
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(127, 233, 216, 0.6);
+  pointer-events: none;
+  z-index: 3;
+}
+.panel::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.panel::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+.crt {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 80;
+  opacity: 0.5;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+}
+
+@keyframes mpulse { 0% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0.55); } 70% { box-shadow: 0 0 0 6px rgba(143, 217, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0); } }
+@keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
+@keyframes mpop { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes twinkle { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }

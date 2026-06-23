@@ -11,6 +11,8 @@
   "dependencies": {
     "@fontsource/geist": "^5.2.9",
     "@fontsource/geist-mono": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/share-tech-mono": "^5.2.7",
     "@radix-ui/react-dropdown-menu": "^2.1.18",
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-router": "^1.95.0",
