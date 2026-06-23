@@ -384,8 +384,15 @@ def _handle_control_request(job: Job, obj: dict):
 
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
-    if d.get("session_id"):
-        job.session_id = d["session_id"]
+    sid = d.get("session_id")
+    if sid and sid != job.session_id:
+        job.session_id = sid
+        # Persist the native session id the moment it's known (the init event),
+        # not only at turn end — so a long-running or question-awaiting run is
+        # linked to its store row before the native scanner encounters its JSONL.
+        # Otherwise the scanner can't dedup and spawns a phantom 'vscode' copy.
+        if job.store_session_id:
+            store.set_claude_session_id(job.store_session_id, sid)
     if t == "assistant":
         for b in d.get("message", {}).get("content", []):
             if not isinstance(b, dict):
