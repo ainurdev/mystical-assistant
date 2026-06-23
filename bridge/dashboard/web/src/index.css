@@ -3,45 +3,65 @@
 :root {
   color-scheme: dark;
 
-  /* Mystic — the SAME fixed deep-violet identity as the Mini App, so the desktop
-     dashboard and the phone read as one product. Token names are shared verbatim
-     with bridge/miniapp/web/src/index.css; keep them in sync. */
-  --tg-bg: #130d20;
-  --tg-text: #ece9f6;
-  --tg-hint: #9588b3;
-  --tg-secondary-bg: #1e1630;
-  --tg-button: #7c5cff;
-  --tg-button-text: #ffffff;
-  --tg-link: #b69bff;
+  /* === Mystical — shared identity (dashboard + Mini App). Keep BOTH index.css
+     files' :root and @theme blocks in sync, names AND values. === */
 
-  /* Accents derived from the violet above. */
-  --surface-2: #2a1f44;
-  --border: rgba(167, 139, 250, 0.16);
-  --brand: #7c5cff;
-  --brand-strong: #6d45f0;
-  --brand-soft: #a78bfa;
-  --brand-glow: rgba(124, 92, 255, 0.32);
+  /* Surfaces */
+  --background: #0e0c14;
+  --foreground: #e9e7f0;
+  --panel: #120f1a;
+  --panel-border: #221d30;
+  --card: #15121f;
+  --card-foreground: #e9e7f0;
+  --popover: #1a1527;
+  --popover-foreground: #e9e7f0;
 
-  /* shadcn/ui tokens mapped onto the purple palette above. */
-  --radius: 0.7rem;
-  --background: var(--tg-bg);
-  --foreground: var(--tg-text);
-  --card: var(--tg-secondary-bg);
-  --card-foreground: var(--tg-text);
-  --popover: var(--surface-2);
-  --popover-foreground: var(--tg-text);
-  --primary: var(--tg-button);
-  --primary-foreground: var(--tg-button-text);
-  --secondary: var(--tg-secondary-bg);
-  --secondary-foreground: var(--tg-text);
-  --muted: var(--tg-secondary-bg);
-  --muted-foreground: var(--tg-hint);
-  --accent: var(--surface-2);
-  --accent-foreground: var(--tg-text);
-  --destructive: #f0496e;
+  /* Brand */
+  --primary: #7458ff;
+  --primary-foreground: #ffffff;
+  --brand: #7458ff;
+  --brand-strong: #6a47ff;
+  --brand-soft: #8b6dff;
+  --brand-glow: rgba(124, 88, 255, 0.26);
+
+  /* Secondary / muted */
+  --secondary: #1c1729;
+  --secondary-foreground: #e9e7f0;
+  --muted: #181423;
+  --muted-foreground: #9c95b0;
+  --muted-2: #6a6380;
+  --accent: #1a1527;
+  --accent-foreground: #e9e7f0;
+
+  /* Status */
+  --success: #5ad18c;
+  --warning: #e2b15a;
+  --danger: #e5736b;
+  --destructive: #e5736b;
   --destructive-foreground: #ffffff;
-  --input: var(--border);
-  --ring: var(--brand-soft);
+
+  /* Surface chips */
+  --surface-vs: #8b6dff;  --surface-vs-bg: rgba(139, 109, 255, 0.14);
+  --surface-tg: #6fb5ff;  --surface-tg-bg: rgba(111, 181, 255, 0.13);
+  --surface-ma: #b08bff;  --surface-ma-bg: rgba(176, 139, 255, 0.13);
+  --surface-web: #5ad18c; --surface-web-bg: rgba(90, 209, 140, 0.13);
+
+  /* Borders / inputs / focus */
+  --border: #241f33;
+  --input: #2e2742;
+  --ring: #8b6dff;
+
+  /* Legacy tg-* aliases (still referenced by some shared components) */
+  --tg-bg: var(--background);
+  --tg-text: var(--foreground);
+  --tg-hint: var(--muted-foreground);
+  --tg-secondary-bg: var(--card);
+  --tg-button: var(--primary);
+  --tg-button-text: var(--primary-foreground);
+  --tg-link: var(--brand-soft);
+  --surface-2: var(--popover);
+
+  --radius: 0.7rem;
 }
 
 @theme inline {
@@ -49,8 +69,14 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-border: var(--panel-border);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -61,13 +87,23 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-2: var(--muted-2);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-surface-vs: var(--surface-vs);
+  --color-surface-tg: var(--surface-tg);
+  --color-surface-ma: var(--surface-ma);
+  --color-surface-web: var(--surface-web);
 }
 
 html,
@@ -78,11 +114,10 @@ body,
 
 body {
   margin: 0;
-  background-color: var(--tg-bg);
-  color: var(--tg-text);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -90,25 +125,56 @@ body {
   box-sizing: border-box;
 }
 
-/* Signature (shared with the Mini App): a quiet violet aura pooling toward the
-   top of the view, giving the app a soft cosmic glow without competing. */
+/* Signature violet aura pooling toward the top, retuned for the darker bg. */
 body::before {
   content: "";
   position: fixed;
   inset: 0 0 auto 0;
-  height: 60vh;
+  height: 55vh;
   pointer-events: none;
   z-index: 0;
-  background: radial-gradient(
-    120% 70% at 50% -10%,
-    var(--brand-glow),
-    transparent 60%
-  );
+  background: radial-gradient(120% 70% at 50% -12%, var(--brand-glow), transparent 60%);
 }
 
 #root {
   position: relative;
   z-index: 1;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2c2640;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3352;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2c2640 transparent;
+}
+
+@keyframes mpulse {
+  0% { box-shadow: 0 0 0 0 rgba(90, 209, 140, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(90, 209, 140, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(90, 209, 140, 0); }
+}
+@keyframes mfade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes mpop {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
 }
 
 textarea,
