@@ -24,17 +24,15 @@ export function Transcript({
     );
   }
   return (
-    <div className="space-y-5">
+    <div className="mx-auto flex max-w-[760px] flex-col gap-[18px] px-6">
       {turns.map((turn) => {
         const isActive = turn.id === activeId;
         const working = isActive && turn.status === "running" && turn.pending.length === 0;
         return (
-          <div key={turn.id} className="space-y-2">
+          <div key={turn.id} className="flex flex-col gap-2.5">
             {turn.prompt && (
-              <div className="flex justify-end">
-                <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
-                  {turn.prompt}
-                </div>
+              <div className="max-w-[78%] self-end whitespace-pre-wrap rounded-[14px] rounded-br-[4px] bg-primary px-[15px] py-[11px] text-[13.5px] leading-relaxed text-primary-foreground shadow-[0_4px_14px_rgba(116,88,255,.25)]">
+                {turn.prompt}
               </div>
             )}
             {(turn.events.length > 0 || turn.status === "running") && (

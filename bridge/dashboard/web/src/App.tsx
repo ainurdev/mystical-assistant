@@ -14,6 +14,7 @@ import {
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
+import { ChatHeader } from "./components/ChatHeader";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
 import { HistoryView } from "./components/HistoryView";
@@ -39,6 +40,7 @@ export function App() {
   const running = active !== null;
   const pendingCount = active?.pending.length ?? 0;
   const vscodeLive = external.some((r) => r.source === "vscode");
+  const selected = sessions.find((s) => s.id === sessionId) ?? null;
 
   function openSession(id: string) {
     seqRef.current = 0;
@@ -252,15 +254,21 @@ export function App() {
           <HistoryView onOpen={(s) => void openFromHistory(s)} />
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto px-4 py-4">
+            <ChatHeader
+              title={selected?.title ?? ""}
+              origin={selected?.origin}
+              model={model}
+              turnCount={turns.length}
+            />
+            <div className="flex-1 overflow-y-auto py-6">
               <Transcript
                 turns={turns}
                 activeId={active?.id ?? null}
                 onRespond={(rid, o) => void respond(rid, o)}
               />
               {error && (
-                <div className="mt-2 rounded bg-red-500/15 px-2 py-1 text-sm text-red-300">
-                  {error}
+                <div className="mx-auto mt-2 max-w-[760px] px-6">
+                  <div className="rounded bg-red-500/15 px-2 py-1 text-sm text-red-300">{error}</div>
                 </div>
               )}
             </div>

@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import type { AnswerSelection, RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
-import { Card } from "./ui";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 
@@ -47,16 +46,19 @@ function FinalResult({
   cost?: number;
 }) {
   return (
-    <Card className="space-y-2 border border-[var(--tg-button)]/30">
-      <div className="whitespace-pre-wrap text-sm leading-relaxed">{result}</div>
-      {(typeof elapsed === "number" || typeof cost === "number") && (
-        <div className="text-xs text-[var(--tg-hint)]">
-          {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
-          {typeof elapsed === "number" && typeof cost === "number" ? " · " : ""}
-          {typeof cost === "number" ? `$${cost.toFixed(4)}` : ""}
-        </div>
-      )}
-    </Card>
+    <div className="flex max-w-[92%] gap-3 rounded-xl border border-[#2a2540] bg-card px-4 py-3.5">
+      <span className="w-2 shrink-0 rounded-[5px] bg-gradient-to-b from-brand-soft to-success" />
+      <div className="min-w-0">
+        <div className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-card-foreground">{result}</div>
+        {(typeof elapsed === "number" || typeof cost === "number") && (
+          <div className="mt-1.5 text-xs text-muted-2">
+            {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
+            {typeof elapsed === "number" && typeof cost === "number" ? " · " : ""}
+            {typeof cost === "number" ? `$${cost.toFixed(4)}` : ""}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -88,7 +90,7 @@ export function RunStream({
         switch (event.type) {
           case "text":
             return (
-              <div key={i} className="whitespace-pre-wrap text-sm leading-relaxed">
+              <div key={i} className="max-w-[92%] text-[14px] leading-[1.62] text-card-foreground">
                 {event.text}
               </div>
             );
@@ -96,13 +98,15 @@ export function RunStream({
             return (
               <div
                 key={i}
-                className="flex items-center gap-1.5 font-mono text-xs text-[var(--tg-hint)]"
+                className="flex max-w-[92%] items-center gap-2.5 rounded-[10px] border border-border bg-card px-3 py-2 font-mono"
               >
-                <ToolIcon name={event.name} />
-                <span className="min-w-0 break-all">
-                  {event.name}
-                  {event.summary ? `: ${event.summary}` : ""}
+                <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-muted">
+                  <ToolIcon name={event.name} />
                 </span>
+                <span className="shrink-0 text-[11px] font-medium text-brand-soft">{event.name}</span>
+                {event.summary && (
+                  <span className="min-w-0 truncate text-[12px] text-muted-foreground">{event.summary}</span>
+                )}
               </div>
             );
           case "tool_done":
