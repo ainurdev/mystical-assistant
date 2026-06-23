@@ -7,8 +7,21 @@ export interface PanelTab {
   render: () => ReactNode;
 }
 
-export function RightPanel({ tabs }: { tabs: PanelTab[] }) {
-  const [active, setActive] = useState(tabs[0]?.id);
+export function RightPanel({
+  tabs,
+  activeId,
+  onActiveChange,
+}: {
+  tabs: PanelTab[];
+  activeId?: string;
+  onActiveChange?: (id: string) => void;
+}) {
+  const [internal, setInternal] = useState(tabs[0]?.id);
+  const active = activeId ?? internal;
+  const setActive = (id: string) => {
+    setInternal(id);
+    onActiveChange?.(id);
+  };
   const current = tabs.find((t) => t.id === active) ?? tabs[0];
   return (
     <aside className="flex min-h-0 w-[372px] shrink-0 flex-col border-l border-panel-border bg-panel">

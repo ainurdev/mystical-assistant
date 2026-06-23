@@ -16,6 +16,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
+import { GitTab } from "./components/GitTab";
 import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
 import { HistoryView } from "./components/HistoryView";
@@ -36,6 +37,8 @@ export function App() {
   const [bridgeIds, setBridgeIds] = useState<Set<string>>(new Set());
   const [awaiting, setAwaiting] = useState<Map<string, "question" | "permission">>(new Map());
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
+  const [activeTab, setActiveTab] = useState("git");
+  const [diffFile, setDiffFile] = useState<{ project: string; path: string } | null>(null);
   const seqRef = useRef(0);
 
   const active = activeOf(turns);
@@ -43,6 +46,7 @@ export function App() {
   const pendingCount = active?.pending.length ?? 0;
   const vscodeLive = external.some((r) => r.source === "vscode");
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
+  const activeProject = state?.project?.rel ?? null;
 
   function openSession(id: string) {
     seqRef.current = 0;
@@ -241,6 +245,33 @@ export function App() {
   }
 
   const panelTabs: PanelTab[] = [
+    {
+      id: "git",
+      label: "Git",
+      badge: (activeProject && gitBadges.get(activeProject)?.dirty)
+        ? String(gitBadges.get(activeProject)!.dirty)
+        : null,
+      render: () => (
+        <GitTab
+          project={activeProject}
+          onOpenDiff={(path) => {
+            if (activeProject) {
+              setDiffFile({ project: activeProject, path });
+              setActiveTab("diff");
+            }
+          }}
+        />
+      ),
+    },
+    {
+      id: "diff",
+      label: "Diff",
+      render: () => (
+        <div className="p-4 text-xs text-muted-foreground">
+          Select a changed file in the Git tab.
+        </div>
+      ),
+    },
     { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
   ];
 
@@ -309,7 +340,7 @@ export function App() {
           </>
         )}
         </main>
-        <RightPanel tabs={panelTabs} />
+        <RightPanel tabs={panelTabs} activeId={activeTab} onActiveChange={setActiveTab} />
       </div>
     </div>
   );
