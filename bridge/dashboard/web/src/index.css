@@ -2,30 +2,40 @@
 
 :root {
   color-scheme: dark;
-  /* === HUD identity (dashboard + Mini App). Keep BOTH index.css in sync. === */
+  /* === HUD identity (dashboard + Mini App). Keep BOTH index.css in sync. ===
+     Phosphor accent is derived from --accent-rgb + --primary; a [data-theme]
+     override of those four vars recolors the whole UI. */
+  --accent-rgb: 127 233 216;
+  --primary: #7fe9d8;
+  --foreground: #bfe6de;
+  --foreground-bright: #dff8f2;
+
   --background: #060a0a;
   --panel: rgba(9, 16, 16, 0.5);
   --card: rgba(7, 13, 13, 0.6);
   --card-foreground: #bfe6de;
   --popover: rgba(7, 13, 13, 0.97);
   --popover-foreground: #dff8f2;
-  --foreground: #bfe6de;
-  --foreground-bright: #dff8f2;
 
-  --primary: #7fe9d8;
   --primary-foreground: #060a0a;
-  --brand: #7fe9d8;
-  --brand-soft: #7fe9d8;
-  --brand-bright: #dff8f2;
-  --brand-glow: rgba(127, 233, 216, 0.25);
+  --brand: var(--primary);
+  --brand-soft: var(--primary);
+  --brand-bright: var(--foreground-bright);
+  --brand-glow: rgb(var(--accent-rgb) / 0.25);
 
-  --secondary: rgba(127, 233, 216, 0.08);
+  --secondary: rgb(var(--accent-rgb) / 0.08);
   --secondary-foreground: #bfe6de;
-  --muted: rgba(127, 233, 216, 0.05);
+  --muted: rgb(var(--accent-rgb) / 0.05);
   --muted-foreground: #6f938d;
   --muted-2: #3c544f;
-  --accent: rgba(127, 233, 216, 0.08);
+  --accent: rgb(var(--accent-rgb) / 0.08);
   --accent-foreground: #dff8f2;
+
+  /* extra named accent fills (single-token; class- and style-safe) */
+  --ac-03: rgb(var(--accent-rgb) / 0.03);
+  --ac-06: rgb(var(--accent-rgb) / 0.06);
+  --ac-12: rgb(var(--accent-rgb) / 0.12);
+  --ac-22: rgb(var(--accent-rgb) / 0.22);
 
   --success: #8fd9a8;
   --warning: #e3c279;
@@ -35,16 +45,16 @@
   --violet: #b9a6ff;
   --blue: #6fb5ff;
 
-  /* Surface chips: VS=teal, WEB=green, TG=blue, MA=violet */
-  --surface-vs: #7fe9d8;  --surface-vs-bg: rgba(127, 233, 216, 0.08);
+  /* Surface chips: VS=accent, WEB=green, TG=blue, MA=violet */
+  --surface-vs: var(--primary);  --surface-vs-bg: rgb(var(--accent-rgb) / 0.08);
   --surface-tg: #6fb5ff;  --surface-tg-bg: rgba(111, 181, 255, 0.06);
   --surface-ma: #b9a6ff;  --surface-ma-bg: rgba(185, 166, 255, 0.06);
   --surface-web: #8fd9a8; --surface-web-bg: rgba(143, 217, 168, 0.06);
 
-  --border: rgba(127, 233, 216, 0.16);
-  --border-bright: rgba(127, 233, 216, 0.4);
-  --input: rgba(127, 233, 216, 0.2);
-  --ring: #7fe9d8;
+  --border: rgb(var(--accent-rgb) / 0.16);
+  --border-bright: rgb(var(--accent-rgb) / 0.4);
+  --input: rgb(var(--accent-rgb) / 0.2);
+  --ring: var(--primary);
 
   /* legacy tg-* aliases still referenced by shared components */
   --tg-bg: var(--background);
@@ -58,6 +68,10 @@
 
   --radius: 0;
 }
+
+[data-theme="amber"]  { --accent-rgb: 232 184 115; --primary: #e8b873; --foreground: #ddc7a0; --foreground-bright: #ffeccb; }
+[data-theme="green"]  { --accent-rgb: 110 231 135; --primary: #6ee787; --foreground: #b6e6c1; --foreground-bright: #d6ffdf; }
+[data-theme="violet"] { --accent-rgb: 185 166 255; --primary: #b9a6ff; --foreground: #d4caf7; --foreground-bright: #efe9ff; }
 
 @theme inline {
   --radius-sm: 0px;
@@ -129,7 +143,7 @@ body {
 }
 
 ::selection {
-  background: rgba(127, 233, 216, 0.25);
+  background: rgb(var(--accent-rgb) / 0.25);
   color: #eafffb;
 }
 ::-webkit-scrollbar {
@@ -137,22 +151,22 @@ body {
   height: 7px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(127, 233, 216, 0.22);
+  background: rgb(var(--accent-rgb) / 0.22);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(127, 233, 216, 0.4);
+  background: rgb(var(--accent-rgb) / 0.4);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(127, 233, 216, 0.22) transparent;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.22) transparent;
 }
 
 /* HUD primitives */
 .glow {
-  text-shadow: 0 0 8px rgba(127, 233, 216, 0.35);
+  text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.35);
 }
 .panel {
   position: relative;
@@ -163,7 +177,7 @@ body {
   position: absolute;
   width: 12px;
   height: 12px;
-  border: 1px solid rgba(127, 233, 216, 0.6);
+  border: 1px solid rgb(var(--accent-rgb) / 0.6);
   pointer-events: none;
   z-index: 3;
 }
@@ -201,7 +215,7 @@ body {
   height: 180px;
   pointer-events: none;
   z-index: 79;
-  background: linear-gradient(180deg, transparent, rgba(127, 233, 216, 0.045), transparent);
+  background: linear-gradient(180deg, transparent, rgb(var(--accent-rgb) / 0.045), transparent);
   animation: sweepmove 8s linear infinite;
 }
 
