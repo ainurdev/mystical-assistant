@@ -166,28 +166,45 @@ def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str,
     return get_session(claude_sid)
 
 
-def list_sessions(chat_id: int, project: str, include_archived: bool = False) -> list[dict]:
+# Sessions whose last message is older than this drop off the shared lists
+# (sidebar + history) across every surface. Resuming/viewing a session by id is
+# unaffected — the full transcript is always preserved.
+LIST_MAX_AGE_SECS = 3 * 86400
+
+
+def list_sessions(chat_id: int, project: str, include_archived: bool = False,
+                  max_age_secs: float | None = LIST_MAX_AGE_SECS) -> list[dict]:
     q = "SELECT * FROM sessions WHERE chat_id=? AND project=?"
+    params: list = [chat_id, project]
     if not include_archived:
         q += " AND archived=0"
+    if max_age_secs is not None:
+        q += " AND updated >= ?"
+        params.append(time.time() - max_age_secs)
     q += " ORDER BY updated DESC"
     with closing(_connect()) as c:
-        return [dict(r) for r in c.execute(q, (chat_id, project)).fetchall()]
+        return [dict(r) for r in c.execute(q, params).fetchall()]
 
 
 def latest_session(chat_id: int, project: str) -> dict | None:
-    rows = list_sessions(chat_id, project)
+    # Unfiltered: resuming a project must find its latest session even if idle.
+    rows = list_sessions(chat_id, project, max_age_secs=None)
     return rows[0] if rows else None
 
 
-def list_sessions_all(chat_id: int, include_archived: bool = False) -> list[dict]:
+def list_sessions_all(chat_id: int, include_archived: bool = False,
+                      max_age_secs: float | None = LIST_MAX_AGE_SECS) -> list[dict]:
     """Every session for a chat across all projects (dashboard sidebar tree)."""
     q = "SELECT * FROM sessions WHERE chat_id=?"
+    params: list = [chat_id]
     if not include_archived:
         q += " AND archived=0"
+    if max_age_secs is not None:
+        q += " AND updated >= ?"
+        params.append(time.time() - max_age_secs)
     q += " ORDER BY project, updated DESC"
     with closing(_connect()) as c:
-        return [dict(r) for r in c.execute(q, (chat_id,)).fetchall()]
+        return [dict(r) for r in c.execute(q, params).fetchall()]
 
 
 def ensure_session(chat_id: int, project: str, session_id: str | None = None, *,
@@ -314,7 +331,8 @@ def import_transcript(session_id: str, turns: list[dict], events: list[dict]) ->
     return True
 
 
-def history(chat_id: int, include_archived: bool = False) -> list[dict]:
+def history(chat_id: int, include_archived: bool = False,
+            max_age_secs: float | None = LIST_MAX_AGE_SECS) -> list[dict]:
     """Per-repo session rollup: one row per session with aggregates joined from
     its turns — turn_count, total_cost, last_activity, and distinct models used.
     Newest activity first."""
@@ -325,12 +343,16 @@ def history(chat_id: int, include_archived: bool = False) -> list[dict]:
          "GROUP_CONCAT(DISTINCT t.model) AS models "
          "FROM sessions s LEFT JOIN turns t ON t.session_id = s.id "
          "WHERE s.chat_id=?")
+    params: list = [chat_id]
     if not include_archived:
         q += " AND s.archived=0"
+    if max_age_secs is not None:
+        q += " AND s.updated >= ?"
+        params.append(time.time() - max_age_secs)
     q += " GROUP BY s.id ORDER BY last_activity DESC"
     rows = []
     with closing(_connect()) as c:
-        for r in c.execute(q, (chat_id,)).fetchall():
+        for r in c.execute(q, params).fetchall():
             d = dict(r)
             d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
             rows.append(d)

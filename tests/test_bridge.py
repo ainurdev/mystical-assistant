@@ -26,6 +26,34 @@ from bridge.miniapp.server import (                       # noqa: E402
 store.init()
 
 
+def test_lists_exclude_sessions_idle_over_3_days():
+    """Lists (sidebar/history) drop sessions whose last message is >3 days old,
+    but the session stays resumable (latest_session) and viewable (get_session)."""
+    from contextlib import closing
+    chat = 7733
+    fresh = store.create_session(chat, "/stale_proj")
+    old = store.create_session(chat, "/stale_proj")
+    with closing(store._connect()) as c:  # backdate `old` to 4 days ago
+        c.execute("UPDATE sessions SET updated=? WHERE id=?",
+                  (time.time() - 4 * 86400, old["id"]))
+        c.commit()
+
+    all_ids = {r["id"] for r in store.list_sessions_all(chat)}
+    assert fresh["id"] in all_ids
+    assert old["id"] not in all_ids                                  # hidden from sidebar
+    assert old["id"] not in {r["id"] for r in store.list_sessions(chat, "/stale_proj")}
+    assert old["id"] not in {r["id"] for r in store.history(chat)}   # hidden from history
+
+    # …but complete history is preserved: still resumable + viewable by id.
+    only_old = store.create_session(chat, "/ghost_proj")
+    with closing(store._connect()) as c:
+        c.execute("UPDATE sessions SET updated=? WHERE id=?",
+                  (time.time() - 4 * 86400, only_old["id"]))
+        c.commit()
+    assert store.latest_session(chat, "/ghost_proj")["id"] == only_old["id"]
+    assert store.get_session(old["id"]) is not None
+
+
 def make_init_data(token, user_id, auth_date=None, tamper=False):
     auth_date = auth_date if auth_date is not None else int(time.time())
     user = json.dumps({"id": user_id, "first_name": "T"}, separators=(",", ":"))
@@ -641,7 +669,10 @@ def test_store_upsert_native_session_dedups_and_refreshes():
     uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     store.upsert_native_session(uid, 563, "/np", "/tmp/np", title="first", updated=100.0)
     store.upsert_native_session(uid, 563, "/np", "/tmp/np", title="ignored", updated=200.0)
-    rows = [r for r in store.list_sessions_all(563) if r["claude_session_id"] == uid]
+    # read unfiltered: these rows use epoch-y timestamps to exercise mtime refresh,
+    # which would otherwise be hidden by the 3-day recency cutoff.
+    rows = [r for r in store.list_sessions_all(563, max_age_secs=None)
+            if r["claude_session_id"] == uid]
     assert len(rows) == 1                                   # no duplicate row
     assert rows[0]["updated"] == 200.0                      # mtime refreshed
     assert rows[0]["title"] == "first"                      # user/first-msg title preserved
@@ -652,7 +683,8 @@ def test_store_upsert_native_refreshes_noise_title():
     store.upsert_native_session(uid, 565, "/p", "/tmp",
                                 title="<ide_opened_file>x</ide_opened_file>")
     store.upsert_native_session(uid, 565, "/p", "/tmp", title="clean prompt")
-    rows = [r for r in store.list_sessions_all(565) if r["claude_session_id"] == uid]
+    rows = [r for r in store.list_sessions_all(565, max_age_secs=None)
+            if r["claude_session_id"] == uid]
     assert rows[0]["title"] == "clean prompt"      # tag-noise title healed on rescan
 
 
