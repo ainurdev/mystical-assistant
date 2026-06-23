@@ -108,15 +108,6 @@ def transcript_for(session: dict, cursor: int = 0) -> dict:
     return data
 
 
-def _resume_blocked_live(session_id: str | None) -> bool:
-    """True if resuming should be refused because the session is open in
-    VSCode/terminal right now (avoid two writers appending to one transcript)."""
-    if not session_id:
-        return False
-    s = store.get_session(session_id)
-    return bool(s and s.get("claude_session_id") and machine.is_live(s["claude_session_id"]))
-
-
 def _save_images(job_id: str, images: list) -> list[str]:
     paths: list[str] = []
     d = os.path.join(config.UPLOAD_DIR, job_id)
@@ -300,10 +291,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid model"}, 400)
         permission_mode = normalize_permission_mode(body.get("permission_mode"))
         session_id = (body.get("session_id") or "").strip() or None
-        if _resume_blocked_live(session_id):
-            return self._json({"error": "This session is open in VSCode right now — "
-                                        "finish or close it there to continue here.",
-                               "code": "live_elsewhere"}, 409)
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []

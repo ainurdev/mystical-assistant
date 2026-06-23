@@ -466,17 +466,6 @@ def test_machine_alive():
     assert machine._alive("nope") is False
 
 
-def test_machine_is_live():
-    orig = machine.list_running
-    machine.list_running = lambda: [{"session_id": "abc"}]
-    try:
-        assert machine.is_live("abc") is True
-        assert machine.is_live("xyz") is False
-        assert machine.is_live("") is False
-    finally:
-        machine.list_running = orig
-
-
 # --- usage normalization ----------------------------------------------------
 
 _USAGE_SAMPLE = {

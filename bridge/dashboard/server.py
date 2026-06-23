@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 from bridge import (browser, config, devserver, machine, native, pubsub, runner,
                     state, store, tunnel, usage)
-from bridge.miniapp.server import (_resume_blocked_live, _save_images, _session_brief,
+from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
 
@@ -227,10 +227,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid model"}, 400)
         permission_mode = normalize_permission_mode(body.get("permission_mode"))
         session_id = (body.get("session_id") or "").strip() or None
-        if _resume_blocked_live(session_id):
-            return self._json({"error": "This session is open in VSCode right now — "
-                                        "finish or close it there to continue here.",
-                               "code": "live_elsewhere"}, 409)
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []
