@@ -35,7 +35,7 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-1.5 rounded-[7px] border border-border bg-muted px-2.5 py-1">
-        <span className="h-[7px] w-[7px] rounded-full bg-success [animation:mpulse_2.2s_infinite]" />
+        <span className="h-[7px] w-[7px] rounded-full bg-success animate-[mpulse_2.2s_infinite]" />
         <span className="text-xs text-muted-foreground">bridge connected</span>
         <span className="font-mono text-xs text-muted-2">· {location.host}</span>
       </div>
@@ -81,7 +81,7 @@ export function Header({
             VS
           </span>
           <span
-            className={`h-1.5 w-1.5 rounded-full ${vscodeLive ? "bg-success [animation:mpulse_2.2s_infinite]" : "bg-muted-2"}`}
+            className={`h-1.5 w-1.5 rounded-full ${vscodeLive ? "bg-success animate-[mpulse_2.2s_infinite]" : "bg-muted-2"}`}
           />
         </div>
       </div>

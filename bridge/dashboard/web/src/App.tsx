@@ -18,6 +18,7 @@ import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
 import { HistoryView } from "./components/HistoryView";
 import { Logs } from "./components/Logs";
+import { RightPanel, type PanelTab } from "./components/RightPanel";
 
 export function App() {
   const [state, setState] = useState<DashState | null>(null);
@@ -216,6 +217,10 @@ export function App() {
     );
   }
 
+  const panelTabs: PanelTab[] = [
+    { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
+  ];
+
   return (
     <div className="flex h-full">
       <Sidebar
@@ -269,9 +274,7 @@ export function App() {
           </>
         )}
       </main>
-      <section className="hidden w-96 shrink-0 border-l border-border lg:flex lg:flex-col">
-        <Logs lines={logs} />
-      </section>
+      <RightPanel tabs={panelTabs} />
     </div>
   );
 }

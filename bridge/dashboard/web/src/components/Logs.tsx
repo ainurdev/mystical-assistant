@@ -6,16 +6,17 @@ export function Logs({ lines }: { lines: string[] }) {
     ref.current?.scrollTo({ top: ref.current.scrollHeight });
   }, [lines.length]);
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Dev server logs
+    <div className="flex h-full flex-col p-4">
+      <div className="mb-3 flex items-center gap-2 text-[11px] text-success">
+        <span className="h-[7px] w-[7px] rounded-full bg-success animate-[mpulse_2.2s_infinite]" />
+        <span className="font-mono">dev server logs</span>
       </div>
       <div
         ref={ref}
-        className="flex-1 overflow-y-auto bg-black/30 p-2 font-mono text-xs leading-relaxed text-foreground"
+        className="min-h-0 flex-1 overflow-y-auto rounded-[9px] border border-border bg-[#100d18] p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
       >
         {lines.length === 0 ? (
-          <div className="text-muted-foreground">no output</div>
+          <div className="text-muted-2">no output</div>
         ) : (
           lines.map((l, i) => (
             <div key={i} className="whitespace-pre-wrap">
