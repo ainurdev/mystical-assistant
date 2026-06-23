@@ -89,6 +89,27 @@ export interface ProjectsListing {
   dirs: string[];
 }
 
+export interface GitFile {
+  path: string;
+  status: string;
+  add: number;
+  del: number;
+}
+export interface GitStatus {
+  is_repo: boolean;
+  branch: string;
+  ahead: number;
+  behind: number;
+  dirty: number;
+  files: GitFile[];
+}
+export interface GitBadge {
+  branch: string;
+  ahead: number;
+  behind: number;
+  dirty: number;
+}
+
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -212,6 +233,23 @@ export const api = {
     req<{ sessions: EnrichedSession[] }>(
       `/local/history${archived ? "?archived=1" : ""}`,
     ),
+  git: (project: string) =>
+    req<GitStatus>(`/local/git?project=${encodeURIComponent(project)}`),
+  gitAll: () => req<{ repos: Record<string, GitBadge> }>("/local/git/all"),
+  gitDiff: (project: string, path: string) =>
+    req<{ path: string; diff: string }>(
+      `/local/git/diff?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
+    ),
+  gitCommit: (project: string, message: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/commit", {
+      method: "POST",
+      body: { project, message },
+    }),
+  gitPush: (project: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/push", {
+      method: "POST",
+      body: { project },
+    }),
 };
 
 /** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */
