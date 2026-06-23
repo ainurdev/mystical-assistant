@@ -22,8 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
-from bridge import (browser, config, devserver, machine, native, pubsub, runner,
-                    state, store, tunnel, usage)
+from bridge import (browser, config, devserver, git, machine, native, pubsub,
+                    runner, state, store, tunnel, usage)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -183,6 +183,32 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 n = 200
             return self._json({"lines": devserver.log_tail(n)})
+        if path == "/local/git":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(git.status(abs_p))
+        if path == "/local/git/all":
+            repos = {}
+            seen = set()
+            for s in store.list_sessions_all(chat):
+                rel = s["project"]
+                if rel in seen:
+                    continue
+                seen.add(rel)
+                abs_p = _abs_project(rel)
+                if abs_p is None:
+                    continue
+                b = git.badge(abs_p)
+                if b is not None:
+                    repos[rel] = b
+            return self._json({"repos": repos})
+        if path == "/local/git/diff":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            fpath = qs.get("path", [""])[0]
+            return self._json({"path": fpath, "diff": git.diff(abs_p, fpath)})
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -213,6 +239,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "not found"}, 404)
             store.archive(sid)
             return self._json({"ok": True})
+        if path == "/local/git/commit":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            msg = (body.get("message") or "").strip()[:2000]
+            if not msg:
+                return self._json({"error": "empty commit message"}, 400)
+            ok, output = git.commit(abs_p, msg)
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/git/push":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            ok, output = git.push(abs_p)
+            return self._json({"ok": ok, "output": output})
         return self._json({"error": "not found"}, 404)
 
     def _run(self, chat, body):
