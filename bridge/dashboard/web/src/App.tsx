@@ -277,6 +277,7 @@ export function App() {
               running={running}
               model={model}
               effort={effort}
+              permissionMode={state?.permission_mode}
               onModel={setModel}
               onEffort={setEffort}
               onSend={(t, i) => void send(t, i)}
