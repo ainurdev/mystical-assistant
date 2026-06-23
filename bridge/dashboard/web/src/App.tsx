@@ -224,36 +224,37 @@ export function App() {
   ];
 
   return (
-    <div className="flex h-full">
-      <Sidebar
-        projectRel={projectRel}
-        sessions={sessions}
-        selectedId={sessionId}
-        onSelectSession={openSession}
-        onNewSession={() => void newSession()}
-        onProjectChanged={() => void loadSessions()}
-        external={external}
-        bridgeIds={bridgeIds}
-        awaiting={awaiting}
+    <div className="flex h-full flex-col">
+      <Header
+        projectName={state?.project?.name ?? ""}
+        view={view}
+        onView={setView}
+        vscodeLive={vscodeLive}
+        state={state}
+        onServer={() =>
+          void api.server(state?.server.status === "running" ? "stop" : "start").catch(() => {})
+        }
+        onPreview={() =>
+          void api.preview(state?.preview.url ? "stop" : "start").catch(() => {})
+        }
       />
-      <main className="flex min-w-0 flex-1 flex-col">
-        <Header
-          projectName={state?.project?.name ?? ""}
-          view={view}
-          onView={setView}
-          vscodeLive={vscodeLive}
-          state={state}
-          onServer={() =>
-            void api.server(state?.server.status === "running" ? "stop" : "start").catch(() => {})
-          }
-          onPreview={() =>
-            void api.preview(state?.preview.url ? "stop" : "start").catch(() => {})
-          }
+      <div className="flex min-h-0 flex-1">
+        <Sidebar
+          projectRel={projectRel}
+          sessions={sessions}
+          selectedId={sessionId}
+          onSelectSession={openSession}
+          onNewSession={() => void newSession()}
+          onProjectChanged={() => void loadSessions()}
+          external={external}
+          bridgeIds={bridgeIds}
+          awaiting={awaiting}
         />
-        {view === "history" ? (
-          <HistoryView onOpen={(s) => void openFromHistory(s)} />
-        ) : (
-          <>
+        <main className="flex min-w-0 flex-1 flex-col bg-background">
+          {view === "history" ? (
+            <HistoryView onOpen={(s) => void openFromHistory(s)} />
+          ) : (
+            <>
             <ChatHeader
               title={selected?.title ?? ""}
               origin={selected?.origin}
@@ -285,8 +286,9 @@ export function App() {
             />
           </>
         )}
-      </main>
-      <RightPanel tabs={panelTabs} />
+        </main>
+        <RightPanel tabs={panelTabs} />
+      </div>
     </div>
   );
 }
