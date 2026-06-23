@@ -110,6 +110,27 @@ export interface GitBadge {
   dirty: number;
 }
 
+export interface GitHubLabel {
+  name: string;
+  color: string;
+}
+export interface Issue {
+  number: number;
+  title: string;
+  url: string;
+  updated: string;
+  labels: GitHubLabel[];
+}
+export interface IssuesInfo {
+  has_remote: boolean;
+  slug: string | null;
+  gh_ok: boolean;
+  error: string;
+  open_count: number;
+  closed_count: number;
+  issues: Issue[];
+}
+
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -249,6 +270,13 @@ export const api = {
     req<{ ok: boolean; output: string }>("/local/git/push", {
       method: "POST",
       body: { project },
+    }),
+  issues: (project: string) =>
+    req<IssuesInfo>(`/local/github/issues?project=${encodeURIComponent(project)}`),
+  createIssue: (project: string, title: string, body: string) =>
+    req<{ ok: boolean; output: string }>("/local/github/issue", {
+      method: "POST",
+      body: { project, title, body },
     }),
 };
 
