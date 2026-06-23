@@ -20,13 +20,24 @@ export function SessionsPanel({
   onSelect: (id: string) => void;
   tele: Telemetry;
 }) {
-  const rows = sessions.slice(0, 6).map((s) => {
-    const kind = awaiting.get(s.id);
-    const running = bridgeIds.has(s.id);
-    const status = kind ? "WAIT" : running ? "RUN" : "IDLE";
-    const color = kind ? "#e3c279" : running ? "#8fd9a8" : "#3c544f";
-    return { s, status, color, surf: surfaceFor(s.origin) };
-  });
+  // "Active" = used in the last 30 min and non-empty (has a title), plus anything
+  // currently running/awaiting regardless of age.
+  const now = Date.now() / 1000;
+  const RECENT = 30 * 60;
+  const rows = sessions
+    .filter((s) => {
+      const live = bridgeIds.has(s.id) || awaiting.has(s.id);
+      const recent = !!s.updated && now - s.updated <= RECENT;
+      return live || (!!s.title && recent);
+    })
+    .slice(0, 8)
+    .map((s) => {
+      const kind = awaiting.get(s.id);
+      const running = bridgeIds.has(s.id);
+      const status = kind ? "WAIT" : running ? "RUN" : "IDLE";
+      const color = kind ? "#e3c279" : running ? "#8fd9a8" : "#3c544f";
+      return { s, status, color, surf: surfaceFor(s.origin) };
+    });
 
   return (
     <Panel label="PANEL" title="ACTIVE SESSIONS" delay=".12s">
@@ -59,7 +70,9 @@ export function SessionsPanel({
             </span>
           </div>
         ))}
-        {rows.length === 0 && <div className="px-2 py-2 text-[11px] text-muted-2">NO SESSIONS</div>}
+        {rows.length === 0 && (
+          <div className="px-2 py-2 text-[11px] text-muted-2">NO ACTIVE SESSIONS · 30M</div>
+        )}
       </div>
       <div className="px-3.5 pb-3 pt-1">
         <div className="flex items-baseline justify-between border-t border-dashed border-border pt-3">
