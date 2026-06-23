@@ -13,18 +13,22 @@ import {
   type SessionBrief,
 } from "./api";
 import { activeOf, mergeDelta, type Turn } from "./chat";
-import { Header } from "./components/Header";
-import { Sidebar } from "./components/Sidebar";
-import { ChatHeader } from "./components/ChatHeader";
+import { useTelemetry } from "./lib/telemetry";
 import { GitTab } from "./components/GitTab";
 import { IssuesTab } from "./components/IssuesTab";
 import { DiffTab } from "./components/DiffTab";
-import { Transcript } from "./components/Transcript";
 import { Composer } from "./components/Composer";
-import { HistoryView } from "./components/HistoryView";
 import { Logs } from "./components/Logs";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import { Strip } from "./components/hud/Strip";
+import { StatusBar } from "./components/hud/StatusBar";
+import { WorkspacePanel } from "./components/hud/WorkspacePanel";
+import { TelemetryPanel } from "./components/hud/TelemetryPanel";
+import { ContextMatrixPanel } from "./components/hud/ContextMatrixPanel";
+import { ProjectsPanel } from "./components/hud/ProjectsPanel";
+import { SessionsPanel } from "./components/hud/SessionsPanel";
+import { Terminal } from "./components/hud/Terminal";
 
 export function App() {
   const [state, setState] = useState<DashState | null>(null);
@@ -54,6 +58,22 @@ export function App() {
   const vscodeLive = external.some((r) => r.source === "vscode");
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
   const activeProject = state?.project?.rel ?? null;
+
+  // Real-derived telemetry inputs (counts over the live transcript).
+  const toolCount = turns.reduce(
+    (n, t) => n + t.events.filter((e) => e.type === "tool").length,
+    0,
+  );
+  const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
+  const cost = turns.reduce(
+    (n, t) => n + t.events.reduce((c, e) => c + (e.type === "result" ? e.cost : 0), 0),
+    0,
+  );
+  const errorCount = turns.reduce(
+    (n, t) => n + t.events.filter((e) => e.type === "error").length,
+    0,
+  );
+  const tele = useTelemetry({ running, toolCount, eventCount });
 
   function openSession(id: string) {
     seqRef.current = 0;
@@ -330,60 +350,56 @@ export function App() {
     { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
   ];
 
+  const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
+
   return (
-    <div className="flex h-full flex-col">
-      <Header
-        projectName={state?.project?.name ?? ""}
-        view={view}
-        onView={setView}
-        vscodeLive={vscodeLive}
-        state={state}
-        onServer={() =>
-          void api.server(state?.server.status === "running" ? "stop" : "start").catch(() => {})
-        }
-        onPreview={() =>
-          void api.preview(state?.preview.url ? "stop" : "start").catch(() => {})
-        }
-        onOpenPalette={() => setPaletteOpen(true)}
-      />
-      <div className="flex min-h-0 flex-1">
-        <Sidebar
-          projectRel={projectRel}
-          sessions={sessions}
-          selectedId={sessionId}
-          onSelectSession={openSession}
-          onNewSession={() => void newSession()}
-          onProjectChanged={() => void loadSessions()}
-          external={external}
-          bridgeIds={bridgeIds}
-          awaiting={awaiting}
-          gitBadges={gitBadges}
-          browsing={browsing}
-          onBrowsingChange={setBrowsing}
-        />
-        <main className="flex min-w-0 flex-1 flex-col bg-background">
-          {view === "history" ? (
-            <HistoryView onOpen={(s) => void openFromHistory(s)} />
-          ) : (
-            <>
-            <ChatHeader
-              title={selected?.title ?? ""}
-              origin={selected?.origin}
-              model={model}
-              turnCount={turns.length}
-            />
-            <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
-              <Transcript
-                turns={turns}
-                activeId={active?.id ?? null}
-                onRespond={(rid, o) => void respond(rid, o)}
-              />
-              {error && (
-                <div className="mx-auto mt-2 max-w-[760px] px-6">
-                  <div className="rounded bg-red-500/15 px-2 py-1 text-sm text-red-300">{error}</div>
-                </div>
-              )}
-            </div>
+    <div className="flex h-full flex-col bg-background">
+      <div className="crt" />
+      <div className="sweep" />
+      <Strip host={location.host} />
+
+      <div
+        className="grid min-h-0 flex-1 gap-[13px] p-[13px]"
+        style={{ gridTemplateColumns: "344px minmax(0,1fr) 368px" }}
+      >
+        {/* LEFT */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-[13px] overflow-y-auto overflow-x-hidden pr-0.5">
+          <WorkspacePanel
+            tele={tele}
+            model={model}
+            vscodeLive={vscodeLive}
+            projectRel={projectRel}
+            sessions={sessions}
+            open={browsing}
+            onOpenChange={setBrowsing}
+            onSelectProject={() => void loadSessions()}
+            onNewSession={() => void newSession()}
+          />
+          <TelemetryPanel tele={tele} turns={turns.length} tools={toolCount} cost={cost} errors={errorCount} />
+          <ContextMatrixPanel permissionMode={state?.permission_mode} />
+          <ProjectsPanel
+            sessions={sessions}
+            gitBadges={gitBadges}
+            bridgeIds={bridgeIds}
+            activeProject={activeProject}
+            onSelectProject={() => void loadSessions()}
+          />
+        </div>
+
+        {/* CENTER */}
+        <Terminal
+          view={view}
+          onView={setView}
+          selected={selected}
+          model={model}
+          turnCount={turns.length}
+          turns={turns}
+          activeId={active?.id ?? null}
+          onRespond={(rid, o) => void respond(rid, o)}
+          error={error}
+          scrollRef={scrollRef}
+          onOpenFromHistory={(s) => void openFromHistory(s)}
+          composer={
             <Composer
               disabled={running || pendingCount > 0}
               running={running}
@@ -395,16 +411,32 @@ export function App() {
               onSend={(t, i) => void send(t, i)}
               onStop={() => void stop()}
             />
-          </>
-        )}
-        </main>
-        <RightPanel tabs={panelTabs} activeId={activeTab} onActiveChange={setActiveTab} />
+          }
+        />
+
+        {/* RIGHT */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-[13px] overflow-y-auto overflow-x-hidden pr-0.5">
+          <SessionsPanel
+            sessions={sessions}
+            external={external}
+            bridgeIds={bridgeIds}
+            awaiting={awaiting}
+            selectedId={sessionId}
+            onSelect={openSession}
+            tele={tele}
+          />
+          <RightPanel tabs={panelTabs} activeId={activeTab} onActiveChange={setActiveTab} />
+        </div>
       </div>
-      <CommandPalette
-        open={paletteOpen}
-        commands={commands}
-        onClose={() => setPaletteOpen(false)}
+
+      <StatusBar
+        mount={state?.project?.rel ?? "/"}
+        repo={activeProject ?? "—"}
+        changes={activeBadge?.dirty ?? 0}
+        contextPct={null}
+        onPalette={() => setPaletteOpen(true)}
       />
+      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
