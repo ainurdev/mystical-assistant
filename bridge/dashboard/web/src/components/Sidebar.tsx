@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { api, type ProjectsListing, type RunningSession, type SessionBrief } from "../api";
+import { api, type GitBadge, type ProjectsListing, type RunningSession, type SessionBrief } from "../api";
 import { ago, surfaceFor, type Surface } from "../lib/surfaces";
 
 export function Sidebar({
@@ -13,6 +13,7 @@ export function Sidebar({
   external,
   bridgeIds,
   awaiting,
+  gitBadges,
 }: {
   projectRel: string | null;
   sessions: SessionBrief[];
@@ -23,6 +24,7 @@ export function Sidebar({
   external: RunningSession[];
   bridgeIds: Set<string>;
   awaiting: Map<string, "question" | "permission">;
+  gitBadges: Map<string, GitBadge>;
 }) {
   const [listing, setListing] = useState<ProjectsListing | null>(null);
   const [browsing, setBrowsing] = useState(false);
@@ -182,6 +184,28 @@ export function Sidebar({
                 {ss.length}
               </span>
             </div>
+            {(() => {
+              const b = gitBadges.get(proj);
+              if (!b) return null;
+              return (
+                <div className="mb-1 flex items-center gap-2.5 px-1.5 font-mono text-[11px]">
+                  <span className="flex items-center gap-1 text-[#a99fd0]">
+                    <span className="text-muted-2">⎇</span>
+                    {b.branch}
+                  </span>
+                  <span className="flex items-center gap-2 text-muted-2">
+                    <span
+                      title="changed files"
+                      style={{ color: b.dirty > 0 ? "var(--warning)" : "var(--muted-2)" }}
+                    >
+                      ●{b.dirty}
+                    </span>
+                    <span title="ahead">↑{b.ahead}</span>
+                    <span title="behind">↓{b.behind}</span>
+                  </span>
+                </div>
+              );
+            })()}
             {ss.map((s) => {
               const on = s.id === selectedId;
               const running = bridgeIds.has(s.id);

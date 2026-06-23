@@ -7,6 +7,7 @@ import {
   type DashState,
   type EffortLevel,
   type EnrichedSession,
+  type GitBadge,
   type ModelId,
   type RunningSession,
   type SessionBrief,
@@ -34,6 +35,7 @@ export function App() {
   const [external, setExternal] = useState<RunningSession[]>([]);
   const [bridgeIds, setBridgeIds] = useState<Set<string>>(new Set());
   const [awaiting, setAwaiting] = useState<Map<string, "question" | "permission">>(new Map());
+  const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const seqRef = useRef(0);
 
   const active = activeOf(turns);
@@ -136,6 +138,25 @@ export function App() {
     };
     void tick();
     const id = setInterval(tick, 4000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Per-repo git badges for the sidebar.
+  useEffect(() => {
+    let live = true;
+    const tick = async () => {
+      try {
+        const { repos } = await api.gitAll();
+        if (live) setGitBadges(new Map(Object.entries(repos)));
+      } catch {
+        /* ignore */
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 10000);
     return () => {
       live = false;
       clearInterval(id);
@@ -249,6 +270,7 @@ export function App() {
           external={external}
           bridgeIds={bridgeIds}
           awaiting={awaiting}
+          gitBadges={gitBadges}
         />
         <main className="flex min-w-0 flex-1 flex-col bg-background">
           {view === "history" ? (
