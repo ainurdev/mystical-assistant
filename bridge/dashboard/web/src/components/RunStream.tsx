@@ -1,40 +1,17 @@
-import {
-  Pencil,
-  BookOpen,
-  Terminal,
-  Search,
-  Wrench,
-  TriangleAlert,
-  CircleStop,
-} from "lucide-react";
+import { TriangleAlert, CircleStop } from "lucide-react";
 import type { AnswerSelection, RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 
-// Mirrors bridge/miniapp/web/src/components/RunStream.tsx (shared design).
-function ToolIcon({ name }: { name: string }) {
-  const props = {
-    size: 13,
-    className: "shrink-0 text-[var(--brand-soft)]",
-    "aria-hidden": true,
-  } as const;
-  switch (name) {
-    case "Edit":
-    case "Write":
-    case "MultiEdit":
-      return <Pencil {...props} />;
-    case "Read":
-      return <BookOpen {...props} />;
-    case "Bash":
-      return <Terminal {...props} />;
-    case "Grep":
-    case "Glob":
-      return <Search {...props} />;
-    default:
-      return <Wrench {...props} />;
-  }
+// Tool-tag colors (HUD terminal). Mirrors the design's BASH/READ/WRITE accents.
+function toolTag(name: string): { color: string; border: string } {
+  if (name === "Bash") return { color: "#7fe9d8", border: "rgba(127,233,216,.35)" };
+  if (name === "Read") return { color: "#b9a6ff", border: "rgba(185,166,255,.35)" };
+  if (name === "Edit" || name === "Write" || name === "MultiEdit")
+    return { color: "#8fd9a8", border: "rgba(143,217,168,.35)" };
+  return { color: "#7fe9d8", border: "rgba(127,233,216,.3)" };
 }
 
 function FinalResult({
@@ -47,12 +24,14 @@ function FinalResult({
   cost?: number;
 }) {
   return (
-    <div className="flex max-w-[92%] gap-3 rounded-xl border border-[#2a2540] bg-card px-4 py-3.5">
-      <span className="w-2 shrink-0 rounded-[5px] bg-gradient-to-b from-brand-soft to-success" />
-      <div className="min-w-0">
-        <Markdown className="text-[13.5px] leading-relaxed text-card-foreground">{result}</Markdown>
+    <div className="my-2 ml-[18px] border border-[rgba(143,217,168,.28)] bg-[rgba(143,217,168,.04)]">
+      <div className="border-b border-[rgba(143,217,168,.18)] px-3 py-1.5 text-[9.5px] tracking-[2px] text-success">
+        RESULT // OK
+      </div>
+      <div className="px-3 py-2.5">
+        <Markdown className="leading-relaxed text-[#c4e8df]">{result}</Markdown>
         {(typeof elapsed === "number" || typeof cost === "number") && (
-          <div className="mt-1.5 text-xs text-muted-2">
+          <div className="mt-1.5 text-[10px] tracking-[1px] text-muted-2">
             {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
             {typeof elapsed === "number" && typeof cost === "number" ? " · " : ""}
             {typeof cost === "number" ? `$${cost.toFixed(4)}` : ""}
@@ -91,25 +70,29 @@ export function RunStream({
         switch (event.type) {
           case "text":
             return (
-              <Markdown key={i} className="max-w-[92%] text-[14px] leading-[1.62] text-card-foreground">
+              <Markdown key={i} className="pl-[18px] leading-relaxed text-[#9fc7c0]">
                 {event.text}
               </Markdown>
             );
-          case "tool":
+          case "tool": {
+            const tt = toolTag(event.name);
             return (
               <div
                 key={i}
-                className="flex max-w-[92%] items-center gap-2.5 rounded-[10px] border border-border bg-card px-3 py-2 font-mono"
+                className="my-1.5 ml-[18px] flex items-center gap-2.5 border border-border bg-[rgba(127,233,216,.03)] px-2.5 py-1.5"
               >
-                <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-muted">
-                  <ToolIcon name={event.name} />
+                <span
+                  className="flex-none border px-1.5 py-px text-[10px] tracking-[1px]"
+                  style={{ color: tt.color, borderColor: tt.border }}
+                >
+                  {event.name.toUpperCase()}
                 </span>
-                <span className="shrink-0 text-[11px] font-medium text-brand-soft">{event.name}</span>
                 {event.summary && (
                   <span className="min-w-0 truncate text-[12px] text-muted-foreground">{event.summary}</span>
                 )}
               </div>
             );
+          }
           case "tool_done":
             return null;
           case "result":

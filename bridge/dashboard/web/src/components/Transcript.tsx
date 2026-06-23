@@ -18,21 +18,24 @@ export function Transcript({
 }) {
   if (!turns.length) {
     return (
-      <div className="p-8 text-center text-sm text-muted-foreground">
-        No messages in this session yet.
+      <div className="py-6 text-[12px] tracking-[1px] text-muted-2">
+        // no messages in this session yet
       </div>
     );
   }
   return (
-    <div className="mx-auto flex max-w-[760px] flex-col gap-[18px] px-6">
+    <div className="flex flex-col gap-3">
       {turns.map((turn) => {
         const isActive = turn.id === activeId;
         const working = isActive && turn.status === "running" && turn.pending.length === 0;
         return (
-          <div key={turn.id} className="flex flex-col gap-2.5">
+          <div key={turn.id} className="flex flex-col gap-1.5">
             {turn.prompt && (
-              <div className="max-w-[78%] self-end whitespace-pre-wrap rounded-[14px] rounded-br-[4px] bg-primary px-[15px] py-[11px] text-[13.5px] leading-relaxed text-primary-foreground shadow-[0_4px_14px_rgba(116,88,255,.25)]">
-                {turn.prompt}
+              <div className="flex gap-[9px]">
+                <span className="flex-none text-violet">~ ❯</span>
+                <span className="min-w-0 whitespace-pre-wrap break-words text-foreground-bright">
+                  {turn.prompt}
+                </span>
               </div>
             )}
             {(turn.events.length > 0 || turn.status === "running") && (
@@ -42,7 +45,9 @@ export function Transcript({
                 onRespond={isActive ? onRespond : undefined}
               />
             )}
-            {working && <div className="text-xs text-muted-foreground">Working…</div>}
+            {working && (
+              <div className="pl-[18px] text-[11px] tracking-[1px] text-muted-2">// working…</div>
+            )}
           </div>
         );
       })}
