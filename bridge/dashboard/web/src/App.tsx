@@ -230,6 +230,9 @@ export function App() {
         onSelectSession={openSession}
         onNewSession={() => void newSession()}
         onProjectChanged={() => void loadSessions()}
+        external={external}
+        bridgeIds={bridgeIds}
+        awaiting={awaiting}
       />
       <main className="flex min-w-0 flex-1 flex-col">
         <Header
