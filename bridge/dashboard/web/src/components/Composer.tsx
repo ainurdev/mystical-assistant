@@ -153,7 +153,7 @@ export function Composer({
             <button
               disabled={disabled || !text.trim()}
               onClick={submit}
-              className="border border-primary bg-[rgba(127,233,216,.12)] px-4 py-1.5 text-[11px] tracking-[2px] text-foreground-bright hover:bg-[rgba(127,233,216,.22)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="border border-primary bg-[var(--ac-12)] px-4 py-1.5 text-[11px] tracking-[2px] text-foreground-bright hover:bg-[var(--ac-22)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               SEND ▸
             </button>

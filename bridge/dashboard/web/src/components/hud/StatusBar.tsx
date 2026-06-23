@@ -22,7 +22,7 @@ export function StatusBar({
       {contextPct !== null && (
         <span className="flex items-center gap-[7px]">
           CONTEXT {contextPct}%
-          <span className="relative inline-block h-[4px] w-[120px] overflow-hidden bg-[rgba(127,233,216,.12)]">
+          <span className="relative inline-block h-[4px] w-[120px] overflow-hidden bg-[var(--ac-12)]">
             <span className="absolute inset-y-0 left-0 bg-primary" style={{ width: `${contextPct}%` }} />
           </span>
         </span>

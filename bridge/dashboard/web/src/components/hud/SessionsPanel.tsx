@@ -38,7 +38,7 @@ export function SessionsPanel({
             className="flex cursor-pointer items-center gap-[9px] px-2 py-2 hover:bg-accent"
             style={{
               animation: `mfadeup .4s ease both ${i * 50}ms`,
-              background: s.id === selectedId ? "rgba(127,233,216,.06)" : undefined,
+              background: s.id === selectedId ? "var(--ac-06)" : undefined,
             }}
           >
             <span
@@ -67,10 +67,10 @@ export function SessionsPanel({
           <span className="text-[9.5px] text-muted-2">SHARED STORE · SYNC</span>
         </div>
         <svg viewBox="0 0 340 60" preserveAspectRatio="none" className="mt-1.5 h-[58px] w-full overflow-visible">
-          <line x1="0" y1="12" x2="340" y2="12" stroke="rgba(127,233,216,.08)" strokeWidth="1" />
-          <line x1="0" y1="30" x2="340" y2="30" stroke="rgba(127,233,216,.12)" strokeWidth="1" />
-          <line x1="0" y1="48" x2="340" y2="48" stroke="rgba(127,233,216,.08)" strokeWidth="1" />
-          <polyline points={wavePoly(tele.wave, 340, 60)} fill="none" stroke="#7fe9d8" strokeWidth="1.3" />
+          <line x1="0" y1="12" x2="340" y2="12" className="stroke-border" strokeWidth="1" />
+          <line x1="0" y1="30" x2="340" y2="30" className="stroke-border" strokeWidth="1" />
+          <line x1="0" y1="48" x2="340" y2="48" className="stroke-border" strokeWidth="1" />
+          <polyline points={wavePoly(tele.wave, 340, 60)} fill="none" className="stroke-primary" strokeWidth="1.3" />
         </svg>
       </div>
     </Panel>

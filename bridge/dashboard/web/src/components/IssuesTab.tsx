@@ -105,7 +105,7 @@ export function IssuesTab({ project }: { project: string | null }) {
             <button
               onClick={() => void create()}
               disabled={busy || !title.trim()}
-              className="rounded-lg border border-primary bg-[rgba(127,233,216,.12)] px-3.5 py-1.5 text-[12px] font-semibold text-foreground-bright hover:bg-[rgba(127,233,216,.22)] disabled:opacity-40"
+              className="rounded-lg border border-primary bg-[var(--ac-12)] px-3.5 py-1.5 text-[12px] font-semibold text-foreground-bright hover:bg-[var(--ac-22)] disabled:opacity-40"
             >
               Create
             </button>

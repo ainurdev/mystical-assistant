@@ -56,7 +56,7 @@ export function CommandPalette({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="panel w-[560px] max-w-[92vw] overflow-hidden border border-[rgba(127,233,216,.4)] bg-[rgba(7,13,13,.97)] shadow-[0_0_60px_rgba(0,0,0,.7),0_0_30px_rgba(127,233,216,.08)] animate-[mpop_.15s_ease]"
+        className="panel w-[560px] max-w-[92vw] overflow-hidden border border-[var(--border-bright)] bg-[rgba(7,13,13,.97)] shadow-[0_0_60px_rgba(0,0,0,.7),0_0_30px_var(--accent)] animate-[mpop_.15s_ease]"
       >
         <div className="flex items-center gap-2.5 border-b border-border px-4 py-3.5">
           <span className="text-[13px] text-primary">~ ❯</span>
@@ -95,8 +95,8 @@ export function CommandPalette({
                 onMouseMove={() => setHighlight(i)}
                 className="flex w-full items-center gap-3 border-l-2 px-2.5 py-2.5 text-left"
                 style={{
-                  background: i === highlight ? "rgba(127,233,216,.08)" : "transparent",
-                  borderColor: i === highlight ? "#7fe9d8" : "transparent",
+                  background: i === highlight ? "var(--accent)" : "transparent",
+                  borderColor: i === highlight ? "var(--primary)" : "transparent",
                 }}
               >
                 <span className="w-[18px] flex-none text-center text-[11px] text-primary">{c.icon}</span>

@@ -7,11 +7,11 @@ import { QuestionCard } from "./QuestionCard";
 
 // Tool-tag colors (HUD terminal). Mirrors the design's BASH/READ/WRITE accents.
 function toolTag(name: string): { color: string; border: string } {
-  if (name === "Bash") return { color: "#7fe9d8", border: "rgba(127,233,216,.35)" };
+  if (name === "Bash") return { color: "var(--primary)", border: "var(--border-bright)" };
   if (name === "Read") return { color: "#b9a6ff", border: "rgba(185,166,255,.35)" };
   if (name === "Edit" || name === "Write" || name === "MultiEdit")
     return { color: "#8fd9a8", border: "rgba(143,217,168,.35)" };
-  return { color: "#7fe9d8", border: "rgba(127,233,216,.3)" };
+  return { color: "var(--primary)", border: "var(--border-bright)" };
 }
 
 function FinalResult({
@@ -79,7 +79,7 @@ export function RunStream({
             return (
               <div
                 key={i}
-                className="my-1.5 ml-[18px] flex items-center gap-2.5 border border-border bg-[rgba(127,233,216,.03)] px-2.5 py-1.5"
+                className="my-1.5 ml-[18px] flex items-center gap-2.5 border border-border bg-[var(--ac-03)] px-2.5 py-1.5"
               >
                 <span
                   className="flex-none border px-1.5 py-px text-[10px] tracking-[1px]"

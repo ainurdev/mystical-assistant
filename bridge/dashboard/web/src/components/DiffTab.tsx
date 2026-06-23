@@ -6,7 +6,7 @@ const ROW: Record<DiffRow["kind"], { bg: string; sign: string; color: string }> 
   add: { bg: "rgba(143,217,168,.07)", sign: "var(--success)", color: "#a7e6c3" },
   del: { bg: "rgba(224,137,122,.07)", sign: "var(--danger)", color: "#f0b0a8" },
   ctx: { bg: "transparent", sign: "var(--muted-2)", color: "#6f938d" },
-  hunk: { bg: "rgba(127,233,216,.06)", sign: "var(--primary)", color: "var(--primary)" },
+  hunk: { bg: "var(--ac-06)", sign: "var(--primary)", color: "var(--primary)" },
 };
 
 export function DiffTab({ file }: { file: { project: string; path: string } | null }) {

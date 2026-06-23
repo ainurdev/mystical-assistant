@@ -37,13 +37,13 @@ export function RightPanel({
               onClick={() => setActive(t.id)}
               className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-1 py-[11px] text-[10.5px] tracking-[1.5px] hover:bg-accent ${
                 on
-                  ? "border-primary bg-[rgba(127,233,216,.06)] text-foreground-bright"
+                  ? "border-primary bg-[var(--ac-06)] text-foreground-bright"
                   : "border-transparent text-muted-2"
               }`}
             >
               {t.label.toUpperCase()}
               {t.badge ? (
-                <span className="border border-[rgba(127,233,216,.4)] px-[5px] text-[9px] text-primary">
+                <span className="border border-[var(--border-bright)] px-[5px] text-[9px] text-primary">
                   {t.badge}
                 </span>
               ) : null}

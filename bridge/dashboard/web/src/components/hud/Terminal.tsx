@@ -62,8 +62,8 @@ export function Terminal({
                 className="border px-2 py-0.5 text-[10px] tracking-[1.5px]"
                 style={{
                   color: view === v ? "#dff8f2" : "#3c544f",
-                  borderColor: view === v ? "#7fe9d8" : "rgba(127,233,216,.16)",
-                  background: view === v ? "rgba(127,233,216,.08)" : "transparent",
+                  borderColor: view === v ? "var(--primary)" : "var(--border)",
+                  background: view === v ? "var(--accent)" : "transparent",
                 }}
               >
                 {v === "chat" ? "CHAT" : "HIST"}
@@ -74,7 +74,7 @@ export function Terminal({
       </div>
       <div
         className="h-px flex-none origin-left"
-        style={{ background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))", animation: "drawline .8s ease both .15s" }}
+        style={{ background: "linear-gradient(90deg,var(--primary),var(--muted))", animation: "drawline .8s ease both .15s" }}
       />
 
       {view === "history" ? (

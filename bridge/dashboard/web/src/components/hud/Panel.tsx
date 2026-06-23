@@ -29,7 +29,7 @@ export function Panel({
       <div
         className="h-px flex-none origin-left"
         style={{
-          background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))",
+          background: "linear-gradient(90deg,var(--primary),var(--muted))",
           animation: `drawline .7s ease both ${delay}`,
         }}
       />

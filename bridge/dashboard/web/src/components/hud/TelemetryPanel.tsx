@@ -31,8 +31,8 @@ export function TelemetryPanel({
           </span>
         </div>
         <svg viewBox="0 0 320 42" preserveAspectRatio="none" className="mt-[5px] h-[42px] w-full overflow-visible">
-          <line x1="0" y1="21" x2="320" y2="21" stroke="rgba(127,233,216,.1)" strokeWidth="1" />
-          <polyline points={poly(tele.sparkA, 320, 42, 4)} fill="none" stroke="#7fe9d8" strokeWidth="1.4" />
+          <line x1="0" y1="21" x2="320" y2="21" className="stroke-border" strokeWidth="1" />
+          <polyline points={poly(tele.sparkA, 320, 42, 4)} fill="none" className="stroke-primary" strokeWidth="1.4" />
         </svg>
 
         <div className="mt-3 flex items-baseline justify-between">
@@ -42,7 +42,7 @@ export function TelemetryPanel({
           </span>
         </div>
         <svg viewBox="0 0 320 42" preserveAspectRatio="none" className="mt-[5px] h-[42px] w-full overflow-visible">
-          <line x1="0" y1="21" x2="320" y2="21" stroke="rgba(127,233,216,.1)" strokeWidth="1" />
+          <line x1="0" y1="21" x2="320" y2="21" className="stroke-border" strokeWidth="1" />
           <polyline points={poly(tele.sparkB, 320, 42, 4)} fill="none" stroke="#b9a6ff" strokeWidth="1.4" />
         </svg>
 

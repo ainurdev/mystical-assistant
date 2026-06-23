@@ -55,7 +55,7 @@ export function ContextMatrixPanel({ permissionMode }: { permissionMode?: string
               key={i}
               className="h-[7px] w-[7px]"
               style={{
-                background: c.on ? "rgba(127,233,216,.8)" : "rgba(127,233,216,.1)",
+                background: c.on ? "var(--primary)" : "var(--border)",
                 animation: "twinkle 3s ease-in-out infinite",
                 animationDelay: c.delay,
               }}

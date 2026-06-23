@@ -152,7 +152,7 @@ export function WorkspacePanel({
                     ))}
                   </div>
                   <button
-                    className="mt-2 w-full border border-primary bg-[rgba(127,233,216,.12)] py-1 text-[10px] tracking-[1.5px] text-foreground-bright hover:bg-[rgba(127,233,216,.22)]"
+                    className="mt-2 w-full border border-primary bg-[var(--ac-12)] py-1 text-[10px] tracking-[1.5px] text-foreground-bright hover:bg-[var(--ac-22)]"
                     onClick={() => void pick(listing.rel)}
                   >
                     USE {listing.rel}

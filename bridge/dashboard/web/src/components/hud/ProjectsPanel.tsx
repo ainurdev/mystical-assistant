@@ -43,8 +43,8 @@ export function ProjectsPanel({
               onClick={() => void pick(p.name)}
               className="mb-1 cursor-pointer border-l-2 px-2.5 py-2.5 hover:bg-accent"
               style={{
-                borderColor: active ? "#7fe9d8" : "transparent",
-                background: active ? "rgba(127,233,216,.06)" : "transparent",
+                borderColor: active ? "var(--primary)" : "transparent",
+                background: active ? "var(--ac-06)" : "transparent",
                 animation: `mfadeup .4s ease both ${i * 50}ms`,
               }}
             >
