@@ -119,6 +119,7 @@ export interface Issue {
   title: string;
   url: string;
   updated: string;
+  body: string;
   labels: GitHubLabel[];
 }
 export interface IssuesInfo {

@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type IssuesInfo } from "../api";
+import { api, type Issue, type IssuesInfo } from "../api";
 import { ago } from "../lib/surfaces";
 
-export function IssuesTab({ project }: { project: string | null }) {
+/** Compose a prompt that hands a GitHub issue to Claude. */
+export function issuePrompt(i: Issue): string {
+  return `Work on GitHub issue #${i.number}: ${i.title}\n\n${
+    i.body?.trim() || "(no description provided)"
+  }\n\n${i.url}`;
+}
+
+export function IssuesTab({
+  project,
+  onFeed,
+}: {
+  project: string | null;
+  onFeed?: (prompt: string) => void;
+}) {
   const [info, setInfo] = useState<IssuesInfo | null>(null);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -115,17 +128,21 @@ export function IssuesTab({ project }: { project: string | null }) {
       )}
 
       {info?.issues.map((i) => (
-        <a
+        <div
           key={i.number}
-          href={i.url}
-          target="_blank"
-          rel="noreferrer"
-          className="mb-2 block rounded-[10px] border border-border bg-card p-3 hover:border-ring"
+          className="mb-2 rounded-[10px] border border-border bg-card p-3 hover:border-ring"
         >
           <div className="flex gap-2.5">
             <span className="mt-0.5 h-3 w-3 shrink-0 rounded-full border-2 border-success" />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] leading-snug text-card-foreground">{i.title}</div>
+              <a
+                href={i.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-[13px] leading-snug text-card-foreground hover:text-foreground"
+              >
+                {i.title}
+              </a>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[10.5px] text-muted-2">#{i.number}</span>
                 {i.labels.map((l) => (
@@ -145,9 +162,17 @@ export function IssuesTab({ project }: { project: string | null }) {
                   {ago(new Date(i.updated).getTime() / 1000)}
                 </span>
               </div>
+              {onFeed && (
+                <button
+                  onClick={() => onFeed(issuePrompt(i))}
+                  className="mt-2 rounded-lg border border-primary bg-[var(--ac-12)] px-2.5 py-1 text-[11px] text-foreground-bright hover:bg-[var(--ac-22)]"
+                >
+                  → Feed to Claude
+                </button>
+              )}
             </div>
           </div>
-        </a>
+        </div>
       ))}
       {info && info.issues.length === 0 && !creating && (
         <div className="px-1 py-2 text-xs text-muted-foreground">No open issues.</div>

@@ -190,6 +190,29 @@ export interface EnrichedSession {
   models: string[];
 }
 
+// GitHub issues for the current project (via the user's authed gh CLI).
+export interface GitHubLabel {
+  name: string;
+  color: string;
+}
+export interface Issue {
+  number: number;
+  title: string;
+  url: string;
+  updated: string;
+  body: string;
+  labels: GitHubLabel[];
+}
+export interface IssuesInfo {
+  has_remote: boolean;
+  slug: string | null;
+  gh_ok: boolean;
+  error: string;
+  open_count: number;
+  closed_count: number;
+  issues: Issue[];
+}
+
 // Claude usage — only computed percentages / reset times (no token, ever).
 export interface UsageBucket {
   percent: number;
@@ -304,6 +327,8 @@ export const api = {
   getRunning: () => request<RunningInfo>("/api/running"),
 
   getUsage: () => request<UsageInfo>("/api/usage"),
+
+  getIssues: () => request<IssuesInfo>("/api/github/issues"),
 
   getHistory: (archived = false) =>
     request<{ sessions: EnrichedSession[] }>(

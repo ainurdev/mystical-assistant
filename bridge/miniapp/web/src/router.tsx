@@ -4,9 +4,11 @@ import { runRoute } from "./routes/run";
 import { serverRoute } from "./routes/server";
 import { previewRoute } from "./routes/preview";
 import { historyRoute } from "./routes/history";
+import { issuesRoute } from "./routes/issues";
 
 const routeTree = rootRoute.addChildren([
   runRoute,
+  issuesRoute,
   serverRoute,
   previewRoute,
   historyRoute,

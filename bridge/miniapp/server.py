@@ -18,8 +18,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (browser, config, devserver, machine, native, runner, state,
-                    store, transcript_jsonl, tunnel, usage)
+from bridge import (browser, config, devserver, github, machine, native, runner,
+                    state, store, transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -186,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_running(chat_id)
                 if path == "/api/usage":
                     return self._json(usage.get_usage())
+                if path == "/api/github/issues":
+                    return self._json(github.issues(state.project_dir(chat_id)))
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
                 if path.startswith("/api/sessions/"):

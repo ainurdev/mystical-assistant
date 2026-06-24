@@ -15,6 +15,7 @@ import {
   TerminalSquare,
   MonitorPlay,
   History,
+  CircleDot,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
@@ -22,6 +23,7 @@ import { FolderNavigator } from "../components/FolderNavigator";
 
 const tabs = [
   { to: "/", label: "Run", icon: MessagesSquare },
+  { to: "/issues", label: "Issues", icon: CircleDot },
   { to: "/history", label: "History", icon: History },
   { to: "/server", label: "Server", icon: TerminalSquare },
   { to: "/preview", label: "Preview", icon: MonitorPlay },

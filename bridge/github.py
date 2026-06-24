@@ -55,7 +55,7 @@ def issues(cwd: str) -> dict:
                 "open_count": 0, "closed_count": 0, "issues": []}
     rc, out, err = _run("gh", "issue", "list", "-R", slug, "--state", "open",
                         "--limit", "30", "--json",
-                        "number,title,url,updatedAt,labels")
+                        "number,title,url,updatedAt,labels,body")
     if rc != 0:
         return {"has_remote": True, "slug": slug, "gh_ok": False,
                 "error": err.strip() or "gh failed", "open_count": 0,
@@ -69,6 +69,7 @@ def issues(cwd: str) -> dict:
         "title": i.get("title", ""),
         "url": i.get("url", ""),
         "updated": i.get("updatedAt", ""),
+        "body": i.get("body", ""),
         "labels": [{"name": l.get("name", ""), "color": l.get("color", "")}
                    for l in (i.get("labels") or [])],
     } for i in raw]

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EffortLevel, ModelId } from "../api";
 import { ContextStrip } from "./UsageStrip";
 
@@ -11,6 +11,8 @@ export function Composer({
   model,
   effort,
   permissionMode,
+  injectedText,
+  injectNonce,
   onModel,
   onEffort,
   onSend,
@@ -21,6 +23,8 @@ export function Composer({
   model: ModelId;
   effort: EffortLevel | "";
   permissionMode?: string | null;
+  injectedText?: string;
+  injectNonce?: number;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
   onSend: (text: string, images: string[]) => void;
@@ -30,6 +34,13 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Prefill the composer when something feeds it a prompt (e.g. an issue). The
+  // nonce retriggers even if the same text is fed twice.
+  useEffect(() => {
+    if (injectNonce) setText(injectedText ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injectNonce]);
 
   function addFiles(files: FileList | File[] | null) {
     if (!files) return;

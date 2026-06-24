@@ -47,6 +47,8 @@ export function App() {
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [activeTab, setActiveTab] = useState("git");
   const [diffFile, setDiffFile] = useState<{ project: string; path: string } | null>(null);
+  // Bumped to prefill the composer (e.g. "Feed to Claude" from the Issues tab).
+  const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
   const [browsing, setBrowsing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [booting, setBooting] = useState(true);
@@ -267,6 +269,13 @@ export function App() {
     }
   }
 
+  // Prefill the composer with an issue (or any prompt) and jump to chat so the
+  // user can review/tweak model+effort before sending.
+  function feedIssue(prompt: string) {
+    setInject((p) => ({ text: prompt, nonce: p.nonce + 1 }));
+    setView("chat");
+  }
+
   async function newSession() {
     const proj = state?.project?.rel;
     if (proj === undefined || proj === null) return;
@@ -353,7 +362,7 @@ export function App() {
         />
       ),
     },
-    { id: "issues", label: "Issues", render: () => <IssuesTab project={activeProject} /> },
+    { id: "issues", label: "Issues", render: () => <IssuesTab project={activeProject} onFeed={feedIssue} /> },
     { id: "diff", label: "Diff", render: () => <DiffTab file={diffFile} /> },
     { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
   ];
@@ -426,6 +435,8 @@ export function App() {
               model={model}
               effort={effort}
               permissionMode={state?.permission_mode}
+              injectedText={inject.text}
+              injectNonce={inject.nonce}
               onModel={setModel}
               onEffort={setEffort}
               onSend={(t, i) => void send(t, i)}
