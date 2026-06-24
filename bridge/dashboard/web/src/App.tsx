@@ -9,6 +9,7 @@ import {
   type EnrichedSession,
   type GitBadge,
   type ModelId,
+  type RunningJob,
   type RunningSession,
   type SessionBrief,
 } from "./api";
@@ -28,6 +29,7 @@ import { TelemetryPanel } from "./components/hud/TelemetryPanel";
 import { ContextMatrixPanel } from "./components/hud/ContextMatrixPanel";
 import { ProjectsPanel } from "./components/hud/ProjectsPanel";
 import { SessionsPanel } from "./components/hud/SessionsPanel";
+import { JobsPanel } from "./components/hud/JobsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import { BootIntro } from "./components/hud/BootIntro";
 
@@ -42,6 +44,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"chat" | "history">("chat");
   const [external, setExternal] = useState<RunningSession[]>([]);
+  const [jobs, setJobs] = useState<RunningJob[]>([]);
   const [bridgeIds, setBridgeIds] = useState<Set<string>>(new Set());
   const [awaiting, setAwaiting] = useState<Map<string, "question" | "permission">>(new Map());
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
@@ -193,6 +196,7 @@ export function App() {
         const r = await api.running();
         if (!live) return;
         setExternal(r.external);
+        setJobs(r.jobs ?? []);
         setBridgeIds(new Set(r.bridge_running));
         setAwaiting(new Map((r.awaiting ?? []).map((a) => [a.session_id, a.kind])));
       } catch {
@@ -447,6 +451,7 @@ export function App() {
 
         {/* RIGHT */}
         <div className="flex min-h-0 min-w-0 flex-col gap-[13px] overflow-y-auto overflow-x-hidden pr-0.5">
+          <JobsPanel jobs={jobs} selectedId={sessionId} onSelect={openSession} />
           <SessionsPanel
             sessions={sessions}
             external={external}

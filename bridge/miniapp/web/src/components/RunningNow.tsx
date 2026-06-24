@@ -25,19 +25,19 @@ function SourceIcon({ source }: { source: RunningSource }) {
 const rowClass =
   "flex w-full items-center gap-2 rounded-lg bg-[var(--tg-bg)] px-2 py-1.5 text-left text-xs";
 
-/** Compact machine-wide "Running now" panel: this chat's live bridge runs
- *  (tappable) followed by read-only external sessions (VS Code / terminal). */
+/** Compact machine-wide "Running now" monitor: this chat's live bridge jobs
+ *  with what each is doing (tappable), followed by read-only external sessions
+ *  (VS Code / terminal). */
 export function RunningNow() {
-  const { sessions, selectSession } = useChat();
+  const { selectSession } = useChat();
   const { data } = useQuery({
     queryKey: ["running"],
     queryFn: () => api.getRunning(),
     refetchInterval: 4000,
   });
   const external = data?.external ?? [];
-  const bridgeIds = new Set(data?.bridge_running ?? []);
-  const bridgeRows = sessions.filter((s) => bridgeIds.has(s.id));
-  if (external.length === 0 && bridgeRows.length === 0) return null;
+  const jobs = data?.jobs ?? [];
+  if (external.length === 0 && jobs.length === 0) return null;
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--tg-secondary-bg)] p-2">
@@ -49,19 +49,29 @@ export function RunningNow() {
         Running now · this machine
       </div>
       <div className="space-y-1">
-        {bridgeRows.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => selectSession(s.id)}
-            className={`${rowClass} active:opacity-70`}
-          >
-            <Bot size={13} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">{s.title || "New chat"}</span>
-            <span className="shrink-0 rounded bg-[var(--tg-secondary-bg)] px-1.5 py-0.5 text-[10px] text-[var(--tg-hint)]">
-              bridge
-            </span>
-          </button>
-        ))}
+        {jobs.map((j) => {
+          const awaiting = j.activity.state === "awaiting";
+          return (
+            <button
+              key={j.job_id}
+              onClick={() => j.session_id && selectSession(j.session_id)}
+              className={`${rowClass} active:opacity-70`}
+            >
+              <Bot size={13} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <div className="truncate">{j.title || "New chat"}</div>
+                <div className="truncate text-[10px] text-[var(--tg-hint)]">
+                  {j.activity.label}
+                </div>
+              </div>
+              {awaiting ? (
+                <span className="shrink-0 text-[10px] text-amber-400">waiting</span>
+              ) : (
+                <span className="shrink-0 text-[10px] text-[var(--tg-hint)]">{ago(j.started)}</span>
+              )}
+            </button>
+          );
+        })}
         {external.map((r) => (
           <div key={r.session_id} className={rowClass} title={r.cwd}>
             <SourceIcon source={r.source} />

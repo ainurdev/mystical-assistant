@@ -149,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/running":
             return self._json({"external": machine.list_running(),
                                "bridge_running": store.running_session_ids(chat),
+                               "jobs": runner.running_jobs(chat),
                                "awaiting": runner.awaiting_input()})
         if path == "/local/usage":
             return self._json(usage.get_usage())

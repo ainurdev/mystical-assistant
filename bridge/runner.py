@@ -300,6 +300,30 @@ class Job:
                            elapsed=self.elapsed, session_id=self.session_id)
             return out
 
+    def activity(self) -> dict:
+        """A short 'what is it doing right now' label for the jobs monitor:
+        awaiting input, the latest tool call, or thinking — plus a tool count."""
+        with self._lock:
+            pending = list(self.pending)
+            tools = 0
+            last_tool = None
+            for ev in self.events:
+                if ev.get("type") == "tool":
+                    tools += 1
+                    last_tool = ev
+        if pending:
+            kinds = {p.get("kind") for p in pending}
+            kind = "question" if "question" in kinds else "permission"
+            label = "awaiting your answer" if kind == "question" else "awaiting your approval"
+            return {"state": "awaiting", "kind": kind, "label": label, "tools": tools}
+        if last_tool is not None:
+            name = last_tool.get("name", "")
+            summary = last_tool.get("summary", "")
+            return {"state": "tool",
+                    "label": (f"{name}: {summary}" if summary else name) or "working…",
+                    "tools": tools}
+        return {"state": "thinking", "label": "thinking…", "tools": tools}
+
 
 _jobs: dict[str, Job] = {}
 _jobs_lock = threading.Lock()
@@ -322,6 +346,29 @@ def awaiting_input() -> list[dict]:
                 kinds = {p.get("kind") for p in j.pending}
                 out.append({"session_id": j.store_session_id,
                             "kind": "question" if "question" in kinds else "permission"})
+    return out
+
+
+def running_jobs(chat_id: int) -> list[dict]:
+    """Rich detail for this chat's live streaming (bridge) jobs — powers the
+    background-jobs monitor. External VS Code/terminal sessions come separately
+    from machine.list_running()."""
+    with _jobs_lock:
+        jobs = [j for j in _jobs.values()
+                if j.chat_id == chat_id and j.status == "running"]
+    out = []
+    for j in jobs:
+        sid = j.store_session_id
+        sess = store.get_session(sid) if sid else None
+        out.append({
+            "session_id": sid,
+            "job_id": j.id,
+            "project": sess["project"] if sess else None,
+            "title": (sess["title"] if sess else None),
+            "started": j.started,
+            "activity": j.activity(),
+        })
+    out.sort(key=lambda d: d["started"] or 0, reverse=True)
     return out
 
 

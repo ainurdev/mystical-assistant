@@ -169,9 +169,24 @@ export interface AwaitingSession {
   session_id: string;
   kind: "question" | "permission";
 }
+export interface JobActivity {
+  state: "tool" | "awaiting" | "thinking";
+  label: string;
+  kind?: "question" | "permission";
+  tools: number;
+}
+export interface RunningJob {
+  session_id: string | null;
+  job_id: string;
+  project: string | null;
+  title: string | null;
+  started: number | null;
+  activity: JobActivity;
+}
 export interface RunningInfo {
   external: RunningSession[];
   bridge_running: string[]; // store session ids with an in-flight turn
+  jobs: RunningJob[]; // this chat's live bridge runs, with activity detail
   awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
 }
 
