@@ -1,48 +1,44 @@
-import type { RunningSession, SessionBrief } from "../../api";
+import type { SessionBrief, SessionStatus } from "../../api";
 import { ago, surfaceFor } from "../../lib/surfaces";
 import { wavePoly, type Telemetry } from "../../lib/telemetry";
 import { Panel } from "./Panel";
 
 export function SessionsPanel({
   sessions,
-  external,
-  bridgeIds,
-  awaiting,
+  status,
   selectedId,
   onSelect,
   tele,
 }: {
   sessions: SessionBrief[];
-  external: RunningSession[];
-  bridgeIds: Set<string>;
-  awaiting: Map<string, "question" | "permission">;
+  status: Map<string, SessionStatus>;
   selectedId: string | null;
   onSelect: (id: string) => void;
   tele: Telemetry;
 }) {
   // "Active" = used in the last 30 min and non-empty (has a title), plus anything
-  // currently running/awaiting regardless of age.
+  // currently working/awaiting regardless of age. Status is the one unified map,
+  // so a live VS Code (native) session shows RUN here too.
   const now = Date.now() / 1000;
   const RECENT = 30 * 60;
   const rows = sessions
     .filter((s) => {
-      const live = bridgeIds.has(s.id) || awaiting.has(s.id);
+      const live = status.has(s.id);
       const recent = !!s.updated && now - s.updated <= RECENT;
       return live || (!!s.title && recent);
     })
     .slice(0, 8)
     .map((s) => {
-      const kind = awaiting.get(s.id);
-      const running = bridgeIds.has(s.id);
-      const status = kind ? "WAIT" : running ? "RUN" : "IDLE";
-      const color = kind ? "#e3c279" : running ? "#8fd9a8" : "#3c544f";
-      return { s, status, color, surf: surfaceFor(s.origin) };
+      const st = status.get(s.id);
+      const label = st?.state === "awaiting" ? "WAIT" : st?.state === "working" ? "RUN" : "IDLE";
+      const color = st?.state === "awaiting" ? "#e3c279" : st?.state === "working" ? "#8fd9a8" : "#3c544f";
+      return { s, status: label, color, onMachine: !!st, surf: surfaceFor(s.origin) };
     });
 
   return (
     <Panel label="PANEL" title="ACTIVE SESSIONS" delay=".12s">
       <div className="px-2.5 pb-1.5 pt-2">
-        {rows.map(({ s, status, color, surf }, i) => (
+        {rows.map(({ s, status, color, onMachine, surf }, i) => (
           <div
             key={s.id}
             onClick={() => onSelect(s.id)}
@@ -61,7 +57,7 @@ export function SessionsPanel({
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] text-[#cfe9e3]">{s.title || "new session"}</div>
               <div className="mt-0.5 text-[9.5px] tracking-[.5px] text-muted-2">
-                {external.length && bridgeIds.has(s.id) ? "this machine" : "store"} · {ago(s.updated)}
+                {onMachine ? "this machine" : "store"} · {ago(s.updated)}
               </div>
             </div>
             <span className="flex flex-none items-center gap-[5px]">

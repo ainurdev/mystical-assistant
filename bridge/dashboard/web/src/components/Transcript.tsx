@@ -13,11 +13,13 @@ export function Transcript({
   activeId,
   onRespond,
   liveTurns,
+  trailingWorking,
 }: {
   turns: Turn[];
   activeId: string | null;
   onRespond: Respond;
   liveTurns?: Set<string>;
+  trailingWorking?: boolean;
 }) {
   if (!turns.length) {
     return (
@@ -54,6 +56,9 @@ export function Transcript({
           </div>
         );
       })}
+      {/* Native (VS Code) live session: no turn is ever "running", so the working
+          state comes from the unified status map instead of turn.status. */}
+      {trailingWorking && <WorkingIndicator />}
     </div>
   );
 }

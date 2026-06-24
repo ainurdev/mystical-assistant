@@ -17,7 +17,8 @@ import threading
 import time
 import uuid
 
-from bridge import config, devserver, pubsub, state, store, transcript_jsonl
+from bridge import (config, devserver, machine, native_activity, pubsub, state,
+                    store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -374,6 +375,50 @@ def running_jobs(chat_id: int) -> list[dict]:
         })
     out.sort(key=lambda d: d["started"] or 0, reverse=True)
     return out
+
+
+def _build_status(bridge_running: list, awaiting: list, jobs: list,
+                  external: list, native_snap: dict) -> dict:
+    """Merge bridge + native liveness into one {session_id: {state, kind, source,
+    label}} map — the single status contract both web surfaces render from. State
+    is 'awaiting' | 'working' | 'idle'; bridge sessions can be any of the three,
+    native (VS Code) sessions only working/idle. External rows are annotated in
+    place with their `state` for the jobs monitor."""
+    awaiting_map = {a["session_id"]: a.get("kind") for a in awaiting}
+    job_label = {j["session_id"]: (j.get("activity") or {}).get("label")
+                 for j in jobs if j.get("session_id")}
+    status: dict[str, dict] = {}
+    for sid in bridge_running:
+        if sid in awaiting_map:
+            kind = awaiting_map[sid]
+            label = "awaiting your answer" if kind == "question" else "awaiting your approval"
+            status[sid] = {"state": "awaiting", "kind": kind,
+                           "source": "bridge", "label": label}
+        else:
+            status[sid] = {"state": "working", "kind": None, "source": "bridge",
+                           "label": job_label.get(sid) or "working…"}
+    for row in external:
+        sid = row.get("session_id")
+        st = native_snap.get(sid) if sid else None
+        row["state"] = st["state"] if st else "idle"
+        if st and st["state"] == "working" and sid not in status:
+            status[sid] = {"state": "working", "kind": None, "source": "native",
+                           "label": st.get("label") or "working…"}
+    return status
+
+
+def running_snapshot(chat_id: int) -> dict:
+    """The full /running payload: external sessions + bridge jobs + bridge-running
+    ids + awaiting list + the unified status map. Both servers return this verbatim
+    so the dashboard and Mini App show identical per-session status."""
+    external = machine.list_running()
+    bridge_running = store.running_session_ids(chat_id)
+    awaiting = awaiting_input()
+    jobs = running_jobs(chat_id)
+    status = _build_status(bridge_running, awaiting, jobs, external,
+                           native_activity.snapshot())
+    return {"external": external, "bridge_running": bridge_running,
+            "jobs": jobs, "awaiting": awaiting, "status": status}
 
 
 def _register(job: Job):

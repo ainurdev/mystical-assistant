@@ -17,6 +17,7 @@ export function Terminal({
   composer,
   onOpenFromHistory,
   liveTurns,
+  trailingWorking,
 }: {
   view: "chat" | "history";
   onView: (v: "chat" | "history") => void;
@@ -34,6 +35,7 @@ export function Terminal({
   composer: ReactNode;
   onOpenFromHistory: (s: EnrichedSession) => void;
   liveTurns?: Set<string>;
+  trailingWorking?: boolean;
 }) {
   const surf = surfaceFor(selected?.origin);
   return (
@@ -86,7 +88,7 @@ export function Terminal({
       ) : (
         <>
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-[18px] py-4 font-mono text-[13px] leading-relaxed">
-            <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} />
+            <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} />
             {error && (
               <div className="mt-2 border border-[rgba(224,137,122,.3)] bg-[rgba(224,137,122,.06)] px-2 py-1 text-[12px] text-danger">
                 {error}

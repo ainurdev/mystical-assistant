@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Issue, type IssuesInfo } from "../api";
 import { ago } from "../lib/surfaces";
+import { Skeleton } from "./ui";
 
 /** Compose a prompt that hands a GitHub issue to Claude. */
 export function issuePrompt(i: Issue): string {
@@ -45,6 +46,18 @@ export function IssuesTab({
   }, [refresh]);
 
   if (!project) return <div className="p-4 text-xs text-muted-foreground">No project selected.</div>;
+  if (info === null)
+    return (
+      <div className="space-y-2 p-4">
+        <Skeleton className="mb-3 h-4 w-28" />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="space-y-2 rounded-[10px] border border-border bg-card p-3">
+            <Skeleton className="h-3.5 w-3/4" />
+            <Skeleton className="h-2.5 w-1/3" />
+          </div>
+        ))}
+      </div>
+    );
   if (info && !info.has_remote)
     return <div className="p-4 text-xs text-muted-foreground">No GitHub remote.</div>;
   if (info && !info.gh_ok)

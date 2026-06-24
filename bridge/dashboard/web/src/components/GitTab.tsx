@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type GitStatus } from "../api";
+import { Skeleton } from "./ui";
 
 function statusColor(s: string): string {
   if (s === "A" || s === "?") return "var(--success)";
@@ -41,6 +42,16 @@ export function GitTab({
   }, [refresh]);
 
   if (!project) return <div className="p-4 text-xs text-muted-foreground">No project selected.</div>;
+  if (st === null)
+    return (
+      <div className="space-y-2 p-4">
+        <Skeleton className="h-12 w-full rounded-[11px]" />
+        <Skeleton className="h-3 w-24" />
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-6 w-full" />
+        ))}
+      </div>
+    );
   if (st && !st.is_repo)
     return <div className="p-4 text-xs text-muted-foreground">Not a git repository.</div>;
 

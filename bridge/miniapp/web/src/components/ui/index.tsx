@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +80,38 @@ export function StatusDot({ status }: { status: string }) {
             : "bg-[var(--tg-hint)]",
       )}
       aria-hidden
+    />
+  );
+}
+
+// Theme-agnostic loading primitives (currentColor-based, so they fit both the
+// dashboard's Mystic theme and the Telegram theme). Spinner for actions / inline
+// "loading…"; Skeleton for content placeholders that match the final layout.
+export function Spinner({ className }: { className?: string }) {
+  return (
+    <span
+      role="status"
+      aria-label="Loading"
+      className={cn(
+        "inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent opacity-60",
+        className,
+      )}
+    />
+  );
+}
+
+export function Skeleton({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      aria-hidden
+      className={cn("animate-pulse rounded-md", className)}
+      style={{ backgroundColor: "color-mix(in srgb, currentColor 12%, transparent)", ...style }}
     />
   );
 }

@@ -18,7 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (browser, config, devserver, github, machine, native,
+from bridge import (browser, config, devserver, github, native,
                     project_config, runner, state, store, transcript_jsonl,
                     tunnel, usage)
 
@@ -329,10 +329,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"sessions": store.history(chat_id, include_archived=archived)})
 
     def _api_running(self, chat_id: int):
-        self._json({"external": machine.list_running(),
-                    "bridge_running": store.running_session_ids(chat_id),
-                    "jobs": runner.running_jobs(chat_id),
-                    "awaiting": runner.awaiting_input()})
+        self._json(runner.running_snapshot(chat_id))
 
     def _api_sessions_list(self, chat_id: int, qs):
         native.refresh(chat_id)            # surface VSCode sessions started since last poll

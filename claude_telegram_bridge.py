@@ -39,7 +39,7 @@ import json
 import os
 import sys
 
-from bridge import config, devserver, pubsub, state, store, tunnel
+from bridge import config, devserver, native_activity, pubsub, state, store, tunnel
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -82,6 +82,7 @@ def _setup_dashboard():
 
 
 def _shutdown():
+    native_activity.stop()
     tunnel.stop_tunnel()
     devserver.stop_server()
     if config.MINIAPP_ENABLE:
@@ -110,6 +111,7 @@ def main():
     else:
         _setup_miniapp()
         _setup_dashboard()
+        native_activity.start()        # tail live VS Code/terminal sessions
 
     offset = 0
     try:

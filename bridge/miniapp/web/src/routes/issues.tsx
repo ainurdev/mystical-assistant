@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { rootRoute } from "./root";
 import { api, type Issue } from "../lib/api";
 import { useChat } from "../lib/chat";
+import { Skeleton } from "../components/ui";
 
 /** Compose a prompt that hands a GitHub issue to Claude. */
 function issuePrompt(i: Issue): string {
@@ -15,7 +16,7 @@ function issuePrompt(i: Issue): string {
 function IssuesPage() {
   const navigate = useNavigate();
   const { setDraft } = useChat();
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["issues"],
     queryFn: () => api.getIssues(),
     refetchInterval: 60000,
@@ -26,6 +27,23 @@ function IssuesPage() {
     setDraft(issuePrompt(i));
     void navigate({ to: "/" });
   }
+
+  if (isLoading)
+    return (
+      <div className="space-y-3 pb-24">
+        <Skeleton className="h-4 w-32" />
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="space-y-2 rounded-2xl border border-[var(--border)] bg-[var(--tg-secondary-bg)] p-3"
+          >
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/3" />
+            <Skeleton className="h-7 w-28 rounded-lg" />
+          </div>
+        ))}
+      </div>
+    );
 
   if (data && !data.has_remote)
     return (

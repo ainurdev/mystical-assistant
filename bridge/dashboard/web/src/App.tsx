@@ -12,10 +12,10 @@ import {
   type RunningJob,
   type RunningSession,
   type SessionBrief,
+  type SessionStatus,
 } from "./api";
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
-import { GitTab } from "./components/GitTab";
 import { IssuesTab } from "./components/IssuesTab";
 import { RunTab } from "./components/RunTab";
 import { DiffTab } from "./components/DiffTab";
@@ -28,7 +28,7 @@ import { StatusBar } from "./components/hud/StatusBar";
 import { WorkspacePanel } from "./components/hud/WorkspacePanel";
 import { TelemetryPanel } from "./components/hud/TelemetryPanel";
 import { ContextMatrixPanel } from "./components/hud/ContextMatrixPanel";
-import { ProjectsPanel } from "./components/hud/ProjectsPanel";
+import { WorkspaceGitPanel } from "./components/hud/WorkspaceGitPanel";
 import { SessionsPanel } from "./components/hud/SessionsPanel";
 import { JobsPanel } from "./components/hud/JobsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -46,10 +46,11 @@ export function App() {
   const [view, setView] = useState<"chat" | "history">("chat");
   const [external, setExternal] = useState<RunningSession[]>([]);
   const [jobs, setJobs] = useState<RunningJob[]>([]);
-  const [bridgeIds, setBridgeIds] = useState<Set<string>>(new Set());
-  const [awaiting, setAwaiting] = useState<Map<string, "question" | "permission">>(new Map());
+  // Unified per-session status (working/awaiting), keyed by session id — the same
+  // map both surfaces render from, including live native (VS Code) sessions.
+  const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
-  const [activeTab, setActiveTab] = useState("git");
+  const [activeTab, setActiveTab] = useState("issues");
   const [diffFile, setDiffFile] = useState<{ project: string; path: string } | null>(null);
   // Bumped to prefill the composer (e.g. "Feed to Claude" from the Issues tab).
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
@@ -71,6 +72,10 @@ export function App() {
   const vscodeLive = external.some((r) => r.source === "vscode");
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
   const activeProject = state?.project?.rel ?? null;
+  // The open session's AI is "working" — either a live bridge turn (handled per-turn
+  // in Transcript) or a native VS Code session being written to right now. The
+  // trailing indicator covers the native case, where no turn is ever "running".
+  const openWorking = (sessionId ? statusMap.get(sessionId)?.state : undefined) === "working";
 
   // Real-derived telemetry inputs (counts over the live transcript).
   const toolCount = turns.reduce(
@@ -198,8 +203,7 @@ export function App() {
         if (!live) return;
         setExternal(r.external);
         setJobs(r.jobs ?? []);
-        setBridgeIds(new Set(r.bridge_running));
-        setAwaiting(new Map((r.awaiting ?? []).map((a) => [a.session_id, a.kind])));
+        setStatusMap(new Map(Object.entries(r.status ?? {})));
       } catch {
         /* ignore */
       }
@@ -338,37 +342,16 @@ export function App() {
       icon: "◰",
       run: () => void api.preview(previewOpen ? "stop" : "start").catch(() => {}),
     },
-    { id: "tab-git", label: "Open Git", group: "Panel", icon: "⎇", run: () => setActiveTab("git") },
     { id: "tab-issues", label: "Open GitHub issues", group: "Panel", icon: "◉", run: () => setActiveTab("issues") },
     { id: "tab-run", label: "Open Run (dev server)", group: "Panel", icon: "▸", run: () => setActiveTab("run") },
     { id: "tab-diff", label: "View changes (diff)", group: "Panel", icon: "±", run: () => setActiveTab("diff") },
     { id: "tab-logs", label: "Open logs", group: "Panel", icon: "≣", run: () => setActiveTab("logs") },
-    { id: "git-commit", label: "Git: commit changes…", group: "Git", icon: "✓", run: () => setActiveTab("git") },
-    { id: "git-push", label: "Git: push to origin…", group: "Git", icon: "↑", run: () => setActiveTab("git") },
     { id: "model-opus", label: "Use Opus", group: "Model", icon: "⌥", run: () => setModel("opus") },
     { id: "model-sonnet", label: "Use Sonnet", group: "Model", icon: "⌥", run: () => setModel("sonnet") },
     { id: "model-haiku", label: "Use Haiku", group: "Model", icon: "⌥", run: () => setModel("haiku") },
   ];
 
   const panelTabs: PanelTab[] = [
-    {
-      id: "git",
-      label: "Git",
-      badge: (activeProject && gitBadges.get(activeProject)?.dirty)
-        ? String(gitBadges.get(activeProject)!.dirty)
-        : null,
-      render: () => (
-        <GitTab
-          project={activeProject}
-          onOpenDiff={(path) => {
-            if (activeProject) {
-              setDiffFile({ project: activeProject, path });
-              setActiveTab("diff");
-            }
-          }}
-        />
-      ),
-    },
     { id: "issues", label: "Issues", render: () => <IssuesTab project={activeProject} onFeed={feedIssue} /> },
     { id: "run", label: "Run", render: () => <RunTab project={activeProject} server={state?.server ?? undefined} /> },
     { id: "diff", label: "Diff", render: () => <DiffTab file={diffFile} /> },
@@ -413,12 +396,18 @@ export function App() {
           />
           <TelemetryPanel tele={tele} turns={turns.length} tools={toolCount} cost={cost} errors={errorCount} />
           <ContextMatrixPanel permissionMode={state?.permission_mode} />
-          <ProjectsPanel
+          <WorkspaceGitPanel
             sessions={sessions}
             gitBadges={gitBadges}
-            bridgeIds={bridgeIds}
+            status={statusMap}
             activeProject={activeProject}
             onSelectProject={() => void loadSessions()}
+            onOpenDiff={(path) => {
+              if (activeProject) {
+                setDiffFile({ project: activeProject, path });
+                setActiveTab("diff");
+              }
+            }}
           />
         </div>
 
@@ -436,6 +425,7 @@ export function App() {
           scrollRef={scrollRef}
           onOpenFromHistory={(s) => void openFromHistory(s)}
           liveTurns={liveTurns.current}
+          trailingWorking={openWorking && !running}
           composer={
             <Composer
               disabled={running || pendingCount > 0}
@@ -459,9 +449,7 @@ export function App() {
           <JobsPanel jobs={jobs} selectedId={sessionId} onSelect={openSession} />
           <SessionsPanel
             sessions={sessions}
-            external={external}
-            bridgeIds={bridgeIds}
-            awaiting={awaiting}
+            status={statusMap}
             selectedId={sessionId}
             onSelect={openSession}
             tele={tele}

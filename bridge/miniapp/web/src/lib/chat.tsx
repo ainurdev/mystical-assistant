@@ -133,6 +133,9 @@ export interface ChatContextValue {
   removeAttachment: (id: string) => void;
   activeTurn: Turn | null;
   isRunning: boolean;
+  // The open session's AI is working — a live bridge turn OR a native (VS Code)
+  // session being written to right now (from the unified status map).
+  sessionWorking: boolean;
   pending: PendingRequest[];
   sendError: ApiError | null;
   model: ModelId;
@@ -180,6 +183,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;
   const isRunning = activeTurn !== null;
   const pending = activeTurn?.pending ?? [];
+
+  // Unified status (shared ["running"] cache with RunningNow / the header). Tells
+  // us when the open session is a live native (VS Code) session so we both stream
+  // its transcript and show a working indicator, even with no bridge turn.
+  const runningQuery = useQuery({
+    queryKey: ["running"],
+    queryFn: () => api.getRunning(),
+    refetchInterval: 4000,
+  });
+  const sessionWorking =
+    (sessionId ? runningQuery.data?.status?.[sessionId]?.state : undefined) === "working";
 
   function openSession(id: string) {
     seqRef.current = 0;
@@ -245,7 +259,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       seqRef.current = t.next_cursor;
       return t;
     },
-    refetchInterval: isRunning ? 1500 : false,
+    refetchInterval: isRunning || sessionWorking ? 1500 : false,
   });
 
   async function addAttachments(files: FileList | null) {
@@ -367,6 +381,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     removeAttachment,
     activeTurn,
     isRunning,
+    sessionWorking,
     pending,
     sendError,
     model,

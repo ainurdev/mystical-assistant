@@ -3,7 +3,7 @@ import { createRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { rootRoute } from "./root";
 import { api, ApiError } from "../lib/api";
-import { Button, Card, Banner, StatusDot } from "../components/ui";
+import { Button, Card, Banner, StatusDot, Spinner } from "../components/ui";
 
 function ServerPage() {
   const queryClient = useQueryClient();
@@ -146,7 +146,15 @@ function ServerPage() {
           ref={logRef}
           className="h-72 overflow-auto rounded-xl bg-black/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap"
         >
-          {lines.length > 0 ? lines.join("\n") : "No logs yet."}
+          {logs.isLoading ? (
+            <span className="flex items-center gap-2 text-[var(--tg-hint)]">
+              <Spinner className="h-3.5 w-3.5" /> Loading logs…
+            </span>
+          ) : lines.length > 0 ? (
+            lines.join("\n")
+          ) : (
+            "No logs yet."
+          )}
         </pre>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { parseDiff, type DiffRow } from "../lib/diff";
+import { Skeleton } from "./ui";
 
 const ROW: Record<DiffRow["kind"], { bg: string; sign: string; color: string }> = {
   add: { bg: "rgba(143,217,168,.07)", sign: "var(--success)", color: "#a7e6c3" },
@@ -12,10 +13,14 @@ const ROW: Record<DiffRow["kind"], { bg: string; sign: string; color: string }> 
 export function DiffTab({ file }: { file: { project: string; path: string } | null }) {
   const [rows, setRows] = useState<DiffRow[]>([]);
   const [empty, setEmpty] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!file) return;
     let live = true;
+    setLoading(true);
+    setRows([]); // clear the previous file's diff so it doesn't flash stale
+    setEmpty(false);
     void (async () => {
       try {
         const r = await api.gitDiff(file.project, file.path);
@@ -25,6 +30,8 @@ export function DiffTab({ file }: { file: { project: string; path: string } | nu
         setEmpty(parsed.length === 0);
       } catch {
         /* ignore */
+      } finally {
+        if (live) setLoading(false);
       }
     })();
     return () => {
@@ -34,7 +41,7 @@ export function DiffTab({ file }: { file: { project: string; path: string } | nu
 
   if (!file)
     return (
-      <div className="p-4 text-xs text-muted-foreground">Select a changed file in the Git tab.</div>
+      <div className="p-4 text-xs text-muted-foreground">Select a changed file to view its diff.</div>
     );
 
   return (
@@ -45,7 +52,13 @@ export function DiffTab({ file }: { file: { project: string; path: string } | nu
         </span>
       </div>
       <div className="overflow-hidden rounded-[9px] border border-border bg-[rgba(0,0,0,.25)] font-mono text-[11.5px] leading-[1.75]">
-        {empty ? (
+        {loading ? (
+          <div className="space-y-1.5 px-3 py-2.5">
+            {[80, 64, 72, 56, 68].map((w, i) => (
+              <Skeleton key={i} className="h-3" style={{ width: `${w}%` }} />
+            ))}
+          </div>
+        ) : empty ? (
           <div className="px-3 py-2 text-muted-2">No textual diff.</div>
         ) : (
           rows.map((d, i) => {

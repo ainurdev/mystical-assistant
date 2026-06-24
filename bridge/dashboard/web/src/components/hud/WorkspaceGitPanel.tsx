@@ -1,27 +1,36 @@
-import { api, type GitBadge, type SessionBrief } from "../../api";
+import { api, type GitBadge, type SessionBrief, type SessionStatus } from "../../api";
+import { GitTab } from "../GitTab";
 import { Panel } from "./Panel";
 
-export function ProjectsPanel({
+/** Bottom-of-sidebar workspace control: the project selector on top (switch
+ *  between repos that have sessions), with the active project's full git detail
+ *  (changes, commit, push) directly below. Replaces the standalone Projects panel
+ *  and the right-panel Git tab. */
+export function WorkspaceGitPanel({
   sessions,
   gitBadges,
-  bridgeIds,
+  status,
   activeProject,
   onSelectProject,
+  onOpenDiff,
 }: {
   sessions: SessionBrief[];
   gitBadges: Map<string, GitBadge>;
-  bridgeIds: Set<string>;
+  status: Map<string, SessionStatus>;
   activeProject: string | null;
   onSelectProject: () => void;
+  onOpenDiff: (path: string) => void;
 }) {
-  // Distinct repos that have sessions, with whether any is running.
+  // Distinct repos that have sessions, with whether any is working (bridge or
+  // native), from the one unified status map.
   const repos = [...new Set(sessions.map((s) => s.project))].map((name) => ({
     name,
-    running: sessions.some((s) => s.project === name && bridgeIds.has(s.id)),
+    running: sessions.some((s) => s.project === name && status.get(s.id)?.state === "working"),
     badge: gitBadges.get(name),
   }));
 
   async function pick(rel: string) {
+    if (rel === activeProject) return;
     try {
       await api.select(rel);
       onSelectProject();
@@ -31,8 +40,9 @@ export function ProjectsPanel({
   }
 
   return (
-    <Panel label="PANEL" title="PROJECTS // GIT" delay=".24s">
-      <div className="px-2.5 pb-3 pt-2">
+    <Panel label="PANEL" title="WORKSPACE // GIT" delay=".24s">
+      {/* Project selector */}
+      <div className="px-2.5 pb-1 pt-2">
         {repos.map((p, i) => {
           const active = p.name === activeProject;
           const dirty = p.badge?.dirty ?? 0;
@@ -41,7 +51,7 @@ export function ProjectsPanel({
             <div
               key={p.name}
               onClick={() => void pick(p.name)}
-              className="mb-1 cursor-pointer border-l-2 px-2.5 py-2.5 hover:bg-accent"
+              className="mb-1 cursor-pointer border-l-2 px-2.5 py-2 hover:bg-accent"
               style={{
                 borderColor: active ? "var(--primary)" : "transparent",
                 background: active ? "var(--ac-06)" : "transparent",
@@ -74,6 +84,11 @@ export function ProjectsPanel({
           <div className="px-2 py-2 text-[11px] text-muted-2">NO PROJECTS</div>
         )}
       </div>
+
+      {/* Active project's git detail (changes / commit / push), moved here from
+          the right-panel tab. */}
+      <div className="mx-2.5 border-t border-dashed border-border" />
+      <GitTab project={activeProject} onOpenDiff={onOpenDiff} />
     </Panel>
   );
 }

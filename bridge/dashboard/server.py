@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
-from bridge import (browser, config, devserver, git, github, machine, native,
+from bridge import (browser, config, devserver, git, github, native,
                     project_config, pubsub, runner, state, store, tunnel, usage)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
@@ -147,10 +147,7 @@ class Handler(BaseHTTPRequestHandler):
             archived = qs.get("archived", ["0"])[0] == "1"
             return self._json({"sessions": store.history(chat, include_archived=archived)})
         if path == "/local/running":
-            return self._json({"external": machine.list_running(),
-                               "bridge_running": store.running_session_ids(chat),
-                               "jobs": runner.running_jobs(chat),
-                               "awaiting": runner.awaiting_input()})
+            return self._json(runner.running_snapshot(chat))
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/sessions":

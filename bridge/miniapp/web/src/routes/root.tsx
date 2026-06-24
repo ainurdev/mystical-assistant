@@ -48,8 +48,7 @@ function HeaderBar({
     queryFn: () => api.getRunning(),
     refetchInterval: 4000,
   });
-  const runningIds = new Set(running.data?.bridge_running ?? []);
-  const awaitingIds = new Set((running.data?.awaiting ?? []).map((a) => a.session_id));
+  const status = running.data?.status ?? {};
   const { newChat, isRunning, sessions, sessionId, selectSession } = useChat();
 
   return (
@@ -92,12 +91,15 @@ function HeaderBar({
                 className="max-w-[38vw] truncate rounded-lg bg-[var(--tg-secondary-bg)] px-2 py-1.5 text-xs outline-none disabled:opacity-40"
                 aria-label="Chat session"
               >
-                {sessions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {(awaitingIds.has(s.id) ? "❓ " : runningIds.has(s.id) ? "● " : "") +
-                      (s.title || "New chat")}
-                  </option>
-                ))}
+                {sessions.map((s) => {
+                  const st = status[s.id]?.state;
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {(st === "awaiting" ? "❓ " : st === "working" ? "● " : "") +
+                        (s.title || "New chat")}
+                    </option>
+                  );
+                })}
               </select>
             )}
             <button

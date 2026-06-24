@@ -163,11 +163,21 @@ export interface RunningSession {
   started: number | null; // epoch seconds
   status: string | null;
   waiting_for: string | null;
+  state?: SessionState; // "working" while its transcript is being written, else "idle"
 }
 
 export interface AwaitingSession {
   session_id: string;
   kind: "question" | "permission";
+}
+export type SessionState = "working" | "awaiting" | "idle";
+// One unified per-session status, identical on every surface. Bridge sessions can
+// be any state; native (VS Code/terminal) sessions are working/idle only.
+export interface SessionStatus {
+  state: SessionState;
+  kind: "question" | "permission" | null;
+  source: "bridge" | "native";
+  label: string | null;
 }
 export interface JobActivity {
   state: "tool" | "awaiting" | "thinking";
@@ -188,6 +198,7 @@ export interface RunningInfo {
   bridge_running: string[]; // store session ids with an in-flight turn
   jobs: RunningJob[]; // this chat's live bridge runs, with activity detail
   awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
+  status: Record<string, SessionStatus>; // unified per-session status (working/awaiting only)
 }
 
 // Per-repo history: a session enriched with aggregates from its turns.
