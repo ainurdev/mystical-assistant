@@ -69,7 +69,7 @@ def test_parses_two_turns_with_prompts():
     assert turns[0]["id"] == "t1" and turns[1]["id"] == "t2"
     assert all(t["status"] == "done" for t in turns)
     assert all(t["attachments"] == [] for t in turns)
-    assert turns[0]["model"] == "claude-opus"
+    assert turns[0]["model"] == "opus"        # normalized to short family
 
 
 def test_events_grouped_and_ordered_under_turns():

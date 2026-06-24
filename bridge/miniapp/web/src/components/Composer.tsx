@@ -29,6 +29,17 @@ const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "max", label: "Max" },
 ];
 
+// Per-message operating mode ("" keeps the session's). Mirrors the CLI's
+// permission modes so you can flip a single run from your phone.
+const PERMS: { id: string; label: string }[] = [
+  { id: "", label: "Session default" },
+  { id: "default", label: "Ask each time" },
+  { id: "acceptEdits", label: "Accept edits" },
+  { id: "plan", label: "Plan only" },
+  { id: "auto", label: "Auto" },
+  { id: "bypassPermissions", label: "Full autonomy" },
+];
+
 const chipClass =
   "inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/60 px-2.5 py-1.5 text-xs font-medium text-foreground outline-none transition-colors active:opacity-70 focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -48,6 +59,8 @@ export function Composer() {
     setModel,
     effort,
     setEffort,
+    perm,
+    setPerm,
   } = useChat();
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -64,6 +77,7 @@ export function Composer() {
   const sendDisabled = blocked || draft.trim().length === 0;
   const modelLabel = MODELS.find((m) => m.id === model)?.label ?? model;
   const effortLabel = EFFORTS.find((e) => e.id === effort)?.label ?? "Auto";
+  const permLabel = PERMS.find((p) => p.id === perm)?.label ?? "Session default";
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-10 mx-auto max-w-screen-sm border-t border-border bg-[var(--tg-bg)] px-3 pb-3 pt-2">
@@ -105,6 +119,23 @@ export function Composer() {
               {EFFORTS.map((e) => (
                 <DropdownMenuRadioItem key={e.id || "auto"} value={e.id || "auto"}>
                   {e.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger className={chipClass} aria-label="Permission mode">
+            {permLabel}
+            <ChevronDown size={13} className="text-muted-foreground" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Operating mode (this run)</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={perm || "session"} onValueChange={(v) => setPerm(v === "session" ? "" : v)}>
+              {PERMS.map((p) => (
+                <DropdownMenuRadioItem key={p.id || "session"} value={p.id || "session"}>
+                  {p.label}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>

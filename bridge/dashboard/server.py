@@ -23,7 +23,7 @@ from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
 from bridge import (browser, config, devserver, git, github, native,
-                    project_config, pubsub, runner, state, store, tunnel, usage)
+                    project_config, pubsub, runner, shell, state, store, tunnel, usage)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -129,7 +129,7 @@ class Handler(BaseHTTPRequestHandler):
             pd = state.project_dir(chat)
             return self._json({
                 "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)},
-                "busy": state.busy_chat is not None, "busy_chat": state.busy_chat,
+                "busy": state.any_running(), "busy_chat": next(iter(state.running_chats()), None),
                 "server": devserver.server_state(), "preview": tunnel.tunnel_state(),
                 "permission_mode": config.MINIAPP_PERMISSION_MODE})
         if path == "/local/projects":
@@ -223,6 +223,12 @@ class Handler(BaseHTTPRequestHandler):
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
+        if path == "/local/shell":
+            try:
+                cursor = int(qs.get("cursor", ["0"])[0])
+            except ValueError:
+                cursor = 0
+            return self._json(shell.snapshot(cursor))
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -234,6 +240,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._respond(path[len("/local/run/"):-len("/respond")], body)
         if path.startswith("/local/run/") and path.endswith("/interrupt"):
             return self._interrupt(path[len("/local/run/"):-len("/interrupt")], body)
+        if path == "/local/shell":
+            return self._json(shell.run(state.project_dir(chat), body.get("command", "")))
+        if path == "/local/shell/kill":
+            return self._json(shell.kill())
         if path == "/local/server":
             return self._server(chat, body)
         if path == "/local/preview":

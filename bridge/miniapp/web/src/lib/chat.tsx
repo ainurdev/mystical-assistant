@@ -142,6 +142,8 @@ export interface ChatContextValue {
   setModel: (m: ModelId) => void;
   effort: EffortLevel | "";
   setEffort: (e: EffortLevel | "") => void;
+  perm: string;
+  setPerm: (p: string) => void;
   sessions: SessionBrief[];
   sessionId: string | null;
   selectSession: (id: string) => void;
@@ -168,6 +170,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [model, setModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
   const [effort, setEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
+  // Per-message permission override ("" = use the session's mode). Lets you flip a
+  // single run to ask/plan/full-auto from the phone, like Shift+Tab in the CLI.
+  const [perm, setPerm] = usePersistentState<string>("miniapp:perm:v1", "");
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null); // current session, for stale-free reads
@@ -293,6 +298,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         sessionId,
         model,
         effort || undefined,
+        perm || undefined,
       );
       onSent?.();
       setTurns((prev) => [
@@ -388,6 +394,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setModel,
     effort,
     setEffort,
+    perm,
+    setPerm,
     sessions,
     sessionId,
     selectSession,

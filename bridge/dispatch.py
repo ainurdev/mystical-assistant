@@ -87,7 +87,8 @@ def on_message(msg: dict):
                          daemon=True).start()
         return
     if text == "/status":
-        st = f"busy with chat {state.busy_chat}" if state.busy_chat else "idle"
+        running = state.running_chats()
+        st = f"busy · {len(running)} run(s)" if running else "idle"
         ts = tunnel_state()
         tunnel = f"{ts['url']} (port {ts['port']})" if ts["url"] else "none"
         s = store.latest_session(chat_id, state.project_key(chat_id))
@@ -98,12 +99,13 @@ def on_message(msg: dict):
                       f"Mini App: {app}\nSession: {sid}")
         return
 
-    # Plain text -> prompt to Claude in the active project.
-    if not state.busy.acquire(blocking=False):
-        send(chat_id, "⏳ Still working on a previous task — please wait.")
+    # Plain text -> prompt to Claude in the active project. Claim this session's
+    # run slot; a run in another project/session is unaffected.
+    session = store.ensure_session(chat_id, state.project_key(chat_id))
+    if not state.acquire_run(session["id"], chat_id):
+        send(chat_id, "⏳ Still working on this session — please wait.")
         return
-    state.busy_chat = chat_id
-    threading.Thread(target=handle_task, args=(chat_id, text), daemon=True).start()
+    threading.Thread(target=handle_task, args=(chat_id, text, session), daemon=True).start()
 
 
 def handle_callback(cb: dict):

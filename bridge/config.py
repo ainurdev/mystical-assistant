@@ -55,6 +55,11 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
     "the result briefly."))
 
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
+
+# Push a Telegram message when a streaming (Mini App / dashboard) run needs your
+# input or finishes, so you can walk away from the panel and still get pinged.
+# The bot's own plain-text turns aren't notified (they already reply in-chat).
+NOTIFY_ENABLE = os.environ.get("NOTIFY_ENABLE", "1").lower() not in ("0", "false", "no", "")
 PREVIEW_PORT = int(os.environ.get("PREVIEW_PORT", "3000"))    # default dev port
 START_CMD = os.environ.get("START_CMD", "npm run dev")        # default /server cmd
 CLOUDFLARED_BIN = os.environ.get("CLOUDFLARED_BIN", "cloudflared")

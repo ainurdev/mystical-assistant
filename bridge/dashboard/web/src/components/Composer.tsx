@@ -4,6 +4,16 @@ import { ContextStrip } from "./UsageStrip";
 
 const MODELS: ModelId[] = ["opus", "sonnet", "haiku"];
 const EFFORTS: (EffortLevel | "")[] = ["", "low", "medium", "high", "xhigh", "max"];
+// Per-message operating mode ("" keeps the session's). Mirrors the CLI permission
+// modes so you can flip a single run (ask / plan / full autonomy) remotely.
+const PERMS: { id: string; label: string }[] = [
+  { id: "", label: "MODE: SESSION" },
+  { id: "default", label: "ASK EACH TIME" },
+  { id: "acceptEdits", label: "ACCEPT EDITS" },
+  { id: "plan", label: "PLAN ONLY" },
+  { id: "auto", label: "AUTO" },
+  { id: "bypassPermissions", label: "FULL AUTONOMY" },
+];
 
 export function Composer({
   disabled,
@@ -11,6 +21,8 @@ export function Composer({
   model,
   effort,
   permissionMode,
+  perm,
+  onPerm,
   injectedText,
   injectNonce,
   onModel,
@@ -24,6 +36,8 @@ export function Composer({
   model: ModelId;
   effort: EffortLevel | "";
   permissionMode?: string | null;
+  perm: string;
+  onPerm: (p: string) => void;
   injectedText?: string;
   injectNonce?: number;
   onModel: (m: ModelId) => void;
@@ -133,6 +147,18 @@ export function Composer({
             {EFFORTS.map((e) => (
               <option key={e} value={e} className="bg-[#0b1313] text-foreground">
                 {e ? e.toUpperCase() : "EFFORT: AUTO"}
+              </option>
+            ))}
+          </select>
+          <select
+            value={perm}
+            onChange={(e) => onPerm(e.target.value)}
+            title="Operating mode for the next message"
+            className="border border-input bg-transparent px-2 py-1 text-[11px] tracking-[1px] text-muted-foreground"
+          >
+            {PERMS.map((p) => (
+              <option key={p.id} value={p.id} className="bg-[#0b1313] text-foreground">
+                {p.label}
               </option>
             ))}
           </select>

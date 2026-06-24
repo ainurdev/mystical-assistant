@@ -361,10 +361,10 @@ def test_handle_task_journals_bot_turn():
     runner.send = lambda *a, **k: None
     runner.typing = lambda *a, **k: None
     runner.run_blocking = lambda chat_id, prompt, resume_id=None: ("answer", "claude-sid", 0.01, False)
-    state.busy.acquire()                             # handle_task assumes caller holds busy
-    state.busy_chat = 777
+    session = store.ensure_session(777, state.project_key(777))
+    state.acquire_run(session["id"], 777)            # handle_task assumes caller holds the slot
     try:
-        runner.handle_task(777, "do the thing")
+        runner.handle_task(777, "do the thing", session)
     finally:
         runner.send, runner.typing, runner.run_blocking = orig
     s = store.latest_session(777, state.project_key(777))

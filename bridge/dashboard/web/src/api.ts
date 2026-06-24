@@ -255,6 +255,17 @@ export interface RunBody {
   session_id: string;
   model?: string;
   effort?: string;
+  permission_mode?: string; // per-message operating mode; omit to use the session's
+}
+
+export interface ShellSnapshot {
+  status: "idle" | "running" | "done" | "error" | "killed";
+  cmd: string | null;
+  running: boolean;
+  dir: string | null;
+  code: number | null;
+  lines: { seq: number; line: string }[];
+  cursor: number;
 }
 
 export const api = {
@@ -279,6 +290,10 @@ export const api = {
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
   server: (action: "start" | "stop", cmd?: string) =>
     req<{ message: string }>("/local/server", { method: "POST", body: { action, cmd } }),
+  shell: (cursor: number) => req<ShellSnapshot>(`/local/shell?cursor=${cursor}`),
+  shellRun: (command: string) =>
+    req<{ ok: boolean; error?: string }>("/local/shell", { method: "POST", body: { command } }),
+  shellKill: () => req<{ ok: boolean; error?: string }>("/local/shell/kill", { method: "POST", body: {} }),
   preview: (action: "start" | "stop", port?: number) =>
     req<{ message: string }>("/local/preview", { method: "POST", body: { action, port } }),
   select: (dir: string) =>

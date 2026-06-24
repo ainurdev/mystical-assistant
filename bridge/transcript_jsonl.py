@@ -29,6 +29,34 @@ _LEADING_TAGS = re.compile(r"^(?:\s*<[^>]+>.*?</[^>]+>\s*|\s*<[^>]+/>\s*)+", re.
 # the runner's heavy imports / env requirements).
 _SUMMARY_KEYS = ("command", "file_path", "path", "pattern", "url", "query", "prompt")
 
+# Estimated Claude list prices, $ per million tokens, so an adopted native session
+# reports a cost instead of $0 (native JSONL records token usage, not a dollar
+# amount). Approximate — override this dict if prices change. cw = cache write,
+# cr = cache read.
+MODEL_PRICING = {
+    "opus":   {"in": 15.0, "out": 75.0, "cw": 18.75, "cr": 1.50},
+    "sonnet": {"in": 3.0,  "out": 15.0, "cw": 3.75,  "cr": 0.30},
+    "haiku":  {"in": 0.80, "out": 4.0,  "cw": 1.00,  "cr": 0.08},
+}
+_DEFAULT_PRICE = MODEL_PRICING["sonnet"]
+
+
+def _short_model(m: str | None) -> str | None:
+    """Normalize a full model id (claude-opus-4-…) to its short family ("opus"),
+    so native turns label the same way bridge turns do."""
+    s = (m or "").lower()
+    for fam in ("opus", "sonnet", "haiku"):
+        if fam in s:
+            return fam
+    return m or None
+
+
+def _cost_from_usage(model: str | None, u: dict) -> float:
+    fam = (model or "").lower()
+    price = next((p for k, p in MODEL_PRICING.items() if k in fam), _DEFAULT_PRICE)
+    return (u["in"] * price["in"] + u["out"] * price["out"]
+            + u["cw"] * price["cw"] + u["cr"] * price["cr"]) / 1_000_000
+
 
 def find_transcript(claude_session_id: str) -> str | None:
     """Locate the JSONL for a native session UUID, regardless of which project
@@ -164,7 +192,9 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
         tid = rec.get("uuid") or f"turn{len(turns)}"
         cur = {"id": tid, "seq": len(turns), "prompt": prompt, "attachments": [],
                "status": "done", "cost": None, "elapsed": None,
-               "started": _ts(rec), "model": None}
+               "started": _ts(rec), "model": None,
+               "_last_ts": _ts(rec), "_seen_usage": False,
+               "_usage": {"in": 0, "out": 0, "cw": 0, "cr": 0}}
         turns.append(cur)
         state["turn"] = cur
 
@@ -203,7 +233,15 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
                 if state["turn"] is None:
                     open_turn(rec, "")
                 if state["turn"].get("model") is None and msg.get("model"):
-                    state["turn"]["model"] = msg.get("model")
+                    state["turn"]["model"] = _short_model(msg.get("model"))
+                usage = msg.get("usage")
+                if isinstance(usage, dict):
+                    acc = state["turn"]["_usage"]
+                    acc["in"] += usage.get("input_tokens") or 0
+                    acc["out"] += usage.get("output_tokens") or 0
+                    acc["cw"] += usage.get("cache_creation_input_tokens") or 0
+                    acc["cr"] += usage.get("cache_read_input_tokens") or 0
+                    state["turn"]["_seen_usage"] = True
                 for b in (content or []):
                     if not isinstance(b, dict):
                         continue
@@ -224,5 +262,19 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
                                   "summary": _summarize_tool(name, b.get("input", {}))})
             # other record types (queue-operation, mode, file-history-snapshot,
             # last-prompt, attachment, ...) carry no transcript content -> skipped
+            if state["turn"] is not None:
+                rts = _ts(rec)
+                if rts:
+                    state["turn"]["_last_ts"] = rts
+    # Finalize per-turn metrics (cost from usage tokens, elapsed from timestamps)
+    # and drop the scratch accumulators so the turn shape matches the store's.
+    for cur in turns:
+        usage = cur.pop("_usage", None)
+        seen = cur.pop("_seen_usage", False)
+        last_ts = cur.pop("_last_ts", None)
+        if seen and usage:
+            cur["cost"] = _cost_from_usage(cur.get("model"), usage)
+        if last_ts and cur["started"]:
+            cur["elapsed"] = max(0, int(last_ts - cur["started"]))
     next_cursor = state["seq"] if state["seq"] > cursor else cursor
     return {"turns": turns, "events": events, "next_cursor": next_cursor}

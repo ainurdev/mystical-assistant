@@ -4,7 +4,9 @@ Two entry points share the same auth/session/permission setup:
   - run_blocking()  -> one-shot JSON result (the bot's plain-text prompt path)
   - start_streaming_job() -> a Job whose events stream in live (the Mini App path)
 
-Both serialize on state.busy so only one Claude run happens at a time.
+Each run claims its session's slot in state's per-session run registry, so two
+turns never hit the same Claude session at once, but different sessions run
+concurrently.
 """
 
 import json
@@ -135,13 +137,12 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None):
             d.get("session_id"), d.get("total_cost_usd"), bool(d.get("is_error")))
 
 
-def handle_task(chat_id: int, prompt: str):
-    """Runs in a thread; assumes the caller already acquired state.busy."""
+def handle_task(chat_id: int, prompt: str, session: dict):
+    """Runs in a thread; the caller already claimed `session`'s run slot."""
     try:
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
-        session = store.ensure_session(chat_id, state.project_key(chat_id))
         job_id = uuid.uuid4().hex
         store.start_turn(session["id"], job_id, prompt, [])
         result, sid, cost, is_error = run_blocking(
@@ -157,8 +158,7 @@ def handle_task(chat_id: int, prompt: str):
             footer += f" · ${cost:.4f}"
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
     finally:
-        state.busy_chat = None
-        state.busy.release()
+        state.release_run(session["id"])
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +421,38 @@ def running_snapshot(chat_id: int) -> dict:
             "jobs": jobs, "awaiting": awaiting, "status": status}
 
 
+def _notify(chat_id: int | None, text: str) -> None:
+    """Best-effort Telegram push (never raises into the run loop)."""
+    if not config.NOTIFY_ENABLE or not chat_id:
+        return
+    try:
+        send(chat_id, text)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _session_label(session_id: str | None) -> str:
+    sess = store.get_session(session_id) if session_id else None
+    if not sess:
+        return "your session"
+    title = sess.get("title") or sess["id"][:8]
+    proj = sess.get("project")
+    return f"{title}{f' · {proj}' if proj else ''}"
+
+
+def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> None:
+    """Ping when a streaming run blocks on you (a question or an approval)."""
+    what = "a question" if kind == "question" else "your approval"
+    link = f"\n{state.miniapp_url}" if state.miniapp_url else ""
+    _notify(chat_id, f"❓ Claude needs {what} — {_session_label(session_id)}{link}")
+
+
+def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool) -> None:
+    """Ping when a streaming run finishes (or errors), so you can step away."""
+    icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
+    _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}")
+
+
 def _register(job: Job):
     with _jobs_lock:
         _jobs[job.id] = job
@@ -476,6 +508,8 @@ def _handle_control_request(job: Job, obj: dict):
                          "summary": summary, "input": req.get("input", {})})
         job.add({"type": "permission", "request_id": rid,
                  "tool_name": tool, "summary": summary})
+    notify_awaiting(job.chat_id, job.store_session_id,
+                    "question" if tool == "AskUserQuestion" else "permission")
 
 
 def _handle_event(job: Job, d: dict):
@@ -522,6 +556,19 @@ def _cleanup_uploads(job_id: str):
     shutil.rmtree(d, ignore_errors=True)
 
 
+def _watchdog(job: Job, proc) -> None:
+    """Kill a run that spends RUN_TIMEOUT actually working. Seconds spent blocked
+    on the user (job.pending non-empty) don't accrue, so an unanswered card can't
+    time the run out."""
+    active = 0.0
+    while proc.poll() is None and active < config.RUN_TIMEOUT:
+        time.sleep(1.0)
+        if not job.pending and not job.interrupted:
+            active += 1.0
+    if proc.poll() is None and active >= config.RUN_TIMEOUT:
+        proc.kill()
+
+
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
                    permission_mode: str | None = None):
@@ -544,10 +591,10 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             return
         job.proc = proc
 
-        # Watchdog: kill the run if it exceeds RUN_TIMEOUT.
-        timer = threading.Timer(config.RUN_TIMEOUT, proc.kill)
-        timer.daemon = True
-        timer.start()
+        # Watchdog: kill the run if it spends RUN_TIMEOUT *working* — time spent
+        # blocked on you (a permission/question card) doesn't count, so a slow
+        # human reply never gets Claude killed mid-task.
+        threading.Thread(target=_watchdog, args=(job, proc), daemon=True).start()
 
         # Deliver the prompt on stdin as a stream-json user message.
         job._write_stdin({"type": "user",
@@ -571,7 +618,6 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 # (it otherwise stays alive awaiting more input).
                 job.close_stdin()
         proc.wait()
-        timer.cancel()
 
         if job.interrupted:
             # Stopped by the user (graceful interrupt or kill): finalize cleanly
@@ -600,8 +646,10 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         job.clear_pending()
         job.close_stdin()
         _cleanup_uploads(job.id)
-        state.busy_chat = None
-        state.busy.release()
+        if job.store_session_id:
+            state.release_run(job.store_session_id)
+        if not job.interrupted:
+            notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
 
 
 _FULL_PERM_ORIGINS = {"dashboard", "miniapp"}
@@ -627,18 +675,31 @@ def _adopt_native(session: dict, origin: str | None) -> None:
     store.set_origin(session["id"], "bridge")
 
 
-def _resolve_run_context(chat_id: int, project_dir: str, *, session_id: str | None,
-                         permission_mode: str | None, origin: str | None):
-    """Resolve the store session plus the cwd + permission to run it with.
-
-    A specific session (started in VSCode, or living in another project) carries
-    its OWN cwd and permission posture, so continuing it from any surface runs in
-    the right directory with the right autonomy. A native session is adopted into
-    the store on first continuation. New sessions inherit the surface default
-    permission. Returns (session, cwd, permission_mode)."""
-    session = store.ensure_session(
+def _resolve_session(chat_id: int, project_dir: str, *, session_id: str | None,
+                     permission_mode: str | None, origin: str | None) -> dict:
+    """Just resolve/create the store session row (idempotent, lock-free) so its id
+    is known before we claim its run slot."""
+    return store.ensure_session(
         chat_id, rel(project_dir), session_id, origin=origin, cwd=project_dir,
         permission_mode=permission_mode or _surface_default_permission(origin))
+
+
+def _resolve_run_context(chat_id: int, project_dir: str, *, session_id: str | None,
+                         permission_mode: str | None, origin: str | None):
+    """Resolve the session then its cwd + permission in one shot (the split-free
+    path used outside the concurrent run loop, e.g. tests)."""
+    session = _resolve_session(chat_id, project_dir, session_id=session_id,
+                               permission_mode=permission_mode, origin=origin)
+    return _finalize_run_context(session, project_dir,
+                                 permission_mode=permission_mode, origin=origin)
+
+
+def _finalize_run_context(session: dict, project_dir: str, *,
+                          permission_mode: str | None, origin: str | None):
+    """Once the session's run slot is held, finish resolving the cwd + permission
+    to run it with (adopting a native session into the store on first continuation
+    — done under the lock so two surfaces can't double-import). Returns
+    (session, cwd, permission_mode)."""
     if session.get("origin") in ("vscode", "terminal"):
         _adopt_native(session, origin)
         session = store.get_session(session["id"])
@@ -662,15 +723,18 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
 
     Resolves (or creates) the store session and runs it in the session's own cwd
     with its own permission posture; --resume continuity comes from that session's
-    claude_session_id. `origin` marks where a newly-created session started."""
-    if not state.busy.acquire(blocking=False):
+    claude_session_id. `origin` marks where a newly-created session started.
+
+    Claims only THIS session's run slot, so a run in another project/session keeps
+    going; returns None only if this very session already has an in-flight turn."""
+    project_dir = project or state.project_dir(chat_id)
+    session = _resolve_session(chat_id, project_dir, session_id=session_id,
+                               permission_mode=permission_mode, origin=origin)
+    if not state.acquire_run(session["id"], chat_id):
         return None
     try:
-        state.busy_chat = chat_id
-        project_dir = project or state.project_dir(chat_id)
-        session, cwd, perm = _resolve_run_context(
-            chat_id, project_dir, session_id=session_id,
-            permission_mode=permission_mode, origin=origin)
+        session, cwd, perm = _finalize_run_context(
+            session, project_dir, permission_mode=permission_mode, origin=origin)
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.resume_id = session["claude_session_id"]
         _register(job)
@@ -682,6 +746,5 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                          daemon=True).start()
         return job
     except BaseException:
-        state.busy_chat = None
-        state.busy.release()
+        state.release_run(session["id"])
         raise

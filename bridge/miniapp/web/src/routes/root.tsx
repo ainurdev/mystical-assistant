@@ -13,6 +13,7 @@ import {
   SquarePen,
   MessagesSquare,
   TerminalSquare,
+  SquareChevronRight,
   MonitorPlay,
   History,
   CircleDot,
@@ -26,6 +27,7 @@ const tabs = [
   { to: "/issues", label: "Issues", icon: CircleDot },
   { to: "/history", label: "History", icon: History },
   { to: "/server", label: "Server", icon: TerminalSquare },
+  { to: "/shell", label: "Shell", icon: SquareChevronRight },
   { to: "/preview", label: "Preview", icon: MonitorPlay },
 ] as const;
 

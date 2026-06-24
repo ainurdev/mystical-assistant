@@ -352,10 +352,12 @@ export const api = {
     sessionId: string,
     model?: string,
     effort?: string,
+    permission?: string,
   ) =>
     request<RunStartResponse>("/api/run", {
       method: "POST",
-      body: { prompt, images, project, session_id: sessionId, model, effort },
+      body: { prompt, images, project, session_id: sessionId, model, effort,
+              permission_mode: permission || undefined },
     }),
 
   getRunning: () => request<RunningInfo>("/api/running"),
@@ -422,9 +424,31 @@ export const api = {
 
   logs: (n: number) => request<LogsResponse>(`/api/logs?n=${n}`),
 
+  getShell: (cursor: number) => request<ShellSnapshot>(`/api/shell?cursor=${cursor}`),
+  runShell: (command: string) =>
+    request<{ ok: boolean; error?: string }>("/api/shell", {
+      method: "POST",
+      body: { command },
+    }),
+  killShell: () =>
+    request<{ ok: boolean; error?: string }>("/api/shell/kill", {
+      method: "POST",
+      body: {},
+    }),
+
   preview: (action: "start" | "stop", port?: number) =>
     request<PreviewActionResponse>("/api/preview", {
       method: "POST",
       body: { action, port },
     }),
 };
+
+export interface ShellSnapshot {
+  status: "idle" | "running" | "done" | "error" | "killed";
+  cmd: string | null;
+  running: boolean;
+  dir: string | null;
+  code: number | null;
+  lines: { seq: number; line: string }[];
+  cursor: number;
+}

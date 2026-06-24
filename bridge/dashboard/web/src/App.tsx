@@ -18,6 +18,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { IssuesTab } from "./components/IssuesTab";
 import { RunTab } from "./components/RunTab";
+import { ShellTab } from "./components/ShellTab";
 import { DiffTab } from "./components/DiffTab";
 import { Composer } from "./components/Composer";
 import { Logs } from "./components/Logs";
@@ -42,6 +43,9 @@ export function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [model, setModel] = useState<ModelId>("opus");
   const [effort, setEffort] = useState<EffortLevel | "">("");
+  // Per-message operating mode ("" = use the session's). Lets you flip a single
+  // run to ask/plan/full-auto without changing the session default.
+  const [permMode, setPermMode] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"chat" | "history">("chat");
   const [external, setExternal] = useState<RunningSession[]>([]);
@@ -246,6 +250,7 @@ export function App() {
         session_id: sessionId,
         model,
         effort: effort || undefined,
+        permission_mode: permMode || undefined,
       });
       liveTurns.current.add(res.job_id);
       setTurns((prev) => [
@@ -344,6 +349,7 @@ export function App() {
     },
     { id: "tab-issues", label: "Open GitHub issues", group: "Panel", icon: "◉", run: () => setActiveTab("issues") },
     { id: "tab-run", label: "Open Run (dev server)", group: "Panel", icon: "▸", run: () => setActiveTab("run") },
+    { id: "tab-shell", label: "Open Shell (run a command)", group: "Panel", icon: "$", run: () => setActiveTab("shell") },
     { id: "tab-diff", label: "View changes (diff)", group: "Panel", icon: "±", run: () => setActiveTab("diff") },
     { id: "tab-logs", label: "Open logs", group: "Panel", icon: "≣", run: () => setActiveTab("logs") },
     { id: "model-opus", label: "Use Opus", group: "Model", icon: "⌥", run: () => setModel("opus") },
@@ -354,6 +360,7 @@ export function App() {
   const panelTabs: PanelTab[] = [
     { id: "issues", label: "Issues", render: () => <IssuesTab project={activeProject} onFeed={feedIssue} /> },
     { id: "run", label: "Run", render: () => <RunTab project={activeProject} server={state?.server ?? undefined} /> },
+    { id: "shell", label: "Shell", render: () => <ShellTab /> },
     { id: "diff", label: "Diff", render: () => <DiffTab file={diffFile} /> },
     { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
   ];
@@ -437,6 +444,8 @@ export function App() {
               injectNonce={inject.nonce}
               onModel={setModel}
               onEffort={setEffort}
+              perm={permMode}
+              onPerm={setPermMode}
               onSend={(t, i) => void send(t, i)}
               onStop={() => void stop()}
               onCompact={() => void send("/compact", [])}

@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (browser, config, devserver, github, native,
-                    project_config, runner, state, store, transcript_jsonl,
+                    project_config, runner, shell, state, store, transcript_jsonl,
                     tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -198,6 +198,12 @@ class Handler(BaseHTTPRequestHandler):
                         chat_id, path[len("/api/sessions/"):], qs)
                 if path.startswith("/api/run/"):
                     return self._api_run_poll(path[len("/api/run/"):], qs)
+                if path == "/api/shell":
+                    try:
+                        cursor = int(qs.get("cursor", ["0"])[0])
+                    except ValueError:
+                        cursor = 0
+                    return self._json(shell.snapshot(cursor))
                 return self._json({"error": "not found"}, 404)
             self._serve_static(path)
         except Exception as e:  # noqa: BLE001
@@ -231,6 +237,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_run(chat_id, body)
             if path == "/api/server":
                 return self._api_server(chat_id, body)
+            if path == "/api/shell":
+                return self._json(shell.run(state.project_dir(chat_id), body.get("command", "")))
+            if path == "/api/shell/kill":
+                return self._json(shell.kill())
             if path == "/api/project/settings":
                 return self._api_project_settings_set(chat_id, body)
             if path == "/api/preview":
@@ -250,7 +260,7 @@ class Handler(BaseHTTPRequestHandler):
         pd = state.project_dir(chat_id)
         self._json({
             "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)} if pd else None,
-            "busy": state.busy_chat is not None,
+            "busy": state.any_running(),
             "server": devserver.server_state(),
             "preview": tunnel.tunnel_state(),
             "permission_mode": config.MINIAPP_PERMISSION_MODE,

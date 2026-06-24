@@ -2,6 +2,7 @@ import { createRouter, createHashHistory } from "@tanstack/react-router";
 import { rootRoute } from "./routes/root";
 import { runRoute } from "./routes/run";
 import { serverRoute } from "./routes/server";
+import { shellRoute } from "./routes/shell";
 import { previewRoute } from "./routes/preview";
 import { historyRoute } from "./routes/history";
 import { issuesRoute } from "./routes/issues";
@@ -10,6 +11,7 @@ const routeTree = rootRoute.addChildren([
   runRoute,
   issuesRoute,
   serverRoute,
+  shellRoute,
   previewRoute,
   historyRoute,
 ]);

@@ -362,7 +362,8 @@ def history(chat_id: int, include_archived: bool = False,
 def running_session_ids(chat_id: int) -> list[str]:
     """Session ids (for this chat) with an in-flight turn — drives the dashboard's
     'running' badge. A running turn means a live bridge job (orphans are reset to
-    'error' on startup, and the busy lock forbids concurrent turns)."""
+    'error' on startup, and the per-session run lock forbids two turns on one
+    session)."""
     with closing(_connect()) as c:
         rows = c.execute(
             "SELECT DISTINCT t.session_id FROM turns t "
