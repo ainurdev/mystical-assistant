@@ -18,8 +18,9 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (browser, config, devserver, github, machine, native, runner,
-                    state, store, transcript_jsonl, tunnel, usage)
+from bridge import (browser, config, devserver, github, machine, native,
+                    project_config, runner, state, store, transcript_jsonl,
+                    tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -188,6 +189,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(usage.get_usage())
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
+                if path == "/api/project/settings":
+                    return self._api_project_settings(chat_id)
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
                 if path.startswith("/api/sessions/"):
@@ -228,6 +231,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_run(chat_id, body)
             if path == "/api/server":
                 return self._api_server(chat_id, body)
+            if path == "/api/project/settings":
+                return self._api_project_settings_set(chat_id, body)
             if path == "/api/preview":
                 return self._api_preview(chat_id, body)
             return self._json({"error": "not found"}, 404)
@@ -400,9 +405,24 @@ class Handler(BaseHTTPRequestHandler):
         if action == "stop":
             msg = devserver.stop_server()
         else:
-            cmd = (body.get("cmd") or "").strip() or config.START_CMD
+            cmd = ((body.get("cmd") or "").strip()
+                   or project_config.run_cmd(state.project_key(chat_id))
+                   or config.START_CMD)
             msg = devserver.start_server(cmd, state.project_dir(chat_id))
         self._json({"server": devserver.server_state(), "message": msg})
+
+    def _api_project_settings(self, chat_id: int):
+        self._json({
+            "scripts": project_config.package_scripts(state.project_dir(chat_id)),
+            "run_cmd": project_config.run_cmd(state.project_key(chat_id)),
+            "default_cmd": config.START_CMD,
+            "log_path": devserver.DEV_LOG_REL,
+        })
+
+    def _api_project_settings_set(self, chat_id: int, body: dict):
+        cmd = project_config.set_run_cmd(state.project_key(chat_id),
+                                         (body.get("run_cmd") or "")[:1000])
+        self._json({"ok": True, "run_cmd": cmd})
 
     def _api_logs(self, qs):
         try:

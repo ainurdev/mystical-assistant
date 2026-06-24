@@ -23,7 +23,7 @@ from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
 from bridge import (browser, config, devserver, git, github, machine, native,
-                    pubsub, runner, state, store, tunnel, usage)
+                    project_config, pubsub, runner, state, store, tunnel, usage)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -215,6 +215,17 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(github.issues(abs_p))
+        if path == "/local/project/settings":
+            rel = qs.get("project", [None])[0] or browser.rel(state.project_dir(chat))
+            abs_p = _abs_project(rel)
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json({
+                "scripts": project_config.package_scripts(abs_p),
+                "run_cmd": project_config.run_cmd(rel),
+                "default_cmd": config.START_CMD,
+                "log_path": devserver.DEV_LOG_REL,
+            })
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -270,6 +281,12 @@ class Handler(BaseHTTPRequestHandler):
             body_text = (body.get("body") or "")[:65536]
             ok, output = github.create_issue(abs_p, title, body_text)
             return self._json({"ok": ok, "output": output})
+        if path == "/local/project/settings":
+            rel = (body.get("project") or "").strip()
+            if _abs_project(rel) is None:
+                return self._json({"error": "invalid project"}, 400)
+            cmd = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000])
+            return self._json({"ok": True, "run_cmd": cmd})
         return self._json({"error": "not found"}, 404)
 
     def _run(self, chat, body):
@@ -325,7 +342,9 @@ class Handler(BaseHTTPRequestHandler):
         if action == "stop":
             msg = devserver.stop_server()
         else:
-            cmd = (body.get("cmd") or "").strip() or config.START_CMD
+            cmd = ((body.get("cmd") or "").strip()
+                   or project_config.run_cmd(browser.rel(state.project_dir(chat)))
+                   or config.START_CMD)
             msg = devserver.start_server(cmd, state.project_dir(chat))
         self._json({"server": devserver.server_state(), "message": msg})
 

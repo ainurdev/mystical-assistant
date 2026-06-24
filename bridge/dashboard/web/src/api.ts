@@ -132,6 +132,13 @@ export interface IssuesInfo {
   issues: Issue[];
 }
 
+export interface ProjectSettings {
+  scripts: Record<string, string>;
+  run_cmd: string | null;
+  default_cmd: string;
+  log_path: string;
+}
+
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -287,6 +294,13 @@ export const api = {
     req<{ ok: boolean; output: string }>("/local/git/push", {
       method: "POST",
       body: { project },
+    }),
+  projectSettings: (project: string) =>
+    req<ProjectSettings>(`/local/project/settings?project=${encodeURIComponent(project)}`),
+  setProjectSettings: (project: string, run_cmd: string) =>
+    req<{ ok: boolean; run_cmd: string | null }>("/local/project/settings", {
+      method: "POST",
+      body: { project, run_cmd },
     }),
   issues: (project: string) =>
     req<IssuesInfo>(`/local/github/issues?project=${encodeURIComponent(project)}`),

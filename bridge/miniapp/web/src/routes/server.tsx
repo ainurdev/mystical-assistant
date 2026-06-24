@@ -1,14 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { rootRoute } from "./root";
 import { api, ApiError } from "../lib/api";
-import { usePersistentState } from "../lib/persistentState";
 import { Button, Card, Banner, StatusDot } from "../components/ui";
 
 function ServerPage() {
   const queryClient = useQueryClient();
-  const [cmd, setCmd] = usePersistentState("miniapp:server-cmd:v1", "npm run dev");
   const logRef = useRef<HTMLPreElement>(null);
 
   const state = useQuery({
@@ -16,6 +14,20 @@ function ServerPage() {
     queryFn: () => api.getState(),
     refetchInterval: 3000,
   });
+  const project = state.data?.project?.rel ?? null;
+
+  // Per-project run settings (package.json scripts + saved command). Keyed by
+  // project so switching repos reloads; no polling, so it won't clobber edits.
+  const settings = useQuery({
+    queryKey: ["project-settings", project],
+    queryFn: () => api.getProjectSettings(),
+    enabled: project !== null,
+  });
+
+  const [cmd, setCmd] = useState("");
+  useEffect(() => {
+    if (settings.data) setCmd(settings.data.run_cmd ?? settings.data.default_cmd);
+  }, [settings.data]);
 
   const logs = useQuery({
     queryKey: ["logs"],
@@ -23,13 +35,22 @@ function ServerPage() {
     refetchInterval: 2000,
   });
 
+  const save = useMutation({
+    mutationFn: (c: string) => api.setProjectSettings(c),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["project-settings", project] }),
+  });
+
   const action = useMutation({
     mutationFn: (vars: { action: "start" | "stop" }) =>
       api.server(vars.action, vars.action === "start" ? cmd : undefined),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["state"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
   });
+
+  function start() {
+    save.mutate(cmd); // persist this project's run command
+    action.mutate({ action: "start" });
+  }
 
   // Auto-scroll the log pane to the bottom when new lines arrive.
   const lines = logs.data?.lines ?? [];
@@ -39,6 +60,8 @@ function ServerPage() {
   }, [lines.length]);
 
   const server = state.data?.server;
+  const scripts = settings.data?.scripts ?? {};
+  const scriptNames = Object.keys(scripts);
   const unauthorized =
     (state.error instanceof ApiError && state.error.unauthorized) ||
     (action.error instanceof ApiError && action.error.unauthorized);
@@ -63,10 +86,32 @@ function ServerPage() {
           </div>
         )}
 
+        {scriptNames.length > 0 && (
+          <div>
+            <div className="mb-1 text-[11px] text-[var(--tg-hint)]">
+              package.json scripts
+            </div>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) setCmd(`npm run ${e.target.value}`);
+              }}
+              className="w-full rounded-lg bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none"
+            >
+              <option value="">Choose a script…</option>
+              {scriptNames.map((n) => (
+                <option key={n} value={n}>
+                  {n} — {scripts[n]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <input
           value={cmd}
           onChange={(e) => setCmd(e.target.value)}
-          placeholder="npm run dev"
+          placeholder={settings.data?.default_cmd ?? "npm run dev"}
           className="w-full rounded-lg bg-[var(--tg-bg)] px-3 py-2 font-mono text-sm outline-none"
         />
 
@@ -74,7 +119,7 @@ function ServerPage() {
           <Button
             className="flex-1"
             disabled={action.isPending}
-            onClick={() => action.mutate({ action: "start" })}
+            onClick={start}
           >
             Start
           </Button>
@@ -86,6 +131,12 @@ function ServerPage() {
           >
             Stop
           </Button>
+        </div>
+
+        <div className="text-[11px] text-[var(--tg-hint)]">
+          Saved per project. Logs also written to{" "}
+          <span className="font-mono">{settings.data?.log_path ?? ".mystical/dev.log"}</span>{" "}
+          so the Claude session can read them.
         </div>
       </Card>
 

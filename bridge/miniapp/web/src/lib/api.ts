@@ -228,6 +228,14 @@ export interface IssuesInfo {
   issues: Issue[];
 }
 
+// Per-project run settings: package.json scripts + the persisted run command.
+export interface ProjectSettings {
+  scripts: Record<string, string>;
+  run_cmd: string | null;
+  default_cmd: string;
+  log_path: string;
+}
+
 // Claude usage — only computed percentages / reset times (no token, ever).
 export interface UsageBucket {
   percent: number;
@@ -344,6 +352,14 @@ export const api = {
   getUsage: () => request<UsageInfo>("/api/usage"),
 
   getIssues: () => request<IssuesInfo>("/api/github/issues"),
+
+  getProjectSettings: () => request<ProjectSettings>("/api/project/settings"),
+
+  setProjectSettings: (run_cmd: string) =>
+    request<{ ok: boolean; run_cmd: string | null }>("/api/project/settings", {
+      method: "POST",
+      body: { run_cmd },
+    }),
 
   getHistory: (archived = false) =>
     request<{ sessions: EnrichedSession[] }>(

@@ -17,7 +17,7 @@ import threading
 import time
 import uuid
 
-from bridge import config, pubsub, state, store, transcript_jsonl
+from bridge import config, devserver, pubsub, state, store, transcript_jsonl
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -95,8 +95,12 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--effort", effort]
     if claude_session_id:
         cmd += ["--resume", claude_session_id]
-    if config.ASK_SYSTEM_PROMPT.strip():
-        cmd += ["--append-system-prompt", config.ASK_SYSTEM_PROMPT]
+    log_note = (
+        "If a dev server was started for this project from the bridge, its output "
+        f"is logged to {devserver.DEV_LOG_REL} in the project root — read that file "
+        "(e.g. tail it) to inspect dev-server logs.")
+    extra = config.ASK_SYSTEM_PROMPT.strip()
+    cmd += ["--append-system-prompt", f"{extra}\n\n{log_note}" if extra else log_note]
     if not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd

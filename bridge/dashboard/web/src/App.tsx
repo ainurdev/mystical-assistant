@@ -17,6 +17,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { GitTab } from "./components/GitTab";
 import { IssuesTab } from "./components/IssuesTab";
+import { RunTab } from "./components/RunTab";
 import { DiffTab } from "./components/DiffTab";
 import { Composer } from "./components/Composer";
 import { Logs } from "./components/Logs";
@@ -338,6 +339,7 @@ export function App() {
     },
     { id: "tab-git", label: "Open Git", group: "Panel", icon: "⎇", run: () => setActiveTab("git") },
     { id: "tab-issues", label: "Open GitHub issues", group: "Panel", icon: "◉", run: () => setActiveTab("issues") },
+    { id: "tab-run", label: "Open Run (dev server)", group: "Panel", icon: "▸", run: () => setActiveTab("run") },
     { id: "tab-diff", label: "View changes (diff)", group: "Panel", icon: "±", run: () => setActiveTab("diff") },
     { id: "tab-logs", label: "Open logs", group: "Panel", icon: "≣", run: () => setActiveTab("logs") },
     { id: "git-commit", label: "Git: commit changes…", group: "Git", icon: "✓", run: () => setActiveTab("git") },
@@ -367,6 +369,7 @@ export function App() {
       ),
     },
     { id: "issues", label: "Issues", render: () => <IssuesTab project={activeProject} onFeed={feedIssue} /> },
+    { id: "run", label: "Run", render: () => <RunTab project={activeProject} server={state?.server ?? undefined} /> },
     { id: "diff", label: "Diff", render: () => <DiffTab file={diffFile} /> },
     { id: "logs", label: "Logs", render: () => <Logs lines={logs} /> },
   ];
