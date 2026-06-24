@@ -17,6 +17,7 @@ export function Composer({
   onEffort,
   onSend,
   onStop,
+  onCompact,
 }: {
   disabled: boolean;
   running: boolean;
@@ -29,6 +30,7 @@ export function Composer({
   onEffort: (e: EffortLevel | "") => void;
   onSend: (text: string, images: string[]) => void;
   onStop: () => void;
+  onCompact?: () => void;
 }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -152,6 +154,16 @@ export function Composer({
           >
             📎
           </button>
+          {onCompact && (
+            <button
+              onClick={() => onCompact()}
+              disabled={disabled}
+              title="Compact context (/compact)"
+              className="border border-input px-2 py-1 text-[10px] tracking-[1px] text-muted-foreground hover:text-foreground disabled:opacity-40"
+            >
+              COMPACT
+            </button>
+          )}
           <div className="flex-1" />
           {running ? (
             <button

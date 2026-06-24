@@ -144,6 +144,7 @@ export interface ChatContextValue {
   selectSession: (id: string) => void;
   openSessionInProject: (project: string, id: string) => Promise<void>;
   send: () => Promise<void>;
+  compact: () => Promise<void>;
   stop: () => Promise<void>;
   respond: (
     requestId: string,
@@ -261,10 +262,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setDraftAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
-  async function send() {
-    const text = draft.trim();
+  // Start a run for an arbitrary prompt on the current session. `onSent` fires
+  // once the run is accepted (used by send() to clear the draft).
+  async function runPrompt(
+    text: string,
+    attachments: Attachment[],
+    onSent?: () => void,
+  ) {
     if (!text || isRunning || pending.length > 0 || !sessionId) return;
-    const attachments = draftAttachments;
     setSendError(null);
     try {
       const res = await api.run(
@@ -275,8 +280,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         model,
         effort || undefined,
       );
-      setDraft("");
-      setDraftAttachments([]);
+      onSent?.();
       setTurns((prev) => [
         ...prev,
         {
@@ -295,6 +299,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (e instanceof ApiError) setSendError(e);
       else setSendError(new ApiError(0, "Failed to start run."));
     }
+  }
+
+  async function send() {
+    await runPrompt(draft.trim(), draftAttachments, () => {
+      setDraft("");
+      setDraftAttachments([]);
+    });
+  }
+
+  // Compact the conversation to reclaim context. `/compact` is a Claude Code
+  // slash command honored on the resumed session (verified over stream-json).
+  async function compact() {
+    await runPrompt("/compact", []);
   }
 
   async function respond(
@@ -361,6 +378,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     selectSession,
     openSessionInProject,
     send,
+    compact,
     stop,
     respond,
     newChat,

@@ -320,6 +320,7 @@ export function App() {
   const previewOpen = !!state?.preview.url;
   const commands: Command[] = [
     { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => void newSession() },
+    { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) },
     { id: "switch-project", label: "Switch project…", group: "Session", icon: "⇄", run: () => setBrowsing(true) },
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
@@ -448,6 +449,7 @@ export function App() {
               onEffort={setEffort}
               onSend={(t, i) => void send(t, i)}
               onStop={() => void stop()}
+              onCompact={() => void send("/compact", [])}
             />
           }
         />

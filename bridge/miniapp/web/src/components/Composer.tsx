@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square } from "lucide-react";
+import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
 import { useChat } from "../lib/chat";
 import type { EffortLevel, ModelId } from "../lib/api";
 import { Button } from "./ui";
@@ -40,6 +40,7 @@ export function Composer() {
     addAttachments,
     removeAttachment,
     send,
+    compact,
     stop,
     isRunning,
     pending,
@@ -109,6 +110,17 @@ export function Composer() {
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <button
+          type="button"
+          onClick={() => void compact()}
+          disabled={blocked}
+          className={`${chipClass} disabled:opacity-40`}
+          title="Compact the conversation to reclaim context"
+        >
+          <Minimize2 size={13} className="text-[var(--brand-soft)]" aria-hidden />
+          Compact
+        </button>
       </div>
 
       {draftAttachments.length > 0 && (
