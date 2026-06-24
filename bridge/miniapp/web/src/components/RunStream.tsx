@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { AnswerSelection, PendingRequest, RunEvent } from "../lib/api";
 import { Card } from "./ui";
+import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 
@@ -47,7 +48,7 @@ function FinalResult({
 }) {
   return (
     <Card className="space-y-2 border border-[var(--tg-button)]/30">
-      <div className="whitespace-pre-wrap text-sm leading-relaxed">{result}</div>
+      <Markdown className="text-sm leading-relaxed">{result}</Markdown>
       {(typeof elapsed === "number" || typeof cost === "number") && (
         <div className="text-xs text-[var(--tg-hint)]">
           {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
@@ -87,9 +88,9 @@ export function RunStream({
         switch (event.type) {
           case "text":
             return (
-              <div key={i} className="whitespace-pre-wrap text-sm leading-relaxed">
+              <Markdown key={i} className="text-sm leading-relaxed">
                 {event.text}
-              </div>
+              </Markdown>
             );
           case "tool":
             return (
