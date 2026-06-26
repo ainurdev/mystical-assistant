@@ -1,63 +1,80 @@
-import { useEffect, useState } from "react";
-import { api } from "../../api";
+import { useState } from "react";
 
-export function StatusBar({
-  mount,
-  repo,
-  changes,
-  running,
-  onPalette,
-}: {
+export interface StatusBarProps {
   mount: string;
+  usedPct: number;
   repo: string;
   changes: number;
-  running: number;
   onPalette: () => void;
-}) {
-  const [ctx, setCtx] = useState<number | null>(null);
-  useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      try {
-        const u = await api.usage();
-        if (live) setCtx(u.available && u.five_hour ? u.five_hour.percent : null);
-      } catch {
-        /* ignore */
-      }
-    };
-    void tick();
-    const id = setInterval(tick, 60000);
-    return () => {
-      live = false;
-      clearInterval(id);
-    };
-  }, []);
+}
+
+export function StatusBar(props: StatusBarProps) {
+  const { mount, usedPct, repo, changes, onPalette } = props;
+  const [hovered, setHovered] = useState(false);
 
   return (
     <div
-      className="flex flex-none items-center gap-4 border-t border-border px-4 py-2 text-[10px] tracking-[1.5px] text-muted-2"
-      style={{ animation: "flicker .9s ease both" }}
+      style={{
+        flex: "none",
+        display: "flex",
+        alignItems: "center",
+        gap: "16px",
+        padding: "8px 16px",
+        borderTop: "1px solid rgba(127,233,216,.14)",
+        fontSize: "10px",
+        letterSpacing: "1.5px",
+        color: "#3c544f",
+        animation: "enterUp .55s cubic-bezier(.2,.8,.2,1) both .36s",
+      }}
     >
-      <span className="text-muted-foreground">
-        MOUNT <span className="text-primary">{mount}</span>
+      <span style={{ color: "#6f938d" }}>
+        MOUNT <span style={{ color: "#7fe9d8" }}>{mount}</span>
       </span>
-      {ctx !== null && (
-        <span className="flex items-center gap-[7px]">
-          CTX {ctx}%
-          <span className="relative inline-block h-[4px] w-[120px] overflow-hidden bg-[var(--ac-12)]">
-            <span className="absolute inset-y-0 left-0 bg-primary" style={{ width: `${ctx}%` }} />
-          </span>
+      <span style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+        USED {usedPct}%
+        <span
+          style={{
+            width: "120px",
+            height: "4px",
+            background: "rgba(127,233,216,.12)",
+            display: "inline-block",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${usedPct}%`,
+              background: "#7fe9d8",
+              animation: "grow 1.2s ease both .4s",
+            }}
+          />
         </span>
-      )}
-      <span className="flex-1" />
-      <span>
-        REPO <span className="text-foreground">/{repo}</span>
       </span>
-      {running > 0 && <span className="text-primary">{running} RUNNING</span>}
-      <span className="text-warning">{changes} CHANGES</span>
+      <span style={{ flex: 1 }} />
+      <span>
+        REPO <span style={{ color: "#bfe6de" }}>{repo}</span>
+      </span>
+      <span style={{ color: "#e3c279" }}>{changes} CHANGES</span>
       <button
         onClick={onPalette}
-        className="border border-input px-2.5 py-1 text-[10px] tracking-[1.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          appearance: "none",
+          cursor: "pointer",
+          border: "1px solid rgba(127,233,216,.22)",
+          background: hovered ? "rgba(127,233,216,.08)" : "transparent",
+          color: hovered ? "#bfe6de" : "#6f938d",
+          fontFamily: "inherit",
+          fontSize: "10px",
+          letterSpacing: "1.5px",
+          padding: "4px 11px",
+        }}
       >
         ⌘K COMMAND
       </button>

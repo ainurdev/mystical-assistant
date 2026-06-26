@@ -166,7 +166,11 @@ body {
 
 /* HUD primitives */
 .glow {
-  text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.35);
+  text-shadow: 0 0 var(--glow, 8px) rgb(var(--accent-rgb) / 0.35);
+}
+.mscroll {
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .panel {
   position: relative;
@@ -242,6 +246,39 @@ body {
 @keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 @keyframes resultflash { 0% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45); filter: brightness(1.7); } 100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); filter: none; } }
 @keyframes quoteout { from { opacity: 1; filter: none; transform: none; } to { opacity: 0; filter: blur(3px) brightness(1.7); transform: translateX(7px); } }
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes mfadeup2 { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
+@keyframes modalIn { 0% { opacity: 0; clip-path: inset(49.5% 42% 49.5% 42%); filter: brightness(2.4); } 24% { opacity: 1; clip-path: inset(49% 0 49% 0); filter: brightness(2.2) drop-shadow(0 0 16px rgb(var(--accent-rgb) / 0.9)); } 58% { clip-path: inset(0 0 0 0); filter: brightness(1.22) drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.5)); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
+@keyframes modalOut { 0% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } 45% { opacity: 1; clip-path: inset(49% 0 49% 0); filter: brightness(2.2) drop-shadow(0 0 16px rgb(var(--accent-rgb) / 0.9)); } 100% { opacity: 0; clip-path: inset(49.5% 42% 49.5% 42%); filter: brightness(2.6); } }
+@keyframes ctxIn { 0% { opacity: 0; clip-path: inset(0 0 100% 0); filter: brightness(2.2); } 45% { opacity: 1; filter: brightness(1.7) drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.7)); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
+@keyframes ctxOut { 0% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } 100% { opacity: 0; clip-path: inset(0 0 100% 0); filter: brightness(2); } }
+@keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdropOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes mdiffin { from { opacity: 0; transform: translateX(26px); filter: brightness(1.8); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes mdiffin2 { from { opacity: 0; transform: translateX(26px); filter: brightness(1.8); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes syncdot { 0% { left: -22%; } 100% { left: 100%; } }
+@keyframes introgrid { from { background-position: 0 0; } to { background-position: 0 46px; } }
+@keyframes auraspin { to { transform: rotate(360deg); } }
+@keyframes radar { 0% { transform: scale(0.28); opacity: 0.85; } 100% { transform: scale(3.4); opacity: 0; } }
+@keyframes drift { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+@keyframes crtoff { 0% { transform: scaleX(1) scaleY(1); opacity: 1; filter: brightness(1); } 44% { transform: scaleX(1.07) scaleY(0.016); opacity: 1; filter: brightness(2.7); } 62% { transform: scaleX(1.07) scaleY(0.016); opacity: 1; filter: brightness(2.7); } 100% { transform: scaleX(0) scaleY(0.016); opacity: 0; filter: brightness(3.4); } }
+@keyframes enterLeft { 0% { opacity: 0; transform: translateX(-48px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterRight { 0% { opacity: 0; transform: translateX(48px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterDown { 0% { opacity: 0; transform: translateY(-30px); filter: brightness(1.7); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterUp { 0% { opacity: 0; transform: translateY(30px); filter: brightness(1.7); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterZoom { 0% { opacity: 0; transform: scale(0.9); filter: brightness(2.4) saturate(0.4); } 55% { opacity: 1; filter: brightness(1.2); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterClip { 0% { opacity: 0; clip-path: inset(0 100% 0 0); filter: brightness(1.7); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
+@keyframes enterBlur { 0% { opacity: 0; transform: scale(1.05); filter: blur(8px) brightness(1.6); } 100% { opacity: 1; transform: none; filter: blur(0) brightness(1); } }
+@keyframes enterSkew { 0% { opacity: 0; transform: translateX(-34px) skewX(8deg); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterLeftUp { 0% { opacity: 0; transform: translate(-26px, 28px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterRightUp { 0% { opacity: 0; transform: translate(28px, 28px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes eyeblink { 0%, 90%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.12); } }
+@keyframes digitflip { 0% { transform: translateY(-48%) scale(0.94); opacity: 0; filter: brightness(2.6); } 55% { opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 1; filter: none; } }
+@keyframes caretbreath { 0%, 100% { opacity: 0.25; box-shadow: 0 0 0 rgb(var(--accent-rgb) / 0); } 50% { opacity: 1; box-shadow: 0 0 9px rgb(var(--accent-rgb) / 0.8); } }
+@keyframes awaitsweep { to { background-position: 200% 0; } }
+@keyframes quotein { 0% { opacity: 0; transform: translateY(9px); filter: blur(7px); } 60% { opacity: 1; } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@keyframes quoteglow { 0%, 100% { text-shadow: 0 0 0 rgb(var(--accent-rgb) / 0); } 50% { text-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.25); } }
 
 textarea,
 input {

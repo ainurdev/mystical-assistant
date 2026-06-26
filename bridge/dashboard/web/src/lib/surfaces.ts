@@ -37,6 +37,31 @@ export function liveSurfaceFor(
   return surfaceFor(origin);
 }
 
+// A stable accent per project (the design colours each repo distinctly). Hashes
+// the project name to a fixed phosphor palette so the same repo always looks the
+// same across the strip, sidebar, terminal header, and analyze modal.
+const PROJ_PALETTE = ["#7fe9d8", "#b9a6ff", "#8fd9a8", "#6fb5ff", "#e3c279", "#ff7ad9"];
+
+export interface ProjectTint {
+  color: string;
+  border: string;
+  tag: string;
+}
+
+export function projectTint(name: string | null | undefined): ProjectTint {
+  const clean = (name ?? "").replace(/\/+$/, "");
+  const base = clean.split("/").pop() || clean || "proj";
+  let h = 0;
+  for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
+  const color = PROJ_PALETTE[h % PROJ_PALETTE.length];
+  const tag = (base.replace(/[^a-z0-9]/gi, "").slice(0, 4) || "proj").toUpperCase();
+  // Convert the hex accent to a translucent border.
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return { color, border: `rgba(${r},${g},${b},.45)`, tag };
+}
+
 export function ago(sec: number | null): string {
   if (!sec) return "";
   const s = Math.max(0, Date.now() / 1000 - sec);

@@ -16,6 +16,7 @@ export interface SessionBrief {
   updated: number;
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
+  cwd?: string | null; // run dir — a linked worktree differs from the project dir
 }
 export interface StoreTurn {
   id: string;
@@ -139,6 +140,54 @@ export interface ProjectSettings {
 
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+// Host vitals (psutil) for the WORKSPACE panel.
+export interface HostStats {
+  available: boolean;
+  host: string;
+  cpu: number;
+  mem_used: number;
+  mem_total: number;
+  mem_pct: number;
+  net_up: number; // KB/s
+  net_down: number; // KB/s
+  load: number;
+  procs: number;
+  state: "NOMINAL" | "BUSY" | string;
+}
+export interface Weather {
+  available: boolean;
+  temp: number | null;
+  cond: string;
+  hi: number | null;
+  lo: number | null;
+  wind: string;
+  hum: string;
+  loc: string;
+}
+export interface Worktree {
+  path: string;
+  rel: string | null;
+  branch: string;
+  head: string;
+  detached: boolean;
+  is_main: boolean;
+}
+export interface CompareFile {
+  name: string;
+  mark: string; // A | M | D | R …
+  add: number;
+  del: number;
+}
+export interface CompareInfo {
+  ok: boolean;
+  commits: number;
+  ahead: number;
+  behind: number;
+  files: CompareFile[];
+  add: number;
+  del: number;
+}
 
 export type RunningSource = "bridge" | "vscode" | "cli" | "sdk" | string;
 export interface RunningSession {
@@ -278,8 +327,16 @@ export const api = {
     ),
   transcript: (id: string, cursor: number) =>
     req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
-  createSession: (project: string) =>
-    req<{ session: SessionBrief }>("/local/sessions", { method: "POST", body: { project } }),
+  createSession: (project: string, cwd?: string) =>
+    req<{ session: SessionBrief }>("/local/sessions", {
+      method: "POST",
+      body: cwd ? { project, cwd } : { project },
+    }),
+  archiveSession: (id: string) =>
+    req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(id)}/archive`, {
+      method: "POST",
+      body: {},
+    }),
   run: (body: RunBody) =>
     req<{ job_id: string; session_id: string }>("/local/run", { method: "POST", body }),
   respond: (
@@ -307,6 +364,7 @@ export const api = {
   git: (project: string) =>
     req<GitStatus>(`/local/git?project=${encodeURIComponent(project)}`),
   gitAll: () => req<{ repos: Record<string, GitBadge> }>("/local/git/all"),
+  logs: (n = 200) => req<{ lines: string[] }>(`/local/logs?n=${n}`),
   gitDiff: (project: string, path: string) =>
     req<{ path: string; diff: string }>(
       `/local/git/diff?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
@@ -335,6 +393,57 @@ export const api = {
       method: "POST",
       body: { project, title, body },
     }),
+  // --- host vitals + weather (WORKSPACE panel ambient widgets) ---
+  sysinfo: () => req<HostStats>("/local/sysinfo"),
+  weather: () => req<Weather>("/local/weather"),
+  // --- branches, worktrees, PRs (unified projects view + Analyze modal) ---
+  branches: (project: string) =>
+    req<{ branches: string[]; current: string }>(
+      `/local/git/branches?project=${encodeURIComponent(project)}`,
+    ),
+  worktrees: (project: string) =>
+    req<{ worktrees: Worktree[] }>(
+      `/local/git/worktrees?project=${encodeURIComponent(project)}`,
+    ),
+  compare: (project: string, base: string, head: string) =>
+    req<CompareInfo>(
+      `/local/git/compare?project=${encodeURIComponent(project)}&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`,
+    ),
+  checkout: (project: string, ref: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/checkout", {
+      method: "POST",
+      body: { project, ref },
+    }),
+  deleteBranch: (project: string, name: string, force = false) =>
+    req<{ ok: boolean; output: string }>("/local/git/branch/delete", {
+      method: "POST",
+      body: { project, name, force },
+    }),
+  merge: (project: string, branch: string, into?: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/merge", {
+      method: "POST",
+      body: { project, branch, into },
+    }),
+  worktreeAdd: (project: string, branch: string, parent?: string, create = true) =>
+    req<{ ok: boolean; path: string; rel: string; branch: string; output: string }>(
+      "/local/git/worktree",
+      { method: "POST", body: { project, branch, parent, create } },
+    ),
+  worktreeRemove: (project: string, path: string, branch?: string, delete_branch = false) =>
+    req<{ ok: boolean; output: string }>("/local/git/worktree/remove", {
+      method: "POST",
+      body: { project, path, branch, delete_branch },
+    }),
+  createPr: (project: string, head: string, base: string, title: string, body?: string) =>
+    req<{ ok: boolean; url: string; number: number | null; output: string }>(
+      "/local/github/pr",
+      { method: "POST", body: { project, head, base, title, body } },
+    ),
+  createProject: (name: string, prompt: string) =>
+    req<{ project: Project; session: SessionBrief; job_id: string | null }>(
+      "/local/projects/create",
+      { method: "POST", body: { name, prompt } },
+    ),
 };
 
 /** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */

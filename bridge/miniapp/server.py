@@ -85,7 +85,7 @@ def normalize_permission_mode(mode) -> str | None:
 def _session_brief(s: dict) -> dict:
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "updated": s["updated"], "archived": s["archived"],
-            "origin": s.get("origin")}
+            "origin": s.get("origin"), "cwd": s.get("cwd")}
 
 
 def transcript_for(session: dict, cursor: int = 0) -> dict:

@@ -143,3 +143,134 @@ def commit(cwd: str, message: str) -> tuple[bool, str]:
 def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
     rc, out, err = _run(cwd, "push", timeout=timeout)
     return rc == 0, (out + err).strip()
+
+
+# --- branches & worktrees (powers the unified projects+sessions view) ---
+
+def current_branch(cwd: str) -> str:
+    rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+    return out.strip() if rc == 0 else ""
+
+
+def branches(cwd: str) -> list[str]:
+    """Local branch names, current first."""
+    if not is_repo(cwd):
+        return []
+    rc, out, _ = _run(cwd, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+    names = [b.strip() for b in out.splitlines() if b.strip()] if rc == 0 else []
+    cur = current_branch(cwd)
+    if cur and cur in names:
+        names.remove(cur)
+        names.insert(0, cur)
+    return names
+
+
+def checkout(cwd: str, ref: str) -> tuple[bool, str]:
+    rc, out, err = _run(cwd, "checkout", ref)
+    return rc == 0, (out + err).strip()
+
+
+def create_branch(cwd: str, name: str, start: str = "") -> tuple[bool, str]:
+    args = ["branch", name] + ([start] if start else [])
+    rc, out, err = _run(cwd, *args)
+    return rc == 0, (out + err).strip()
+
+
+def delete_branch(cwd: str, name: str, force: bool = False) -> tuple[bool, str]:
+    if name in ("main", "master", current_branch(cwd)):
+        return False, "refusing to delete the current/default branch"
+    rc, out, err = _run(cwd, "branch", "-D" if force else "-d", name)
+    return rc == 0, (out + err).strip()
+
+
+def merge(cwd: str, branch: str, ff_only: bool = False) -> tuple[bool, str]:
+    """Merge `branch` into the current branch."""
+    args = ["merge", "--ff-only" if ff_only else "--no-edit", branch]
+    rc, out, err = _run(cwd, *args, timeout=30)
+    return rc == 0, (out + err).strip()
+
+
+def worktrees(cwd: str) -> list[dict]:
+    """Parse `git worktree list --porcelain` → [{path, branch, head, is_main}]."""
+    if not is_repo(cwd):
+        return []
+    rc, out, _ = _run(cwd, "worktree", "list", "--porcelain")
+    if rc != 0:
+        return []
+    items: list[dict] = []
+    cur: dict = {}
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            if cur:
+                items.append(cur)
+            cur = {"path": line[len("worktree "):].strip(), "branch": "",
+                   "head": "", "detached": False}
+        elif line.startswith("HEAD "):
+            cur["head"] = line[len("HEAD "):].strip()[:10]
+        elif line.startswith("branch "):
+            ref = line[len("branch "):].strip()
+            cur["branch"] = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+        elif line.strip() == "detached":
+            cur["detached"] = True
+    if cur:
+        items.append(cur)
+    for i, w in enumerate(items):
+        w["is_main"] = i == 0
+    return items
+
+
+def worktree_add(cwd: str, path: str, branch: str, start: str = "",
+                 create: bool = True) -> tuple[bool, str]:
+    """Add a worktree at `path`. create=True makes a new branch `branch` from
+    `start`; create=False checks out an existing `branch` into the worktree."""
+    if create:
+        args = ["worktree", "add", "-b", branch, path] + ([start] if start else [])
+    else:
+        args = ["worktree", "add", path, branch]
+    rc, out, err = _run(cwd, *args, timeout=30)
+    return rc == 0, (out + err).strip()
+
+
+def worktree_remove(cwd: str, path: str, force: bool = True) -> tuple[bool, str]:
+    args = ["worktree", "remove"] + (["--force"] if force else []) + [path]
+    rc, out, err = _run(cwd, *args, timeout=20)
+    return rc == 0, (out + err).strip()
+
+
+def compare(cwd: str, base: str, head: str) -> dict:
+    """Diff stats between `base` and `head` (three-dot, i.e. since merge-base) —
+    powers the PR preview: commit count, files changed, +/- totals."""
+    if not is_repo(cwd):
+        return {"ok": False, "commits": 0, "ahead": 0, "behind": 0,
+                "files": [], "add": 0, "del": 0}
+    rng = f"{base}...{head}"
+    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", rng)
+    behind = ahead = 0
+    if rc == 0 and out.strip():
+        parts = out.split()
+        if len(parts) == 2:
+            behind, ahead = int(parts[0] or 0), int(parts[1] or 0)
+    marks: dict[str, str] = {}
+    rc, out, _ = _run(cwd, "diff", "--name-status", rng)
+    if rc == 0:
+        for line in out.splitlines():
+            cols = line.split("\t")
+            if len(cols) >= 2:
+                marks[cols[-1]] = cols[0][:1]
+    files = []
+    total_add = total_del = 0
+    rc, out, _ = _run(cwd, "diff", "--numstat", rng)
+    if rc == 0:
+        for line in out.splitlines():
+            cols = line.split("\t")
+            if len(cols) != 3:
+                continue
+            a, d, name = cols
+            add = 0 if a == "-" else int(a)
+            dele = 0 if d == "-" else int(d)
+            total_add += add
+            total_del += dele
+            files.append({"name": name, "mark": marks.get(name, "M"),
+                          "add": add, "del": dele})
+    return {"ok": True, "commits": ahead, "ahead": ahead, "behind": behind,
+            "files": files, "add": total_add, "del": total_del}

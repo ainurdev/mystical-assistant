@@ -22,8 +22,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
+import re
+
 from bridge import (browser, config, devserver, git, github, native,
-                    project_config, pubsub, runner, shell, state, store, tunnel, usage)
+                    project_config, pubsub, runner, shell, state, store,
+                    sysinfo, tunnel, usage, weather)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -51,6 +54,21 @@ def _abs_project(project) -> str | None:
         return None
     cand = os.path.realpath(os.path.join(config.BASE_PATH, str(project).lstrip("/")))
     return cand if browser.within_base(cand) and os.path.isdir(cand) else None
+
+
+# Managed git worktrees live under a hidden dir at the workspace root, so the
+# project browser (which skips dotdirs) never surfaces them as projects.
+_WT_ROOT = os.path.join(config.BASE_PATH, ".worktrees")
+_SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _slug(s: str) -> str:
+    return _SLUG_RE.sub("-", (s or "").strip().strip("/")).strip("-") or "wt"
+
+
+def _worktree_path(project_rel: str, branch: str) -> str:
+    repo = _slug(os.path.basename((project_rel or "").rstrip("/")) or "repo")
+    return os.path.join(_WT_ROOT, repo, _slug(branch))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -228,6 +246,31 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 cursor = 0
             return self._json(shell.snapshot(cursor))
+        if path == "/local/sysinfo":
+            return self._json(sysinfo.host_stats())
+        if path == "/local/weather":
+            return self._json(weather.current())
+        if path == "/local/git/branches":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json({"branches": git.branches(abs_p),
+                               "current": git.current_branch(abs_p)})
+        if path == "/local/git/worktrees":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            wts = git.worktrees(abs_p)
+            for w in wts:
+                w["rel"] = browser.rel(w["path"]) if browser.within_base(w["path"]) else None
+            return self._json({"worktrees": wts})
+        if path == "/local/git/compare":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            base = (qs.get("base", ["main"])[0] or "main").strip()
+            head = (qs.get("head", [""])[0] or git.current_branch(abs_p)).strip()
+            return self._json(git.compare(abs_p, base, head))
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -251,7 +294,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._select(chat, body)
         if path == "/local/sessions":
             project = (body.get("project") or "").strip()
-            cwd = _abs_project(project) or state.project_dir(chat)
+            # A worktree session runs in its own cwd (a linked worktree under
+            # .worktrees) while still grouping under its logical project.
+            wt = (body.get("cwd") or "").strip()
+            wt_abs = os.path.realpath(wt) if wt else None
+            cwd = (wt_abs if wt_abs and browser.within_base(wt_abs)
+                   and os.path.isdir(wt_abs) else None) \
+                or _abs_project(project) or state.project_dir(chat)
             s = store.create_session(chat, project, origin="dashboard", cwd=cwd,
                                      permission_mode=config.NEW_SESSION_PERMISSION_MODE)
             return self._json({"session": _session_brief(s)})
@@ -293,7 +342,111 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             cmd = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000])
             return self._json({"ok": True, "run_cmd": cmd})
+        if path == "/local/git/checkout":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            ok, output = git.checkout(abs_p, (body.get("ref") or "").strip())
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/git/branch/delete":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            ok, output = git.delete_branch(abs_p, (body.get("name") or "").strip(),
+                                           force=bool(body.get("force")))
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/git/merge":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            branch = (body.get("branch") or "").strip()
+            into = (body.get("into") or "").strip()
+            if into and into != git.current_branch(abs_p):
+                ok, output = git.checkout(abs_p, into)
+                if not ok:
+                    return self._json({"ok": False, "output": output})
+            ok, output = git.merge(abs_p, branch)
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/git/worktree":
+            return self._worktree(body)
+        if path == "/local/git/worktree/remove":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            wt = os.path.realpath((body.get("path") or "").strip())
+            if not browser.within_base(wt):
+                return self._json({"error": "invalid path"}, 400)
+            ok, output = git.worktree_remove(abs_p, wt)
+            if ok and body.get("delete_branch") and body.get("branch"):
+                git.delete_branch(abs_p, (body.get("branch") or "").strip(), force=True)
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/github/pr":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            head = (body.get("head") or git.current_branch(abs_p)).strip()
+            base = (body.get("base") or "main").strip()
+            title = (body.get("title") or "").strip()[:256] or f"Merge {head} into {base}"
+            ok, info = github.create_pr(abs_p, head, base, title, (body.get("body") or "")[:65536])
+            return self._json({"ok": ok, **info})
+        if path == "/local/projects/create":
+            return self._create_project(chat, body)
         return self._json({"error": "not found"}, 404)
+
+    def _worktree(self, body):
+        """Create (or reuse) a git worktree for a branch and return its path so the
+        client can start a session in it. `create` makes a new branch from `parent`;
+        otherwise an existing branch is checked out into the worktree."""
+        project = (body.get("project") or "").strip()
+        abs_p = _abs_project(project)
+        if abs_p is None:
+            return self._json({"error": "invalid project"}, 400)
+        branch = (body.get("branch") or "").strip()
+        if not branch or branch in (".", ".."):
+            return self._json({"error": "invalid branch"}, 400)
+        wt = _worktree_path(project, branch)
+        rel = browser.rel(wt)
+        if os.path.isdir(wt):                      # already opened — reuse it
+            return self._json({"ok": True, "path": wt, "rel": rel, "branch": branch,
+                               "output": "worktree exists"})
+        os.makedirs(os.path.dirname(wt), exist_ok=True)
+        parent = (body.get("parent") or git.current_branch(abs_p) or "main").strip()
+        create = body.get("create", True)
+        ok, output = git.worktree_add(abs_p, wt, branch, parent, create=bool(create))
+        if not ok:
+            return self._json({"ok": False, "output": output})
+        return self._json({"ok": True, "path": wt, "rel": rel, "branch": branch,
+                           "output": output})
+
+    def _create_project(self, chat, body):
+        """Scaffold a new git repo under BASE_PATH and start a session on it with
+        the user's first instruction streaming in immediately."""
+        name = _slug((body.get("name") or "").strip().lower())
+        prompt = (body.get("prompt") or "").strip()
+        if not name or name.startswith("."):
+            return self._json({"error": "invalid name"}, 400)
+        dest = os.path.realpath(os.path.join(config.BASE_PATH, name))
+        if not browser.within_base(dest):
+            return self._json({"error": "invalid name"}, 400)
+        if os.path.exists(dest):
+            return self._json({"error": "already exists"}, 409)
+        try:
+            os.makedirs(dest)
+        except OSError as e:
+            return self._json({"error": str(e)}, 500)
+        git._run(dest, "init")
+        git._run(dest, "commit", "--allow-empty", "-m", "init")
+        rel = browser.rel(dest)
+        s = store.create_session(chat, rel, origin="dashboard", cwd=dest,
+                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+        job_id = None
+        if prompt:
+            job = runner.start_streaming_job(chat, prompt, [], dest,
+                                             session_id=s["id"], origin="dashboard")
+            job_id = job.id if job else None
+        return self._json({"project": {"rel": rel, "name": name},
+                           "session": _session_brief(store.get_session(s["id"])),
+                           "job_id": job_id})
 
     def _run(self, chat, body):
         prompt = (body.get("prompt") or "").strip()

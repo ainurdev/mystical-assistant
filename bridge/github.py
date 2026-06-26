@@ -86,3 +86,26 @@ def create_issue(cwd: str, title: str, body: str) -> tuple[bool, str]:
     rc, out, err = _run("gh", "issue", "create", "-R", slug,
                         "--title", title, "--body", body or "", timeout=30)
     return rc == 0, (out + err).strip()
+
+
+_PR_URL_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/pull/(\d+)")
+
+
+def create_pr(cwd: str, head: str, base: str, title: str,
+              body: str = "") -> tuple[bool, dict]:
+    """Push `head` and open a PR into `base`. Returns (ok, {url, number, output})."""
+    slug = remote_slug(cwd)
+    if slug is None:
+        return False, {"output": "no GitHub remote", "url": "", "number": None}
+    # The PR head must exist on the remote — push it (sets upstream if new).
+    prc, pout, perr = _run("git", "-C", cwd, "push", "-u", "origin", head, timeout=40)
+    if prc != 0:
+        return False, {"output": (pout + perr).strip() or "push failed",
+                       "url": "", "number": None}
+    rc, out, err = _run("gh", "pr", "create", "-R", slug, "--base", base,
+                        "--head", head, "--title", title, "--body", body or "",
+                        timeout=40)
+    output = (out + err).strip()
+    m = _PR_URL_RE.search(output)
+    return rc == 0, {"output": output, "url": m.group(0) if m else "",
+                     "number": int(m.group(1)) if m else None}
