@@ -14,6 +14,10 @@ export interface Turn {
   events: RunEvent[];
   status: "running" | "done" | "error";
   pending: PendingRequest[];
+  // Images sent with the prompt. Client-sent turns carry data: URLs (rendered
+  // inline); turns rehydrated from the store carry server paths (shown as a chip,
+  // since the upload files are cleaned up after the run).
+  attachments?: string[];
 }
 
 export function derivePending(events: RunEvent[]): PendingRequest[] {
@@ -43,8 +47,24 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
   for (const st of t.turns) {
     storeSeq.set(st.id, st.seq);
     const ex = map.get(st.id);
-    if (ex) map.set(st.id, { ...ex, status: st.status, prompt: ex.prompt || st.prompt });
-    else map.set(st.id, { id: st.id, prompt: st.prompt, events: [], status: st.status, pending: [] });
+    // Prefer attachments the client already holds (data: URLs we can render) over
+    // the store's server paths; fall back to the store for rehydrated turns.
+    if (ex)
+      map.set(st.id, {
+        ...ex,
+        status: st.status,
+        prompt: ex.prompt || st.prompt,
+        attachments: ex.attachments?.length ? ex.attachments : st.attachments,
+      });
+    else
+      map.set(st.id, {
+        id: st.id,
+        prompt: st.prompt,
+        events: [],
+        status: st.status,
+        pending: [],
+        attachments: st.attachments,
+      });
   }
   for (const ev of t.events) {
     const turn = map.get(ev.turn_id);
@@ -63,4 +83,21 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
 export function activeOf(turns: Turn[]): Turn | null {
   const last = turns[turns.length - 1];
   return last && last.status === "running" ? last : null;
+}
+
+/** Rough client-side estimate of the conversation's context size. The backend
+ *  records no token counts, so we approximate at ~4 chars/token over the visible
+ *  prompt + event text. Good enough to surface "getting big — consider /compact". */
+export function estimateContextTokens(turns: Turn[]): number {
+  let chars = 0;
+  for (const t of turns) {
+    chars += t.prompt.length;
+    for (const e of t.events) {
+      if (e.type === "text") chars += e.text.length;
+      else if (e.type === "tool") chars += e.name.length + e.summary.length;
+      else if (e.type === "result") chars += e.result.length;
+      else if (e.type === "error") chars += e.message.length;
+    }
+  }
+  return Math.round(chars / 4);
 }

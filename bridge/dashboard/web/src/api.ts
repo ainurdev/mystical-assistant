@@ -76,8 +76,6 @@ export interface PreviewInfo {
 }
 export interface DashState {
   project: Project | null;
-  busy: boolean;
-  busy_chat: number | null;
   server: ServerInfo;
   preview: PreviewInfo;
   permission_mode?: string | null;
@@ -159,7 +157,9 @@ export interface AwaitingSession {
   session_id: string;
   kind: "question" | "permission";
 }
-export type SessionState = "working" | "awaiting" | "idle";
+// working = transcript being written right now; live = native session recently
+// active (alive but briefly paused); awaiting = blocked on you; else idle.
+export type SessionState = "working" | "awaiting" | "live" | "idle";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/idle only.
 export interface SessionStatus {

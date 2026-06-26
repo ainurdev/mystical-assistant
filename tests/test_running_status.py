@@ -5,6 +5,7 @@ Run: `python tests/test_running_status.py`
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -60,6 +61,34 @@ def test_unknown_external_session_defaults_to_idle():
     external = [{"session_id": "n3", "source": "vscode"}]
     runner._build_status(bridge_running=[], awaiting=[], jobs=[],
                          external=external, native_snap={})
+    assert external[0]["state"] == "idle"
+
+
+def test_recently_active_native_session_is_live_not_idle():
+    # Alive + transcript touched a few seconds ago but not writing *right now*:
+    # shows LIVE (current session, briefly paused) instead of flat IDLE.
+    external = [{"session_id": "n4", "source": "vscode", "last_active": time.time() - 5}]
+    status = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                  external=external, native_snap={})
+    assert status["n4"]["state"] == "live"
+    assert status["n4"]["source"] == "native"
+    assert external[0]["state"] == "live"
+
+
+def test_working_native_session_beats_live_recency():
+    external = [{"session_id": "n5", "source": "vscode", "last_active": time.time() - 5}]
+    status = runner._build_status(
+        bridge_running=[], awaiting=[], jobs=[], external=external,
+        native_snap={"n5": {"state": "working", "label": "Bash", "last_write": 1.0}})
+    assert status["n5"]["state"] == "working"
+
+
+def test_stale_native_session_is_idle():
+    external = [{"session_id": "n6", "source": "vscode",
+                 "last_active": time.time() - runner._LIVE_WINDOW - 30}]
+    status = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                  external=external, native_snap={})
+    assert "n6" not in status
     assert external[0]["state"] == "idle"
 
 

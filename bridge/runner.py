@@ -377,13 +377,20 @@ def running_jobs(chat_id: int) -> list[dict]:
     return out
 
 
+# A native (VS Code/terminal) session that isn't writing *right now* but whose
+# transcript was touched within this window shows as LIVE — your current working
+# session, briefly paused (thinking, a long tool, reading) — instead of flat IDLE.
+# native_activity flags the tighter "writing now" → working state.
+_LIVE_WINDOW = 90.0
+
+
 def _build_status(bridge_running: list, awaiting: list, jobs: list,
                   external: list, native_snap: dict) -> dict:
     """Merge bridge + native liveness into one {session_id: {state, kind, source,
     label}} map — the single status contract both web surfaces render from. State
-    is 'awaiting' | 'working' | 'idle'; bridge sessions can be any of the three,
-    native (VS Code) sessions only working/idle. External rows are annotated in
-    place with their `state` for the jobs monitor."""
+    is 'awaiting' | 'working' | 'live' | 'idle'; bridge sessions are awaiting/
+    working, native (VS Code/terminal) sessions working/live/idle. External rows
+    are annotated in place with their `state` for the jobs monitor."""
     awaiting_map = {a["session_id"]: a.get("kind") for a in awaiting}
     job_label = {j["session_id"]: (j.get("activity") or {}).get("label")
                  for j in jobs if j.get("session_id")}
@@ -397,13 +404,22 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
         else:
             status[sid] = {"state": "working", "kind": None, "source": "bridge",
                            "label": job_label.get(sid) or "working…"}
+    now = time.time()
     for row in external:
         sid = row.get("session_id")
         st = native_snap.get(sid) if sid else None
-        row["state"] = st["state"] if st else "idle"
-        if st and st["state"] == "working" and sid not in status:
-            status[sid] = {"state": "working", "kind": None, "source": "native",
-                           "label": st.get("label") or "working…"}
+        if st and st["state"] == "working":
+            row["state"] = "working"
+            if sid and sid not in status:
+                status[sid] = {"state": "working", "kind": None, "source": "native",
+                               "label": st.get("label") or "working…"}
+        elif sid and (now - (row.get("last_active") or 0)) < _LIVE_WINDOW:
+            row["state"] = "live"
+            if sid not in status:
+                status[sid] = {"state": "live", "kind": None, "source": "native",
+                               "label": "active"}
+        else:
+            row["state"] = "idle"
     return status
 
 

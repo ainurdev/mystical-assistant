@@ -5,11 +5,13 @@ export function StatusBar({
   mount,
   repo,
   changes,
+  running,
   onPalette,
 }: {
   mount: string;
   repo: string;
   changes: number;
+  running: number;
   onPalette: () => void;
 }) {
   const [ctx, setCtx] = useState<number | null>(null);
@@ -51,6 +53,7 @@ export function StatusBar({
       <span>
         REPO <span className="text-foreground">/{repo}</span>
       </span>
+      {running > 0 && <span className="text-primary">{running} RUNNING</span>}
       <span className="text-warning">{changes} CHANGES</span>
       <button
         onClick={onPalette}

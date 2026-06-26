@@ -25,6 +25,18 @@ export function surfaceFor(origin: string | null | undefined): Surface {
   return SURFACES[origin ?? ""] ?? FALLBACK;
 }
 
+/** Surface to show for a session row: where the last prompt came from. Prefer
+ *  where it's live *right now* (VS Code / terminal) over where it started.
+ *  Bridge-driven (sdk) and offline sessions fall back to their stored origin. */
+export function liveSurfaceFor(
+  origin: string | null | undefined,
+  liveSource?: string | null,
+): Surface {
+  if (liveSource === "vscode") return surfaceFor("vscode");
+  if (liveSource === "cli") return surfaceFor("terminal");
+  return surfaceFor(origin);
+}
+
 export function ago(sec: number | null): string {
   if (!sec) return "";
   const s = Math.max(0, Date.now() / 1000 - sec);

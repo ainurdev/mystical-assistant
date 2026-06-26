@@ -14,7 +14,7 @@ import {
   type SessionBrief,
   type SessionStatus,
 } from "./api";
-import { activeOf, mergeDelta, type Turn } from "./chat";
+import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { IssuesTab } from "./components/IssuesTab";
 import { RunTab } from "./components/RunTab";
@@ -68,7 +68,10 @@ export function App() {
   // Turns started from this client this session — their results "type" in live.
   const liveTurns = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pendingScrollRef = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Whether the transcript is "pinned" to the bottom (follow new content). Set
+  // false when the user scrolls up to read back, true again at the bottom.
+  const stickRef = useRef(true);
 
   const active = activeOf(turns);
   const running = active !== null;
@@ -95,11 +98,12 @@ export function App() {
     (n, t) => n + t.events.filter((e) => e.type === "error").length,
     0,
   );
+  const contextTokens = estimateContextTokens(turns);
   const tele = useTelemetry({ running, toolCount, eventCount });
 
   function openSession(id: string) {
     seqRef.current = 0;
-    pendingScrollRef.current = true; // jump to latest once this session's turns load
+    stickRef.current = true; // jump to latest once this session's turns load
     setTurns([]);
     setSessionId(id);
   }
@@ -173,13 +177,30 @@ export function App() {
     };
   }, [sessionId]);
 
-  // When a session is opened, jump to the latest message once its turns load.
+  // Keep the transcript pinned to the newest content as it streams in (events
+  // landing, the result typing out) and when a session is first opened — but
+  // yield the moment the user scrolls up to read back. Re-subscribes whenever
+  // the chat surface (re)mounts: boot reveal, history↔chat toggles.
   useEffect(() => {
-    if (!pendingScrollRef.current || turns.length === 0) return;
-    pendingScrollRef.current = false;
     const el = scrollRef.current;
-    if (el) requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight }));
-  }, [turns]);
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const onScroll = () => {
+      stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(() => {
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(content);
+    // Content may already be fully rendered when we (re)attach (boot reveal,
+    // history→chat) so the observer won't fire — land at the bottom now.
+    if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, [view, showDashboard]);
 
   // Live dev-server logs (SSE).
   useEffect(() => logStream((line) => setLogs((prev) => [...prev.slice(-2000), line])), []);
@@ -253,9 +274,10 @@ export function App() {
         permission_mode: permMode || undefined,
       });
       liveTurns.current.add(res.job_id);
+      stickRef.current = true; // follow the response we're about to stream
       setTurns((prev) => [
         ...prev,
-        { id: res.job_id, prompt: text, events: [], status: "running", pending: [] },
+        { id: res.job_id, prompt: text, events: [], status: "running", pending: [], attachments: images },
       ]);
     } catch (e) {
       setError((e as Error).message);
@@ -423,6 +445,7 @@ export function App() {
           view={view}
           onView={setView}
           selected={selected}
+          activeProject={activeProject}
           model={model}
           turnCount={turns.length}
           turns={turns}
@@ -430,6 +453,7 @@ export function App() {
           onRespond={(rid, o) => void respond(rid, o)}
           error={error}
           scrollRef={scrollRef}
+          contentRef={contentRef}
           onOpenFromHistory={(s) => void openFromHistory(s)}
           liveTurns={liveTurns.current}
           trailingWorking={openWorking && !running}
@@ -442,6 +466,7 @@ export function App() {
               permissionMode={state?.permission_mode}
               injectedText={inject.text}
               injectNonce={inject.nonce}
+              contextTokens={contextTokens}
               onModel={setModel}
               onEffort={setEffort}
               perm={permMode}
@@ -459,6 +484,7 @@ export function App() {
           <SessionsPanel
             sessions={sessions}
             status={statusMap}
+            external={external}
             selectedId={sessionId}
             onSelect={openSession}
             tele={tele}
@@ -471,6 +497,7 @@ export function App() {
         mount={state?.project?.rel ?? "/"}
         repo={activeProject ?? "—"}
         changes={activeBadge?.dirty ?? 0}
+        running={jobs.length}
         onPalette={() => setPaletteOpen(true)}
       />
           <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />

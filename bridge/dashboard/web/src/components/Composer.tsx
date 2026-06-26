@@ -15,6 +15,14 @@ const PERMS: { id: string; label: string }[] = [
   { id: "bypassPermissions", label: "FULL AUTONOMY" },
 ];
 
+// Past this estimated context size we nudge the user toward /compact.
+const COMPACT_SUGGEST_TOKENS = 100_000;
+
+function fmtTokens(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return `${n}`;
+}
+
 export function Composer({
   disabled,
   running,
@@ -25,6 +33,7 @@ export function Composer({
   onPerm,
   injectedText,
   injectNonce,
+  contextTokens,
   onModel,
   onEffort,
   onSend,
@@ -40,6 +49,7 @@ export function Composer({
   onPerm: (p: string) => void;
   injectedText?: string;
   injectNonce?: number;
+  contextTokens?: number;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
   onSend: (text: string, images: string[]) => void;
@@ -66,6 +76,9 @@ export function Composer({
       r.readAsDataURL(f);
     });
   }
+  function removeImage(i: number) {
+    setImages((prev) => prev.filter((_, j) => j !== i));
+  }
   function imagesFrom(items: DataTransferItemList | undefined): File[] {
     return Array.from(items ?? [])
       .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
@@ -84,9 +97,20 @@ export function Composer({
     <div className="flex-none border-t border-border px-4 py-3">
       <ContextStrip permissionMode={permissionMode} />
       {images.length > 0 && (
-        <div className="mb-2 flex gap-2">
+        <div className="mb-2 flex flex-wrap gap-2">
           {images.map((src, i) => (
-            <img key={i} src={src} className="h-12 w-12 border border-border object-cover" alt="" />
+            <div key={i} className="relative h-12 w-12">
+              <img src={src} className="h-12 w-12 border border-border object-cover" alt="" />
+              <button
+                type="button"
+                onClick={() => removeImage(i)}
+                title="Remove image"
+                aria-label="Remove image"
+                className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center border border-border-bright bg-background text-[11px] leading-none text-muted-foreground hover:border-danger hover:text-danger"
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -180,16 +204,41 @@ export function Composer({
           >
             📎
           </button>
-          {onCompact && (
-            <button
-              onClick={() => onCompact()}
-              disabled={disabled}
-              title="Compact context (/compact)"
-              className="border border-input px-2 py-1 text-[10px] tracking-[1px] text-muted-foreground hover:text-foreground disabled:opacity-40"
-            >
-              COMPACT
-            </button>
-          )}
+          {onCompact &&
+            (() => {
+              const ctx = contextTokens ?? 0;
+              const suggest = ctx >= COMPACT_SUGGEST_TOKENS;
+              return (
+                <div className="flex items-center gap-2">
+                  {ctx > 0 && (
+                    <span
+                      title="Estimated conversation context (~chars/4)"
+                      className={`hidden text-[10px] tracking-[1px] sm:inline ${
+                        suggest ? "text-warning" : "text-muted-2"
+                      }`}
+                    >
+                      ~{fmtTokens(ctx)} ctx{suggest ? " · large" : ""}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => onCompact()}
+                    disabled={disabled}
+                    title={
+                      suggest
+                        ? `Context is large (~${fmtTokens(ctx)} tokens) — consider compacting (/compact)`
+                        : "Compact context (/compact)"
+                    }
+                    className={`border px-2 py-1 text-[10px] tracking-[1px] hover:text-foreground disabled:opacity-40 ${
+                      suggest
+                        ? "border-warning text-warning"
+                        : "border-input text-muted-foreground"
+                    }`}
+                  >
+                    COMPACT
+                  </button>
+                </div>
+              );
+            })()}
           <div className="flex-1" />
           {running ? (
             <button

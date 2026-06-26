@@ -1,26 +1,31 @@
-import type { SessionBrief, SessionStatus } from "../../api";
-import { ago, surfaceFor } from "../../lib/surfaces";
+import type { RunningSession, SessionBrief, SessionStatus } from "../../api";
+import { ago, liveSurfaceFor } from "../../lib/surfaces";
 import { wavePoly, type Telemetry } from "../../lib/telemetry";
 import { Panel } from "./Panel";
 
 export function SessionsPanel({
   sessions,
   status,
+  external,
   selectedId,
   onSelect,
   tele,
 }: {
   sessions: SessionBrief[];
   status: Map<string, SessionStatus>;
+  external: RunningSession[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   tele: Telemetry;
 }) {
   // "Active" = used in the last 30 min and non-empty (has a title), plus anything
-  // currently working/awaiting regardless of age. Status is the one unified map,
-  // so a live VS Code (native) session shows RUN here too.
+  // currently working/live/awaiting regardless of age. Status is the one unified
+  // map, so a live VS Code (native) session shows RUN/LIVE here too.
   const now = Date.now() / 1000;
   const RECENT = 30 * 60;
+  // Where each session is alive right now (vscode | cli | sdk) — drives the
+  // "last prompt from" label, preferred over where the session started.
+  const liveSource = new Map(external.map((r) => [r.session_id, r.source]));
   const rows = sessions
     .filter((s) => {
       const live = status.has(s.id);
@@ -30,15 +35,23 @@ export function SessionsPanel({
     .slice(0, 8)
     .map((s) => {
       const st = status.get(s.id);
-      const label = st?.state === "awaiting" ? "WAIT" : st?.state === "working" ? "RUN" : "IDLE";
-      const color = st?.state === "awaiting" ? "#e3c279" : st?.state === "working" ? "#8fd9a8" : "#3c544f";
-      return { s, status: label, color, onMachine: !!st, surf: surfaceFor(s.origin) };
+      const label =
+        st?.state === "awaiting" ? "WAIT"
+        : st?.state === "working" ? "RUN"
+        : st?.state === "live" ? "LIVE"
+        : "IDLE";
+      const color =
+        st?.state === "awaiting" ? "#e3c279"
+        : st?.state === "working" ? "#8fd9a8"
+        : st?.state === "live" ? "#6a9e84"
+        : "#3c544f";
+      return { s, status: label, color, surf: liveSurfaceFor(s.origin, liveSource.get(s.id)) };
     });
 
   return (
     <Panel label="PANEL" title="ACTIVE SESSIONS" delay=".12s">
       <div className="px-2.5 pb-1.5 pt-2">
-        {rows.map(({ s, status, color, onMachine, surf }, i) => (
+        {rows.map(({ s, status, color, surf }, i) => (
           <div
             key={s.id}
             onClick={() => onSelect(s.id)}
@@ -48,16 +61,10 @@ export function SessionsPanel({
               background: s.id === selectedId ? "var(--ac-06)" : undefined,
             }}
           >
-            <span
-              className="w-[26px] flex-none border px-1 py-[3px] text-center text-[9px] tracking-[1px]"
-              style={{ color: surf.color, borderColor: surf.color }}
-            >
-              {surf.code}
-            </span>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] text-[#cfe9e3]">{s.title || "new session"}</div>
               <div className="mt-0.5 text-[9.5px] tracking-[.5px] text-muted-2">
-                {onMachine ? "this machine" : "store"} · {ago(s.updated)}
+                <span style={{ color: surf.color }}>{surf.label}</span> · {ago(s.updated)}
               </div>
             </div>
             <span className="flex flex-none items-center gap-[5px]">

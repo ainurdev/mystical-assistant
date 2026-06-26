@@ -129,7 +129,6 @@ class Handler(BaseHTTPRequestHandler):
             pd = state.project_dir(chat)
             return self._json({
                 "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)},
-                "busy": state.any_running(), "busy_chat": next(iter(state.running_chats()), None),
                 "server": devserver.server_state(), "preview": tunnel.tunnel_state(),
                 "permission_mode": config.MINIAPP_PERMISSION_MODE})
         if path == "/local/projects":

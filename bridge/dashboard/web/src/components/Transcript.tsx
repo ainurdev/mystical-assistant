@@ -2,6 +2,34 @@ import type { AnswerSelection } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import { RunStream } from "./RunStream";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
+import { RuneSpirit } from "./hud/RuneSpirit";
+
+function Attachments({ items }: { items: string[] }) {
+  const imgs = items.filter((a) => a.startsWith("data:") || a.startsWith("http"));
+  const others = items.length - imgs.length;
+  return (
+    <div className="flex gap-[9px]">
+      <span className="flex-none select-none text-violet opacity-0" aria-hidden>
+        ~ ❯
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        {imgs.map((src, i) => (
+          <img
+            key={i}
+            src={src}
+            alt="attachment"
+            className="h-16 w-16 border border-border object-cover"
+          />
+        ))}
+        {others > 0 && (
+          <span className="text-[11px] tracking-[0.5px] text-muted-2">
+            📎 {others} image{others > 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 type Respond = (
   requestId: string,
@@ -22,11 +50,7 @@ export function Transcript({
   trailingWorking?: boolean;
 }) {
   if (!turns.length) {
-    return (
-      <div className="py-6 text-[12px] tracking-[1px] text-muted-2">
-        // no messages in this session yet
-      </div>
-    );
+    return <RuneSpirit variant="block" />;
   }
   return (
     <div className="flex flex-col gap-3">
@@ -42,6 +66,9 @@ export function Transcript({
                   {turn.prompt}
                 </span>
               </div>
+            )}
+            {turn.attachments && turn.attachments.length > 0 && (
+              <Attachments items={turn.attachments} />
             )}
             {(turn.events.length > 0 || turn.status === "running") && (
               <RunStream
