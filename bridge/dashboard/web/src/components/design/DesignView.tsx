@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { composePrompt } from "@selector/composePrompt";
+import { api } from "../../api";
 import { useSelector } from "./useSelector";
 import { PreviewFrame } from "./PreviewFrame";
 import { SelectionTray } from "./SelectionTray";
@@ -24,10 +25,15 @@ export function DesignView({
     return <div className="p-4 text-sm opacity-60">Start the preview tunnel first, then reload Design.</div>;
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!instruction.trim() || !sel.state.items.length) return;
     const text = composePrompt({ project, width, items: sel.state.items, instruction });
-    onSubmit(text, []); // screenshot attach is layered in Task 9
+    let images: string[] = [];
+    try {
+      const shot = await api.screenshot(width);
+      if (shot.data_url) images = [shot.data_url];
+    } catch { /* no screenshot: send text-only */ }
+    onSubmit(text, images);
     sel.clear();
     setInstruction("");
   };
@@ -41,7 +47,7 @@ export function DesignView({
         <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)}
           placeholder="What should Claude change?" rows={3}
           className="w-full rounded border border-[var(--border)] bg-[var(--panel)] p-2 text-sm outline-none" />
-        <button onClick={submit} disabled={busy || !instruction.trim() || !sel.state.items.length}
+        <button onClick={() => void submit()} disabled={busy || !instruction.trim() || !sel.state.items.length}
           className="rounded bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:opacity-40">
           Send to Claude
         </button>

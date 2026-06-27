@@ -12,6 +12,7 @@ The dashboard operates as config.DASH_CHAT_ID, sharing that user's store session
 and active project with the Telegram bot + Mini App.
 """
 
+import base64
 import hmac
 import json
 import mimetypes
@@ -25,8 +26,8 @@ from urllib.parse import parse_qs, urlparse
 import re
 
 from bridge import (browser, config, devserver, git, github, native,
-                    project_config, pubsub, runner, shell, state, store,
-                    sysinfo, tunnel, usage, weather)
+                    project_config, pubsub, runner, screenshot, shell, state,
+                    store, sysinfo, tunnel, usage, weather)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -290,6 +291,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._server(chat, body)
         if path == "/local/preview":
             return self._preview(body)
+        if path == "/local/preview/screenshot":
+            return self._api_preview_screenshot(body)
         if path == "/local/select":
             return self._select(chat, body)
         if path == "/local/sessions":
@@ -518,6 +521,21 @@ class Handler(BaseHTTPRequestHandler):
                 port = config.PREVIEW_PORT
             _, msg = tunnel.start_tunnel(port)
         self._json({"preview": tunnel.tunnel_state(), "message": msg})
+
+    def _api_preview_screenshot(self, body: dict):
+        url = tunnel.tunnel_state().get("url")
+        if not url:
+            return self._json({"error": "preview not running"}, 409)
+        try:
+            width = int(body.get("width") or 375)
+        except (TypeError, ValueError):
+            width = 375
+        try:
+            png = screenshot.capture(url, width)
+        except Exception as e:  # noqa: BLE001
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+        data_url = "data:image/png;base64," + base64.b64encode(png).decode()
+        return self._json({"data_url": data_url})
 
     def _select(self, chat, body):
         d = (body.get("dir") or "").strip()
