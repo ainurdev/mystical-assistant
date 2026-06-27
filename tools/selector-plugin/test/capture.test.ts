@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { cssPath, readMloc, captureElement } from "../src/capture";
+import { cssPath, readMloc, captureElement, capturePin } from "../src/capture";
 
 beforeEach(() => {
   document.body.innerHTML = `
@@ -40,5 +40,35 @@ describe("captureElement", () => {
       text: "Get started", mloc: "src/Hero.tsx:42:7",
     });
     expect(cap.outerHTML.length).toBeLessThanOrEqual(500);
+  });
+
+  it("truncates long text and outerHTML with an ellipsis", () => {
+    const el = document.createElement("div");
+    el.textContent = "x".repeat(600);
+    document.body.appendChild(el);
+    const cap = captureElement(el, "x2");
+    expect(cap.text.endsWith("…")).toBe(true);
+    expect(cap.text.length).toBe(121);
+    expect(cap.outerHTML.endsWith("…")).toBe(true);
+    expect(cap.outerHTML.length).toBe(501);
+  });
+});
+
+describe("capturePin", () => {
+  it("captures point and nearest element context", () => {
+    const el = document.getElementById("go")!;
+    const cap = capturePin(el, { x: 10, y: 20 }, "p1");
+    expect(cap).toMatchObject({ kind: "pin", id: "p1", point: { x: 10, y: 20 } });
+    expect(cap.nearestSelector).toBe(cssPath(el));
+    expect(cap.nearestTag).toBe(el.tagName.toLowerCase());
+    expect(cap.mloc).toBe("src/Hero.tsx:42:7");
+  });
+
+  it("nulls element fields but keeps the point when el is null", () => {
+    const cap = capturePin(null, { x: 5, y: 7 }, "p2");
+    expect(cap.nearestSelector).toBeNull();
+    expect(cap.nearestTag).toBeNull();
+    expect(cap.mloc).toBeNull();
+    expect(cap.point).toEqual({ x: 5, y: 7 });
   });
 });
