@@ -6,6 +6,15 @@ import { useSelector } from "./useSelector";
 import { PreviewFrame } from "./PreviewFrame";
 import { SelectionTray } from "./SelectionTray";
 
+const SETUP_PROMPT = `Set up the visual element selector in this project. Add the dev dependency
+\`vite-plugin-mystical-selector\` (it lives in this repo at tools/selector-plugin) and
+wire it into the Vite config dev-only:
+
+  import { mysticalSelector } from "vite-plugin-mystical-selector/plugin";
+  // plugins: [react(), mysticalSelector({ parentOrigins: ["*"] })]
+
+Then restart the dev server. Keep it dev-only; do not add it to production builds.`;
+
 export function DesignView({ previewUrl, project }: { previewUrl: string | null; project: string | null }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [width, setWidth] = useState(375);
@@ -36,6 +45,12 @@ export function DesignView({ previewUrl, project }: { previewUrl: string | null;
       <PreviewFrame url={previewUrl} iframeRef={iframeRef} width={width} onWidth={setWidth}
         mode={sel.state.mode} onMode={sel.setMode} hoverLabel={sel.state.hoverLabel} />
       <SelectionTray items={sel.state.items} onNote={sel.setNote} onRemove={sel.remove} />
+      {!sel.state.items.length && (
+        <button onClick={() => void runPrompt(SETUP_PROMPT, [])}
+          className="rounded-lg border border-[var(--tg-hint)] px-2 py-1 text-xs opacity-80">
+          Set up selector in this project
+        </button>
+      )}
       <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} rows={3}
         placeholder="What should Claude change?"
         className="w-full rounded-lg bg-[var(--tg-secondary-bg)] p-2 text-sm outline-none" />

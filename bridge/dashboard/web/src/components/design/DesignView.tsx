@@ -5,6 +5,15 @@ import { useSelector } from "./useSelector";
 import { PreviewFrame } from "./PreviewFrame";
 import { SelectionTray } from "./SelectionTray";
 
+const SETUP_PROMPT = `Set up the visual element selector in this project. Add the dev dependency
+\`vite-plugin-mystical-selector\` (it lives in this repo at tools/selector-plugin) and
+wire it into the Vite config dev-only:
+
+  import { mysticalSelector } from "vite-plugin-mystical-selector/plugin";
+  // plugins: [react(), mysticalSelector({ parentOrigins: ["*"] })]
+
+Then restart the dev server. Keep it dev-only; do not add it to production builds.`;
+
 export function DesignView({
   previewUrl, project, onSubmit, busy,
 }: {
@@ -44,6 +53,12 @@ export function DesignView({
         mode={sel.state.mode} onMode={sel.setMode} hoverLabel={sel.state.hoverLabel} />
       <div className="flex flex-col gap-2 overflow-y-auto">
         <SelectionTray items={sel.state.items} onNote={sel.setNote} onRemove={sel.remove} />
+        {!sel.state.items.length && (
+          <button onClick={() => onSubmit(SETUP_PROMPT, [])}
+            className="rounded border border-[var(--border)] px-2 py-1 text-xs opacity-80">
+            Set up selector in this project
+          </button>
+        )}
         <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)}
           placeholder="What should Claude change?" rows={3}
           className="w-full rounded border border-[var(--border)] bg-[var(--panel)] p-2 text-sm outline-none" />
