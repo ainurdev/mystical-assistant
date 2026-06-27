@@ -18,6 +18,8 @@
     "@babel/parser": "^7.25.0",
     "@babel/traverse": "^7.25.0",
     "@babel/types": "^7.25.0",
+    "@types/babel__generator": "^7.27.0",
+    "@types/babel__traverse": "^7.28.0",
     "esbuild": "^0.24.0",
     "jsdom": "^25.0.0",
     "typescript": "^5.7.2",
