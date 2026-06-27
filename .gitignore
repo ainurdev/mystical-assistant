@@ -25,5 +25,8 @@ bridge/dashboard/web/.vite/
 tools/selector-plugin/node_modules/
 tools/selector-plugin/.vite/
 
+# Vite cache (when vite is run from the repo root)
+/.vite/
+
 # Session store (default lives in $HOME; ignore any local copy)
 .bridge_state/

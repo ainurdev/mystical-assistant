@@ -1,4 +1,3 @@
-import base64
 from unittest import mock
 from bridge import screenshot
 
