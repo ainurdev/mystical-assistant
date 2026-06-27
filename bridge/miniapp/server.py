@@ -19,8 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (browser, config, devserver, github, native,
-                    project_config, runner, shell, state, store, transcript_jsonl,
-                    tunnel, usage)
+                    project_config, runner, screenshot, shell, state, store,
+                    transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -245,6 +245,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_project_settings_set(chat_id, body)
             if path == "/api/preview":
                 return self._api_preview(chat_id, body)
+            if path == "/api/preview/screenshot":
+                return self._api_preview_screenshot(body)
             return self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             self._safe_500(e)
@@ -449,6 +451,21 @@ class Handler(BaseHTTPRequestHandler):
                 port = config.PREVIEW_PORT
             _, msg = tunnel.start_tunnel(port)
         self._json({"preview": tunnel.tunnel_state(), "message": msg})
+
+    def _api_preview_screenshot(self, body: dict):
+        url = tunnel.tunnel_state().get("url")
+        if not url:
+            return self._json({"error": "preview not running"}, 409)
+        try:
+            width = int(body.get("width") or 375)
+        except (TypeError, ValueError):
+            width = 375
+        try:
+            png = screenshot.capture(url, width)
+        except Exception as e:  # noqa: BLE001
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+        data_url = "data:image/png;base64," + base64.b64encode(png).decode()
+        return self._json({"data_url": data_url})
 
     # --- static (SPA) --------------------------------------------------------
     def _serve_static(self, path: str):

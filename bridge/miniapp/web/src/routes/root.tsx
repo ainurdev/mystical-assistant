@@ -15,6 +15,7 @@ import {
   TerminalSquare,
   SquareChevronRight,
   MonitorPlay,
+  MousePointerClick,
   History,
   CircleDot,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const tabs = [
   { to: "/server", label: "Server", icon: TerminalSquare },
   { to: "/shell", label: "Shell", icon: SquareChevronRight },
   { to: "/preview", label: "Preview", icon: MonitorPlay },
+  { to: "/design", label: "Design", icon: MousePointerClick },
 ] as const;
 
 function HeaderBar({

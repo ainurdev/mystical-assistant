@@ -6,6 +6,7 @@ import { shellRoute } from "./routes/shell";
 import { previewRoute } from "./routes/preview";
 import { historyRoute } from "./routes/history";
 import { issuesRoute } from "./routes/issues";
+import { designRoute } from "./routes/design";
 
 const routeTree = rootRoute.addChildren([
   runRoute,
@@ -13,6 +14,7 @@ const routeTree = rootRoute.addChildren([
   serverRoute,
   shellRoute,
   previewRoute,
+  designRoute,
   historyRoute,
 ]);
 

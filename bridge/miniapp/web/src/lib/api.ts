@@ -441,6 +441,9 @@ export const api = {
       method: "POST",
       body: { action, port },
     }),
+
+  screenshot: (width: number) =>
+    request<{ data_url: string }>("/api/preview/screenshot", { method: "POST", body: { width } }),
 };
 
 export interface ShellSnapshot {
