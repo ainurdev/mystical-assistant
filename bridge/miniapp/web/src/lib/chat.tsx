@@ -149,6 +149,7 @@ export interface ChatContextValue {
   selectSession: (id: string) => void;
   openSessionInProject: (project: string, id: string) => Promise<void>;
   send: () => Promise<void>;
+  runPrompt: (text: string, attachments: Attachment[]) => Promise<void>;
   compact: () => Promise<void>;
   stop: () => Promise<void>;
   respond: (
@@ -401,6 +402,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     selectSession,
     openSessionInProject,
     send,
+    runPrompt,
     compact,
     stop,
     respond,

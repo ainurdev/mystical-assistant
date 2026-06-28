@@ -41,6 +41,7 @@ import { ThemeModal } from "./components/hud/ThemeModal";
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal } from "./components/hud/AnalyzeModal";
+import { DesignView } from "./components/design/DesignView";
 
 type PermDefault = "plan" | "acceptEdits" | "auto";
 
@@ -64,7 +65,7 @@ export function App() {
   const [effort, setEffort] = useState<EffortLevel | "">("");
   const [permMode, setPermMode] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"chat" | "history">("chat");
+  const [view, setView] = useState<"chat" | "history" | "design">("chat");
   const [external, setExternal] = useState<RunningSession[]>([]);
   const [jobs, setJobs] = useState<RunningJob[]>([]);
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
@@ -395,6 +396,7 @@ export function App() {
     { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) },
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
+    { id: "view-design", label: "Go to Design", group: "View", icon: "◐", run: () => setView("design") },
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && setAnalyzeProject(activeProject) },
     { id: "theme", label: "Theme & CRT…", group: "Display", icon: "◐", run: () => setThemeOpen(true) },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
@@ -498,23 +500,32 @@ export function App() {
               </div>
 
               {/* CENTER */}
-              <Terminal
-                view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
-                branch={activeBadge?.branch} model={model} turnCount={turns.length} turns={turns}
-                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} error={error}
-                scrollRef={scrollRef} contentRef={contentRef}
-                onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
-                trailingWorking={openWorking && !running} loading={loadingSession}
-                composer={
-                  <Composer
-                    disabled={running || pendingCount > 0} running={running} model={model} effort={effort}
-                    permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce}
-                    contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
-                    perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
-                    onCompact={() => void send("/compact", [])}
-                  />
-                }
-              />
+              {view === "design" ? (
+                <DesignView
+                  previewUrl={state?.preview?.url ?? null}
+                  project={selected?.project ?? state?.project?.rel ?? null}
+                  onSubmit={(text, images) => { void send(text, images); setView("chat"); }}
+                  busy={!!active}
+                />
+              ) : (
+                <Terminal
+                  view={view as "chat" | "history"} onView={setView as (v: "chat" | "history") => void} selected={selected} sessionId={sessionId} activeProject={activeProject}
+                  branch={activeBadge?.branch} model={model} turnCount={turns.length} turns={turns}
+                  activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} error={error}
+                  scrollRef={scrollRef} contentRef={contentRef}
+                  onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
+                  trailingWorking={openWorking && !running} loading={loadingSession}
+                  composer={
+                    <Composer
+                      disabled={running || pendingCount > 0} running={running} model={model} effort={effort}
+                      permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce}
+                      contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
+                      perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
+                      onCompact={() => void send("/compact", [])}
+                    />
+                  }
+                />
+              )}
 
               {/* RIGHT */}
               <div className="mscroll flex min-h-0 min-w-0 flex-col pr-0.5">

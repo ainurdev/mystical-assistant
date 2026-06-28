@@ -459,6 +459,8 @@ export const api = {
       "/local/projects/create",
       { method: "POST", body: { name, prompt } },
     ),
+  screenshot: (width: number) =>
+    req<{ data_url: string }>("/local/preview/screenshot", { method: "POST", body: { width } }),
 };
 
 /** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */

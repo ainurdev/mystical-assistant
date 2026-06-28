@@ -9,7 +9,8 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@selector/*": ["../../../tools/selector-plugin/src/*"]
     },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
