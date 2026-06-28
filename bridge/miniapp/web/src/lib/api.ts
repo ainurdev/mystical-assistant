@@ -26,6 +26,7 @@ export interface AppState {
   busy: boolean;
   server: ServerInfo;
   preview: PreviewInfo;
+  permission_mode?: string; // server-side default operating mode
 }
 
 export interface ProjectsListing {
@@ -41,6 +42,36 @@ export interface SelectResponse {
 
 export interface RunStartResponse {
   job_id: string;
+  session_id: string;
+}
+
+export interface SessionBrief {
+  id: string;
+  title: string | null;
+  project: string;
+  updated: number;
+  archived: number;
+  origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
+}
+
+export interface StoreTurn {
+  id: string;
+  seq: number;
+  prompt: string;
+  attachments: string[];
+  status: "running" | "done" | "error";
+  cost: number | null;
+  elapsed: number | null;
+  started: number;
+}
+
+export type StoreEvent = RunEvent & { seq: number; turn_id: string };
+
+export interface Transcript {
+  session: (SessionBrief & { claude_session_id: string | null; created: number }) | null;
+  turns: StoreTurn[];
+  events: StoreEvent[];
+  next_cursor: number;
 }
 
 export interface QuestionOption {
@@ -74,6 +105,12 @@ export type RunEvent =
 
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+export type PermissionMode =
+  | "auto"
+  | "plan"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "default";
 
 export interface PendingRequest {
   request_id: string;
@@ -112,6 +149,123 @@ export interface LogsResponse {
 export interface PreviewActionResponse {
   preview: PreviewInfo;
   message: string;
+}
+
+// Machine-wide running sessions (external clients) + this chat's live bridge runs.
+export type RunningSource = "bridge" | "vscode" | "cli" | "sdk" | string;
+
+export interface RunningSession {
+  session_id: string;
+  pid: number;
+  project: string;
+  cwd: string;
+  source: RunningSource;
+  started: number | null; // epoch seconds
+  status: string | null;
+  waiting_for: string | null;
+  state?: SessionState; // "working" while its transcript is being written, else "idle"
+}
+
+export interface AwaitingSession {
+  session_id: string;
+  kind: "question" | "permission";
+}
+export type SessionState = "working" | "awaiting" | "idle";
+// One unified per-session status, identical on every surface. Bridge sessions can
+// be any state; native (VS Code/terminal) sessions are working/idle only.
+export interface SessionStatus {
+  state: SessionState;
+  kind: "question" | "permission" | null;
+  source: "bridge" | "native";
+  label: string | null;
+}
+export interface JobActivity {
+  state: "tool" | "awaiting" | "thinking";
+  label: string;
+  kind?: "question" | "permission";
+  tools: number;
+}
+export interface RunningJob {
+  session_id: string | null;
+  job_id: string;
+  project: string | null;
+  title: string | null;
+  started: number | null;
+  activity: JobActivity;
+}
+export interface RunningInfo {
+  external: RunningSession[];
+  bridge_running: string[]; // store session ids with an in-flight turn
+  jobs: RunningJob[]; // this chat's live bridge runs, with activity detail
+  awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
+  status: Record<string, SessionStatus>; // unified per-session status (working/awaiting only)
+}
+
+// Per-repo history: a session enriched with aggregates from its turns.
+export interface EnrichedSession {
+  id: string;
+  title: string | null;
+  project: string;
+  origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
+  created: number;
+  updated: number;
+  archived: number;
+  turn_count: number;
+  total_cost: number;
+  last_activity: number;
+  models: string[];
+}
+
+// GitHub issues for the current project (via the user's authed gh CLI).
+export interface GitHubLabel {
+  name: string;
+  color: string;
+}
+export interface Issue {
+  number: number;
+  title: string;
+  url: string;
+  updated: string;
+  body: string;
+  labels: GitHubLabel[];
+}
+export interface IssuesInfo {
+  has_remote: boolean;
+  slug: string | null;
+  gh_ok: boolean;
+  error: string;
+  open_count: number;
+  closed_count: number;
+  issues: Issue[];
+}
+
+// Per-project run settings: package.json scripts + the persisted run command.
+export interface ProjectSettings {
+  scripts: Record<string, string>;
+  run_cmd: string | null;
+  default_cmd: string;
+  log_path: string;
+}
+
+// Claude usage — only computed percentages / reset times (no token, ever).
+export interface UsageBucket {
+  percent: number;
+  resets_at: string | null;
+  severity: string;
+}
+
+export interface UsageInfo {
+  available: boolean;
+  five_hour?: UsageBucket | null;
+  seven_day?: UsageBucket | null;
+  limits?: {
+    kind: string;
+    group: string;
+    percent: number;
+    severity: string;
+    resets_at: string | null;
+    is_active: boolean;
+  }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -194,14 +348,55 @@ export const api = {
   run: (
     prompt: string,
     images: string[],
-    project?: string,
-    fresh?: boolean,
+    project: string | undefined,
+    sessionId: string,
     model?: string,
     effort?: string,
+    permission?: string,
   ) =>
     request<RunStartResponse>("/api/run", {
       method: "POST",
-      body: { prompt, images, project, fresh, model, effort },
+      body: { prompt, images, project, session_id: sessionId, model, effort,
+              permission_mode: permission || undefined },
+    }),
+
+  getRunning: () => request<RunningInfo>("/api/running"),
+
+  getUsage: () => request<UsageInfo>("/api/usage"),
+
+  getIssues: () => request<IssuesInfo>("/api/github/issues"),
+
+  getProjectSettings: () => request<ProjectSettings>("/api/project/settings"),
+
+  setProjectSettings: (run_cmd: string) =>
+    request<{ ok: boolean; run_cmd: string | null }>("/api/project/settings", {
+      method: "POST",
+      body: { run_cmd },
+    }),
+
+  getHistory: (archived = false) =>
+    request<{ sessions: EnrichedSession[] }>(
+      `/api/history${archived ? "?archived=1" : ""}`,
+    ),
+
+  listSessions: (project: string) =>
+    request<{ sessions: SessionBrief[] }>(
+      `/api/sessions?project=${encodeURIComponent(project)}`,
+    ),
+
+  createSession: (project: string) =>
+    request<{ session: SessionBrief }>("/api/sessions", {
+      method: "POST",
+      body: { project },
+    }),
+
+  getSession: (id: string, cursor: number) =>
+    request<Transcript>(`/api/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+
+  archiveSession: (id: string) =>
+    request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/archive`, {
+      method: "POST",
+      body: {},
     }),
 
   runStatus: (jobId: string, cursor: number) =>
@@ -229,9 +424,34 @@ export const api = {
 
   logs: (n: number) => request<LogsResponse>(`/api/logs?n=${n}`),
 
+  getShell: (cursor: number) => request<ShellSnapshot>(`/api/shell?cursor=${cursor}`),
+  runShell: (command: string) =>
+    request<{ ok: boolean; error?: string }>("/api/shell", {
+      method: "POST",
+      body: { command },
+    }),
+  killShell: () =>
+    request<{ ok: boolean; error?: string }>("/api/shell/kill", {
+      method: "POST",
+      body: {},
+    }),
+
   preview: (action: "start" | "stop", port?: number) =>
     request<PreviewActionResponse>("/api/preview", {
       method: "POST",
       body: { action, port },
     }),
+
+  screenshot: (width: number) =>
+    request<{ data_url: string }>("/api/preview/screenshot", { method: "POST", body: { width } }),
 };
+
+export interface ShellSnapshot {
+  status: "idle" | "running" | "done" | "error" | "killed";
+  cmd: string | null;
+  running: boolean;
+  dir: string | null;
+  code: number | null;
+  lines: { seq: number; line: string }[];
+  cursor: number;
+}

@@ -12,16 +12,24 @@ From your phone:
   - /server     start the project's dev server   · /logs   recent output
   - /preview    public link to the running server · <message> prompt Claude Code
 
-Configure via run.sh (TELEGRAM_BOT_TOKEN, BASE_PATH, ALLOWED_CHAT_IDS,
-EXTRA_CLAUDE_ARGS, …). Design: docs/superpowers/specs/2026-06-22-telegram-miniapp-design.md
+On your machine (printed on startup, localhost only, never tunneled):
+  - Dashboard at http://127.0.0.1:8790/?token=… — a full desktop Claude client
+    (per-project sessions, prompts + cards, model/effort, server/preview controls)
+    with live per-session/project Claude streams and dev-server logs side by side.
+
+Conversations are the single source of truth in a SQLite store (~/.bridge_state/),
+shared by the bot, the Mini App, and the dashboard. Configure via run.sh
+(TELEGRAM_BOT_TOKEN, BASE_PATH, ALLOWED_CHAT_IDS, EXTRA_CLAUDE_ARGS, DASH_PORT, …).
+Design: docs/superpowers/specs/2026-06-23-unified-sessions-dashboard-design.md
 
 Requirements
 ------------
 - Python 3.9+, `pip install requests`
 - `claude` CLI installed and logged in (auth is reused; no API key).
 - `cloudflared` for /preview and the Mini App tunnel.
-- Mini App UI built once:
-    npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build
+- Mini App + Dashboard UIs built once:
+    npm --prefix bridge/miniapp/web ci   && npm --prefix bridge/miniapp/web run build
+    npm --prefix bridge/dashboard/web ci && npm --prefix bridge/dashboard/web run build
 - POSIX (macOS / Linux) for /server process-group control.
 
 >>> Read the SECURITY section at the bottom before exposing this. <<<
@@ -31,7 +39,7 @@ import json
 import os
 import sys
 
-from bridge import config, devserver, state, tunnel
+from bridge import config, devserver, native_activity, pubsub, state, store, tunnel
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -60,12 +68,30 @@ def _setup_miniapp():
     print(f"Mini App live: {url}")
 
 
+def _setup_dashboard():
+    if not config.DASH_ENABLE:
+        return
+    from bridge.dashboard import server as dash
+    if not dash.web_built():
+        print("⚠️  Dashboard UI not built — run:\n"
+              "    npm --prefix bridge/dashboard/web ci && "
+              "npm --prefix bridge/dashboard/web run build")
+    dash.start()
+    print(f"Dashboard (localhost only): http://{config.DASH_HOST}:{config.DASH_PORT}/"
+          f"?token={config.DASH_TOKEN}")
+
+
 def _shutdown():
+    native_activity.stop()
     tunnel.stop_tunnel()
     devserver.stop_server()
     if config.MINIAPP_ENABLE:
         from bridge.miniapp import server as miniapp
         miniapp.stop()
+    if config.DASH_ENABLE:
+        from bridge.dashboard import server as dash
+        dash.stop()
+    pubsub.shutdown()
     if state.miniapp_tunnel_proc and state.miniapp_tunnel_proc.poll() is None:
         state.miniapp_tunnel_proc.terminate()
 
@@ -79,10 +105,13 @@ def main():
     if not me:
         sys.exit("Could not reach Telegram. Check the token / network.")
     print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
+    store.init()
     if not config.ALLOWED_CHAT_IDS:
         print("⚠️  No ALLOWED_CHAT_IDS — DISCOVERY mode (won't execute Claude).")
     else:
         _setup_miniapp()
+        _setup_dashboard()
+        native_activity.start()        # tail live VS Code/terminal sessions
 
     offset = 0
     try:

@@ -13,7 +13,11 @@ import {
   SquarePen,
   MessagesSquare,
   TerminalSquare,
+  SquareChevronRight,
   MonitorPlay,
+  MousePointerClick,
+  History,
+  CircleDot,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
@@ -21,8 +25,12 @@ import { FolderNavigator } from "../components/FolderNavigator";
 
 const tabs = [
   { to: "/", label: "Run", icon: MessagesSquare },
+  { to: "/issues", label: "Issues", icon: CircleDot },
+  { to: "/history", label: "History", icon: History },
   { to: "/server", label: "Server", icon: TerminalSquare },
+  { to: "/shell", label: "Shell", icon: SquareChevronRight },
   { to: "/preview", label: "Preview", icon: MonitorPlay },
+  { to: "/design", label: "Design", icon: MousePointerClick },
 ] as const;
 
 function HeaderBar({
@@ -39,7 +47,13 @@ function HeaderBar({
     refetchInterval: 5000,
   });
   const project = state.data?.project;
-  const { newChat, isRunning, turns } = useChat();
+  const running = useQuery({
+    queryKey: ["running"],
+    queryFn: () => api.getRunning(),
+    refetchInterval: 4000,
+  });
+  const status = running.data?.status ?? {};
+  const { newChat, isRunning, sessions, sessionId, selectSession } = useChat();
 
   return (
     <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--tg-bg)] px-3 pb-2 pt-2">
@@ -71,15 +85,36 @@ function HeaderBar({
             />
           )}
         </button>
-        {pathname === "/" && turns.length > 0 && (
-          <button
-            onClick={newChat}
-            disabled={isRunning}
-            className="flex shrink-0 items-center gap-1 rounded-lg bg-[var(--tg-secondary-bg)] px-3 py-1.5 text-xs disabled:opacity-40"
-          >
-            <SquarePen size={14} aria-hidden />
-            New
-          </button>
+        {pathname === "/" && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {sessions.length > 0 && (
+              <select
+                value={sessionId ?? ""}
+                onChange={(e) => selectSession(e.target.value)}
+                disabled={isRunning}
+                className="max-w-[38vw] truncate rounded-lg bg-[var(--tg-secondary-bg)] px-2 py-1.5 text-xs outline-none disabled:opacity-40"
+                aria-label="Chat session"
+              >
+                {sessions.map((s) => {
+                  const st = status[s.id]?.state;
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {(st === "awaiting" ? "❓ " : st === "working" ? "● " : "") +
+                        (s.title || "New chat")}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
+            <button
+              onClick={() => void newChat()}
+              disabled={isRunning}
+              className="flex items-center gap-1 rounded-lg bg-[var(--tg-secondary-bg)] px-3 py-1.5 text-xs disabled:opacity-40"
+            >
+              <SquarePen size={14} aria-hidden />
+              New
+            </button>
+          </div>
         )}
       </div>
 
@@ -111,6 +146,7 @@ function Layout() {
   const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <ChatProvider>
+      <div className="crt" />
       <div className="mx-auto flex h-full max-w-screen-sm flex-col">
         <HeaderBar
           pickerOpen={pickerOpen}

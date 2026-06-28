@@ -4,10 +4,11 @@ import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
+import { RunningNow } from "../components/RunningNow";
 import { Banner } from "../components/ui";
 
 function RunPage() {
-  const { turns, activeTurn, respond, sendError } = useChat();
+  const { turns, activeTurn, sessionWorking, respond, sendError } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to the latest message as the transcript grows.
@@ -18,6 +19,8 @@ function RunPage() {
 
   return (
     <div className="space-y-4 pb-44">
+      <RunningNow />
+
       {turns.length === 0 && (
         <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">
           Start a conversation with Claude.
@@ -67,6 +70,12 @@ function RunPage() {
           </div>
         );
       })}
+
+      {/* Native (VS Code) live session: no bridge turn is "running", so the
+          working state comes from the unified status map. */}
+      {sessionWorking && !activeTurn && (
+        <div className="text-xs text-[var(--tg-hint)]">Working…</div>
+      )}
 
       {sendError && (
         <Banner tone="error">

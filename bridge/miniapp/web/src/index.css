@@ -1,54 +1,87 @@
 @import "tailwindcss";
 
 :root {
-  /* Mystic — a fixed deep-violet identity. The Mini App owns this palette;
-     telegram.ts pushes our background onto Telegram's chrome rather than
-     mapping Telegram's themeParams in, so the purple theme stays consistent. */
-  --tg-bg: #130d20;
-  --tg-text: #ece9f6;
-  --tg-hint: #9588b3;
-  --tg-secondary-bg: #1e1630;
-  --tg-button: #7c5cff;
-  --tg-button-text: #ffffff;
-  --tg-link: #b69bff;
+  color-scheme: dark;
+  /* === HUD identity (dashboard + Mini App). Keep BOTH index.css in sync. ===
+     Phosphor accent derived from --accent-rgb + --primary. */
+  --accent-rgb: 127 233 216;
+  --primary: #7fe9d8;
+  --foreground: #bfe6de;
+  --foreground-bright: #dff8f2;
 
-  /* Accents derived from the violet above. */
-  --surface-2: #2a1f44;
-  --border: rgba(167, 139, 250, 0.16);
-  --brand: #7c5cff;
-  --brand-strong: #6d45f0;
-  --brand-soft: #a78bfa;
-  --brand-glow: rgba(124, 92, 255, 0.32);
+  --background: #060a0a;
+  --panel: rgba(9, 16, 16, 0.5);
+  --card: rgba(7, 13, 13, 0.6);
+  --card-foreground: #bfe6de;
+  --popover: rgba(7, 13, 13, 0.97);
+  --popover-foreground: #dff8f2;
 
-  /* shadcn/ui tokens mapped onto the purple palette above. */
-  --radius: 0.7rem;
-  --background: var(--tg-bg);
-  --foreground: var(--tg-text);
-  --card: var(--tg-secondary-bg);
-  --card-foreground: var(--tg-text);
-  --popover: var(--surface-2);
-  --popover-foreground: var(--tg-text);
-  --primary: var(--tg-button);
-  --primary-foreground: var(--tg-button-text);
-  --secondary: var(--tg-secondary-bg);
-  --secondary-foreground: var(--tg-text);
-  --muted: var(--tg-secondary-bg);
-  --muted-foreground: var(--tg-hint);
-  --accent: var(--surface-2);
-  --accent-foreground: var(--tg-text);
-  --destructive: #f0496e;
-  --destructive-foreground: #ffffff;
-  --input: var(--border);
-  --ring: var(--brand-soft);
+  --primary-foreground: #060a0a;
+  --brand: var(--primary);
+  --brand-soft: var(--primary);
+  --brand-bright: var(--foreground-bright);
+  --brand-glow: rgb(var(--accent-rgb) / 0.25);
+
+  --secondary: rgb(var(--accent-rgb) / 0.08);
+  --secondary-foreground: #bfe6de;
+  --muted: rgb(var(--accent-rgb) / 0.05);
+  --muted-foreground: #6f938d;
+  --muted-2: #3c544f;
+  --accent: rgb(var(--accent-rgb) / 0.08);
+  --accent-foreground: #dff8f2;
+
+  --ac-03: rgb(var(--accent-rgb) / 0.03);
+  --ac-06: rgb(var(--accent-rgb) / 0.06);
+  --ac-12: rgb(var(--accent-rgb) / 0.12);
+  --ac-22: rgb(var(--accent-rgb) / 0.22);
+
+  --success: #8fd9a8;
+  --warning: #e3c279;
+  --danger: #e0897a;
+  --destructive: #e0897a;
+  --destructive-foreground: #060a0a;
+  --violet: #b9a6ff;
+  --blue: #6fb5ff;
+
+  --surface-vs: var(--primary);  --surface-vs-bg: rgb(var(--accent-rgb) / 0.08);
+  --surface-tg: #6fb5ff;  --surface-tg-bg: rgba(111, 181, 255, 0.06);
+  --surface-ma: #b9a6ff;  --surface-ma-bg: rgba(185, 166, 255, 0.06);
+  --surface-web: #8fd9a8; --surface-web-bg: rgba(143, 217, 168, 0.06);
+
+  --border: rgb(var(--accent-rgb) / 0.16);
+  --border-bright: rgb(var(--accent-rgb) / 0.4);
+  --input: rgb(var(--accent-rgb) / 0.2);
+  --ring: var(--primary);
+
+  --tg-bg: var(--background);
+  --tg-text: var(--foreground);
+  --tg-hint: var(--muted-foreground);
+  --tg-secondary-bg: var(--card);
+  --tg-button: var(--primary);
+  --tg-button-text: var(--primary-foreground);
+  --tg-link: var(--primary);
+  --surface-2: var(--panel);
+
+  --radius: 0;
 }
 
+[data-theme="green"]   { --accent-rgb: 95 221 143;  --primary: #5fdd8f; --foreground: #aee0bd; --foreground-bright: #d6ffe1; }
+[data-theme="amber"]   { --accent-rgb: 232 176 74;  --primary: #e8b04a; --foreground: #e6cf9c; --foreground-bright: #ffe7b0; }
+[data-theme="magenta"] { --accent-rgb: 255 122 217; --primary: #ff7ad9; --foreground: #f1c2e6; --foreground-bright: #ffd9f3; }
+
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+
+  --font-sans: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-foreground-bright: var(--foreground-bright);
+  --color-panel: var(--panel);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -59,13 +92,27 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-2: var(--muted-2);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-violet: var(--violet);
+  --color-blue: var(--blue);
   --color-border: var(--border);
+  --color-border-bright: var(--border-bright);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-bright: var(--brand-bright);
+  --color-surface-vs: var(--surface-vs);
+  --color-surface-tg: var(--surface-tg);
+  --color-surface-ma: var(--surface-ma);
+  --color-surface-web: var(--surface-web);
 }
 
 html,
@@ -76,28 +123,10 @@ body,
 
 body {
   margin: 0;
-  background-color: var(--tg-bg);
-  color: var(--tg-text);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
+  background: #060a0a;
+  color: var(--foreground);
+  font-family: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
   -webkit-font-smoothing: antialiased;
-}
-
-/* Signature: a quiet violet aura that pools toward the top of the view, giving
-   the chat a soft cosmic glow without competing with the content. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 60vh;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(
-    120% 70% at 50% -10%,
-    var(--brand-glow),
-    transparent 60%
-  );
 }
 
 #root {
@@ -105,7 +134,124 @@ body::before {
   z-index: 1;
 }
 
+::selection {
+  background: rgb(var(--accent-rgb) / 0.25);
+  color: #eafffb;
+}
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--accent-rgb) / 0.22);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--accent-rgb) / 0.4);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.22) transparent;
+}
+
 textarea,
 input {
   font-family: inherit;
 }
+
+/* HUD primitives */
+.glow {
+  text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.35);
+}
+.panel {
+  position: relative;
+}
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.6);
+  pointer-events: none;
+  z-index: 3;
+}
+.panel::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.panel::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+.crt {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 80;
+  opacity: 0.5;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+}
+
+@keyframes mpulse { 0% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0.55); } 70% { box-shadow: 0 0 0 6px rgba(143, 217, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0); } }
+@keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
+@keyframes mpop { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes twinkle { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+/* Markdown rendering for assistant messages (react-markdown + remark-gfm). */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0.5em 0; }
+.md h1, .md h2, .md h3, .md h4 { margin: 0.9em 0 0.4em; font-weight: 600; line-height: 1.3; }
+.md h1 { font-size: 1.3em; }
+.md h2 { font-size: 1.18em; }
+.md h3 { font-size: 1.06em; }
+.md ul, .md ol { margin: 0.5em 0; padding-left: 1.4em; }
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
+.md li { margin: 0.2em 0; }
+.md li > ul, .md li > ol { margin: 0.2em 0; }
+.md a { color: var(--brand-soft); text-decoration: underline; text-underline-offset: 2px; }
+.md strong { font-weight: 600; color: var(--foreground); }
+.md em { font-style: italic; }
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.08em 0.34em;
+}
+.md pre {
+  margin: 0.6em 0;
+  padding: 0.8em 0.9em;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow-x: auto;
+}
+.md pre code { background: none; border: none; padding: 0; font-size: 0.86em; line-height: 1.5; }
+.md blockquote {
+  margin: 0.6em 0;
+  padding-left: 0.9em;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+.md hr { margin: 1em 0; border: none; border-top: 1px solid var(--border); }
+.md table { margin: 0.6em 0; border-collapse: collapse; font-size: 0.92em; }
+.md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
+.md th { background: var(--muted); font-weight: 600; }
+.md img { max-width: 100%; border-radius: 8px; }

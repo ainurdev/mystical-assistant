@@ -2,9 +2,21 @@ import { createRouter, createHashHistory } from "@tanstack/react-router";
 import { rootRoute } from "./routes/root";
 import { runRoute } from "./routes/run";
 import { serverRoute } from "./routes/server";
+import { shellRoute } from "./routes/shell";
 import { previewRoute } from "./routes/preview";
+import { historyRoute } from "./routes/history";
+import { issuesRoute } from "./routes/issues";
+import { designRoute } from "./routes/design";
 
-const routeTree = rootRoute.addChildren([runRoute, serverRoute, previewRoute]);
+const routeTree = rootRoute.addChildren([
+  runRoute,
+  issuesRoute,
+  serverRoute,
+  shellRoute,
+  previewRoute,
+  designRoute,
+  historyRoute,
+]);
 
 // Hash history is the safest choice inside the Telegram webview.
 export const router = createRouter({

@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# mystical — lifecycle launcher for the mystical-assistant Telegram↔Claude bridge.
+#
+# It just delegates the real start to the repo's run.sh (which holds your secrets
+# and is git-ignored); this wrapper adds easy start/stop/restart/status/logs from
+# anywhere on your PATH. No secrets live here, so it is safe to commit.
+#
+# Install (once):  ln -sf "$PWD/bin/mystical" ~/.local/bin/mystical
+
+set -euo pipefail
+
+# --- locate the repo (resolve the ~/.local/bin symlink back to the real file) --
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO="$(cd "$(dirname "$SELF")/.." && pwd)"
+RUN_SH="$REPO/run.sh"
+ENTRY="claude_telegram_bridge.py"            # process we manage
+
+STATE_DIR="${BRIDGE_STATE_DIR:-$HOME/.bridge_state}"
+LOG="${MYSTICAL_LOG:-$STATE_DIR/mystical.log}"
+PID_FILE="$STATE_DIR/mystical.pid"
+
+c_g=$'\033[32m'; c_r=$'\033[31m'; c_y=$'\033[33m'; c_0=$'\033[0m'
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '%s✓%s %s\n' "$c_g" "$c_0" "$*"; }
+warn() { printf '%s!%s %s\n' "$c_y" "$c_0" "$*"; }
+die()  { printf '%s✗%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
+
+usage() {
+  cat <<EOF
+mystical — control the mystical-assistant bridge
+
+  mystical [start]   start in the background; logs -> $LOG
+  mystical stop      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
+  mystical restart   stop, then start
+  mystical status    is it running? ports + dashboard URL + tunnel link
+  mystical logs      follow the log (Ctrl-C to stop following)
+  mystical run       run in the foreground (live logs, Ctrl-C to quit)
+EOF
+}
+
+[ -f "$RUN_SH" ] || die "run.sh not found at $RUN_SH — it holds your bot token; create it before starting."
+
+# --- helpers -----------------------------------------------------------------
+bridge_pid() {
+  # Echo the live bridge PID (prefer the pidfile, fall back to pgrep), else nothing.
+  local p=""
+  if [ -f "$PID_FILE" ]; then
+    p="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then printf '%s' "$p"; return 0; fi
+  fi
+  p="$(pgrep -f "$ENTRY" | head -n1 || true)"
+  [ -n "$p" ] && printf '%s' "$p"
+}
+
+dash_url() {
+  local port token
+  port="$(grep -oE 'DASH_PORT=[0-9]+' "$RUN_SH" | head -n1 | cut -d= -f2 || true)"; port="${port:-8790}"
+  token="$(grep -oE 'DASH_TOKEN=[A-Za-z0-9_-]+' "$RUN_SH" | head -n1 | cut -d= -f2 || true)"
+  if [ -n "$token" ]; then printf 'http://127.0.0.1:%s/?token=%s' "$port" "$token"
+  else printf 'http://127.0.0.1:%s/' "$port"; fi
+}
+
+# --- commands ----------------------------------------------------------------
+cmd_start() {
+  local pid; pid="$(bridge_pid || true)"
+  if [ -n "$pid" ]; then warn "Already running (pid $pid). Use 'mystical restart' to reload."; return 0; fi
+  mkdir -p "$STATE_DIR"
+  say "Starting mystical bridge…  (logs: $LOG)"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid env PYTHONUNBUFFERED=1 "$RUN_SH" >>"$LOG" 2>&1 < /dev/null &
+  else
+    nohup env PYTHONUNBUFFERED=1 "$RUN_SH" >>"$LOG" 2>&1 < /dev/null &
+  fi
+  local newpid=$!
+  printf '%s' "$newpid" > "$PID_FILE"
+  # wait for the dashboard to answer, but fail fast if the process dies
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    kill -0 "$newpid" 2>/dev/null || { warn "Process exited early — last log lines:"; tail -n 15 "$LOG" 2>/dev/null || true; return 1; }
+    curl -s -o /dev/null "http://127.0.0.1:8790/" 2>/dev/null && break
+    sleep 1
+  done
+  cmd_status
+}
+
+cmd_stop() {
+  local pid; pid="$(bridge_pid || true)"
+  if [ -z "$pid" ]; then warn "Not running."; rm -f "$PID_FILE"; return 0; fi
+  # When we started it (setsid), the bridge leads its own process group, so its
+  # cloudflared child shares the pgid. Signal the whole group then, so a SIGKILL
+  # fallback reaps the tunnel too instead of orphaning it. Otherwise (foreign
+  # group) only signal the pid, to avoid hitting unrelated processes.
+  local pgid; pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+  local target="$pid"
+  [ -n "$pgid" ] && [ "$pgid" = "$pid" ] && target="-$pgid"
+  say "Stopping (pid $pid)…"
+  kill -INT -- "$target" 2>/dev/null || true     # KeyboardInterrupt -> clean _shutdown()
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$pid" 2>/dev/null; then warn "Didn't exit on SIGINT; sending SIGKILL."; kill -KILL -- "$target" 2>/dev/null || true; fi
+  rm -f "$PID_FILE"
+  ok "Stopped."
+}
+
+cmd_status() {
+  local pid; pid="$(bridge_pid || true)"
+  if [ -z "$pid" ]; then say "${c_r}●${c_0} stopped"; return 0; fi
+  ok "running (pid $pid)"
+  local d m
+  d="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8790/" 2>/dev/null || echo 000)"
+  m="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8787/" 2>/dev/null || echo 000)"
+  say "  dashboard 8790 : HTTP $d"
+  say "  mini app  8787 : HTTP $m"
+  say "  dashboard URL  : $(dash_url)"
+  local turl; turl="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' "$LOG" 2>/dev/null | tail -n1 || true)"
+  [ -n "$turl" ] && say "  mini app tunnel: $turl"
+  say "  logs           : $LOG"
+}
+
+cmd_logs() { [ -f "$LOG" ] || die "No log yet at $LOG — start it first."; exec tail -n 200 -f "$LOG"; }
+cmd_run()  { exec env PYTHONUNBUFFERED=1 "$RUN_SH"; }
+
+case "${1:-start}" in
+  start)            cmd_start ;;
+  stop)             cmd_stop ;;
+  restart)          cmd_stop; cmd_start ;;
+  status)           cmd_status ;;
+  logs)             cmd_logs ;;
+  run|fg)           cmd_run ;;
+  -h|--help|help)   usage ;;
+  *)                die "unknown command: $1"$'\n'"$(usage)" ;;
+esac

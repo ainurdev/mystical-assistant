@@ -18,7 +18,9 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import browser, config, devserver, runner, state, tunnel
+from bridge import (browser, config, devserver, github, native,
+                    project_config, runner, screenshot, shell, state, store,
+                    transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -69,6 +71,42 @@ def normalize_model_effort(model, effort) -> tuple[bool, str | None, str | None]
     if e is not None and e not in config.MINIAPP_EFFORTS:
         e = None
     return True, m, e
+
+
+def normalize_permission_mode(mode) -> str | None:
+    """Validate a run's requested permission/operating mode. Unknown or blank ->
+    None, so the caller falls back to config.MINIAPP_PERMISSION_MODE."""
+    m = (mode or "").strip() or None
+    if m is not None and m not in config.MINIAPP_PERMISSION_MODES:
+        return None
+    return m
+
+
+def _session_brief(s: dict) -> dict:
+    return {"id": s["id"], "title": s["title"], "project": s["project"],
+            "updated": s["updated"], "archived": s["archived"],
+            "origin": s.get("origin"), "cwd": s.get("cwd")}
+
+
+def transcript_for(session: dict, cursor: int = 0) -> dict:
+    """Unified transcript loader. A session that still lives only as native JSONL
+    (started in VSCode and not yet continued through the bridge) renders from that
+    JSONL on demand; everything else renders from the store. Same shape either way."""
+    if session.get("origin") in ("vscode", "terminal"):
+        path = transcript_jsonl.find_transcript(session.get("claude_session_id"))
+        data = (transcript_jsonl.parse_jsonl(path, cursor) if path
+                else {"turns": [], "events": [], "next_cursor": cursor})
+        return {"session": session, **data}
+    data = store.transcript(session["id"], cursor)
+    # Fallback: a bridge row whose conversation actually lives in the native JSONL
+    # (shares a claude_session_id but was never journaled) -> render from JSONL.
+    if not data["turns"] and session.get("claude_session_id"):
+        path = transcript_jsonl.find_transcript(session["claude_session_id"])
+        if path:
+            jdata = transcript_jsonl.parse_jsonl(path, cursor)
+            if jdata["turns"]:
+                return {"session": session, **jdata}
+    return data
 
 
 def _save_images(job_id: str, images: list) -> list[str]:
@@ -143,8 +181,29 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_projects(qs)
                 if path == "/api/logs":
                     return self._api_logs(qs)
+                if path == "/api/history":
+                    return self._api_history(chat_id, qs)
+                if path == "/api/running":
+                    return self._api_running(chat_id)
+                if path == "/api/usage":
+                    return self._json(usage.get_usage())
+                if path == "/api/github/issues":
+                    return self._json(github.issues(state.project_dir(chat_id)))
+                if path == "/api/project/settings":
+                    return self._api_project_settings(chat_id)
+                if path == "/api/sessions":
+                    return self._api_sessions_list(chat_id, qs)
+                if path.startswith("/api/sessions/"):
+                    return self._api_session_get(
+                        chat_id, path[len("/api/sessions/"):], qs)
                 if path.startswith("/api/run/"):
                     return self._api_run_poll(path[len("/api/run/"):], qs)
+                if path == "/api/shell":
+                    try:
+                        cursor = int(qs.get("cursor", ["0"])[0])
+                    except ValueError:
+                        cursor = 0
+                    return self._json(shell.snapshot(cursor))
                 return self._json({"error": "not found"}, 404)
             self._serve_static(path)
         except Exception as e:  # noqa: BLE001
@@ -163,6 +222,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "bad json"}, 400)
             if path == "/api/select":
                 return self._api_select(chat_id, body)
+            if path == "/api/sessions":
+                return self._api_sessions_create(chat_id, body)
+            if path.startswith("/api/sessions/") and path.endswith("/archive"):
+                return self._api_session_archive(
+                    chat_id, path[len("/api/sessions/"):-len("/archive")], body)
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
                     path[len("/api/run/"):-len("/respond")], body)
@@ -173,8 +237,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_run(chat_id, body)
             if path == "/api/server":
                 return self._api_server(chat_id, body)
+            if path == "/api/shell":
+                return self._json(shell.run(state.project_dir(chat_id), body.get("command", "")))
+            if path == "/api/shell/kill":
+                return self._json(shell.kill())
+            if path == "/api/project/settings":
+                return self._api_project_settings_set(chat_id, body)
             if path == "/api/preview":
                 return self._api_preview(chat_id, body)
+            if path == "/api/preview/screenshot":
+                return self._api_preview_screenshot(body)
             return self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             self._safe_500(e)
@@ -190,9 +262,10 @@ class Handler(BaseHTTPRequestHandler):
         pd = state.project_dir(chat_id)
         self._json({
             "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)} if pd else None,
-            "busy": state.busy_chat is not None,
+            "busy": state.any_running(),
             "server": devserver.server_state(),
             "preview": tunnel.tunnel_state(),
+            "permission_mode": config.MINIAPP_PERMISSION_MODE,
         })
 
     def _api_projects(self, qs):
@@ -217,7 +290,6 @@ class Handler(BaseHTTPRequestHandler):
         if not browser.within_base(cand) or not os.path.isdir(cand):
             return self._json({"error": "invalid dir"}, 400)
         state.active[chat_id] = cand
-        state.sessions.pop(chat_id, None)
         self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
 
     def _api_run(self, chat_id: int, body: dict):
@@ -236,21 +308,22 @@ class Handler(BaseHTTPRequestHandler):
         ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
         if not ok:
             return self._json({"error": "invalid model"}, 400)
+        permission_mode = normalize_permission_mode(body.get("permission_mode"))
+        session_id = (body.get("session_id") or "").strip() or None
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []
         except ValueError as e:
             runner._cleanup_uploads(job_id)
             return self._json({"error": str(e)}, 413)
-        if body.get("fresh"):
-            # First message of a new chat: don't --resume the prior session.
-            state.sessions.pop(chat_id, None)
         job = runner.start_streaming_job(chat_id, prompt, paths, project_path,
-                                         job_id=job_id, model=model, effort=effort)
+                                         job_id=job_id, model=model, effort=effort,
+                                         permission_mode=permission_mode,
+                                         session_id=session_id, origin="miniapp")
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
-        self._json({"job_id": job.id})
+        self._json({"job_id": job.id, "session_id": job.store_session_id})
 
     def _api_run_poll(self, job_id: str, qs):
         try:
@@ -261,6 +334,48 @@ class Handler(BaseHTTPRequestHandler):
         if not job:
             return self._json({"error": "not found"}, 404)
         self._json(job.snapshot(cursor))
+
+    def _api_history(self, chat_id: int, qs):
+        native.refresh(chat_id)            # surface VSCode sessions in the history view
+        archived = qs.get("archived", ["0"])[0] == "1"
+        self._json({"sessions": store.history(chat_id, include_archived=archived)})
+
+    def _api_running(self, chat_id: int):
+        self._json(runner.running_snapshot(chat_id))
+
+    def _api_sessions_list(self, chat_id: int, qs):
+        native.refresh(chat_id)            # surface VSCode sessions started since last poll
+        project = (qs.get("project", [""])[0] or "").strip()
+        rows = (store.list_sessions(chat_id, project) if project
+                else store.list_sessions_all(chat_id))    # no project -> all sessions
+        self._json({"sessions": [_session_brief(s) for s in rows]})
+
+    def _api_sessions_create(self, chat_id: int, body: dict):
+        project = (body.get("project") or "").strip()
+        cand = os.path.realpath(os.path.join(config.BASE_PATH, project.lstrip("/")))
+        cwd = (cand if browser.within_base(cand) and os.path.isdir(cand)
+               else state.project_dir(chat_id))
+        s = store.create_session(chat_id, project, origin="miniapp", cwd=cwd,
+                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+        self._json({"session": _session_brief(s)})
+
+    def _api_session_get(self, chat_id: int, rest: str, qs):
+        sid = rest.split("/")[0]
+        s = store.get_session(sid)
+        if not s or s["chat_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        try:
+            cursor = int(qs.get("cursor", ["0"])[0])
+        except ValueError:
+            cursor = 0
+        self._json(transcript_for(s, cursor))
+
+    def _api_session_archive(self, chat_id: int, sid: str, body: dict):
+        s = store.get_session(sid)
+        if not s or s["chat_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        store.archive(sid)
+        self._json({"ok": True})
 
     def _api_run_respond(self, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""
@@ -299,9 +414,24 @@ class Handler(BaseHTTPRequestHandler):
         if action == "stop":
             msg = devserver.stop_server()
         else:
-            cmd = (body.get("cmd") or "").strip() or config.START_CMD
+            cmd = ((body.get("cmd") or "").strip()
+                   or project_config.run_cmd(state.project_key(chat_id))
+                   or config.START_CMD)
             msg = devserver.start_server(cmd, state.project_dir(chat_id))
         self._json({"server": devserver.server_state(), "message": msg})
+
+    def _api_project_settings(self, chat_id: int):
+        self._json({
+            "scripts": project_config.package_scripts(state.project_dir(chat_id)),
+            "run_cmd": project_config.run_cmd(state.project_key(chat_id)),
+            "default_cmd": config.START_CMD,
+            "log_path": devserver.DEV_LOG_REL,
+        })
+
+    def _api_project_settings_set(self, chat_id: int, body: dict):
+        cmd = project_config.set_run_cmd(state.project_key(chat_id),
+                                         (body.get("run_cmd") or "")[:1000])
+        self._json({"ok": True, "run_cmd": cmd})
 
     def _api_logs(self, qs):
         try:
@@ -321,6 +451,21 @@ class Handler(BaseHTTPRequestHandler):
                 port = config.PREVIEW_PORT
             _, msg = tunnel.start_tunnel(port)
         self._json({"preview": tunnel.tunnel_state(), "message": msg})
+
+    def _api_preview_screenshot(self, body: dict):
+        url = tunnel.tunnel_state().get("url")
+        if not url:
+            return self._json({"error": "preview not running"}, 409)
+        try:
+            width = int(body.get("width") or 375)
+        except (TypeError, ValueError):
+            width = 375
+        try:
+            png = screenshot.capture(url, width)
+        except Exception as e:  # noqa: BLE001
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
+        data_url = "data:image/png;base64," + base64.b64encode(png).decode()
+        return self._json({"data_url": data_url})
 
     # --- static (SPA) --------------------------------------------------------
     def _serve_static(self, path: str):

@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@selector": fileURLToPath(new URL("../../../tools/selector-plugin/src", import.meta.url)),
     },
   },
   server: {

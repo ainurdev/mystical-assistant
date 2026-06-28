@@ -4,6 +4,10 @@ import { RouterProvider } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initTelegram } from "./lib/telegram";
 import { router } from "./router";
+import "@fontsource/share-tech-mono/400.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/700.css";
 import "./index.css";
 
 initTelegram();

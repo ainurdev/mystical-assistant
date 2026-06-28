@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import sys
+import tempfile
 import time
 import urllib.parse
 
@@ -16,10 +17,41 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
+os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
-from bridge import config, runner                       # noqa: E402
+from bridge import config, machine, pubsub, runner, store, usage   # noqa: E402
 from bridge.miniapp.server import (                       # noqa: E402
     validate_init_data, normalize_model_effort)
+
+store.init()
+
+
+def test_lists_exclude_sessions_idle_over_3_days():
+    """Lists (sidebar/history) drop sessions whose last message is >3 days old,
+    but the session stays resumable (latest_session) and viewable (get_session)."""
+    from contextlib import closing
+    chat = 7733
+    fresh = store.create_session(chat, "/stale_proj")
+    old = store.create_session(chat, "/stale_proj")
+    with closing(store._connect()) as c:  # backdate `old` to 4 days ago
+        c.execute("UPDATE sessions SET updated=? WHERE id=?",
+                  (time.time() - 4 * 86400, old["id"]))
+        c.commit()
+
+    all_ids = {r["id"] for r in store.list_sessions_all(chat)}
+    assert fresh["id"] in all_ids
+    assert old["id"] not in all_ids                                  # hidden from sidebar
+    assert old["id"] not in {r["id"] for r in store.list_sessions(chat, "/stale_proj")}
+    assert old["id"] not in {r["id"] for r in store.history(chat)}   # hidden from history
+
+    # …but complete history is preserved: still resumable + viewable by id.
+    only_old = store.create_session(chat, "/ghost_proj")
+    with closing(store._connect()) as c:
+        c.execute("UPDATE sessions SET updated=? WHERE id=?",
+                  (time.time() - 4 * 86400, only_old["id"]))
+        c.commit()
+    assert store.latest_session(chat, "/ghost_proj")["id"] == only_old["id"]
+    assert store.get_session(old["id"]) is not None
 
 
 def make_init_data(token, user_id, auth_date=None, tamper=False):
@@ -257,6 +289,89 @@ def test_base_cmd_omits_model_effort_by_default():
     assert "--effort" not in cmd
 
 
+def test_base_cmd_resumes_when_session_id():
+    cmd = runner._base_cmd("p", 555, stream=True, interactive=True,
+                           claude_session_id="abc123")
+    assert cmd[cmd.index("--resume") + 1] == "abc123"
+
+
+def test_state_project_key_is_canonical_rel():
+    from bridge import state
+    assert state.project_key(424242).startswith("/")   # base or /rel
+
+
+def test_runner_journals_to_store():
+    s = store.create_session(555, "p5")
+    job = runner.Job("jx", 555, s["id"])
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "hey"}]}})
+    runner._handle_event(job, {"type": "result", "result": "ok",
+                               "total_cost_usd": 0.02, "session_id": "c1"})
+    runner._drain_journal()
+    evs = [e["type"] for e in store.transcript(s["id"])["events"]]
+    assert "text" in evs and "result" in evs
+
+
+def test_runner_job_without_session_does_not_journal():
+    job = runner.Job("nojournal", 555)            # no store session
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "hi"}]}})
+    runner._drain_journal()
+    assert job.events and job.store_session_id is None   # in-memory only, no error
+
+
+def test_session_brief_shape():
+    from bridge.miniapp.server import _session_brief
+    s = store.create_session(555, "p6")
+    b = _session_brief(s)
+    assert set(b) == {"id", "title", "project", "updated", "archived", "origin"}
+    assert b["id"] == s["id"] and b["project"] == "p6"
+
+
+def test_store_list_sessions_all():
+    store.create_session(900, "a")
+    store.create_session(900, "b")
+    projs = {s["project"] for s in store.list_sessions_all(900)}
+    assert {"a", "b"} <= projs
+
+
+# --- dashboard security ------------------------------------------------------
+
+def test_tunnel_refuses_reserved_ports():
+    from bridge import tunnel
+    url, msg = tunnel.start_tunnel(config.DASH_PORT)
+    assert url is None and "reserved" in msg.lower()
+    url2, _ = tunnel.start_tunnel(config.MINIAPP_PORT)
+    assert url2 is None
+
+
+def test_dashboard_security_helpers():
+    from bridge.dashboard import server as dash
+    assert dash._tok_ok(config.DASH_TOKEN) is True
+    assert dash._tok_ok("nope") is False
+    assert dash._tok_ok("") is False
+    assert f"127.0.0.1:{config.DASH_PORT}" in dash._HOSTS
+    assert f"http://localhost:{config.DASH_PORT}" in dash._ORIGINS
+
+
+def test_handle_task_journals_bot_turn():
+    from bridge import state
+    state.active[777] = "/tmp"                       # BASE_PATH=/tmp -> project_key "/"
+    orig = (runner.send, runner.typing, runner.run_blocking)
+    runner.send = lambda *a, **k: None
+    runner.typing = lambda *a, **k: None
+    runner.run_blocking = lambda chat_id, prompt, resume_id=None: ("answer", "claude-sid", 0.01, False)
+    session = store.ensure_session(777, state.project_key(777))
+    state.acquire_run(session["id"], 777)            # handle_task assumes caller holds the slot
+    try:
+        runner.handle_task(777, "do the thing", session)
+    finally:
+        runner.send, runner.typing, runner.run_blocking = orig
+    s = store.latest_session(777, state.project_key(777))
+    assert s and s["claude_session_id"] == "claude-sid"
+    assert "result" in [e["type"] for e in store.transcript(s["id"])["events"]]
+
+
 # --- interrupt --------------------------------------------------------------
 
 def test_interrupt_writes_control_request_and_marks_job():
@@ -306,6 +421,384 @@ def test_normalize_model_effort_unknown_model_rejected():
 
 def test_normalize_model_effort_unknown_effort_dropped():
     assert normalize_model_effort("opus", "ultra") == (True, "opus", None)
+
+
+# --- session store ----------------------------------------------------------
+
+def test_store_create_and_get_session():
+    s = store.create_session(555, "org/repo")
+    assert s["chat_id"] == 555 and s["project"] == "org/repo" and s["archived"] == 0
+    got = store.get_session(s["id"])
+    assert got["id"] == s["id"] and got["claude_session_id"] is None
+
+
+def test_store_latest_and_ensure():
+    a = store.create_session(555, "p1")
+    b = store.create_session(555, "p1")
+    assert store.latest_session(555, "p1")["id"] == b["id"]
+    assert store.ensure_session(555, "p1", a["id"])["id"] == a["id"]
+    assert store.ensure_session(555, "p2")["project"] == "p2"   # creates one
+
+
+def test_store_archive_and_resume_id():
+    s = store.create_session(555, "p3")
+    store.set_claude_session_id(s["id"], "claude-xyz")
+    store.archive(s["id"])
+    assert store.get_session(s["id"])["claude_session_id"] == "claude-xyz"
+    assert store.get_session(s["id"])["archived"] == 1
+    assert all(x["id"] != s["id"] for x in store.list_sessions(555, "p3"))
+
+
+def test_store_turns_events_transcript():
+    s = store.create_session(555, "p4")
+    store.start_turn(s["id"], "job1", "hello world", [])
+    assert store.get_session(s["id"])["title"]              # auto-titled
+    seq0 = store.append_event(s["id"], "job1", {"type": "text", "text": "hi"})
+    seq1 = store.append_event(s["id"], "job1", {"type": "result", "result": "done"})
+    assert (seq0, seq1) == (0, 1)
+    store.finish_turn("job1", "done", 0.01, 3)
+    t = store.transcript(s["id"], cursor=0)
+    assert [e["type"] for e in t["events"]] == ["text", "result"]
+    assert t["next_cursor"] == 2 and t["turns"][0]["status"] == "done"
+    assert t["turns"][0]["attachments"] == []
+    assert store.transcript(s["id"], cursor=1)["events"][0]["type"] == "result"
+
+
+# --- machine: running external sessions -------------------------------------
+
+def test_machine_row_vscode_presence_only():
+    row = machine._row({"sessionId": "s1", "pid": 4242, "cwd": "/proj/foo",
+                        "startedAt": 1782065470782, "entrypoint": "claude-vscode"})
+    assert row["source"] == "vscode" and row["project"] == "foo"
+    assert row["status"] is None and row["waiting_for"] is None
+    assert abs(row["started"] - 1782065470.782) < 1          # ms -> s
+
+
+def test_machine_row_cli_status_and_home_shortened():
+    home = os.path.expanduser("~")
+    row = machine._row({"sessionId": "s", "pid": 1, "cwd": home + "/code/x",
+                        "startedAt": 1782065470782, "entrypoint": "cli",
+                        "status": "waiting", "waitingFor": "dialog open"})
+    assert row["cwd"] == "~/code/x" and row["source"] == "cli"
+    assert row["status"] == "waiting" and row["waiting_for"] == "dialog open"
+
+
+def test_machine_row_skips_incomplete():
+    assert machine._row({"pid": 1}) is None                  # no sessionId
+    assert machine._row({"sessionId": "s"}) is None          # no pid
+
+
+def test_machine_alive():
+    assert machine._alive(os.getpid()) is True
+    assert machine._alive(2_000_000_000) is False
+    assert machine._alive("nope") is False
+
+
+def test_machine_transcript_mtime():
+    with tempfile.TemporaryDirectory() as d:
+        old = machine.PROJECTS_DIR
+        machine.PROJECTS_DIR = d
+        try:
+            cwd = "/home/u/projects/my_app.v2"  # '/', '_', '.' all collapse to '-'
+            enc = "-home-u-projects-my-app-v2"
+            os.makedirs(os.path.join(d, enc))
+            tx = os.path.join(d, enc, "sid123.jsonl")
+            open(tx, "w").close()
+            os.utime(tx, (1000.0, 12345.0))
+            assert machine._transcript_mtime("sid123", cwd) == 12345.0
+            assert machine._transcript_mtime("missing", cwd) is None
+            assert machine._transcript_mtime("", cwd) is None
+        finally:
+            machine.PROJECTS_DIR = old
+
+
+def test_machine_last_active_prefers_transcript_over_frozen_registry():
+    # The bug: VS Code freezes its registry file at start, so its mtime is stale.
+    # last_active must come from the transcript (appended to on every turn).
+    with tempfile.TemporaryDirectory() as sd, tempfile.TemporaryDirectory() as pd:
+        old_s, old_p = machine.SESSIONS_DIR, machine.PROJECTS_DIR
+        machine.SESSIONS_DIR, machine.PROJECTS_DIR = sd, pd
+        try:
+            cwd, sid = "/home/u/proj/app", "abc"
+            reg = os.path.join(sd, f"{os.getpid()}.json")  # this pid is alive
+            with open(reg, "w") as f:
+                json.dump({"pid": os.getpid(), "sessionId": sid, "cwd": cwd,
+                           "startedAt": 1782000000000, "entrypoint": "claude-vscode"}, f)
+            os.utime(reg, (1000.0, 1000.0))                # registry "frozen at start"
+            enc = "-home-u-proj-app"
+            os.makedirs(os.path.join(pd, enc))
+            tx = os.path.join(pd, enc, f"{sid}.jsonl")
+            open(tx, "w").close()
+            os.utime(tx, (5000.0, 5000.0))                 # transcript is newer
+            rows = machine.list_running()
+            assert len(rows) == 1
+            assert rows[0]["last_active"] == 5000.0        # transcript wins, not 1000
+        finally:
+            machine.SESSIONS_DIR, machine.PROJECTS_DIR = old_s, old_p
+
+
+# --- usage normalization ----------------------------------------------------
+
+_USAGE_SAMPLE = {
+    "five_hour": {"utilization": 28.0, "resets_at": "2026-06-23T01:49:59+00:00"},
+    "seven_day": {"utilization": 51.4, "resets_at": "2026-06-24T11:59:59+00:00"},
+    "limits": [
+        {"kind": "session", "group": "session", "percent": 28, "severity": "normal",
+         "resets_at": "2026-06-23T01:49:59+00:00", "is_active": False, "scope": None},
+        {"kind": "weekly_all", "group": "weekly", "percent": 51, "severity": "warning",
+         "resets_at": "2026-06-24T11:59:59+00:00", "is_active": True, "scope": None},
+    ],
+}
+
+
+def test_usage_normalize():
+    u = usage._normalize(_USAGE_SAMPLE)
+    assert u["available"] is True
+    assert u["five_hour"] == {"percent": 28, "resets_at": "2026-06-23T01:49:59+00:00",
+                              "severity": "normal"}
+    assert u["seven_day"]["percent"] == 51 and u["seven_day"]["severity"] == "warning"
+    assert all(set(l) == {"kind", "group", "percent", "severity", "resets_at",
+                          "is_active"} for l in u["limits"])   # 'scope' dropped
+
+
+def test_usage_normalize_missing_buckets():
+    u = usage._normalize({"limits": []})
+    assert u["available"] is True
+    assert u["five_hour"] is None and u["seven_day"] is None
+
+
+# --- store: running session ids (badge) -------------------------------------
+
+def test_store_running_session_ids():
+    s = store.create_session(556, "rp")
+    other = store.create_session(556, "rp")
+    store.start_turn(s["id"], "rt1", "go", [])               # leaves status 'running'
+    store.start_turn(other["id"], "rt2", "go", [])
+    store.finish_turn("rt2", "done", 0.0, 1)
+    ids = store.running_session_ids(556)
+    assert s["id"] in ids and other["id"] not in ids
+    assert store.running_session_ids(424243) == []           # scoped by chat
+
+
+# --- per-repo history + model capture ---------------------------------------
+
+def test_store_history_aggregates():
+    s = store.create_session(557, "hrepo")
+    store.start_turn(s["id"], "h1", "first", [], model="opus")
+    store.finish_turn("h1", "done", 0.02, 5)
+    store.start_turn(s["id"], "h2", "second", [], model="sonnet")
+    store.finish_turn("h2", "done", 0.03, 7)
+    row = next(r for r in store.history(557) if r["id"] == s["id"])
+    assert row["turn_count"] == 2
+    assert abs(row["total_cost"] - 0.05) < 1e-9
+    assert row["models"] == ["opus", "sonnet"]            # sorted, distinct
+    assert row["project"] == "hrepo"
+    assert row["last_activity"] >= row["created"]
+
+
+def test_store_history_excludes_archived_by_default():
+    s = store.create_session(558, "arepo")
+    store.start_turn(s["id"], "a1", "x", [])
+    store.archive(s["id"])
+    assert all(r["id"] != s["id"] for r in store.history(558))
+    assert any(r["id"] == s["id"] for r in store.history(558, include_archived=True))
+
+
+def test_store_history_session_with_no_turns():
+    s = store.create_session(560, "empty")
+    row = next(r for r in store.history(560) if r["id"] == s["id"])
+    assert row["turn_count"] == 0 and row["total_cost"] == 0 and row["models"] == []
+    assert row["last_activity"] == s["updated"]            # falls back to session.updated
+
+
+def test_store_init_idempotent_and_model_persisted():
+    store.init()                                           # second call must not raise
+    s = store.create_session(559, "mrepo")
+    store.start_turn(s["id"], "m1", "x", [], model="haiku")
+    row = next(r for r in store.history(559) if r["id"] == s["id"])
+    assert row["models"] == ["haiku"]                      # migration applied, model stored
+
+
+# --- pubsub -----------------------------------------------------------------
+
+def test_pubsub_basic_and_overflow():
+    q = pubsub.subscribe("t1")
+    pubsub.publish("t1", {"n": 1})
+    assert q.get_nowait() == {"n": 1}
+    for i in range(600):
+        pubsub.publish("t1", {"n": i})
+    assert q.get_nowait() is pubsub.RESYNC      # backlog collapsed to a resync
+    pubsub.unsubscribe("t1", q)
+    pubsub.publish("t1", {"n": 2})              # no subscribers -> no error
+
+
+# --- cross-surface continuity: store extensions -----------------------------
+
+def test_store_migration_adds_origin_cwd_permission_columns():
+    import sqlite3
+    store.init()                                            # idempotent
+    con = sqlite3.connect(config.BRIDGE_DB)
+    cols = {r[1] for r in con.execute("PRAGMA table_info(sessions)").fetchall()}
+    con.close()
+    assert {"origin", "cwd", "permission_mode"} <= cols
+
+
+def test_store_create_session_records_origin_cwd_permission():
+    s = store.create_session(561, "proj", origin="dashboard", cwd="/tmp/proj",
+                             permission_mode="bypassPermissions")
+    assert s["origin"] == "dashboard"
+    assert s["cwd"] == "/tmp/proj"
+    assert s["permission_mode"] == "bypassPermissions"
+
+
+def test_store_create_session_defaults_new_columns_to_none():
+    s = store.create_session(561, "proj2")
+    assert s["origin"] is None and s["cwd"] is None and s["permission_mode"] is None
+
+
+def test_store_upsert_native_session_creates_row_keyed_by_uuid():
+    uid = "11111111-2222-3333-4444-555555555555"
+    s = store.upsert_native_session(uid, 562, "/np", "/tmp/np", title="hi there")
+    assert s["id"] == uid and s["claude_session_id"] == uid
+    assert s["origin"] == "vscode" and s["cwd"] == "/tmp/np"
+    assert s["project"] == "/np" and s["title"] == "hi there"
+    assert store.get_by_claude_session_id(uid)["id"] == uid
+
+
+def test_store_upsert_native_session_dedups_and_refreshes():
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    store.upsert_native_session(uid, 563, "/np", "/tmp/np", title="first", updated=100.0)
+    store.upsert_native_session(uid, 563, "/np", "/tmp/np", title="ignored", updated=200.0)
+    # read unfiltered: these rows use epoch-y timestamps to exercise mtime refresh,
+    # which would otherwise be hidden by the 3-day recency cutoff.
+    rows = [r for r in store.list_sessions_all(563, max_age_secs=None)
+            if r["claude_session_id"] == uid]
+    assert len(rows) == 1                                   # no duplicate row
+    assert rows[0]["updated"] == 200.0                      # mtime refreshed
+    assert rows[0]["title"] == "first"                      # user/first-msg title preserved
+
+
+def test_store_upsert_native_refreshes_noise_title():
+    uid = "noise-uuid-1"
+    store.upsert_native_session(uid, 565, "/p", "/tmp",
+                                title="<ide_opened_file>x</ide_opened_file>")
+    store.upsert_native_session(uid, 565, "/p", "/tmp", title="clean prompt")
+    rows = [r for r in store.list_sessions_all(565, max_age_secs=None)
+            if r["claude_session_id"] == uid]
+    assert rows[0]["title"] == "clean prompt"      # tag-noise title healed on rescan
+
+
+def test_store_set_permission_mode_and_cwd():
+    s = store.create_session(564, "pp")
+    store.set_permission_mode(s["id"], "bypassPermissions")
+    store.set_cwd(s["id"], "/tmp/pp")
+    g = store.get_session(s["id"])
+    assert g["permission_mode"] == "bypassPermissions" and g["cwd"] == "/tmp/pp"
+
+
+def test_ensure_session_create_passes_origin_cwd_permission():
+    s = store.ensure_session(570, "/newproj", None, origin="dashboard",
+                             cwd="/tmp/newproj", permission_mode="bypassPermissions")
+    assert s["origin"] == "dashboard" and s["cwd"] == "/tmp/newproj"
+    assert s["permission_mode"] == "bypassPermissions"
+
+
+def test_ensure_session_existing_ignores_create_args():
+    a = store.create_session(571, "/p")
+    s = store.ensure_session(571, "/p", a["id"], origin="miniapp", permission_mode="plan")
+    assert s["id"] == a["id"] and s["origin"] is None        # existing row untouched
+
+
+# --- runner: cross-surface run context (cwd + permission per session) --------
+
+def test_resolve_context_new_session_gets_surface_default_permission():
+    sess, cwd, perm = runner._resolve_run_context(
+        572, "/tmp/ctxnew", session_id=None, permission_mode=None, origin="dashboard")
+    assert sess["permission_mode"] == config.NEW_SESSION_PERMISSION_MODE
+    assert perm == config.NEW_SESSION_PERMISSION_MODE
+    assert cwd == "/tmp/ctxnew" and sess["cwd"] == "/tmp/ctxnew"
+    assert sess["origin"] == "dashboard"
+
+
+def test_resolve_context_resumes_session_with_its_own_cwd_and_permission():
+    s = store.create_session(573, "/proj", origin="vscode", cwd="/tmp/realdir",
+                             permission_mode="plan")
+    sess, cwd, perm = runner._resolve_run_context(
+        573, "/tmp/other", session_id=s["id"], permission_mode=None, origin="miniapp")
+    assert sess["id"] == s["id"]
+    assert cwd == "/tmp/realdir"               # the session's own cwd, not the chat's
+    assert perm == "plan"                      # the session's stored permission
+
+
+def test_resolve_context_explicit_permission_overrides_session():
+    s = store.create_session(574, "/proj", cwd="/tmp/d", permission_mode="plan")
+    _, _, perm = runner._resolve_run_context(
+        574, "/tmp/d", session_id=s["id"], permission_mode="acceptEdits", origin="miniapp")
+    assert perm == "acceptEdits"
+
+
+# --- adopt-on-continue (native session -> store) ----------------------------
+
+def test_store_set_origin():
+    s = store.create_session(580, "/p", origin="vscode")
+    store.set_origin(s["id"], "bridge")
+    assert store.get_session(s["id"])["origin"] == "bridge"
+
+
+def test_store_import_transcript_loads_turns_events_idempotent():
+    s = store.create_session(581, "/p")
+    turns = [{"id": "u1", "seq": 0, "prompt": "hi", "attachments": [], "status": "done",
+              "cost": None, "elapsed": None, "started": 1.0, "model": "opus"}]
+    events = [{"type": "text", "text": "yo", "seq": 0, "turn_id": "u1"}]
+    assert store.import_transcript(s["id"], turns, events) is True
+    t = store.transcript(s["id"])
+    assert [x["id"] for x in t["turns"]] == ["u1"]
+    assert t["turns"][0]["prompt"] == "hi" and t["turns"][0]["model"] == "opus"
+    assert [e["type"] for e in t["events"]] == ["text"]
+    assert store.import_transcript(s["id"], turns, events) is False   # idempotent no-op
+    assert len(store.transcript(s["id"])["turns"]) == 1
+
+
+def test_transcript_for_bridge_falls_back_to_jsonl_when_store_empty():
+    import tempfile
+    from bridge import transcript_jsonl as _T
+    from bridge.miniapp.server import transcript_for
+    root = tempfile.mkdtemp()
+    _T.PROJECTS_DIR = root
+    uid = "fallback-uuid-1"
+    sub = os.path.join(root, "p")
+    os.makedirs(sub)
+    with open(os.path.join(sub, uid + ".jsonl"), "w") as f:
+        f.write(json.dumps({"type": "user", "uuid": "x1", "cwd": "/tmp",
+                            "message": {"role": "user", "content": "jsonl only"}}) + "\n")
+    s = store.create_session(590, "/p")                 # origin None, empty store turns
+    store.set_claude_session_id(s["id"], uid)
+    t = transcript_for(store.get_session(s["id"]))
+    assert any(x["prompt"] == "jsonl only" for x in t["turns"])   # fell back to JSONL
+
+
+def test_resolve_context_adopts_native_session_into_store():
+    import tempfile
+    from bridge import transcript_jsonl as _T
+    root = tempfile.mkdtemp()
+    _T.PROJECTS_DIR = root
+    uid = "adopt-uuid-1"
+    sub = os.path.join(root, "p")
+    os.makedirs(sub)
+    with open(os.path.join(sub, uid + ".jsonl"), "w") as f:
+        f.write(json.dumps({"type": "user", "uuid": "j1", "cwd": "/tmp/realcwd",
+                            "message": {"role": "user", "content": "orig vscode msg"}}) + "\n")
+        f.write(json.dumps({"type": "assistant", "uuid": "j2", "message": {
+            "role": "assistant", "content": [{"type": "text", "text": "vscode reply"}]}}) + "\n")
+    s = store.create_session(582, "/p", origin="vscode", cwd="/tmp/realcwd")
+    store.set_claude_session_id(s["id"], uid)
+    sess, cwd, perm = runner._resolve_run_context(
+        582, "/tmp/other", session_id=s["id"], permission_mode=None, origin="miniapp")
+    assert sess["origin"] == "bridge"                          # adopted into the store
+    assert cwd == "/tmp/realcwd"                               # native cwd preserved
+    assert perm == config.NEW_SESSION_PERMISSION_MODE          # continued from miniapp -> full
+    tr = store.transcript(s["id"])
+    assert any(t["prompt"] == "orig vscode msg" for t in tr["turns"])   # history imported
 
 
 if __name__ == "__main__":

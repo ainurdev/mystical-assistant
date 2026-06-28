@@ -7,14 +7,19 @@ import threading
 import time
 from collections import deque
 
-from bridge import config, state
+from bridge import config, pubsub, state
 from bridge.browser import rel
 from bridge.telegram import send
+
+# Dev-server logs are also teed to this file *inside the project* so a Claude
+# session running in the same cwd can simply read it (e.g. `tail .mystical/dev.log`).
+DEV_LOG_REL = os.path.join(".mystical", "dev.log")
 
 _server_proc: subprocess.Popen | None = None
 _server_log: deque = deque(maxlen=300)
 _server_cmd: str | None = None
 _server_dir: str | None = None
+_server_logfile = None  # open file handle for DEV_LOG_REL, or None
 _server_lock = threading.Lock()
 
 
@@ -22,19 +27,54 @@ def _server_alive() -> bool:
     return _server_proc is not None and _server_proc.poll() is None
 
 
+def _open_logfile(cwd: str):
+    """Open <cwd>/.mystical/dev.log (truncating) and self-ignore the dir from
+    git. Best-effort: returns the file handle, or None if it can't be created."""
+    try:
+        d = os.path.join(cwd, ".mystical")
+        os.makedirs(d, exist_ok=True)
+        gi = os.path.join(d, ".gitignore")
+        if not os.path.exists(gi):
+            with open(gi, "w", encoding="utf-8") as f:
+                f.write("*\n")  # the .mystical dir never shows up in git status
+        return open(os.path.join(d, "dev.log"), "w", encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+
+
+def _close_logfile():
+    global _server_logfile
+    if _server_logfile is not None:
+        try:
+            _server_logfile.close()
+        except OSError:
+            pass
+        _server_logfile = None
+
+
 def _server_reader(proc: subprocess.Popen):
     if proc.stdout:
         for line in proc.stdout:
-            _server_log.append(line.rstrip("\n"))
+            line = line.rstrip("\n")
+            _server_log.append(line)
+            f = _server_logfile
+            if f is not None:
+                try:
+                    f.write(line + "\n")
+                except (OSError, ValueError):
+                    pass
+            pubsub.publish("logs", {"line": line})
 
 
 def start_server(cmd: str, cwd: str) -> str:
-    global _server_proc, _server_cmd, _server_dir
+    global _server_proc, _server_cmd, _server_dir, _server_logfile
     with _server_lock:
         if _server_alive():
             return (f"⚙️ Server already running (pid {_server_proc.pid}) in "
                     f"{rel(_server_dir)}: {_server_cmd}\nUse /server stop first.")
         _server_log.clear()
+        _close_logfile()
+        _server_logfile = _open_logfile(cwd)
         try:
             proc = subprocess.Popen(
                 cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE,
@@ -66,6 +106,7 @@ def stop_server() -> str:
         except subprocess.TimeoutExpired:
             os.killpg(os.getpgid(_server_proc.pid), signal.SIGKILL)
         _server_proc = None
+        _close_logfile()
         return "🛑 Server stopped."
 
 
