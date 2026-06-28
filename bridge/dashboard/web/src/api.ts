@@ -163,6 +163,7 @@ export interface Weather {
   lo: number | null;
   wind: string;
   hum: string;
+  unit: "C" | "F";
   loc: string;
 }
 export interface Worktree {
@@ -365,9 +366,11 @@ export const api = {
     req<GitStatus>(`/local/git?project=${encodeURIComponent(project)}`),
   gitAll: () => req<{ repos: Record<string, GitBadge> }>("/local/git/all"),
   logs: (n = 200) => req<{ lines: string[] }>(`/local/logs?n=${n}`),
-  gitDiff: (project: string, path: string) =>
+  gitDiff: (project: string, path: string, base?: string, head?: string) =>
     req<{ path: string; diff: string }>(
-      `/local/git/diff?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
+      `/local/git/diff?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${
+        base && head ? `&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}` : ""
+      }`,
     ),
   gitCommit: (project: string, message: string) =>
     req<{ ok: boolean; output: string }>("/local/git/commit", {
@@ -396,18 +399,30 @@ export const api = {
   // --- host vitals + weather (WORKSPACE panel ambient widgets) ---
   sysinfo: () => req<HostStats>("/local/sysinfo"),
   weather: () => req<Weather>("/local/weather"),
+  setWeatherCity: (city: string) =>
+    req<Weather & { error?: string }>("/local/weather/city", {
+      method: "POST",
+      body: { city },
+    }),
+  setWeatherUnit: (unit: string) =>
+    req<Weather & { error?: string }>("/local/weather/unit", {
+      method: "POST",
+      body: { unit },
+    }),
   // --- branches, worktrees, PRs (unified projects view + Analyze modal) ---
   branches: (project: string) =>
-    req<{ branches: string[]; current: string }>(
+    req<{ branches: string[]; current: string; default: string }>(
       `/local/git/branches?project=${encodeURIComponent(project)}`,
     ),
   worktrees: (project: string) =>
     req<{ worktrees: Worktree[] }>(
       `/local/git/worktrees?project=${encodeURIComponent(project)}`,
     ),
-  compare: (project: string, base: string, head: string) =>
+  compare: (project: string, base: string, head: string, dots?: 2 | 3) =>
     req<CompareInfo>(
-      `/local/git/compare?project=${encodeURIComponent(project)}&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`,
+      `/local/git/compare?project=${encodeURIComponent(project)}&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}${
+        dots === 2 ? "&dots=2" : ""
+      }`,
     ),
   checkout: (project: string, ref: string) =>
     req<{ ok: boolean; output: string }>("/local/git/checkout", {

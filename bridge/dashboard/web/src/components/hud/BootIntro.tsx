@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const bootLines: { label: string; status: string; statusColor: string }[] = [
   { label: "ESTABLISHING BRIDGE", status: "OK", statusColor: "#8fd9a8" },
@@ -12,19 +12,26 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
   const { onReveal, onDone } = props;
   const [fade, setFade] = useState(false);
 
+  // Keep the latest callbacks in a ref so the auto-exit timers below can run
+  // once on mount. App re-renders every second (the telemetry clock), handing
+  // BootIntro fresh callback identities each time — depending on them here would
+  // clear+reset the timers before they ever fire, so the intro never auto-exits.
+  const cb = useRef({ onReveal, onDone });
+  cb.current = { onReveal, onDone };
+
   useEffect(() => {
     const t1 = window.setTimeout(() => {
       setFade(true);
-      onReveal();
+      cb.current.onReveal();
     }, 3600);
     const t2 = window.setTimeout(() => {
-      onDone();
+      cb.current.onDone();
     }, 4250);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [onReveal, onDone]);
+  }, []);
 
   const dismissBoot = () => {
     setFade(true);

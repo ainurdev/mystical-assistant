@@ -17,12 +17,23 @@ except Exception:  # noqa: BLE001 — psutil optional
 # Last (timestamp, bytes_sent, bytes_recv) sample for rate calculation.
 _net: tuple[float, int, int] | None = None
 _host = socket.gethostname().split(".")[0] or "host"
+_cpu_primed = False
 
-if _HAVE:
-    try:  # prime psutil's CPU baseline so the first poll isn't a flat 0%
-        psutil.cpu_percent(interval=None)
+
+def _cpu_percent() -> float:
+    """System-wide CPU utilization (%) read from the OS's own counters via psutil
+    (/proc/stat on Linux/WSL, the equivalent elsewhere). `interval=None` reports
+    usage since the previous call, so it's accurate for our ~2s polling — but its
+    very first call returns a misleading 0, so we take one short blocking sample to
+    seed it. The result is whole-machine load: one fully-busy core of N reads ~100/N%."""
+    global _cpu_primed
+    try:
+        if not _cpu_primed:
+            _cpu_primed = True
+            return float(psutil.cpu_percent(interval=0.1))
+        return float(psutil.cpu_percent(interval=None))
     except Exception:  # noqa: BLE001
-        pass
+        return 0.0
 
 
 def _net_rates() -> tuple[float, float]:
@@ -49,10 +60,7 @@ def host_stats() -> dict:
         return {"available": False, "host": _host, "cpu": 0, "mem_used": 0.0,
                 "mem_total": 0.0, "mem_pct": 0, "net_up": 0.0, "net_down": 0.0,
                 "load": 0.0, "procs": 0, "state": "NOMINAL"}
-    try:
-        cpu = psutil.cpu_percent(interval=None)
-    except Exception:  # noqa: BLE001
-        cpu = 0.0
+    cpu = _cpu_percent()
     try:
         vm = psutil.virtual_memory()
         mem_used = round(vm.used / 1024 ** 3, 1)

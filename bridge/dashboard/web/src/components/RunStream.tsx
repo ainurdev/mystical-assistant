@@ -132,9 +132,9 @@ export function RunStream({
         switch (event.type) {
           case "text":
             return (
-              <Markdown key={i} className="pl-[18px] leading-relaxed text-[#9fc7c0]">
-                {event.text}
-              </Markdown>
+              <div key={i} style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
+                <Markdown className="pl-[18px] leading-relaxed text-[#9fc7c0]">{event.text}</Markdown>
+              </div>
             );
           case "tool": {
             const tt = toolTag(event.name);
@@ -142,6 +142,7 @@ export function RunStream({
               <div
                 key={i}
                 className="my-1.5 ml-[18px] flex items-center gap-2.5 border border-border bg-[var(--ac-03)] px-2.5 py-1.5"
+                style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
               >
                 <span
                   className="flex-none border px-1.5 py-px text-[10px] tracking-[1px]"
@@ -173,6 +174,7 @@ export function RunStream({
               <div
                 key={i}
                 className="flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
+                style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
               >
                 <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
                 <span>{event.message}</span>

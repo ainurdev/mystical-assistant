@@ -279,6 +279,11 @@ body {
 @keyframes awaitsweep { to { background-position: 200% 0; } }
 @keyframes quotein { 0% { opacity: 0; transform: translateY(9px); filter: blur(7px); } 60% { opacity: 1; } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
 @keyframes quoteglow { 0%, 100% { text-shadow: 0 0 0 rgb(var(--accent-rgb) / 0); } 50% { text-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.25); } }
+/* New streamed line: phosphor write-on — rises in with a quick brightness flash. */
+@keyframes streamIn { 0% { opacity: 0; transform: translateY(7px); filter: brightness(1.75); } 100% { opacity: 1; transform: none; filter: none; } }
+/* Channel "tuning" while a session loads: an unstable bright scanline — flickers,
+   jitters, pulses width — held until the transcript lands and the viewport blooms. */
+@keyframes chanline { 0% { opacity: 0.4; transform: translateY(-50%) scaleX(0.5); } 10% { opacity: 1; transform: translateY(-50%) scaleX(1); } 16% { opacity: 0.45; } 24% { opacity: 1; transform: translateY(calc(-50% + 2px)) scaleX(0.92); } 38% { opacity: 0.7; transform: translateY(-50%) scaleX(1); } 52% { opacity: 1; } 66% { opacity: 0.5; transform: translateY(calc(-50% - 2px)) scaleX(0.82); } 80% { opacity: 1; transform: translateY(-50%) scaleX(1); } 90% { opacity: 0.55; } 100% { opacity: 1; transform: translateY(-50%) scaleX(1); } }
 
 textarea,
 input {

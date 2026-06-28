@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { HostStats, Weather } from "../../api";
 
 export type WorkspacePanelProps = {
@@ -14,13 +15,43 @@ export type WorkspacePanelProps = {
     commits: number;
     streak: number;
   };
+  onSetCity?: (city: string) => Promise<string | null>;
+  onSetUnit?: (unit: string) => Promise<string | null>;
+  openSettings?: number; // nonce — bump to open the weather settings editor (from the context menu)
 };
 
 const fmtNet = (kb: number): string =>
   kb >= 1024 ? (kb / 1024).toFixed(1) + "M/s" : Math.round(kb) + "K/s";
 
 export function WorkspacePanel(props: WorkspacePanelProps) {
-  const { clock, date, turns, host, weather, focus } = props;
+  const { clock, date, turns, host, weather, focus, onSetCity, onSetUnit, openSettings } = props;
+  const [editLoc, setEditLoc] = useState(false);
+  const [city, setCity] = useState("");
+  const [cityErr, setCityErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // The context menu opens the weather settings by bumping `openSettings`.
+  useEffect(() => {
+    if (openSettings) { setEditLoc(true); setCityErr(null); setCity(""); }
+  }, [openSettings]);
+
+  async function submitCity() {
+    if (!onSetCity || !city.trim()) { setEditLoc(false); return; }
+    setSaving(true);
+    setCityErr(null);
+    const err = await onSetCity(city.trim());
+    setSaving(false);
+    if (err) { setCityErr(err); return; }
+    setCity("");
+    setEditLoc(false);
+  }
+
+  async function pickUnit(u: "C" | "F") {
+    if (!onSetUnit || saving) return;
+    setSaving(true);
+    await onSetUnit(u === "F" ? "fahrenheit" : "celsius");
+    setSaving(false);
+  }
 
   const hostStateColor = host.state === "BUSY" ? "#e3c279" : "#8fd9a8";
   const netUp = fmtNet(host.net_up);
@@ -72,7 +103,15 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
                 {ch}
               </span>
             ) : (
-              <span key={`${i}-${ch}`} style={{ animation: "digitflip" }}>
+              <span
+                key={`${i}-${ch}`}
+                style={{
+                  display: "inline-block",
+                  minWidth: "0.6em",
+                  textAlign: "center",
+                  animation: "digitflip .5s cubic-bezier(.2,.85,.25,1) both",
+                }}
+              >
                 {ch}
               </span>
             ),
@@ -304,8 +343,12 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
           </div>
         </div>
 
-        {/* weather (merged) */}
+        {/* weather (merged) — right-click for city + unit settings */}
         <div
+          data-ctx-type="weather"
+          data-ctx-id="weather"
+          data-ctx-label={weather.loc}
+          title="right-click for weather settings"
           style={{
             marginTop: "16px",
             borderTop: "1px dashed rgba(127,233,216,.14)",
@@ -335,7 +378,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
           </svg>
           <div style={{ flex: "none" }}>
             <div className="glow" style={{ fontSize: "23px", lineHeight: 1, color: "#dff8f2" }}>
-              {wxTemp}°
+              {wxTemp}°<span style={{ fontSize: "13px", color: "#7fe9d8" }}>{weather.unit}</span>
             </div>
             <div
               style={{
@@ -358,7 +401,49 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               lineHeight: 1.75,
             }}
           >
-            <div>{weather.loc}</div>
+            {editLoc ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
+                <input
+                  autoFocus
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void submitCity();
+                    if (e.key === "Escape") { setEditLoc(false); setCityErr(null); }
+                  }}
+                  onBlur={() => { if (!saving) { setEditLoc(false); setCityErr(null); } }}
+                  placeholder="city…"
+                  disabled={saving}
+                  style={{ width: 130, background: "rgba(7,13,13,.6)", border: `1px solid ${cityErr ? "#e0897a" : "rgba(127,233,216,.3)"}`, outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: "9.5px", letterSpacing: ".5px", padding: "3px 6px", textAlign: "right" }}
+                />
+                <div style={{ display: "flex", gap: 4 }}>
+                  {(["C", "F"] as const).map((u) => {
+                    const on = weather.unit === u;
+                    return (
+                      <button
+                        key={u}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => void pickUnit(u)}
+                        disabled={saving || !onSetUnit}
+                        title={u === "C" ? "Celsius" : "Fahrenheit"}
+                        style={{ appearance: "none", cursor: saving ? "default" : "pointer", border: `1px solid ${on ? "#7fe9d8" : "rgba(127,233,216,.22)"}`, background: on ? "rgba(127,233,216,.16)" : "transparent", color: on ? "#dff8f2" : "#6f938d", fontFamily: "inherit", fontSize: "9.5px", letterSpacing: ".5px", padding: "2px 8px" }}
+                      >
+                        °{u}
+                      </button>
+                    );
+                  })}
+                </div>
+                {cityErr && <div style={{ fontSize: "8.5px", color: "#e0897a" }}>{cityErr}</div>}
+              </div>
+            ) : (
+              <div
+                onClick={onSetCity ? () => { setEditLoc(true); setCityErr(null); setCity(""); } : undefined}
+                title={onSetCity ? "click to change city" : undefined}
+                style={{ cursor: onSetCity ? "pointer" : "default", color: cityErr ? "#e0897a" : "#6f938d" }}
+              >
+                {saving ? "…" : cityErr ? "not found" : weather.loc}
+              </div>
+            )}
             <div>
               H <span style={{ color: "#bfe6de" }}>{weather.hi}°</span> · L{" "}
               <span style={{ color: "#bfe6de" }}>{weather.lo}°</span>

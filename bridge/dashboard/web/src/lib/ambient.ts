@@ -8,7 +8,7 @@ const EMPTY_HOST: HostStats = {
   net_up: 0, net_down: 0, load: 0, procs: 0, state: "NOMINAL",
 };
 const EMPTY_WX: Weather = {
-  available: false, temp: null, cond: "—", hi: null, lo: null, wind: "—", hum: "—", loc: "—",
+  available: false, temp: null, cond: "—", hi: null, lo: null, wind: "—", hum: "—", unit: "C", loc: "—",
 };
 
 /** Poll host vitals (psutil) ~every 2s. */
@@ -31,8 +31,13 @@ export function useHostVitals(): HostStats {
   return host;
 }
 
-/** Poll weather (cached server-side) every 10 minutes. */
-export function useWeather(): Weather {
+/** Poll weather (cached server-side) every 10 minutes; setCity geocodes + refetches,
+ *  setUnit switches °C/°F. Both persist server-side. */
+export function useWeather(): {
+  weather: Weather;
+  setCity: (city: string) => Promise<string | null>;
+  setUnit: (unit: string) => Promise<string | null>;
+} {
   const [wx, setWx] = useState<Weather>(EMPTY_WX);
   useEffect(() => {
     let live = true;
@@ -48,7 +53,27 @@ export function useWeather(): Weather {
     const id = setInterval(tick, 600_000);
     return () => { live = false; clearInterval(id); };
   }, []);
-  return wx;
+  const setCity = useCallback(async (city: string): Promise<string | null> => {
+    try {
+      const r = await api.setWeatherCity(city);
+      if (r.error) return r.error;
+      setWx(r);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }, []);
+  const setUnit = useCallback(async (unit: string): Promise<string | null> => {
+    try {
+      const r = await api.setWeatherUnit(unit);
+      if (r.error) return r.error;
+      setWx(r);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }, []);
+  return { weather: wx, setCity, setUnit };
 }
 
 export interface Focus {

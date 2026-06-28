@@ -91,7 +91,10 @@ def _count_lines(path: str) -> int:
 
 
 def _porcelain(cwd: str) -> str | None:
-    rc, out, _ = _run(cwd, "status", "--porcelain=v2", "--branch")
+    # quotePath=false: emit non-ASCII paths verbatim, not C-quoted ("caf\303\251"),
+    # so the path is usable as a pathspec and the file's diff renders.
+    rc, out, _ = _run(cwd, "-c", "core.quotePath=false",
+                      "status", "--porcelain=v2", "--branch")
     return out if rc == 0 else None
 
 
@@ -150,6 +153,22 @@ def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
 def current_branch(cwd: str) -> str:
     rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
     return out.strip() if rc == 0 else ""
+
+
+def default_branch(cwd: str) -> str:
+    """The repo's default branch — what PRs/merges target. Prefers the remote's
+    HEAD (origin/HEAD), then a local main/master, then the current branch. Many
+    repos don't use 'main' (e.g. master, or a custom default), so callers must not
+    assume it."""
+    rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "origin/HEAD")
+    name = out.strip() if rc == 0 else ""
+    if name and name != "origin/HEAD":
+        return name.split("/", 1)[-1]
+    local = branches(cwd)
+    for cand in ("main", "master"):
+        if cand in local:
+            return cand
+    return current_branch(cwd) or "main"
 
 
 def branches(cwd: str) -> list[str]:
@@ -237,35 +256,77 @@ def worktree_remove(cwd: str, path: str, force: bool = True) -> tuple[bool, str]
     return rc == 0, (out + err).strip()
 
 
-def compare(cwd: str, base: str, head: str) -> dict:
-    """Diff stats between `base` and `head` (three-dot, i.e. since merge-base) —
-    powers the PR preview: commit count, files changed, +/- totals."""
+def diff_ref(cwd: str, base: str, head: str, path: str) -> str:
+    """Per-file text diff between two refs, tip-to-tip (`git diff base..head -- path`).
+    Powers the Changes tab's branch comparison. The caller must validate base/head
+    are real branch refs; path is confined to cwd."""
+    safe = _safe_path(cwd, path)
+    if safe is None:
+        return ""
+    _rc, out, _err = _run(cwd, "diff", f"{base}..{head}", "--", safe)
+    return out
+
+
+def _ztokens(out: str) -> list[str]:
+    """Split NUL-delimited git output, dropping the trailing empty field."""
+    toks = out.split("\0")
+    if toks and toks[-1] == "":
+        toks.pop()
+    return toks
+
+
+def compare(cwd: str, base: str, head: str, three_dot: bool = True) -> dict:
+    """Diff stats between `base` and `head`. With three_dot (default) the range is
+    `base...head` (changes since the merge-base) — powers the PR preview. With
+    three_dot=False it's a direct tip-to-tip `base..head` diff — powers the Changes
+    tab's branch comparison. Returns commit count, files changed, +/- totals."""
     if not is_repo(cwd):
         return {"ok": False, "commits": 0, "ahead": 0, "behind": 0,
                 "files": [], "add": 0, "del": 0}
-    rng = f"{base}...{head}"
-    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", rng)
+    rng = f"{base}...{head}" if three_dot else f"{base}..{head}"
+    # left-right count needs the symmetric (three-dot) form regardless of `rng`.
+    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", f"{base}...{head}")
     behind = ahead = 0
     if rc == 0 and out.strip():
         parts = out.split()
         if len(parts) == 2:
             behind, ahead = int(parts[0] or 0), int(parts[1] or 0)
+    # -z keeps paths verbatim (no C-quoting of non-ASCII) and splits rename/copy
+    # entries into separate NUL fields, so every `name` is a real, diffable path —
+    # not the `old => new` numstat form or a "caf\303\251" quoted name.
     marks: dict[str, str] = {}
-    rc, out, _ = _run(cwd, "diff", "--name-status", rng)
+    rc, out, _ = _run(cwd, "diff", "--name-status", "-z", rng)
     if rc == 0:
-        for line in out.splitlines():
-            cols = line.split("\t")
-            if len(cols) >= 2:
-                marks[cols[-1]] = cols[0][:1]
+        toks = _ztokens(out)
+        i = 0
+        while i < len(toks):
+            st = toks[i]
+            i += 1
+            if st[:1] in ("R", "C"):  # rename/copy → old, new follow; key on new
+                if i + 1 < len(toks):
+                    marks[toks[i + 1]] = st[0]
+                i += 2
+            elif i < len(toks):
+                marks[toks[i]] = st[0] if st else "M"
+                i += 1
     files = []
     total_add = total_del = 0
-    rc, out, _ = _run(cwd, "diff", "--numstat", rng)
+    rc, out, _ = _run(cwd, "diff", "--numstat", "-z", rng)
     if rc == 0:
-        for line in out.splitlines():
-            cols = line.split("\t")
-            if len(cols) != 3:
+        toks = _ztokens(out)
+        i = 0
+        while i < len(toks):
+            cols = toks[i].split("\t")
+            i += 1
+            if len(cols) < 3:
                 continue
-            a, d, name = cols
+            a, d, name = cols[0], cols[1], cols[2]
+            if name == "":  # rename/copy → old, new follow as separate tokens
+                if i + 1 < len(toks):
+                    name = toks[i + 1]
+                i += 2
+            if not name:
+                continue
             add = 0 if a == "-" else int(a)
             dele = 0 if d == "-" else int(d)
             total_add += add

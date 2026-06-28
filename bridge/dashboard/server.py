@@ -223,6 +223,13 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             fpath = qs.get("path", [""])[0]
+            base = (qs.get("base", [""])[0] or "").strip()
+            head = (qs.get("head", [""])[0] or "").strip()
+            if base and head:
+                refs = set(git.branches(abs_p)) | {git.default_branch(abs_p)}
+                if base not in refs or head not in refs:
+                    return self._json({"error": "invalid ref"}, 400)
+                return self._json({"path": fpath, "diff": git.diff_ref(abs_p, base, head, fpath)})
             return self._json({"path": fpath, "diff": git.diff(abs_p, fpath)})
         if path == "/local/github/issues":
             abs_p = _abs_project(qs.get("project", [None])[0])
@@ -255,7 +262,8 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json({"branches": git.branches(abs_p),
-                               "current": git.current_branch(abs_p)})
+                               "current": git.current_branch(abs_p),
+                               "default": git.default_branch(abs_p)})
         if path == "/local/git/worktrees":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -270,7 +278,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             base = (qs.get("base", ["main"])[0] or "main").strip()
             head = (qs.get("head", [""])[0] or git.current_branch(abs_p)).strip()
-            return self._json(git.compare(abs_p, base, head))
+            three_dot = (qs.get("dots", ["3"])[0] or "3").strip() != "2"
+            return self._json(git.compare(abs_p, base, head, three_dot))
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -385,12 +394,16 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             head = (body.get("head") or git.current_branch(abs_p)).strip()
-            base = (body.get("base") or "main").strip()
+            base = (body.get("base") or git.default_branch(abs_p)).strip()
             title = (body.get("title") or "").strip()[:256] or f"Merge {head} into {base}"
             ok, info = github.create_pr(abs_p, head, base, title, (body.get("body") or "")[:65536])
             return self._json({"ok": ok, **info})
         if path == "/local/projects/create":
             return self._create_project(chat, body)
+        if path == "/local/weather/city":
+            return self._json(weather.set_location((body.get("city") or "")[:120]))
+        if path == "/local/weather/unit":
+            return self._json(weather.set_unit((body.get("unit") or "")[:20]))
         return self._json({"error": "not found"}, 404)
 
     def _worktree(self, body):

@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import type { GitBadge, SessionBrief, SessionStatus, Worktree } from "../../api";
 import { api } from "../../api";
 import { ago, projectTint, surfaceFor } from "../../lib/surfaces";
+import { Spinner } from "../ui";
 
 export interface ProjectGroup {
   rel: string;
   name: string;
   badge?: GitBadge;
-  sessions: SessionBrief[];
+  sessions: SessionBrief[]; // most-recent few, for display (capped)
+  sessionCount: number; // true total, for the count label
   running: boolean;
 }
 
@@ -15,6 +17,7 @@ interface Props {
   groups: ProjectGroup[];
   status: Map<string, SessionStatus>;
   selectedSessionId: string | null;
+  loadingSessionId: string | null;
   onSelectProject: (rel: string) => void;
   onSelectSession: (s: SessionBrief) => void;
   onAnalyze: (rel: string) => void;
@@ -35,8 +38,8 @@ function statusView(s: SessionStatus | undefined) {
 }
 
 function ProjectCard({
-  g, status, selectedSessionId, active, onSelectProject, onSelectSession, onAnalyze,
-  onNewSession, onWorktreeSession,
+  g, status, selectedSessionId, loadingSessionId, active, onSelectProject, onSelectSession,
+  onAnalyze, onNewSession, onWorktreeSession,
 }: {
   g: ProjectGroup;
   active: boolean;
@@ -50,8 +53,8 @@ function ProjectCard({
   const badge = g.badge;
   const dirty = badge?.dirty ?? 0;
 
-  // Lazily load branches + worktrees the first time the picker opens, so we can
-  // offer existing branches and map worktree sessions to their branch.
+  // Branches power the picker's existing-branch buttons — load them lazily the
+  // first time it opens.
   useEffect(() => {
     if (!pickerOpen || branches.length) return;
     let live = true;
@@ -60,9 +63,20 @@ function ProjectCard({
       setBranches(b.branches);
       setParent(b.current || b.branches[0] || "main");
     }).catch(() => {});
-    void api.worktrees(g.rel).then((w) => { if (live) setWorktrees(w.worktrees); }).catch(() => {});
     return () => { live = false; };
   }, [pickerOpen, g.rel, branches.length]);
+
+  // Worktrees map each session's cwd → its branch. Load them up front (so labels
+  // show without opening the picker) and re-fetch whenever the session set
+  // changes — e.g. right after creating a new worktree session, so the new
+  // session shows its branch instead of falling back to the project's.
+  const sessionCwds = g.sessions.map((s) => s.cwd ?? "").join("|");
+  useEffect(() => {
+    if (!sessionCwds) return; // no sessions → nothing to label
+    let live = true;
+    void api.worktrees(g.rel).then((w) => { if (live) setWorktrees(w.worktrees); }).catch(() => {});
+    return () => { live = false; };
+  }, [g.rel, sessionCwds]);
 
   function branchForSession(s: SessionBrief): string {
     const wt = worktrees.find((w) => w.path === s.cwd);
@@ -89,7 +103,7 @@ function ProjectCard({
         </span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "0 10px 9px 20px" }}>
-        <span style={{ fontSize: 9, letterSpacing: ".5px", color: "#6f938d", flex: 1 }}>{g.sessions.length} SESSIONS</span>
+        <span style={{ fontSize: 9, letterSpacing: ".5px", color: "#6f938d", flex: 1 }}>{g.sessionCount} SESSIONS</span>
         <button onClick={() => onAnalyze(g.rel)}
           style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "rgba(127,233,216,.06)", color: "#bfe6de", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "4px 10px" }}>ANALYZE ▸</button>
       </div>
@@ -98,13 +112,18 @@ function ProjectCard({
         <div style={{ borderTop: "1px solid rgba(127,233,216,.07)", padding: "6px 8px 7px", display: "flex", flexDirection: "column", gap: 3, background: "rgba(7,13,13,.25)" }}>
           {g.sessions.map((s) => {
             const on = s.id === selectedSessionId;
+            const isLoading = s.id === loadingSessionId;
             const sv = statusView(status.get(s.id));
             const surf = surfaceFor(s.origin);
             return (
               <div key={s.id} onClick={() => onSelectSession(s)}
                 data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", cursor: "pointer", borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`, background: on ? "rgba(127,233,216,.13)" : "transparent", transition: "background .2s ease" }}>
-                <span style={{ width: on ? 7 : 5, height: on ? 7 : 5, borderRadius: "50%", background: sv.c, flex: "none" }} />
+                {isLoading ? (
+                  <span style={{ color: "#7fe9d8", flex: "none", display: "flex" }}><Spinner className="h-[9px] w-[9px] border" /></span>
+                ) : (
+                  <span style={{ width: on ? 7 : 5, height: on ? 7 : 5, borderRadius: "50%", background: sv.c, flex: "none" }} />
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, color: on ? "#eafff9" : "#aeccc6", fontWeight: on ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "untitled session"}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
@@ -117,7 +136,8 @@ function ProjectCard({
                     <span style={{ fontSize: 8.5, color: "#3c544f", flex: "none", marginLeft: "auto" }}>{ago(s.updated)}</span>
                   </div>
                 </div>
-                {on && <span style={{ fontSize: 8, letterSpacing: 1, color: "#7fe9d8", flex: "none" }}>● ON</span>}
+                {isLoading ? <span style={{ fontSize: 8, letterSpacing: 1, color: "#7fe9d8", flex: "none" }}>LOADING…</span>
+                  : on ? <span style={{ fontSize: 8, letterSpacing: 1, color: "#7fe9d8", flex: "none" }}>● ON</span> : null}
               </div>
             );
           })}
@@ -177,7 +197,7 @@ export function ProjectsPanel(props: Props) {
   const [newOpen, setNewOpen] = useState(false);
   const [npName, setNpName] = useState("");
   const [npPrompt, setNpPrompt] = useState("");
-  const sessionTotal = groups.reduce((n, g) => n + g.sessions.length, 0);
+  const sessionTotal = groups.reduce((n, g) => n + g.sessionCount, 0);
   const activeRel = groups.find((g) => g.sessions.some((s) => s.id === props.selectedSessionId))?.rel;
 
   return (
@@ -212,7 +232,8 @@ export function ProjectsPanel(props: Props) {
         )}
         {groups.map((g) => (
           <ProjectCard key={g.rel} g={g} active={g.rel === activeRel} status={props.status}
-            selectedSessionId={props.selectedSessionId} onSelectProject={props.onSelectProject}
+            selectedSessionId={props.selectedSessionId} loadingSessionId={props.loadingSessionId}
+            onSelectProject={props.onSelectProject}
             onSelectSession={props.onSelectSession} onAnalyze={props.onAnalyze}
             onNewSession={props.onNewSession} onWorktreeSession={props.onWorktreeSession} />
         ))}

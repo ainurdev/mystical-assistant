@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { EffortLevel, ModelId } from "../api";
 
 const MODELS: { id: ModelId; label: string }[] = [
@@ -128,6 +128,14 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injectNonce]);
 
+  // Auto-grow the input with its content (1 line → up to ~9 lines, then scroll).
+  useLayoutEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [text]);
+
   function addFiles(files: FileList | File[] | null) {
     if (!files) return;
     Array.from(files).forEach((f) => {
@@ -240,7 +248,7 @@ export function Composer({
           onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
           placeholder={disabled ? "working…" : "message claude — describe a change, paste an error…"}
           rows={1}
-          style={{ flex: 1, minWidth: 0, maxHeight: 160, resize: "none", background: "transparent", border: 0, outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.5 }}
+          style={{ flex: 1, minWidth: 0, display: "block", maxHeight: 180, overflowY: "auto", resize: "none", background: "transparent", border: 0, outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.5 }}
         />
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
           onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />

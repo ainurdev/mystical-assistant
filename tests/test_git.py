@@ -104,6 +104,65 @@ def test_path_escape_rejected():
     assert g._safe_path(d, "a.txt") == "a.txt"
 
 
+def _commit_on_branch(d, branch, start=None):
+    if start is None:
+        _run(d, "checkout", "-q", "-b", branch)
+    else:
+        _run(d, "checkout", "-q", "-b", branch, start)
+
+
+def test_compare_renamed_file_is_diffable():
+    """A renamed file must list under its real (new) path so its diff renders —
+    not the `old => new` numstat form, which is not a usable pathspec."""
+    d = _mkrepo()
+    _write(d, "old.txt", "k1\nk2\nk3\nk4\nk5\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "base")
+    base = g.current_branch(d)
+    _commit_on_branch(d, "feature")
+    os.rename(os.path.join(d, "old.txt"), os.path.join(d, "new.txt"))
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "rename")
+    cmp = g.compare(d, base, "feature", three_dot=False)
+    names = [f["name"] for f in cmp["files"]]
+    assert "new.txt" in names, names
+    assert not any("=>" in n for n in names), names
+    entry = next(f for f in cmp["files"] if f["name"] == "new.txt")
+    assert entry["mark"] == "R"
+    assert g.diff_ref(d, base, "feature", "new.txt").strip()
+
+
+def test_compare_unicode_path_is_diffable():
+    """A non-ASCII filename must not be C-quoted in the file list, or its per-file
+    diff lookup matches nothing and renders blank."""
+    d = _mkrepo()
+    _write(d, "café.txt", "u\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "base")
+    base = g.current_branch(d)
+    _commit_on_branch(d, "feature")
+    _write(d, "café.txt", "u\nmore\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "edit")
+    cmp = g.compare(d, base, "feature", three_dot=False)
+    names = [f["name"] for f in cmp["files"]]
+    assert "café.txt" in names, names
+    assert g.diff_ref(d, base, "feature", "café.txt").strip()
+
+
+def test_status_unicode_path_is_diffable():
+    """A non-ASCII filename in the working tree must list under its real path so
+    the working-tree diff renders."""
+    d = _mkrepo()
+    _write(d, "café.txt", "u\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "café.txt", "u\nmore\n")
+    paths = [f["path"] for f in g.status(d)["files"]]
+    assert "café.txt" in paths, paths
+    assert g.diff(d, "café.txt").strip()
+
+
 def test_push_to_bare_remote():
     bare = tempfile.mkdtemp()
     subprocess.run(["git", "init", "--bare", "-q", bare], check=True)

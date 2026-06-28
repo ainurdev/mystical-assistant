@@ -57,6 +57,7 @@ export function App() {
   const [state, setState] = useState<DashState | null>(null);
   const [sessions, setSessions] = useState<SessionBrief[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [loadingSession, setLoadingSession] = useState(false); // true from select until its transcript first resolves
   const [turns, setTurns] = useState<Turn[]>([]);
   const [, setLogs] = useState<string[]>([]);
   const [model, setModel] = useState<ModelId>("opus");
@@ -92,13 +93,14 @@ export function App() {
 
   // Ambient widgets.
   const host = useHostVitals();
-  const weather = useWeather();
+  const { weather, setCity, setUnit } = useWeather();
+  const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
   const radio = useRadio();
   const sessionsToday = useMemo(
     () => sessions.filter((s) => Date.now() / 1000 - s.updated < 86400).length,
     [sessions],
   );
-  const { focus, bumpCommit } = useFocus(sessionsToday);
+  const { focus } = useFocus(sessionsToday);
 
   const active = activeOf(turns);
   const running = active !== null;
@@ -129,6 +131,7 @@ export function App() {
     seqRef.current = 0;
     stickRef.current = true;
     setTurns([]);
+    setLoadingSession(true);
     setSessionId(id);
   }
 
@@ -172,6 +175,7 @@ export function App() {
         setTurns((prev) => mergeDelta(prev, t));
         seqRef.current = t.next_cursor;
       } catch { /* ignore */ }
+      finally { if (live) setLoadingSession(false); }
     };
     void tick();
     const id = setInterval(tick, 1500);
@@ -368,7 +372,7 @@ export function App() {
       });
       groups.push({
         rel, name: rel.replace(/\/+$/, "").split("/").pop() || rel,
-        badge: gitBadges.get(rel), sessions: ss.slice(0, 8), running,
+        badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
     groups.sort((a, b) => {
@@ -426,6 +430,11 @@ export function App() {
       items.push({ icon: "⊙", label: "Copy session title", onClick: () => copy(selected?.title || "session") });
       items.push({ icon: "↥", label: "Scroll to top", onClick: () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; } });
       items.push({ divider: true });
+    } else if (ctxMenu.type === "weather") {
+      const other = weather.unit === "F" ? "C" : "F";
+      items.push({ icon: "✎", label: "Set city…", onClick: () => setWxSettings((n) => n + 1) });
+      items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
+      items.push({ divider: true });
     }
     items.push({ icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) });
     items.push({ icon: "♪", label: "Toggle Claude·FM", onClick: () => radio.toggle() });
@@ -434,7 +443,7 @@ export function App() {
     items.push({ icon: "↻", label: "Replay boot", onClick: () => replayBoot() });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, sessions, analyzeProject, activeProject, selected, radio]);
+  }, [ctxMenu, sessions, analyzeProject, activeProject, selected, radio, weather, setUnit]);
 
   async function archiveSession(id: string) {
     try {
@@ -483,19 +492,19 @@ export function App() {
             <div className="grid min-h-0 flex-1 gap-[13px] p-[13px]" style={{ gridTemplateColumns: "344px minmax(0,1fr) 368px", minWidth: 0 }}>
               {/* LEFT */}
               <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
-                <WorkspacePanel clock={tele.clock} date={tele.date} turns={turns.length} host={host} weather={weather} focus={focus} />
+                <WorkspacePanel clock={tele.clock} date={tele.date} turns={turns.length} host={host} weather={weather} focus={focus} onSetCity={setCity} onSetUnit={setUnit} openSettings={wxSettings} />
                 <IntelPanel />
                 <TaskQueuePanel projects={projectNames} onFeed={feed} />
               </div>
 
               {/* CENTER */}
               <Terminal
-                view={view} onView={setView} selected={selected} activeProject={activeProject}
+                view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
                 branch={activeBadge?.branch} model={model} turnCount={turns.length} turns={turns}
                 activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} error={error}
                 scrollRef={scrollRef} contentRef={contentRef}
                 onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
-                trailingWorking={openWorking && !running}
+                trailingWorking={openWorking && !running} loading={loadingSession}
                 composer={
                   <Composer
                     disabled={running || pendingCount > 0} running={running} model={model} effort={effort}
@@ -511,6 +520,7 @@ export function App() {
               <div className="mscroll flex min-h-0 min-w-0 flex-col pr-0.5">
                 <ProjectsPanel
                   groups={projectGroups} status={statusMap} selectedSessionId={sessionId}
+                  loadingSessionId={loadingSession ? sessionId : null}
                   onSelectProject={(rel) => void selectProject(rel)}
                   onSelectSession={(s) => openSession(s.id)}
                   onAnalyze={(rel) => setAnalyzeProject(rel)}
@@ -534,7 +544,6 @@ export function App() {
                 onSelectSession={(s) => { openSession(s.id); setAnalyzeProject(null); setView("chat"); }}
                 onNewSession={(rel) => { void newSession(rel); setAnalyzeProject(null); }}
                 onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
-                onCommit={() => bumpCommit()}
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
