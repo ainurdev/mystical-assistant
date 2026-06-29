@@ -1018,6 +1018,16 @@ def test_project_config_prod_url_roundtrip():
     assert project_config.prod_url("proj/pu") is None
 
 
+def test_allowed_screenshot_url():
+    from bridge.dashboard.server import _allowed_screenshot_url
+    assert _allowed_screenshot_url("http://localhost:3000", 3000, None)
+    assert _allowed_screenshot_url("http://127.0.0.1:3000/x", 3000, None)
+    assert not _allowed_screenshot_url("http://localhost:9999", 3000, None)
+    assert _allowed_screenshot_url("https://app.example.com/p", 3000, "https://app.example.com")
+    assert not _allowed_screenshot_url("https://evil.example.com", 3000, "https://app.example.com")
+    assert not _allowed_screenshot_url("file:///etc/passwd", 3000, None)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

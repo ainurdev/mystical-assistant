@@ -81,6 +81,25 @@ def _worktree_path(project_rel: str, branch: str) -> str:
     return os.path.join(_WT_ROOT, repo, _slug(branch))
 
 
+def _allowed_screenshot_url(url: str, dev_port: int, prod_url: str | None) -> bool:
+    """A screenshot target is allowed only if it is the local dev server
+    (localhost/127.0.0.1 on dev_port) or the project's configured prod URL."""
+    try:
+        u = urlparse((url or "").strip())
+    except ValueError:
+        return False
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
+    if u.hostname in ("localhost", "127.0.0.1") and u.port == dev_port:
+        return True
+    if prod_url:
+        p = urlparse(prod_url.strip())
+        if (u.scheme == p.scheme and u.hostname == p.hostname
+                and (u.port or None) == (p.port or None)):
+            return True
+    return False
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ClaudeBridgeDashboard"
 
@@ -570,7 +589,16 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"preview": tunnel.tunnel_state(), "message": msg})
 
     def _api_preview_screenshot(self, body: dict):
-        url = tunnel.tunnel_state().get("url")
+        chat = _chat()
+        target = (body.get("url") or "").strip()
+        if target:
+            rel = browser.rel(state.project_dir(chat))
+            if not _allowed_screenshot_url(target, config.PREVIEW_PORT,
+                                           project_config.prod_url(rel)):
+                return self._json({"error": "url not allowed"}, 400)
+            url = target
+        else:
+            url = tunnel.tunnel_state().get("url")
         if not url:
             return self._json({"error": "preview not running"}, 409)
         try:
