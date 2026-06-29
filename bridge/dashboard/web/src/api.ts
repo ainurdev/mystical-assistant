@@ -17,6 +17,7 @@ export interface SessionBrief {
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
+  branch?: string; // the session's git branch (worktree branch, or the project's)
 }
 export interface StoreTurn {
   id: string;
@@ -79,6 +80,7 @@ export interface DashState {
   project: Project | null;
   server: ServerInfo;
   preview: PreviewInfo;
+  dev_port?: number; // local dev-server port (config.PREVIEW_PORT) for the preview window
   permission_mode?: string | null;
 }
 export interface ProjectsListing {
@@ -134,6 +136,7 @@ export interface IssuesInfo {
 export interface ProjectSettings {
   scripts: Record<string, string>;
   run_cmd: string | null;
+  prod_url: string | null;
   default_cmd: string;
   log_path: string;
 }
@@ -318,6 +321,16 @@ export interface ShellSnapshot {
   cursor: number;
 }
 
+export interface TermInfo {
+  id: string;
+  project: string;
+  cwd_rel: string;
+  cols: number;
+  rows: number;
+  created: number;
+  alive: boolean;
+}
+
 export const api = {
   state: () => req<DashState>("/local/state"),
   projects: (dir?: string) =>
@@ -346,12 +359,28 @@ export const api = {
   ) => req(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
-  server: (action: "start" | "stop", cmd?: string) =>
-    req<{ message: string }>("/local/server", { method: "POST", body: { action, cmd } }),
+  server: (action: "start" | "stop", cmd?: string, project?: string) =>
+    req<{ message: string }>("/local/server", { method: "POST", body: { action, cmd, project } }),
   shell: (cursor: number) => req<ShellSnapshot>(`/local/shell?cursor=${cursor}`),
   shellRun: (command: string) =>
     req<{ ok: boolean; error?: string }>("/local/shell", { method: "POST", body: { command } }),
   shellKill: () => req<{ ok: boolean; error?: string }>("/local/shell/kill", { method: "POST", body: {} }),
+  // --- interactive PTY terminals (multi-instance xterm.js) ---
+  terminals: (project: string) =>
+    req<{ terminals: TermInfo[] }>(`/local/terminals?project=${encodeURIComponent(project)}`),
+  createTerminal: (project: string, cwdRel: string, cols: number, rows: number) =>
+    req<{ id?: string; cwd_rel?: string; project?: string; error?: string }>("/local/terminals", {
+      method: "POST",
+      body: { project, cwd_rel: cwdRel, cols, rows },
+    }),
+  closeTerminal: (id: string) =>
+    req<{ ok: boolean; error?: string }>(`/local/terminals/${encodeURIComponent(id)}/close`, {
+      method: "POST",
+      body: {},
+    }),
+  termWsUrl: (id: string) =>
+    `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/local/ws/terminal` +
+    `?id=${encodeURIComponent(id)}&token=${encodeURIComponent(TOKEN)}`,
   preview: (action: "start" | "stop", port?: number) =>
     req<{ message: string }>("/local/preview", { method: "POST", body: { action, port } }),
   select: (dir: string) =>
@@ -384,10 +413,10 @@ export const api = {
     }),
   projectSettings: (project: string) =>
     req<ProjectSettings>(`/local/project/settings?project=${encodeURIComponent(project)}`),
-  setProjectSettings: (project: string, run_cmd: string) =>
-    req<{ ok: boolean; run_cmd: string | null }>("/local/project/settings", {
+  setProjectSettings: (project: string, patch: { run_cmd?: string; prod_url?: string }) =>
+    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null }>("/local/project/settings", {
       method: "POST",
-      body: { project, run_cmd },
+      body: { project, ...patch },
     }),
   issues: (project: string) =>
     req<IssuesInfo>(`/local/github/issues?project=${encodeURIComponent(project)}`),
@@ -459,8 +488,8 @@ export const api = {
       "/local/projects/create",
       { method: "POST", body: { name, prompt } },
     ),
-  screenshot: (width: number) =>
-    req<{ data_url: string }>("/local/preview/screenshot", { method: "POST", body: { width } }),
+  screenshot: (width: number, url?: string) =>
+    req<{ data_url: string }>("/local/preview/screenshot", { method: "POST", body: { width, url } }),
 };
 
 /** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */

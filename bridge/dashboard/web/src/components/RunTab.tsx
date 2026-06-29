@@ -40,7 +40,7 @@ export function RunTab({
   const running = server?.status === "running";
 
   async function persist() {
-    if (project) await api.setProjectSettings(project, cmd).catch(() => {});
+    if (project) await api.setProjectSettings(project, { run_cmd: cmd }).catch(() => {});
   }
   async function start() {
     setBusy(true);
