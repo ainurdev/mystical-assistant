@@ -58,6 +58,29 @@ def set_run_cmd(project: str, cmd: str) -> str | None:
     return cmd or None
 
 
+def prod_url(project: str) -> str | None:
+    """The configured production/deployed URL for a project, or None if unset."""
+    return get(project).get("prod_url") or None
+
+
+def set_prod_url(project: str, url: str) -> str | None:
+    """Persist (or clear, when blank) a project's production URL."""
+    url = (url or "").strip()
+    with _lock:
+        data = _load()
+        entry = data.get(project, {})
+        if url:
+            entry["prod_url"] = url
+        else:
+            entry.pop("prod_url", None)
+        if entry:
+            data[project] = entry
+        else:
+            data.pop(project, None)
+        _save(data)
+    return url or None
+
+
 def package_scripts(cwd: str) -> dict:
     """The `scripts` map (name -> command) from the project's package.json, or
     {} when there is no package.json / no scripts."""

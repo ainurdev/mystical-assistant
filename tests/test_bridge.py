@@ -1010,6 +1010,14 @@ def test_current_branch_cached_dedupes_within_ttl():
         git._branch_cache.clear()
 
 
+def test_project_config_prod_url_roundtrip():
+    from bridge import project_config
+    project_config.set_prod_url("proj/pu", "https://app.example.com/")
+    assert project_config.prod_url("proj/pu") == "https://app.example.com/"
+    project_config.set_prod_url("proj/pu", "")     # blank clears
+    assert project_config.prod_url("proj/pu") is None
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

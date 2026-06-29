@@ -18,6 +18,8 @@ import json
 import mimetypes
 import os
 import queue
+import socket
+import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -27,7 +29,7 @@ import re
 
 from bridge import (browser, config, devserver, git, github, native,
                     project_config, pubsub, runner, screenshot, shell, state,
-                    store, sysinfo, tunnel, usage, weather)
+                    store, sysinfo, terminals, tunnel, usage, weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -40,6 +42,13 @@ _ORIGINS = {f"http://{h}" for h in _HOSTS}
 
 def _tok_ok(tok: str) -> bool:
     return hmac.compare_digest(tok or "", config.DASH_TOKEN)
+
+
+def _ws_authorized(host: str, origin: str, token: str) -> bool:
+    """Gate the terminal websocket upgrade. WebSockets bypass the browser
+    same-origin policy, so the Origin allow-list is checked explicitly
+    (anti-CSWSH) on top of the Host allow-list and the per-process token."""
+    return host in _HOSTS and origin in _ORIGINS and _tok_ok(token)
 
 
 def _chat() -> int:
@@ -110,6 +119,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "bad host"}, 403)
             u = urlparse(self.path)
             path, qs = u.path, parse_qs(u.query)
+            if path == "/local/ws/terminal":
+                return self._terminal_ws(qs)
             if path.startswith("/local/stream/"):
                 return self._stream(path[len("/local/stream/"):], qs)
             if path.startswith("/local/"):
@@ -149,6 +160,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({
                 "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)},
                 "server": devserver.server_state(), "preview": tunnel.tunnel_state(),
+                "dev_port": config.PREVIEW_PORT,
                 "permission_mode": config.MINIAPP_PERMISSION_MODE})
         if path == "/local/projects":
             relp = (qs.get("dir", [""])[0] or "").strip()
@@ -245,6 +257,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({
                 "scripts": project_config.package_scripts(abs_p),
                 "run_cmd": project_config.run_cmd(rel),
+                "prod_url": project_config.prod_url(rel),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
@@ -254,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 cursor = 0
             return self._json(shell.snapshot(cursor))
+        if path == "/local/terminals":
+            return self._json({"terminals": terminals.info(qs.get("project", [None])[0])})
         if path == "/local/sysinfo":
             return self._json(sysinfo.host_stats())
         if path == "/local/weather":
@@ -296,6 +311,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(shell.run(state.project_dir(chat), body.get("command", "")))
         if path == "/local/shell/kill":
             return self._json(shell.kill())
+        if path == "/local/terminals":
+            abs_p = _abs_project(body.get("cwd_rel") or body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid directory"}, 400)
+            try:
+                cols, rows = int(body.get("cols", 80)), int(body.get("rows", 24))
+            except (ValueError, TypeError):
+                cols, rows = 80, 24
+            return self._json(terminals.create(abs_p, body.get("project", ""), cols, rows))
+        if path.startswith("/local/terminals/") and path.endswith("/close"):
+            return self._json(terminals.close(path[len("/local/terminals/"):-len("/close")]))
         if path == "/local/server":
             return self._server(chat, body)
         if path == "/local/preview":
@@ -352,8 +378,12 @@ class Handler(BaseHTTPRequestHandler):
             rel = (body.get("project") or "").strip()
             if _abs_project(rel) is None:
                 return self._json({"error": "invalid project"}, 400)
-            cmd = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000])
-            return self._json({"ok": True, "run_cmd": cmd})
+            out: dict = {"ok": True}
+            if "run_cmd" in body:
+                out["run_cmd"] = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000])
+            if "prod_url" in body:
+                out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000])
+            return self._json(out)
         if path == "/local/git/checkout":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:
@@ -517,10 +547,14 @@ class Handler(BaseHTTPRequestHandler):
         if action == "stop":
             msg = devserver.stop_server()
         else:
+            # Run in the project the caller names (the Design/Run tab's project),
+            # falling back to the chat's active project. Without this, the cwd is
+            # whatever is globally active — unset → BASE_PATH, which breaks install.
+            cwd = _abs_project(body.get("project")) or state.project_dir(chat)
             cmd = ((body.get("cmd") or "").strip()
-                   or project_config.run_cmd(browser.rel(state.project_dir(chat)))
+                   or project_config.run_cmd(browser.rel(cwd))
                    or config.START_CMD)
-            msg = devserver.start_server(cmd, state.project_dir(chat))
+            msg = devserver.start_server(cmd, cwd)
         self._json({"server": devserver.server_state(), "message": msg})
 
     def _preview(self, body):
@@ -557,6 +591,86 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid dir"}, 400)
         state.active[chat] = cand
         self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
+
+    # --- terminal websocket (Host + Origin + ?token= gated) ---
+    def _terminal_ws(self, qs):
+        """Upgrade to a websocket bound to terminal `id` and pump it bidirectionally.
+        Client->server frames are binary with a 1-byte channel prefix: 0x00 = stdin,
+        0x01 = UTF-8 JSON control ({type:"resize",cols,rows}). Server->client frames
+        are binary PTY output."""
+        if self.headers.get("Upgrade", "").lower() != "websocket":
+            return self._json({"error": "expected websocket"}, 400)
+        if not _ws_authorized(self.headers.get("Host", ""),
+                              self.headers.get("Origin", ""),
+                              qs.get("token", [""])[0]):
+            return self._json({"error": "unauthorized"}, 401)
+        tid = qs.get("id", [""])[0]
+        if not any(t["id"] == tid for t in terminals.info(None)):
+            return self._json({"error": "no such terminal"}, 404)
+        key = self.headers.get("Sec-WebSocket-Key", "")
+        if not key:
+            return self._json({"error": "missing key"}, 400)
+
+        self.close_connection = True
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", wsutil.accept_key(key))
+        self.end_headers()
+        try:
+            self.wfile.flush()
+        except OSError:
+            return
+
+        send_lock = threading.Lock()
+
+        def _send(data: bytes, opcode: int = wsutil.OP_BINARY) -> bool:
+            with send_lock:
+                try:
+                    self.wfile.write(wsutil.encode_frame(data, opcode))
+                    self.wfile.flush()
+                    return True
+                except OSError:
+                    return False
+
+        closed = threading.Event()
+
+        def _on_close():            # PTY ended: notify the client + unblock recv
+            _send(b"", wsutil.OP_CLOSE)
+            closed.set()
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        sub = terminals.attach(tid, lambda b: _send(b, wsutil.OP_BINARY), _on_close)
+        if sub is None:
+            return
+        try:
+            while not closed.is_set():
+                frame = wsutil.decode_frame(self.rfile)
+                if frame is None:
+                    break
+                op, payload = frame
+                if op == wsutil.OP_CLOSE:
+                    break
+                if op == wsutil.OP_PING:
+                    _send(payload, wsutil.OP_PONG)
+                    continue
+                if not payload:
+                    continue
+                channel, body = payload[0], payload[1:]
+                if channel == 0x00:
+                    terminals.write(tid, body)
+                elif channel == 0x01:
+                    try:
+                        msg = json.loads(body.decode("utf-8", "replace"))
+                        if msg.get("type") == "resize":
+                            terminals.resize(tid, int(msg["cols"]), int(msg["rows"]))
+                    except (ValueError, KeyError, TypeError):
+                        pass
+        finally:
+            terminals.detach(tid, sub)
 
     # --- SSE live streams (?token= gated) ---
     def _stream(self, rest, qs):
