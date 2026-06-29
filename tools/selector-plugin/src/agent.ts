@@ -16,7 +16,7 @@ export function installAgent(win: Window = window): void {
       if (savedCursor === null) savedCursor = body.style.cursor;
       body.style.cursor = "crosshair";
     } else if (savedCursor !== null) {
-      if (body.style.cursor === "crosshair") body.style.cursor = savedCursor;
+      body.style.cursor = savedCursor;
       savedCursor = null;
     }
   }
@@ -96,4 +96,6 @@ export function installAgent(win: Window = window): void {
 }
 
 // Auto-install when delivered as a script into a page.
-if (typeof window !== "undefined") installAgent(window);
+if (typeof window !== "undefined" && !(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.VITEST) {
+  installAgent(window);
+}
