@@ -136,6 +136,13 @@ export function App() {
     setSessionId(id);
   }
 
+  async function selectSession(s: SessionBrief) {
+    if (s.project !== activeProject) {
+      try { await api.select(s.project); setState(await api.state()); } catch { /* ignore */ }
+    }
+    openSession(s.id);
+  }
+
   // --- polls (unchanged data flow) ---
   useEffect(() => {
     let live = true;
@@ -502,6 +509,7 @@ export function App() {
               {/* CENTER */}
               {view === "design" ? (
                 <DesignView
+                  view={view} onView={setView}
                   previewUrl={state?.preview?.url ?? null}
                   project={selected?.project ?? state?.project?.rel ?? null}
                   onSubmit={(text, images) => { void send(text, images); setView("chat"); }}
@@ -509,8 +517,8 @@ export function App() {
                 />
               ) : (
                 <Terminal
-                  view={view as "chat" | "history"} onView={setView as (v: "chat" | "history") => void} selected={selected} sessionId={sessionId} activeProject={activeProject}
-                  branch={activeBadge?.branch} model={model} turnCount={turns.length} turns={turns}
+                  view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
+                  branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
                   activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} error={error}
                   scrollRef={scrollRef} contentRef={contentRef}
                   onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
@@ -533,7 +541,7 @@ export function App() {
                   groups={projectGroups} status={statusMap} selectedSessionId={sessionId}
                   loadingSessionId={loadingSession ? sessionId : null}
                   onSelectProject={(rel) => void selectProject(rel)}
-                  onSelectSession={(s) => openSession(s.id)}
+                  onSelectSession={(s) => void selectSession(s)}
                   onAnalyze={(rel) => setAnalyzeProject(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
@@ -552,7 +560,7 @@ export function App() {
                 project={analyzeProject} badge={gitBadges.get(analyzeProject)}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
-                onSelectSession={(s) => { openSession(s.id); setAnalyzeProject(null); setView("chat"); }}
+                onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}
                 onNewSession={(rel) => { void newSession(rel); setAnalyzeProject(null); }}
                 onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
               />
