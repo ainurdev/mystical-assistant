@@ -35,12 +35,11 @@ export function PreviewFrame({
         <span className="mx-2 opacity-40">|</span>
         <button onClick={() => onMode(mode === "select" ? "idle" : "select")}
           className={`rounded px-2 py-1 ${mode === "select" ? "bg-[var(--accent)] text-[var(--accent-foreground)]" : "bg-[var(--panel)]"}`}>Select</button>
-        <button onClick={() => onMode(mode === "pin" ? "idle" : "pin")}
-          className={`rounded px-2 py-1 ${mode === "pin" ? "bg-[var(--accent)] text-[var(--accent-foreground)]" : "bg-[var(--panel)]"}`}>Pin</button>
         {hoverLabel && <span className="ml-2 truncate font-mono opacity-70">{hoverLabel}</span>}
       </div>
       <div ref={(el) => setContainerW(el?.clientWidth ?? 0)}
-        className="relative flex-1 overflow-auto rounded border border-[var(--border)] bg-[var(--background)]">
+        className="relative flex-1 overflow-auto rounded border border-[var(--border)] bg-[var(--background)]"
+        style={{ cursor: mode === "select" ? "crosshair" : "default" }}>
         <div style={{ width, transform: `scale(${scale})`, transformOrigin: "top left", height: scale < 1 ? `${100 / scale}%` : "100%" }}>
           <iframe ref={iframeRef} src={url} title="preview"
             style={{ width: "100%", height: "100%", border: "0" }} />
