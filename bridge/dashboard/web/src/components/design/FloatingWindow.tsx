@@ -16,7 +16,8 @@ function clamp(r: Rect): Rect {
 function load(key: string, fallback: Rect): Rect {
   try {
     const v = JSON.parse(localStorage.getItem(key) || "");
-    if (v && typeof v.x === "number" && typeof v.w === "number") return clamp(v);
+    if (v && typeof v.x === "number" && typeof v.y === "number"
+        && typeof v.w === "number" && typeof v.h === "number") return clamp(v);
   } catch { /* ignore */ }
   return clamp(fallback);
 }
