@@ -354,6 +354,39 @@ def test_dashboard_security_helpers():
     assert f"http://localhost:{config.DASH_PORT}" in dash._ORIGINS
 
 
+def test_dashboard_server_starts_in_requested_project_dir():
+    """Regression: the Design tab passes the project it is showing, and the dev
+    server must start in THAT project's dir — not the globally-active project,
+    which (when unset) falls back to BASE_PATH and runs `pnpm install` in the
+    wrong place (ERR_PNPM_NO_PKG_MANIFEST)."""
+    from bridge.dashboard import server as dash
+    from bridge import devserver, state
+
+    proj = "ibgroup_designrun"
+    proj_dir = os.path.join(config.BASE_PATH, proj)   # BASE_PATH=/tmp in tests
+    os.makedirs(proj_dir, exist_ok=True)
+    chat = 909
+    state.active.pop(chat, None)                       # no active project set
+
+    captured = {}
+    orig = devserver.start_server
+    devserver.start_server = lambda cmd, cwd: captured.update(cmd=cmd, cwd=cwd) or "ok"
+    try:
+        h = dash.Handler.__new__(dash.Handler)
+        h._json = lambda obj, code=200: None           # swallow the HTTP response
+        h._server(chat, {"action": "start", "cmd": "pnpm install",
+                         "project": proj})
+    finally:
+        devserver.start_server = orig
+        try:
+            os.rmdir(proj_dir)
+        except OSError:
+            pass
+
+    assert captured["cwd"] == os.path.realpath(proj_dir)   # named project…
+    assert captured["cwd"] != config.BASE_PATH             # …not the BASE_PATH fallback
+
+
 def test_handle_task_journals_bot_turn():
     from bridge import state
     state.active[777] = "/tmp"                       # BASE_PATH=/tmp -> project_key "/"
@@ -721,6 +754,7 @@ def test_resolve_context_new_session_gets_surface_default_permission():
 
 
 def test_resolve_context_resumes_session_with_its_own_cwd_and_permission():
+    os.makedirs("/tmp/realdir", exist_ok=True)   # a session's run cwd must exist on disk
     s = store.create_session(573, "/proj", origin="vscode", cwd="/tmp/realdir",
                              permission_mode="plan")
     sess, cwd, perm = runner._resolve_run_context(
@@ -790,6 +824,7 @@ def test_resolve_context_adopts_native_session_into_store():
                             "message": {"role": "user", "content": "orig vscode msg"}}) + "\n")
         f.write(json.dumps({"type": "assistant", "uuid": "j2", "message": {
             "role": "assistant", "content": [{"type": "text", "text": "vscode reply"}]}}) + "\n")
+    os.makedirs("/tmp/realcwd", exist_ok=True)   # a session's run cwd must exist on disk
     s = store.create_session(582, "/p", origin="vscode", cwd="/tmp/realcwd")
     store.set_claude_session_id(s["id"], uid)
     sess, cwd, perm = runner._resolve_run_context(
@@ -799,6 +834,178 @@ def test_resolve_context_adopts_native_session_into_store():
     assert perm == config.NEW_SESSION_PERMISSION_MODE          # continued from miniapp -> full
     tr = store.transcript(s["id"])
     assert any(t["prompt"] == "orig vscode msg" for t in tr["turns"])   # history imported
+
+
+def test_run_context_falls_back_when_session_cwd_removed():
+    """A session's stored cwd can be a git worktree that was later removed. The run
+    must fall back to the project dir, not pass the dead path to subprocess (which
+    raises FileNotFoundError, misreported as '`claude` not found on PATH')."""
+    from bridge import runner
+    chat = 8123
+    s = store.create_session(chat, "/wt_proj", origin="dashboard",
+                             cwd="/tmp/removed-worktree-zzz")   # does not exist
+    sess, cwd, perm = runner._finalize_run_context(
+        s, "/tmp", permission_mode=None, origin="dashboard")    # /tmp = BASE_PATH, exists
+    assert cwd == "/tmp"                                         # fell back to project dir
+
+
+# --- websocket framing (terminal transport) ---------------------------------
+
+def test_ws_accept_key_rfc_example():
+    from bridge import wsutil
+    # RFC 6455 §1.3 canonical handshake example.
+    assert wsutil.accept_key("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+
+
+def test_ws_encode_frame_small_unmasked():
+    from bridge import wsutil
+    # FIN + binary opcode (0x82), no mask bit, len=2, payload — server frames unmasked.
+    assert wsutil.encode_frame(b"hi", wsutil.OP_BINARY) == b"\x82\x02hi"
+
+
+def test_ws_encode_frame_126_extended_length():
+    import struct
+    from bridge import wsutil
+    payload = b"x" * 200
+    f = wsutil.encode_frame(payload, wsutil.OP_BINARY)
+    assert f[0] == 0x82 and f[1] == 126
+    assert struct.unpack(">H", f[2:4])[0] == 200
+    assert f[4:] == payload
+
+
+def test_ws_encode_frame_64bit_length():
+    import struct
+    from bridge import wsutil
+    payload = b"y" * 70000
+    f = wsutil.encode_frame(payload, wsutil.OP_BINARY)
+    assert f[1] == 127
+    assert struct.unpack(">Q", f[2:10])[0] == 70000
+    assert f[10:] == payload
+
+
+def test_ws_decode_masked_client_text_frame():
+    import io
+    from bridge import wsutil
+    mask, payload = b"\x01\x02\x03\x04", b"ping"
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    frame = bytes([0x81, 0x80 | len(payload)]) + mask + masked
+    assert wsutil.decode_frame(io.BytesIO(frame)) == (wsutil.OP_TEXT, b"ping")
+
+
+def test_ws_decode_close_frame():
+    import io
+    from bridge import wsutil
+    frame = bytes([0x88, 0x80]) + b"\x00\x00\x00\x00"   # close, masked, zero-length
+    op, _ = wsutil.decode_frame(io.BytesIO(frame))
+    assert op == wsutil.OP_CLOSE
+
+
+def test_ws_decode_eof_returns_none():
+    import io
+    from bridge import wsutil
+    assert wsutil.decode_frame(io.BytesIO(b"")) is None
+
+
+# --- terminals (PTY registry) ------------------------------------------------
+
+def _wait_for(pred, secs=3.0):
+    import time as _t
+    end = _t.time() + secs
+    while _t.time() < end:
+        if pred():
+            return True
+        _t.sleep(0.05)
+    return pred()
+
+
+def test_terminal_cap_enforced():
+    from bridge import terminals
+    orig = terminals.MAX_TERMS
+    terminals.MAX_TERMS = 2
+    made = []
+    try:
+        made.append(terminals.create("/tmp")["id"])
+        made.append(terminals.create("/tmp")["id"])
+        r = terminals.create("/tmp")
+        assert "id" not in r and r.get("error")
+    finally:
+        terminals.MAX_TERMS = orig
+        for t in made:
+            terminals.close(t)
+
+
+def test_terminal_create_info_close_lifecycle():
+    from bridge import terminals
+    tid = terminals.create("/tmp", project="projL")["id"]
+    info = {t["id"]: t for t in terminals.info(None)}
+    assert tid in info and info[tid]["alive"] is True
+    assert terminals.close(tid)["ok"] is True
+    assert all(t["id"] != tid for t in terminals.info(None))   # dropped synchronously
+
+
+def test_terminal_info_filters_by_project():
+    from bridge import terminals
+    a = terminals.create("/tmp", project="projA")["id"]
+    b = terminals.create("/tmp", project="projB")["id"]
+    try:
+        ids_a = {t["id"] for t in terminals.info("projA")}
+        assert a in ids_a and b not in ids_a
+        assert {t["id"] for t in terminals.info(None)} >= {a, b}
+    finally:
+        terminals.close(a)
+        terminals.close(b)
+
+
+def test_terminal_resize_reflected_in_info():
+    from bridge import terminals
+    tid = terminals.create("/tmp", cols=80, rows=24)["id"]
+    try:
+        terminals.resize(tid, 120, 40)
+        info = {t["id"]: t for t in terminals.info(None)}[tid]
+        assert info["cols"] == 120 and info["rows"] == 40
+    finally:
+        terminals.close(tid)
+
+
+def test_terminal_write_echoes_through_attached_socket():
+    from bridge import terminals
+    orig_shell = terminals._DEFAULT_SHELL
+    terminals._DEFAULT_SHELL = "/bin/sh"            # fast, deterministic (no heavy rc)
+    got = bytearray()
+    tid = terminals.create("/tmp")["id"]
+    try:
+        terminals.attach(tid, lambda b: got.extend(b))
+        terminals.write(tid, b"echo READY_MARK\n")
+        assert _wait_for(lambda: b"READY_MARK" in bytes(got))
+    finally:
+        terminals.close(tid)
+        terminals._DEFAULT_SHELL = orig_shell
+
+
+def test_dashboard_ws_authorization():
+    from bridge.dashboard import server as dash
+    host = f"127.0.0.1:{config.DASH_PORT}"
+    origin = f"http://{host}"
+    assert dash._ws_authorized(host, origin, config.DASH_TOKEN) is True
+    assert dash._ws_authorized("evil.example", origin, config.DASH_TOKEN) is False
+    assert dash._ws_authorized(host, "http://evil.example", config.DASH_TOKEN) is False
+    assert dash._ws_authorized(host, origin, "badtoken") is False
+
+
+def test_current_branch_cached_dedupes_within_ttl():
+    from bridge import git
+    calls = []
+    real = git.current_branch
+    git.current_branch = lambda cwd: (calls.append(cwd), "feat/x")[1]
+    git._branch_cache.clear()
+    try:
+        assert git.current_branch_cached("/wt") == "feat/x"
+        assert git.current_branch_cached("/wt") == "feat/x"
+        assert len(calls) == 1            # second call served from cache
+        assert git.current_branch_cached("") == ""   # empty cwd short-circuits
+    finally:
+        git.current_branch = real
+        git._branch_cache.clear()
 
 
 if __name__ == "__main__":

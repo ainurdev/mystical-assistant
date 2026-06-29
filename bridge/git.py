@@ -4,6 +4,7 @@ cwd already confined to BASE_PATH by the dashboard's _abs_project."""
 
 import os
 import subprocess
+import time
 
 
 def _run(cwd: str, *args: str, timeout: int = 8) -> tuple[int, str, str]:
@@ -153,6 +154,25 @@ def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
 def current_branch(cwd: str) -> str:
     rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
     return out.strip() if rc == 0 else ""
+
+
+_branch_cache: dict[str, tuple[str, float]] = {}
+_BRANCH_TTL = 3.0
+
+
+def current_branch_cached(cwd: str) -> str:
+    """current_branch with a short TTL cache. /local/sessions polls every 5s and
+    many sessions share one cwd (the project dir), so this avoids spawning a git
+    per session on every poll."""
+    if not cwd:
+        return ""
+    now = time.monotonic()
+    hit = _branch_cache.get(cwd)
+    if hit is not None and now - hit[1] < _BRANCH_TTL:
+        return hit[0]
+    b = current_branch(cwd)
+    _branch_cache[cwd] = (b, now)
+    return b
 
 
 def default_branch(cwd: str) -> str:
