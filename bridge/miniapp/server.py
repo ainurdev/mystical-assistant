@@ -18,7 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (browser, config, devserver, github, native,
+from bridge import (browser, config, devserver, git, github, native,
                     project_config, runner, screenshot, shell, state, store,
                     transcript_jsonl, tunnel, usage)
 
@@ -83,9 +83,11 @@ def normalize_permission_mode(mode) -> str | None:
 
 
 def _session_brief(s: dict) -> dict:
+    cwd = s.get("cwd")
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "updated": s["updated"], "archived": s["archived"],
-            "origin": s.get("origin"), "cwd": s.get("cwd")}
+            "origin": s.get("origin"), "cwd": cwd,
+            "branch": git.current_branch_cached(cwd) if cwd else ""}
 
 
 def transcript_for(session: dict, cursor: int = 0) -> dict:
