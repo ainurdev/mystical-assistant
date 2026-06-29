@@ -4,6 +4,7 @@ import type { Turn } from "../../chat";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
+import { ViewTabs, type View } from "./ViewTabs";
 
 const FRESH_QUOTES = [
   "the prompt is blank, the potential is not.",
@@ -82,10 +83,10 @@ function ChannelTuning() {
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   error, scrollRef, contentRef, composer, onOpenFromHistory, liveTurns, trailingWorking,
-  loading, sessionId,
+  loading, sessionId, onOpenRunner,
 }: {
-  view: "chat" | "history";
-  onView: (v: "chat" | "history") => void;
+  view: View;
+  onView: (v: View) => void;
   selected: SessionBrief | null;
   activeProject?: string | null;
   branch?: string | null;
@@ -103,6 +104,7 @@ export function Terminal({
   trailingWorking?: boolean;
   loading?: boolean;
   sessionId?: string | null;
+  onOpenRunner?: () => void;
 }) {
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
@@ -163,14 +165,13 @@ export function Terminal({
           <span style={{ fontSize: 9, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
           </span>
-          <div style={{ display: "flex" }}>
-            {(["chat", "history"] as const).map((v) => (
-              <button key={v} onClick={() => onView(v)}
-                style={{ appearance: "none", cursor: "pointer", border: `1px solid ${view === v ? "#7fe9d8" : "rgba(127,233,216,.16)"}`, background: view === v ? "rgba(127,233,216,.08)" : "transparent", color: view === v ? "#dff8f2" : "#3c544f", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "3px 8px" }}>
-                {v === "chat" ? "CHAT" : "HIST"}
-              </button>
-            ))}
-          </div>
+          {onOpenRunner && (
+            <button onClick={onOpenRunner} title="Open the running-project preview"
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "rgba(127,233,216,.06)", color: "#bfe6de", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "3px 8px" }}>
+              ⊞ PREVIEW
+            </button>
+          )}
+          <ViewTabs view={view} onView={onView} />
         </div>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
