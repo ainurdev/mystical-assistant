@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { GitBadge, SessionBrief, SessionStatus, Worktree } from "../../api";
+import type { GitBadge, SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectTint, surfaceFor } from "../../lib/surfaces";
 import { Spinner } from "../ui";
@@ -47,7 +47,6 @@ function ProjectCard({
   const tint = projectTint(g.rel);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
-  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [parent, setParent] = useState<string>("");
   const [newBranch, setNewBranch] = useState("");
   const badge = g.badge;
@@ -65,23 +64,6 @@ function ProjectCard({
     }).catch(() => {});
     return () => { live = false; };
   }, [pickerOpen, g.rel, branches.length]);
-
-  // Worktrees map each session's cwd → its branch. Load them up front (so labels
-  // show without opening the picker) and re-fetch whenever the session set
-  // changes — e.g. right after creating a new worktree session, so the new
-  // session shows its branch instead of falling back to the project's.
-  const sessionCwds = g.sessions.map((s) => s.cwd ?? "").join("|");
-  useEffect(() => {
-    if (!sessionCwds) return; // no sessions → nothing to label
-    let live = true;
-    void api.worktrees(g.rel).then((w) => { if (live) setWorktrees(w.worktrees); }).catch(() => {});
-    return () => { live = false; };
-  }, [g.rel, sessionCwds]);
-
-  function branchForSession(s: SessionBrief): string {
-    const wt = worktrees.find((w) => w.path === s.cwd);
-    return wt?.branch || badge?.branch || "main";
-  }
 
   return (
     <div
@@ -130,7 +112,7 @@ function ProjectCard({
                     <span title="surface" style={{ fontSize: 8, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "0 4px", flex: "none" }}>{surf.code}</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 8, color: "#a78bf0", border: "1px solid rgba(185,166,255,.24)", padding: "0 4px", maxWidth: 110, minWidth: 0 }}>
                       <span style={{ flex: "none" }}>⎇</span>
-                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branchForSession(s)}</span>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.branch || badge?.branch || "main"}</span>
                     </span>
                     <span style={{ fontSize: 8, letterSpacing: 1, color: sv.c, flex: "none" }}>{sv.l}</span>
                     <span style={{ fontSize: 8.5, color: "#3c544f", flex: "none", marginLeft: "auto" }}>{ago(s.updated)}</span>
