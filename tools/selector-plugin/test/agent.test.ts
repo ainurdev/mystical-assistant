@@ -13,6 +13,22 @@ function withParent() {
   return { posted, spy };
 }
 
+describe("agent cursor", () => {
+  it("sets a crosshair cursor while armed and restores it on idle", () => {
+    installAgent(window);
+    const send = (type: string, mode: string) =>
+      window.dispatchEvent(new MessageEvent("message", {
+        data: { source: HOST_SOURCE, nonce: "n1", type, mode },
+        origin: "http://localhost",
+      }));
+    send("init", "idle");          // handshake: registers nonce "n1"
+    send("setMode", "select");
+    expect(document.body.style.cursor).toBe("crosshair");
+    send("setMode", "idle");
+    expect(document.body.style.cursor).toBe("");
+  });
+});
+
 describe("agent handshake", () => {
   it("announces ready on load", () => {
     const { posted } = withParent();

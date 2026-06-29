@@ -8,6 +8,18 @@ export function installAgent(win: Window = window): void {
   let parentOrigin = "*";
   let counter = 0;
   let overlay: HTMLDivElement | null = null;
+  let savedCursor: string | null = null;
+  function applyCursor() {
+    const body = win.document.body;
+    if (!body) return;
+    if (mode !== "idle") {
+      if (savedCursor === null) savedCursor = body.style.cursor;
+      body.style.cursor = "crosshair";
+    } else if (savedCursor !== null) {
+      if (body.style.cursor === "crosshair") body.style.cursor = savedCursor;
+      savedCursor = null;
+    }
+  }
 
   const post = (msg: AgentMessage) => win.parent.postMessage(msg, parentOrigin);
 
@@ -63,12 +75,13 @@ export function installAgent(win: Window = window): void {
         nonce = d.nonce;
         parentOrigin = d.parentOrigin || e.origin || "*";
         mode = d.mode ?? "idle";
+        applyCursor();
       }
       return;
     }
     if (!isHostMessage(e.data, nonce)) return;
     const msg = e.data;
-    if (msg.type === "setMode") mode = msg.mode;
+    if (msg.type === "setMode") { mode = msg.mode; applyCursor(); }
     else if (msg.type === "clear") moveOverlay(null);
     else if (msg.type === "highlight") moveOverlay(msg.selector ? win.document.querySelector(msg.selector) : null);
     if (mode === "idle") moveOverlay(null);
