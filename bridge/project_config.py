@@ -30,55 +30,61 @@ def _save(data: dict) -> None:
     os.replace(tmp, _PATH)
 
 
+def _key(project: str, branch: "str | None") -> str:
+    """Settings are scoped per directory and per branch, so the same repo on a
+    different branch (or in a different worktree) keeps its own run command and
+    prod URL. A blank branch keeps the legacy directory-only key."""
+    return f"{project}@{branch}" if branch else project
+
+
 def get(project: str) -> dict:
     with _lock:
         return _load().get(project, {})
 
 
-def run_cmd(project: str) -> str | None:
-    """The configured dev/run command for a project, or None if unset."""
-    return get(project).get("run_cmd") or None
+def _get_field(project: str, branch: "str | None", field: str) -> "str | None":
+    v = get(_key(project, branch)).get(field)
+    if v is None and branch:  # fall back to the directory-only entry
+        v = get(project).get(field)
+    return v or None
 
 
-def set_run_cmd(project: str, cmd: str) -> str | None:
+def _set_field(project: str, branch: "str | None", field: str, value: str) -> "str | None":
+    value = (value or "").strip()
+    key = _key(project, branch)
+    with _lock:
+        data = _load()
+        entry = data.get(key, {})
+        if value:
+            entry[field] = value
+        else:
+            entry.pop(field, None)
+        if entry:
+            data[key] = entry
+        else:
+            data.pop(key, None)
+        _save(data)
+    return value or None
+
+
+def run_cmd(project: str, branch: "str | None" = None) -> "str | None":
+    """The configured dev/run command for a project (optionally branch), or None."""
+    return _get_field(project, branch, "run_cmd")
+
+
+def set_run_cmd(project: str, cmd: str, branch: "str | None" = None) -> "str | None":
     """Persist (or clear, when blank) a project's dev/run command."""
-    cmd = (cmd or "").strip()
-    with _lock:
-        data = _load()
-        entry = data.get(project, {})
-        if cmd:
-            entry["run_cmd"] = cmd
-        else:
-            entry.pop("run_cmd", None)
-        if entry:
-            data[project] = entry
-        else:
-            data.pop(project, None)
-        _save(data)
-    return cmd or None
+    return _set_field(project, branch, "run_cmd", cmd)
 
 
-def prod_url(project: str) -> str | None:
-    """The configured production/deployed URL for a project, or None if unset."""
-    return get(project).get("prod_url") or None
+def prod_url(project: str, branch: "str | None" = None) -> "str | None":
+    """The configured production/deployed URL for a project (optionally branch)."""
+    return _get_field(project, branch, "prod_url")
 
 
-def set_prod_url(project: str, url: str) -> str | None:
+def set_prod_url(project: str, url: str, branch: "str | None" = None) -> "str | None":
     """Persist (or clear, when blank) a project's production URL."""
-    url = (url or "").strip()
-    with _lock:
-        data = _load()
-        entry = data.get(project, {})
-        if url:
-            entry["prod_url"] = url
-        else:
-            entry.pop("prod_url", None)
-        if entry:
-            data[project] = entry
-        else:
-            data.pop(project, None)
-        _save(data)
-    return url or None
+    return _set_field(project, branch, "prod_url", url)
 
 
 def package_scripts(cwd: str) -> dict:

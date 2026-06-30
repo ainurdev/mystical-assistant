@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
   type CompareFile,
@@ -9,11 +9,15 @@ import {
   type IssuesInfo,
   type SessionBrief,
   type SessionStatus,
+  type TermInfo,
   type Worktree,
 } from "../../api";
-import { ago, projectTint, surfaceFor } from "../../lib/surfaces";
+import { projectTint } from "../../lib/surfaces";
+import { CommitPanel } from "./CommitPanel";
+import { WorktreeBoard } from "./WorktreeBoard";
+import { XtermPane } from "./XtermPane";
 
-type Tab = "overview" | "changes" | "issues" | "logs";
+type Tab = "overview" | "worktrees" | "changes" | "issues" | "terminal";
 
 interface Props {
   project: string;
@@ -61,6 +65,8 @@ export function AnalyzeModal(props: Props) {
   // modal-wide branch focus: source (what we view) → destination (merge/compare target).
   const [selectedBranch, setSelectedBranch] = useState("");
   const [destBranch, setDestBranch] = useState("");
+  // Changes tab opens on the working-tree commit view; merge "VIEW CHANGES →" jumps to compare.
+  const [changesMode, setChangesMode] = useState<"working" | "compare">("working");
 
   const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
   const refreshWt = () => { void api.worktrees(project).then((w) => setWorktrees(w.worktrees)).catch(() => {}); };
@@ -89,9 +95,10 @@ export function AnalyzeModal(props: Props) {
   const issueCount = issues?.open_count ?? 0;
   const tabs: { k: Tab; l: string; badge?: number }[] = [
     { k: "overview", l: "OVERVIEW" },
+    { k: "worktrees", l: "WORKTREES" },
     { k: "changes", l: "CHANGES" },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
-    { k: "logs", l: "LOGS" },
+    { k: "terminal", l: "TERMINAL" },
   ];
 
   return (
@@ -128,29 +135,35 @@ export function AnalyzeModal(props: Props) {
         {/* body — flex column that clips; each tab fills it and scrolls internally */}
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", padding: 18 }}>
           {tab === "overview" && (
-            <OverviewTab {...props} git={git} branches={branches} defaultBranch={defaultBranch}
-              worktrees={worktrees} onRefreshWt={refreshWt}
+            <OverviewTab project={project} git={git} branches={branches} defaultBranch={defaultBranch}
+              onRefreshWt={refreshWt}
               selectedBranch={selectedBranch} destBranch={destBranch} setDestBranch={setDestBranch}
-              onGotoChanges={() => setTab("changes")} />
+              onGotoChanges={() => { setChangesMode("compare"); setTab("changes"); }} />
+          )}
+          {tab === "worktrees" && (
+            <WorktreeBoard project={project} sessions={props.sessions} status={props.status}
+              worktrees={worktrees} git={git} selectedBranch={selectedBranch} setSelectedBranch={setSelectedBranch}
+              onSelectSession={props.onSelectSession} onNewSession={props.onNewSession}
+              onWorktreeSession={props.onWorktreeSession} onRefreshWt={refreshWt}
+              onTerminal={(b) => { setSelectedBranch(b); setTab("terminal"); }} />
           )}
           {tab === "changes" && <ChangesTab project={project} branches={branches}
-            selectedBranch={selectedBranch} destBranch={destBranch} setDestBranch={setDestBranch} />}
+            selectedBranch={selectedBranch} destBranch={destBranch} setDestBranch={setDestBranch}
+            mode={changesMode} setMode={setChangesMode} />}
           {tab === "issues" && <IssuesTab project={project} info={issues} onFeed={props.onFeed} onReload={() => void api.issues(project).then(setIssues)} />}
-          {tab === "logs" && <LogsTab />}
+          {tab === "terminal" && <TerminalTab project={project} worktrees={worktrees} selectedBranch={selectedBranch} />}
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------------- OVERVIEW: branch sessions + merge + worktrees + PR ---------------- */
+/* ---------------- OVERVIEW: merge + PR (sessions & worktrees live in the WORKTREES tab) ---------------- */
 function OverviewTab({
-  project, sessions, status, git, branches, defaultBranch, worktrees, onSelectSession, onNewSession,
-  onWorktreeSession, onRefreshWt, selectedBranch, destBranch, setDestBranch, onGotoChanges,
-}: Props & { git: GitStatus | null; branches: string[]; defaultBranch: string; worktrees: Worktree[]; onRefreshWt: () => void;
+  project, git, branches, defaultBranch, onRefreshWt, selectedBranch, destBranch, setDestBranch, onGotoChanges,
+}: { project: string; git: GitStatus | null; branches: string[]; defaultBranch: string; onRefreshWt: () => void;
   selectedBranch: string; destBranch: string; setDestBranch: (b: string) => void; onGotoChanges: () => void }) {
   const cur = git?.branch || "main";
-  const [newBranch, setNewBranch] = useState("");
   const [prOpen, setPrOpen] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prCreated, setPrCreated] = useState<{ number: number | null; url: string } | null>(null);
@@ -159,29 +172,11 @@ function OverviewTab({
   const [mergeDiff, setMergeDiff] = useState<CompareInfo | null>(null);
   const sameBranch = !selectedBranch || !destBranch || selectedBranch === destBranch;
 
-  const wtByBranch = useMemo(() => {
-    const m = new Map<string, Worktree>();
-    for (const w of worktrees) m.set(w.branch, w);
-    return m;
-  }, [worktrees]);
-
-  // sessions on the selected branch (its worktree, or the checkout for main-dir sessions).
-  const branchSessions = useMemo(() => sessions.filter((s) => {
-    const wt = worktrees.find((w) => w.path === s.cwd);
-    return (wt?.branch || cur) === selectedBranch;
-  }), [sessions, worktrees, cur, selectedBranch]);
-
   // the diff a merge/PR would introduce: selected's changes relative to destination.
   useEffect(() => {
     if (sameBranch) { setMergeDiff(null); return; }
     void api.compare(project, destBranch, selectedBranch, 2).then(setMergeDiff).catch(() => setMergeDiff(null));
   }, [project, selectedBranch, destBranch, sameBranch]);
-
-  const selWt = worktrees.find((w) => w.branch === selectedBranch);
-  function newOnSelected() {
-    if (selWt) onWorktreeSession(project, selectedBranch, false);
-    else onNewSession(project);
-  }
 
   async function doMerge() {
     setBusy(true);
@@ -191,19 +186,6 @@ function OverviewTab({
       onRefreshWt();
     } finally { setBusy(false); }
     setTimeout(() => setBanner(""), 4500);
-  }
-  async function doRemove(w: Worktree) {
-    setBusy(true);
-    try {
-      const r = await api.worktreeRemove(project, w.path, w.branch, true);
-      setBanner(r.ok ? `Removed worktree ${w.branch}` : `Failed: ${r.output}`);
-      onRefreshWt();
-    } finally { setBusy(false); }
-    setTimeout(() => setBanner(""), 4000);
-  }
-  async function doCheckout(ref: string) {
-    setBusy(true);
-    try { await api.checkout(project, ref); onRefreshWt(); } finally { setBusy(false); }
   }
   async function doCreatePr() {
     setBusy(true);
@@ -219,102 +201,32 @@ function OverviewTab({
       {banner && (
         <div style={{ border: "1px solid rgba(127,233,216,.35)", background: "rgba(127,233,216,.06)", color: "#bfe6de", fontSize: 10.5, padding: "8px 11px", marginBottom: 12, fontFamily: "'JetBrains Mono',monospace" }}>▸ {banner}</div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-        {/* left: sessions on the selected branch */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f", display: "flex", alignItems: "center", gap: 5 }}>SESSIONS ON <span style={{ color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace" }}>⎇ {selectedBranch || "—"}</span></span>
-            <span style={{ flex: 1 }} />
-            <button onClick={newOnSelected} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(185,166,255,.4)", background: "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 9px", display: "flex", alignItems: "center", gap: 5 }}><span style={{ fontSize: 12 }}>+</span>NEW</button>
+      <div style={{ maxWidth: 580 }}>
+        {/* merge: selected → destination */}
+        <div style={{ border: "1px solid rgba(185,166,255,.3)", background: "rgba(185,166,255,.05)", padding: "10px 12px", marginBottom: 14 }}>
+          <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", marginBottom: 9 }}>MERGE</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", gap: 5 }}><span style={{ color: "#b9a6ff" }}>⎇</span>{selectedBranch || "—"}</span>
+            <span style={{ color: "#6f6088", fontSize: 12 }}>→</span>
+            <BranchSelect branches={branches} value={destBranch} head={cur} onChange={setDestBranch} accent="#b9a6ff" exclude={selectedBranch} />
           </div>
-          {branchSessions.map((s) => {
-            const surf = surfaceFor(s.origin);
-            const st = status.get(s.id)?.state ?? "idle";
-            const sc = st === "working" ? "#8fd9a8" : st === "awaiting" ? "#e3c279" : st === "live" ? "#6fb5ff" : "#5a6f6a";
-            return (
-              <div key={s.id} onClick={() => onSelectSession(s)} style={{ border: "1px solid rgba(127,233,216,.12)", marginBottom: 7, display: "flex", alignItems: "center", gap: 9, padding: "10px", cursor: "pointer" }}>
-                <span style={{ fontSize: 9, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "3px 4px", flex: "none", width: 30, textAlign: "center" }}>{surf.code}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: "#cfe9e3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "untitled"}</div>
-                  <div style={{ fontSize: 9.5, color: "#3c544f", marginTop: 2 }}>{ago(s.updated)}</div>
-                </div>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: sc, flex: "none" }} />
+          {sameBranch ? (
+            <div style={{ marginTop: 9, fontSize: 10, color: "#6f6088", fontFamily: "'JetBrains Mono',monospace" }}>Pick a different destination to merge.</div>
+          ) : (
+            <>
+              <div style={{ marginTop: 9, border: "1px solid rgba(127,233,216,.12)", background: "rgba(7,13,13,.5)", padding: "7px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#6f938d" }}>
+                {mergeDiff ? <>{mergeDiff.commits} commits · {mergeDiff.files.length} files · <span style={{ color: "#8fd9a8" }}>+{mergeDiff.add}</span> <span style={{ color: "#e0897a" }}>−{mergeDiff.del}</span></> : "comparing…"}
               </div>
-            );
-          })}
-          {branchSessions.length === 0 && <div style={{ fontSize: 11, color: "#3c544f", padding: "6px 2px" }}>No sessions on this branch.</div>}
+              <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+                <button onClick={doMerge} disabled={busy} style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #8fd9a8", background: "rgba(143,217,168,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, opacity: busy ? 0.5 : 1 }}>MERGE → {destBranch}</button>
+                <button onClick={onGotoChanges} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 12px", display: "flex", alignItems: "center", gap: 5 }}>VIEW CHANGES →</button>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* right: merge + worktrees + PR */}
-        <div>
-          {/* merge: selected → destination */}
-          <div style={{ border: "1px solid rgba(185,166,255,.3)", background: "rgba(185,166,255,.05)", padding: "10px 12px", marginBottom: 14 }}>
-            <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", marginBottom: 9 }}>MERGE</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11, color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", gap: 5 }}><span style={{ color: "#b9a6ff" }}>⎇</span>{selectedBranch || "—"}</span>
-              <span style={{ color: "#6f6088", fontSize: 12 }}>→</span>
-              <BranchSelect branches={branches} value={destBranch} head={cur} onChange={setDestBranch} accent="#b9a6ff" exclude={selectedBranch} />
-            </div>
-            {sameBranch ? (
-              <div style={{ marginTop: 9, fontSize: 10, color: "#6f6088", fontFamily: "'JetBrains Mono',monospace" }}>Pick a different destination to merge.</div>
-            ) : (
-              <>
-                <div style={{ marginTop: 9, border: "1px solid rgba(127,233,216,.12)", background: "rgba(7,13,13,.5)", padding: "7px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#6f938d" }}>
-                  {mergeDiff ? <>{mergeDiff.commits} commits · {mergeDiff.files.length} files · <span style={{ color: "#8fd9a8" }}>+{mergeDiff.add}</span> <span style={{ color: "#e0897a" }}>−{mergeDiff.del}</span></> : "comparing…"}
-                </div>
-                <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
-                  <button onClick={doMerge} disabled={busy} style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #8fd9a8", background: "rgba(143,217,168,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, opacity: busy ? 0.5 : 1 }}>MERGE → {destBranch}</button>
-                  <button onClick={onGotoChanges} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 12px", display: "flex", alignItems: "center", gap: 5 }}>VIEW CHANGES →</button>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f" }}>WORKTREES</span>
-            <span style={{ fontSize: 8.5, color: "#6f6088" }}>{worktrees.filter((w) => !w.is_main).length} OPEN</span>
-            <span style={{ flex: 1 }} />
-            <span style={{ fontSize: 9, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace" }}>●{git?.dirty ?? 0} ↑{git?.ahead ?? 0} ↓{git?.behind ?? 0}</span>
-          </div>
-
-          {/* default / base row */}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, border: "1px solid rgba(127,233,216,.12)", padding: "8px 11px", marginBottom: 8, background: "rgba(7,13,13,.3)" }}>
-            <span style={{ fontSize: 12, color: "#7fe9d8", flex: "none" }}>⎇</span>
-            <button onClick={() => doCheckout(defaultBranch)} disabled={busy} style={{ flex: 1, minWidth: 0, appearance: "none", border: 0, background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: "#cfe9e3" }}>{defaultBranch}</button>
-            {cur === defaultBranch && <span style={{ fontSize: 8, letterSpacing: 1, color: "#06100e", background: "#7fe9d8", padding: "2px 6px", flex: "none" }}>HEAD</span>}
-          </div>
-
-          {worktrees.filter((w) => !w.is_main).map((w) => (
-            <div key={w.path} data-ctx-type="branch" data-ctx-id={w.branch} data-ctx-label={w.branch}
-              style={{ border: `1px solid ${w.branch === cur ? "#7fe9d8" : "rgba(127,233,216,.32)"}`, borderLeft: `2px solid ${w.branch === cur ? "#7fe9d8" : "rgba(127,233,216,.32)"}`, background: w.branch === cur ? "rgba(127,233,216,.05)" : "transparent", padding: "9px 11px", marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12, color: "#7fe9d8", flex: "none" }}>⎇</span>
-                <button onClick={() => doCheckout(w.branch)} disabled={busy} style={{ flex: 1, minWidth: 0, appearance: "none", border: 0, background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: w.branch === cur ? "#dff8f2" : "#cfe9e3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.branch}</button>
-                <span style={{ fontSize: 8, letterSpacing: 1, color: "#7fe9d8", flex: "none" }}>WORKTREE LIVE</span>
-              </div>
-              <div style={{ marginTop: 7, fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#5a6f6a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={w.path}>{w.path}</div>
-              <div style={{ marginTop: 9, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                <button onClick={() => onWorktreeSession(project, w.branch, false)} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 9px", flex: "none", display: "flex", alignItems: "center", gap: 4 }}><span style={{ color: "#7fe9d8" }}>▸</span>ATTACH</button>
-                <button onClick={() => doRemove(w)} disabled={busy} title="delete worktree + branch" style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(224,137,122,.28)", background: "transparent", color: "#9a6f68", fontFamily: "inherit", fontSize: 11, padding: "5px 8px", flex: "none", marginLeft: "auto", lineHeight: 1 }}>✕</button>
-              </div>
-            </div>
-          ))}
-
-          {/* new worktree */}
-          <div style={{ border: "1px solid rgba(185,166,255,.25)", background: "rgba(185,166,255,.04)", padding: "8px 9px" }}>
-            <div style={{ fontSize: 8, letterSpacing: 1, color: "#6f6088", marginBottom: 7 }}>NEW WORKTREE FROM <span style={{ color: "#cbb8ff" }}>{selectedBranch || cur}</span></div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ fontSize: 13, color: "#b9a6ff", flex: "none" }}>⎇</span>
-              <input value={newBranch} onChange={(e) => setNewBranch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && newBranch.trim()) { onWorktreeSession(project, newBranch.trim().replace(/\s+/g, "-"), true, selectedBranch || cur); setNewBranch(""); } }}
-                placeholder="new branch name…" style={{ flex: 1, minWidth: 0, background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "5px 8px" }} />
-              <button onClick={() => { if (newBranch.trim()) { onWorktreeSession(project, newBranch.trim().replace(/\s+/g, "-"), true, selectedBranch || cur); setNewBranch(""); } }}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid #b9a6ff", background: "rgba(185,166,255,.14)", color: "#e7deff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 10px", flex: "none" }}>▸ OPEN</button>
-            </div>
-          </div>
-
-          {/* PR */}
-          {prCreated && (
+        {/* PR */}
+        {prCreated && (
             <div style={{ marginTop: 11, border: "1px solid rgba(143,217,168,.35)", background: "rgba(143,217,168,.06)", padding: "10px 12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 11, color: "#8fd9a8" }}>⇡ PR {prCreated.number ? `#${prCreated.number}` : "opened"}</span>
@@ -348,15 +260,15 @@ function OverviewTab({
               title={sameBranch ? "pick a different destination to open a PR" : "open a pull request"}
               style={{ width: "100%", marginTop: 11, appearance: "none", cursor: sameBranch ? "not-allowed" : "pointer", border: `1px solid ${sameBranch ? "rgba(127,233,216,.12)" : "rgba(127,233,216,.3)"}`, background: "transparent", color: sameBranch ? "#3c544f" : "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 9 }}>⇡ CREATE PULL REQUEST</button>
           )}
-        </div>
       </div>
     </div>
   );
 }
 
-/* ---------------- CHANGES: compare selected branch ↔ destination branch ---------------- */
-function ChangesTab({ project, branches, selectedBranch, destBranch, setDestBranch }:
-  { project: string; branches: string[]; selectedBranch: string; destBranch: string; setDestBranch: (b: string) => void }) {
+/* ---------------- CHANGES: working-tree commit + compare selected ↔ destination ---------------- */
+function ChangesTab({ project, branches, selectedBranch, destBranch, setDestBranch, mode, setMode }:
+  { project: string; branches: string[]; selectedBranch: string; destBranch: string; setDestBranch: (b: string) => void;
+    mode: "working" | "compare"; setMode: (m: "working" | "compare") => void }) {
   const [sel, setSel] = useState<string | null>(null);
   const [diff, setDiff] = useState<string>("");
   const [cmpFiles, setCmpFiles] = useState<CompareFile[]>([]);
@@ -368,19 +280,26 @@ function ChangesTab({ project, branches, selectedBranch, destBranch, setDestBran
 
   useEffect(() => {
     setSel(null);
-    if (sameBranch) { setCmpFiles([]); return; }
+    if (mode !== "compare" || sameBranch) { setCmpFiles([]); return; }
     void api.compare(project, destBranch, selectedBranch, 2).then((c) => setCmpFiles(c.files)).catch(() => setCmpFiles([]));
-  }, [project, selectedBranch, destBranch, sameBranch]);
+  }, [project, selectedBranch, destBranch, sameBranch, mode]);
 
   useEffect(() => {
-    if (!selName || sameBranch) { setDiff(""); return; }
+    if (mode !== "compare" || !selName || sameBranch) { setDiff(""); return; }
     void api.gitDiff(project, selName, destBranch, selectedBranch).then((d) => setDiff(d.diff)).catch(() => setDiff(""));
-  }, [selName, project, selectedBranch, destBranch, sameBranch]);
+  }, [selName, project, selectedBranch, destBranch, sameBranch, mode]);
 
   const selFile = files.find((f) => f.path === selName);
   const lines = diff.split("\n");
 
   const chip = (on: boolean): CSSProperties => ({ appearance: "none", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "5px 8px", border: `1px solid ${on ? "#7fe9d8" : "rgba(127,233,216,.18)"}`, background: on ? "rgba(127,233,216,.14)" : "transparent", color: on ? "#dff8f2" : "#9fc7c0" });
+  const modeToggle = (
+    <div style={{ display: "flex", gap: 6, marginBottom: 11, flex: "none" }}>
+      {(["working", "compare"] as const).map((m) => (
+        <button key={m} onClick={() => setMode(m)} style={{ ...chip(mode === m), letterSpacing: 1, padding: "5px 12px" }}>{m === "working" ? "WORKING TREE" : "COMPARE"}</button>
+      ))}
+    </div>
+  );
   const selector = (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 11 }}>
       <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f", marginRight: 2 }}>COMPARE</span>
@@ -393,12 +312,11 @@ function ChangesTab({ project, branches, selectedBranch, destBranch, setDestBran
     </div>
   );
 
-  if (sameBranch)
-    return <div style={{ animation: "mslide .3s ease both" }}>{selector}<div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>Pick a destination branch to compare against {selectedBranch || "the selected branch"}.</div></div>;
-  if (files.length === 0)
-    return <div style={{ animation: "mslide .3s ease both" }}>{selector}<div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>No differences between {selectedBranch} and {destBranch}.</div></div>;
-
-  return (
+  const compareBody = sameBranch ? (
+    <div style={{ animation: "mslide .3s ease both" }}>{selector}<div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>Pick a destination branch to compare against {selectedBranch || "the selected branch"}.</div></div>
+  ) : files.length === 0 ? (
+    <div style={{ animation: "mslide .3s ease both" }}>{selector}<div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>No differences between {selectedBranch} and {destBranch}.</div></div>
+  ) : (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", animation: "mslide .3s ease both" }}>
       {selector}
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid rgba(127,233,216,.12)", flex: 1, minHeight: 0 }}>
@@ -432,6 +350,13 @@ function ChangesTab({ project, branches, selectedBranch, destBranch, setDestBran
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {modeToggle}
+      {mode === "working" ? <CommitPanel project={project} branch={selectedBranch} /> : compareBody}
     </div>
   );
 }
@@ -522,24 +447,96 @@ function IssuesTab({ project, info, onFeed, onReload }: { project: string; info:
   );
 }
 
-/* ---------------- LOGS ---------------- */
-function LogsTab() {
-  const [lines, setLines] = useState<string[]>([]);
+/* ---------------- TERMINAL ---------------- */
+function shortDir(rel: string): string {
+  return rel.replace(/\/+$/, "").split("/").pop() || rel;
+}
+
+function TerminalTab({ project, worktrees, selectedBranch }: {
+  project: string;
+  worktrees: Worktree[];
+  selectedBranch: string;
+}) {
+  const [terms, setTerms] = useState<TermInfo[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  // Open in the selected branch's worktree when it has one, else the project dir.
+  const cwdRel = useMemo(() => {
+    const wt = worktrees.find((w) => w.branch === selectedBranch && w.rel);
+    return wt?.rel ?? project;
+  }, [worktrees, selectedBranch, project]);
+
+  // List the persisted terminals for this project on open (reconnect to live ones).
   useEffect(() => {
     let live = true;
-    const tick = () => { void api.logs(200).then((d) => { if (live) setLines(d.lines); }).catch(() => {}); };
-    tick();
-    const id = setInterval(tick, 2000);
-    return () => { live = false; clearInterval(id); };
+    void api.terminals(project).then((d) => {
+      if (!live) return;
+      setTerms(d.terminals);
+      setActiveId((cur) => (cur && d.terminals.some((t) => t.id === cur)) ? cur : (d.terminals[0]?.id ?? null));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [project]);
+
+  const removeTerm = useCallback((id: string) => {
+    setTerms((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      setActiveId((cur) => (cur === id ? (next[next.length - 1]?.id ?? null) : cur));
+      return next;
+    });
   }, []);
+
+  async function create() {
+    if (creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const r = await api.createTerminal(project, cwdRel, 80, 24);
+      if (r.error || !r.id) { setError(r.error || "could not open terminal"); return; }
+      const fresh: TermInfo = { id: r.id, project, cwd_rel: r.cwd_rel ?? cwdRel, cols: 80, rows: 24, created: Date.now() / 1000, alive: true };
+      setTerms((prev) => [...prev, fresh]);
+      setActiveId(r.id);
+    } catch (e) { setError((e as Error).message); }
+    finally { setCreating(false); }
+  }
+
+  async function closeTerm(id: string) {
+    try { await api.closeTerminal(id); } catch { /* already gone */ }
+    removeTerm(id);
+  }
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", animation: "mslide .3s ease both" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 11, fontSize: 10, letterSpacing: 1, flex: "none" }}>
-        <span style={{ color: "#8fd9a8", display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "#8fd9a8", animation: "mpulse 2.4s infinite" }} />DEV SERVER</span>
+      {/* instance strip */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flex: "none", flexWrap: "wrap" }}>
+        {terms.map((t, i) => (
+          <span key={t.id} onClick={() => setActiveId(t.id)}
+            style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", border: `1px solid ${t.id === activeId ? "#7fe9d8" : "rgba(127,233,216,.16)"}`, background: t.id === activeId ? "rgba(127,233,216,.08)" : "transparent", color: t.id === activeId ? "#dff8f2" : "#6f938d", fontSize: 10, letterSpacing: 1, padding: "4px 8px" }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: t.alive ? "#8fd9a8" : "#e0897a" }} />
+            sh {i + 1}
+            <button title="close terminal" onClick={(e) => { e.stopPropagation(); void closeTerm(t.id); }}
+              style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", color: "inherit", fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
+          </span>
+        ))}
+        <button onClick={() => void create()} disabled={creating} title={`new terminal in ${shortDir(cwdRel)}`}
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: "4px 10px" }}>+ NEW</button>
+        <span style={{ flex: 1 }} />
+        <span title="working directory" style={{ fontSize: 9.5, color: "#3c544f", fontFamily: "'JetBrains Mono',monospace" }}>↳ {shortDir(cwdRel)}</span>
       </div>
-      <div style={{ border: "1px solid rgba(127,233,216,.12)", padding: "11px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, lineHeight: 1.95, flex: 1, minHeight: 0, overflow: "auto" }} className="mscroll">
-        {lines.length === 0 && <div style={{ color: "#3c544f" }}>No dev-server output. Start the server from the Run command.</div>}
-        {lines.map((ln, i) => <div key={i} style={{ color: "#6f938d", whiteSpace: "pre-wrap" }}>{ln}</div>)}
+      {error && <div style={{ marginBottom: 8, border: "1px solid rgba(224,137,122,.3)", background: "rgba(224,137,122,.06)", padding: "4px 8px", fontSize: 11, color: "#e0897a", flex: "none" }}>{error}</div>}
+
+      {/* panes — kept mounted so output keeps flowing; only the active one is shown */}
+      <div style={{ position: "relative", flex: 1, minHeight: 0, border: "1px solid rgba(127,233,216,.12)", background: "#070d0d" }}>
+        {terms.length === 0 ? (
+          <div style={{ color: "#3c544f", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", padding: 12 }}>
+            No terminals. <span style={{ color: "#7fe9d8" }}>+ NEW</span> opens an interactive shell in {shortDir(cwdRel)}.
+          </div>
+        ) : terms.map((t) => (
+          <div key={t.id} style={{ position: "absolute", inset: 8, display: t.id === activeId ? "block" : "none" }}>
+            <XtermPane id={t.id} active={t.id === activeId} onEnded={() => removeTerm(t.id)} />
+          </div>
+        ))}
       </div>
     </div>
   );

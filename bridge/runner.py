@@ -113,13 +113,15 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 # Blocking run (Telegram plain-text prompt)
 # ---------------------------------------------------------------------------
 
-def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None):
+def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
+                 cwd: str | None = None, timeout: int | None = None):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id)
+    timeout = timeout or config.RUN_TIMEOUT
     try:
-        proc = subprocess.run(cmd, cwd=state.project_dir(chat_id), capture_output=True,
-                              text=True, timeout=config.RUN_TIMEOUT)
+        proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
+                              text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return (f"⏱️ Timed out after {config.RUN_TIMEOUT // 60} min.", None, None, True)
+        return (f"⏱️ Timed out after {timeout // 60} min.", None, None, True)
     except FileNotFoundError:
         return ("❌ `claude` not found on PATH.", None, None, True)
 
@@ -724,6 +726,11 @@ def _finalize_run_context(session: dict, project_dir: str, *,
         path = transcript_jsonl.find_transcript(session["claude_session_id"])
         cwd = transcript_jsonl.recover_cwd(path) if path else None
     cwd = cwd or project_dir
+    # A stored cwd can be a git worktree that was later removed; spawning there
+    # raises FileNotFoundError (which the bridge misreports as "`claude` not found
+    # on PATH"). Fall back to the project dir so the run still proceeds.
+    if not os.path.isdir(cwd):
+        cwd = project_dir
     if not session.get("cwd"):
         store.set_cwd(session["id"], cwd)
     return session, cwd, (permission_mode or session.get("permission_mode"))

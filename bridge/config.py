@@ -105,6 +105,10 @@ BRIDGE_DB = os.path.expanduser(os.environ.get("BRIDGE_DB", "~/.bridge_state/brid
 DASH_ENABLE = os.environ.get("DASH_ENABLE", "1").lower() not in ("0", "false", "no", "")
 DASH_HOST = "127.0.0.1"
 DASH_PORT = int(os.environ.get("DASH_PORT", "8790"))
-DASH_TOKEN = os.environ.get("DASH_TOKEN") or secrets.token_urlsafe(24)
+# Unset → a fresh random token per run (secure default). Set DASH_TOKEN="" to
+# DISABLE the gate so the dashboard opens with no ?token= (localhost-only
+# convenience; drops the CSRF defense — see the SECURITY note above).
+_dash_token = os.environ.get("DASH_TOKEN")
+DASH_TOKEN = secrets.token_urlsafe(24) if _dash_token is None else _dash_token
 DASH_CHAT_ID = int(os.environ.get("DASH_CHAT_ID", "0")) or (
     min(ALLOWED_CHAT_IDS) if ALLOWED_CHAT_IDS else 0)

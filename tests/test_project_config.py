@@ -28,3 +28,19 @@ def test_run_cmd_roundtrip(tmp_path, monkeypatch):
     # blank clears the entry
     assert project_config.set_run_cmd("/repo", "") is None
     assert project_config.run_cmd("/repo") is None
+
+
+def test_run_cmd_per_branch(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
+    # A directory-only command acts as the fallback for any branch.
+    project_config.set_run_cmd("/repo", "npm run dev")
+    assert project_config.run_cmd("/repo", branch="feat/x") == "npm run dev"
+    # A branch-specific command overrides the fallback for that branch only.
+    project_config.set_run_cmd("/repo", "npm run dev -- --port 4500", branch="feat/x")
+    assert project_config.run_cmd("/repo", branch="feat/x") == "npm run dev -- --port 4500"
+    assert project_config.run_cmd("/repo", branch="other") == "npm run dev"
+    assert project_config.run_cmd("/repo") == "npm run dev"
+    # prod URL scopes per branch the same way.
+    project_config.set_prod_url("/repo", "https://x.example", branch="feat/x")
+    assert project_config.prod_url("/repo", branch="feat/x") == "https://x.example"
+    assert project_config.prod_url("/repo", branch="other") is None

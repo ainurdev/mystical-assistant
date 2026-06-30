@@ -8,6 +8,7 @@ export function installAgent(win: Window = window): void {
   let parentOrigin = "*";
   let counter = 0;
   let overlay: HTMLDivElement | null = null;
+  let label: HTMLDivElement | null = null;
   let savedCursor: string | null = null;
   function applyCursor() {
     const body = win.document.body;
@@ -28,23 +29,77 @@ export function installAgent(win: Window = window): void {
     const d = win.document.createElement("div");
     d.setAttribute("data-mystical-overlay", "");
     Object.assign(d.style, {
-      position: "fixed", pointerEvents: "none", zIndex: "2147483647",
-      border: "2px solid #3b82f6", background: "rgba(59,130,246,0.12)",
-      borderRadius: "2px", transition: "all 40ms linear", display: "none",
+      position: "fixed", pointerEvents: "none", zIndex: "2147483646",
+      border: "1.5px solid #7fe9d8", background: "rgba(127,233,216,0.10)",
+      borderRadius: "3px", boxShadow: "0 0 0 1px rgba(7,13,13,0.5)",
+      transition: "all 50ms ease-out", display: "none",
     } as CSSStyleDeclaration);
     win.document.body.appendChild(d);
     overlay = d;
     return d;
   }
+
+  // A floating inspector chip (tag · #id · .class · WxH) pinned to the element.
+  function ensureLabel(): HTMLDivElement {
+    if (label) return label;
+    const d = win.document.createElement("div");
+    d.setAttribute("data-mystical-overlay", "");
+    Object.assign(d.style, {
+      position: "fixed", pointerEvents: "none", zIndex: "2147483647",
+      display: "none", maxWidth: "340px", boxSizing: "border-box",
+      padding: "3px 8px", borderRadius: "5px",
+      background: "rgba(8,13,16,0.96)", border: "1px solid rgba(127,233,216,0.28)",
+      boxShadow: "0 4px 14px rgba(0,0,0,0.45)",
+      font: "500 11px/1.5 ui-monospace,'JetBrains Mono',SFMono-Regular,Menlo,monospace",
+      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".02em",
+    } as CSSStyleDeclaration);
+    win.document.body.appendChild(d);
+    label = d;
+    return d;
+  }
+  function chip(text: string, color: string, opacity = 1): HTMLSpanElement {
+    const s = win.document.createElement("span");
+    s.textContent = text;
+    s.style.color = color;
+    if (opacity !== 1) s.style.opacity = String(opacity);
+    return s;
+  }
+  function fillLabel(el: Element, r: DOMRect) {
+    const lab = ensureLabel();
+    lab.textContent = "";
+    lab.appendChild(chip(el.tagName.toLowerCase(), "#7fe9d8"));
+    if (el.id) lab.appendChild(chip(`#${el.id}`, "#e6c07b"));
+    if (el.classList.length) {
+      const more = el.classList.length > 1 ? `+${el.classList.length - 1}` : "";
+      lab.appendChild(chip(`.${el.classList[0]}${more}`, "#9fb6d0"));
+    }
+    const dim = chip(`${Math.round(r.width)}×${Math.round(r.height)}`, "#dff8f2", 0.5);
+    dim.style.marginLeft = "6px";
+    lab.appendChild(dim);
+    lab.style.display = "block";
+    // Pin above the element's top-left; flip below when there's no room above,
+    // and clamp horizontally so the chip stays on-screen.
+    const lh = lab.offsetHeight || 22;
+    const lw = lab.offsetWidth || 0;
+    let top = r.top - lh - 6;
+    if (top < 4) top = Math.min(r.bottom + 6, win.innerHeight - lh - 4);
+    let left = Math.max(4, r.left);
+    if (left + lw > win.innerWidth - 4) left = Math.max(4, win.innerWidth - lw - 4);
+    lab.style.left = left + "px";
+    lab.style.top = top + "px";
+  }
+
   function moveOverlay(el: Element | null) {
     const o = ensureOverlay();
-    if (!el) { o.style.display = "none"; return; }
+    const lab = ensureLabel();
+    if (!el) { o.style.display = "none"; lab.style.display = "none"; return; }
     const r = el.getBoundingClientRect();
     Object.assign(o.style, { display: "block", left: r.x + "px", top: r.y + "px", width: r.width + "px", height: r.height + "px" });
+    fillLabel(el, r);
   }
   function targetAt(x: number, y: number): Element | null {
     const el = win.document.elementFromPoint(x, y);
-    if (!el || el === overlay) return null;
+    if (!el || el === overlay || el === label) return null;
     return el;
   }
 

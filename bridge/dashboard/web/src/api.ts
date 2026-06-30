@@ -4,6 +4,11 @@
 // pages can't read it, which (with the server's Host allow-list) is the CSRF defense.
 const params = new URLSearchParams(location.search);
 export const TOKEN = params.get("token") ?? "";
+// The server injects window.__DASH_AUTH_REQUIRED__ into index.html. It is false
+// when the gate is disabled (DASH_TOKEN=""), so the dashboard opens with no
+// ?token=. Absent (e.g. the vite dev server) → treat as not required.
+export const AUTH_REQUIRED =
+  (window as Window & { __DASH_AUTH_REQUIRED__?: boolean }).__DASH_AUTH_REQUIRED__ === true;
 
 export interface Project {
   rel: string;
@@ -72,6 +77,26 @@ export interface ServerInfo {
   dir: string | null;
   pid: number | null;
 }
+// One concurrent dev server, keyed by run directory. `url`/`port` are the
+// localhost the framework actually bound (detected from its output).
+export interface DevServerInfo {
+  status: "running" | "exited" | "not started";
+  cmd: string | null;
+  dir: string | null;       // run dir, as a rel path
+  pid: number | null;
+  url: string | null;       // detected http://localhost:<port>
+  port: number | null;
+  project: string;          // canonical project rel (for grouping/label)
+  branch: string;
+  tail: string[];           // recent log lines (for status/errors)
+}
+// Identifies which run directory + branch a preview request targets.
+export interface PreviewCtx {
+  cwd?: string | null;      // absolute worktree dir (from a session)
+  cwd_rel?: string | null;  // rel run dir (from the running-servers list)
+  project?: string | null;  // canonical project rel; resolution fallback + label
+  branch?: string | null;
+}
 export interface PreviewInfo {
   url: string | null;
   port: number | null;
@@ -80,7 +105,8 @@ export interface DashState {
   project: Project | null;
   server: ServerInfo;
   preview: PreviewInfo;
-  dev_port?: number; // local dev-server port (config.PREVIEW_PORT) for the preview window
+  servers?: DevServerInfo[]; // all concurrent dev servers
+  dev_port?: number; // legacy default dev-server port (config.PREVIEW_PORT)
   permission_mode?: string | null;
 }
 export interface ProjectsListing {
@@ -359,8 +385,13 @@ export const api = {
   ) => req(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
-  server: (action: "start" | "stop", cmd?: string, project?: string) =>
-    req<{ message: string }>("/local/server", { method: "POST", body: { action, cmd, project } }),
+  server: (action: "start" | "stop", opts: { cmd?: string } & PreviewCtx = {}) =>
+    req<{ message: string; server: DevServerInfo; servers: DevServerInfo[] }>(
+      "/local/server", { method: "POST", body: { action, ...opts } }),
+  servers: () => req<{ servers: DevServerInfo[] }>("/local/servers"),
+  detectPreview: (ctx: PreviewCtx) =>
+    req<{ command: string; source: string; explanation: string }>(
+      "/local/preview/detect", { method: "POST", body: { ...ctx } }),
   shell: (cursor: number) => req<ShellSnapshot>(`/local/shell?cursor=${cursor}`),
   shellRun: (command: string) =>
     req<{ ok: boolean; error?: string }>("/local/shell", { method: "POST", body: { command } }),
@@ -391,32 +422,42 @@ export const api = {
     req<{ sessions: EnrichedSession[] }>(
       `/local/history${archived ? "?archived=1" : ""}`,
     ),
-  git: (project: string) =>
-    req<GitStatus>(`/local/git?project=${encodeURIComponent(project)}`),
+  // branch → operate on that branch's worktree (else the project checkout)
+  git: (project: string, branch?: string) =>
+    req<GitStatus>(
+      `/local/git?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
   gitAll: () => req<{ repos: Record<string, GitBadge> }>("/local/git/all"),
   logs: (n = 200) => req<{ lines: string[] }>(`/local/logs?n=${n}`),
-  gitDiff: (project: string, path: string, base?: string, head?: string) =>
+  gitDiff: (project: string, path: string, base?: string, head?: string, branch?: string) =>
     req<{ path: string; diff: string }>(
       `/local/git/diff?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${
         base && head ? `&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}` : ""
-      }`,
+      }${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
     ),
-  gitCommit: (project: string, message: string) =>
+  // paths → partial commit of only those files; branch → its worktree
+  gitCommit: (project: string, message: string, paths?: string[], branch?: string) =>
     req<{ ok: boolean; output: string }>("/local/git/commit", {
       method: "POST",
-      body: { project, message },
+      body: { project, message, ...(paths ? { paths } : {}), ...(branch ? { branch } : {}) },
     }),
-  gitPush: (project: string) =>
+  // AI-generated commit message for the selected files (one-shot headless Claude)
+  commitMessage: (project: string, branch: string, paths: string[]) =>
+    req<{ message?: string; error?: string }>("/local/git/commit-message", {
+      method: "POST",
+      body: { project, branch, paths },
+    }),
+  gitPush: (project: string, branch?: string) =>
     req<{ ok: boolean; output: string }>("/local/git/push", {
       method: "POST",
-      body: { project },
+      body: { project, ...(branch ? { branch } : {}) },
     }),
-  projectSettings: (project: string) =>
-    req<ProjectSettings>(`/local/project/settings?project=${encodeURIComponent(project)}`),
-  setProjectSettings: (project: string, patch: { run_cmd?: string; prod_url?: string }) =>
+  projectSettings: (ctx: PreviewCtx) =>
+    req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
+  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string }) =>
     req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null }>("/local/project/settings", {
       method: "POST",
-      body: { project, ...patch },
+      body: { ...ctx, ...patch },
     }),
   issues: (project: string) =>
     req<IssuesInfo>(`/local/github/issues?project=${encodeURIComponent(project)}`),
@@ -488,9 +529,19 @@ export const api = {
       "/local/projects/create",
       { method: "POST", body: { name, prompt } },
     ),
-  screenshot: (width: number, url?: string) =>
-    req<{ data_url: string }>("/local/preview/screenshot", { method: "POST", body: { width, url } }),
+  screenshot: (width: number, url?: string, ctx: PreviewCtx = {}) =>
+    req<{ data_url: string }>("/local/preview/screenshot", { method: "POST", body: { width, url, ...ctx } }),
 };
+
+/** Query string for a preview context (cwd/project/branch), omitting blanks. */
+function ctxQuery(ctx: PreviewCtx): string {
+  const p = new URLSearchParams();
+  if (ctx.cwd) p.set("cwd", ctx.cwd);
+  if (ctx.cwd_rel) p.set("cwd_rel", ctx.cwd_rel);
+  if (ctx.project) p.set("project", ctx.project);
+  if (ctx.branch) p.set("branch", ctx.branch);
+  return p.toString();
+}
 
 /** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */
 export function logStream(onLine: (line: string) => void): () => void {

@@ -356,6 +356,15 @@ def test_dashboard_security_helpers():
     assert f"http://localhost:{config.DASH_PORT}" in dash._ORIGINS
 
 
+def test_dashboard_token_gate_disabled_when_empty(monkeypatch):
+    """DASH_TOKEN="" disables the gate so the dashboard opens with no ?token=;
+    _tok_ok then accepts any token (localhost-only convenience)."""
+    from bridge.dashboard import server as dash
+    monkeypatch.setattr(config, "DASH_TOKEN", "")
+    assert dash._tok_ok("") is True
+    assert dash._tok_ok("anything") is True
+
+
 def test_dashboard_server_starts_in_requested_project_dir():
     """Regression: the Design tab passes the project it is showing, and the dev
     server must start in THAT project's dir — not the globally-active project,
@@ -371,15 +380,16 @@ def test_dashboard_server_starts_in_requested_project_dir():
     state.active.pop(chat, None)                       # no active project set
 
     captured = {}
-    orig = devserver.start_server
-    devserver.start_server = lambda cmd, cwd: captured.update(cmd=cmd, cwd=cwd) or "ok"
+    orig = devserver.start
+    devserver.start = (lambda cwd, cmd, project="", branch="":
+                       captured.update(cmd=cmd, cwd=cwd) or "ok")
     try:
         h = dash.Handler.__new__(dash.Handler)
         h._json = lambda obj, code=200: None           # swallow the HTTP response
         h._server(chat, {"action": "start", "cmd": "pnpm install",
                          "project": proj})
     finally:
-        devserver.start_server = orig
+        devserver.start = orig
         try:
             os.rmdir(proj_dir)
         except OSError:
@@ -1020,12 +1030,14 @@ def test_project_config_prod_url_roundtrip():
 
 def test_allowed_screenshot_url():
     from bridge.dashboard.server import _allowed_screenshot_url
-    assert _allowed_screenshot_url("http://localhost:3000", 3000, None)
-    assert _allowed_screenshot_url("http://127.0.0.1:3000/x", 3000, None)
-    assert not _allowed_screenshot_url("http://localhost:9999", 3000, None)
-    assert _allowed_screenshot_url("https://app.example.com/p", 3000, "https://app.example.com")
-    assert not _allowed_screenshot_url("https://evil.example.com", 3000, "https://app.example.com")
-    assert not _allowed_screenshot_url("file:///etc/passwd", 3000, None)
+    # dev_ports is the set of localhost ports a dev server bound (concurrent previews).
+    assert _allowed_screenshot_url("http://localhost:3000", {3000}, None)
+    assert _allowed_screenshot_url("http://127.0.0.1:3000/x", {3000}, None)
+    assert _allowed_screenshot_url("http://localhost:5174", {3000, 5174}, None)  # another preview
+    assert not _allowed_screenshot_url("http://localhost:9999", {3000}, None)
+    assert _allowed_screenshot_url("https://app.example.com/p", {3000}, "https://app.example.com")
+    assert not _allowed_screenshot_url("https://evil.example.com", {3000}, "https://app.example.com")
+    assert not _allowed_screenshot_url("file:///etc/passwd", {3000}, None)
 
 
 if __name__ == "__main__":

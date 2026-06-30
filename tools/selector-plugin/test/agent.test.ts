@@ -29,6 +29,27 @@ describe("agent cursor", () => {
   });
 });
 
+describe("agent hover tooltip", () => {
+  it("pins a floating label with tag + id while selecting", () => {
+    installAgent(window);
+    const send = (type: string, mode: string) =>
+      window.dispatchEvent(new MessageEvent("message", {
+        data: { source: HOST_SOURCE, nonce: "n1", type, mode },
+        origin: "http://localhost",
+      }));
+    send("init", "idle");
+    send("setMode", "select");
+    const btn = document.getElementById("b")!;
+    document.elementFromPoint = () => btn; // jsdom has no layout engine
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5, clientY: 5, bubbles: true }));
+    const chip = Array.from(document.querySelectorAll("[data-mystical-overlay]"))
+      .find((n) => (n.textContent ?? "").includes("button"));
+    expect(chip).toBeTruthy();
+    expect(chip!.textContent).toContain("button");
+    expect(chip!.textContent).toContain("#b");
+  });
+});
+
 describe("agent handshake", () => {
   it("announces ready on load", () => {
     const { posted } = withParent();

@@ -77,8 +77,10 @@ def _setup_dashboard():
               "    npm --prefix bridge/dashboard/web ci && "
               "npm --prefix bridge/dashboard/web run build")
     dash.start()
-    print(f"Dashboard (localhost only): http://{config.DASH_HOST}:{config.DASH_PORT}/"
-          f"?token={config.DASH_TOKEN}")
+    url = f"http://{config.DASH_HOST}:{config.DASH_PORT}/"
+    if config.DASH_TOKEN:
+        url += f"?token={config.DASH_TOKEN}"
+    print(f"Dashboard (localhost only): {url}")
 
 
 def _shutdown():

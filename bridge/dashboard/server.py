@@ -28,8 +28,9 @@ from urllib.parse import parse_qs, urlparse
 import re
 
 from bridge import (browser, config, devserver, git, github, native,
-                    project_config, pubsub, runner, screenshot, shell, state,
-                    store, sysinfo, terminals, tunnel, usage, weather, wsutil)
+                    preview_detect, project_config, pubsub, runner, screenshot,
+                    shell, state, store, sysinfo, terminals, tunnel, usage,
+                    weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -41,6 +42,8 @@ _ORIGINS = {f"http://{h}" for h in _HOSTS}
 
 
 def _tok_ok(tok: str) -> bool:
+    if not config.DASH_TOKEN:          # gate disabled via DASH_TOKEN="" (see config)
+        return True
     return hmac.compare_digest(tok or "", config.DASH_TOKEN)
 
 
@@ -66,6 +69,24 @@ def _abs_project(project) -> str | None:
     return cand if browser.within_base(cand) and os.path.isdir(cand) else None
 
 
+def _abs_within(path: str) -> str | None:
+    """Resolve an absolute path that must live under BASE_PATH (e.g. a session's
+    worktree cwd). Returns the realpath, or None if it escapes the workspace."""
+    if not path:
+        return None
+    cand = os.path.realpath(path)
+    return cand if browser.within_base(cand) and os.path.isdir(cand) else None
+
+
+def _server_cwd(chat, body) -> str:
+    """The run directory a preview/dev-server request targets: an absolute
+    worktree cwd if given, else a project rel, else the chat's active project.
+    Mirrors the worktree resolution used by /local/sessions."""
+    return (_abs_within((body.get("cwd") or "").strip())
+            or _abs_project(body.get("cwd_rel") or body.get("project"))
+            or state.project_dir(chat))
+
+
 # Managed git worktrees live under a hidden dir at the workspace root, so the
 # project browser (which skips dotdirs) never surfaces them as projects.
 _WT_ROOT = os.path.join(config.BASE_PATH, ".worktrees")
@@ -81,16 +102,41 @@ def _worktree_path(project_rel: str, branch: str) -> str:
     return os.path.join(_WT_ROOT, repo, _slug(branch))
 
 
-def _allowed_screenshot_url(url: str, dev_port: int, prod_url: str | None) -> bool:
-    """A screenshot target is allowed only if it is the local dev server
-    (localhost/127.0.0.1 on dev_port) or the project's configured prod URL."""
+def _worktree_cwd(project, branch) -> "str | None":
+    """The working-tree dir to operate on for a project+branch: the branch's linked
+    worktree when one exists on disk, else the project checkout. None if the project
+    is invalid. Lets status/diff/commit target the right tree per selected branch."""
+    abs_p = _abs_project(project)
+    if abs_p is None:
+        return None
+    b = (branch or "").strip()
+    if b:
+        wt = _abs_within(_worktree_path(str(project), b))
+        if wt is not None:
+            return wt
+    return abs_p
+
+
+# Headless one-shot prompt for "generate commit message" (mirrors preview_detect).
+_COMMIT_MSG_PROMPT = (
+    "Write a single git commit message for the staged changes below. Use the "
+    "Conventional Commits format — `type(scope): summary`, with an imperative "
+    "summary under 72 chars; add a short body only if it conveys real information. "
+    "Respond with ONLY the commit message: no markdown, no code fences, no "
+    "preamble.\n\nDIFF:\n"
+)
+
+
+def _allowed_screenshot_url(url: str, dev_ports: "set[int]", prod_url: str | None) -> bool:
+    """A screenshot target is allowed only if it is a local dev server
+    (localhost/127.0.0.1 on a port a dev server bound) or the project's prod URL."""
     try:
         u = urlparse((url or "").strip())
     except ValueError:
         return False
     if u.scheme not in ("http", "https") or not u.hostname:
         return False
-    if u.hostname in ("localhost", "127.0.0.1") and u.port == dev_port:
+    if u.hostname in ("localhost", "127.0.0.1") and u.port in dev_ports:
         return True
     if prod_url:
         p = urlparse(prod_url.strip())
@@ -179,6 +225,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({
                 "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)},
                 "server": devserver.server_state(), "preview": tunnel.tunnel_state(),
+                "servers": devserver.list_servers(),
                 "dev_port": config.PREVIEW_PORT,
                 "permission_mode": config.MINIAPP_PERMISSION_MODE})
         if path == "/local/projects":
@@ -231,10 +278,11 @@ class Handler(BaseHTTPRequestHandler):
                 n = 200
             return self._json({"lines": devserver.log_tail(n)})
         if path == "/local/git":
-            abs_p = _abs_project(qs.get("project", [None])[0])
-            if abs_p is None:
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
-            return self._json(git.status(abs_p))
+            return self._json(git.status(cwd))
         if path == "/local/git/all":
             repos = {}
             seen = set()
@@ -251,7 +299,8 @@ class Handler(BaseHTTPRequestHandler):
                     repos[rel] = b
             return self._json({"repos": repos})
         if path == "/local/git/diff":
-            abs_p = _abs_project(qs.get("project", [None])[0])
+            project = qs.get("project", [None])[0]
+            abs_p = _abs_project(project)
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             fpath = qs.get("path", [""])[0]
@@ -262,21 +311,24 @@ class Handler(BaseHTTPRequestHandler):
                 if base not in refs or head not in refs:
                     return self._json({"error": "invalid ref"}, 400)
                 return self._json({"path": fpath, "diff": git.diff_ref(abs_p, base, head, fpath)})
-            return self._json({"path": fpath, "diff": git.diff(abs_p, fpath)})
+            # working-tree diff: target the selected branch's worktree
+            cwd = _worktree_cwd(project, (qs.get("branch", [""])[0] or "").strip())
+            return self._json({"path": fpath, "diff": git.diff(cwd, fpath)})
         if path == "/local/github/issues":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(github.issues(abs_p))
         if path == "/local/project/settings":
-            rel = qs.get("project", [None])[0] or browser.rel(state.project_dir(chat))
-            abs_p = _abs_project(rel)
-            if abs_p is None:
-                return self._json({"error": "invalid project"}, 400)
+            abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
+                     or _abs_project(qs.get("cwd_rel", [None])[0] or qs.get("project", [None])[0])
+                     or state.project_dir(chat))
+            rel = browser.rel(abs_p)
+            branch = (qs.get("branch", [""])[0] or "").strip() or None
             return self._json({
                 "scripts": project_config.package_scripts(abs_p),
-                "run_cmd": project_config.run_cmd(rel),
-                "prod_url": project_config.prod_url(rel),
+                "run_cmd": project_config.run_cmd(rel, branch),
+                "prod_url": project_config.prod_url(rel, branch),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
@@ -288,6 +340,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(shell.snapshot(cursor))
         if path == "/local/terminals":
             return self._json({"terminals": terminals.info(qs.get("project", [None])[0])})
+        if path == "/local/servers":
+            return self._json({"servers": devserver.list_servers()})
         if path == "/local/sysinfo":
             return self._json(sysinfo.host_stats())
         if path == "/local/weather":
@@ -345,6 +399,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._server(chat, body)
         if path == "/local/preview":
             return self._preview(body)
+        if path == "/local/preview/detect":
+            return self._preview_detect(chat, body)
         if path == "/local/preview/screenshot":
             return self._api_preview_screenshot(body)
         if path == "/local/select":
@@ -369,19 +425,25 @@ class Handler(BaseHTTPRequestHandler):
             store.archive(sid)
             return self._json({"ok": True})
         if path == "/local/git/commit":
-            abs_p = _abs_project(body.get("project"))
-            if abs_p is None:
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
             msg = (body.get("message") or "").strip()[:2000]
             if not msg:
                 return self._json({"error": "empty commit message"}, 400)
-            ok, output = git.commit(abs_p, msg)
+            paths = body.get("paths")
+            if isinstance(paths, list) and paths:
+                ok, output = git.commit_paths(cwd, msg, [str(p) for p in paths][:500])
+            else:
+                ok, output = git.commit(cwd, msg)
             return self._json({"ok": ok, "output": output})
+        if path == "/local/git/commit-message":
+            return self._commit_message(chat, body)
         if path == "/local/git/push":
-            abs_p = _abs_project(body.get("project"))
-            if abs_p is None:
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
-            ok, output = git.push(abs_p)
+            ok, output = git.push(cwd)
             return self._json({"ok": ok, "output": output})
         if path == "/local/github/issue":
             abs_p = _abs_project(body.get("project"))
@@ -394,14 +456,17 @@ class Handler(BaseHTTPRequestHandler):
             ok, output = github.create_issue(abs_p, title, body_text)
             return self._json({"ok": ok, "output": output})
         if path == "/local/project/settings":
-            rel = (body.get("project") or "").strip()
-            if _abs_project(rel) is None:
+            abs_p = (_abs_within((body.get("cwd") or "").strip())
+                     or _abs_project(body.get("cwd_rel") or body.get("project")))
+            if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
+            rel = browser.rel(abs_p)
+            branch = (body.get("branch") or "").strip() or None
             out: dict = {"ok": True}
             if "run_cmd" in body:
-                out["run_cmd"] = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000])
+                out["run_cmd"] = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000], branch)
             if "prod_url" in body:
-                out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000])
+                out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000], branch)
             return self._json(out)
         if path == "/local/git/checkout":
             abs_p = _abs_project(body.get("project"))
@@ -483,6 +548,25 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "path": wt, "rel": rel, "branch": branch,
                            "output": output})
 
+    def _commit_message(self, chat, body):
+        """Generate a commit message for the selected files via a one-shot headless
+        Claude run over their diff (same pattern as preview_detect)."""
+        cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+        if cwd is None:
+            return self._json({"error": "invalid project"}, 400)
+        paths = body.get("paths")
+        paths = [str(p) for p in paths][:500] if isinstance(paths, list) else []
+        if not paths:
+            return self._json({"error": "no files selected"}, 400)
+        diff = git.diff_multi(cwd, paths)
+        if not diff.strip():
+            return self._json({"error": "no changes to describe"}, 400)
+        result, _sid, _cost, is_error = runner.run_blocking(
+            chat, _COMMIT_MSG_PROMPT + diff, cwd=cwd, timeout=120)
+        if is_error or not (result or "").strip():
+            return self._json({"error": "could not generate message"}, 502)
+        return self._json({"message": git.clean_commit_message(result)})
+
     def _create_project(self, chat, body):
         """Scaffold a new git repo under BASE_PATH and start a session on it with
         the user's first instruction streaming in immediately."""
@@ -562,19 +646,35 @@ class Handler(BaseHTTPRequestHandler):
         self._json(job.snapshot(_cursor(body)))
 
     def _server(self, chat, body):
+        # A preview targets one run directory (a project, or a linked worktree
+        # with its own branch), so several can run concurrently on their own
+        # ports. The caller names the cwd/branch; we fall back to the active one.
+        cwd = _server_cwd(chat, body)
+        rel = browser.rel(cwd)
+        branch = (body.get("branch") or "").strip()
         action = body.get("action", "start")
         if action == "stop":
-            msg = devserver.stop_server()
+            msg = devserver.stop(cwd)
         else:
-            # Run in the project the caller names (the Design/Run tab's project),
-            # falling back to the chat's active project. Without this, the cwd is
-            # whatever is globally active — unset → BASE_PATH, which breaks install.
-            cwd = _abs_project(body.get("project")) or state.project_dir(chat)
             cmd = ((body.get("cmd") or "").strip()
-                   or project_config.run_cmd(browser.rel(cwd))
+                   or project_config.run_cmd(rel, branch or None)
                    or config.START_CMD)
-            msg = devserver.start_server(cmd, cwd)
-        self._json({"server": devserver.server_state(), "message": msg})
+            msg = devserver.start(cwd, cmd, project=(body.get("project") or rel), branch=branch)
+        self._json({"server": devserver.state_for(cwd),
+                    "servers": devserver.list_servers(), "message": msg})
+
+    def _preview_detect(self, chat, body):
+        # Learn how to start this project (heuristic, falling back to Claude for
+        # ambiguous repos), persist the chain per project+branch, and return it.
+        cwd = _server_cwd(chat, body)
+        rel = browser.rel(cwd)
+        branch = (body.get("branch") or "").strip() or None
+        res = preview_detect.detect(cwd, chat)
+        cmd = (res.get("command") or "").strip()
+        if cmd:
+            project_config.set_run_cmd(rel, cmd, branch)
+        self._json({"command": cmd, "source": res.get("source"),
+                    "explanation": res.get("explanation", "")})
 
     def _preview(self, body):
         action = body.get("action", "start")
@@ -592,9 +692,15 @@ class Handler(BaseHTTPRequestHandler):
         chat = _chat()
         target = (body.get("url") or "").strip()
         if target:
-            rel = browser.rel(state.project_dir(chat))
-            if not _allowed_screenshot_url(target, config.PREVIEW_PORT,
-                                           project_config.prod_url(rel)):
+            dev_ports = {s["port"] for s in devserver.list_servers() if s.get("port")}
+            dev_ports.add(config.PREVIEW_PORT)
+            abs_p = (_abs_within((body.get("cwd") or "").strip())
+                     or _abs_project(body.get("cwd_rel") or body.get("project"))
+                     or state.project_dir(chat))
+            rel = browser.rel(abs_p)
+            branch = (body.get("branch") or "").strip() or None
+            if not _allowed_screenshot_url(target, dev_ports,
+                                           project_config.prod_url(rel, branch)):
                 return self._json({"error": "url not allowed"}, 400)
             url = target
         else:
@@ -808,7 +914,14 @@ class Handler(BaseHTTPRequestHandler):
             cache = "public, max-age=31536000, immutable"
         ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
         with open(fp, "rb") as f:
-            self._send(f.read(), 200, ctype, cache=cache)
+            data = f.read()
+        if os.path.basename(fp) == "index.html":
+            # Tell the SPA whether the ?token= gate is live so it only nags about
+            # a missing token when one is actually required (not when DASH_TOKEN="").
+            flag = b"true" if config.DASH_TOKEN else b"false"
+            data = data.replace(
+                b"<head>", b"<head><script>window.__DASH_AUTH_REQUIRED__=" + flag + b"</script>", 1)
+        self._send(data, 200, ctype, cache=cache)
 
 
 def _cursor(body) -> int:

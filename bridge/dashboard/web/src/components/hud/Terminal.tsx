@@ -24,11 +24,50 @@ function basename(rel: string | null | undefined): string | null {
   return clean.split("/").pop() || clean;
 }
 
+// The assistant's idle expressions. Eyes + mouth are simple glowing primitives;
+// faces are crossfaded (not morphed) so any shape pairs read smoothly.
+const FACE_TEAL = "#7fe9d8";
+const EYE_GLOW = "0 0 8px #7fe9d8";
+type EyeV = "open" | "round" | "line" | "happy";
+type MouthV = "smile" | "grin" | "flat" | "o";
+
+function Eye({ v }: { v: EyeV }) {
+  if (v === "happy") // an upward ∩ arc — a content squint
+    return <span style={{ width: 13, height: 7, border: `2px solid ${FACE_TEAL}`, borderBottom: 0, borderRadius: "11px 11px 0 0", boxShadow: EYE_GLOW }} />;
+  if (v === "line")
+    return <span style={{ width: 12, height: 3, borderRadius: 3, background: FACE_TEAL, boxShadow: EYE_GLOW }} />;
+  if (v === "round")
+    return <span style={{ width: 12, height: 12, borderRadius: "50%", background: FACE_TEAL, boxShadow: EYE_GLOW, animation: "eyeblink 5s infinite" }} />;
+  return <span style={{ width: 9, height: 13, borderRadius: 3, background: FACE_TEAL, boxShadow: EYE_GLOW, animation: "eyeblink 5s infinite" }} />;
+}
+function Mouth({ v }: { v: MouthV }) {
+  if (v === "o")
+    return <span style={{ width: 9, height: 9, border: `2px solid ${FACE_TEAL}`, borderRadius: "50%", opacity: 0.9 }} />;
+  if (v === "flat")
+    return <span style={{ width: 16, height: 2, borderRadius: 2, background: FACE_TEAL, opacity: 0.75 }} />;
+  if (v === "grin")
+    return <span style={{ width: 26, height: 13, border: `2px solid ${FACE_TEAL}`, borderTop: 0, borderRadius: "0 0 16px 16px", opacity: 0.9 }} />;
+  return <span style={{ width: 22, height: 10, border: `2px solid ${FACE_TEAL}`, borderTop: 0, borderRadius: "0 0 14px 14px", opacity: 0.85 }} />;
+}
+const FACES: { eyeL: EyeV; eyeR: EyeV; mouth: MouthV }[] = [
+  { eyeL: "open", eyeR: "open", mouth: "smile" },   // friendly
+  { eyeL: "happy", eyeR: "happy", mouth: "grin" },  // delighted
+  { eyeL: "round", eyeR: "round", mouth: "o" },     // curious
+  { eyeL: "line", eyeR: "line", mouth: "flat" },    // calm
+  { eyeL: "open", eyeR: "line", mouth: "smile" },   // a wink
+];
+
 /** The empty-session intro: the mystical assistant face + a rotating quote. */
 function FreshState({ project }: { project: string | null }) {
   const [qi, setQi] = useState(0);
+  const [face, setFace] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setQi((q) => q + 1), 7200);
+    return () => clearInterval(id);
+  }, []);
+  // Drift through expressions on a long, unhurried interval.
+  useEffect(() => {
+    const id = setInterval(() => setFace((f) => (f + 1) % FACES.length), 10000);
     return () => clearInterval(id);
   }, []);
   return (
@@ -39,11 +78,22 @@ function FreshState({ project }: { project: string | null }) {
           <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(185,166,255,.4)" strokeWidth="1" strokeDasharray="3 13" style={{ transformOrigin: "50px 50px", animation: "introspinr 16s linear infinite" }} />
         </svg>
         <div style={{ position: "relative", width: 92, height: 92, borderRadius: "50%", border: "1.5px solid rgba(127,233,216,.5)", background: "radial-gradient(circle at 50% 36%,rgba(127,233,216,.16),rgba(7,13,13,.6))", boxShadow: "0 0 28px rgba(127,233,216,.18),inset 0 0 22px rgba(127,233,216,.1)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, animation: "bob 4.5s ease-in-out infinite" }}>
-          <div style={{ display: "flex", gap: 16 }}>
-            <span style={{ width: 9, height: 13, background: "#7fe9d8", borderRadius: 3, boxShadow: "0 0 8px #7fe9d8", animation: "eyeblink 5s infinite" }} />
-            <span style={{ width: 9, height: 13, background: "#7fe9d8", borderRadius: 3, boxShadow: "0 0 8px #7fe9d8", animation: "eyeblink 5s infinite" }} />
+          {/* Expressions are stacked and crossfaded so the face dissolves
+              between moods on the 10s interval rather than popping. */}
+          <div style={{ position: "relative", width: 60, height: 42 }}>
+            {FACES.map((f, i) => (
+              <div key={i} aria-hidden style={{
+                position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", gap: 9,
+                opacity: i === face ? 1 : 0, transition: "opacity 1.3s ease",
+              }}>
+                <div style={{ display: "flex", gap: 16, alignItems: "center", height: 14 }}>
+                  <Eye v={f.eyeL} /><Eye v={f.eyeR} />
+                </div>
+                <Mouth v={f.mouth} />
+              </div>
+            ))}
           </div>
-          <div style={{ width: 22, height: 10, border: "2px solid #7fe9d8", borderTop: 0, borderRadius: "0 0 14px 14px", opacity: 0.85 }} />
         </div>
         <span style={{ position: "absolute", top: 4, right: 8, color: "#b9a6ff", fontSize: 13, animation: "twinkle 3s infinite" }}>✦</span>
         <span style={{ position: "absolute", bottom: 10, left: 4, color: "#7fe9d8", fontSize: 10, animation: "twinkle 4s infinite .5s" }}>✦</span>

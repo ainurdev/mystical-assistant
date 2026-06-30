@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  AUTH_REQUIRED,
   logStream,
   TOKEN,
   type AnswerSelection,
@@ -385,9 +386,10 @@ export function App() {
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
+    // Order by most-recent session activity. We deliberately do NOT pin the
+    // active project to the top — selecting a project should highlight it in
+    // place, not yank it to position 0 under the cursor.
     groups.sort((a, b) => {
-      if (a.rel === activeProject) return -1;
-      if (b.rel === activeProject) return 1;
       const am = a.sessions[0]?.updated ?? 0;
       const bm = b.sessions[0]?.updated ?? 0;
       return bm - am;
@@ -463,7 +465,7 @@ export function App() {
     } catch { /* ignore */ }
   }
 
-  if (!TOKEN) {
+  if (AUTH_REQUIRED && !TOKEN) {
     return (
       <div className="p-8 text-center text-sm text-muted-foreground">
         Missing token. Open the dashboard via the URL the bridge printed (it includes
@@ -561,8 +563,8 @@ export function App() {
             {runnerOpen && (
               <RunningWindow
                 project={selected?.project ?? activeProject}
-                branch={selected?.branch}
-                devPort={state?.dev_port ?? 3000}
+                branch={selected?.branch ?? activeBadge?.branch}
+                cwd={selected?.cwd}
                 busy={!!active}
                 onSubmit={(text, images) => { void send(text, images); }}
                 onClose={() => setRunnerOpen(false)}

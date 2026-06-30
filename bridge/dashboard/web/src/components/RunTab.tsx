@@ -20,7 +20,7 @@ export function RunTab({
     if (!project) return;
     let live = true;
     api
-      .projectSettings(project)
+      .projectSettings({ project })
       .then((s) => {
         if (!live) return;
         setSettings(s);
@@ -40,14 +40,14 @@ export function RunTab({
   const running = server?.status === "running";
 
   async function persist() {
-    if (project) await api.setProjectSettings(project, { run_cmd: cmd }).catch(() => {});
+    if (project) await api.setProjectSettings({ project }, { run_cmd: cmd }).catch(() => {});
   }
   async function start() {
     setBusy(true);
     setNote(null);
     try {
       await persist();
-      const r = await api.server("start", cmd);
+      const r = await api.server("start", { cmd, project });
       setNote(r.message);
     } catch (e) {
       setNote((e as Error).message);
@@ -58,7 +58,7 @@ export function RunTab({
   async function stop() {
     setBusy(true);
     try {
-      const r = await api.server("stop");
+      const r = await api.server("stop", { project });
       setNote(r.message);
     } catch {
       /* ignore */

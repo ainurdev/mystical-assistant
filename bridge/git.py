@@ -3,6 +3,7 @@ every call shells out to `git -C <cwd> …` with a timeout. Callers pass an abso
 cwd already confined to BASE_PATH by the dashboard's _abs_project."""
 
 import os
+import re
 import subprocess
 import time
 
@@ -142,6 +143,49 @@ def commit(cwd: str, message: str) -> tuple[bool, str]:
         return False, (err or out or "git add failed").strip()
     rc, out, err = _run(cwd, "commit", "-m", message)
     return rc == 0, (out + err).strip()
+
+
+def commit_paths(cwd: str, message: str, paths: list[str]) -> tuple[bool, str]:
+    """Commit only `paths` (a partial commit): stage exactly those, then commit
+    just them via pathspec, leaving any other changes uncommitted."""
+    safe = [p for p in (_safe_path(cwd, x) for x in paths) if p]
+    if not safe:
+        return False, "no files selected"
+    rc, out, err = _run(cwd, "add", "--", *safe)
+    if rc != 0:
+        return False, (err or out or "git add failed").strip()
+    rc, out, err = _run(cwd, "commit", "-m", message, "--", *safe)
+    return rc == 0, (out + err).strip()
+
+
+def diff_multi(cwd: str, paths: list[str], limit: int = 8000) -> str:
+    """Concatenated working-tree diff for `paths` (tracked + untracked), capped at
+    `limit` chars — feeds commit-message generation without unbounded token cost."""
+    chunks: list[str] = []
+    total = 0
+    for p in paths:
+        d = diff(cwd, p)
+        if not d:
+            continue
+        chunks.append(d)
+        total += len(d)
+        if total >= limit:
+            break
+    return "\n".join(chunks)[:limit]
+
+
+_FENCE_RE = re.compile(r"^```[^\n]*\n(.*)\n```$", re.S)
+
+
+def clean_commit_message(raw: str) -> str:
+    """Strip a model's markdown code fence / wrapping quotes from a commit message."""
+    s = (raw or "").strip()
+    m = _FENCE_RE.match(s)
+    if m:
+        s = m.group(1).strip()
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"' and '"' not in s[1:-1]:
+        s = s[1:-1].strip()
+    return s[:2000]
 
 
 def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:

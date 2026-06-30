@@ -1,6 +1,18 @@
-"""Dev server: a long-lived background process owned by the bridge."""
+"""Dev servers: long-lived background processes owned by the bridge.
+
+One server per run directory, so several projects / worktrees / branches can be
+previewed at the same time. Each server detects the localhost URL the framework
+actually bound (dev servers auto-pick the next free port when the default is
+busy) by scanning its own output, and that detected URL is what the preview
+surface points at.
+
+Legacy single-server helpers (``start_server``/``stop_server``/``server_state``/
+``log_tail``/``server_status``) operate on the most-recently-started server so
+the Mini App and Telegram surfaces keep working unchanged.
+"""
 
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -15,16 +27,32 @@ from bridge.telegram import send
 # session running in the same cwd can simply read it (e.g. `tail .mystical/dev.log`).
 DEV_LOG_REL = os.path.join(".mystical", "dev.log")
 
-_server_proc: subprocess.Popen | None = None
-_server_log: deque = deque(maxlen=300)
-_server_cmd: str | None = None
-_server_dir: str | None = None
-_server_logfile = None  # open file handle for DEV_LOG_REL, or None
-_server_lock = threading.Lock()
+MAX_SERVERS = 8           # runaway guard (concurrent dev servers)
+DETECT_TIMEOUT = 8.0      # how long start() waits for the URL before returning
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_URL_RE = re.compile(r"https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})")
+
+_servers: "dict[str, DevServer]" = {}   # keyed by realpath(cwd)
+_primary: "str | None" = None           # last-started cwd — backs the legacy API
+_lock = threading.Lock()
 
 
-def _server_alive() -> bool:
-    return _server_proc is not None and _server_proc.poll() is None
+def _safe_rel(path: str) -> str:
+    try:
+        return rel(path)
+    except Exception:  # noqa: BLE001
+        return path
+
+
+def _detect_url(line: str):
+    """Parse a `http://localhost:PORT` (or 127.0.0.1 / 0.0.0.0) URL out of a log
+    line, normalising the host to localhost. Returns (url, port) or None."""
+    m = _URL_RE.search(_ANSI_RE.sub("", line))
+    if not m:
+        return None
+    port = int(m.group(1))
+    return f"http://localhost:{port}", port
 
 
 def _open_logfile(cwd: str):
@@ -42,112 +70,213 @@ def _open_logfile(cwd: str):
         return None
 
 
-def _close_logfile():
-    global _server_logfile
-    if _server_logfile is not None:
+class DevServer:
+    def __init__(self, cwd: str, cmd: str, project: str, branch: str):
+        self.cwd = cwd
+        self.cmd = cmd
+        self.project = project
+        self.branch = branch
+        self.created = time.time()
+        self.log: deque = deque(maxlen=300)
+        self.url: "str | None" = None
+        self.port: "int | None" = None
+        self.logfile = _open_logfile(cwd)
+        self.proc = subprocess.Popen(
+            cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, bufsize=1,
+            start_new_session=True)
+        threading.Thread(target=self._reader, daemon=True).start()
+
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def _reader(self) -> None:
+        if self.proc.stdout:
+            for line in self.proc.stdout:
+                line = line.rstrip("\n")
+                self.log.append(line)
+                if self.url is None:
+                    hit = _detect_url(line)
+                    if hit:
+                        self.url, self.port = hit
+                if self.logfile is not None:
+                    try:
+                        self.logfile.write(line + "\n")
+                    except (OSError, ValueError):
+                        pass
+                pubsub.publish("logs", {"line": line, "dir": _safe_rel(self.cwd)})
+        self._close_logfile()
+
+    def _close_logfile(self) -> None:
+        if self.logfile is not None:
+            try:
+                self.logfile.close()
+            except OSError:
+                pass
+            self.logfile = None
+
+    def state(self) -> dict:
+        running = self.alive()
+        return {
+            "status": "running" if running else "exited",
+            "cmd": self.cmd,
+            "dir": _safe_rel(self.cwd),
+            "pid": self.proc.pid if running else None,
+            "url": self.url,
+            "port": self.port,
+            "project": self.project,
+            "branch": self.branch,
+            "tail": list(self.log)[-12:],
+        }
+
+    def terminate(self) -> None:
         try:
-            _server_logfile.close()
-        except OSError:
-            pass
-        _server_logfile = None
-
-
-def _server_reader(proc: subprocess.Popen):
-    if proc.stdout:
-        for line in proc.stdout:
-            line = line.rstrip("\n")
-            _server_log.append(line)
-            f = _server_logfile
-            if f is not None:
-                try:
-                    f.write(line + "\n")
-                except (OSError, ValueError):
-                    pass
-            pubsub.publish("logs", {"line": line})
-
-
-def start_server(cmd: str, cwd: str) -> str:
-    global _server_proc, _server_cmd, _server_dir, _server_logfile
-    with _server_lock:
-        if _server_alive():
-            return (f"⚙️ Server already running (pid {_server_proc.pid}) in "
-                    f"{rel(_server_dir)}: {_server_cmd}\nUse /server stop first.")
-        _server_log.clear()
-        _close_logfile()
-        _server_logfile = _open_logfile(cwd)
-        try:
-            proc = subprocess.Popen(
-                cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, bufsize=1,
-                start_new_session=True)
-        except Exception as e:  # noqa: BLE001
-            return f"❌ Failed to start: {e}"
-        _server_proc, _server_cmd, _server_dir = proc, cmd, cwd
-        threading.Thread(target=_server_reader, args=(proc,), daemon=True).start()
-        time.sleep(2)
-        if proc.poll() is not None:
-            tail = "\n".join(list(_server_log)[-15:]) or "(no output)"
-            return f"❌ Server exited immediately (code {proc.returncode}):\n{tail}"
-        return (f"✅ Server started (pid {proc.pid}) in {rel(cwd)}: {cmd}\n"
-                f"/preview {config.PREVIEW_PORT} to open it · /logs to see output.")
-
-
-def stop_server() -> str:
-    global _server_proc
-    with _server_lock:
-        if not _server_alive():
-            _server_proc = None
-            return "No server is running."
-        try:
-            os.killpg(os.getpgid(_server_proc.pid), signal.SIGTERM)
-            _server_proc.wait(timeout=8)
+            os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+            self.proc.wait(timeout=8)
         except (ProcessLookupError, PermissionError):
             pass
         except subprocess.TimeoutExpired:
-            os.killpg(os.getpgid(_server_proc.pid), signal.SIGKILL)
-        _server_proc = None
-        _close_logfile()
-        return "🛑 Server stopped."
+            try:
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+            except OSError:
+                pass
+        self._close_logfile()
 
 
-def server_status() -> str:
-    if _server_alive():
-        return f"running (pid {_server_proc.pid}) in {rel(_server_dir)}: {_server_cmd}"
-    if _server_proc is not None:
-        return f"exited (code {_server_proc.returncode}): {_server_cmd}"
-    return "not started"
+def _not_started(cwd: "str | None") -> dict:
+    return {"status": "not started", "cmd": None,
+            "dir": _safe_rel(cwd) if cwd else None, "pid": None,
+            "url": None, "port": None, "project": "", "branch": "", "tail": []}
+
+
+# --- registry API (keyed by run directory) ---------------------------------
+
+def start(cwd: str, cmd: str, project: str = "", branch: str = "") -> str:
+    """Start a dev server in ``cwd`` (no-op if one is already running there).
+    Blocks briefly for the framework to print its localhost URL, then returns."""
+    global _primary
+    cwd = os.path.realpath(cwd)
+    with _lock:
+        ex = _servers.get(cwd)
+        if ex and ex.alive():
+            _primary = cwd
+            return (f"⚙️ Server already running (pid {ex.proc.pid}) in "
+                    f"{_safe_rel(cwd)}: {ex.cmd}\nStop it first.")
+        _servers.pop(cwd, None)  # drop this dir's previous (exited) entry
+        if len(_servers) >= MAX_SERVERS:  # reclaim slots from servers that have exited
+            for k in [k for k, s in _servers.items() if not s.alive()]:
+                _servers.pop(k, None)
+        if len(_servers) >= MAX_SERVERS:
+            return f"❌ Too many dev servers running ({MAX_SERVERS}). Stop one first."
+        try:
+            srv = DevServer(cwd, cmd, project or _safe_rel(cwd), branch)
+        except Exception as e:  # noqa: BLE001
+            return f"❌ Failed to start: {e}"
+        _servers[cwd] = srv
+        _primary = cwd
+
+    # Wait for the URL to appear (or for an immediate crash) — but don't block
+    # forever; the reader keeps filling in url/port after we return.
+    deadline = time.time() + DETECT_TIMEOUT
+    while time.time() < deadline:
+        if not srv.alive():
+            # Keep the exited entry in the registry so the surface can show its
+            # status + error output (a stale entry is replaced on the next start).
+            tail = "\n".join(list(srv.log)[-15:]) or "(no output)"
+            return f"❌ Server exited immediately (code {srv.proc.returncode}):\n{tail}"
+        if srv.url:
+            break
+        time.sleep(0.1)
+    where = srv.url or f"http://localhost:{config.PREVIEW_PORT}"
+    suffix = "" if srv.url else " (port not detected yet)"
+    return (f"✅ Server started (pid {srv.proc.pid}) in {_safe_rel(cwd)}: {cmd}\n"
+            f"Preview: {where}{suffix} · /logs to see output.")
+
+
+def stop(cwd: str) -> str:
+    cwd = os.path.realpath(cwd)
+    with _lock:
+        srv = _servers.pop(cwd, None)
+    if not srv:
+        return "No server is running here."
+    srv.terminate()
+    return "🛑 Server stopped."
+
+
+def state_for(cwd: str) -> dict:
+    cwd = os.path.realpath(cwd)
+    with _lock:
+        srv = _servers.get(cwd)
+    return srv.state() if srv else _not_started(cwd)
+
+
+def list_servers() -> list:
+    with _lock:
+        srvs = list(_servers.values())
+    return [s.state() for s in srvs]
+
+
+def _tail(cwd: str, n: int) -> list:
+    cwd = os.path.realpath(cwd)
+    with _lock:
+        srv = _servers.get(cwd)
+    return list(srv.log)[-n:] if srv else []
+
+
+# --- legacy single-server helpers (Mini App + Telegram) --------------------
+
+def start_server(cmd: str, cwd: str) -> str:
+    return start(cwd, cmd, project=_safe_rel(cwd))
+
+
+def stop_server() -> str:
+    if _primary is None:
+        return "No server is running."
+    return stop(_primary)
 
 
 def server_state() -> dict:
-    """Structured status for the Mini App API."""
-    if _server_alive():
-        return {"status": "running", "cmd": _server_cmd,
-                "dir": rel(_server_dir), "pid": _server_proc.pid}
-    if _server_proc is not None:
-        return {"status": "exited", "cmd": _server_cmd,
-                "dir": rel(_server_dir) if _server_dir else None, "pid": None}
-    return {"status": "not started", "cmd": None, "dir": None, "pid": None}
+    """Structured status of the primary (last-started) server, for the Mini App."""
+    if _primary is None:
+        return {"status": "not started", "cmd": None, "dir": None, "pid": None}
+    s = state_for(_primary)
+    return {"status": s["status"], "cmd": s["cmd"], "dir": s["dir"], "pid": s["pid"]}
 
 
-def log_tail(n: int = 200) -> list[str]:
-    return list(_server_log)[-n:]
+def log_tail(n: int = 200) -> list:
+    if _primary is None:
+        return []
+    return _tail(_primary, n)
 
+
+def server_status() -> str:
+    with _lock:
+        running = [s for s in _servers.values() if s.alive()]
+    if not running:
+        return "not started"
+    parts = ", ".join(f"{s.project or _safe_rel(s.cwd)} ({s.url or '…'})"
+                      for s in running)
+    return f"{len(running)} running: {parts}"
+
+
+# --- Telegram handlers (operate on the chat's active project dir) ----------
 
 def handle_server(chat_id: int, arg: str):
     parts = arg.split(maxsplit=1)
     sub = parts[0] if parts else "start"
     rest = parts[1] if len(parts) > 1 else ""
+    cwd = state.project_dir(chat_id)
     if sub == "stop":
-        send(chat_id, stop_server())
+        send(chat_id, stop(cwd))
     elif sub == "status":
         send(chat_id, "Server: " + server_status())
     elif sub in ("start", ""):
         cmd = rest or config.START_CMD
-        send(chat_id, f"🚀 Starting in {rel(state.project_dir(chat_id))}: {cmd}")
-        send(chat_id, start_server(cmd, state.project_dir(chat_id)))
+        send(chat_id, f"🚀 Starting in {_safe_rel(cwd)}: {cmd}")
+        send(chat_id, start(cwd, cmd, project=_safe_rel(cwd)))
     else:
-        send(chat_id, f"🚀 Starting in {rel(state.project_dir(chat_id))}: {arg}")
-        send(chat_id, start_server(arg, state.project_dir(chat_id)))
+        send(chat_id, f"🚀 Starting in {_safe_rel(cwd)}: {arg}")
+        send(chat_id, start(cwd, arg, project=_safe_rel(cwd)))
 
 
 def handle_logs(chat_id: int, arg: str):
@@ -155,6 +284,6 @@ def handle_logs(chat_id: int, arg: str):
         n = int(arg) if arg else 40
     except ValueError:
         n = 40
-    lines = log_tail(n)
+    lines = _tail(state.project_dir(chat_id), n)
     body = "\n".join(lines) if lines else "(no server output yet)"
     send(chat_id, f"📄 Last {len(lines)} log line(s):\n\n{body}")
