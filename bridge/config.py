@@ -56,6 +56,12 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
 
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
 
+# --- Project memory ----------------------------------------------------------
+# Curated, project+branch-scoped memory injected into every turn's system prompt
+# and captured (with a Keep/Skip gate) after edits. See the project-memory design.
+MEMORY_ENABLE = os.environ.get("MEMORY_ENABLE", "1").lower() not in ("0", "false", "no", "")
+MEMORY_TOKEN_BUDGET = int(os.environ.get("MEMORY_TOKEN_BUDGET", "800"))  # resident pack cap
+
 # Push a Telegram message when a streaming (Mini App / dashboard) run needs your
 # input or finishes, so you can walk away from the panel and still get pinged.
 # The bot's own plain-text turns aren't notified (they already reply in-chat).
