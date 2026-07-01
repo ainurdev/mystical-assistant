@@ -137,8 +137,16 @@ def _stop_tunnel_locked():
     _tunnel_proc = _tunnel_url = _tunnel_port = None
 
 
+def _named_configured() -> bool:
+    """A stable named tunnel is usable only if the hostname, id, and local
+    credentials file are all present. Otherwise /preview uses a quick tunnel."""
+    return bool(config.TUNNEL_ID and config.PREVIEW_HOSTNAME
+                and os.path.isfile(config.TUNNEL_CREDENTIALS_FILE))
+
+
 def start_tunnel(port: int):
-    """Start the named preview tunnel pointing PREVIEW_HOSTNAME at `port`."""
+    """Start the preview tunnel for `port` — a stable named tunnel if configured,
+    otherwise an ephemeral *.trycloudflare.com quick tunnel."""
     if port in (config.MINIAPP_PORT, config.DASH_PORT):
         return (None, f"❌ Refusing to tunnel reserved port {port} "
                       "(Mini App / dashboard must never be public).")
@@ -146,14 +154,20 @@ def start_tunnel(port: int):
         return (None, f"❌ Invalid port {port}.")
     global _tunnel_proc, _tunnel_url, _tunnel_port
     with _tunnel_lock:
-        if not os.path.isfile(config.TUNNEL_CREDENTIALS_FILE):
-            return (None, "❌ Preview tunnel not provisioned — missing credentials "
-                          f"file:\n{config.TUNNEL_CREDENTIALS_FILE}\n"
-                          "Re-run the Cloudflare setup step.")
         if _tunnel_proc and _tunnel_proc.poll() is None and _tunnel_url:
             if _tunnel_port == port:
                 return _tunnel_url, f"🔗 Already live (port {port}):\n{_tunnel_url}"
             _stop_tunnel_locked()
+        if not _named_configured():
+            proc, url = open_quick_tunnel(port)
+            if not proc or not url:
+                if not _which_cloudflared():
+                    return (None, "❌ `cloudflared` not found. Install it first.")
+                return (None, "❌ Couldn't establish a quick tunnel.")
+            _tunnel_proc, _tunnel_url, _tunnel_port = proc, url, port
+            return url, (f"🔗 Preview live (port {port}):\n{url}\n\n"
+                         "⚠️ Public link — anyone with it can reach your server while "
+                         "it's running. /preview stop when done.")
         proc, info = _spawn_named(port)
         if not proc:
             if info == "missing-bin" or not _which_cloudflared():

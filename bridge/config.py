@@ -70,13 +70,11 @@ CLOUDFLARED_BIN = os.environ.get("CLOUDFLARED_BIN", "cloudflared")
 # tunnel + DNS are provisioned once via the Cloudflare API; the credentials file
 # (git-ignored, in $HOME) lets cloudflared run it locally. The Mini App control
 # panel still uses an ephemeral quick tunnel (see tunnel.open_quick_tunnel).
-PREVIEW_HOSTNAME = os.environ.get("PREVIEW_HOSTNAME", "preview.mhzrerfani.dev")
-TUNNEL_NAME = os.environ.get("TUNNEL_NAME", "mystical-preview")
-TUNNEL_ID = os.environ.get("TUNNEL_ID", "612b1ee2-693c-4640-a3ed-133adce0da6b")
-TUNNEL_CREDENTIALS_FILE = os.path.expanduser(os.environ.get(
-    "TUNNEL_CREDENTIALS_FILE", "~/.cloudflared/mystical-preview.json"))
-TUNNEL_CONFIG_FILE = os.path.expanduser(os.environ.get(
-    "TUNNEL_CONFIG_FILE", "~/.cloudflared/mystical-preview-config.yml"))
+PREVIEW_HOSTNAME = os.environ.get("PREVIEW_HOSTNAME", "")
+TUNNEL_NAME = os.environ.get("TUNNEL_NAME", "")
+TUNNEL_ID = os.environ.get("TUNNEL_ID", "")
+TUNNEL_CREDENTIALS_FILE = os.path.expanduser(os.environ.get("TUNNEL_CREDENTIALS_FILE", ""))
+TUNNEL_CONFIG_FILE = os.path.expanduser(os.environ.get("TUNNEL_CONFIG_FILE", ""))
 
 POLL_TIMEOUT = 30
 API = f"https://api.telegram.org/bot{TOKEN}"
