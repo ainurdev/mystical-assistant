@@ -34,7 +34,9 @@
   /* extra named accent fills (single-token; class- and style-safe) */
   --ac-03: rgb(var(--accent-rgb) / 0.03);
   --ac-06: rgb(var(--accent-rgb) / 0.06);
+  --ac-08: rgb(var(--accent-rgb) / 0.08);
   --ac-12: rgb(var(--accent-rgb) / 0.12);
+  --ac-16: rgb(var(--accent-rgb) / 0.16);
   --ac-22: rgb(var(--accent-rgb) / 0.22);
 
   --success: #8fd9a8;
@@ -65,6 +67,10 @@
   --tg-button-text: var(--primary-foreground);
   --tg-link: var(--primary);
   --surface-2: var(--panel);
+
+  /* Preview Console: the UI/label voice + house easing (from the design system). */
+  --font-display: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
+  --ease-hud: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --radius: 0;
 }

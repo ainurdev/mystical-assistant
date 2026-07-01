@@ -666,6 +666,15 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         _cleanup_uploads(job.id)
         if job.store_session_id:
             state.release_run(job.store_session_id)
+            # The session's run slot is now free: let the preview queue mark this
+            # item done/failed and start the next queued prompt. Best-effort.
+            try:
+                from bridge import queue_manager
+                queue_manager.notify_job_done(
+                    job.store_session_id, job.id, job.status,
+                    job.result, job.cost, job.elapsed)
+            except Exception:  # noqa: BLE001 — never let the queue break a run
+                pass
         if not job.interrupted:
             notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
 

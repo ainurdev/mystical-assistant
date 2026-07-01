@@ -565,8 +565,7 @@ export function App() {
                 project={selected?.project ?? activeProject}
                 branch={selected?.branch ?? activeBadge?.branch}
                 cwd={selected?.cwd}
-                busy={!!active}
-                onSubmit={(text, images) => { void send(text, images); }}
+                sessionId={sessionId}
                 onClose={() => setRunnerOpen(false)}
               />
             )}

@@ -28,9 +28,9 @@ from urllib.parse import parse_qs, urlparse
 import re
 
 from bridge import (browser, config, devserver, git, github, native,
-                    preview_detect, project_config, pubsub, runner, screenshot,
-                    shell, state, store, sysinfo, terminals, tunnel, usage,
-                    weather, wsutil)
+                    preview_detect, project_config, pubsub, queue_manager, runner,
+                    screenshot, shell, state, store, sysinfo, terminals, tunnel,
+                    usage, weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -244,6 +244,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"sessions": store.history(chat, include_archived=archived)})
         if path == "/local/running":
             return self._json(runner.running_snapshot(chat))
+        if path == "/local/queue":
+            sid = (qs.get("session", [""])[0] or "").strip()
+            return self._json(queue_manager.snapshot(sid) if sid else
+                              {"session_id": "", "seq": 0, "paused": False, "items": []})
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/sessions":
@@ -380,6 +384,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._respond(path[len("/local/run/"):-len("/respond")], body)
         if path.startswith("/local/run/") and path.endswith("/interrupt"):
             return self._interrupt(path[len("/local/run/"):-len("/interrupt")], body)
+        if path.startswith("/local/queue/"):
+            return self._queue(path[len("/local/queue/"):], chat, body)
         if path == "/local/shell":
             return self._json(shell.run(state.project_dir(chat), body.get("command", "")))
         if path == "/local/shell/kill":
@@ -645,6 +651,69 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not running"}, 409)
         self._json(job.snapshot(_cursor(body)))
 
+    def _queue(self, op, chat, body):
+        """Preview-console prompt queue. Runs are keyed by the store session id —
+        the same key the run slot uses — so queued prompts serialise with normal
+        chat runs in that session and run strictly one at a time."""
+        sid = (body.get("session_id") or "").strip()
+        if op == "enqueue":
+            if not sid:
+                return self._json({"error": "session required"}, 400)
+            text = (body.get("text") or "").strip()
+            prompt = (body.get("prompt") or text).strip()
+            if not prompt:
+                return self._json({"error": "empty prompt"}, 400)
+            images = body.get("images") or []
+            if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
+                return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
+            ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
+            if not ok:
+                return self._json({"error": "invalid model"}, 400)
+            permission_mode = normalize_permission_mode(body.get("permission_mode"))
+            run_job_id = uuid.uuid4().hex
+            try:
+                paths = _save_images(run_job_id, images) if images else []
+            except ValueError as e:
+                runner._cleanup_uploads(run_job_id)
+                return self._json({"error": str(e)}, 413)
+            sel = body.get("sel") if isinstance(body.get("sel"), list) else []
+            try:
+                width = int(body.get("width") or 0)
+            except (ValueError, TypeError):
+                width = 0
+            item_id = queue_manager.enqueue(
+                sid, text=(text or prompt), prompt=prompt, images=paths, model=model,
+                effort=effort, permission_mode=permission_mode, width=width, sel=sel,
+                surface=(body.get("surface") or "dashboard"), chat_id=chat,
+                project=_abs_project(body.get("project")), run_job_id=run_job_id)
+            return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
+        if not sid:
+            return self._json({"error": "session required"}, 400)
+        item_id = (body.get("item_id") or "").strip()
+        if op == "remove":
+            queue_manager.remove(sid, item_id)
+        elif op == "edit":
+            text = (body.get("text") or "").strip()
+            queue_manager.edit(sid, item_id, text, (body.get("prompt") or text).strip())
+        elif op == "reorder":
+            queue_manager.reorder(sid, (body.get("from") or "").strip(),
+                                  (body.get("to") or "").strip())
+        elif op == "bump":
+            queue_manager.bump(sid, item_id)
+        elif op == "pause":
+            queue_manager.pause(sid)
+        elif op == "resume":
+            queue_manager.resume(sid)
+        elif op == "cancel":
+            queue_manager.cancel(sid, item_id)
+        elif op == "retry":
+            queue_manager.retry(sid, item_id)
+        elif op == "clear-done":
+            queue_manager.clear_done(sid)
+        else:
+            return self._json({"error": "unknown queue op"}, 404)
+        return self._json(queue_manager.snapshot(sid))
+
     def _server(self, chat, body):
         # A preview targets one run directory (a project, or a linked worktree
         # with its own branch), so several can run concurrently on their own
@@ -819,6 +888,13 @@ class Handler(BaseHTTPRequestHandler):
             self._sse(f"session:{sid}", lambda c: store.transcript(sid, c)["events"], cursor)
         elif rest == "logs":
             self._sse("logs", lambda c: [{"line": ln} for ln in devserver.log_tail(200)], 0)
+        elif rest.startswith("queue/"):
+            sid = rest[len("queue/"):].split("/")[0]
+            try:
+                cursor = int(qs.get("cursor", ["0"])[0])
+            except ValueError:
+                cursor = 0
+            self._sse(f"queue:{sid}", lambda c: queue_manager.backfill(sid, c), cursor)
         else:
             self._json({"error": "not found"}, 404)
 

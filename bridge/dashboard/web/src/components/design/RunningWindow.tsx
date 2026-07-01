@@ -1,18 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { composePrompt } from "@selector/composePrompt";
-import { api, type DevServerInfo, type PreviewCtx } from "../../api";
-import { PreviewControls } from "./PreviewControls";
+import type { Capture } from "@selector/protocol";
+import { api, logStream, type DevServerInfo, type PreviewCtx } from "../../api";
 import { PreviewFrame } from "./PreviewFrame";
 import { useSelector } from "./useSelector";
+import { usePreviewQueue, useRunProgress } from "./usePreviewQueue";
+import { PreviewConsole } from "./PreviewConsole";
+
+function basename(rel: string | null): string {
+  if (!rel) return "—";
+  const clean = rel.replace(/\/+$/, "");
+  return clean.split("/").pop() || clean || "—";
+}
+
+/** Turn a selector capture into a short {tag,label} anchor for the queue card. */
+function anchorOf(c: Capture): { tag: string; label: string } {
+  if (c.kind === "element") {
+    const label = (c.text || "").trim().slice(0, 40) || c.selector || c.tag;
+    return { tag: c.tag, label };
+  }
+  return { tag: "pin", label: `PIN (${Math.round(c.point.x)},${Math.round(c.point.y)})` };
+}
 
 export function RunningWindow({
-  project, branch, cwd, busy, onSubmit, onClose,
+  project, branch, cwd, sessionId, onClose,
 }: {
   project: string | null;       // canonical project rel
   branch: string | null | undefined;
   cwd?: string | null;          // absolute run dir of the selected session (worktree)
-  busy: boolean;                // a Claude run is active
-  onSubmit: (text: string, images: string[]) => void;
+  sessionId: string | null;     // the dashboard's open session — the queue runs against it
   onClose: () => void;
 }) {
   const [source, setSource] = useState<"localhost" | "deployed">("localhost");
@@ -22,32 +38,28 @@ export function RunningWindow({
   const [width, setWidth] = useState(375);
   const [instruction, setInstruction] = useState("");
   const [busyRun, setBusyRun] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
   const [servers, setServers] = useState<DevServerInfo[]>([]);
   const [learning, setLearning] = useState(false);
-  // A switcher pick overrides the selected-session context until the selection changes.
-  const [override, setOverride] = useState<{ cwdRel: string; project: string | null; branch: string } | null>(null);
+  // run settings for queued prompts (independent of the main chat composer)
+  const [model, setModel] = useState("opus");
+  const [effort, setEffort] = useState("");
+  const [mode, setMode] = useState("acceptEdits");
+  // live dev-server log feed (LOGS tab)
+  const [logs, setLogs] = useState<string[]>([]);
+  const [autoscroll, setAutoscroll] = useState(true);
+  const [logFilter, setLogFilter] = useState("all");
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  // Contexts we've already auto-learned this mount (so we learn+run only once each).
   const learnedRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => { setOverride(null); }, [project, branch, cwd]);
-
-  // The (project, branch) the preview currently targets, and the API context
-  // used to start/stop/save/screenshot it.
-  const ctxProject = override ? override.project : project;
-  const ctxBranch = override ? override.branch : (branch || "");
-  const apiCtx = useMemo<PreviewCtx>(() => override
-    ? { cwd_rel: override.cwdRel, project: override.project, branch: override.branch }
-    : { cwd: cwd ?? undefined, project, branch: branch || undefined },
-    [override, project, branch, cwd]);
+  const ctxProject = project;
+  const ctxBranch = branch || "";
+  const apiCtx = useMemo<PreviewCtx>(
+    () => ({ cwd: cwd ?? undefined, project, branch: branch || undefined }),
+    [project, branch, cwd]);
   const ctxKey = useMemo(() => JSON.stringify(apiCtx), [apiCtx]);
 
-  // This context's running dev server (matched by its rel dir, or by project+branch).
-  const ctxServer = override
-    ? servers.find((s) => s.dir === override.cwdRel)
-    : servers.find((s) => s.project === project && (s.branch || "") === (branch || ""));
+  // This context's running dev server (matched by project + branch).
+  const ctxServer = servers.find((s) => s.project === project && (s.branch || "") === (branch || ""));
   const status = ctxServer?.status ?? "not started";
   const localhostUrl = ctxServer?.url ?? null;
 
@@ -84,6 +96,13 @@ export function RunningWindow({
     return () => { live = false; clearInterval(id); };
   }, []);
 
+  // Live dev-server logs (SSE replays the recent tail, then streams). Shared across
+  // servers; the LOGS tab filters client-side.
+  useEffect(() => {
+    const stop = logStream((line) => setLogs((p) => [...p, line].slice(-400)));
+    return stop;
+  }, []);
+
   const activeUrl = source === "localhost" ? localhostUrl : (prodUrl || null);
   const origin = useMemo(() => {
     try { return activeUrl ? new URL(activeUrl).origin : null; } catch { return null; }
@@ -93,11 +112,15 @@ export function RunningWindow({
   const selectorOrigin = source === "localhost" ? origin : null;
   const sel = useSelector(iframeRef, selectorOrigin);
 
+  // --- the per-session prompt queue + the running prompt's live tool stream ---
+  const q = usePreviewQueue(sessionId);
+  const progress = useRunProgress(sessionId, q.running?.job_id ?? null);
+  const curTool = progress.tools.find((t) => t.state === "running") ?? progress.tools[progress.tools.length - 1];
+  const runningTool = curTool ? `${curTool.name} · ${curTool.summary}` : null;
+
   const save = async () => {
     await api.setProjectSettings(apiCtx, { run_cmd: cmd, prod_url: prodUrl }).catch(() => {});
   };
-  // skipSave: the just-learned command is already persisted server-side, and
-  // `cmd` state may not have flushed yet — so start with it explicitly.
   const start = async (opts?: { cmd?: string; skipSave?: boolean }) => {
     setBusyRun(true);
     try {
@@ -107,7 +130,6 @@ export function RunningWindow({
       setSource("localhost");
     } catch { /* ignore */ } finally { setBusyRun(false); }
   };
-  // Learn the start chain (heuristic, then Claude for tricky repos); optionally run it.
   const learn = async (autorun: boolean) => {
     setLearning(true);
     try {
@@ -124,10 +146,13 @@ export function RunningWindow({
     catch { /* ignore */ } finally { setBusyRun(false); }
   };
 
+  // Compose + enqueue. Picks are optional; a bare instruction is fine.
   const submit = async () => {
-    if (!instruction.trim() || !sel.state.items.length) return;
-    setSending(true);
-    const text = composePrompt({ project: ctxProject, width, items: sel.state.items, instruction });
+    if (!instruction.trim() || !sessionId) return;
+    const items = sel.state.items;
+    const prompt = items.length
+      ? composePrompt({ project: ctxProject, width, items, instruction })
+      : instruction.trim();
     let images: string[] = [];
     try {
       if (activeUrl) {
@@ -135,18 +160,23 @@ export function RunningWindow({
         if (shot.data_url) images = [shot.data_url];
       }
     } catch { /* text-only fallback */ }
-    onSubmit(text, images);
+    q.enqueue({
+      text: instruction.trim(), prompt, images, sel: items.map((it) => anchorOf(it.capture)),
+      width, project: ctxProject ?? undefined,
+      model, effort: effort || undefined, permission_mode: mode || undefined,
+    });
     sel.clear();
     setInstruction("");
-    setSending(false);
-  };
-
-  const onSwitch = (s: DevServerInfo) => {
-    setOverride({ cwdRel: s.dir ?? "", project: s.project, branch: s.branch });
-    setSource("localhost");
   };
 
   const canSelect = source === "localhost" && !!localhostUrl;
+  const queuedCount = q.queued.length;
+  const sendLabel = (q.running || queuedCount) ? "ADD ▸" : "SEND ▸";
+  const sendHint = !instruction.trim()
+    ? "⌘↵ to send · joins the queue"
+    : q.running ? "runs after the current task — auto-advances"
+      : queuedCount ? `queues behind ${queuedCount} waiting`
+        : "starts on the running server";
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "#05080a" }}>
@@ -167,31 +197,48 @@ export function RunningWindow({
           )}
         </div>
       ) : (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#9fc7c0", fontSize: 13, textAlign: "center", padding: 24 }}>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#9fc7c0", fontSize: 13, fontStyle: "italic", textAlign: "center", padding: 24 }}>
           {source === "deployed"
-            ? "No production URL set — add one in the controls."
+            ? "no production URL set — add one in the controls."
             : status === "running"
-              ? "Dev server running — waiting for it to report its localhost URL…"
-              : "Start the dev server to preview localhost."}
+              ? "dev server running — waiting for it to report its localhost URL…"
+              : "the server sleeps — press RUN to wake the preview."}
         </div>
       )}
 
-      <PreviewControls
-        project={ctxProject} branch={ctxBranch}
-        source={source} onSource={setSource} hasProd={!!prodUrl}
-        collapsed={collapsed} onCollapsed={setCollapsed} onClose={onClose}
-        cmd={cmd} onCmd={setCmd} placeholder={placeholder}
-        prodUrl={prodUrl} onProdUrl={setProdUrl} status={status} port={ctxServer?.port ?? null}
-        onStart={() => void start()} onStop={() => void stop()} onSave={() => void save()}
-        onLearn={() => void learn(true)} learning={learning} busyRun={busyRun || learning}
-        width={width} onWidth={setWidth}
-        selecting={sel.state.mode === "select"}
-        onToggleSelect={() => sel.setMode(sel.state.mode === "select" ? "idle" : "select")}
-        canSelect={canSelect} hoverLabel={sel.state.hoverLabel}
-        items={sel.state.items} onNote={sel.setNote} onRemove={sel.remove}
-        instruction={instruction} onInstruction={setInstruction}
-        onSubmit={() => void submit()} sending={busy || sending}
-        servers={servers} activeDir={ctxServer?.dir ?? null} onSwitch={onSwitch}
+      <PreviewConsole
+        project={basename(ctxProject)} branch={ctxBranch || null}
+        serverStatus={status} port={ctxServer?.port ?? null}
+        onClose={onClose}
+        previewProps={{
+          source, onSource: setSource, hasProd: !!prodUrl,
+          project: ctxProject, cmd, onCmd: setCmd, placeholder,
+          prodUrl, onProdUrl: setProdUrl, serverStatus: status, port: ctxServer?.port ?? null,
+          onStart: () => void start(), onStop: () => void stop(), onSave: () => void save(),
+          onLearn: () => void learn(true), learning, busyRun: busyRun || learning,
+          width, onWidth: setWidth,
+          selecting: sel.state.mode === "select",
+          onToggleSelect: () => sel.setMode(sel.state.mode === "select" ? "idle" : "select"),
+          canSelect, hoverLabel: sel.state.hoverLabel,
+          items: sel.state.items, onNote: sel.setNote, onRemove: sel.remove,
+          instruction, onInstruction: setInstruction, onSend: () => void submit(), sendLabel, sendHint,
+          model, onModel: setModel, effort, onEffort: setEffort, mode, onMode: setMode,
+        }}
+        logsProps={{
+          lines: logs, running: status === "running", port: ctxServer?.port ?? null,
+          autoscroll, onAutoscroll: setAutoscroll, onClear: () => setLogs([]),
+          filter: logFilter, onFilter: setLogFilter,
+        }}
+        queueProps={{
+          items: q.items, paused: q.paused, running: q.running, runningTool,
+          onTogglePause: q.togglePause, onClearDone: q.clearDone,
+          onRemove: q.remove, onEdit: q.edit, onCancel: q.cancel, onRetry: q.retry,
+          onBump: q.bump, onReorder: q.reorder, onShowProgress: () => {},
+        }}
+        sidebar={{
+          running: q.running, progress, queued: q.queued, paused: q.paused,
+          onBump: q.bump, onTogglePause: q.togglePause,
+        }}
       />
     </div>
   );

@@ -161,6 +161,8 @@ export function Terminal({
   const tint = projectTint(sessionProject);
   const projectLabel = basename(sessionProject);
   const empty = view === "chat" && turns.length === 0;
+  // The most recent prompt, shown beneath the title in the header (clamped to 2 lines).
+  const lastPrompt = turns.length ? (turns[turns.length - 1].prompt || "").trim() : "";
 
   // CRT channel-change: when a switched-to session's content lands, "retune" the
   // viewport — collapse to a bright scanline, then bloom open with a glitch. Driven
@@ -196,20 +198,27 @@ export function Terminal({
       data-ctx-type="terminal"
       style={{ border: "1px solid rgba(127,233,216,.2)", background: "rgba(7,13,13,.6)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, overflow: "hidden" }}>
-          <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: 9, letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
-            {projectLabel || "—"}
-          </span>
-          {branch && (
-            <span title="session branch" style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, letterSpacing: ".5px", color: "#a78bf0", border: "1px solid rgba(185,166,255,.28)", padding: "2px 7px" }}>
-              <span style={{ color: "#b9a6ff" }}>⎇</span>{branch}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, overflow: "hidden" }}>
+            <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: 9, letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
+              {projectLabel || "—"}
+            </span>
+            {branch && (
+              <span title="session branch" style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, letterSpacing: ".5px", color: "#a78bf0", border: "1px solid rgba(185,166,255,.28)", padding: "2px 7px" }}>
+                <span style={{ color: "#b9a6ff" }}>⎇</span>{branch}
+              </span>
+            )}
+            <span style={{ fontSize: 11, letterSpacing: ".5px", color: "#9fc7c0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {selected?.title || "new session"}
+            </span>
+          </div>
+          {lastPrompt && (
+            <span title={lastPrompt} style={{ fontSize: 10.5, lineHeight: 1.35, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>
+              {lastPrompt}
             </span>
           )}
-          <span style={{ fontSize: 11, letterSpacing: ".5px", color: "#9fc7c0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {selected?.title || "new session"}
-          </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
           <span style={{ fontSize: 9, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>

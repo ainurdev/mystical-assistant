@@ -170,6 +170,38 @@ export interface ProjectSettings {
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
+// One prompt in the preview console's per-session queue. `text` is the human
+// instruction shown in the UI; the full composed prompt that runs stays server-side.
+export interface QueueItem {
+  id: string;
+  status: "queued" | "running" | "done" | "failed";
+  text: string;
+  sel: { tag: string; label: string }[];
+  width: number;
+  surface: string;
+  model: string | null;
+  effort: string | null;
+  permission_mode: string | null;
+  job_id: string | null;
+  result: string | null;
+  error: string | null;
+  cost: number | null;
+  elapsed: number | null;
+  created: number;
+  started: number | null;
+}
+// The whole per-session queue. `seq` is a revision counter (SSE dedup); the
+// server publishes a fresh snapshot on every change.
+export interface QueueSnapshot {
+  session_id: string;
+  seq: number;
+  paused: boolean;
+  items: QueueItem[];
+}
+export type QueueOp =
+  | "remove" | "edit" | "reorder" | "bump"
+  | "pause" | "resume" | "cancel" | "retry" | "clear-done";
+
 // Host vitals (psutil) for the WORKSPACE panel.
 export interface HostStats {
   available: boolean;
@@ -531,6 +563,17 @@ export const api = {
     ),
   screenshot: (width: number, url?: string, ctx: PreviewCtx = {}) =>
     req<{ data_url: string }>("/local/preview/screenshot", { method: "POST", body: { width, url, ...ctx } }),
+  // --- preview console prompt queue (per session) ---
+  queue: (sessionId: string) =>
+    req<QueueSnapshot>(`/local/queue?session=${encodeURIComponent(sessionId)}`),
+  queueEnqueue: (body: {
+    session_id: string; text: string; prompt: string; images?: string[];
+    sel?: { tag: string; label: string }[]; width?: number; project?: string;
+    model?: string; effort?: string; permission_mode?: string; surface?: string;
+  }) => req<QueueSnapshot & { item_id: string }>(
+    "/local/queue/enqueue", { method: "POST", body }),
+  queueOp: (op: QueueOp, body: Record<string, unknown>) =>
+    req<QueueSnapshot>(`/local/queue/${op}`, { method: "POST", body }),
 };
 
 /** Query string for a preview context (cwd/project/branch), omitting blanks. */
@@ -553,6 +596,31 @@ export function logStream(onLine: (line: string) => void): () => void {
     } catch {
       /* ignore */
     }
+  };
+  return () => es.close();
+}
+
+/** Subscribe to a session's preview queue (SSE). Each message is a full snapshot
+ * (the server publishes one on every change). Returns an unsubscribe fn. */
+export function queueStream(sessionId: string, onSnap: (snap: QueueSnapshot) => void): () => void {
+  const es = new EventSource(
+    `/local/stream/queue/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(TOKEN)}`);
+  es.onmessage = (e) => {
+    try { onSnap(JSON.parse(e.data) as QueueSnapshot); } catch { /* ignore */ }
+  };
+  return () => es.close();
+}
+
+/** Subscribe to a session's run events (SSE), from `cursor`. Used by the progress
+ * sidebar to render the running prompt's live tool-call stream (a turn's events
+ * carry turn_id === its job_id). Returns an unsubscribe fn. */
+export function sessionStream(
+  sessionId: string, cursor: number, onEvent: (ev: StoreEvent) => void,
+): () => void {
+  const es = new EventSource(
+    `/local/stream/session/${encodeURIComponent(sessionId)}?cursor=${cursor}&token=${encodeURIComponent(TOKEN)}`);
+  es.onmessage = (e) => {
+    try { onEvent(JSON.parse(e.data) as StoreEvent); } catch { /* ignore */ }
   };
   return () => es.close();
 }
