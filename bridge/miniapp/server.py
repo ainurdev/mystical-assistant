@@ -18,7 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (browser, config, devserver, git, github, native,
+from bridge import (agents, browser, config, devserver, git, github, native,
                     project_config, runner, screenshot, shell, state, store,
                     transcript_jsonl, tunnel, usage)
 
@@ -187,6 +187,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_history(chat_id, qs)
                 if path == "/api/running":
                     return self._api_running(chat_id)
+                if path == "/api/agents":
+                    return self._api_agents(chat_id, qs)
+                if path == "/api/agents/activity":
+                    return self._api_agent_activity(chat_id, qs)
                 if path == "/api/usage":
                     return self._json(usage.get_usage())
                 if path == "/api/github/issues":
@@ -344,6 +348,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_running(self, chat_id: int):
         self._json(runner.running_snapshot(chat_id))
+
+    def _agents_session(self, chat_id: int, qs):
+        sid = qs.get("session", [""])[0]
+        s = store.get_session(sid) if sid else None
+        if not s or s["chat_id"] != chat_id:
+            return None
+        return s
+
+    def _api_agents(self, chat_id: int, qs):
+        s = self._agents_session(chat_id, qs)
+        if not s:
+            return self._json({"error": "not found"}, 404)
+        self._json(agents.session_agents(s))
+
+    def _api_agent_activity(self, chat_id: int, qs):
+        s = self._agents_session(chat_id, qs)
+        if not s:
+            return self._json({"error": "not found"}, 404)
+        try:
+            cursor = int(qs.get("cursor", ["0"])[0])
+        except ValueError:
+            cursor = 0
+        self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor))
 
     def _api_sessions_list(self, chat_id: int, qs):
         native.refresh(chat_id)            # surface VSCode sessions started since last poll
