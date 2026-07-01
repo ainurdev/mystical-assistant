@@ -19,8 +19,8 @@ import threading
 import time
 import uuid
 
-from bridge import (config, devserver, machine, native_activity, pubsub, state,
-                    store, transcript_jsonl)
+from bridge import (config, devserver, git, machine, memory, native_activity,
+                    pubsub, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -66,10 +66,60 @@ def _drain_journal() -> None:
         _journal_one(item)
 
 
+_LOG_NOTE = (
+    "If a dev server was started for this project from the bridge, its output "
+    f"is logged to {devserver.DEV_LOG_REL} in the project root — read that file "
+    "(e.g. tail it) to inspect dev-server logs.")
+_EDIT_TOOLS = {"Edit", "Write", "MultiEdit"}
+
+
+def _project_key(chat_id: int, cwd: "str | None") -> str:
+    return rel(cwd or state.project_dir(chat_id))
+
+
+def _branch_for(chat_id: int, cwd: "str | None") -> "str | None":
+    return git.current_branch_cached(cwd or state.project_dir(chat_id)) or None
+
+
+def _memory_pack_for(chat_id: int, cwd: "str | None") -> str:
+    """Project+branch memory Context Pack for injection. Best-effort: disabled or
+    any failure yields an empty pack (never blocks a turn)."""
+    if not config.MEMORY_ENABLE:
+        return ""
+    try:
+        return memory.render_pack(chat_id, _project_key(chat_id, cwd),
+                                  _branch_for(chat_id, cwd))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _compose_system_prompt(pack: str = "") -> str:
+    """Stable content first (ASK prompt + dev-log note), then the memory pack —
+    which is byte-stable within a session, so the prefix stays cache-eligible."""
+    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, pack.strip()) if p]
+    return "\n\n".join(parts)
+
+
+def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
+                   cwd: "str | None", assistant_text: str, edited_files: list) -> None:
+    """Run the post-turn memory extractor off the hot path (fire-and-forget)."""
+    if not config.MEMORY_ENABLE or not session_id or not (assistant_text or "").strip():
+        return
+
+    def work():
+        try:
+            memory.propose(chat_id, session_id, turn_id, _project_key(chat_id, cwd),
+                           _branch_for(chat_id, cwd), assistant_text, edited_files)
+        except Exception:  # noqa: BLE001
+            pass
+    threading.Thread(target=work, daemon=True).start()
+
+
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
-              claude_session_id: str | None = None) -> list[str]:
+              claude_session_id: str | None = None, cwd: str | None = None,
+              skip_pack: bool = False) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -98,12 +148,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--effort", effort]
     if claude_session_id:
         cmd += ["--resume", claude_session_id]
-    log_note = (
-        "If a dev server was started for this project from the bridge, its output "
-        f"is logged to {devserver.DEV_LOG_REL} in the project root — read that file "
-        "(e.g. tail it) to inspect dev-server logs.")
-    extra = config.ASK_SYSTEM_PROMPT.strip()
-    cmd += ["--append-system-prompt", f"{extra}\n\n{log_note}" if extra else log_note]
+    pack = "" if skip_pack else _memory_pack_for(chat_id, cwd)
+    cmd += ["--append-system-prompt", _compose_system_prompt(pack)]
     if not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd
@@ -114,8 +160,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 # ---------------------------------------------------------------------------
 
 def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
-                 cwd: str | None = None, timeout: int | None = None):
-    cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id)
+                 cwd: str | None = None, timeout: int | None = None, *,
+                 model: str | None = None, skip_pack: bool = False):
+    cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
+                    cwd=cwd, model=model, skip_pack=skip_pack)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
@@ -155,6 +203,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
             store.set_claude_session_id(session["id"], sid)
         store.finish_turn(job_id, "error" if is_error else "done", cost,
                           int(time.time() - started))
+        if not is_error:
+            _capture_async(chat_id, session["id"], job_id, None, result, [])
         footer = f"\n\n— {int(time.time() - started)}s"
         if cost is not None:
             footer += f" · ${cost:.4f}"
@@ -187,6 +237,8 @@ class Job:
         self.proc = None                 # subprocess.Popen, for control responses
         self.pending: list[dict] = []    # unresolved can_use_tool requests
         self.interrupted = False         # user pressed Stop
+        self.texts: list[str] = []       # assistant text this turn (memory capture)
+        self.edited: list[str] = []      # files edited this turn (Edit/Write/MultiEdit)
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -548,11 +600,15 @@ def _handle_event(job: Job, d: dict):
             if b.get("type") == "text":
                 txt = (b.get("text") or "").strip()
                 if txt:
+                    job.texts.append(txt)
                     job.add({"type": "text", "text": txt})
             elif b.get("type") == "tool_use":
                 name = b.get("name", "tool")
+                inp = b.get("input", {})
+                if name in _EDIT_TOOLS and isinstance(inp, dict) and inp.get("file_path"):
+                    job.edited.append(str(inp["file_path"]))
                 job.add({"type": "tool", "name": name,
-                         "summary": _summarize_tool(name, b.get("input", {}))})
+                         "summary": _summarize_tool(name, inp)})
     elif t == "user":
         for b in d.get("message", {}).get("content", []):
             if isinstance(b, dict) and b.get("type") == "tool_result":
@@ -598,7 +654,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                            "responding: " + ", ".join(image_paths) + "\n\n" + prompt)
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
-                        claude_session_id=job.resume_id)
+                        claude_session_id=job.resume_id, cwd=cwd)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -675,6 +731,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                     job.result, job.cost, job.elapsed)
             except Exception:  # noqa: BLE001 — never let the queue break a run
                 pass
+        if not job.interrupted and job.status == "done" and job.store_session_id:
+            _capture_async(job.chat_id, job.store_session_id, job.id, cwd,
+                           "\n\n".join(job.texts), list(job.edited))
         if not job.interrupted:
             notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
 
