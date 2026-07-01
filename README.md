@@ -35,6 +35,11 @@ browser is just a remote control; the work happens on your machine, in your repo
   shows up live on another.
 - **Interactive cards.** Permission prompts (Allow/Deny) and `AskUserQuestion`
   prepared answers render as cards you can act on from phone or desktop.
+- **Live agent activity.** When a run spawns subagents (the `Task` tool), a pill
+  at the end of the chat shows "⚡ N agents working"; open it for a modal listing
+  each subagent (what it's doing, its type, running/done) with a live per-agent
+  activity feed. Read-only, derived from Claude Code's on-disk subagent
+  transcripts — on both the Mini App and dashboard.
 - **Per-project sessions & history.** Sessions are keyed by repo; a per-repo
   history view rolls up turn counts, cost, models, and last activity, with
   running / "awaiting your answer" indicators.
