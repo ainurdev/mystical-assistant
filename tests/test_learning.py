@@ -58,7 +58,7 @@ def test_propose_gated_off_by_flag():
             delattr(config, "LEARNING_ENABLE")
 
 
-def test_propose_returns_parsed(monkeypatch=None):
+def test_propose_returns_parsed():
     orig = runner.run_blocking
     runner.run_blocking = _fake_run('[{"title":"T","snippet":"s","why_it_matters":"w"}]')
     try:

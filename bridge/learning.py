@@ -23,10 +23,12 @@ _EXTRACT_SYS = (
 def _parse_candidates(raw: str) -> list[dict]:
     s = (raw or "").strip()
     if s.startswith("```"):
-        s = s.strip("`")
+        s = s[3:]                        # drop the opening fence only
         nl = s.find("\n")
         if nl != -1:
-            s = s[nl + 1:]
+            s = s[nl + 1:]               # drop the ```lang tag line
+        if s.rstrip().endswith("```"):
+            s = s.rstrip()[:-3]          # drop the closing fence only
         s = s.strip()
     try:
         data = json.loads(s)
@@ -51,8 +53,8 @@ def propose_review_items(owner_id: int, project_path: str, assistant_text: str,
         return []
     if not (assistant_text or edits_summary):
         return []
-    gate = "" if edited else ("\nNOTE: it is UNKNOWN whether code changed; return "
-                              "[] unless code was clearly written or edited.")
+    gate = ("\nNOTE: it is UNKNOWN whether code changed; return [] unless code "
+            "was clearly written or edited.") if edited is None else ""
     prompt = (f"{_EXTRACT_SYS}{gate}\n\n=== ASSISTANT OUTPUT ===\n{assistant_text}\n\n"
               f"=== EDITS ===\n{edits_summary}")
     try:
