@@ -49,6 +49,11 @@ browser is just a remote control; the work happens on your machine, in your repo
 - **Dev server + preview.** Start/stop the project's dev server and watch its logs;
   expose it on a stable public URL via a named Cloudflare Tunnel.
 - **Claude usage.** Live 5-hour / 7-day utilization shown in both clients.
+- **Project memory.** After a turn, a cheap Haiku pass proposes durable facts —
+  conventions, decisions, your preferences, the active goal — as **Keep/Skip** cards.
+  Kept facts are injected (project- and branch-scoped) into every future turn's system
+  prompt, so a session knows its repo without re-deriving it. Curate them in the Memory
+  view; set `MEMORY_ENABLE=0` to disable.
 - **One shared design system.** The dashboard and Mini App share the "Mystic"
   violet theme, tokens, and components.
 
