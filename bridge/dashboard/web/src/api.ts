@@ -60,7 +60,15 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  | {
+      type: "memory_candidate";
+      item_id: string;
+      mem_type: string;
+      scope: string;
+      title: string;
+      body: string;
+    };
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };
 
@@ -411,6 +419,22 @@ export interface TermInfo {
   alive: boolean;
 }
 
+// Project memory: a curated fact injected into turns for its project/branch.
+export interface Memory {
+  id: string;
+  owner_id: number;
+  scope: "user" | "project";
+  project_path: string | null;
+  branch: string | null;
+  type: string;
+  title: string;
+  body: string;
+  status: string;
+  pinned: number;
+  created_at: number;
+  updated_at: number;
+}
+
 export const api = {
   state: () => req<DashState>("/local/state"),
   projects: (dir?: string) =>
@@ -472,6 +496,31 @@ export const api = {
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
   running: () => req<RunningInfo>("/local/running"),
   usage: () => req<UsageInfo>("/local/usage"),
+  memoryItems: (project?: string, status = "active") =>
+    req<{ items: Memory[] }>(
+      `/local/memory/items?status=${encodeURIComponent(status)}` +
+        (project ? `&project=${encodeURIComponent(project)}` : ""),
+    ),
+  memoryCandidate: (itemId: string, action: "keep" | "skip") =>
+    req<{ item: Memory | null }>("/local/memory/candidate", {
+      method: "POST",
+      body: { item_id: itemId, action },
+    }),
+  memoryUpdate: (itemId: string, title?: string, body?: string) =>
+    req<{ item: Memory }>("/local/memory/update", {
+      method: "POST",
+      body: { item_id: itemId, title, body },
+    }),
+  memoryStatus: (itemId: string, status: "active" | "archived") =>
+    req<{ item: Memory }>("/local/memory/status", {
+      method: "POST",
+      body: { item_id: itemId, status },
+    }),
+  memoryPin: (itemId: string, pinned: boolean) =>
+    req<{ item: Memory }>("/local/memory/pin", {
+      method: "POST",
+      body: { item_id: itemId, pinned },
+    }),
   history: (archived = false) =>
     req<{ sessions: EnrichedSession[] }>(
       `/local/history${archived ? "?archived=1" : ""}`,

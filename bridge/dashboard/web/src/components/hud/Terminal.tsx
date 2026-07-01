@@ -4,6 +4,7 @@ import type { Turn } from "../../chat";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
+import { MemoryView } from "../MemoryView";
 import { ViewTabs, type View } from "./ViewTabs";
 
 const FRESH_QUOTES = [
@@ -238,6 +239,10 @@ export function Terminal({
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
           <HistoryView onOpen={onOpenFromHistory} />
+        </div>
+      ) : view === "memory" ? (
+        <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
+          <MemoryView />
         </div>
       ) : (
         <>

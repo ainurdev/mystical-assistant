@@ -67,7 +67,7 @@ export function App() {
   const [effort, setEffort] = useState<EffortLevel | "">("");
   const [permMode, setPermMode] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"chat" | "history">("chat");
+  const [view, setView] = useState<"chat" | "history" | "memory">("chat");
   const [external, setExternal] = useState<RunningSession[]>([]);
   const [jobs, setJobs] = useState<RunningJob[]>([]);
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
@@ -408,6 +408,7 @@ export function App() {
     { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) },
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
+    { id: "view-memory", label: "Go to Memory", group: "View", icon: "◆", run: () => setView("memory") },
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && setAnalyzeProject(activeProject) },
     { id: "theme", label: "Theme & CRT…", group: "Display", icon: "◐", run: () => setThemeOpen(true) },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
