@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 import re
 
-from bridge import (browser, config, devserver, git, github, native,
+from bridge import (agents, browser, config, devserver, git, github, native,
                     preview_detect, project_config, pubsub, queue_manager, runner,
                     screenshot, shell, state, store, sysinfo, terminals, tunnel,
                     usage, weather, wsutil)
@@ -373,6 +373,22 @@ class Handler(BaseHTTPRequestHandler):
             head = (qs.get("head", [""])[0] or git.current_branch(abs_p)).strip()
             three_dot = (qs.get("dots", ["3"])[0] or "3").strip() != "2"
             return self._json(git.compare(abs_p, base, head, three_dot))
+        if path == "/local/agents":
+            sid = qs.get("session", [""])[0]
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json(agents.session_agents(s))
+        if path == "/local/agents/activity":
+            sid = qs.get("session", [""])[0]
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            try:
+                cursor = int(qs.get("cursor", ["0"])[0])
+            except ValueError:
+                cursor = 0
+            return self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor))
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
