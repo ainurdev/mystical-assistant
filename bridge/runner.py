@@ -114,8 +114,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 # ---------------------------------------------------------------------------
 
 def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
-                 cwd: str | None = None, timeout: int | None = None):
-    cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id)
+                 cwd: str | None = None, timeout: int | None = None,
+                 model: str | None = None):
+    cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
+                    model=model)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
