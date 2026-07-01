@@ -43,6 +43,7 @@ import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal } from "./components/hud/AnalyzeModal";
 import { RunningWindow } from "./components/design/RunningWindow";
+import { AgentsPill } from "./components/AgentsPill";
 
 type PermDefault = "plan" | "acceptEdits" | "auto";
 
@@ -519,13 +520,16 @@ export function App() {
                 trailingWorking={openWorking && !running} loading={loadingSession}
                 onOpenRunner={() => setRunnerOpen(true)}
                 composer={
-                  <Composer
-                    disabled={running || pendingCount > 0} running={running} model={model} effort={effort}
-                    permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce}
-                    contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
-                    perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
-                    onCompact={() => void send("/compact", [])}
-                  />
+                  <>
+                    <AgentsPill sessionId={sessionId} running={running} />
+                    <Composer
+                      disabled={running || pendingCount > 0} running={running} model={model} effort={effort}
+                      permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce}
+                      contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
+                      perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
+                      onCompact={() => void send("/compact", [])}
+                    />
+                  </>
                 }
               />
 

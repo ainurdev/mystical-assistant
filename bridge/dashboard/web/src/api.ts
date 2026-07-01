@@ -251,6 +251,28 @@ export interface CompareInfo {
   del: number;
 }
 
+export type AgentInfo = {
+  agent_id: string;
+  agent_type: string;
+  description: string;
+  tool_use_id: string;
+  spawn_depth: number;
+  status: "running" | "done";
+  started_at: number;
+  updated_at: number;
+};
+export type AgentsInfo = { running: number; total: number; agents: AgentInfo[] };
+export type AgentActivityEvent =
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string; summary: string };
+export type AgentActivity = {
+  events: AgentActivityEvent[];
+  next_cursor: number;
+  status: "running" | "done";
+  description: string;
+  agent_type: string;
+};
+
 export type RunningSource = "bridge" | "vscode" | "cli" | "sdk" | string;
 export interface RunningSession {
   session_id: string;
@@ -574,6 +596,13 @@ export const api = {
     "/local/queue/enqueue", { method: "POST", body }),
   queueOp: (op: QueueOp, body: Record<string, unknown>) =>
     req<QueueSnapshot>(`/local/queue/${op}`, { method: "POST", body }),
+  agents: (sessionId: string) =>
+    req<AgentsInfo>(`/local/agents?session=${encodeURIComponent(sessionId)}`),
+  agentActivity: (sessionId: string, agentId: string, cursor: number) =>
+    req<AgentActivity>(
+      `/local/agents/activity?session=${encodeURIComponent(sessionId)}` +
+        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
+    ),
 };
 
 /** Query string for a preview context (cwd/project/branch), omitting blanks. */
