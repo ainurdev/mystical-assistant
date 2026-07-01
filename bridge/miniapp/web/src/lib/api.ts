@@ -101,7 +101,15 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  | {
+      type: "memory_candidate";
+      item_id: string;
+      mem_type: string;
+      scope: string;
+      title: string;
+      body: string;
+    };
 
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -294,6 +302,22 @@ export interface UsageInfo {
 // Error type so the UI can distinguish auth / busy / generic failures.
 // ---------------------------------------------------------------------------
 
+// Project memory: a curated fact injected into turns for its project/branch.
+export interface Memory {
+  id: string;
+  owner_id: number;
+  scope: "user" | "project";
+  project_path: string | null;
+  branch: string | null;
+  type: string;
+  title: string;
+  body: string;
+  status: string;
+  pinned: number;
+  created_at: number;
+  updated_at: number;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -474,6 +498,32 @@ export const api = {
       `/api/agents/activity?session=${encodeURIComponent(sessionId)}` +
         `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
     ),
+
+  memoryItems: (project?: string, status = "active") =>
+    request<{ items: Memory[] }>(
+      `/api/memory/items?status=${encodeURIComponent(status)}` +
+        (project ? `&project=${encodeURIComponent(project)}` : ""),
+    ),
+  memoryCandidate: (itemId: string, action: "keep" | "skip") =>
+    request<{ item: Memory | null }>("/api/memory/candidate", {
+      method: "POST",
+      body: { item_id: itemId, action },
+    }),
+  memoryUpdate: (itemId: string, title?: string, body?: string) =>
+    request<{ item: Memory }>("/api/memory/update", {
+      method: "POST",
+      body: { item_id: itemId, title, body },
+    }),
+  memoryStatus: (itemId: string, status: "active" | "archived") =>
+    request<{ item: Memory }>("/api/memory/status", {
+      method: "POST",
+      body: { item_id: itemId, status },
+    }),
+  memoryPin: (itemId: string, pinned: boolean) =>
+    request<{ item: Memory }>("/api/memory/pin", {
+      method: "POST",
+      body: { item_id: itemId, pinned },
+    }),
 };
 
 export interface ShellSnapshot {

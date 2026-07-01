@@ -12,6 +12,7 @@ import { Card } from "./ui";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+import { MemoryCandidateCard } from "./MemoryCandidateCard";
 
 // Map a few common tool names to icons; default to a wrench.
 function ToolIcon({ name }: { name: string }) {
@@ -161,6 +162,17 @@ export function RunStream({
                 />
                 <span>Stopped — send a message to continue.</span>
               </div>
+            );
+          case "memory_candidate":
+            return (
+              <MemoryCandidateCard
+                key={i}
+                itemId={event.item_id}
+                memType={event.mem_type}
+                scope={event.scope}
+                title={event.title}
+                body={event.body}
+              />
             );
           case "permission_resolved":
           case "question_answered":

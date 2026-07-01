@@ -18,6 +18,7 @@ import {
   MousePointerClick,
   History,
   CircleDot,
+  Brain,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
@@ -27,6 +28,7 @@ const tabs = [
   { to: "/", label: "Run", icon: MessagesSquare },
   { to: "/issues", label: "Issues", icon: CircleDot },
   { to: "/history", label: "History", icon: History },
+  { to: "/memory", label: "Memory", icon: Brain },
   { to: "/server", label: "Server", icon: TerminalSquare },
   { to: "/shell", label: "Shell", icon: SquareChevronRight },
   { to: "/preview", label: "Preview", icon: MonitorPlay },
