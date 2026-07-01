@@ -37,6 +37,8 @@ export function TeacherTab({ project }: { project: string }) {
     try {
       const r = await api.learningTeach({ item_id: sel.id, mode, user_answer });
       setOutput(r.text);
+    } catch {
+      setOutput("Something went wrong — try again.");
     } finally {
       setBusy(false);
     }
@@ -102,7 +104,10 @@ export function TeacherTab({ project }: { project: string }) {
               </div>
             )}
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => api.learningItem(sel.id, "reviewed")}
+              <button onClick={() => {
+                void api.learningItem(sel.id, "reviewed");
+                setItems((prev) => prev.map((it) => it.id === sel.id ? { ...it, mastery: it.mastery + 1 } : it));
+              }}
                 style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "7px 12px" }}>
                 MARK REVIEWED
               </button>
