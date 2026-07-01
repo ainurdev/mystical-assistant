@@ -124,6 +124,30 @@ def test_capture_streaming_skips_when_no_edit_tool():
         learning.propose_review_items = orig
 
 
+def test_capture_bot_path_sends_card_not_event():
+    orig_propose = learning.propose_review_items
+    orig_send = learning._send_bot_candidate_card
+    sent = []
+    learning.propose_review_items = lambda *a, **k: [
+        {"title": "generics", "snippet": "T", "why_it_matters": "y"}]
+    learning._send_bot_candidate_card = lambda chat_id, item: sent.append(item)
+    try:
+        sess = store.create_session(4244, "/botproj")
+        store.start_turn(sess["id"], "botturn", "make a change", [])
+        store.append_event(sess["id"], "botturn", {"type": "result", "result": "done"})
+        learning.capture_after_turn(4244, sess, "botturn", tool_visibility=False)
+        # bot path: card sender invoked + item stored as candidate...
+        assert len(sent) == 1 and sent[0]["title"] == "generics"
+        assert len(store.list_learning_items(4244, "/botproj", status="candidate")) == 1
+        # ...and NO review_candidate transcript event (that's streaming-only)
+        evs = [e for e in store.transcript(sess["id"])["events"]
+               if e.get("type") == "review_candidate"]
+        assert evs == []
+    finally:
+        learning.propose_review_items = orig_propose
+        learning._send_bot_candidate_card = orig_send
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
