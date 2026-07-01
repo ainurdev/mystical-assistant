@@ -5,6 +5,7 @@ import type { PendingRequest } from "../chat";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+import { ReviewCandidateCard } from "./ReviewCandidateCard";
 
 // Result blocks already "printed" this session — guards against re-typing when a
 // session is reopened or the transcript re-renders.
@@ -109,12 +110,14 @@ export function RunStream({
   events,
   pending = [],
   onRespond,
+  onReviewResolve,
   animate = false,
   turnId = "",
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
+  onReviewResolve?: (itemId: string, action: "keep" | "skip") => void;
   animate?: boolean;
   turnId?: string;
 }) {
@@ -124,6 +127,10 @@ export function RunStream({
   for (const e of events) {
     if (e.type === "permission_resolved") permResolved.set(e.request_id, e.behavior);
     if (e.type === "question_answered") qAnswered.set(e.request_id, e.answers);
+  }
+  const reviewResolved = new Map<string, "kept" | "skipped">();
+  for (const e of events) {
+    if (e.type === "review_resolved") reviewResolved.set(e.item_id, e.action);
   }
 
   return (
@@ -192,6 +199,21 @@ export function RunStream({
                 onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
               />
             );
+          case "review_candidate":
+            return (
+              <ReviewCandidateCard
+                key={i}
+                title={event.title}
+                whyItMatters={event.why_it_matters}
+                snippet={event.snippet}
+                active={!!onReviewResolve && !reviewResolved.has(event.item_id)}
+                resolved={reviewResolved.get(event.item_id)}
+                onKeep={() => onReviewResolve?.(event.item_id, "keep")}
+                onSkip={() => onReviewResolve?.(event.item_id, "skip")}
+              />
+            );
+          case "review_resolved":
+            return null;
           case "question":
             return (
               <QuestionCard

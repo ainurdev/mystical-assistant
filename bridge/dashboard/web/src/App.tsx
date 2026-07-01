@@ -310,6 +310,12 @@ export function App() {
     try { await api.interrupt(active.id); } catch { /* poll reconciles */ }
   }
 
+  // The continuous poll picks up the resulting `review_resolved` event on its own,
+  // so no manual state update / invalidation is needed here.
+  const onReviewResolve = (itemId: string, action: "keep" | "skip") => {
+    void api.learningItem(itemId, action);
+  };
+
   function feed(texts: string[]) {
     const text = texts.join("\n");
     setInject((p) => ({ text, nonce: p.nonce + 1 }));
@@ -513,7 +519,7 @@ export function App() {
               <Terminal
                 view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
-                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} error={error}
+                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} onReviewResolve={onReviewResolve} error={error}
                 scrollRef={scrollRef} contentRef={contentRef}
                 onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession}

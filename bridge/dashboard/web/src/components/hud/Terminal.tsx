@@ -132,6 +132,7 @@ function ChannelTuning() {
 
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
+  onReviewResolve,
   error, scrollRef, contentRef, composer, onOpenFromHistory, liveTurns, trailingWorking,
   loading, sessionId, onOpenRunner,
 }: {
@@ -145,6 +146,7 @@ export function Terminal({
   turns: Turn[];
   activeId: string | null;
   onRespond: (requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) => void;
+  onReviewResolve?: (itemId: string, action: "keep" | "skip") => void;
   error: string | null;
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
@@ -248,7 +250,7 @@ export function Terminal({
               ) : empty ? (
                 <FreshState project={sessionProject} />
               ) : (
-                <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} />
+                <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} />
               )}
               {error && (
                 <div style={{ marginTop: 8, border: "1px solid rgba(224,137,122,.3)", background: "rgba(224,137,122,.06)", padding: "4px 8px", fontSize: 12, color: "#e0897a" }}>
