@@ -18,9 +18,9 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (agents, browser, config, devserver, git, github, native,
-                    project_config, runner, screenshot, shell, state, store,
-                    transcript_jsonl, tunnel, usage)
+from bridge import (agents, browser, config, devserver, git, github, memory,
+                    native, project_config, runner, screenshot, shell, state,
+                    store, transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -210,6 +210,8 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         cursor = 0
                     return self._json(shell.snapshot(cursor))
+                if path == "/api/memory/items":
+                    return self._api_memory_items(chat_id, qs)
                 return self._json({"error": "not found"}, 404)
             self._serve_static(path)
         except Exception as e:  # noqa: BLE001
@@ -253,6 +255,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_preview(chat_id, body)
             if path == "/api/preview/screenshot":
                 return self._api_preview_screenshot(body)
+            if path == "/api/memory/candidate":
+                return self._api_memory_candidate(chat_id, body)
+            if path == "/api/memory/update":
+                return self._api_memory_update(chat_id, body)
+            if path == "/api/memory/status":
+                return self._api_memory_status(chat_id, body)
+            if path == "/api/memory/pin":
+                return self._api_memory_pin(chat_id, body)
             return self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             self._safe_500(e)
@@ -297,6 +307,32 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid dir"}, 400)
         state.active[chat_id] = cand
         self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
+
+    # --- project memory ------------------------------------------------------
+    def _api_memory_items(self, chat_id, qs):
+        return self._json({"items": memory.items(
+            chat_id, project=(qs.get("project", [None])[0] or None),
+            status=(qs.get("status", ["active"])[0] or "active"))})
+
+    def _api_memory_candidate(self, chat_id, body):
+        if body.get("action") not in ("keep", "skip"):
+            return self._json({"error": "bad action"}, 400)
+        m = memory.keep_or_skip(chat_id, str(body.get("item_id", "")), body["action"])
+        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
+
+    def _api_memory_update(self, chat_id, body):
+        m = memory.edit(chat_id, str(body.get("item_id", "")), body.get("title"), body.get("body"))
+        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
+
+    def _api_memory_status(self, chat_id, body):
+        if body.get("status") not in ("active", "archived"):
+            return self._json({"error": "bad status"}, 400)
+        m = memory.set_status(chat_id, str(body.get("item_id", "")), body["status"])
+        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
+
+    def _api_memory_pin(self, chat_id, body):
+        m = memory.set_pin(chat_id, str(body.get("item_id", "")), bool(body.get("pinned")))
+        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
 
     def _api_run(self, chat_id: int, body: dict):
         prompt = (body.get("prompt") or "").strip()

@@ -27,10 +27,10 @@ from urllib.parse import parse_qs, urlparse
 
 import re
 
-from bridge import (agents, browser, config, devserver, git, github, native,
-                    preview_detect, project_config, pubsub, queue_manager, runner,
-                    screenshot, shell, state, store, sysinfo, terminals, tunnel,
-                    usage, weather, wsutil)
+from bridge import (agents, browser, config, devserver, git, github, memory,
+                    native, preview_detect, project_config, pubsub, queue_manager,
+                    runner, screenshot, shell, state, store, sysinfo, terminals,
+                    tunnel, usage, weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -389,6 +389,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 cursor = 0
             return self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor))
+        if path == "/local/memory/items":
+            return self._json({"items": memory.items(
+                chat, project=(qs.get("project", [None])[0] or None),
+                status=(qs.get("status", ["active"])[0] or "active"))})
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -543,6 +547,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(weather.set_location((body.get("city") or "")[:120]))
         if path == "/local/weather/unit":
             return self._json(weather.set_unit((body.get("unit") or "")[:20]))
+        if path == "/local/memory/candidate":
+            if body.get("action") not in ("keep", "skip"):
+                return self._json({"error": "bad action"}, 400)
+            m = memory.keep_or_skip(chat, str(body.get("item_id", "")), body["action"])
+            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
+        if path == "/local/memory/update":
+            m = memory.edit(chat, str(body.get("item_id", "")), body.get("title"), body.get("body"))
+            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
+        if path == "/local/memory/status":
+            if body.get("status") not in ("active", "archived"):
+                return self._json({"error": "bad status"}, 400)
+            m = memory.set_status(chat, str(body.get("item_id", "")), body["status"])
+            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
+        if path == "/local/memory/pin":
+            m = memory.set_pin(chat, str(body.get("item_id", "")), bool(body.get("pinned")))
+            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
         return self._json({"error": "not found"}, 404)
 
     def _worktree(self, body):

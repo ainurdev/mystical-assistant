@@ -181,3 +181,51 @@ def propose(owner_id: int, session_id: str, turn_id: str, project: str,
             "scope": scope, "title": op["title"], "body": op["body"]})
         created.append(m["id"])
     return created
+
+
+# --- action layer (shared by both HTTP servers; owner-scoped) ---------------
+
+def _owned(owner_id: int, item_id: str) -> "dict | None":
+    m = store.get_memory(item_id)
+    return m if (m and m["owner_id"] == owner_id) else None
+
+
+def keep_or_skip(owner_id: int, item_id: str, action: str) -> "dict | None":
+    """Keep activates a candidate (and archives its UPDATE target); Skip archives
+    it. Returns the updated row, or None if it isn't the owner's."""
+    m = _owned(owner_id, item_id)
+    if not m:
+        return None
+    if action == "keep":
+        if m.get("supersedes_id"):
+            store.set_memory_status(m["supersedes_id"], "archived")
+        store.set_memory_status(item_id, "active")
+    else:
+        store.set_memory_status(item_id, "archived")
+    return store.get_memory(item_id)
+
+
+def set_status(owner_id: int, item_id: str, status: str) -> "dict | None":
+    if not _owned(owner_id, item_id):
+        return None
+    store.set_memory_status(item_id, status)
+    return store.get_memory(item_id)
+
+
+def set_pin(owner_id: int, item_id: str, pinned: bool) -> "dict | None":
+    if not _owned(owner_id, item_id):
+        return None
+    store.set_pinned(item_id, bool(pinned))
+    return store.get_memory(item_id)
+
+
+def edit(owner_id: int, item_id: str, title: "str | None", body: "str | None") -> "dict | None":
+    if not _owned(owner_id, item_id):
+        return None
+    store.update_memory(item_id, title=title, body=body)
+    return store.get_memory(item_id)
+
+
+def items(owner_id: int, project: "str | None" = None, branch: "str | None" = None,
+          status: str = "active") -> list[dict]:
+    return store.list_memories(owner_id, project=project, branch=branch, status=status)
