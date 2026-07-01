@@ -101,7 +101,21 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  | { type: "review_candidate"; item_id: string; title: string; why_it_matters: string; snippet: string }
+  | { type: "review_resolved"; item_id: string; action: "kept" | "skipped" };
+
+export type LearningItem = {
+  id: string;
+  project_path: string;
+  title: string;
+  code_snippet: string;
+  why_it_matters: string;
+  status: string;
+  mastery: number;
+  times_reviewed: number;
+  notes: string;
+};
 
 export type ModelId = "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -444,6 +458,23 @@ export const api = {
 
   screenshot: (width: number) =>
     request<{ data_url: string }>("/api/preview/screenshot", { method: "POST", body: { width } }),
+
+  learningItems: (project?: string) =>
+    request<{ items: LearningItem[] }>(
+      `/api/learning/items${project ? `?project=${encodeURIComponent(project)}` : ""}`,
+    ),
+
+  learningItem: (itemId: string, action: "keep" | "skip" | "archive" | "reviewed") =>
+    request<{ ok: true }>("/api/learning/item", {
+      method: "POST",
+      body: { item_id: itemId, action },
+    }),
+
+  learningTeach: (body: {
+    item_id: string;
+    mode: "explain" | "quiz" | "exercise" | "grade";
+    user_answer?: string;
+  }) => request<{ text: string }>("/api/learning/teach", { method: "POST", body }),
 };
 
 export interface ShellSnapshot {

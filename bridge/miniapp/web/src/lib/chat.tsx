@@ -156,6 +156,7 @@ export interface ChatContextValue {
     requestId: string,
     opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
   ) => Promise<void>;
+  reviewResolve: (itemId: string, action: "keep" | "skip") => void;
   newChat: () => Promise<void>;
 }
 
@@ -352,6 +353,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refresh();
   }
 
+  function reviewResolve(itemId: string, action: "keep" | "skip") {
+    void api.learningItem(itemId, action).then(() => {
+      if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
+    });
+  }
+
+  useEffect(() => {
+    if (isRunning || sessionId === null) return;
+    const t1 = setTimeout(() => qc.invalidateQueries({ queryKey: ["transcript", sessionId] }), 2500);
+    const t2 = setTimeout(() => qc.invalidateQueries({ queryKey: ["transcript", sessionId] }), 6000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [isRunning, sessionId, qc]);
+
   async function stop() {
     if (!activeTurn) return;
     try {
@@ -406,6 +420,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     compact,
     stop,
     respond,
+    reviewResolve,
     newChat,
   };
 

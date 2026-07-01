@@ -8,7 +8,7 @@ import { RunningNow } from "../components/RunningNow";
 import { Banner } from "../components/ui";
 
 function RunPage() {
-  const { turns, activeTurn, sessionWorking, respond, sendError } = useChat();
+  const { turns, activeTurn, sessionWorking, respond, reviewResolve, sendError } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to the latest message as the transcript grows.
@@ -62,6 +62,7 @@ function RunPage() {
                   events={turn.events}
                   pending={isActive ? activeTurn.pending : []}
                   onRespond={isActive ? respond : undefined}
+                  onReviewResolve={reviewResolve}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
                 {turn.stale && <Banner tone="info">Session ended — start a new chat.</Banner>}
