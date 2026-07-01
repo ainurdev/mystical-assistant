@@ -201,6 +201,28 @@ export interface RunningInfo {
   status: Record<string, SessionStatus>; // unified per-session status (working/awaiting only)
 }
 
+export type AgentInfo = {
+  agent_id: string;
+  agent_type: string;
+  description: string;
+  tool_use_id: string;
+  spawn_depth: number;
+  status: "running" | "done";
+  started_at: number;
+  updated_at: number;
+};
+export type AgentsInfo = { running: number; total: number; agents: AgentInfo[] };
+export type AgentActivityEvent =
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string; summary: string };
+export type AgentActivity = {
+  events: AgentActivityEvent[];
+  next_cursor: number;
+  status: "running" | "done";
+  description: string;
+  agent_type: string;
+};
+
 // Per-repo history: a session enriched with aggregates from its turns.
 export interface EnrichedSession {
   id: string;
@@ -444,6 +466,14 @@ export const api = {
 
   screenshot: (width: number) =>
     request<{ data_url: string }>("/api/preview/screenshot", { method: "POST", body: { width } }),
+
+  agents: (sessionId: string) =>
+    request<AgentsInfo>(`/api/agents?session=${encodeURIComponent(sessionId)}`),
+  agentActivity: (sessionId: string, agentId: string, cursor: number) =>
+    request<AgentActivity>(
+      `/api/agents/activity?session=${encodeURIComponent(sessionId)}` +
+        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
+    ),
 };
 
 export interface ShellSnapshot {

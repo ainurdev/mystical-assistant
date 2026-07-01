@@ -6,9 +6,10 @@ import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
 import { RunningNow } from "../components/RunningNow";
 import { Banner } from "../components/ui";
+import { AgentsPill } from "../components/AgentsPill";
 
 function RunPage() {
-  const { turns, activeTurn, sessionWorking, respond, sendError } = useChat();
+  const { turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to the latest message as the transcript grows.
@@ -87,6 +88,7 @@ function RunPage() {
         </Banner>
       )}
 
+      <AgentsPill sessionId={sessionId} running={isRunning} />
       <div ref={bottomRef} />
       <Composer />
     </div>
