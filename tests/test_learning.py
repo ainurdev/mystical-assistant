@@ -87,6 +87,43 @@ def test_teach_builds_mode_prompt_and_returns_text():
         runner.run_blocking = orig
 
 
+def test_capture_streaming_creates_item_and_event():
+    orig = learning.propose_review_items
+    learning.propose_review_items = lambda *a, **k: [
+        {"title": "closures", "snippet": "() => x", "why_it_matters": "captures x"}]
+    try:
+        sess = store.create_session(4242, "/capproj")
+        store.start_turn(sess["id"], "turn1", "do the thing", [])
+        store.append_event(sess["id"], "turn1", {"type": "text", "text": "I edited it."})
+        store.append_event(sess["id"], "turn1", {"type": "tool", "name": "Edit",
+                                                 "summary": "file.py"})
+        learning.capture_after_turn(4242, sess, "turn1", tool_visibility=True)
+        items = store.list_learning_items(4242, "/capproj", status="candidate")
+        assert len(items) == 1 and items[0]["title"] == "closures"
+        evs = [e for e in store.transcript(sess["id"])["events"]
+               if e.get("type") == "review_candidate"]
+        assert len(evs) == 1 and evs[0]["title"] == "closures"
+    finally:
+        learning.propose_review_items = orig
+
+
+def test_capture_streaming_skips_when_no_edit_tool():
+    called = {"n": 0}
+    orig = learning.propose_review_items
+    def _spy(*a, **k):
+        called["n"] += 1
+        return []
+    learning.propose_review_items = _spy
+    try:
+        sess = store.create_session(4243, "/capproj2")
+        store.start_turn(sess["id"], "turn2", "just a question", [])
+        store.append_event(sess["id"], "turn2", {"type": "text", "text": "no edits"})
+        learning.capture_after_turn(4243, sess, "turn2", tool_visibility=True)
+        assert called["n"] == 0        # no Edit/Write tool → extractor never called
+    finally:
+        learning.propose_review_items = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

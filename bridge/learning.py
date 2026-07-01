@@ -66,6 +66,56 @@ def propose_review_items(owner_id: int, project_path: str, assistant_text: str,
     return [] if is_error else _parse_candidates(text)
 
 
+def capture_after_turn(chat_id: int, session: dict, turn_id: str, *,
+                       tool_visibility: bool) -> None:
+    """Best-effort: propose review candidates for a finished turn. Streaming
+    surfaces set tool_visibility=True (we can trust the absence of Edit/Write to
+    mean 'no code change'); the bot sets False (unknown — the extractor decides)."""
+    try:
+        if not getattr(config, "LEARNING_ENABLE", True):
+            return
+        evs = [e for e in store.transcript(session["id"])["events"]
+               if e.get("turn_id") == turn_id]
+        edited_tools = [e for e in evs
+                        if e.get("type") == "tool" and e.get("name") in EDIT_TOOLS]
+        edited = bool(edited_tools)
+        if tool_visibility and not edited:
+            return
+        texts = [e["text"] for e in evs if e.get("type") == "text" and e.get("text")]
+        if not texts:
+            texts = [e.get("result", "") for e in evs if e.get("type") == "result"]
+        assistant_text = "\n\n".join(t for t in texts if t)[:6000]
+        edits_summary = "\n".join(e.get("summary", "") for e in edited_tools)[:2000]
+        cands = propose_review_items(chat_id, session["project"], assistant_text,
+                                     edits_summary,
+                                     edited=(edited if tool_visibility else None))
+        for c in cands:
+            item = store.add_learning_item(
+                chat_id, session["project"], c["title"], session_id=session["id"],
+                source_turn_id=turn_id, code_snippet=c["snippet"],
+                why_it_matters=c["why_it_matters"], status="candidate")
+            if tool_visibility:
+                store.append_event(session["id"], turn_id, {
+                    "type": "review_candidate", "item_id": item["id"],
+                    "title": item["title"], "why_it_matters": item["why_it_matters"],
+                    "snippet": item["code_snippet"]})
+            else:
+                _send_bot_candidate_card(chat_id, item)
+    except Exception as e:  # noqa: BLE001
+        print(f"[learning] capture failed: {e}", file=sys.stderr)
+
+
+def _send_bot_candidate_card(chat_id: int, item: dict) -> None:
+    from bridge import telegram  # local import: avoid import cycles at module load
+    text = "📚 Review later?\n" + item["title"]
+    if item["why_it_matters"]:
+        text += "\n" + item["why_it_matters"]
+    kb = {"inline_keyboard": [[
+        {"text": "✅ Keep", "callback_data": f"rvw:k:{item['id']}"},
+        {"text": "✖ Skip", "callback_data": f"rvw:s:{item['id']}"}]]}
+    telegram.send(chat_id, text, reply_markup=kb)
+
+
 def teach(item: dict, mode: str, *, user_answer: str | None = None) -> str:
     ctx = (f"Concept: {item.get('title', '')}\n"
            f"Why it matters: {item.get('why_it_matters', '')}\n"
