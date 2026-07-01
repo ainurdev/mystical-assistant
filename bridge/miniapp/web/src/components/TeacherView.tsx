@@ -48,7 +48,7 @@ export function TeacherView() {
             >
               <span className="flex-1 text-sm">{it.title}</span>
               <span className="text-xs text-[var(--brand-soft)]">
-                {"●".repeat(Math.min(it.mastery, 3)) || "○"}
+                {"●".repeat(Math.max(0, Math.min(it.mastery, 3))) || "○"}
               </span>
             </button>
           ))}
@@ -69,6 +69,8 @@ function TeacherDetail({ item, onBack }: { item: LearningItem; onBack: () => voi
     try {
       const r = await api.learningTeach({ item_id: item.id, mode, user_answer });
       setOutput(r.text);
+    } catch {
+      setOutput("Something went wrong — try again.");
     } finally {
       setBusy(false);
     }
@@ -127,7 +129,13 @@ function TeacherDetail({ item, onBack }: { item: LearningItem; onBack: () => voi
       )}
 
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={() => api.learningItem(item.id, "reviewed")}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            void api.learningItem(item.id, "reviewed");
+            onBack();
+          }}
+        >
           Mark reviewed
         </Button>
         <Button
