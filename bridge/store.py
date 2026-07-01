@@ -57,6 +57,29 @@ CREATE TABLE IF NOT EXISTS events (
   ts          REAL NOT NULL,
   PRIMARY KEY (session_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS memories (
+  id                TEXT PRIMARY KEY,
+  owner_id          INTEGER NOT NULL,
+  scope             TEXT NOT NULL,          -- 'user' | 'project'
+  project_path      TEXT,                   -- NULL when scope='user'
+  branch            TEXT,                   -- NULL = project-wide / user scope
+  type              TEXT NOT NULL,          -- convention|decision|preference|goal|gotcha
+  title             TEXT NOT NULL,
+  body              TEXT NOT NULL,
+  status            TEXT NOT NULL,          -- candidate|active|archived
+  pinned            INTEGER NOT NULL DEFAULT 0,
+  source_session_id TEXT,
+  source_turn_id    TEXT,
+  supersedes_id     TEXT,                   -- UPDATE candidate: the memory it replaces on Keep
+  embedding         BLOB,                   -- reserved for sqlite-vec (Approach B)
+  use_count         INTEGER NOT NULL DEFAULT 0,
+  created_at        REAL NOT NULL,
+  updated_at        REAL NOT NULL,
+  last_used_at      REAL
+);
+CREATE INDEX IF NOT EXISTS ix_memories_ns
+  ON memories(owner_id, scope, project_path, branch, status);
 """
 
 
@@ -392,3 +415,120 @@ def transcript(session_id: str, cursor: int = 0) -> dict:
         t["attachments"] = json.loads(t["attachments"])
     next_cursor = (events[-1]["seq"] + 1) if events else cursor
     return {"session": s, "turns": turns, "events": events, "next_cursor": next_cursor}
+
+
+# --- memories (project memory) ----------------------------------------------
+# Curated, project+branch-scoped semantic memory. See
+# docs/superpowers/specs/2026-07-01-project-memory-design.md
+
+def add_memory(owner_id: int, scope: str, type: str, title: str, body: str, *,
+               project_path: str | None = None, branch: str | None = None,
+               status: str = "candidate", pinned: bool = False,
+               source_session_id: str | None = None, source_turn_id: str | None = None,
+               supersedes_id: str | None = None) -> dict:
+    mid = uuid.uuid4().hex
+    now = time.time()
+    with closing(_connect()) as c:
+        c.execute(
+            "INSERT INTO memories(id,owner_id,scope,project_path,branch,type,title,body,"
+            "status,pinned,source_session_id,source_turn_id,supersedes_id,use_count,"
+            "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)",
+            (mid, owner_id, scope, project_path, branch, type, title, body, status,
+             1 if pinned else 0, source_session_id, source_turn_id, supersedes_id, now, now))
+    return get_memory(mid)
+
+
+def get_memory(mem_id: str) -> dict | None:
+    with closing(_connect()) as c:
+        return _row(c.execute("SELECT * FROM memories WHERE id=?", (mem_id,)).fetchone())
+
+
+def list_memories(owner_id: int, *, scope: str | None = None, project: str | None = None,
+                  branch: str | None = None, status: str | None = None,
+                  type: str | None = None) -> list[dict]:
+    """General filter for the Memory view: exact-match on any provided field."""
+    q = "SELECT * FROM memories WHERE owner_id=?"
+    params: list = [owner_id]
+    for col, val in (("scope", scope), ("project_path", project), ("branch", branch),
+                     ("status", status), ("type", type)):
+        if val is not None:
+            q += f" AND {col}=?"
+            params.append(val)
+    q += " ORDER BY pinned DESC, created_at DESC"
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
+def set_memory_status(mem_id: str, status: str) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE memories SET status=?, updated_at=? WHERE id=?",
+                  (status, time.time(), mem_id))
+
+
+def set_pinned(mem_id: str, pinned: bool) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE memories SET pinned=?, updated_at=? WHERE id=?",
+                  (1 if pinned else 0, time.time(), mem_id))
+
+
+def update_memory(mem_id: str, title: str | None = None, body: str | None = None) -> None:
+    sets, params = [], []
+    if title is not None:
+        sets.append("title=?"); params.append(title)
+    if body is not None:
+        sets.append("body=?"); params.append(body)
+    if not sets:
+        return
+    sets.append("updated_at=?"); params.append(time.time())
+    params.append(mem_id)
+    with closing(_connect()) as c:
+        c.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id=?", params)
+
+
+def touch_memory(mem_id: str) -> None:
+    """Record that a memory was injected/used. Deliberately does NOT bump
+    updated_at, so the resident pack stays byte-stable across turns (caching)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE memories SET use_count=use_count+1, last_used_at=? WHERE id=?",
+                  (time.time(), mem_id))
+
+
+def supersede_memory(old_id: str, title: str | None = None,
+                     body: str | None = None) -> dict | None:
+    """Archive `old_id` and add an active replacement in the same namespace/type,
+    with new title/body (falling back to the old values). Returns the new row."""
+    old = get_memory(old_id)
+    if old is None:
+        return None
+    set_memory_status(old_id, "archived")
+    return add_memory(
+        old["owner_id"], old["scope"], old["type"],
+        old["title"] if title is None else title,
+        old["body"] if body is None else body,
+        project_path=old["project_path"], branch=old["branch"],
+        status="active", pinned=bool(old["pinned"]), supersedes_id=old_id)
+
+
+# The active cascade for a session: user prefs + project-wide facts + this branch.
+# A NULL branch arg matches only project-wide rows (branch IS NULL).
+_CASCADE = ("(scope='user' OR (scope='project' AND project_path=? "
+            "AND (branch IS NULL OR branch=?)))")
+
+
+def resolve_memories(owner_id: int, project: str, branch: str | None) -> list[dict]:
+    """Active memories a session should see, pinned-first then newest."""
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute(
+            f"SELECT * FROM memories WHERE owner_id=? AND status='active' AND {_CASCADE} "
+            "ORDER BY pinned DESC, created_at DESC",
+            (owner_id, project, branch)).fetchall()]
+
+
+def namespace_version(owner_id: int, project: str, branch: str | None) -> float:
+    """max(updated_at) over the active cascade — the Context Pack's memoization key.
+    Changes iff the resident pack would change; 0.0 when the cascade is empty."""
+    with closing(_connect()) as c:
+        return c.execute(
+            f"SELECT COALESCE(MAX(updated_at), 0.0) AS v FROM memories "
+            f"WHERE owner_id=? AND status='active' AND {_CASCADE}",
+            (owner_id, project, branch)).fetchone()["v"]
