@@ -88,6 +88,10 @@ SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv",
 # --- Mini App ----------------------------------------------------------------
 MINIAPP_ENABLE = os.environ.get("MINIAPP_ENABLE", "1").lower() not in ("0", "false", "no", "")
 MINIAPP_PORT = int(os.environ.get("MINIAPP_PORT", "8787"))   # local HTTP bind port
+
+# Teacher mode: auto-suggest review candidates after code turns. Default on.
+LEARNING_ENABLE = os.environ.get("LEARNING_ENABLE", "1").lower() \
+    not in ("0", "false", "no", "")
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")
