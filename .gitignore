@@ -1,5 +1,5 @@
-# Secrets — run.sh holds the Telegram bot token
-run.sh
+# Secrets — .env holds the Telegram bot token
+.env
 
 # Mini App uploads (screenshots sent from the phone)
 .bridge_uploads/
