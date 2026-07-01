@@ -57,6 +57,25 @@ CREATE TABLE IF NOT EXISTS events (
   ts          REAL NOT NULL,
   PRIMARY KEY (session_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS learning_items (
+  id               TEXT PRIMARY KEY,
+  owner_id         INTEGER NOT NULL,
+  project_path     TEXT NOT NULL,
+  session_id       TEXT,
+  source_turn_id   TEXT,
+  title            TEXT NOT NULL,
+  code_snippet     TEXT NOT NULL DEFAULT '',
+  why_it_matters   TEXT NOT NULL DEFAULT '',
+  status           TEXT NOT NULL DEFAULT 'candidate',
+  mastery          INTEGER NOT NULL DEFAULT 0,
+  times_reviewed   INTEGER NOT NULL DEFAULT 0,
+  created_at       REAL NOT NULL,
+  last_reviewed_at REAL,
+  notes            TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_learning_owner
+  ON learning_items(owner_id, project_path, status, created_at);
 """
 
 
@@ -247,6 +266,63 @@ def set_title(session_id: str, title: str) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET title=? WHERE id=? AND (title IS NULL OR title='')",
                   (title, session_id))
+
+
+# --- learning items ---------------------------------------------------------
+
+def add_learning_item(owner_id: int, project_path: str, title: str, *,
+                      session_id: str | None = None, source_turn_id: str | None = None,
+                      code_snippet: str = "", why_it_matters: str = "",
+                      status: str = "candidate") -> dict:
+    iid = uuid.uuid4().hex
+    now = time.time()
+    with closing(_connect()) as c:
+        c.execute(
+            "INSERT INTO learning_items(id,owner_id,project_path,session_id,"
+            "source_turn_id,title,code_snippet,why_it_matters,status,mastery,"
+            "times_reviewed,created_at,last_reviewed_at,notes) "
+            "VALUES(?,?,?,?,?,?,?,?,?,0,0,?,NULL,'')",
+            (iid, owner_id, project_path, session_id, source_turn_id, title,
+             code_snippet, why_it_matters, status, now))
+    return get_learning_item(iid)
+
+
+def get_learning_item(item_id: str) -> dict | None:
+    with closing(_connect()) as c:
+        return _row(c.execute("SELECT * FROM learning_items WHERE id=?",
+                              (item_id,)).fetchone())
+
+
+def list_learning_items(owner_id: int, project_path: str | None = None,
+                        status: str = "kept") -> list[dict]:
+    q = "SELECT * FROM learning_items WHERE owner_id=? AND status=?"
+    params: list = [owner_id, status]
+    if project_path is not None:
+        q += " AND project_path=?"
+        params.append(project_path)
+    q += " ORDER BY created_at DESC"
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
+def set_learning_status(item_id: str, status: str) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE learning_items SET status=? WHERE id=?", (status, item_id))
+
+
+def bump_mastery(item_id: str) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE learning_items SET mastery=mastery+1,"
+                  "times_reviewed=times_reviewed+1,last_reviewed_at=? WHERE id=?",
+                  (time.time(), item_id))
+
+
+def append_learning_note(item_id: str, text: str) -> None:
+    if not text:
+        return
+    with closing(_connect()) as c:
+        c.execute("UPDATE learning_items SET notes=notes||? WHERE id=?",
+                  ("\n" + text, item_id))
 
 
 def rename(session_id: str, title: str) -> None:
