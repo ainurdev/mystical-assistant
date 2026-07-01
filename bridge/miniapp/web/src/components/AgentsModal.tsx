@@ -30,9 +30,9 @@ export function AgentsModal({
       const a = await api.agentActivity(sessionId, selected as string, cursorRef.current);
       if (a.events.length) {
         setEvents((prev) => [...prev, ...a.events]);
-        cursorRef.current = a.next_cursor;
       }
-      return a;
+      cursorRef.current = a.next_cursor; // always advance: next_cursor counts all
+      return a;                          // lines read, incl. non-assistant (no-event) ones
     },
     refetchInterval: (q) =>
       (q.state.data?.status ?? "running") === "running" ? 1000 : false,
