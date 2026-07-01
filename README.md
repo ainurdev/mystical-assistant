@@ -44,6 +44,11 @@ browser is just a remote control; the work happens on your machine, in your repo
 - **Dev server + preview.** Start/stop the project's dev server and watch its logs;
   expose it on a stable public URL via a named Cloudflare Tunnel.
 - **Claude usage.** Live 5-hour / 7-day utilization shown in both clients.
+- **Teacher mode + review log.** After a turn that edits code, a cheap Haiku pass
+  proposes 1–2 concepts to review as **Keep/Skip** cards on any surface. Kept items
+  live in a Teacher view (Mini App `/teacher` tab, dashboard **TEACHER** tab in the
+  project analyze modal) with on-demand Explain, Explain-back (graded), Quiz, and
+  Exercise. Set `LEARNING_ENABLE=0` to disable.
 - **One shared design system.** The dashboard and Mini App share the "Mystic"
   violet theme, tokens, and components.
 
