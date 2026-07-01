@@ -14,10 +14,11 @@ import {
 } from "../../api";
 import { projectTint } from "../../lib/surfaces";
 import { CommitPanel } from "./CommitPanel";
+import { TeacherTab } from "./TeacherTab";
 import { WorktreeBoard } from "./WorktreeBoard";
 import { XtermPane } from "./XtermPane";
 
-type Tab = "overview" | "worktrees" | "changes" | "issues" | "terminal";
+type Tab = "overview" | "worktrees" | "changes" | "issues" | "terminal" | "teacher";
 
 interface Props {
   project: string;
@@ -99,6 +100,7 @@ export function AnalyzeModal(props: Props) {
     { k: "changes", l: "CHANGES" },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
     { k: "terminal", l: "TERMINAL" },
+    { k: "teacher", l: "TEACHER" },
   ];
 
   return (
@@ -152,6 +154,7 @@ export function AnalyzeModal(props: Props) {
             mode={changesMode} setMode={setChangesMode} />}
           {tab === "issues" && <IssuesTab project={project} info={issues} onFeed={props.onFeed} onReload={() => void api.issues(project).then(setIssues)} />}
           {tab === "terminal" && <TerminalTab project={project} worktrees={worktrees} selectedBranch={selectedBranch} />}
+          {tab === "teacher" && <TeacherTab project={project} />}
         </div>
       </div>
     </div>
