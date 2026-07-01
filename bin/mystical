@@ -35,12 +35,16 @@ mystical — control the mystical-assistant bridge
   mystical stop      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
   mystical restart   stop, then start
   mystical status    is it running? ports + dashboard URL + tunnel link
+  mystical doctor    check prerequisites (claude, python, cloudflared, npm)
   mystical logs      follow the log (Ctrl-C to stop following)
   mystical run       run in the foreground (live logs, Ctrl-C to quit)
 EOF
 }
 
-[ -f "$ENV_FILE" ] || die ".env not found at $ENV_FILE — run ./setup.sh to create it."
+case "${1:-start}" in
+  doctor|-h|--help|help) : ;;   # diagnostics/help need no .env
+  *) [ -f "$ENV_FILE" ] || die ".env not found at $ENV_FILE — run ./setup.sh to create it." ;;
+esac
 
 # --- helpers -----------------------------------------------------------------
 bridge_pid() {
@@ -121,6 +125,7 @@ cmd_status() {
 
 cmd_logs() { [ -f "$LOG" ] || die "No log yet at $LOG — start it first."; exec tail -n 200 -f "$LOG"; }
 cmd_run()  { exec env PYTHONUNBUFFERED=1 "$RUN_SH"; }
+cmd_doctor() { exec "$REPO/setup.sh" --check-only; }
 
 case "${1:-start}" in
   start)            cmd_start ;;
@@ -129,6 +134,7 @@ case "${1:-start}" in
   status)           cmd_status ;;
   logs)             cmd_logs ;;
   run|fg)           cmd_run ;;
+  doctor)           cmd_doctor ;;
   -h|--help|help)   usage ;;
   *)                die "unknown command: $1"$'\n'"$(usage)" ;;
 esac
