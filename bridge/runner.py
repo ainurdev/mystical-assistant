@@ -209,6 +209,12 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         if cost is not None:
             footer += f" · ${cost:.4f}"
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
+        if not is_error:
+            from bridge import learning  # local import: runner<->learning cycle
+            threading.Thread(target=learning.capture_after_turn,
+                             args=(chat_id, session, job_id),
+                             kwargs={"tool_visibility": False},
+                             daemon=True).start()
     finally:
         state.release_run(session["id"])
 
@@ -736,6 +742,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                            "\n\n".join(job.texts), list(job.edited))
         if not job.interrupted:
             notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
+        # Teacher-mode capture (best-effort, background thread). Streaming has
+        # tool visibility, so we trust Edit/Write detection.
+        if job.store_session_id and job.status == "done":
+            _sess = store.get_session(job.store_session_id)
+            if _sess:
+                from bridge import learning  # local import: runner<->learning cycle
+                threading.Thread(target=learning.capture_after_turn,
+                                 args=(job.chat_id, _sess, job.id),
+                                 kwargs={"tool_visibility": True},
+                                 daemon=True).start()
 
 
 _FULL_PERM_ORIGINS = {"dashboard", "miniapp"}

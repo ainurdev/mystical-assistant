@@ -19,6 +19,7 @@ import {
   History,
   CircleDot,
   Brain,
+  GraduationCap,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
@@ -33,6 +34,7 @@ const tabs = [
   { to: "/shell", label: "Shell", icon: SquareChevronRight },
   { to: "/preview", label: "Preview", icon: MonitorPlay },
   { to: "/design", label: "Design", icon: MousePointerClick },
+  { to: "/teacher", label: "Teacher", icon: GraduationCap },
 ] as const;
 
 function HeaderBar({

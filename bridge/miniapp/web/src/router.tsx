@@ -8,6 +8,7 @@ import { historyRoute } from "./routes/history";
 import { issuesRoute } from "./routes/issues";
 import { designRoute } from "./routes/design";
 import { memoryRoute } from "./routes/memory";
+import { teacherRoute } from "./routes/teacher";
 
 const routeTree = rootRoute.addChildren([
   runRoute,
@@ -18,6 +19,7 @@ const routeTree = rootRoute.addChildren([
   designRoute,
   historyRoute,
   memoryRoute,
+  teacherRoute,
 ]);
 
 // Hash history is the safest choice inside the Telegram webview.

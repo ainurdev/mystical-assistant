@@ -54,6 +54,11 @@ browser is just a remote control; the work happens on your machine, in your repo
   Kept facts are injected (project- and branch-scoped) into every future turn's system
   prompt, so a session knows its repo without re-deriving it. Curate them in the Memory
   view; set `MEMORY_ENABLE=0` to disable.
+- **Teacher mode + review log.** After a turn that edits code, a cheap Haiku pass
+  proposes 1–2 concepts to review as **Keep/Skip** cards on any surface. Kept items
+  live in a Teacher view (Mini App `/teacher` tab, dashboard **TEACHER** tab in the
+  project analyze modal) with on-demand Explain, Explain-back (graded), Quiz, and
+  Exercise. Set `LEARNING_ENABLE=0` to disable.
 - **One shared design system.** The dashboard and Mini App share the "Mystic"
   violet theme, tokens, and components.
 

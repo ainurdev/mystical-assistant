@@ -68,7 +68,9 @@ export type RunEvent =
       scope: string;
       title: string;
       body: string;
-    };
+    }
+  | { type: "review_candidate"; item_id: string; title: string; why_it_matters: string; snippet: string }
+  | { type: "review_resolved"; item_id: string; action: "kept" | "skipped" };
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };
 
@@ -78,6 +80,18 @@ export interface Transcript {
   events: StoreEvent[];
   next_cursor: number;
 }
+
+export type LearningItem = {
+  id: string;
+  project_path: string;
+  title: string;
+  code_snippet: string;
+  why_it_matters: string;
+  status: string;
+  mastery: number;
+  times_reviewed: number;
+  notes: string;
+};
 
 export interface ServerInfo {
   status: "running" | "exited" | "not started";
@@ -652,6 +666,21 @@ export const api = {
       `/local/agents/activity?session=${encodeURIComponent(sessionId)}` +
         `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
     ),
+  // --- learning items (teacher mode review log) ---
+  learningItems: (project?: string) =>
+    req<{ items: LearningItem[] }>(
+      `/local/learning/items${project ? `?project=${encodeURIComponent(project)}` : ""}`,
+    ),
+  learningItem: (itemId: string, action: "keep" | "skip" | "archive" | "reviewed") =>
+    req<{ ok: true }>("/local/learning/item", {
+      method: "POST",
+      body: { item_id: itemId, action },
+    }),
+  learningTeach: (body: {
+    item_id: string;
+    mode: "explain" | "quiz" | "exercise" | "grade";
+    user_answer?: string;
+  }) => req<{ text: string }>("/local/learning/teach", { method: "POST", body }),
 };
 
 /** Query string for a preview context (cwd/project/branch), omitting blanks. */

@@ -18,9 +18,9 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (agents, browser, config, devserver, git, github, memory,
-                    native, project_config, runner, screenshot, shell, state,
-                    store, transcript_jsonl, tunnel, usage)
+from bridge import (agents, browser, config, devserver, git, github, learning,
+                    memory, native, project_config, runner, screenshot, shell,
+                    state, store, transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -199,6 +199,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_project_settings(chat_id)
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
+                if path == "/api/learning/items":
+                    return self._api_learning_items(chat_id, qs)
                 if path.startswith("/api/sessions/"):
                     return self._api_session_get(
                         chat_id, path[len("/api/sessions/"):], qs)
@@ -232,6 +234,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_select(chat_id, body)
             if path == "/api/sessions":
                 return self._api_sessions_create(chat_id, body)
+            if path == "/api/learning/item":
+                return self._api_learning_item(chat_id, body)
+            if path == "/api/learning/teach":
+                return self._api_learning_teach(chat_id, body)
             if path.startswith("/api/sessions/") and path.endswith("/archive"):
                 return self._api_session_archive(
                     chat_id, path[len("/api/sessions/"):-len("/archive")], body)
@@ -381,6 +387,43 @@ class Handler(BaseHTTPRequestHandler):
         native.refresh(chat_id)            # surface VSCode sessions in the history view
         archived = qs.get("archived", ["0"])[0] == "1"
         self._json({"sessions": store.history(chat_id, include_archived=archived)})
+
+    def _api_learning_items(self, chat_id: int, qs):
+        project = qs.get("project", [""])[0]
+        self._json({"items": store.list_learning_items(
+            chat_id, project or None, status="kept")})
+
+    def _api_learning_item(self, chat_id: int, body: dict):
+        item = store.get_learning_item((body.get("item_id") or "").strip())
+        if not item or item["owner_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        action = body.get("action")
+        if action in ("keep", "skip"):
+            status = "kept" if action == "keep" else "skipped"
+            store.set_learning_status(item["id"], status)
+            if item["session_id"] and item["source_turn_id"]:
+                store.append_event(item["session_id"], item["source_turn_id"],
+                                   {"type": "review_resolved",
+                                    "item_id": item["id"], "action": status})
+        elif action == "archive":
+            store.set_learning_status(item["id"], "archived")
+        elif action == "reviewed":
+            store.bump_mastery(item["id"])
+        else:
+            return self._json({"error": "bad action"}, 400)
+        self._json({"ok": True})
+
+    def _api_learning_teach(self, chat_id: int, body: dict):
+        item = store.get_learning_item((body.get("item_id") or "").strip())
+        if not item or item["owner_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        mode = body.get("mode")
+        if mode not in ("explain", "quiz", "exercise", "grade"):
+            return self._json({"error": "bad mode"}, 400)
+        text = learning.teach(item, mode, user_answer=body.get("user_answer"))
+        if mode == "grade":
+            store.append_learning_note(item["id"], text)
+        self._json({"text": text})
 
     def _api_running(self, chat_id: int):
         self._json(runner.running_snapshot(chat_id))

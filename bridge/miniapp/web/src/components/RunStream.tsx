@@ -13,6 +13,7 @@ import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { MemoryCandidateCard } from "./MemoryCandidateCard";
+import { ReviewCandidateCard } from "./ReviewCandidateCard";
 
 // Map a few common tool names to icons; default to a wrench.
 function ToolIcon({ name }: { name: string }) {
@@ -70,10 +71,12 @@ export function RunStream({
   events,
   pending = [],
   onRespond,
+  onReviewResolve,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
+  onReviewResolve?: (itemId: string, action: "keep" | "skip") => void;
 }) {
   const pendingIds = new Set(pending.map((p) => p.request_id));
   const permResolved = new Map<string, "allow" | "deny">();
@@ -81,6 +84,10 @@ export function RunStream({
   for (const e of events) {
     if (e.type === "permission_resolved") permResolved.set(e.request_id, e.behavior);
     if (e.type === "question_answered") qAnswered.set(e.request_id, e.answers);
+  }
+  const reviewResolved = new Map<string, "kept" | "skipped">();
+  for (const e of events) {
+    if (e.type === "review_resolved") reviewResolved.set(e.item_id, e.action);
   }
 
   return (
@@ -174,6 +181,21 @@ export function RunStream({
                 body={event.body}
               />
             );
+          case "review_candidate":
+            return (
+              <ReviewCandidateCard
+                key={i}
+                title={event.title}
+                whyItMatters={event.why_it_matters}
+                snippet={event.snippet}
+                active={!!onReviewResolve && !reviewResolved.has(event.item_id)}
+                resolved={reviewResolved.get(event.item_id)}
+                onKeep={() => onReviewResolve?.(event.item_id, "keep")}
+                onSkip={() => onReviewResolve?.(event.item_id, "skip")}
+              />
+            );
+          case "review_resolved":
+            return null; // reflected inside the candidate card
           case "permission_resolved":
           case "question_answered":
             return null; // shown inside the relevant card

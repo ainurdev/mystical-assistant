@@ -27,10 +27,10 @@ from urllib.parse import parse_qs, urlparse
 
 import re
 
-from bridge import (agents, browser, config, devserver, git, github, memory,
-                    native, preview_detect, project_config, pubsub, queue_manager,
-                    runner, screenshot, shell, state, store, sysinfo, terminals,
-                    tunnel, usage, weather, wsutil)
+from bridge import (agents, browser, config, devserver, git, github, learning,
+                    memory, native, preview_detect, project_config, pubsub,
+                    queue_manager, runner, screenshot, shell, state, store,
+                    sysinfo, terminals, tunnel, usage, weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -393,6 +393,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"items": memory.items(
                 chat, project=(qs.get("project", [None])[0] or None),
                 status=(qs.get("status", ["active"])[0] or "active"))})
+        if path == "/local/learning/items":
+            project = qs.get("project", [""])[0]
+            return self._json({"items": store.list_learning_items(
+                chat, project or None, status="kept")})
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -563,6 +567,36 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/memory/pin":
             m = memory.set_pin(chat, str(body.get("item_id", "")), bool(body.get("pinned")))
             return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
+        if path == "/local/learning/item":
+            item = store.get_learning_item((body.get("item_id") or "").strip())
+            if not item or item["owner_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            action = body.get("action")
+            if action in ("keep", "skip"):
+                status = "kept" if action == "keep" else "skipped"
+                store.set_learning_status(item["id"], status)
+                if item["session_id"] and item["source_turn_id"]:
+                    store.append_event(item["session_id"], item["source_turn_id"],
+                                       {"type": "review_resolved",
+                                        "item_id": item["id"], "action": status})
+            elif action == "archive":
+                store.set_learning_status(item["id"], "archived")
+            elif action == "reviewed":
+                store.bump_mastery(item["id"])
+            else:
+                return self._json({"error": "bad action"}, 400)
+            return self._json({"ok": True})
+        if path == "/local/learning/teach":
+            item = store.get_learning_item((body.get("item_id") or "").strip())
+            if not item or item["owner_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            mode = body.get("mode")
+            if mode not in ("explain", "quiz", "exercise", "grade"):
+                return self._json({"error": "bad mode"}, 400)
+            text = learning.teach(item, mode, user_answer=body.get("user_answer"))
+            if mode == "grade":
+                store.append_learning_note(item["id"], text)
+            return self._json({"text": text})
         return self._json({"error": "not found"}, 404)
 
     def _worktree(self, body):
