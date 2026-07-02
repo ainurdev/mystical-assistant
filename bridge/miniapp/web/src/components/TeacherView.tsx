@@ -68,7 +68,7 @@ function TeacherDetail({ item, onBack }: { item: LearningItem; onBack: () => voi
     setOutput("");
     try {
       const r = await api.learningTeach({ item_id: item.id, mode, user_answer });
-      setOutput(r.text);
+      setOutput(r.text || "Couldn't generate — try again.");
     } catch {
       setOutput("Something went wrong — try again.");
     } finally {
