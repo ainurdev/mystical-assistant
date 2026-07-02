@@ -1,27 +1,21 @@
 import { useState } from "react";
+import type { HudSettings, ThemeKey } from "../../lib/theme";
+import { CrtToggles, ThemeCardGrid } from "./ThemeModal";
 
 type Model = "opus" | "sonnet" | "haiku";
 type Mode = "plan" | "acceptEdits" | "auto";
 
-interface ProjectRow {
-  name: string;
-  path: string;
-  runCmd: string;
-  dotColor: string;
-  tag: string;
-  tagColor: string;
-}
-
 export interface SettingsModalProps {
   wsRoot: string;
-  projects: ProjectRow[];
   host: string;
   port: string;
+  settings: HudSettings;
+  onTheme: (t: ThemeKey) => void;
+  onToggle: (key: "scanlines" | "sweep" | "glow") => void;
   defModel: Model;
   defMode: Mode;
   onDefModel: (m: Model) => void;
   onDefMode: (m: Mode) => void;
-  onOpenTheme: () => void;
   onClose: () => void;
 }
 
@@ -40,20 +34,20 @@ const MODE_OPTS: { label: string; value: Mode }[] = [
 export function SettingsModal(props: SettingsModalProps) {
   const {
     wsRoot,
-    projects,
     host,
     port,
+    settings,
+    onTheme,
+    onToggle,
     defModel,
     defMode,
     onDefModel,
     onDefMode,
-    onOpenTheme,
     onClose,
   } = props;
 
   const [escHover, setEscHover] = useState(false);
   const [rescanHover, setRescanHover] = useState(false);
-  const [themeHover, setThemeHover] = useState(false);
   const [doneHover, setDoneHover] = useState(false);
 
   return (
@@ -170,6 +164,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <input
               value={wsRoot}
               disabled
+              placeholder="/home/squared/dev"
               style={{
                 flex: 1,
                 minWidth: 0,
@@ -209,119 +204,24 @@ export function SettingsModal(props: SettingsModalProps) {
               fontSize: 9.5,
               letterSpacing: 1.5,
               color: "#3c544f",
-              margin: "20px 0 10px",
+              marginBottom: 11,
             }}
           >
-            PROJECT PATHS &amp; RUN COMMANDS · {projects.length} found
+            THEME · DISPLAY PROFILE
           </div>
-          <div style={{ border: "1px solid rgba(127,233,216,.12)" }}>
-            {projects.map((p, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 11,
-                  padding: "11px 13px",
-                  borderBottom: "1px solid rgba(127,233,216,.07)",
-                }}
-              >
-                <span
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    background: p.dotColor,
-                    flex: "none",
-                  }}
-                ></span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "#dff8f2",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {p.name}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 8.5,
-                        letterSpacing: ".5px",
-                        color: p.tagColor,
-                        border: `1px solid ${p.tagColor}`,
-                        padding: "0 5px",
-                        flex: "none",
-                      }}
-                    >
-                      {p.tag}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "#6f938d",
-                      fontFamily: "'JetBrains Mono',monospace",
-                      marginTop: 3,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      direction: "rtl",
-                      textAlign: "left",
-                    }}
-                  >
-                    {p.path}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    flex: "none",
-                    background: "rgba(7,13,13,.6)",
-                    border: "1px solid rgba(127,233,216,.14)",
-                    padding: "5px 8px",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "#b9a6ff",
-                      fontFamily: "'JetBrains Mono',monospace",
-                    }}
-                  >
-                    $
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "#9fc7c0",
-                      fontFamily: "'JetBrains Mono',monospace",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {p.runCmd}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <ThemeCardGrid settings={settings} onTheme={onTheme} />
+
           <div
             style={{
-              fontSize: 9,
-              letterSpacing: ".5px",
-              color: "#456b65",
-              marginTop: 7,
+              fontSize: 9.5,
+              letterSpacing: 1.5,
+              color: "#3c544f",
+              margin: "20px 0 11px",
             }}
           >
-            Run commands are auto-detected from each repo's outer package.json —
-            override per project in Analyze ▸ Overview.
+            CRT EFFECTS
           </div>
+          <CrtToggles settings={settings} onToggle={onToggle} />
 
           {/* 2-col grid */}
           <div
@@ -481,7 +381,7 @@ export function SettingsModal(props: SettingsModalProps) {
                             cursor: "pointer",
                             border: 0,
                             background: active ? "#7fe9d8" : "transparent",
-                            color: active ? "#06100e" : "#bfe6de",
+                            color: active ? "#06100e" : "#6f938d",
                             fontFamily: "inherit",
                             fontSize: 10,
                             letterSpacing: 1,
@@ -524,7 +424,7 @@ export function SettingsModal(props: SettingsModalProps) {
                             cursor: "pointer",
                             border: 0,
                             background: active ? "#7fe9d8" : "transparent",
-                            color: active ? "#06100e" : "#bfe6de",
+                            color: active ? "#06100e" : "#6f938d",
                             fontFamily: "inherit",
                             fontSize: 9,
                             letterSpacing: ".5px",
@@ -560,24 +460,6 @@ export function SettingsModal(props: SettingsModalProps) {
             >
               Settings persist to ~/.mystical/config.toml on this host.
             </span>
-            <button
-              onClick={onOpenTheme}
-              onMouseEnter={() => setThemeHover(true)}
-              onMouseLeave={() => setThemeHover(false)}
-              style={{
-                appearance: "none",
-                cursor: "pointer",
-                border: "1px solid rgba(127,233,216,.25)",
-                background: themeHover ? "rgba(127,233,216,.08)" : "transparent",
-                color: "#bfe6de",
-                fontFamily: "inherit",
-                fontSize: 10,
-                letterSpacing: 1.5,
-                padding: "9px 14px",
-              }}
-            >
-              THEME &amp; CRT ▸
-            </button>
             <button
               onClick={onClose}
               onMouseEnter={() => setDoneHover(true)}

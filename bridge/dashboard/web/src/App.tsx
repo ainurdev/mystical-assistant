@@ -18,14 +18,16 @@ import {
 } from "./api";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, projectTint } from "./lib/surfaces";
+import { ago } from "./lib/surfaces";
 import {
   loadSettings,
   saveSettings,
+  themeCanvas,
   themeDef,
   themeFilter,
+  themeFont,
   type HudSettings,
-  type Phosphor,
+  type ThemeKey,
 } from "./lib/theme";
 import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { Composer } from "./components/Composer";
@@ -131,7 +133,11 @@ export function App() {
     saveSettings(settings);
   }, [settings]);
 
-  function setTheme(t: Phosphor) { setSettings((s) => ({ ...s, theme: t })); }
+  // Picking a theme also applies its default CRT toggles (design onPick).
+  function setTheme(t: ThemeKey) {
+    const d = themeDef(t);
+    setSettings((s) => ({ ...s, theme: t, scanlines: d.crt, sweep: d.swp, glow: d.glw }));
+  }
   function toggleCrt(key: "scanlines" | "sweep" | "glow") {
     setSettings((s) => ({ ...s, [key]: !s[key] }));
   }
@@ -513,14 +519,6 @@ export function App() {
 
   const td = themeDef(settings.theme);
   const wsRoot = (activeProject || "/").replace(/\/[^/]*$/, "") || "/";
-  const settingsProjects = projectGroups.map((g) => {
-    const tint = projectTint(g.rel);
-    return {
-      name: g.name, path: g.rel, runCmd: "npm run dev",
-      dotColor: g.running ? "#8fd9a8" : (g.badge?.dirty ? "#e3c279" : "#3c544f"),
-      tag: tint.tag, tagColor: tint.color,
-    };
-  });
 
   return (
     <div className="flex h-full flex-col" style={{ background: "#060a0a", position: "relative" }}>
@@ -529,8 +527,21 @@ export function App() {
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: -1, background: td.bg, transition: "background .5s ease" }} />
 
       {showDashboard && (
-        <>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, filter: themeFilter(settings.theme) }}>
+        // ONE themed container: colour comes from the CSS filter, shape from
+        // data-theme, ground/voice from canvas/font. Every surface — panels
+        // and all modals below — inherits all three.
+        <div
+          data-theme={settings.theme}
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            filter: themeFilter(settings.theme),
+            background: themeCanvas(settings.theme),
+            fontFamily: themeFont(settings.theme) || undefined,
+          }}
+        >
             <Strip
               radio={radio.radio}
               onToggleRadio={radio.toggle}
@@ -637,23 +648,22 @@ export function App() {
             {previewProject && (
               <ProjectPreviewModal project={previewProject} onClose={() => setPreviewProject(null)} />
             )}
-          </div>
 
-          {themeOpen && (
-            <ThemeModal settings={settings} onTheme={setTheme} onToggle={toggleCrt}
-              onReplayBoot={replayBoot} onClose={() => setThemeOpen(false)} />
-          )}
-          {settingsOpen && (
-            <SettingsModal wsRoot={wsRoot} projects={settingsProjects} host={host.host}
-              port={location.port || "8790"} defModel={model} defMode={defMode}
-              onDefModel={setModel} onDefMode={(m) => { setDefMode(m); setPermMode(m); }}
-              onOpenTheme={() => { setSettingsOpen(false); setThemeOpen(true); }}
-              onClose={() => setSettingsOpen(false)} />
-          )}
-        </>
+            {themeOpen && (
+              <ThemeModal settings={settings} onTheme={setTheme} onToggle={toggleCrt}
+                onReplayBoot={replayBoot} onClose={() => setThemeOpen(false)} />
+            )}
+            {settingsOpen && (
+              <SettingsModal wsRoot={wsRoot} host={host.host} port={location.port || "8790"}
+                settings={settings} onTheme={setTheme} onToggle={toggleCrt}
+                defModel={model} defMode={defMode}
+                onDefModel={setModel} onDefMode={(m) => { setDefMode(m); setPermMode(m); }}
+                onClose={() => setSettingsOpen(false)} />
+            )}
+            {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
+        </div>
       )}
 
-      {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
       {booting && (
         <BootIntro onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
