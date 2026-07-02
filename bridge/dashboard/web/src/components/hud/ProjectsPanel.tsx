@@ -15,16 +15,19 @@ interface Props {
   activeProject: string | null;
   onSelectProject: (rel: string) => void;
   onAnalyze: (rel: string) => void;
+  onPreview: (rel: string) => void;
+  onManage: () => void;
   onCreateProject: (name: string, prompt: string) => void;
 }
 
 function ProjectRow({
-  g, active, onSelectProject, onAnalyze,
+  g, active, onSelectProject, onAnalyze, onPreview,
 }: {
   g: ProjectGroup;
   active: boolean;
   onSelectProject: (rel: string) => void;
   onAnalyze: (rel: string) => void;
+  onPreview: (rel: string) => void;
 }) {
   const [eyeHov, setEyeHov] = useState(false);
   const [anHov, setAnHov] = useState(false);
@@ -56,9 +59,8 @@ function ProjectRow({
       {g.running && (
         <span style={{ fontSize: 8, letterSpacing: 1, color: "#8fd9a8", border: "1px solid rgba(143,217,168,.3)", padding: "1px 5px", flex: "none" }}>LIVE</span>
       )}
-      {/* TODO(phase2): dedicated app-preview surface — reuses the analyze modal for now */}
       <button
-        onClick={() => onAnalyze(g.rel)} title="preview the running app"
+        onClick={() => onPreview(g.rel)} title="preview the running app"
         onMouseEnter={() => setEyeHov(true)} onMouseLeave={() => setEyeHov(false)}
         style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(143,217,168,.3)", background: eyeHov ? "rgba(143,217,168,.16)" : "rgba(143,217,168,.06)", color: "#8fd9a8", fontFamily: "inherit", padding: "5px 7px", flex: "none", display: "flex", alignItems: "center", lineHeight: 0 }}
       >
@@ -82,7 +84,7 @@ function ProjectRow({
 }
 
 export function ProjectsPanel(props: Props) {
-  const { groups, activeProject, onSelectProject, onAnalyze, onCreateProject } = props;
+  const { groups, activeProject, onSelectProject, onAnalyze, onPreview, onManage, onCreateProject } = props;
   const [newOpen, setNewOpen] = useState(false);
   const [npName, setNpName] = useState("");
   const [npPrompt, setNpPrompt] = useState("");
@@ -98,7 +100,7 @@ export function ProjectsPanel(props: Props) {
         <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#7fe9d8" }}>{groups.length} REPOS</span>
           <button
-            onClick={() => { /* TODO(phase2): manage-projects modal (hide, remove, import) */ }}
+            onClick={onManage}
             title="manage projects — hide, remove, import"
             onMouseEnter={() => setManageHov(true)} onMouseLeave={() => setManageHov(false)}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: manageHov ? "rgba(127,233,216,.14)" : "rgba(127,233,216,.05)", color: manageHov ? "#dff8f2" : "#9fc7c0", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px" }}
@@ -134,7 +136,7 @@ export function ProjectsPanel(props: Props) {
         )}
         {groups.map((g) => (
           <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
-            onSelectProject={onSelectProject} onAnalyze={onAnalyze} />
+            onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
         ))}
         {groups.length === 0 && (
           <div style={{ fontSize: 11, color: "#3c544f", padding: "10px 4px" }}>No projects with sessions yet.</div>

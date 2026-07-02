@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export interface Command {
   id: string;
   label: string;
   group: string;
   icon: string;
+  iconColor?: string;
   run: () => void;
 }
 
+/* COMMAND PALETTE — matches the HUD design mock (hud.dc.html lines 1259–1282):
+   backdrop + panel with prompt row, ESC badge, and a scrolling command list. */
 export function CommandPalette({
   open,
   commands,
@@ -19,6 +22,8 @@ export function CommandPalette({
 }) {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<number | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -28,11 +33,12 @@ export function CommandPalette({
     );
   }, [commands, query]);
 
-  // Reset query/highlight whenever the palette opens.
+  // Reset query/highlight/closing whenever the palette opens.
   useEffect(() => {
     if (open) {
       setQuery("");
       setHighlight(0);
+      setClosing(false);
     }
   }, [open]);
 
@@ -41,25 +47,37 @@ export function CommandPalette({
     setHighlight((h) => (filtered.length === 0 ? 0 : Math.min(h, filtered.length - 1)));
   }, [filtered.length]);
 
+  useEffect(() => () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+  }, []);
+
   if (!open) return null;
+
+  // Animated close (design animCloseModal — modalOut/backdropOut, then unmount).
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    closeTimer.current = window.setTimeout(() => onClose(), 280);
+  };
 
   const run = (c: Command | undefined) => {
     if (!c) return;
     c.run();
-    onClose();
+    requestClose();
   };
 
   return (
     <div
-      onClick={onClose}
-      className="fixed inset-0 z-[90] flex items-start justify-center bg-[rgba(4,7,7,.7)] pt-[14vh]"
+      onClick={requestClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(4,7,7,.7)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="panel w-[560px] max-w-[92vw] overflow-hidden border border-[var(--border-bright)] bg-[rgba(7,13,13,.97)] shadow-[0_0_60px_rgba(0,0,0,.7),0_0_30px_var(--accent)] animate-[mpop_.15s_ease]"
+        className="panel"
+        style={{ width: 560, maxWidth: "92vw", border: "1px solid rgba(127,233,216,.4)", background: "rgba(7,13,13,.97)", boxShadow: "0 0 60px rgba(0,0,0,.7),0 0 30px rgba(127,233,216,.08)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
       >
-        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3.5">
-          <span className="text-[13px] text-primary">~ ❯</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 16px", borderBottom: "1px solid rgba(127,233,216,.16)" }}>
+          <span style={{ color: "#7fe9d8" }}>~ ❯</span>
           <input
             autoFocus
             value={query}
@@ -76,32 +94,35 @@ export function CommandPalette({
                 run(filtered[highlight]);
               } else if (e.key === "Escape") {
                 e.preventDefault();
-                onClose();
+                e.stopPropagation(); // keep App's window handler from unmounting mid-animation
+                requestClose();
               }
             }}
             placeholder="search projects, sessions, or run a command…"
-            className="flex-1 bg-transparent font-mono text-[13.5px] text-foreground-bright outline-none placeholder:text-muted-2"
+            style={{ flex: 1, background: "transparent", border: 0, outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 13.5 }}
           />
-          <span className="border border-input px-[7px] py-0.5 text-[9.5px] tracking-[1.5px] text-muted-2">ESC</span>
+          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f", border: "1px solid rgba(127,233,216,.2)", padding: "2px 7px" }}>ESC</span>
         </div>
-        <div className="max-h-[46vh] overflow-y-auto p-1.5">
+        <div className="mscroll" style={{ maxHeight: "46vh", overflowY: "auto", padding: 6 }}>
           {filtered.length === 0 ? (
-            <div className="px-3 py-6 text-center text-[12px] tracking-[1px] text-muted-2">// no commands</div>
+            <div style={{ padding: "24px 12px", textAlign: "center", fontSize: 12, letterSpacing: 1, color: "#3c544f" }}>// no commands</div>
           ) : (
             filtered.map((c, i) => (
               <button
                 key={c.id}
                 onClick={() => run(c)}
                 onMouseMove={() => setHighlight(i)}
-                className="flex w-full items-center gap-3 border-l-2 px-2.5 py-2.5 text-left"
                 style={{
-                  background: i === highlight ? "var(--accent)" : "transparent",
-                  borderColor: i === highlight ? "var(--primary)" : "transparent",
+                  width: "100%", appearance: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                  display: "flex", alignItems: "center", gap: 12, padding: "9px 11px",
+                  border: 0, borderLeft: `2px solid ${i === highlight ? "#7fe9d8" : "transparent"}`,
+                  background: i === highlight ? "rgba(127,233,216,.08)" : "transparent",
+                  animation: "mfadeup .3s ease both", animationDelay: `${i * 50}ms`,
                 }}
               >
-                <span className="w-[18px] flex-none text-center text-[11px] text-primary">{c.icon}</span>
-                <span className="flex-1 text-[12.5px] text-[#cfe9e3]">{c.label}</span>
-                <span className="text-[9.5px] tracking-[1px] text-muted-2">{c.group.toUpperCase()}</span>
+                <span style={{ fontSize: 11, color: c.iconColor ?? "#7fe9d8", width: 18, textAlign: "center", flex: "none" }}>{c.icon}</span>
+                <span style={{ flex: 1, fontSize: 12.5, color: "#cfe9e3" }}>{c.label}</span>
+                <span style={{ fontSize: 9.5, letterSpacing: 1, color: "#3c544f" }}>{c.group.toUpperCase()}</span>
               </button>
             ))
           )}

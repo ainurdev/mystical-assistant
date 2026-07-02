@@ -41,6 +41,8 @@ import { ThemeModal } from "./components/hud/ThemeModal";
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal } from "./components/hud/AnalyzeModal";
+import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
+import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { RunningWindow } from "./components/design/RunningWindow";
 import { AgentsPill } from "./components/AgentsPill";
 
@@ -79,6 +81,13 @@ export function App() {
   const [booting, setBooting] = useState(!skipBoot);
   const [showDashboard, setShowDashboard] = useState(skipBoot);
   const [runnerOpen, setRunnerOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [previewProject, setPreviewProject] = useState<string | null>(null);
+  // Manage-projects bookkeeping. TODO(phase2-data): session-local only — the
+  // bridge has no hide/remove/import endpoints yet.
+  const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>({});
+  const [removedProjects, setRemovedProjects] = useState<Record<string, boolean>>({});
+  const [importedProjects, setImportedProjects] = useState<string[]>([]);
 
   // HUD chrome state.
   const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
@@ -86,6 +95,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxState | null>(null);
+  const [ctxClosing, setCtxClosing] = useState(false);
+  const ctxTimer = useRef<number | null>(null);
   const [defMode, setDefMode] = useState<PermDefault>("acceptEdits");
 
   const seqRef = useRef(0);
@@ -247,7 +258,9 @@ export function App() {
         e.preventDefault();
         setPaletteOpen((v) => !v);
       } else if (e.key === "Escape") {
-        if (ctxMenu) setCtxMenu(null);
+        if (ctxMenu) closeCtx();
+        else if (previewProject) setPreviewProject(null);
+        else if (manageOpen) setManageOpen(false);
         else if (paletteOpen) setPaletteOpen(false);
         else if (runnerOpen) setRunnerOpen(false);
         else if (themeOpen) setThemeOpen(false);
@@ -257,7 +270,8 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ctxMenu, paletteOpen, runnerOpen, themeOpen, settingsOpen, analyzeProject]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxMenu, previewProject, manageOpen, paletteOpen, runnerOpen, themeOpen, settingsOpen, analyzeProject]);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
@@ -267,6 +281,8 @@ export function App() {
       if (el.closest?.("input, textarea")) return;
       e.preventDefault();
       const node = el.closest?.("[data-ctx-type]") as HTMLElement | null;
+      if (ctxTimer.current) window.clearTimeout(ctxTimer.current);
+      setCtxClosing(false);
       setCtxMenu({
         x: e.clientX, y: e.clientY,
         type: node?.getAttribute("data-ctx-type") || "surface",
@@ -366,6 +382,22 @@ export function App() {
     setShowDashboard(false); setBooting(true);
   }
 
+  // Animated context-menu close (design closeCtxAnim — ctxOut plays, then unmount).
+  function closeCtx() {
+    if (ctxTimer.current) window.clearTimeout(ctxTimer.current);
+    setCtxClosing(true);
+    ctxTimer.current = window.setTimeout(() => { setCtxMenu(null); setCtxClosing(false); }, 165);
+  }
+
+  // TODO(phase2-data): local-only import — no bridge endpoint to attach a repo yet.
+  function importProject(path: string) {
+    const rel = path.trim().replace(/\/+$/, "");
+    if (!rel) return;
+    setImportedProjects((prev) => (prev.includes(rel) ? prev : [...prev, rel]));
+    setRemovedProjects((p) => ({ ...p, [rel]: false }));
+    setHiddenProjects((p) => ({ ...p, [rel]: false }));
+  }
+
   // --- derived ---
   const projectGroups = useMemo<ProjectGroup[]>(() => {
     const byProj = new Map<string, SessionBrief[]>();
@@ -397,6 +429,9 @@ export function App() {
     });
     return groups;
   }, [sessions, gitBadges, statusMap, activeProject]);
+
+  // HIDE keeps a project out of the sidebar; REMOVE detaches it (design manage modal).
+  const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && !removedProjects[g.rel]);
 
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
   const usedPct = Math.round(usage?.five_hour?.percent ?? 0);
@@ -549,9 +584,11 @@ export function App() {
               {/* RIGHT */}
               <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
                 <ProjectsPanel
-                  groups={projectGroups} activeProject={activeProject}
+                  groups={visibleGroups} activeProject={activeProject}
                   onSelectProject={(rel) => void selectProject(rel)}
                   onAnalyze={(rel) => setAnalyzeProject(rel)}
+                  onPreview={(rel) => setPreviewProject(rel)}
+                  onManage={() => setManageOpen(true)}
                   onCreateProject={(name, prompt) => void createProject(name, prompt)}
                 />
                 <TaskQueuePanel projects={projectNames} onFeed={feed} />
@@ -583,6 +620,23 @@ export function App() {
                 onClose={() => setRunnerOpen(false)}
               />
             )}
+            {manageOpen && (
+              <ManageProjectsModal
+                groups={projectGroups.filter((g) => !removedProjects[g.rel])}
+                imported={importedProjects.filter((rel) => !removedProjects[rel])}
+                hidden={hiddenProjects}
+                onToggleHide={(rel) => setHiddenProjects((p) => ({ ...p, [rel]: !p[rel] }))}
+                onRemove={(rel) => {
+                  setRemovedProjects((p) => ({ ...p, [rel]: true }));
+                  setPreviewProject((cur) => (cur === rel ? null : cur));
+                }}
+                onImport={importProject}
+                onClose={() => setManageOpen(false)}
+              />
+            )}
+            {previewProject && (
+              <ProjectPreviewModal project={previewProject} onClose={() => setPreviewProject(null)} />
+            )}
           </div>
 
           {themeOpen && (
@@ -599,7 +653,7 @@ export function App() {
         </>
       )}
 
-      {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} onClose={() => setCtxMenu(null)} />}
+      {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
       {booting && (
         <BootIntro onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
