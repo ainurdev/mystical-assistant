@@ -14,6 +14,7 @@ set -euo pipefail
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 REPO="$(cd "$(dirname "$SELF")/.." && pwd)"
 RUN_SH="$REPO/run.sh"
+ENV_FILE="$REPO/.env"                        # secrets/overrides (git-ignored)
 ENTRY="claude_telegram_bridge.py"            # process we manage
 
 STATE_DIR="${BRIDGE_STATE_DIR:-$HOME/.bridge_state}"
@@ -34,12 +35,16 @@ mystical — control the mystical-assistant bridge
   mystical stop      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
   mystical restart   stop, then start
   mystical status    is it running? ports + dashboard URL + tunnel link
+  mystical doctor    check prerequisites (claude, python, cloudflared, npm)
   mystical logs      follow the log (Ctrl-C to stop following)
   mystical run       run in the foreground (live logs, Ctrl-C to quit)
 EOF
 }
 
-[ -f "$RUN_SH" ] || die "run.sh not found at $RUN_SH — it holds your bot token; create it before starting."
+case "${1:-start}" in
+  doctor|-h|--help|help) : ;;   # diagnostics/help need no .env
+  *) [ -f "$ENV_FILE" ] || die ".env not found at $ENV_FILE — run ./setup.sh to create it." ;;
+esac
 
 # --- helpers -----------------------------------------------------------------
 bridge_pid() {
@@ -55,8 +60,8 @@ bridge_pid() {
 
 dash_url() {
   local port token
-  port="$(grep -oE 'DASH_PORT=[0-9]+' "$RUN_SH" | head -n1 | cut -d= -f2 || true)"; port="${port:-8790}"
-  token="$(grep -oE 'DASH_TOKEN=[A-Za-z0-9_-]+' "$RUN_SH" | head -n1 | cut -d= -f2 || true)"
+  port="$(grep -oE 'DASH_PORT="?[0-9]+' "$ENV_FILE" 2>/dev/null | head -n1 | grep -oE '[0-9]+' || true)"; port="${port:-8790}"
+  token="$(grep -oE 'DASH_TOKEN="?[A-Za-z0-9_-]+' "$ENV_FILE" 2>/dev/null | head -n1 | sed 's/.*=//; s/\"//g' || true)"
   if [ -n "$token" ]; then printf 'http://127.0.0.1:%s/?token=%s' "$port" "$token"
   else printf 'http://127.0.0.1:%s/' "$port"; fi
 }
@@ -120,6 +125,7 @@ cmd_status() {
 
 cmd_logs() { [ -f "$LOG" ] || die "No log yet at $LOG — start it first."; exec tail -n 200 -f "$LOG"; }
 cmd_run()  { exec env PYTHONUNBUFFERED=1 "$RUN_SH"; }
+cmd_doctor() { exec "$REPO/setup.sh" --check-only; }
 
 case "${1:-start}" in
   start)            cmd_start ;;
@@ -128,6 +134,7 @@ case "${1:-start}" in
   status)           cmd_status ;;
   logs)             cmd_logs ;;
   run|fg)           cmd_run ;;
+  doctor)           cmd_doctor ;;
   -h|--help|help)   usage ;;
   *)                die "unknown command: $1"$'\n'"$(usage)" ;;
 esac

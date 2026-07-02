@@ -1,5 +1,9 @@
 # mystical-assistant
 
+> Control Claude Code on your own machine from your phone — Telegram-native.
+
+<!-- DEMO_GIF: 45–60s screen recording (marketing track) goes here -->
+
 A remote dev workflow backed by **Claude Code on your own machine**, driven from
 anywhere — a **Telegram bot**, a **Telegram Mini App** control panel, and a
 **localhost desktop dashboard** — all sharing one conversation store. Start a
@@ -89,38 +93,47 @@ Design specs live in [docs/superpowers/specs/](docs/superpowers/specs/).
 
 ## Quick start
 
-**Prerequisites:** Python 3.9+ with `requests`; the `claude` CLI (installed and
-logged in); `cloudflared` (for previews + the Mini App tunnel); Node + npm to build
-the two web clients once.
+**Prerequisites:** the `claude` CLI (installed and logged in) and Python 3.9+
+with `requests`. `cloudflared` and Node are optional (only for the Mini App panel
+and rebuilding the web UI).
 
 ```bash
-# Build the web clients (once)
-npm --prefix bridge/miniapp/web ci   && npm --prefix bridge/miniapp/web run build
-npm --prefix bridge/dashboard/web ci && npm --prefix bridge/dashboard/web run build
-
-# Configure secrets in run.sh (git-ignored): TELEGRAM_BOT_TOKEN, BASE_PATH,
-# ALLOWED_CHAT_IDS, EXTRA_CLAUDE_ARGS, DASH_TOKEN. Keep it chmod 600.
-
-# Start it
-./run.sh                 # or: mystical   (see below)
+git clone https://github.com/mhzrerfani/mystical-assistant
+cd mystical-assistant
+./setup.sh      # checks prereqs, walks you through @BotFather, writes .env
+mystical        # start it — then message your bot
 ```
 
-On first run with an empty `ALLOWED_CHAT_IDS`, the bot is in **discovery mode** —
-message it to learn your chat id, put it in `run.sh`, and restart.
-
-### The `mystical` command
-
-A small launcher (`bin/mystical`, symlinked onto your `PATH`) manages the bridge
-from anywhere — it delegates to the git-ignored `run.sh`:
+`./setup.sh` captures your Telegram chat id automatically (just message the bot
+when it asks) and links a `mystical` launcher onto your `PATH`. The web clients
+ship prebuilt, so there is **no build step**.
 
 ```
 mystical            start in the background (logs → ~/.bridge_state/mystical.log)
 mystical stop       graceful stop
 mystical restart    stop, then start
 mystical status     running? + ports, dashboard URL, public tunnel link
+mystical doctor     check prerequisites
 mystical logs       follow the log
 mystical run        run in the foreground (Ctrl-C to quit)
 ```
+
+### Manual / advanced setup
+
+- **Config lives in `.env`** (git-ignored; `setup.sh` writes it). See
+  `.env.example` for every option. Required: `TELEGRAM_BOT_TOKEN`, `BASE_PATH`,
+  `ALLOWED_CHAT_IDS`.
+- **Dashboard only (no cloudflared):** set `MINIAPP_ENABLE="0"` in `.env`.
+- **Stable preview URL:** by default `/preview` uses ephemeral
+  `*.trycloudflare.com` links. To get a fixed hostname, provision a named
+  Cloudflare Tunnel and set `PREVIEW_HOSTNAME`/`TUNNEL_NAME`/`TUNNEL_ID`/
+  `TUNNEL_CREDENTIALS_FILE` in `.env`.
+- **Rebuild the web UI** (only if you change the frontend):
+  `npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build`
+  (same for `bridge/dashboard/web`). The dashboard build also needs the selector
+  plugin's deps: `npm --prefix tools/selector-plugin install`.
+- **First-run discovery mode:** if chat-id capture times out, start `mystical`
+  with `ALLOWED_CHAT_IDS` empty, message the bot, and copy the printed id.
 
 ---
 
@@ -132,7 +145,7 @@ machine. With `--dangerously-skip-permissions` that is arbitrary command executi
 - Keep `ALLOWED_CHAT_IDS` locked to your own chat id(s); never leave it empty in
   production (discovery mode is for setup only).
 - Treat `TELEGRAM_BOT_TOKEN` as a secret (it also signs Mini App `initData`).
-  `run.sh` is git-ignored; keep it `chmod 600`.
+  It lives in `.env`, which is git-ignored; keep it `chmod 600`.
 - The Mini App server binds `127.0.0.1` and is reachable only through the
   cloudflared tunnel; unauthenticated requests get 401 (signed `initData` required).
 - The dashboard binds `127.0.0.1` and is **never tunneled**; it is gated by a Host

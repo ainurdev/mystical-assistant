@@ -1,5 +1,5 @@
-# Secrets — run.sh holds the Telegram bot token
-run.sh
+# Secrets — .env holds the Telegram bot token
+.env
 
 # Mini App uploads (screenshots sent from the phone)
 .bridge_uploads/
@@ -10,15 +10,13 @@ __pycache__/
 .venv/
 venv/
 
-# Mini App frontend build artifacts
+# Mini App frontend build artifacts (dist/ is committed — ships prebuilt)
 bridge/miniapp/web/node_modules/
-bridge/miniapp/web/dist/
 bridge/miniapp/web/.vite/
 *.tsbuildinfo
 
-# Dashboard frontend build artifacts
+# Dashboard frontend build artifacts (dist/ is committed — ships prebuilt)
 bridge/dashboard/web/node_modules/
-bridge/dashboard/web/dist/
 bridge/dashboard/web/.vite/
 
 # Selector plugin package (dist/agent.global.js is committed intentionally)
