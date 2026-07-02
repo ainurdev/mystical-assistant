@@ -27,15 +27,14 @@ import {
   type HudSettings,
   type Phosphor,
 } from "./lib/theme";
-import { useFocus, useHostVitals, useRadio, useWeather } from "./lib/ambient";
+import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { Composer } from "./components/Composer";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
-import { WorkspacePanel } from "./components/hud/WorkspacePanel";
-import { IntelPanel } from "./components/hud/IntelPanel";
 import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel";
+import { SessionsPanel } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import { BootIntro } from "./components/hud/BootIntro";
 import { ThemeModal } from "./components/hud/ThemeModal";
@@ -100,11 +99,6 @@ export function App() {
   const { weather, setCity, setUnit } = useWeather();
   const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
   const radio = useRadio();
-  const sessionsToday = useMemo(
-    () => sessions.filter((s) => Date.now() / 1000 - s.updated < 86400).length,
-    [sessions],
-  );
-  const { focus } = useFocus(sessionsToday);
 
   const active = activeOf(turns);
   const running = active !== null;
@@ -507,14 +501,26 @@ export function App() {
               onToggleRadio={radio.toggle}
               onNextRadio={radio.next}
               onOpenSettings={() => setSettingsOpen(true)}
+              clock={tele.clock}
+              weather={weather}
+              onSetCity={setCity}
+              onSetUnit={setUnit}
+              openSettings={wxSettings}
             />
 
-            <div className="grid min-h-0 flex-1 gap-[13px] p-[13px]" style={{ gridTemplateColumns: "344px minmax(0,1fr) 368px", minWidth: 0 }}>
+            <div className="grid min-h-0 flex-1 gap-[13px] p-[13px]" style={{ gridTemplateColumns: "360px minmax(0,1fr) 358px", minWidth: 0 }}>
               {/* LEFT */}
               <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
-                <WorkspacePanel clock={tele.clock} date={tele.date} turns={turns.length} host={host} weather={weather} focus={focus} onSetCity={setCity} onSetUnit={setUnit} openSettings={wxSettings} />
-                <IntelPanel />
-                <TaskQueuePanel projects={projectNames} onFeed={feed} />
+                <SessionsPanel
+                  sessions={sessions} groups={projectGroups} status={statusMap}
+                  selectedSessionId={sessionId} loadingSessionId={loadingSession ? sessionId : null}
+                  activeProject={activeProject}
+                  onSelectSession={(s) => void selectSession(s)}
+                  onAnalyze={(rel) => setAnalyzeProject(rel)}
+                  onNewSession={(rel) => void newSession(rel)}
+                  onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
+                  onFeed={feed}
+                />
               </div>
 
               {/* CENTER */}
@@ -541,17 +547,14 @@ export function App() {
               />
 
               {/* RIGHT */}
-              <div className="mscroll flex min-h-0 min-w-0 flex-col pr-0.5">
+              <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
                 <ProjectsPanel
-                  groups={projectGroups} status={statusMap} selectedSessionId={sessionId}
-                  loadingSessionId={loadingSession ? sessionId : null}
+                  groups={projectGroups} activeProject={activeProject}
                   onSelectProject={(rel) => void selectProject(rel)}
-                  onSelectSession={(s) => void selectSession(s)}
                   onAnalyze={(rel) => setAnalyzeProject(rel)}
-                  onNewSession={(rel) => void newSession(rel)}
-                  onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
                   onCreateProject={(name, prompt) => void createProject(name, prompt)}
                 />
+                <TaskQueuePanel projects={projectNames} onFeed={feed} />
               </div>
             </div>
 
