@@ -1,8 +1,6 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
-  type CompareFile,
-  type CompareInfo,
   type GitBadge,
   type GitStatus,
   type Issue,
@@ -12,13 +10,17 @@ import {
   type TermInfo,
   type Worktree,
 } from "../../api";
-import { projectTint } from "../../lib/surfaces";
-import { CommitPanel } from "./CommitPanel";
-import { TeacherTab } from "./TeacherTab";
-import { WorktreeBoard } from "./WorktreeBoard";
+import { ago, projectTint, surfaceFor } from "../../lib/surfaces";
+import { EditorTab, type BranchOpt } from "./EditorTab";
+import { SkillsTab } from "./SkillsTab";
+import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
 
-type Tab = "overview" | "worktrees" | "changes" | "issues" | "terminal" | "teacher";
+/* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
+   530–1258): header with editable short tag, 7-tab bar (OVERVIEW / GIT /
+   WORKTREES / EDITOR / TERMINAL / SKILLS / ISSUES), and per-tab bodies. */
+
+type Tab = "overview" | "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues";
 
 interface Props {
   project: string;
@@ -32,345 +34,715 @@ interface Props {
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
 }
 
-const FILE_COLOR = (s: string) => (s === "A" ? "#8fd9a8" : s === "D" ? "#e0897a" : "#e3c279");
+const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "#8fd9a8" : s === "D" ? "#e0897a" : "#e3c279");
+
+/* tag-edit swatches (design TAG_COLORS) */
+const TAG_COLORS = [
+  { color: "#7fe9d8", bd: "rgba(127,233,216,.45)" },
+  { color: "#b9a6ff", bd: "rgba(185,166,255,.45)" },
+  { color: "#8fd9a8", bd: "rgba(143,217,168,.45)" },
+  { color: "#e3c279", bd: "rgba(227,194,121,.45)" },
+  { color: "#6fb5ff", bd: "rgba(111,181,255,.45)" },
+  { color: "#ff7ad9", bd: "rgba(255,122,217,.4)" },
+  { color: "#e0897a", bd: "rgba(224,137,122,.45)" },
+];
 
 function name(rel: string): string {
   return rel.replace(/\/+$/, "").split("/").pop() || rel;
 }
 
-/* Compact branch dropdown. `head` marks the checked-out branch; `exclude` hides a branch (e.g. the source). */
-function BranchSelect({ branches, value, head, onChange, accent = "#7fe9d8", exclude }:
-  { branches: string[]; value: string; head?: string; onChange: (b: string) => void; accent?: string; exclude?: string }) {
-  const list = (branches.length ? branches : [value].filter(Boolean)).filter((b) => b !== exclude);
-  if (value && !list.includes(value)) list.unshift(value);
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}
-      style={{ appearance: "none", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: accent, background: "rgba(7,13,13,.6)", border: `1px solid ${accent}40`, padding: "3px 8px", outline: "none", maxWidth: 220 }}>
-      {list.length === 0 && <option value="">—</option>}
-      {list.map((b) => <option key={b} value={b} style={{ background: "#0a1414", color: "#dff8f2" }}>{b === head ? "● " : "⎇ "}{b}{b === head ? " · HEAD" : ""}</option>)}
-    </select>
-  );
+function hexRgba(hex: string, a: number): string {
+  const h = hex.replace("#", "");
+  if (h.length < 6) return `rgba(159,199,192,${a})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
 }
 
 export function AnalyzeModal(props: Props) {
   const { project, badge } = props;
   const tint = projectTint(project);
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+
   const [tab, setTab] = useState<Tab>("overview");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [issues, setIssues] = useState<IssuesInfo | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
+  const [termCount, setTermCount] = useState(0);
   const [closing, setClosing] = useState(false);
-  const [maximized, setMaximized] = useState(false);
-  // modal-wide branch focus: source (what we view) → destination (merge/compare target).
+  // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
   const [selectedBranch, setSelectedBranch] = useState("");
-  const [destBranch, setDestBranch] = useState("");
-  // Changes tab opens on the working-tree commit view; merge "VIEW CHANGES →" jumps to compare.
-  const [changesMode, setChangesMode] = useState<"working" | "compare">("working");
+
+  // editable short tag + color. TODO(phase2-data): no persistence endpoint yet —
+  // the override lives for this modal instance only.
+  const [tagOv, setTagOv] = useState<{ tag: string; color: string; bd: string } | null>(null);
+  const [tagEditOpen, setTagEditOpen] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+  const [tagColorDraft, setTagColorDraft] = useState("");
+  const tag = tagOv?.tag ?? tint.tag;
+  const tagColor = tagOv?.color ?? tint.color;
+  const tagBd = tagOv?.bd ?? tint.border;
 
   const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
   const refreshWt = () => { void api.worktrees(project).then((w) => setWorktrees(w.worktrees)).catch(() => {}); };
+  const refreshBranches = () => {
+    void api.branches(project).then((b) => { setBranches(b.branches); if (b.default) setDefaultBranch(b.default); }).catch(() => {});
+  };
 
   useEffect(() => {
-    setSelectedBranch(""); setDestBranch("");
+    setSelectedBranch("");
+    setTagOv(null); setTagEditOpen(false);
     refreshGit();
     void api.issues(project).then(setIssues).catch(() => {});
-    void api.branches(project).then((b) => { setBranches(b.branches); if (b.default) setDefaultBranch(b.default); }).catch(() => {});
+    refreshBranches();
     refreshWt();
+    void api.terminals(project).then((d) => setTermCount(d.terminals.length)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
-  // default selected → the checked-out branch; destination → repo default branch.
+  // default viewed branch → the checked-out branch
   useEffect(() => { const c = git?.branch || badge?.branch; if (c) setSelectedBranch((p) => p || c); }, [git, badge]);
-  useEffect(() => {
-    if (!branches.length) return;
-    setDestBranch((p) => (p && branches.includes(p) ? p : defaultBranch || branches[0] || ""));
-  }, [branches, defaultBranch]);
 
   function close() {
     setClosing(true);
     setTimeout(props.onClose, 260);
   }
 
+  function openTagEdit() {
+    setTagDraft(tag);
+    setTagColorDraft(tagColor);
+    setTagEditOpen((o) => !o);
+  }
+  function saveTagEdit() {
+    const t = (tagDraft.trim() || tag).toUpperCase().slice(0, 5);
+    const c = tagColorDraft || tagColor;
+    setTagOv({ tag: t, color: c, bd: hexRgba(c, 0.45) });
+    setTagEditOpen(false);
+  }
+
+  const cur = git?.branch || badge?.branch || "";
+  const live = props.sessions.some((s) => {
+    const st = props.status.get(s.id)?.state;
+    return st === "working" || st === "live";
+  });
+  const linkedWt = worktrees.filter((w) => !w.is_main).length;
   const issueCount = issues?.open_count ?? 0;
+
+  const branchOpts: BranchOpt[] = useMemo(() => {
+    const list = branches.length ? branches : (cur ? [cur] : []);
+    return list.map((b) => ({ name: b, on: b === (selectedBranch || cur), hasWorktree: worktrees.some((w) => w.branch === b) }));
+  }, [branches, cur, selectedBranch, worktrees]);
+
   const tabs: { k: Tab; l: string; badge?: number }[] = [
     { k: "overview", l: "OVERVIEW" },
-    { k: "worktrees", l: "WORKTREES" },
-    { k: "changes", l: "CHANGES" },
+    { k: "changes", l: "GIT", badge: git?.dirty || undefined },
+    { k: "worktrees", l: "WORKTREES", badge: linkedWt || undefined },
+    { k: "editor", l: "EDITOR" },
+    { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
+    { k: "skills", l: "SKILLS" },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
-    { k: "terminal", l: "TERMINAL" },
-    { k: "teacher", l: "TEACHER" },
   ];
 
   return (
     <div onClick={close}
-      style={{ position: "fixed", inset: 0, background: "rgba(4,7,7,.72)", zIndex: 92, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: maximized ? "3vh" : "7vh", transition: "padding-top .34s cubic-bezier(.16,.84,.3,1)", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
+      style={{ position: "fixed", inset: 0, background: "rgba(4,7,7,.72)", zIndex: 92, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "7vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: maximized ? "96vw" : 1040, maxWidth: "96vw", height: maximized ? "94vh" : "84vh", display: "flex", flexDirection: "column", border: "1px solid rgba(127,233,216,.4)", background: "rgba(7,13,13,.98)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px rgba(127,233,216,.08)", transition: "width .34s cubic-bezier(.16,.84,.3,1), height .34s cubic-bezier(.16,.84,.3,1)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ width: 880, maxWidth: "94vw", maxHeight: "84vh", display: "flex", flexDirection: "column", border: "1px solid rgba(127,233,216,.4)", background: "rgba(7,13,13,.98)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px rgba(127,233,216,.08)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid rgba(127,233,216,.16)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "#3c544f" }}>ANALYZE</span>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: tint.color }} />
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: tagColor }} />
           <span style={{ fontSize: 15, color: "#dff8f2", letterSpacing: ".5px" }}>{name(project)}</span>
-          <BranchSelect branches={branches} value={selectedBranch || git?.branch || badge?.branch || ""}
-            head={git?.branch || badge?.branch || ""} onChange={setSelectedBranch} />
+          <span style={{ position: "relative", flex: "none" }}>
+            <button onClick={openTagEdit} title="edit short tag & color" {...hp("tag")}
+              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 9, letterSpacing: ".5px", color: tagColor, border: `1px solid ${tagBd}`, background: hov === "tag" ? "rgba(127,233,216,.06)" : "transparent", fontFamily: "inherit", padding: "3px 7px" }}>
+              {tag}<span style={{ fontSize: 8, color: "#6f938d" }}>✎</span>
+            </button>
+            {tagEditOpen && (
+              <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 224, border: "1px solid rgba(127,233,216,.4)", background: "rgba(7,13,13,.99)", boxShadow: "0 14px 40px rgba(0,0,0,.7)", padding: 12, animation: "mslide .16s ease both" }}>
+                <div style={{ fontSize: 8, letterSpacing: 1.5, color: "#3c544f", marginBottom: 7 }}>SHORT TAG</div>
+                <input value={tagDraft} onChange={(e) => setTagDraft(e.target.value)} placeholder="MYST" maxLength={5}
+                  style={{ width: "100%", boxSizing: "border-box", background: "rgba(4,7,7,.6)", border: "1px solid rgba(127,233,216,.25)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, letterSpacing: 2, textAlign: "center", padding: 7, textTransform: "uppercase" }} />
+                <div style={{ fontSize: 8, letterSpacing: 1.5, color: "#3c544f", margin: "11px 0 7px" }}>COLOR</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {TAG_COLORS.map((c) => (
+                    <button key={c.color} onClick={() => setTagColorDraft(c.color)}
+                      style={{ width: 20, height: 20, borderRadius: "50%", border: 0, cursor: "pointer", background: c.color, boxShadow: tagColorDraft === c.color ? `0 0 0 2px #060a0a, 0 0 0 3px ${c.color}` : "0 0 0 0 transparent", padding: 0, flex: "none" }} />
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 7, marginTop: 13 }}>
+                  <button onClick={saveTagEdit} {...hp("tagsave")}
+                    style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #7fe9d8", background: hov === "tagsave" ? "rgba(127,233,216,.24)" : "rgba(127,233,216,.14)", color: "#dff8f2", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7 }}>SAVE</button>
+                  <button onClick={() => setTagEditOpen(false)} {...hp("tagcancel")}
+                    style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.2)", background: hov === "tagcancel" ? "rgba(127,233,216,.06)" : "transparent", color: "#6f938d", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "7px 11px" }}>CANCEL</button>
+                </div>
+              </div>
+            )}
+          </span>
           <span style={{ fontSize: 11, color: "#6f938d", display: "flex", gap: 9, fontFamily: "'JetBrains Mono',monospace" }}>
             <span style={{ color: "#8fd9a8" }}>↑{git?.ahead ?? badge?.ahead ?? 0}</span>
             <span>↓{git?.behind ?? badge?.behind ?? 0}</span>
           </span>
+          {live && <span style={{ fontSize: 9, letterSpacing: 1, color: "#8fd9a8", border: "1px solid rgba(143,217,168,.3)", padding: "1px 6px" }}>LIVE</span>}
           <span style={{ flex: 1 }} />
-          <button onClick={() => setMaximized((m) => !m)} title={maximized ? "restore size" : "maximize"}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px" }}>{maximized ? "⤡ RESTORE" : "⤢ EXPAND"}</button>
           <button onClick={close} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px" }}>ESC ✕</button>
         </div>
         {/* tabs */}
-        <div style={{ display: "flex", flex: "none", borderBottom: "1px solid rgba(127,233,216,.12)", padding: "0 10px" }}>
+        <div style={{ display: "flex", flex: "none", borderBottom: "1px solid rgba(127,233,216,.12)", padding: "0 6px", overflowX: "auto" }}>
           {tabs.map((t) => (
-            <button key={t.k} onClick={() => setTab(t.k)}
-              style={{ appearance: "none", border: 0, borderBottom: `2px solid ${tab === t.k ? "#7fe9d8" : "transparent"}`, cursor: "pointer", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: "11px 15px", background: tab === t.k ? "rgba(127,233,216,.06)" : "transparent", color: tab === t.k ? "#dff8f2" : "#3c544f", display: "flex", alignItems: "center", gap: 7 }}>
+            <button key={t.k} onClick={() => setTab(t.k)} {...hp(`tab:${t.k}`)}
+              style={{ appearance: "none", border: 0, borderBottom: `2px solid ${tab === t.k ? "#7fe9d8" : "transparent"}`, cursor: "pointer", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "10px 11px", background: tab === t.k ? "rgba(127,233,216,.06)" : hov === `tab:${t.k}` ? "rgba(127,233,216,.05)" : "transparent", color: tab === t.k ? "#dff8f2" : "#3c544f", display: "flex", alignItems: "center", gap: 7 }}>
               {t.l}
               {t.badge != null && <span style={{ fontSize: 9, color: "#7fe9d8", border: "1px solid rgba(127,233,216,.3)", padding: "0 5px" }}>{t.badge}</span>}
             </button>
           ))}
         </div>
-        {/* body — flex column that clips; each tab fills it and scrolls internally */}
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", padding: 18 }}>
+        {/* body */}
+        <div className="mscroll" style={{ flex: 1, overflowY: "auto", padding: 18 }}>
           {tab === "overview" && (
-            <OverviewTab project={project} git={git} branches={branches} defaultBranch={defaultBranch}
-              onRefreshWt={refreshWt}
-              selectedBranch={selectedBranch} destBranch={destBranch} setDestBranch={setDestBranch}
-              onGotoChanges={() => { setChangesMode("compare"); setTab("changes"); }} />
+            <OverviewTab project={project} git={git} dotColor={tagColor} issueCount={issueCount}
+              worktrees={worktrees} branches={branches} sessions={props.sessions} status={props.status}
+              onGoto={setTab} onFeed={props.onFeed} onSelectSession={props.onSelectSession}
+              onNewSession={props.onNewSession} onWorktreeSession={props.onWorktreeSession} />
+          )}
+          {tab === "changes" && (
+            <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
+              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} />
           )}
           {tab === "worktrees" && (
-            <WorktreeBoard project={project} sessions={props.sessions} status={props.status}
-              worktrees={worktrees} git={git} selectedBranch={selectedBranch} setSelectedBranch={setSelectedBranch}
-              onSelectSession={props.onSelectSession} onNewSession={props.onNewSession}
-              onWorktreeSession={props.onWorktreeSession} onRefreshWt={refreshWt}
-              onTerminal={(b) => { setSelectedBranch(b); setTab("terminal"); }} />
+            <WorktreesTab project={project} sessions={props.sessions} worktrees={worktrees}
+              branches={branches} defaultBranch={defaultBranch} git={git}
+              onSelectSession={props.onSelectSession} onWorktreeSession={props.onWorktreeSession}
+              onRefresh={() => { refreshGit(); refreshWt(); refreshBranches(); }} />
           )}
-          {tab === "changes" && <ChangesTab project={project} branches={branches}
-            selectedBranch={selectedBranch} destBranch={destBranch} setDestBranch={setDestBranch}
-            mode={changesMode} setMode={setChangesMode} />}
-          {tab === "issues" && <IssuesTab project={project} info={issues} onFeed={props.onFeed} onReload={() => void api.issues(project).then(setIssues)} />}
-          {tab === "terminal" && <TerminalTab project={project} worktrees={worktrees} selectedBranch={selectedBranch} />}
-          {tab === "teacher" && <TeacherTab project={project} />}
+          {tab === "editor" && (
+            <EditorTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts} onPickBranch={setSelectedBranch} />
+          )}
+          {tab === "terminal" && (
+            <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount} />
+          )}
+          {tab === "skills" && <SkillsTab project={project} name={name(project)} />}
+          {tab === "issues" && (
+            <IssuesTab project={project} info={issues} onFeed={props.onFeed}
+              onReload={() => void api.issues(project).then(setIssues).catch(() => {})} />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------------- OVERVIEW: merge + PR (sessions & worktrees live in the WORKTREES tab) ---------------- */
-function OverviewTab({
-  project, git, branches, defaultBranch, onRefreshWt, selectedBranch, destBranch, setDestBranch, onGotoChanges,
-}: { project: string; git: GitStatus | null; branches: string[]; defaultBranch: string; onRefreshWt: () => void;
-  selectedBranch: string; destBranch: string; setDestBranch: (b: string) => void; onGotoChanges: () => void }) {
+/* ---------------- OVERVIEW: stat tiles + sessions grouped by branch (design 575–655) ---------------- */
+
+const SURF_TINT: Record<string, { c: string; bd: string }> = {
+  VS: { c: "#7fe9d8", bd: "rgba(127,233,216,.4)" },
+  WEB: { c: "#8fd9a8", bd: "rgba(143,217,168,.4)" },
+  TG: { c: "#6fb5ff", bd: "rgba(111,181,255,.4)" },
+  MA: { c: "#b9a6ff", bd: "rgba(185,166,255,.4)" },
+};
+const SURF_FALLBACK = { c: "#9fc7c0", bd: "rgba(159,199,192,.4)" };
+
+const SESSION_ST: Record<string, { c: string; l: string }> = {
+  working: { c: "#8fd9a8", l: "RUN" },
+  awaiting: { c: "#e3c279", l: "AWAIT" },
+  live: { c: "#6fb5ff", l: "LIVE" },
+  idle: { c: "#3c544f", l: "IDLE" },
+};
+
+function machineFor(origin: string | null | undefined): string {
+  if (origin === "dashboard") return "localhost";
+  if (origin === "bot" || origin === "miniapp") return "phone";
+  return "this machine";
+}
+
+function OverviewTab({ project, git, dotColor, issueCount, worktrees, branches, sessions, status, onGoto, onFeed, onSelectSession, onNewSession, onWorktreeSession }: {
+  project: string; git: GitStatus | null; dotColor: string; issueCount: number;
+  worktrees: Worktree[]; branches: string[]; sessions: SessionBrief[]; status: Map<string, SessionStatus>;
+  onGoto: (t: Tab) => void; onFeed: (texts: string[]) => void; onSelectSession: (s: SessionBrief) => void;
+  onNewSession: (rel: string) => void; onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
+}) {
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
   const cur = git?.branch || "main";
-  const [prOpen, setPrOpen] = useState(false);
-  const [prTitle, setPrTitle] = useState("");
-  const [prCreated, setPrCreated] = useState<{ number: number | null; url: string } | null>(null);
-  const [banner, setBanner] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [mergeDiff, setMergeDiff] = useState<CompareInfo | null>(null);
-  const sameBranch = !selectedBranch || !destBranch || selectedBranch === destBranch;
 
-  // the diff a merge/PR would introduce: selected's changes relative to destination.
-  useEffect(() => {
-    if (sameBranch) { setMergeDiff(null); return; }
-    void api.compare(project, destBranch, selectedBranch, 2).then(setMergeDiff).catch(() => setMergeDiff(null));
-  }, [project, selectedBranch, destBranch, sameBranch]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
 
-  async function doMerge() {
-    setBusy(true);
-    try {
-      const r = await api.merge(project, selectedBranch, destBranch);
-      setBanner(r.ok ? `Merged ${selectedBranch} → ${destBranch}` : `Merge failed: ${r.output}`);
-      onRefreshWt();
-    } finally { setBusy(false); }
-    setTimeout(() => setBanner(""), 4500);
+  // new-session composer
+  const [nsOpen, setNsOpen] = useState(false);
+  const [nsBranch, setNsBranch] = useState("");
+  const [nsNewOpen, setNsNewOpen] = useState(false);
+  const [nsNewBranch, setNsNewBranch] = useState("");
+  const [nsParent, setNsParent] = useState("");
+  const [nsTask, setNsTask] = useState("");
+
+  const branchList = branches.length ? branches : [cur];
+  const nsBranchSel = nsNewOpen ? "" : (nsBranch && branchList.includes(nsBranch) ? nsBranch : cur);
+  const nsNewParent = nsParent && branchList.includes(nsParent) ? nsParent : cur;
+
+  const linked = worktrees.filter((w) => !w.is_main).length;
+  const visible = sessions.filter((s) => !hidden.has(s.id));
+
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, SessionBrief[]>();
+    for (const s of visible) {
+      const b = s.branch || cur;
+      const arr = map.get(b);
+      if (arr) arr.push(s);
+      else { map.set(b, [s]); order.push(b); }
+    }
+    return order.map((b) => ({ branch: b, sessions: map.get(b) ?? [] }));
+  }, [visible, cur]);
+
+  const tiles: { label: string; value: string; accent: string; valueColor: string; hint?: string; goto?: Tab }[] = [
+    { label: "BRANCH", value: cur, accent: "#7fe9d8", valueColor: "#dff8f2", hint: "manage branches & worktrees", goto: "worktrees" },
+    { label: "CHANGES", value: String(git?.dirty ?? 0), accent: "#e3c279", valueColor: (git?.dirty ?? 0) > 0 ? "#e3c279" : "#6f938d", hint: "view the working tree", goto: "changes" },
+    { label: "SYNC", value: `↑${git?.ahead ?? 0} ↓${git?.behind ?? 0}`, accent: "#8fd9a8", valueColor: "#dff8f2", hint: "commit · push · pull", goto: "changes" },
+    { label: "SESSIONS", value: String(visible.length), accent: "#b9a6ff", valueColor: "#cbb8ff" },
+    { label: "WORKTREES", value: String(linked), accent: "#6fb5ff", valueColor: "#dff8f2", hint: "open worktrees", goto: "worktrees" },
+    { label: "ISSUES", value: String(issueCount), accent: "#e0897a", valueColor: "#dff8f2", hint: "open GitHub issues", goto: "issues" },
+  ];
+
+  function cycleNsParent() {
+    if (!branchList.length) return;
+    const i = Math.max(0, branchList.indexOf(nsNewParent));
+    setNsParent(branchList[(i + 1) % branchList.length]);
   }
-  async function doCreatePr() {
-    setBusy(true);
-    try {
-      const r = await api.createPr(project, selectedBranch, destBranch, prTitle || `Merge ${selectedBranch} into ${destBranch}`);
-      if (r.ok) { setPrCreated({ number: r.number, url: r.url }); setPrOpen(false); }
-      else setBanner(`PR failed: ${r.output}`);
-    } finally { setBusy(false); }
+
+  function startNewSession() {
+    const task = nsTask.trim();
+    if (task) onFeed([task]);
+    if (nsNewOpen) {
+      const b = nsNewBranch.trim().replace(/\s+/g, "-");
+      if (!b) return;
+      onWorktreeSession(project, b, true, nsNewParent || undefined);
+    } else if (nsBranchSel === cur) {
+      onNewSession(project);
+    } else {
+      onWorktreeSession(project, nsBranchSel, false);
+    }
+    setNsOpen(false); setNsTask(""); setNsNewBranch(""); setNsNewOpen(false);
+  }
+
+  async function archive(s: SessionBrief) {
+    try { await api.archiveSession(s.id); } catch { /* ignore */ }
+    setHidden((h) => new Set(h).add(s.id));
   }
 
   return (
-    <div className="mscroll" style={{ flex: 1, minHeight: 0, animation: "mslide .3s ease both" }}>
-      {banner && (
-        <div style={{ border: "1px solid rgba(127,233,216,.35)", background: "rgba(127,233,216,.06)", color: "#bfe6de", fontSize: 10.5, padding: "8px 11px", marginBottom: 12, fontFamily: "'JetBrains Mono',monospace" }}>▸ {banner}</div>
-      )}
-      <div style={{ maxWidth: 580 }}>
-        {/* merge: selected → destination */}
-        <div style={{ border: "1px solid rgba(185,166,255,.3)", background: "rgba(185,166,255,.05)", padding: "10px 12px", marginBottom: 14 }}>
-          <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", marginBottom: 9 }}>MERGE</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11, color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", gap: 5 }}><span style={{ color: "#b9a6ff" }}>⎇</span>{selectedBranch || "—"}</span>
-            <span style={{ color: "#6f6088", fontSize: 12 }}>→</span>
-            <BranchSelect branches={branches} value={destBranch} head={cur} onChange={setDestBranch} accent="#b9a6ff" exclude={selectedBranch} />
+    <div style={{ animation: "mslide .3s ease both" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8, marginBottom: 17 }}>
+        {tiles.map((t) => (
+          <div key={t.label} onClick={t.goto ? () => onGoto(t.goto as Tab) : undefined} title={t.hint} {...hp(`tile:${t.label}`)}
+            style={{ border: "1px solid rgba(127,233,216,.12)", borderTop: `2px solid ${t.accent}`, background: hov === `tile:${t.label}` ? "rgba(127,233,216,.05)" : "rgba(7,13,13,.32)", padding: "10px 11px", cursor: t.goto ? "pointer" : "default" }}>
+            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "#3c544f", display: "flex", alignItems: "center", gap: 5 }}>
+              <span>{t.label}</span>
+              {t.goto && <span style={{ color: "#456b65" }}>›</span>}
+            </div>
+            <div style={{ fontSize: 15, color: t.valueColor, marginTop: 6, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.value}</div>
           </div>
-          {sameBranch ? (
-            <div style={{ marginTop: 9, fontSize: 10, color: "#6f6088", fontFamily: "'JetBrains Mono',monospace" }}>Pick a different destination to merge.</div>
-          ) : (
+        ))}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f" }}>SESSIONS ON THIS PROJECT</span>
+        <span style={{ flex: 1 }} />
+        <button onClick={() => setNsOpen((o) => !o)} title="new session on this project" {...hp("nsnew")}
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(185,166,255,.4)", background: hov === "nsnew" ? "rgba(185,166,255,.16)" : "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 9px", display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 12 }}>+</span>NEW</button>
+      </div>
+
+      {nsOpen && (
+        <div style={{ border: "1px solid rgba(185,166,255,.3)", background: "rgba(185,166,255,.05)", padding: 12, marginBottom: 9, animation: "mslide .25s ease both" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flex: "none" }} />
+            <span style={{ fontSize: 9, letterSpacing: 1.5, color: "#6f938d" }}>NEW SESSION · {name(project)}</span>
+          </div>
+          <div style={{ fontSize: 8.5, letterSpacing: 1, color: "#3c544f", margin: "2px 0 6px" }}>BRANCH</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {branchList.map((b) => {
+              const on = !nsNewOpen && b === nsBranchSel;
+              return (
+                <button key={b} onClick={() => { setNsBranch(b); setNsNewOpen(false); }} {...hp(`nsb:${b}`)}
+                  style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${on || hov === `nsb:${b}` ? "#b9a6ff" : "rgba(127,233,216,.18)"}`, background: on ? "rgba(185,166,255,.16)" : "transparent", color: on ? "#e7deff" : "#9fc7c0", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 8px" }}>
+                  <span style={{ color: "#b9a6ff" }}>⎇</span>{b}</button>
+              );
+            })}
+            <button onClick={() => setNsNewOpen((o) => !o)} title="create a new branch for this session"
+              style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "#b9a6ff" : "rgba(185,166,255,.3)"}`, background: nsNewOpen ? "rgba(185,166,255,.16)" : "transparent", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".5px", padding: "5px 9px" }}>+ NEW</button>
+          </div>
+          {nsNewOpen && (
             <>
-              <div style={{ marginTop: 9, border: "1px solid rgba(127,233,216,.12)", background: "rgba(7,13,13,.5)", padding: "7px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#6f938d" }}>
-                {mergeDiff ? <>{mergeDiff.commits} commits · {mergeDiff.files.length} files · <span style={{ color: "#8fd9a8" }}>+{mergeDiff.add}</span> <span style={{ color: "#e0897a" }}>−{mergeDiff.del}</span></> : "comparing…"}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7 }}>
+                <span style={{ fontSize: 8, letterSpacing: 1, color: "#3c544f", flex: "none" }}>BRANCH FROM</span>
+                <button onClick={cycleNsParent} title="change parent branch — click to cycle" {...hp("nsparent")}
+                  style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, border: `1px solid ${hov === "nsparent" ? "#b9a6ff" : "rgba(185,166,255,.3)"}`, background: "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 7px", minWidth: 0 }}>
+                  <span style={{ color: "#b9a6ff", flex: "none" }}>⎇</span>
+                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{nsNewParent}</span>
+                  <span style={{ color: "#6f6088", flex: "none" }}>⟳</span>
+                </button>
               </div>
-              <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
-                <button onClick={doMerge} disabled={busy} style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #8fd9a8", background: "rgba(143,217,168,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, opacity: busy ? 0.5 : 1 }}>MERGE → {destBranch}</button>
-                <button onClick={onGotoChanges} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 12px", display: "flex", alignItems: "center", gap: 5 }}>VIEW CHANGES →</button>
-              </div>
+              <input value={nsNewBranch} onChange={(e) => setNsNewBranch(e.target.value)} placeholder="new-branch-name"
+                style={{ width: "100%", boxSizing: "border-box", marginTop: 7, background: "rgba(7,13,13,.6)", border: "1px solid rgba(185,166,255,.35)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "7px 9px" }} />
             </>
           )}
+          <textarea value={nsTask} onChange={(e) => setNsTask(e.target.value)} placeholder="first instruction for Claude…"
+            style={{ width: "100%", boxSizing: "border-box", minHeight: 62, resize: "vertical", marginTop: 9, background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 12, lineHeight: 1.5, padding: "9px 10px" }} />
+          <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+            <button onClick={startNewSession} {...hp("nsstart")}
+              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #7fe9d8", background: hov === "nsstart" ? "rgba(127,233,216,.22)" : "rgba(127,233,216,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <span style={{ color: "#7fe9d8" }}>▸</span>START</button>
+            <button onClick={() => setNsOpen(false)} {...hp("nscancel")}
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.2)", background: hov === "nscancel" ? "rgba(127,233,216,.06)" : "transparent", color: "#6f938d", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 12px" }}>CANCEL</button>
+          </div>
         </div>
+      )}
 
-        {/* PR */}
-        {prCreated && (
-            <div style={{ marginTop: 11, border: "1px solid rgba(143,217,168,.35)", background: "rgba(143,217,168,.06)", padding: "10px 12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, color: "#8fd9a8" }}>⇡ PR {prCreated.number ? `#${prCreated.number}` : "opened"}</span>
-                <span style={{ flex: 1 }} />
-                {prCreated.url && <a href={prCreated.url} target="_blank" rel="noreferrer" style={{ fontSize: 9, letterSpacing: 1, color: "#8fd9a8", border: "1px solid rgba(143,217,168,.4)", padding: "1px 6px", textDecoration: "none" }}>OPEN ↗</a>}
-              </div>
-            </div>
-          )}
-          {prOpen ? (
-            <div style={{ marginTop: 11, border: "1px solid rgba(185,166,255,.32)", background: "rgba(185,166,255,.05)", padding: "11px 12px" }}>
-              <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", marginBottom: 8 }}>NEW PULL REQUEST · {selectedBranch} → {destBranch}</div>
-              <input value={prTitle} onChange={(e) => setPrTitle(e.target.value)} placeholder="pull request title…" style={{ width: "100%", boxSizing: "border-box", background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 11.5, padding: "7px 9px" }} />
-              <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f", margin: "10px 0 6px" }}>MERGE INTO</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {[...(defaultBranch && defaultBranch !== selectedBranch ? [defaultBranch] : []), ...branches.filter((b) => b !== selectedBranch && b !== defaultBranch)].map((b) => (
-                  <button key={b} onClick={() => setDestBranch(b)} style={{ appearance: "none", cursor: "pointer", border: `1px solid ${b === destBranch ? "#b9a6ff" : "rgba(127,233,216,.18)"}`, background: b === destBranch ? "rgba(185,166,255,.18)" : "transparent", color: b === destBranch ? "#e7deff" : "#9fc7c0", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "5px 8px" }}>⎇ {b}</button>
-                ))}
-              </div>
-              {mergeDiff && (
-                <div style={{ marginTop: 9, border: "1px solid rgba(127,233,216,.12)", background: "rgba(7,13,13,.5)", padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#6f938d" }}>
-                  {mergeDiff.commits} commits · {mergeDiff.files.length} files · <span style={{ color: "#8fd9a8" }}>+{mergeDiff.add}</span> <span style={{ color: "#e0897a" }}>−{mergeDiff.del}</span>
+      {groups.map((g) => (
+        <div key={g.branch}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0 7px" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, letterSpacing: ".5px", color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace" }}>
+              <span style={{ color: "#b9a6ff" }}>⎇</span>{g.branch}</span>
+            <span style={{ flex: 1, height: 1, background: "rgba(185,166,255,.16)" }} />
+            <span style={{ fontSize: 8, letterSpacing: 1, color: "#6f6088" }}>{g.sessions.length} SESSION{g.sessions.length === 1 ? "" : "S"}</span>
+          </div>
+          {g.sessions.map((s) => {
+            const surf = surfaceFor(s.origin);
+            const st = SURF_TINT[surf.code] ?? SURF_FALLBACK;
+            const state = status.get(s.id)?.state ?? "idle";
+            const sc = SESSION_ST[state] ?? SESSION_ST.idle;
+            const open = expanded === s.id;
+            return (
+              <div key={s.id} style={{ border: `1px solid ${open ? "rgba(127,233,216,.35)" : "rgba(127,233,216,.12)"}`, marginBottom: 7, background: open ? "rgba(127,233,216,.06)" : "transparent" }}>
+                <div onClick={() => setExpanded((e) => (e === s.id ? null : s.id))} {...hp(`sess:${s.id}`)}
+                  style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 10px", cursor: "pointer", background: hov === `sess:${s.id}` ? "rgba(127,233,216,.04)" : "transparent" }}>
+                  <span style={{ fontSize: 9, letterSpacing: 1, color: st.c, border: `1px solid ${st.bd}`, padding: "3px 4px", flex: "none", width: 26, textAlign: "center" }}>{surf.code}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: "#cfe9e3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "untitled"}</div>
+                    <div style={{ fontSize: 9.5, color: "#3c544f", marginTop: 2 }}>{machineFor(s.origin)} · {ago(s.updated) || "now"}</div>
+                  </div>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, flex: "none" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: sc.c }} />
+                    <span style={{ fontSize: 9, letterSpacing: 1, color: sc.c }}>{sc.l}</span>
+                  </span>
+                  <span style={{ fontSize: 11, color: "#6f938d", flex: "none", width: 10, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
                 </div>
-              )}
-              <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
-                <button onClick={doCreatePr} disabled={busy} style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #b9a6ff", background: "rgba(185,166,255,.14)", color: "#e7deff", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 7 }}>OPEN PR</button>
-                <button onClick={() => setPrOpen(false)} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.2)", background: "transparent", color: "#6f938d", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
+                {open && (
+                  <div style={{ borderTop: "1px solid rgba(127,233,216,.1)", padding: "11px 11px 12px", animation: "mslide .2s ease both" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ flex: 1 }} />
+                      <button onClick={() => void archive(s)} {...hp(`arch:${s.id}`)}
+                        style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(224,137,122,.3)", background: hov === `arch:${s.id}` ? "rgba(224,137,122,.1)" : "transparent", color: "#cf9387", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 10px" }}>ARCHIVE</button>
+                      <button onClick={() => onSelectSession(s)} {...hp(`att:${s.id}`)}
+                        style={{ appearance: "none", cursor: "pointer", border: "1px solid #7fe9d8", background: hov === `att:${s.id}` ? "rgba(127,233,216,.22)" : "rgba(127,233,216,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 12px", display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ color: "#7fe9d8" }}>▸</span>ATTACH</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ) : (
-            <button onClick={() => { setPrOpen(true); setPrTitle(`Merge ${selectedBranch} into ${destBranch}`); }} disabled={sameBranch}
-              title={sameBranch ? "pick a different destination to open a PR" : "open a pull request"}
-              style={{ width: "100%", marginTop: 11, appearance: "none", cursor: sameBranch ? "not-allowed" : "pointer", border: `1px solid ${sameBranch ? "rgba(127,233,216,.12)" : "rgba(127,233,216,.3)"}`, background: "transparent", color: sameBranch ? "#3c544f" : "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 9 }}>⇡ CREATE PULL REQUEST</button>
-          )}
-      </div>
+            );
+          })}
+        </div>
+      ))}
+      {visible.length === 0 && <div style={{ fontSize: 11, color: "#3c544f", padding: "6px 2px" }}>No active sessions on this project.</div>}
     </div>
   );
 }
 
-/* ---------------- CHANGES: working-tree commit + compare selected ↔ destination ---------------- */
-function ChangesTab({ project, branches, selectedBranch, destBranch, setDestBranch, mode, setMode }:
-  { project: string; branches: string[]; selectedBranch: string; destBranch: string; setDestBranch: (b: string) => void;
-    mode: "working" | "compare"; setMode: (m: "working" | "compare") => void }) {
-  const [sel, setSel] = useState<string | null>(null);
-  const [diff, setDiff] = useState<string>("");
-  const [cmpFiles, setCmpFiles] = useState<CompareFile[]>([]);
-  const sameBranch = !selectedBranch || !destBranch || selectedBranch === destBranch;
+/* ---------------- GIT (changes): working-tree master-detail + commit/push (design 656–728) ---------------- */
 
-  // file list: selected's changes relative to the destination (tip-to-tip dest..selected).
-  const files = cmpFiles.map((f) => ({ path: f.name, status: f.mark, add: f.add, del: f.del }));
+interface DiffLine {
+  ln: string;
+  mark: string;
+  kind: "add" | "del" | "ctx" | "hunk";
+  text: string;
+}
+
+const DIFF_VIEW: Record<DiffLine["kind"], { bg: string; sign: string; color: string }> = {
+  add: { bg: "rgba(143,217,168,.07)", sign: "#8fd9a8", color: "#a7e6c3" },
+  del: { bg: "rgba(224,137,122,.07)", sign: "#e0897a", color: "#f0b0a8" },
+  ctx: { bg: "transparent", sign: "#2e423f", color: "#6f938d" },
+  hunk: { bg: "rgba(127,233,216,.06)", sign: "#7fe9d8", color: "#7fe9d8" },
+};
+
+/* Unified diff → numbered design rows (sequential numbers from each hunk's
+   new-file start, matching the mock's numbering). */
+function parseDiffRows(diff: string): DiffLine[] {
+  const out: DiffLine[] = [];
+  let n = 0;
+  let inHunk = false;
+  for (const ln of diff.split("\n")) {
+    if (ln.startsWith("@@")) {
+      const m = /\+(\d+)/.exec(ln);
+      if (m) n = parseInt(m[1], 10);
+      inHunk = true;
+      out.push({ ln: "", mark: "@@", kind: "hunk", text: ` ${ln}` });
+      continue;
+    }
+    if (!inHunk) continue;
+    if (ln.startsWith("+")) out.push({ ln: String(n++), mark: "+", kind: "add", text: ln.slice(1) });
+    else if (ln.startsWith("-")) out.push({ ln: String(n++), mark: "-", kind: "del", text: ln.slice(1) });
+    else out.push({ ln: String(n++), mark: "", kind: "ctx", text: ln.startsWith(" ") ? ln.slice(1) : ln });
+  }
+  return out;
+}
+
+function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }: {
+  project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void; onRefreshGit: () => void;
+}) {
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+
+  const [st, setSt] = useState<GitStatus | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
+  const [diff, setDiff] = useState("");
+  const [nonce, setNonce] = useState(0);
+  const [msg, setMsg] = useState("");
+  const [genBusy, setGenBusy] = useState(false);
+  const [gitOp, setGitOp] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const opT = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showOp(m: string) {
+    setGitOp(m);
+    if (opT.current) clearTimeout(opT.current);
+    opT.current = setTimeout(() => setGitOp(""), 4500);
+  }
+  useEffect(() => () => { if (opT.current) clearTimeout(opT.current); }, []);
+
+  const load = () => {
+    void api.git(project, branch || undefined).then(setSt).catch(() => setSt(null));
+  };
+  useEffect(() => { setSel(null); setMsg(""); load(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, branch]);
+
+  const files = st?.files ?? [];
   const selName = sel ?? files[0]?.path ?? null;
 
   useEffect(() => {
-    setSel(null);
-    if (mode !== "compare" || sameBranch) { setCmpFiles([]); return; }
-    void api.compare(project, destBranch, selectedBranch, 2).then((c) => setCmpFiles(c.files)).catch(() => setCmpFiles([]));
-  }, [project, selectedBranch, destBranch, sameBranch, mode]);
+    if (!selName) { setDiff(""); return; }
+    let live = true;
+    void api.gitDiff(project, selName, undefined, undefined, branch || undefined)
+      .then((d) => { if (live) { setDiff(d.diff); setNonce((x) => x + 1); } })
+      .catch(() => { if (live) setDiff(""); });
+    return () => { live = false; };
+  }, [selName, project, branch]);
 
-  useEffect(() => {
-    if (mode !== "compare" || !selName || sameBranch) { setDiff(""); return; }
-    void api.gitDiff(project, selName, destBranch, selectedBranch).then((d) => setDiff(d.diff)).catch(() => setDiff(""));
-  }, [selName, project, selectedBranch, destBranch, sameBranch, mode]);
-
+  const rows = useMemo(() => parseDiffRows(diff), [diff]);
   const selFile = files.find((f) => f.path === selName);
-  const lines = diff.split("\n");
+  const diffAnim = nonce % 2 ? "mdiffin" : "mdiffin2";
 
-  const chip = (on: boolean): CSSProperties => ({ appearance: "none", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "5px 8px", border: `1px solid ${on ? "#7fe9d8" : "rgba(127,233,216,.18)"}`, background: on ? "rgba(127,233,216,.14)" : "transparent", color: on ? "#dff8f2" : "#9fc7c0" });
-  const modeToggle = (
-    <div style={{ display: "flex", gap: 6, marginBottom: 11, flex: "none" }}>
-      {(["working", "compare"] as const).map((m) => (
-        <button key={m} onClick={() => setMode(m)} style={{ ...chip(mode === m), letterSpacing: 1, padding: "5px 12px" }}>{m === "working" ? "WORKING TREE" : "COMPARE"}</button>
-      ))}
-    </div>
-  );
-  const selector = (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 11 }}>
-      <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f", marginRight: 2 }}>COMPARE</span>
-      <span style={{ fontSize: 10, color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace" }}>⎇ {selectedBranch || "—"}</span>
-      <span style={{ fontSize: 9, color: "#6f6088", margin: "0 1px" }}>→</span>
-      {branches.filter((b) => b !== selectedBranch).map((b) => (
-        <button key={b} onClick={() => setDestBranch(b)} style={chip(destBranch === b)}>⎇ {b}</button>
-      ))}
-      {!sameBranch && <span style={{ fontSize: 9, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", marginLeft: 2 }}>{selectedBranch} ◂▸ {destBranch} · tip-to-tip</span>}
-    </div>
-  );
+  async function genMsg() {
+    if (genBusy || !files.length) return;
+    setGenBusy(true);
+    try {
+      const r = await api.commitMessage(project, branch, files.map((f) => f.path));
+      if (r.message) setMsg(r.message);
+    } catch { /* ignore */ }
+    finally { setGenBusy(false); }
+  }
 
-  const compareBody = sameBranch ? (
-    <div style={{ animation: "mslide .3s ease both" }}>{selector}<div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>Pick a destination branch to compare against {selectedBranch || "the selected branch"}.</div></div>
-  ) : files.length === 0 ? (
-    <div style={{ animation: "mslide .3s ease both" }}>{selector}<div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>No differences between {selectedBranch} and {destBranch}.</div></div>
-  ) : (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", animation: "mslide .3s ease both" }}>
-      {selector}
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid rgba(127,233,216,.12)", flex: 1, minHeight: 0 }}>
-        <div style={{ borderRight: "1px solid rgba(127,233,216,.12)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", padding: "11px 12px 8px", flex: "none" }}>DIFF · {files.length}</div>
-          <div className="mscroll" style={{ flex: 1, minHeight: 0 }}>
-            {files.map((f) => {
-              const on = f.path === selName;
-              return (
-                <button key={f.path} onClick={() => setSel(f.path)} style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`, background: on ? "rgba(127,233,216,.08)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px" }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
-                  <span style={{ fontSize: 11, color: on ? "#dff8f2" : "#9fc7c0", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
-                  <span style={{ fontSize: 10, flex: "none", display: "flex", gap: 5 }}><span style={{ color: "#8fd9a8" }}>+{f.add}</span><span style={{ color: "#e0897a" }}>−{f.del}</span></span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div style={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid rgba(127,233,216,.1)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, flex: "none" }}>
-            <span style={{ color: FILE_COLOR(selFile?.status ?? "M"), fontWeight: 700 }}>{selFile?.status ?? ""}</span>
-            <span style={{ flex: 1, color: "#dff8f2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{selName || ""}</span>
-            <span style={{ color: "#8fd9a8" }}>+{selFile?.add ?? 0}</span><span style={{ color: "#e0897a" }}>−{selFile?.del ?? 0}</span>
-          </div>
-          <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowX: "auto", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.7 }}>
-            {lines.map((ln, i) => {
-              const kind = ln.startsWith("@@") ? "hunk" : ln.startsWith("+") ? "add" : ln.startsWith("-") ? "del" : "ctx";
-              const map = { add: { bg: "rgba(143,217,168,.07)", c: "#a7e6c3" }, del: { bg: "rgba(224,137,122,.07)", c: "#f0b0a8" }, hunk: { bg: "rgba(127,233,216,.06)", c: "#7fe9d8" }, ctx: { bg: "transparent", c: "#6f938d" } }[kind];
-              return <div key={i} style={{ display: "flex", background: map.bg, padding: "0 10px", minWidth: "max-content" }}><span style={{ color: map.c, whiteSpace: "pre", flex: 1 }}>{ln || " "}</span></div>;
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  async function doCommit() {
+    if (busy || !msg.trim() || !files.length) return;
+    setBusy(true);
+    try {
+      const r = await api.gitCommit(project, msg.trim(), undefined, branch || undefined);
+      if (r.ok) { showOp(`Committed ${files.length} file${files.length === 1 ? "" : "s"} on ${branch}`); setMsg(""); load(); onRefreshGit(); }
+      else showOp(`Commit failed: ${r.output}`);
+    } finally { setBusy(false); }
+  }
+
+  async function doPush() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api.gitPush(project, branch || undefined);
+      showOp(r.ok ? `Pushed ${branch} to origin` : `Push failed: ${r.output}`);
+      if (r.ok) { load(); onRefreshGit(); }
+    } finally { setBusy(false); }
+  }
+
+  function doPull() {
+    // TODO(phase2-data): no pull endpoint on the bridge yet.
+    showOp("Pull isn't wired to the bridge yet");
+  }
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      {modeToggle}
-      {mode === "working" ? <CommitPanel project={project} branch={selectedBranch} /> : compareBody}
+    <div style={{ animation: "mslide .3s ease both" }}>
+      <div style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f", marginBottom: 11 }}>WORKING TREE</div>
+      {st && files.length === 0 && (
+        <div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>Working tree clean.</div>
+      )}
+      {files.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid rgba(127,233,216,.12)", minHeight: 362 }}>
+          {/* file list */}
+          <div style={{ borderRight: "1px solid rgba(127,233,216,.12)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 12px 8px", flex: "none" }}>
+              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f" }}>CHANGED · {files.length}</span>
+              <span style={{ flex: 1 }} />
+              <div style={{ position: "relative", flex: "none" }}>
+                <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
+                  style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "#b9a6ff" : "rgba(185,166,255,.3)"}`, background: "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px", maxWidth: 160 }}>
+                  <span style={{ color: "#b9a6ff", flex: "none" }}>⎇</span>
+                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch || "—"}</span>
+                  <span style={{ color: "#6f6088", flex: "none" }}>▾</span>
+                </button>
+                {menuOpen && (
+                  <div style={{ position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 30, minWidth: 214, border: "1px solid rgba(185,166,255,.4)", background: "rgba(7,13,13,.99)", boxShadow: "0 12px 32px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
+                    <div style={{ fontSize: 8, letterSpacing: 1.5, color: "#3c544f", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
+                    {branchOpts.map((b) => (
+                      <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
+                        style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "rgba(185,166,255,.1)" : "transparent", color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "7px 9px", textAlign: "left" }}>
+                        <span style={{ color: "#b9a6ff", flex: "none" }}>⎇</span>
+                        <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
+                        {b.hasWorktree && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "#8fd9a8", border: "1px solid rgba(143,217,168,.35)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
+                        {b.on && <span style={{ color: "#7fe9d8", flex: "none" }}>✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+              {files.map((f) => {
+                const on = f.path === selName;
+                return (
+                  <button key={f.path} onClick={() => setSel(f.path)} {...hp(`f:${f.path}`)}
+                    style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`, background: on ? "rgba(127,233,216,.08)" : hov === `f:${f.path}` ? "rgba(127,233,216,.05)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
+                    <span style={{ fontSize: 11, color: on ? "#dff8f2" : "#9fc7c0", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
+                    <span style={{ fontSize: 10, flex: "none", display: "flex", gap: 5 }}><span style={{ color: "#8fd9a8" }}>+{f.add}</span><span style={{ color: "#e0897a" }}>−{f.del}</span></span>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ borderTop: "1px solid rgba(127,233,216,.1)", flex: "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 9px 0" }}>
+                <input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="commit message…"
+                  style={{ flex: 1, minWidth: 0, background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 11, padding: "6px 8px" }} />
+                <button onClick={() => void genMsg()} title="generate with Claude" {...hp("gen")}
+                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${genBusy ? "rgba(185,166,255,.5)" : "rgba(185,166,255,.35)"}`, background: genBusy ? "rgba(185,166,255,.16)" : hov === "gen" ? "rgba(185,166,255,.16)" : "transparent", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 9px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 5, height: 5, background: "#b9a6ff", transform: "rotate(45deg)" }} />{genBusy ? "THINKING…" : "GEN"}</button>
+              </div>
+              {gitOp && (
+                <div style={{ margin: "8px 9px 0", border: "1px solid rgba(143,217,168,.35)", background: "rgba(143,217,168,.06)", color: "#a7e6c3", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "6px 9px", display: "flex", alignItems: "center", gap: 7, animation: "mslide .2s ease both" }}>
+                  <span style={{ color: "#8fd9a8", flex: "none" }}>✓</span>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gitOp}</span>
+                </div>
+              )}
+              <div style={{ padding: "8px 9px 6px" }}>
+                <button onClick={() => void doCommit()} {...hp("commit")}
+                  style={{ width: "100%", appearance: "none", cursor: "pointer", border: "1px solid #7fe9d8", background: hov === "commit" ? "rgba(127,233,216,.22)" : "rgba(127,233,216,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8 }}>COMMIT ALL</button>
+              </div>
+              <div style={{ display: "flex", gap: 7, padding: "0 9px 9px" }}>
+                <button onClick={() => void doPush()} title="push to origin" {...hp("push")}
+                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: hov === "push" ? "rgba(127,233,216,.08)" : "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <span style={{ color: "#8fd9a8" }}>↑</span>PUSH {st?.ahead ?? 0}</button>
+                <button onClick={doPull} title="pull from origin" {...hp("pull")}
+                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: hov === "pull" ? "rgba(127,233,216,.08)" : "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <span style={{ color: "#6fb5ff" }}>↓</span>PULL {st?.behind ?? 0}</button>
+              </div>
+            </div>
+          </div>
+          {/* diff panel */}
+          <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid rgba(127,233,216,.1)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, flex: "none" }}>
+              <span style={{ color: FILE_COLOR(selFile?.status ?? "M"), fontWeight: 700 }}>{selFile?.status ?? ""}</span>
+              <span style={{ flex: 1, color: "#dff8f2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{selName || ""}</span>
+              <span style={{ color: "#8fd9a8" }}>+{selFile?.add ?? 0}</span><span style={{ color: "#e0897a" }}>−{selFile?.del ?? 0}</span>
+            </div>
+            <div className="mscroll" style={{ flex: 1, overflow: "auto", minHeight: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.7 }}>
+              {rows.map((d, i) => {
+                const v = DIFF_VIEW[d.kind];
+                return (
+                  <div key={`${nonce}:${i}`} style={{ display: "flex", background: v.bg, animation: `${diffAnim} .34s ease both`, animationDelay: `${i * 22}ms` }}>
+                    <span style={{ width: 36, flex: "none", textAlign: "right", paddingRight: 9, color: "#2e423f", userSelect: "none", borderRight: "1px solid rgba(127,233,216,.08)" }}>{d.ln}</span>
+                    <span style={{ width: 14, flex: "none", textAlign: "center", color: v.sign }}>{d.mark}</span>
+                    <span style={{ color: v.color, whiteSpace: "pre", flex: 1 }}>{d.text || " "}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ---------------- ISSUES ---------------- */
-function IssuesTab({ project, info, onFeed, onReload }: { project: string; info: IssuesInfo | null; onFeed: (t: string[]) => void; onReload: () => void }) {
+/* ---------------- ISSUES: master-detail with select/feed + pagination (design 876–991) ---------------- */
+
+const ISSUES_PER_PAGE = 4;
+const NEW_ISSUE_LABELS = [
+  { name: "bug", color: "#e0897a" },
+  { name: "enhancement", color: "#b9a6ff" },
+  { name: "p1", color: "#e3c279" },
+  { name: "good first issue", color: "#8fd9a8" },
+];
+
+function issueText(i: Issue): string {
+  return `Address issue #${i.number}: ${i.title}\n\n${i.body || ""}`;
+}
+
+function agoIso(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "—";
+  return ago(t / 1000) || "now";
+}
+
+function IssuesTab({ project, info, onFeed, onReload }: {
+  project: string; info: IssuesInfo | null; onFeed: (t: string[]) => void; onReload: () => void;
+}) {
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+
   const [open, setOpen] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [fed, setFed] = useState<Set<number>>(new Set());
+  const [banner, setBanner] = useState("");
+  const bannerT = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [label, setLabel] = useState("bug"); // TODO(phase2-data): createIssue has no labels param yet
+
+  useEffect(() => () => { if (bannerT.current) clearTimeout(bannerT.current); }, []);
+  function showBanner(m: string) {
+    setBanner(m);
+    if (bannerT.current) clearTimeout(bannerT.current);
+    bannerT.current = setTimeout(() => setBanner(""), 4500);
+  }
+
   const issues = info?.issues ?? [];
-  const sel = issues.find((i) => i.number === open) || null;
+  const pageCount = Math.max(1, Math.ceil(issues.length / ISSUES_PER_PAGE));
+  const pageIdx = Math.min(page, pageCount - 1);
+  const pageIssues = issues.slice(pageIdx * ISSUES_PER_PAGE, pageIdx * ISSUES_PER_PAGE + ISSUES_PER_PAGE);
+  const selIssue = issues.find((i) => i.number === open) || null;
+  const selCount = sel.size;
+
+  function toggleSel(n: number) {
+    setSel((prev) => { const s = new Set(prev); if (s.has(n)) s.delete(n); else s.add(n); return s; });
+  }
+
+  function feedSelected() {
+    const picked = issues.filter((i) => sel.has(i.number));
+    if (!picked.length) return;
+    onFeed(picked.map(issueText));
+    setFed((f) => { const n = new Set(f); picked.forEach((i) => n.add(i.number)); return n; });
+    setSel(new Set());
+    showBanner(`Fed ${picked.length} issue${picked.length === 1 ? "" : "s"} to Claude`);
+  }
+
+  function feedOne(i: Issue) {
+    onFeed([issueText(i)]);
+    setFed((f) => new Set(f).add(i.number));
+    showBanner(`Fed #${i.number} to Claude`);
+  }
 
   async function create() {
     if (!title.trim()) return;
@@ -382,66 +754,137 @@ function IssuesTab({ project, info, onFeed, onReload }: { project: string; info:
   if (info && !info.gh_ok) return <div style={{ fontSize: 12, color: "#e0897a", padding: "6px 2px" }}>gh CLI unavailable: {info.error || "not authenticated"}.</div>;
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", animation: "mslide .3s ease both" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, flex: "none" }}>
+    <div style={{ animation: "mslide .3s ease both" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11 }}>
         <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f" }}>{info?.open_count ?? 0} OPEN ISSUES</span>
         <span style={{ flex: 1 }} />
-        <button onClick={() => setNewOpen((o) => !o)} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(185,166,255,.4)", background: "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}><span style={{ fontSize: 12 }}>+</span>NEW ISSUE</button>
+        {selCount > 0 && (
+          <button onClick={feedSelected} {...hp("feedsel")}
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid #8fd9a8", background: hov === "feedsel" ? "rgba(143,217,168,.22)" : "rgba(143,217,168,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "#8fd9a8" }}>▸</span>FEED {selCount} TO CLAUDE</button>
+        )}
+        <button onClick={() => setNewOpen((o) => !o)} {...hp("newissue")}
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(185,166,255,.4)", background: hov === "newissue" ? "rgba(185,166,255,.16)" : "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 12 }}>+</span>NEW ISSUE</button>
       </div>
+
+      {banner && (
+        <div style={{ border: "1px solid rgba(143,217,168,.4)", background: "rgba(143,217,168,.08)", color: "#a7e6c3", fontSize: 10.5, letterSpacing: ".5px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both" }}>
+          <span style={{ color: "#8fd9a8" }}>▸</span>{banner}
+        </div>
+      )}
+
       {newOpen && (
-        <div style={{ border: "1px solid rgba(185,166,255,.32)", background: "rgba(185,166,255,.05)", padding: "11px 12px", marginBottom: 10 }}>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="describe the issue…" style={{ width: "100%", boxSizing: "border-box", background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 12, padding: "7px 9px" }} />
+        <div style={{ border: "1px solid rgba(185,166,255,.32)", background: "rgba(185,166,255,.05)", padding: "11px 12px", marginBottom: 10, animation: "mslide .2s ease both" }}>
+          <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", marginBottom: 8 }}>NEW ISSUE · {name(project)}</div>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="describe the issue…"
+            style={{ width: "100%", boxSizing: "border-box", background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 12, padding: "7px 9px" }} />
+          <div style={{ fontSize: 8.5, letterSpacing: 1, color: "#3c544f", margin: "9px 0 6px" }}>LABEL</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {NEW_ISSUE_LABELS.map((l) => {
+              const on = label === l.name;
+              return (
+                <button key={l.name} onClick={() => setLabel(l.name)}
+                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on ? hexRgba(l.color, 0.6) : "rgba(127,233,216,.18)"}`, background: on ? hexRgba(l.color, 0.12) : "transparent", color: on ? "#dff8f2" : "#9fc7c0", fontFamily: "inherit", fontSize: 9, letterSpacing: ".5px", padding: "4px 9px", display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: l.color }} />{l.name}</button>
+              );
+            })}
+          </div>
           <div style={{ display: "flex", gap: 7, marginTop: 10 }}>
-            <button onClick={create} style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #b9a6ff", background: "rgba(185,166,255,.14)", color: "#e7deff", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 7 }}>CREATE ISSUE</button>
-            <button onClick={() => setNewOpen(false)} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.2)", background: "transparent", color: "#6f938d", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
+            <button onClick={() => void create()} {...hp("createissue")}
+              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #b9a6ff", background: hov === "createissue" ? "rgba(185,166,255,.24)" : "rgba(185,166,255,.14)", color: "#e7deff", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 7 }}>CREATE ISSUE</button>
+            <button onClick={() => setNewOpen(false)} {...hp("cancelissue")}
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.2)", background: hov === "cancelissue" ? "rgba(127,233,216,.06)" : "transparent", color: "#6f938d", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "330px 1fr", border: "1px solid rgba(127,233,216,.12)", flex: 1, minHeight: 0 }}>
-        <div className="mscroll" style={{ borderRight: "1px solid rgba(127,233,216,.12)", padding: 9, minHeight: 0 }}>
-          {issues.map((i: Issue) => {
-            const on = i.number === open;
-            return (
-              <div key={i.number} onClick={() => setOpen(i.number)} data-ctx-type="issue" data-ctx-id={String(i.number)} data-ctx-label={`#${i.number}`}
-                style={{ border: `1px solid ${on ? "rgba(127,233,216,.4)" : "rgba(127,233,216,.12)"}`, borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`, padding: "9px 10px", marginBottom: 7, cursor: "pointer", background: on ? "rgba(127,233,216,.08)" : "transparent" }}>
-                <div style={{ fontSize: 12, color: "#cfe9e3", lineHeight: 1.35 }}>{i.title}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 9.5, color: "#3c544f", fontFamily: "'JetBrains Mono',monospace" }}>#{i.number}</span>
-                  {i.labels.slice(0, 2).map((l) => (
-                    <span key={l.name} style={{ fontSize: 8.5, letterSpacing: ".5px", padding: "1px 6px", color: `#${l.color || "9fc7c0"}`, border: "1px solid rgba(127,233,216,.2)" }}>{l.name}</span>
+
+      {/* master-detail */}
+      <div style={{ display: "grid", gridTemplateColumns: "330px 1fr", border: "1px solid rgba(127,233,216,.12)", minHeight: 372 }}>
+        {/* LEFT: list */}
+        <div style={{ borderRight: "1px solid rgba(127,233,216,.12)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 9 }}>
+            {pageIssues.map((i) => {
+              const isOpen = i.number === open;
+              const isSel = sel.has(i.number);
+              return (
+                <div key={i.number} onClick={() => setOpen(i.number)} data-ctx-type="issue" data-ctx-id={String(i.number)} data-ctx-label={`#${i.number}`} {...hp(`row:${i.number}`)}
+                  style={{ border: `1px solid ${isOpen ? "rgba(127,233,216,.4)" : hov === `row:${i.number}` ? "rgba(127,233,216,.3)" : isSel ? "rgba(127,233,216,.25)" : "rgba(127,233,216,.12)"}`, borderLeft: `2px solid ${isOpen ? "#7fe9d8" : "transparent"}`, padding: "9px 10px", marginBottom: 7, cursor: "pointer", background: isOpen ? "rgba(127,233,216,.06)" : "transparent", display: "flex", gap: 9 }}>
+                  <span onClick={(e) => { e.stopPropagation(); toggleSel(i.number); }} title="select"
+                    style={{ width: 15, height: 15, border: `1px solid ${isSel ? "#7fe9d8" : "rgba(127,233,216,.3)"}`, background: isSel ? "#7fe9d8" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#06100e", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+                      <div style={{ fontSize: 12, color: "#cfe9e3", lineHeight: 1.35, flex: 1 }}>{i.title}</div>
+                      {fed.has(i.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "#06100e", background: "#8fd9a8", padding: "2px 5px", flex: "none" }}>✓</span>}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 9.5, color: "#3c544f", fontFamily: "'JetBrains Mono',monospace" }}>#{i.number}</span>
+                      {i.labels.slice(0, 2).map((l) => (
+                        <span key={l.name} style={{ fontSize: 8.5, letterSpacing: ".5px", padding: "1px 6px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
+                      ))}
+                      <span style={{ fontSize: 9.5, color: "#2e423f", marginLeft: "auto" }}>{agoIso(i.updated)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {issues.length === 0 && <div style={{ fontSize: 11, color: "#3c544f", padding: 6 }}>No open issues.</div>}
+          </div>
+          {pageCount > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 9px", borderTop: "1px solid rgba(127,233,216,.1)", flex: "none" }}>
+              <button onClick={() => setPage((p) => Math.max(0, p - 1))} {...hp("prev")}
+                style={{ appearance: "none", cursor: pageIdx > 0 ? "pointer" : "not-allowed", border: "1px solid rgba(127,233,216,.2)", background: hov === "prev" ? "rgba(127,233,216,.06)" : "transparent", color: pageIdx > 0 ? "#9fc7c0" : "#3c544f", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1, padding: "5px 10px" }}>‹ PREV</button>
+              <span style={{ flex: 1, textAlign: "center", fontSize: 9, letterSpacing: 1, color: "#6f938d" }}>{pageIdx + 1} / {pageCount}</span>
+              <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} {...hp("next")}
+                style={{ appearance: "none", cursor: pageIdx < pageCount - 1 ? "pointer" : "not-allowed", border: "1px solid rgba(127,233,216,.2)", background: hov === "next" ? "rgba(127,233,216,.06)" : "transparent", color: pageIdx < pageCount - 1 ? "#9fc7c0" : "#3c544f", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1, padding: "5px 10px" }}>NEXT ›</button>
+            </div>
+          )}
+        </div>
+        {/* RIGHT: detail */}
+        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+          {selIssue ? (
+            <>
+              <div style={{ flex: "none", padding: "15px 18px 13px", borderBottom: "1px solid rgba(127,233,216,.1)", animation: "mslide .25s ease both" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                  <span style={{ fontSize: 10, color: "#3c544f", fontFamily: "'JetBrains Mono',monospace" }}>#{selIssue.number}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, letterSpacing: 1, color: "#8fd9a8", border: "1px solid rgba(143,217,168,.4)", padding: "2px 8px" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#8fd9a8" }} />OPEN</span>
+                  {fed.has(selIssue.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "#06100e", background: "#8fd9a8", padding: "2px 6px" }}>✓ FED</span>}
+                  <span style={{ flex: 1 }} />
+                  <button onClick={() => setOpen(null)} title="close detail" {...hp("closedetail")}
+                    style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: hov === "closedetail" ? "rgba(127,233,216,.08)" : "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 11, padding: "2px 8px", lineHeight: 1 }}>✕</button>
+                </div>
+                <div style={{ fontSize: 15, color: "#dff8f2", marginTop: 11, lineHeight: 1.4 }}>{selIssue.title}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 9, flexWrap: "wrap" }}>
+                  {selIssue.labels.map((l) => (
+                    <span key={l.name} style={{ fontSize: 9, letterSpacing: ".5px", padding: "1px 7px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
                   ))}
                 </div>
+                {/* TODO(phase2-data): author/assignee aren't in the issues endpoint yet */}
+                <div style={{ fontSize: 10, color: "#6f938d", marginTop: 11 }}>opened {agoIso(selIssue.updated)} ago by <span style={{ color: "#9fc7c0" }}>—</span> · assignee <span style={{ color: "#9fc7c0" }}>—</span></div>
               </div>
-            );
-          })}
-          {issues.length === 0 && <div style={{ fontSize: 11, color: "#3c544f", padding: 6 }}>No open issues.</div>}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-          {sel ? (
-            <>
-              <div style={{ flex: "none", padding: "15px 18px 13px", borderBottom: "1px solid rgba(127,233,216,.1)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <span style={{ fontSize: 10, color: "#3c544f", fontFamily: "'JetBrains Mono',monospace" }}>#{sel.number}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, letterSpacing: 1, color: "#8fd9a8", border: "1px solid rgba(143,217,168,.4)", padding: "2px 8px" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "#8fd9a8" }} />OPEN</span>
-                  <span style={{ flex: 1 }} />
-                  <button onClick={() => setOpen(null)} style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 11, padding: "2px 8px", lineHeight: 1 }}>✕</button>
-                </div>
-                <div style={{ fontSize: 15, color: "#dff8f2", marginTop: 11, lineHeight: 1.4 }}>{sel.title}</div>
-              </div>
-              <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "14px 18px" }}>
+              <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
                 <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f", marginBottom: 8 }}>DESCRIPTION</div>
-                <div style={{ fontSize: 12, color: "#bfe6de", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{sel.body || "No description."}</div>
+                <div style={{ fontSize: 12, color: "#bfe6de", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{selIssue.body || "No description."}</div>
+                <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f", margin: "18px 0 11px" }}>ACTIVITY</div>
+                {/* TODO(phase2-data): no issue-activity endpoint yet */}
+                <div style={{ fontSize: 10.5, color: "#2e423f" }}>No activity yet.</div>
               </div>
               <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderTop: "1px solid rgba(127,233,216,.1)" }}>
-                <button onClick={() => onFeed([`Address issue #${sel.number}: ${sel.title}\n\n${sel.body || ""}`])} style={{ appearance: "none", cursor: "pointer", border: "1px solid #8fd9a8", background: "rgba(143,217,168,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>▸ FEED TO CLAUDE</button>
+                <button onClick={() => feedOne(selIssue)} {...hp("feedone")}
+                  style={{ appearance: "none", cursor: "pointer", border: "1px solid #8fd9a8", background: hov === "feedone" ? "rgba(143,217,168,.22)" : "rgba(143,217,168,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>
+                  {fed.has(selIssue.number) ? "FEED AGAIN" : "FEED TO CLAUDE"}</button>
                 <span style={{ flex: 1 }} />
-                {sel.url && <a href={sel.url} target="_blank" rel="noreferrer" style={{ fontSize: 10, letterSpacing: 1, color: "#9fc7c0", border: "1px solid rgba(127,233,216,.25)", padding: "8px 13px", textDecoration: "none" }}>VIEW ↗</a>}
+                {/* TODO(phase2-data): no close-issue endpoint yet (unwired in the design too) */}
+                <button {...hp("closeissue")}
+                  style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(224,137,122,.3)", background: hov === "closeissue" ? "rgba(224,137,122,.1)" : "transparent", color: "#cf9387", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>CLOSE ISSUE</button>
               </div>
             </>
           ) : (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
               <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#2e423f" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
               <div style={{ fontSize: 11, letterSpacing: 1.5, color: "#3c544f" }}>SELECT AN ISSUE</div>
+              <div style={{ fontSize: 10, color: "#2e423f", maxWidth: 210, lineHeight: 1.55 }}>Click any issue on the left to read its full description and activity.</div>
             </div>
           )}
         </div>
@@ -450,28 +893,37 @@ function IssuesTab({ project, info, onFeed, onReload }: { project: string; info:
   );
 }
 
-/* ---------------- TERMINAL ---------------- */
-function shortDir(rel: string): string {
-  return rel.replace(/\/+$/, "").split("/").pop() || rel;
-}
+/* ---------------- TERMINAL: run-project bar + multi-tab PTY terminals (design 1063–1120) ---------------- */
 
-function TerminalTab({ project, worktrees, selectedBranch }: {
-  project: string;
-  worktrees: Worktree[];
-  selectedBranch: string;
+function TerminalTab({ project, worktrees, branch, onCount }: {
+  project: string; worktrees: Worktree[]; branch: string; onCount: (n: number) => void;
 }) {
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+
   const [terms, setTerms] = useState<TermInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
 
-  // Open in the selected branch's worktree when it has one, else the project dir.
-  const cwdRel = useMemo(() => {
-    const wt = worktrees.find((w) => w.branch === selectedBranch && w.rel);
-    return wt?.rel ?? project;
-  }, [worktrees, selectedBranch, project]);
+  const [runCmd, setRunCmd] = useState("");
+  const [runSource, setRunSource] = useState("");
+  const [detected, setDetected] = useState(false);
+  const [genBusy, setGenBusy] = useState(false);
+  const [runBusy, setRunBusy] = useState(false);
 
-  // List the persisted terminals for this project on open (reconnect to live ones).
+  // auto-detect the run command for this project
+  useEffect(() => {
+    let live = true;
+    setRunCmd(""); setRunSource(""); setDetected(false);
+    void api.detectPreview({ project })
+      .then((r) => { if (live) { setRunCmd(r.command || ""); setRunSource(r.source || ""); setDetected(true); } })
+      .catch(() => { if (live) setDetected(true); });
+    return () => { live = false; };
+  }, [project]);
+
+  // reconnect to this project's persisted terminals
   useEffect(() => {
     let live = true;
     void api.terminals(project).then((d) => {
@@ -482,24 +934,33 @@ function TerminalTab({ project, worktrees, selectedBranch }: {
     return () => { live = false; };
   }, [project]);
 
-  const removeTerm = useCallback((id: string) => {
+  useEffect(() => { onCount(terms.length); }, [terms, onCount]);
+
+  const branchOf = (t: TermInfo): string => {
+    const wt = worktrees.find((w) => w.rel && w.rel === t.cwd_rel);
+    if (wt) return wt.branch;
+    if (t.cwd_rel === project) return branch || "main";
+    return t.cwd_rel.replace(/\/+$/, "").split("/").pop() || t.cwd_rel;
+  };
+
+  const removeTerm = (id: string) => {
     setTerms((prev) => {
       const next = prev.filter((t) => t.id !== id);
       setActiveId((cur) => (cur === id ? (next[next.length - 1]?.id ?? null) : cur));
       return next;
     });
-  }, []);
+  };
 
-  async function create() {
+  async function create(cwdRel: string) {
     if (creating) return;
-    setCreating(true);
-    setError(null);
+    setCreating(true); setError("");
     try {
       const r = await api.createTerminal(project, cwdRel, 80, 24);
       if (r.error || !r.id) { setError(r.error || "could not open terminal"); return; }
       const fresh: TermInfo = { id: r.id, project, cwd_rel: r.cwd_rel ?? cwdRel, cols: 80, rows: 24, created: Date.now() / 1000, alive: true };
       setTerms((prev) => [...prev, fresh]);
       setActiveId(r.id);
+      setNewOpen(false);
     } catch (e) { setError((e as Error).message); }
     finally { setCreating(false); }
   }
@@ -509,37 +970,97 @@ function TerminalTab({ project, worktrees, selectedBranch }: {
     removeTerm(id);
   }
 
-  return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", animation: "mslide .3s ease both" }}>
-      {/* instance strip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flex: "none", flexWrap: "wrap" }}>
-        {terms.map((t, i) => (
-          <span key={t.id} onClick={() => setActiveId(t.id)}
-            style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", border: `1px solid ${t.id === activeId ? "#7fe9d8" : "rgba(127,233,216,.16)"}`, background: t.id === activeId ? "rgba(127,233,216,.08)" : "transparent", color: t.id === activeId ? "#dff8f2" : "#6f938d", fontSize: 10, letterSpacing: 1, padding: "4px 8px" }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: t.alive ? "#8fd9a8" : "#e0897a" }} />
-            sh {i + 1}
-            <button title="close terminal" onClick={(e) => { e.stopPropagation(); void closeTerm(t.id); }}
-              style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", color: "inherit", fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
-          </span>
-        ))}
-        <button onClick={() => void create()} disabled={creating} title={`new terminal in ${shortDir(cwdRel)}`}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: "4px 10px" }}>+ NEW</button>
-        <span style={{ flex: 1 }} />
-        <span title="working directory" style={{ fontSize: 9.5, color: "#3c544f", fontFamily: "'JetBrains Mono',monospace" }}>↳ {shortDir(cwdRel)}</span>
-      </div>
-      {error && <div style={{ marginBottom: 8, border: "1px solid rgba(224,137,122,.3)", background: "rgba(224,137,122,.06)", padding: "4px 8px", fontSize: 11, color: "#e0897a", flex: "none" }}>{error}</div>}
+  async function genRun() {
+    if (genBusy) return;
+    setGenBusy(true);
+    try {
+      const r = await api.detectPreview({ project });
+      setRunCmd(r.command || "");
+      setRunSource(r.source || "");
+    } catch { /* ignore */ }
+    finally { setGenBusy(false); }
+  }
 
-      {/* panes — kept mounted so output keeps flowing; only the active one is shown */}
-      <div style={{ position: "relative", flex: 1, minHeight: 0, border: "1px solid rgba(127,233,216,.12)", background: "#070d0d" }}>
+  async function runProject() {
+    const cmd = runCmd.trim();
+    if (!cmd || runBusy) return;
+    setRunBusy(true);
+    try { await api.server("start", { cmd, project }); }
+    catch (e) { setError((e as Error).message); }
+    finally { setRunBusy(false); }
+  }
+
+  const wtOpts = worktrees.length
+    ? worktrees.map((w) => ({ name: w.branch, rel: w.rel ?? project }))
+    : [{ name: branch || "main", rel: project }];
+
+  return (
+    <div style={{ animation: "mslide .3s ease both" }}>
+      {/* run project */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, border: "1px solid rgba(143,217,168,.24)", background: "rgba(143,217,168,.04)", padding: "9px 11px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 8, letterSpacing: 1.5, color: "#8fd9a8", flex: "none" }}>RUN PROJECT</span>
+        <span style={{ fontSize: 13, color: "#8fd9a8", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>$</span>
+        <input value={runCmd} onChange={(e) => setRunCmd(e.target.value)} placeholder="command to run this project…"
+          style={{ flex: 1, minWidth: 120, background: "rgba(4,7,7,.6)", border: "1px solid rgba(127,233,216,.16)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, padding: "7px 9px" }} />
+        <span title="auto-detected" style={{ fontSize: 8, letterSpacing: ".5px", color: "#456b65", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{runSource}</span>
+        {detected && !runCmd && (
+          <button onClick={() => void genRun()} title="complex project — let Claude generate the run command" {...hp("gen")}
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(185,166,255,.4)", background: hov === "gen" ? "rgba(185,166,255,.18)" : "rgba(185,166,255,.08)", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "7px 11px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ color: "#b9a6ff" }}>✦</span>{genBusy ? "THINKING…" : "GENERATE"}</button>
+        )}
+        <button onClick={() => void runProject()} title="run in terminal" {...hp("run")}
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid #8fd9a8", background: hov === "run" ? "rgba(143,217,168,.24)" : "rgba(143,217,168,.14)", color: "#dff8f2", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "7px 14px", flex: "none", display: "flex", alignItems: "center", gap: 6, opacity: runBusy ? 0.6 : 1 }}>
+          <span style={{ color: "#8fd9a8" }}>▸</span>RUN</button>
+      </div>
+      {error && (
+        <div style={{ border: "1px solid rgba(224,137,122,.3)", background: "rgba(224,137,122,.06)", color: "#e0897a", fontSize: 10.5, padding: "7px 11px", marginBottom: 9, fontFamily: "'JetBrains Mono',monospace" }}>{error}</div>
+      )}
+      {/* terminal box */}
+      <div style={{ border: "1px solid rgba(127,233,216,.14)", display: "flex", flexDirection: "column", height: 430, background: "rgba(4,7,7,.55)" }}>
+        <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderBottom: "1px solid rgba(127,233,216,.12)", background: "rgba(7,13,13,.5)", overflowX: "auto" }}>
+          {terms.map((t) => {
+            const on = t.id === activeId;
+            return (
+              <div key={t.id} onClick={() => setActiveId(t.id)} {...hp(`term:${t.id}`)}
+                style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", cursor: "pointer", borderRight: "1px solid rgba(127,233,216,.1)", borderBottom: `2px solid ${on ? "#7fe9d8" : "transparent"}`, background: on ? "rgba(127,233,216,.06)" : hov === `term:${t.id}` ? "rgba(127,233,216,.05)" : "transparent", flex: "none" }}>
+                <span style={{ color: "#7fe9d8", fontSize: 10, flex: "none" }}>❯_</span>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: on ? "#dff8f2" : "#6f938d", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {branchOf(t)}</span>
+                <button onClick={(e) => { e.stopPropagation(); void closeTerm(t.id); }} title="close terminal" {...hp(`termx:${t.id}`)}
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === `termx:${t.id}` ? "#e0897a" : "#6f938d", fontFamily: "inherit", fontSize: 12, lineHeight: 1, padding: "0 2px", flex: "none" }}>✕</button>
+              </div>
+            );
+          })}
+          <button onClick={() => setNewOpen((o) => !o)} title="new terminal on a worktree" {...hp("termnew")}
+            style={{ appearance: "none", cursor: "pointer", border: 0, background: hov === "termnew" ? "rgba(127,233,216,.08)" : "transparent", color: "#7fe9d8", fontFamily: "inherit", fontSize: 15, lineHeight: 1, padding: "4px 13px", flex: "none" }}>+</button>
+        </div>
+        {newOpen && (
+          <div style={{ flex: "none", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, padding: "9px 11px", borderBottom: "1px solid rgba(127,233,216,.1)", background: "rgba(185,166,255,.04)" }}>
+            <span style={{ fontSize: 8, letterSpacing: 1.5, color: "#6f6088", flex: "none" }}>OPEN ON WORKTREE</span>
+            {wtOpts.map((w) => (
+              <button key={w.name} onClick={() => void create(w.rel)} {...hp(`wt:${w.name}`)}
+                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `wt:${w.name}` ? "#b9a6ff" : "rgba(185,166,255,.3)"}`, background: "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px" }}>
+                <span style={{ color: "#b9a6ff" }}>⎇</span>{w.name}</button>
+            ))}
+          </div>
+        )}
         {terms.length === 0 ? (
-          <div style={{ color: "#3c544f", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", padding: 12 }}>
-            No terminals. <span style={{ color: "#7fe9d8" }}>+ NEW</span> opens an interactive shell in {shortDir(cwdRel)}.
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 11 }}>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 22, color: "#243634" }}>❯_</span>
+            <div style={{ fontSize: 11, letterSpacing: 1.5, color: "#3c544f" }}>NO OPEN TERMINALS</div>
+            <button onClick={() => setNewOpen(true)} {...hp("emptynew")}
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: hov === "emptynew" ? "rgba(127,233,216,.16)" : "rgba(127,233,216,.06)", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 14px" }}>+ NEW TERMINAL</button>
           </div>
-        ) : terms.map((t) => (
-          <div key={t.id} style={{ position: "absolute", inset: 8, display: t.id === activeId ? "block" : "none" }}>
-            <XtermPane id={t.id} active={t.id === activeId} onEnded={() => removeTerm(t.id)} />
+        ) : (
+          /* real PTY panes replace the design's simulated output/input; all stay
+             mounted so output keeps flowing, only the active one is visible */
+          <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+            {terms.map((t) => (
+              <div key={t.id} style={{ position: "absolute", inset: 8, display: t.id === activeId ? "block" : "none" }}>
+                <XtermPane id={t.id} active={t.id === activeId} onEnded={() => removeTerm(t.id)} />
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
