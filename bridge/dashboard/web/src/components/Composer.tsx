@@ -95,6 +95,7 @@ function fmtTokens(n: number): string {
 export function Composer({
   disabled, running, model, effort, perm, onPerm, injectedText, injectNonce,
   contextTokens, resetLabel, onModel, onEffort, onSend, onStop, onCompact,
+  queued, onCancelQueued,
 }: {
   disabled: boolean;
   running: boolean;
@@ -112,6 +113,8 @@ export function Composer({
   onSend: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: () => void;
+  queued?: { id: string; text: string }[];
+  onCancelQueued?: (id: string) => void;
 }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -164,6 +167,22 @@ export function Composer({
 
   return (
     <div style={{ flex: "none", borderTop: "1px solid rgba(127,233,216,.14)", padding: "11px 16px" }}>
+      {/* queued prompts — waiting to run after the current turn */}
+      {queued && queued.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 9 }}>
+          <span style={{ fontSize: 10, letterSpacing: 1, color: "#b9a6ff", flex: "none" }}>QUEUED · {queued.length}</span>
+          {queued.map((q) => (
+            <span key={q.id} title={q.text}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 240, border: "1px solid rgba(185,166,255,.3)", background: "rgba(185,166,255,.08)", color: "#cbb8ff", fontSize: 10, letterSpacing: 0.5, padding: "2px 6px" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
+              {onCancelQueued && (
+                <button onClick={() => onCancelQueued(q.id)} title="Remove from queue"
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "#a38fe0", fontSize: 11, lineHeight: 1, padding: 0, flex: "none" }}>✕</button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
       {/* context + reset row */}
       <div style={{ display: "flex", alignItems: "center", gap: 11, fontSize: 10, letterSpacing: 1, color: "#3c544f", marginBottom: 9 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 7, flex: 1 }}>
@@ -179,13 +198,13 @@ export function Composer({
         {onCompact && (
           <button
             onClick={() => onCompact()}
-            disabled={disabled}
+            disabled={disabled || running}
             title="Compact context (/compact)"
             style={{
               appearance: "none", cursor: "pointer", background: "transparent",
               border: `1px solid ${suggest ? "#e3c279" : "rgba(127,233,216,.2)"}`,
               color: suggest ? "#e3c279" : "#6f938d", fontFamily: "inherit", fontSize: 9,
-              letterSpacing: 1, padding: "3px 8px", opacity: disabled ? 0.4 : 1,
+              letterSpacing: 1, padding: "3px 8px", opacity: disabled || running ? 0.4 : 1,
             }}
           >
             COMPACT
@@ -246,7 +265,7 @@ export function Composer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
           onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
-          placeholder={disabled ? "working…" : "message claude — describe a change, paste an error…"}
+          placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
           rows={1}
           style={{ flex: 1, minWidth: 0, display: "block", maxHeight: 180, overflowY: "auto", resize: "none", background: "transparent", border: 0, outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.5 }}
         />
@@ -256,8 +275,12 @@ export function Composer({
           style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "#6f938d", fontSize: 13, flex: "none", marginTop: 2 }}>📎</button>
         <span style={{ fontSize: 10, letterSpacing: 1, color: "#6f938d", border: "1px solid rgba(127,233,216,.2)", padding: "2px 8px", flex: "none", marginTop: 1 }}>{model.toUpperCase()}</span>
         {running ? (
-          <button onClick={onStop}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid #e0897a", background: "rgba(224,137,122,.12)", color: "#e0897a", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none" }}>STOP ■</button>
+          <>
+            <button onClick={onStop}
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid #e0897a", background: "rgba(224,137,122,.12)", color: "#e0897a", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none" }}>STOP ■</button>
+            <button onClick={submit} disabled={disabled || !text.trim()} title="Queue this prompt to run after the current turn"
+              style={{ appearance: "none", cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid #b9a6ff", background: "rgba(185,166,255,.12)", color: "#e7deff", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none", opacity: disabled || !text.trim() ? 0.4 : 1 }}>QUEUE ▸</button>
+          </>
         ) : (
           <button onClick={submit} disabled={disabled || !text.trim()}
             style={{ appearance: "none", cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid #7fe9d8", background: "rgba(127,233,216,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none", opacity: disabled || !text.trim() ? 0.4 : 1 }}>SEND ▸</button>

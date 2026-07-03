@@ -47,6 +47,7 @@ import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
 import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { RunningWindow } from "./components/design/RunningWindow";
 import { AgentsPill } from "./components/AgentsPill";
+import { usePreviewQueue } from "./components/design/usePreviewQueue";
 
 type PermDefault = "plan" | "acceptEdits" | "auto";
 
@@ -112,6 +113,9 @@ export function App() {
   const { weather, setCity, setUnit } = useWeather();
   const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
   const radio = useRadio();
+  // Server-side per-session prompt queue: lets a new prompt be queued while a
+  // turn is in flight (runs after it) instead of forcing a STOP first.
+  const queue = usePreviewQueue(sessionId);
 
   const active = activeOf(turns);
   const running = active !== null;
@@ -303,9 +307,17 @@ export function App() {
   async function send(text: string, images: string[]) {
     if (!sessionId) return;
     setError(null);
+    const project = selected?.project ?? state?.project?.rel ?? undefined;
+    const enqueue = () => queue.enqueue({
+      text, prompt: text, images, project,
+      model, effort: effort || undefined, permission_mode: permMode || undefined,
+    });
+    // A turn is already in flight for this session — queue the prompt to run
+    // after it (and any earlier queued prompts) instead of blocking on STOP.
+    if (running) { enqueue(); return; }
     try {
       const res = await api.run({
-        prompt: text, images, project: selected?.project ?? state?.project?.rel,
+        prompt: text, images, project,
         session_id: sessionId, model, effort: effort || undefined,
         permission_mode: permMode || undefined,
       });
@@ -315,7 +327,12 @@ export function App() {
         ...prev,
         { id: res.job_id, prompt: text, events: [], status: "running", pending: [], attachments: images },
       ]);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) {
+      // Lost the race: the run slot filled between our check and the request.
+      // Queue it rather than surfacing a "busy" error.
+      if ((e as Error).message === "busy") enqueue();
+      else setError((e as Error).message);
+    }
   }
 
   async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) {
@@ -454,6 +471,7 @@ export function App() {
     { id: "theme", label: "Theme & CRT…", group: "Display", icon: "◐", run: () => setThemeOpen(true) },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
     { id: "radio", label: radio.radio.playing ? "Pause Claude·FM" : "Play Claude·FM", group: "Audio", icon: "♪", run: () => radio.toggle() },
+    { id: "model-fable", label: "Use Fable", group: "Model", icon: "⌥", run: () => setModel("fable") },
     { id: "model-opus", label: "Use Opus", group: "Model", icon: "⌥", run: () => setModel("opus") },
     { id: "model-sonnet", label: "Use Sonnet", group: "Model", icon: "⌥", run: () => setModel("sonnet") },
     { id: "model-haiku", label: "Use Haiku", group: "Model", icon: "⌥", run: () => setModel("haiku") },
@@ -582,11 +600,13 @@ export function App() {
                   <>
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
-                      disabled={running || pendingCount > 0} running={running} model={model} effort={effort}
+                      disabled={!sessionId || pendingCount > 0} running={running} model={model} effort={effort}
                       permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce}
                       contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onCompact={() => void send("/compact", [])}
+                      queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
+                      onCancelQueued={(id) => queue.remove(id)}
                     />
                   </>
                 }

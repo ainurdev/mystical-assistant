@@ -32,7 +32,7 @@ MINIAPP_PERMISSION_MODE = os.environ.get("MINIAPP_PERMISSION_MODE", "auto")
 # Model/effort the Mini App chat may request per message (passed as `claude
 # --model`/`--effort`). The frontend pickers must stay within these; the server
 # rejects an unknown model and drops an unknown effort.
-MINIAPP_MODELS = {"opus", "sonnet", "haiku"}
+MINIAPP_MODELS = {"fable", "opus", "sonnet", "haiku"}
 MINIAPP_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 # Permission/operating modes the chat clients may request per message (passed as
 # `claude --permission-mode`); the server rejects anything outside this set.

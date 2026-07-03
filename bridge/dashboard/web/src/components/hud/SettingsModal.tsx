@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { HudSettings, ThemeKey } from "../../lib/theme";
 import { CrtToggles, ThemeCardGrid } from "./ThemeModal";
 
-type Model = "opus" | "sonnet" | "haiku";
+type Model = "fable" | "opus" | "sonnet" | "haiku";
 type Mode = "plan" | "acceptEdits" | "auto";
 
 export interface SettingsModalProps {
@@ -23,6 +23,7 @@ const MODEL_OPTS: { label: string; value: Model }[] = [
   { label: "HAIKU", value: "haiku" },
   { label: "SONNET", value: "sonnet" },
   { label: "OPUS", value: "opus" },
+  { label: "FABLE", value: "fable" },
 ];
 
 const MODE_OPTS: { label: string; value: Mode }[] = [

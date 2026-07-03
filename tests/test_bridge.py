@@ -456,6 +456,10 @@ def test_normalize_model_effort_valid():
     assert normalize_model_effort("opus", "high") == (True, "opus", "high")
 
 
+def test_normalize_model_effort_fable_accepted():
+    assert normalize_model_effort("fable", "high") == (True, "fable", "high")
+
+
 def test_normalize_model_effort_blank_dropped():
     assert normalize_model_effort("", "") == (True, None, None)
 

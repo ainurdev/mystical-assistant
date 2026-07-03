@@ -189,7 +189,7 @@ export interface ProjectSettings {
   log_path: string;
 }
 
-export type ModelId = "opus" | "sonnet" | "haiku";
+export type ModelId = "fable" | "opus" | "sonnet" | "haiku";
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 // One prompt in the preview console's per-session queue. `text` is the human
