@@ -7,7 +7,7 @@ runner.run_blocking (one-shot, cheap model, no memory pack)."""
 
 import sys
 
-from bridge import config, runner, store
+from bridge import config, native, runner, store
 
 _SYS = (
     "You name a chat for a sidebar. Given the user's first message and the "
@@ -63,7 +63,9 @@ def _generate(chat_id: int, project: str | None, prompt: str, reply: str) -> str
     convo = f"USER:\n{prompt[:1500]}"
     if reply:
         convo += f"\n\nASSISTANT:\n{reply[:2000]}"
-    full = f"{_SYS}\n\n=== CONVERSATION ===\n{convo}"
+    # Tag the prompt so this headless run's JSONL is skipped by native.scan and
+    # never surfaces as a phantom session (mirrors learning/memory/preview).
+    full = f"{native.INTERNAL_ONESHOT_TAG}\n{_SYS}\n\n=== CONVERSATION ===\n{convo}"
     try:
         text, _sid, _cost, is_error = runner.run_blocking(
             chat_id, full, cwd=project or None, timeout=45,

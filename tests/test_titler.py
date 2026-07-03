@@ -51,6 +51,17 @@ def test_generates_subject_from_first_turn():
     assert "display:flex" in calls[0]             # assistant reply fed too
 
 
+def test_prompt_is_tagged_internal():
+    # The titler runs a headless one-shot that persists a JSONL; the internal tag
+    # keeps native.scan from surfacing it as a phantom session in the list.
+    from bridge import native
+    calls = []
+    runner.run_blocking = _stub_run_blocking("Some Title", calls=calls)
+    sess, tid = _session_with_first_turn()
+    titler.generate_after_turn(1, sess, tid)
+    assert calls and calls[0].startswith(native.INTERNAL_ONESHOT_TAG)
+
+
 def test_skips_when_manually_renamed():
     calls = []
     runner.run_blocking = _stub_run_blocking("Should Not Apply", calls=calls)
