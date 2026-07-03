@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type GitFile } from "../../api";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorState, Prec } from "@codemirror/state";
+import { indentWithTab } from "@codemirror/commands";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags as t } from "@lezer/highlight";
+import { basicSetup } from "codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { css } from "@codemirror/lang-css";
+import { html } from "@codemirror/lang-html";
+import { json } from "@codemirror/lang-json";
+import { python } from "@codemirror/lang-python";
+import { markdown } from "@codemirror/lang-markdown";
+import { api, type FileContent } from "../../api";
 
-/* EDITOR tab of the Analyze modal — vim-style read-only viewer. The explorer
-   shows the selected branch's modified files as a tree (there is no generic
-   file-listing endpoint yet); the buffer renders that file's working-tree diff.
-   Matches the HUD design mock (hud.dc.html lines 992–1062).
-   TODO(phase2-data): full file tree + file contents + :w handling need backend
-   endpoints that don't exist yet. */
+/* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
+   the whole working tree of the selected branch/worktree, opens any file into an
+   editable CodeMirror 6 buffer with syntax highlighting, and saves to disk via
+   Ctrl-S / :w (POST /local/files/write). Binary/oversized files load read-only
+   with a placeholder. */
 
 export interface BranchOpt {
   name: string;
@@ -27,32 +38,25 @@ interface TreeRow {
   depth: number;
   name: string;
   path: string;
-  status?: string;
 }
-
-interface EvLine {
-  n: string;
-  kind: "add" | "del" | "ctx" | "hunk";
-  text: string;
-}
-
-const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "#8fd9a8" : s === "D" ? "#e0897a" : "#e3c279");
 
 const EXT_COLOR: Record<string, string> = {
-  ts: "#6fb5ff", tsx: "#6fb5ff", js: "#e3c279", jsx: "#e3c279", css: "#b9a6ff", scss: "#b9a6ff",
-  md: "#9fc7c0", json: "#e3c279", py: "#8fd9a8", html: "#e0897a",
+  ts: "#6fb5ff", tsx: "#6fb5ff", js: "#e3c279", jsx: "#e3c279", mjs: "#e3c279", cjs: "#e3c279",
+  css: "#b9a6ff", scss: "#b9a6ff", md: "#9fc7c0", json: "#e3c279", py: "#8fd9a8",
+  html: "#e0897a", htm: "#e0897a", toml: "#9fc7c0", yml: "#9fc7c0", yaml: "#9fc7c0",
 };
 function iconColor(name: string): string {
-  const ext = name.split(".").pop() ?? "";
-  return EXT_COLOR[ext] ?? "#7fa8a0";
+  return EXT_COLOR[name.split(".").pop()?.toLowerCase() ?? ""] ?? "#7fa8a0";
 }
 
-function buildRows(files: GitFile[], collapsed: Set<string>): TreeRow[] {
-  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
+/* Flatten a sorted path list into a collapsible directory tree (dirs before
+   their files, honoring the collapsed set). */
+function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
+  const sorted = [...paths].sort((a, b) => a.localeCompare(b));
   const rows: TreeRow[] = [];
   const seen = new Set<string>();
-  for (const f of sorted) {
-    const parts = f.path.split("/");
+  for (const path of sorted) {
+    const parts = path.split("/");
     let prefix = "";
     let hidden = false;
     for (let i = 0; i < parts.length - 1; i++) {
@@ -64,89 +68,161 @@ function buildRows(files: GitFile[], collapsed: Set<string>): TreeRow[] {
       if (collapsed.has(p)) hidden = true;
       prefix = p;
     }
-    if (!hidden) rows.push({ key: `f:${f.path}`, dir: false, depth: parts.length - 1, name: parts[parts.length - 1] ?? f.path, path: f.path, status: f.status });
+    if (!hidden) rows.push({ key: `f:${path}`, dir: false, depth: parts.length - 1, name: parts[parts.length - 1] ?? path, path });
   }
   return rows;
 }
 
-/* Unified diff → vim-buffer lines: sequential numbers from each hunk's new-file
-   start (matching the mock's numbering), headers before the first hunk dropped. */
-function parseDiff(diff: string): EvLine[] {
-  const out: EvLine[] = [];
-  let n = 0;
-  let inHunk = false;
-  for (const ln of diff.split("\n")) {
-    if (ln.startsWith("@@")) {
-      const m = /\+(\d+)/.exec(ln);
-      if (m) n = parseInt(m[1], 10);
-      inHunk = true;
-      out.push({ n: "", kind: "hunk", text: ln });
-      continue;
-    }
-    if (!inHunk) continue;
-    if (ln.startsWith("+")) out.push({ n: String(n++), kind: "add", text: ln.slice(1) });
-    else if (ln.startsWith("-")) out.push({ n: String(n++), kind: "del", text: ln.slice(1) });
-    else out.push({ n: String(n++), kind: "ctx", text: ln.startsWith(" ") ? ln.slice(1) : ln });
-  }
-  return out;
+function langFor(path: string) {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (["ts", "tsx", "js", "jsx", "mjs", "cjs"].includes(ext))
+    return [javascript({ typescript: ext.startsWith("ts"), jsx: ext.endsWith("x") })];
+  if (ext === "json") return [json()];
+  if (ext === "css" || ext === "scss") return [css()];
+  if (ext === "html" || ext === "htm") return [html()];
+  if (ext === "py") return [python()];
+  if (ext === "md" || ext === "markdown") return [markdown()];
+  return [];
 }
 
-const LINE_VIEW: Record<EvLine["kind"], { bg: string; c: string }> = {
-  add: { bg: "rgba(143,217,168,.07)", c: "#a7e6c3" },
-  del: { bg: "rgba(224,137,122,.07)", c: "#f0b0a8" },
-  hunk: { bg: "rgba(127,233,216,.06)", c: "#7fe9d8" },
-  ctx: { bg: "transparent", c: "#9fc7c0" },
-};
+// CRT-flavored syntax colors + a transparent editor chrome, so the buffer sits
+// on the panel's own dark background rather than CodeMirror's default light one.
+const crtHighlight = HighlightStyle.define([
+  { tag: t.keyword, color: "#b9a6ff" },
+  { tag: [t.name, t.propertyName, t.macroName, t.deleted, t.character], color: "#cfe9e3" },
+  { tag: [t.function(t.variableName), t.labelName], color: "#7fe9d8" },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name), t.bool], color: "#8fd9a8" },
+  { tag: [t.typeName, t.className, t.number, t.annotation, t.modifier, t.self, t.namespace], color: "#e3c279" },
+  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link], color: "#7fe9d8" },
+  { tag: [t.meta, t.comment], color: "#5a7772", fontStyle: "italic" },
+  { tag: t.strong, fontWeight: "bold" },
+  { tag: t.emphasis, fontStyle: "italic" },
+  { tag: t.strikethrough, textDecoration: "line-through" },
+  { tag: [t.string, t.inserted, t.special(t.string)], color: "#a7e6c3" },
+  { tag: t.invalid, color: "#f0b0a8" },
+]);
+
+const crtTheme = EditorView.theme({
+  "&": { backgroundColor: "transparent", color: "#cfe9e3", height: "100%", fontSize: "12px" },
+  "&.cm-focused": { outline: "none" },
+  ".cm-content": { fontFamily: "'JetBrains Mono',monospace", caretColor: "#7fe9d8" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#7fe9d8" },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: "rgba(127,233,216,.18)" },
+  ".cm-gutters": { backgroundColor: "transparent", color: "#2e423f", border: "none" },
+  ".cm-activeLine": { backgroundColor: "rgba(127,233,216,.045)" },
+  ".cm-activeLineGutter": { backgroundColor: "rgba(127,233,216,.06)", color: "#6f938d" },
+  ".cm-scroller": { fontFamily: "'JetBrains Mono',monospace", lineHeight: "1.6" },
+  ".cm-selectionMatch": { backgroundColor: "rgba(185,166,255,.15)" },
+}, { dark: true });
 
 export function EditorTab({ project, branch, branchOpts, onPickBranch }: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const [files, setFiles] = useState<GitFile[]>([]);
+  const [paths, setPaths] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [sel, setSel] = useState<string | null>(null);
-  const [lines, setLines] = useState<EvLine[]>([]);
-  const [mode, setMode] = useState<"NORMAL" | "INSERT">("NORMAL");
+  const [open, setOpen] = useState<string | null>(null);      // path being edited
+  const [meta, setMeta] = useState<FileContent | null>(null); // load result (binary/too_large flags)
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [cmd, setCmd] = useState("");
   const [note, setNote] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const baseRef = useRef("");                     // last-saved content, for the dirty check
+  const saveRef = useRef<() => void>(() => {});   // latest save fn, for the Ctrl-S keymap
   const noteT = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  function flash(m: string) {
+    setNote(m);
+    if (noteT.current) clearTimeout(noteT.current);
+    noteT.current = setTimeout(() => setNote(""), 3000);
+  }
+  useEffect(() => () => { if (noteT.current) clearTimeout(noteT.current); }, []);
+
+  // Load the file list whenever the project/branch changes.
   useEffect(() => {
     let live = true;
-    setSel(null);
-    setCollapsed(new Set());
-    void api.git(project, branch || undefined)
-      .then((g) => { if (live) setFiles(g.files); })
-      .catch(() => { if (live) setFiles([]); });
+    setOpen(null); setMeta(null); setCollapsed(new Set());
+    void api.filesTree(project, branch || undefined)
+      .then((r) => { if (live) setPaths(r.files); })
+      .catch(() => { if (live) setPaths([]); });
     return () => { live = false; };
   }, [project, branch]);
 
-  const rows = useMemo(() => buildRows(files, collapsed), [files, collapsed]);
-  const selPath = sel ?? files[0]?.path ?? null;
+  const rows = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
 
+  // Load a file's contents when `open` changes.
   useEffect(() => {
-    if (!selPath) { setLines([]); return; }
+    if (!open) { setMeta(null); return; }
     let live = true;
-    void api.gitDiff(project, selPath, undefined, undefined, branch || undefined)
-      .then((d) => { if (live) setLines(parseDiff(d.diff)); })
-      .catch(() => { if (live) setLines([]); });
+    setMeta(null); setDirty(false);
+    void api.fileRead(project, open, branch || undefined)
+      .then((r) => { if (live) { setMeta(r); baseRef.current = r.content ?? ""; } })
+      .catch((e) => { if (live) setMeta({ ok: false, error: (e as Error).message }); });
     return () => { live = false; };
-  }, [selPath, project, branch]);
+  }, [open, project, branch]);
 
-  useEffect(() => () => { if (noteT.current) clearTimeout(noteT.current); }, []);
+  const editable = !!meta && meta.ok && !meta.binary && !meta.too_large;
+
+  // (Re)build the CodeMirror view when an editable file's contents arrive.
+  useEffect(() => {
+    if (!hostRef.current || !editable || !open || !meta) return;
+    const state = EditorState.create({
+      doc: meta.content ?? "",
+      extensions: [
+        basicSetup,
+        lineNumbers(),
+        crtTheme,
+        syntaxHighlighting(crtHighlight),
+        langFor(open),
+        Prec.highest(keymap.of([
+          { key: "Mod-s", preventDefault: true, run: () => { saveRef.current(); return true; } },
+          indentWithTab,
+        ])),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) setDirty(u.state.doc.toString() !== baseRef.current);
+        }),
+      ],
+    });
+    const view = new EditorView({ state, parent: hostRef.current });
+    viewRef.current = view;
+    view.focus();
+    return () => { view.destroy(); viewRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editable, open, meta]);
+
+  async function save() {
+    const v = viewRef.current;
+    if (!v || !open || saving) return;
+    const content = v.state.doc.toString();
+    setSaving(true);
+    try {
+      const r = await api.fileWrite(project, open, content, branch || undefined);
+      if (r.ok) { baseRef.current = content; setDirty(false); flash(`wrote ${open}`); }
+      else flash(`E212: ${r.error || "write failed"}`);
+    } catch (e) {
+      flash(`E212: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+  saveRef.current = () => { void save(); };
 
   function onCmdKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
-    // TODO(phase2-data): no file-write endpoint yet — the buffer is read-only.
+    const c = cmd.trim().replace(/^:/, "");
     setCmd("");
-    setNote("E45: readonly");
-    if (noteT.current) clearTimeout(noteT.current);
-    noteT.current = setTimeout(() => setNote(""), 2500);
+    if (c === "w" || c === "write" || c === "wq" || c === "x") void save();
+    else if (c) flash(`E492: not an editor command: ${c}`);
   }
 
-  const lineCount = lines.filter((l) => l.kind !== "hunk").length;
-  const tildes = Math.max(0, 20 - lines.length);
+  const lineCount = editable ? (meta?.content ?? "").split("\n").length : 0;
+  const statusRight = note
+    || (meta && !meta.ok ? (meta.error || "can't open") : "")
+    || (meta?.binary ? "binary file" : meta?.too_large ? "too large to edit" : editable ? `utf-8 · ${lineCount}L` : "");
 
   return (
     <div style={{ animation: "mslide .3s ease both" }}>
@@ -154,7 +230,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch }: Props) 
         {/* explorer */}
         <div style={{ borderRight: "1px solid rgba(127,233,216,.12)", display: "flex", flexDirection: "column", minHeight: 0, background: "rgba(7,13,13,.35)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>
-            <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>EXPLORER</span>
+            <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>EXPLORER · {paths.length}</span>
             <span style={{ flex: 1 }} />
             <div style={{ position: "relative", flex: "none" }}>
               <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
@@ -181,7 +257,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch }: Props) 
           </div>
           <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingBottom: 8 }}>
             {rows.length === 0 && (
-              <div style={{ fontSize: 11, color: "#3c544f", padding: "8px 10px" }}>No modified files on ⎇ {branch || "this branch"}.</div>
+              <div style={{ fontSize: 11, color: "#3c544f", padding: "8px 10px" }}>No files on ⎇ {branch || "this branch"}.</div>
             )}
             {rows.map((r) => r.dir ? (
               <button key={r.key} onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(r.path)) n.delete(r.path); else n.add(r.path); return n; })}
@@ -192,56 +268,48 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch }: Props) 
                 <span style={{ fontSize: 11, color: "#cfe9e3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.name}</span>
               </button>
             ) : (
-              <button key={r.key} onClick={() => setSel(r.path)} title={r.path} {...hp(r.key)}
-                style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === selPath ? "#7fe9d8" : "transparent"}`, background: r.path === selPath ? "rgba(127,233,216,.08)" : hov === r.key ? "rgba(127,233,216,.05)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
+              <button key={r.key} onClick={() => setOpen(r.path)} title={r.path} {...hp(r.key)}
+                style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === open ? "#7fe9d8" : "transparent"}`, background: r.path === open ? "rgba(127,233,216,.08)" : hov === r.key ? "rgba(127,233,216,.05)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
                 <span style={{ width: 8, height: 10, flex: "none", background: iconColor(r.name), opacity: 0.85 }} />
-                <span style={{ fontSize: 11, color: r.path === selPath ? "#dff8f2" : "#9fc7c0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>{r.name}</span>
-                {r.status && <span style={{ fontSize: 9, fontWeight: 700, color: FILE_COLOR(r.status), flex: "none" }}>{r.status}</span>}
+                <span style={{ fontSize: 11, color: r.path === open ? "#dff8f2" : "#9fc7c0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>{r.name}</span>
+                {r.path === open && dirty && <span style={{ fontSize: 12, color: "#e3c279", flex: "none", lineHeight: 1 }}>●</span>}
               </button>
             ))}
           </div>
         </div>
 
-        {/* buffer + vim chrome */}
+        {/* buffer + chrome */}
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "rgba(4,7,7,.5)" }}>
-          <div className="mscroll" style={{ flex: 1, overflow: "auto", minHeight: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, lineHeight: 1.65, padding: "6px 0" }}>
-            {lines.map((l, i) => {
-              const v = LINE_VIEW[l.kind];
-              return (
-                <div key={i} style={{ display: "flex", background: v.bg }}>
-                  <span style={{ width: 38, flex: "none", textAlign: "right", paddingRight: 10, color: "#2e423f", userSelect: "none" }}>{l.n}</span>
-                  <span style={{ whiteSpace: "pre", paddingRight: 14 }}>
-                    <span style={{ color: v.c }}>{l.text || " "}</span>
-                  </span>
-                </div>
-              );
-            })}
-            {Array.from({ length: tildes }).map((_, i) => (
-              <div key={`t${i}`} style={{ display: "flex" }}>
-                <span style={{ width: 38, flex: "none", textAlign: "right", paddingRight: 10, color: "#243634", userSelect: "none" }}>~</span>
+          <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
+            {editable ? (
+              <div ref={hostRef} className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto" }} />
+            ) : (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: "#5a7772" }}>
+                {!open ? "Select a file to edit."
+                  : !meta ? "Loading…"
+                  : !meta.ok ? (meta.error || "Can't open this file.")
+                  : meta.binary ? "Binary file — not editable here."
+                  : meta.too_large ? "File is over 1 MB — too large to edit here."
+                  : ""}
               </div>
-            ))}
+            )}
           </div>
           <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderTop: "1px solid rgba(127,233,216,.14)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5 }}>
-            <span style={{ background: mode === "NORMAL" ? "#7fe9d8" : "#8fd9a8", color: "#06100e", fontWeight: 700, letterSpacing: 1.5, padding: "5px 12px", flex: "none" }}>{mode}</span>
+            <span style={{ background: dirty ? "#e3c279" : "#7fe9d8", color: "#06100e", fontWeight: 700, letterSpacing: 1.5, padding: "5px 12px", flex: "none" }}>{saving ? "SAVING" : dirty ? "UNSAVED" : "EDIT"}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 12px", color: "#9fc7c0", flex: 1, minWidth: 0, background: "rgba(127,233,216,.05)" }}>
               <span style={{ color: "#b9a6ff", flex: "none" }}>⎇ {branch || "—"}</span>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{selPath || "no file"}</span>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{open || "no file"}</span>
             </span>
-            <span style={{ display: "flex", alignItems: "center", padding: "5px 12px", color: "#6f938d", flex: "none", background: "rgba(127,233,216,.05)" }}>
-              {note || `utf-8 · ${lineCount}L`}
+            <span style={{ display: "flex", alignItems: "center", padding: "5px 12px", color: note ? "#a7e6c3" : "#6f938d", flex: "none", background: "rgba(127,233,216,.05)", whiteSpace: "nowrap" }}>
+              {statusRight}
             </span>
           </div>
           <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid rgba(127,233,216,.1)", padding: "6px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
-            <div style={{ display: "flex", gap: 5, flex: "none" }}>
-              <button onClick={() => setMode("NORMAL")} title="normal mode (Esc)" {...hp("esc")}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: hov === "esc" ? "rgba(127,233,216,.08)" : "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 9, letterSpacing: ".5px", padding: "3px 8px" }}>esc</button>
-              <button onClick={() => setMode("INSERT")} title="insert mode (i)" {...hp("ins")}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(143,217,168,.3)", background: hov === "ins" ? "rgba(143,217,168,.1)" : "transparent", color: "#8fd9a8", fontFamily: "inherit", fontSize: 9, letterSpacing: ".5px", padding: "3px 8px" }}>i</button>
-            </div>
+            <button onClick={() => void save()} disabled={!editable || saving || !dirty} title="save (Ctrl-S / :w)" {...hp("save")}
+              style={{ appearance: "none", cursor: editable && dirty && !saving ? "pointer" : "not-allowed", border: "1px solid rgba(143,217,168,.35)", background: hov === "save" && editable && dirty ? "rgba(143,217,168,.14)" : "transparent", color: "#8fd9a8", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px", opacity: editable && dirty && !saving ? 1 : 0.45 }}>▸ SAVE</button>
             <span style={{ color: "#7fe9d8", flex: "none" }}>:</span>
             <input value={cmd} onChange={(e) => setCmd(e.target.value)} onKeyDown={onCmdKey}
-              placeholder="w · wq · %s/old/new/g"
+              placeholder="w · wq"
               style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5 }} />
           </div>
         </div>

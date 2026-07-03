@@ -506,6 +506,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
   const [gitOp, setGitOp] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Which files are staged for the next commit. `sel` above is the *focused*
+  // file (whose diff shows); `checked` is the multi-select for commit/GEN.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const opT = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showOp(m: string) {
@@ -516,13 +519,19 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
   useEffect(() => () => { if (opT.current) clearTimeout(opT.current); }, []);
 
   const load = () => {
-    void api.git(project, branch || undefined).then(setSt).catch(() => setSt(null));
+    void api.git(project, branch || undefined)
+      .then((g) => { setSt(g); setChecked(new Set(g.files.map((f) => f.path))); })
+      .catch(() => setSt(null));
   };
   useEffect(() => { setSel(null); setMsg(""); load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, branch]);
 
   const files = st?.files ?? [];
   const selName = sel ?? files[0]?.path ?? null;
+  const allChecked = files.length > 0 && checked.size === files.length;
+  const toggleCheck = (p: string) =>
+    setChecked((prev) => { const n = new Set(prev); if (n.has(p)) n.delete(p); else n.add(p); return n; });
+  const toggleAll = () => setChecked(allChecked ? new Set() : new Set(files.map((f) => f.path)));
 
   useEffect(() => {
     if (!selName) { setDiff(""); return; }
@@ -538,21 +547,22 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
   const diffAnim = nonce % 2 ? "mdiffin" : "mdiffin2";
 
   async function genMsg() {
-    if (genBusy || !files.length) return;
+    if (genBusy || !checked.size) return;
     setGenBusy(true);
     try {
-      const r = await api.commitMessage(project, branch, files.map((f) => f.path));
+      const r = await api.commitMessage(project, branch, [...checked]);
       if (r.message) setMsg(r.message);
     } catch { /* ignore */ }
     finally { setGenBusy(false); }
   }
 
   async function doCommit() {
-    if (busy || !msg.trim() || !files.length) return;
+    if (busy || !msg.trim() || !checked.size) return;
     setBusy(true);
+    const n = checked.size;
     try {
-      const r = await api.gitCommit(project, msg.trim(), undefined, branch || undefined);
-      if (r.ok) { showOp(`Committed ${files.length} file${files.length === 1 ? "" : "s"} on ${branch}`); setMsg(""); load(); onRefreshGit(); }
+      const r = await api.gitCommit(project, msg.trim(), [...checked], branch || undefined);
+      if (r.ok) { showOp(`Committed ${n} file${n === 1 ? "" : "s"} on ${branch}`); setMsg(""); load(); onRefreshGit(); }
       else showOp(`Commit failed: ${r.output}`);
     } finally { setBusy(false); }
   }
@@ -583,7 +593,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
           {/* file list */}
           <div style={{ borderRight: "1px solid rgba(127,233,216,.12)", display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 12px 8px", flex: "none" }}>
-              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f" }}>CHANGED · {files.length}</span>
+              <button onClick={toggleAll} disabled={!files.length} title={allChecked ? "deselect all" : "select all"} {...hp("all")}
+                style={{ appearance: "none", cursor: files.length ? "pointer" : "default", border: "1px solid rgba(127,233,216,.25)", background: hov === "all" ? "rgba(127,233,216,.08)" : "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "3px 7px", flex: "none" }}>{allChecked ? "NONE" : "ALL"}</button>
+              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f" }}>{checked.size}/{files.length} SEL</span>
               <span style={{ flex: 1 }} />
               <div style={{ position: "relative", flex: "none" }}>
                 <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
@@ -611,13 +623,16 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
             <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               {files.map((f) => {
                 const on = f.path === selName;
+                const isChecked = checked.has(f.path);
                 return (
-                  <button key={f.path} onClick={() => setSel(f.path)} {...hp(`f:${f.path}`)}
-                    style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`, background: on ? "rgba(127,233,216,.08)" : hov === `f:${f.path}` ? "rgba(127,233,216,.05)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px" }}>
+                  <div key={f.path} onClick={() => setSel(f.path)} {...hp(`f:${f.path}`)}
+                    style={{ borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`, background: on ? "rgba(127,233,216,.08)" : hov === `f:${f.path}` ? "rgba(127,233,216,.05)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px" }}>
+                    <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(f.path)} onClick={(e) => e.stopPropagation()} title="stage this file for commit"
+                      style={{ accentColor: "#7fe9d8", cursor: "pointer", flex: "none", width: 13, height: 13, margin: 0 }} />
                     <span style={{ fontSize: 11, fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
-                    <span style={{ fontSize: 11, color: on ? "#dff8f2" : "#9fc7c0", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
+                    <span style={{ fontSize: 11, color: on ? "#dff8f2" : isChecked ? "#9fc7c0" : "#5a6f6a", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
                     <span style={{ fontSize: 10, flex: "none", display: "flex", gap: 5 }}><span style={{ color: "#8fd9a8" }}>+{f.add}</span><span style={{ color: "#e0897a" }}>−{f.del}</span></span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -636,8 +651,8 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
                 </div>
               )}
               <div style={{ padding: "8px 9px 6px" }}>
-                <button onClick={() => void doCommit()} {...hp("commit")}
-                  style={{ width: "100%", appearance: "none", cursor: "pointer", border: "1px solid #7fe9d8", background: hov === "commit" ? "rgba(127,233,216,.22)" : "rgba(127,233,216,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8 }}>COMMIT ALL</button>
+                <button onClick={() => void doCommit()} disabled={!checked.size || !msg.trim() || busy} {...hp("commit")}
+                  style={{ width: "100%", appearance: "none", cursor: checked.size && msg.trim() && !busy ? "pointer" : "not-allowed", border: "1px solid #7fe9d8", background: hov === "commit" ? "rgba(127,233,216,.22)" : "rgba(127,233,216,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, opacity: !checked.size || !msg.trim() || busy ? 0.45 : 1 }}>COMMIT {checked.size} FILE{checked.size === 1 ? "" : "S"}</button>
               </div>
               <div style={{ display: "flex", gap: 7, padding: "0 9px 9px" }}>
                 <button onClick={() => void doPush()} title="push to origin" {...hp("push")}

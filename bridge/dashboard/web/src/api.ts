@@ -159,6 +159,18 @@ export interface GitBadge {
   dirty: number;
 }
 
+// A working-tree file loaded into the EDITOR tab. `content` is empty when the
+// file is binary or over the size cap (the editor shows a placeholder instead).
+export interface FileContent {
+  ok: boolean;
+  path?: string;
+  content?: string;
+  binary?: boolean;
+  too_large?: boolean;
+  size?: number;
+  error?: string;
+}
+
 export interface GitHubLabel {
   name: string;
   color: string;
@@ -568,6 +580,20 @@ export const api = {
     req<{ ok: boolean; output: string }>("/local/git/push", {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
+    }),
+  // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
+  filesTree: (project: string, branch?: string) =>
+    req<{ files: string[] }>(
+      `/local/files/tree?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
+  fileRead: (project: string, path: string, branch?: string) =>
+    req<FileContent>(
+      `/local/files/read?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
+  fileWrite: (project: string, path: string, content: string, branch?: string) =>
+    req<{ ok: boolean; error?: string }>("/local/files/write", {
+      method: "POST",
+      body: { project, path, content, ...(branch ? { branch } : {}) },
     }),
   projectSettings: (ctx: PreviewCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
