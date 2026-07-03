@@ -20,7 +20,7 @@ import time
 import uuid
 
 from bridge import (config, devserver, git, machine, memory, native_activity,
-                    pubsub, state, store, transcript_jsonl)
+                    project_config, pubsub, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -82,13 +82,15 @@ def _branch_for(chat_id: int, cwd: "str | None") -> "str | None":
 
 
 def _memory_pack_for(chat_id: int, cwd: "str | None") -> str:
-    """Project+branch memory Context Pack for injection. Best-effort: disabled or
-    any failure yields an empty pack (never blocks a turn)."""
+    """Project+branch memory Context Pack for injection. Best-effort: disabled, an
+    'off' project posture, or any failure yields an empty pack (never blocks a turn)."""
     if not config.MEMORY_ENABLE:
         return ""
     try:
-        return memory.render_pack(chat_id, _project_key(chat_id, cwd),
-                                  _branch_for(chat_id, cwd))
+        project = _project_key(chat_id, cwd)
+        if project_config.memory_mode(project) == "off":
+            return ""
+        return memory.render_pack(chat_id, project, _branch_for(chat_id, cwd))
     except Exception:  # noqa: BLE001
         return ""
 
@@ -102,14 +104,20 @@ def _compose_system_prompt(pack: str = "") -> str:
 
 def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
                    cwd: "str | None", assistant_text: str, edited_files: list) -> None:
-    """Run the post-turn memory extractor off the hot path (fire-and-forget)."""
+    """Run the post-turn memory extractor off the hot path (fire-and-forget). The
+    project's posture gates it: 'off' skips capture, 'auto' keeps without the gate."""
     if not config.MEMORY_ENABLE or not session_id or not (assistant_text or "").strip():
+        return
+    project = _project_key(chat_id, cwd)
+    mode = project_config.memory_mode(project)
+    if mode == "off":
         return
 
     def work():
         try:
-            memory.propose(chat_id, session_id, turn_id, _project_key(chat_id, cwd),
-                           _branch_for(chat_id, cwd), assistant_text, edited_files)
+            memory.propose(chat_id, session_id, turn_id, project,
+                           _branch_for(chat_id, cwd), assistant_text, edited_files,
+                           auto=(mode == "auto"))
         except Exception:  # noqa: BLE001
             pass
     threading.Thread(target=work, daemon=True).start()

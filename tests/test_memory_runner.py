@@ -13,7 +13,7 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
-from bridge import config, runner, store  # noqa: E402
+from bridge import config, project_config, runner, store  # noqa: E402
 
 store.init()
 
@@ -46,6 +46,20 @@ def test_memory_pack_for_disabled_returns_empty():
         assert runner._memory_pack_for(555, "/tmp") == ""
     finally:
         config.MEMORY_ENABLE = old
+
+
+def test_memory_pack_for_respects_off_posture():
+    key = runner._project_key(555, "/tmp")
+    store.add_memory(555, "project", "goal", "ship it", "finish the thing",
+                     project_path=key, branch=None, status="active")
+    old = project_config.memory_mode
+    try:
+        project_config.memory_mode = lambda _p: "ask"
+        assert "ship it" in runner._memory_pack_for(555, "/tmp")
+        project_config.memory_mode = lambda _p: "off"
+        assert runner._memory_pack_for(555, "/tmp") == ""
+    finally:
+        project_config.memory_mode = old
 
 
 if __name__ == "__main__":
