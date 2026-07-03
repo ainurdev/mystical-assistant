@@ -318,6 +318,19 @@ class Handler(BaseHTTPRequestHandler):
             # working-tree diff: target the selected branch's worktree
             cwd = _worktree_cwd(project, (qs.get("branch", [""])[0] or "").strip())
             return self._json({"path": fpath, "diff": git.diff(cwd, fpath)})
+        if path == "/local/files/tree":
+            # EDITOR tab: the whole working tree of the selected branch/worktree
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json({"files": git.list_tree(cwd)})
+        if path == "/local/files/read":
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(git.read_file(cwd, qs.get("path", [""])[0]))
         if path == "/local/github/issues":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -475,6 +488,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             ok, output = git.push(cwd)
             return self._json({"ok": ok, "output": output})
+        if path == "/local/files/write":
+            # EDITOR tab :w / Ctrl-S — save a working-tree file to disk
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            rel = (body.get("path") or "").strip()
+            if not rel:
+                return self._json({"error": "no path"}, 400)
+            content = body.get("content")
+            if not isinstance(content, str):
+                return self._json({"error": "content must be a string"}, 400)
+            if len(content) > 5_000_000:
+                return self._json({"error": "file too large"}, 413)
+            ok, output = git.write_file(cwd, rel, content)
+            return self._json({"ok": ok} if ok else {"ok": False, "error": output})
         if path == "/local/github/issue":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:
