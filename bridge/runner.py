@@ -210,10 +210,13 @@ def handle_task(chat_id: int, prompt: str, session: dict):
             footer += f" · ${cost:.4f}"
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
         if not is_error:
-            from bridge import learning  # local import: runner<->learning cycle
+            from bridge import learning, titler  # local import: runner<->* cycle
             threading.Thread(target=learning.capture_after_turn,
                              args=(chat_id, session, job_id),
                              kwargs={"tool_visibility": False},
+                             daemon=True).start()
+            threading.Thread(target=titler.generate_after_turn,
+                             args=(chat_id, session, job_id),
                              daemon=True).start()
     finally:
         state.release_run(session["id"])
@@ -747,10 +750,13 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if job.store_session_id and job.status == "done":
             _sess = store.get_session(job.store_session_id)
             if _sess:
-                from bridge import learning  # local import: runner<->learning cycle
+                from bridge import learning, titler  # local import: runner<->* cycle
                 threading.Thread(target=learning.capture_after_turn,
                                  args=(job.chat_id, _sess, job.id),
                                  kwargs={"tool_visibility": True},
+                                 daemon=True).start()
+                threading.Thread(target=titler.generate_after_turn,
+                                 args=(job.chat_id, _sess, job.id),
                                  daemon=True).start()
 
 

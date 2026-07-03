@@ -96,6 +96,10 @@ MINIAPP_PORT = int(os.environ.get("MINIAPP_PORT", "8787"))   # local HTTP bind p
 # Teacher mode: auto-suggest review candidates after code turns. Default on.
 LEARNING_ENABLE = os.environ.get("LEARNING_ENABLE", "1").lower() \
     not in ("0", "false", "no", "")
+# Auto-title new sessions with an LLM-generated subject after the first turn
+# (Claude-app style), replacing the first-prompt placeholder. Default on.
+TITLE_ENABLE = os.environ.get("TITLE_ENABLE", "1").lower() \
+    not in ("0", "false", "no", "")
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")
