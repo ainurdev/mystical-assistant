@@ -152,7 +152,7 @@ def _default_run(owner_id: int, prompt: str) -> str:
 
 def propose(owner_id: int, session_id: str, turn_id: str, project: str,
             branch: "str | None", assistant_text: str, edited_files: list[str], *,
-            run=None) -> list[str]:
+            run=None, auto: bool = False) -> list[str]:
     """Reconcile durable facts from a finished turn into Keep/Skip candidates.
     Best-effort and swallowed on any failure — never blocks or errors the turn.
     Returns the ids of the candidates it created."""
@@ -175,9 +175,12 @@ def propose(owner_id: int, session_id: str, turn_id: str, project: str,
             proj, br = project, (branch if t == "goal" else None)
         sup = op["id"] if (op["op"] == "UPDATE" and op.get("id") in existing_ids) else None
         m = store.add_memory(owner_id, scope, t, op["title"], op["body"],
-                             project_path=proj, branch=br, status="candidate",
+                             project_path=proj, branch=br,
+                             status="active" if auto else "candidate",
                              source_session_id=session_id, source_turn_id=turn_id,
                              supersedes_id=sup)
+        if auto and sup:                         # no human gate → archive the target now
+            store.set_memory_status(sup, "archived")
         store.append_event(session_id, turn_id, {
             "type": "memory_candidate", "item_id": m["id"], "mem_type": t,
             "scope": scope, "title": op["title"], "body": op["body"]})

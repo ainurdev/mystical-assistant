@@ -165,6 +165,29 @@ def test_default_run_path_produces_candidate():
     assert store.get_memory(ids[0])["title"] == "pnpm"
 
 
+def test_auto_creates_active_not_candidate():
+    o = 4011
+    sid, tid = _session_turn(o, "/p")
+    raw = '[{"op":"ADD","type":"convention","scope":"project","title":"pnpm","body":"use pnpm"}]'
+    ids = memory.propose(o, sid, tid, "/p", "feat", "did stuff", ["a.py"],
+                         run=lambda _p: raw, auto=True)
+    assert len(ids) == 1
+    assert store.get_memory(ids[0])["status"] == "active"
+
+
+def test_auto_update_archives_superseded_target():
+    o = 4012
+    sid, tid = _session_turn(o, "/p")
+    target = store.add_memory(o, "project", "goal", "old goal", "old",
+                              project_path="/p", branch="feat", status="active")
+    raw = ('[{"op":"UPDATE","id":"%s","type":"goal","scope":"project",'
+           '"title":"new goal","body":"new"}]') % target["id"]
+    ids = memory.propose(o, sid, tid, "/p", "feat", "x", [], run=lambda _p: raw, auto=True)
+    assert store.get_memory(ids[0])["status"] == "active"
+    assert store.get_memory(ids[0])["supersedes_id"] == target["id"]
+    assert store.get_memory(target["id"])["status"] == "archived"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]
