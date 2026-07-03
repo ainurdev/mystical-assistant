@@ -158,7 +158,7 @@ def propose(owner_id: int, session_id: str, turn_id: str, project: str,
     Returns the ids of the candidates it created."""
     if not config.MEMORY_ENABLE or not (assistant_text or "").strip():
         return []
-    run = run or _default_run
+    run = run or (lambda p: _default_run(owner_id, p))
     existing = _existing(owner_id, project, branch)
     try:
         ops = _parse_ops(run(_build_capture_prompt(existing, assistant_text, edited_files)) or "")

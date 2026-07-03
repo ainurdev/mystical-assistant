@@ -148,6 +148,23 @@ def test_run_exception_is_swallowed():
     assert memory.propose(o, sid, tid, "/p", "feat", "x", [], run=boom) == []
 
 
+def test_default_run_path_produces_candidate():
+    # Exercises the REAL default run (no injected `run`): a regression guard for the
+    # owner-binding bug where propose() called a 2-arg _default_run with 1 arg.
+    o = 4010
+    sid, tid = _session_turn(o, "/p")
+    from bridge import runner
+    raw = '[{"op":"ADD","type":"convention","scope":"project","title":"pnpm","body":"use pnpm"}]'
+    old = runner.run_blocking
+    runner.run_blocking = lambda owner, prompt, **k: (raw, None, None, False)
+    try:
+        ids = memory.propose(o, sid, tid, "/p", "feat", "did real work", ["a.py"])
+    finally:
+        runner.run_blocking = old
+    assert len(ids) == 1
+    assert store.get_memory(ids[0])["title"] == "pnpm"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]
