@@ -75,6 +75,66 @@ def render_pack(owner_id: int, project: str, branch: "str | None") -> str:
     return text
 
 
+# --- suggestions (memory-grounded prompt ideas for a fresh session) ---------
+# Memoized per (owner, project, branch) → (namespace_version, list[str]); recomputes
+# only when the project's active memory changed, so auto-fetch on every new session
+# is cheap.
+_suggest_cache: dict = {}
+
+
+def _build_suggest_prompt(pack: str) -> str:
+    return (
+        "Below is the curated memory for a software project. Propose exactly 3 "
+        "concrete next-step prompts the developer could send to an AI coding "
+        "assistant to make progress on THIS project — grounded in the goal, "
+        "conventions, decisions, and gotchas below. Each is one imperative "
+        "sentence, specific to this project (no generic advice).\n\n"
+        "Return STRICT JSON only: an array of exactly 3 short strings. No prose.\n\n"
+        f"{pack}")
+
+
+def _parse_suggestions(raw: str) -> list[str]:
+    """Parse the model's JSON array of strings; tolerant of ```json fences / prose;
+    returns at most 3 non-empty strings, or [] on anything malformed (never raises)."""
+    try:
+        data = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        m = re.search(r"\[.*\]", raw, re.S)
+        if not m:
+            return []
+        try:
+            data = json.loads(m.group(0))
+        except Exception:  # noqa: BLE001
+            return []
+    if not isinstance(data, list):
+        return []
+    return [s.strip() for s in data if isinstance(s, str) and s.strip()][:3]
+
+
+def suggest(owner_id: int, project: str, branch: "str | None", *, run=None) -> list[str]:
+    """Up to 3 memory-grounded next-step prompts for a new session. Best-effort:
+    [] when memory is disabled, the project has no memory, or the model output is
+    malformed. Cached by namespace_version so repeat calls don't re-spend."""
+    if not config.MEMORY_ENABLE:
+        return []
+    pack = render_pack(owner_id, project, branch)
+    if not pack.strip():
+        return []
+    version = store.namespace_version(owner_id, project, branch)
+    key = (owner_id, project, branch)
+    cached = _suggest_cache.get(key)
+    if cached and cached[0] == version:
+        return cached[1]
+    run = run or (lambda p: _default_run(owner_id, p))
+    try:
+        out = _parse_suggestions(run(_build_suggest_prompt(pack)) or "")
+    except Exception:  # noqa: BLE001
+        log.debug("memory suggest failed", exc_info=True)
+        return []
+    _suggest_cache[key] = (version, out)
+    return out
+
+
 # --- capture (post-turn extractor) ------------------------------------------
 # Machine gate: a cheap Haiku pass reconciles proposed facts against existing
 # ones (ADD/UPDATE/SKIP) and emits Keep/Skip candidates — the human gate.
