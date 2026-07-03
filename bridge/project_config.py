@@ -87,6 +87,26 @@ def set_prod_url(project: str, url: str, branch: "str | None" = None) -> "str | 
     return _set_field(project, branch, "prod_url", url)
 
 
+_MEMORY_MODES = ("ask", "auto", "off")
+
+
+def memory_mode(project: str) -> str:
+    """Per-project memory posture: 'ask' (default) | 'auto' | 'off'. Project-wide
+    (never branch-scoped), so it reads the bare-project key only."""
+    return _get_field(project, None, "memory_mode") or "ask"
+
+
+def set_memory_mode(project: str, mode: str) -> str:
+    """Persist the posture; invalid/blank coerces to 'ask'. 'ask' is the default, so
+    it is stored blank (clearing the field) to keep the JSON minimal. Returns the
+    effective mode."""
+    mode = (mode or "").strip().lower()
+    if mode not in _MEMORY_MODES:
+        mode = "ask"
+    _set_field(project, None, "memory_mode", "" if mode == "ask" else mode)
+    return mode
+
+
 def package_scripts(cwd: str) -> dict:
     """The `scripts` map (name -> command) from the project's package.json, or
     {} when there is no package.json / no scripts."""
