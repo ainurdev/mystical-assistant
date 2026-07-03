@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-import { EditorState, Prec } from "@codemirror/state";
-import { indentWithTab } from "@codemirror/commands";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { HighlightStyle, syntaxHighlighting, indentOnInput, bracketMatching } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
-import { basicSetup } from "codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
@@ -173,15 +172,23 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch }: Props) 
     const state = EditorState.create({
       doc: meta.content ?? "",
       extensions: [
-        basicSetup,
         lineNumbers(),
-        crtTheme,
+        highlightActiveLineGutter(),
+        highlightActiveLine(),
+        drawSelection(),
+        history(),
+        indentOnInput(),
+        bracketMatching(),
         syntaxHighlighting(crtHighlight),
+        crtTheme,
         langFor(open),
-        Prec.highest(keymap.of([
+        // Mod-s first so it wins over any default binding; then editing keymaps.
+        keymap.of([
           { key: "Mod-s", preventDefault: true, run: () => { saveRef.current(); return true; } },
           indentWithTab,
-        ])),
+          ...defaultKeymap,
+          ...historyKeymap,
+        ]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) setDirty(u.state.doc.toString() !== baseRef.current);
         }),
