@@ -54,3 +54,10 @@ def test_start_script_fallback(tmp_path):
     _pkg(str(tmp_path), {"start": "node server.js"})
     os.makedirs(tmp_path / "node_modules")
     assert pd.heuristic(str(tmp_path)) == "npm run start"
+
+
+def test_claude_prompt_is_tagged_internal():
+    # The Claude fallback runs a throwaway session that persists a JSONL; the tag
+    # keeps native.scan from surfacing it in the unified session list.
+    from bridge import native
+    assert pd._PROMPT.startswith(native.INTERNAL_ONESHOT_TAG)

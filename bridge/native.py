@@ -20,6 +20,29 @@ from bridge.browser import rel, within_base
 _last_scan = 0.0
 _SCAN_MIN_INTERVAL = 5.0
 
+# Prefix stamped on the bridge's internal one-shot prompts (commit-message
+# generation, preview detection). Those headless runs still persist a JSONL under
+# ~/.claude/projects, so scan() skips any transcript whose first user message
+# starts with this — they must never surface in the unified session list. Not
+# angle-bracket shaped so transcript_jsonl.first_user_text won't strip it.
+INTERNAL_ONESHOT_TAG = "[[mystical-internal]]"
+
+# Internal one-shots created before the tag existed still sit on disk untagged,
+# and scan() re-reads every transcript on each poll — so without a content match
+# they resurface after cleanup. Match their stable prompt openings too. Safe to
+# drop once the pre-tag backlog ages out of the list window.
+_LEGACY_INTERNAL_PREFIXES = (
+    "You are configuring a one-click 'preview' button",
+    "Write a single git commit message for the staged changes",
+)
+
+
+def _is_internal_oneshot(title: str) -> bool:
+    """True for the bridge's own headless generator prompts (commit-message,
+    preview command) — tagged going forward, matched by prefix for the backlog."""
+    return (title.startswith(INTERNAL_ONESHOT_TAG)
+            or title.startswith(_LEGACY_INTERNAL_PREFIXES))
+
 
 def refresh(chat_id: int | None = None, *, force: bool = False) -> int:
     """Debounced scan() for the hot path (session-list requests), so a session
@@ -58,6 +81,8 @@ def scan(chat_id: int | None = None) -> int:
             if not cwd or not within_base(cwd):
                 continue
             title = transcript_jsonl.first_user_text(path)
+            if title and _is_internal_oneshot(title):
+                continue  # bridge-internal one-shot — never list
             if title:
                 title = title.strip()[:60]
             try:

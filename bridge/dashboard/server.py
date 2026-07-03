@@ -118,7 +118,9 @@ def _worktree_cwd(project, branch) -> "str | None":
 
 
 # Headless one-shot prompt for "generate commit message" (mirrors preview_detect).
+# Tagged so its throwaway session is kept out of the unified list (native.scan).
 _COMMIT_MSG_PROMPT = (
+    native.INTERNAL_ONESHOT_TAG + "\n"
     "Write a single git commit message for the staged changes below. Use the "
     "Conventional Commits format — `type(scope): summary`, with an imperative "
     "summary under 72 chars; add a short body only if it conveys real information. "
@@ -638,7 +640,8 @@ class Handler(BaseHTTPRequestHandler):
         if not diff.strip():
             return self._json({"error": "no changes to describe"}, 400)
         result, _sid, _cost, is_error = runner.run_blocking(
-            chat, _COMMIT_MSG_PROMPT + diff, cwd=cwd, timeout=120)
+            chat, _COMMIT_MSG_PROMPT + diff, cwd=cwd, timeout=120,
+            model="haiku", skip_pack=True)
         if is_error or not (result or "").strip():
             return self._json({"error": "could not generate message"}, 502)
         return self._json({"message": git.clean_commit_message(result)})

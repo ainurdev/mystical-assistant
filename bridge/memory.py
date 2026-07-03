@@ -144,8 +144,10 @@ def _build_capture_prompt(existing: list[dict], assistant_text: str,
 def _default_run(owner_id: int, prompt: str) -> str:
     """Real capture call: a cheap, sessionless Haiku pass with NO Context Pack
     (skip_pack) so memory never biases its own extraction."""
-    from bridge import runner  # lazy: avoid an import cycle
-    return runner.run_blocking(owner_id, prompt, model="haiku", skip_pack=True)[0]
+    from bridge import native, runner  # lazy: avoid an import cycle
+    return runner.run_blocking(
+        owner_id, native.INTERNAL_ONESHOT_TAG + "\n" + prompt,
+        model="haiku", skip_pack=True)[0]
 
 
 def propose(owner_id: int, session_id: str, turn_id: str, project: str,

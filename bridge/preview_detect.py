@@ -11,6 +11,8 @@ import json
 import os
 import re
 
+from bridge import native
+
 # Lockfile → package manager (first match wins).
 _PMS = [("pnpm-lock.yaml", "pnpm"), ("yarn.lock", "yarn"),
         ("bun.lockb", "bun"), ("package-lock.json", "npm")]
@@ -82,6 +84,9 @@ def heuristic(cwd: str) -> "str | None":
 
 
 _PROMPT = (
+    # Tagged so this throwaway generator session is kept out of the unified
+    # session list (native.scan skips transcripts starting with the tag).
+    native.INTERNAL_ONESHOT_TAG + "\n"
     "You are configuring a one-click 'preview' button for this project. Determine the "
     "exact shell command(s) to start its development web server so it can be opened in a "
     "browser. The command runs from this directory with a shell; chain steps with && "

@@ -4,7 +4,7 @@ Capture is best-effort — nothing here may raise into the turn lifecycle."""
 import json
 import sys
 
-from bridge import config, runner, store
+from bridge import config, native, runner, store
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit"}
 
@@ -59,7 +59,8 @@ def propose_review_items(owner_id: int, project_path: str, assistant_text: str,
               f"=== EDITS ===\n{edits_summary}")
     try:
         text, _sid, _cost, is_error = runner.run_blocking(
-            owner_id, prompt, cwd=project_path or None, timeout=60, model="haiku")
+            owner_id, native.INTERNAL_ONESHOT_TAG + "\n" + prompt,
+            cwd=project_path or None, timeout=60, model="haiku")
     except Exception as e:  # noqa: BLE001
         print(f"[learning] extract call failed: {e}", file=sys.stderr)
         return []
@@ -140,7 +141,8 @@ def teach(item: dict, mode: str, *, user_answer: str | None = None) -> str:
         return ""
     try:
         text, _sid, _cost, is_error = runner.run_blocking(
-            item["owner_id"], prompt, cwd=item.get("project_path") or None, timeout=120)
+            item["owner_id"], native.INTERNAL_ONESHOT_TAG + "\n" + prompt,
+            cwd=item.get("project_path") or None, timeout=120)
     except Exception as e:  # noqa: BLE001
         print(f"[learning] teach call failed: {e}", file=sys.stderr)
         return ""

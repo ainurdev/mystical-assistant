@@ -70,6 +70,25 @@ def test_scan_skips_transcript_without_recoverable_cwd():
     assert store.get_by_claude_session_id("uuid-nocwd") is None
 
 
+def test_scan_skips_internal_oneshot():
+    # Commit-message / preview one-shots persist a JSONL but must stay off the list.
+    cwd = os.path.join(_BASE, "oneshot")
+    first = native.INTERNAL_ONESHOT_TAG + "\nWrite a single git commit message..."
+    _write_native("uuid-oneshot", cwd, first_user=first)
+    native.scan(chat_id=OWNER)
+    assert store.get_by_claude_session_id("uuid-oneshot") is None
+
+
+def test_scan_skips_legacy_untagged_oneshot():
+    # Pre-tag one-shots persist untagged on disk; scan must still skip them by
+    # prompt signature so cleaned-up rows don't resurface on the next rescan.
+    cwd = os.path.join(_BASE, "legacy")
+    first = "You are configuring a one-click 'preview' button for this project."
+    _write_native("uuid-legacy", cwd, first_user=first)
+    native.scan(chat_id=OWNER)
+    assert store.get_by_claude_session_id("uuid-legacy") is None
+
+
 def test_scan_is_idempotent():
     cwd = os.path.join(_BASE, "idem")
     _write_native("uuid-idem", cwd)
