@@ -335,6 +335,7 @@ class Handler(BaseHTTPRequestHandler):
                 "scripts": project_config.package_scripts(abs_p),
                 "run_cmd": project_config.run_cmd(rel, branch),
                 "prod_url": project_config.prod_url(rel, branch),
+                "memory_mode": project_config.memory_mode(rel),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
@@ -390,7 +391,8 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = int(qs.get("cursor", ["0"])[0])
             except ValueError:
                 cursor = 0
-            return self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor))
+            return self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor,
+                                                    qs.get("workflow", [""])[0] or None))
         if path == "/local/memory/items":
             return self._json({"items": memory.items(
                 chat, project=(qs.get("project", [None])[0] or None),
@@ -499,6 +501,8 @@ class Handler(BaseHTTPRequestHandler):
                 out["run_cmd"] = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000], branch)
             if "prod_url" in body:
                 out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000], branch)
+            if "memory_mode" in body:
+                out["memory_mode"] = project_config.set_memory_mode(rel, body.get("memory_mode") or "")
             return self._json(out)
         if path == "/local/git/checkout":
             abs_p = _abs_project(body.get("project"))
@@ -553,6 +557,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(weather.set_location((body.get("city") or "")[:120]))
         if path == "/local/weather/unit":
             return self._json(weather.set_unit((body.get("unit") or "")[:20]))
+        if path == "/local/memory/suggest":
+            abs_p = (_abs_within((body.get("cwd") or "").strip())
+                     or _abs_project(body.get("cwd_rel") or body.get("project"))
+                     or state.project_dir(chat))
+            rel = browser.rel(abs_p)
+            if project_config.memory_mode(rel) == "off":
+                return self._json({"suggestions": []})
+            branch = git.current_branch_cached(abs_p) or None
+            return self._json({"suggestions": memory.suggest(chat, rel, branch)})
         if path == "/local/memory/candidate":
             if body.get("action") not in ("keep", "skip"):
                 return self._json({"error": "bad action"}, 400)
