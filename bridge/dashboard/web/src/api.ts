@@ -185,6 +185,7 @@ export interface ProjectSettings {
   scripts: Record<string, string>;
   run_cmd: string | null;
   prod_url: string | null;
+  memory_mode: string;
   default_cmd: string;
   log_path: string;
 }
@@ -283,7 +284,32 @@ export type AgentInfo = {
   started_at: number;
   updated_at: number;
 };
-export type AgentsInfo = { running: number; total: number; agents: AgentInfo[] };
+export type WorkflowAgentInfo = {
+  agent_id: string;
+  agent_type: string;
+  description: string;
+  run_id: string;
+  status: "running" | "done";
+  started_at: number;
+  updated_at: number;
+};
+export type WorkflowInfo = {
+  run_id: string;
+  name: string;
+  status: "running" | "done";
+  agent_count: number;
+  total_tokens: number;
+  total_tool_calls: number;
+  duration_ms: number;
+  summary: string;
+  agents: WorkflowAgentInfo[];
+};
+export type AgentsInfo = {
+  running: number;
+  total: number;
+  agents: AgentInfo[];
+  workflows: WorkflowInfo[];
+};
 export type AgentActivityEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; summary: string };
@@ -535,6 +561,11 @@ export const api = {
       method: "POST",
       body: { item_id: itemId, pinned },
     }),
+  memorySuggest: (project: string) =>
+    req<{ suggestions: string[] }>("/local/memory/suggest", {
+      method: "POST",
+      body: { project },
+    }),
   history: (archived = false) =>
     req<{ sessions: EnrichedSession[] }>(
       `/local/history${archived ? "?archived=1" : ""}`,
@@ -571,8 +602,8 @@ export const api = {
     }),
   projectSettings: (ctx: PreviewCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
-  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string }) =>
-    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null }>("/local/project/settings", {
+  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string; memory_mode?: string }) =>
+    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; memory_mode?: string }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
@@ -661,10 +692,11 @@ export const api = {
     req<QueueSnapshot>(`/local/queue/${op}`, { method: "POST", body }),
   agents: (sessionId: string) =>
     req<AgentsInfo>(`/local/agents?session=${encodeURIComponent(sessionId)}`),
-  agentActivity: (sessionId: string, agentId: string, cursor: number) =>
+  agentActivity: (sessionId: string, agentId: string, cursor: number, workflowId?: string) =>
     req<AgentActivity>(
       `/local/agents/activity?session=${encodeURIComponent(sessionId)}` +
-        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
+        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
+        (workflowId ? `&workflow=${encodeURIComponent(workflowId)}` : ""),
     ),
   // --- learning items (teacher mode review log) ---
   learningItems: (project?: string) =>
