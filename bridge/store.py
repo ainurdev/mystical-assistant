@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   archived          INTEGER NOT NULL DEFAULT 0,
   origin            TEXT,
   cwd               TEXT,
-  permission_mode   TEXT
+  permission_mode   TEXT,
+  title_source      TEXT DEFAULT 'auto'
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -133,6 +134,9 @@ def init() -> None:
         for col in ("origin", "cwd", "permission_mode"):
             if col not in scols:
                 c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
+        # Title provenance: 'auto' (first-prompt), 'subject' (LLM), 'manual'.
+        if "title_source" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN title_source TEXT DEFAULT 'auto'")
         # Any turn still 'running' at startup is orphaned (the bridge restarted);
         # mark it errored so the UI doesn't poll a dead job forever.
         c.execute("UPDATE turns SET status='error' WHERE status='running'")
@@ -291,6 +295,15 @@ def set_title(session_id: str, title: str) -> None:
                   (title, session_id))
 
 
+def set_subject_title(session_id: str, title: str) -> None:
+    """Replace an auto (first-prompt) title with an LLM-generated subject, marking
+    it 'subject'. No-op once the title is already a subject or a manual rename — so
+    we never regenerate and never clobber a name the user chose."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET title=?, title_source='subject' "
+                  "WHERE id=? AND title_source='auto'", (title, session_id))
+
+
 # --- learning items ---------------------------------------------------------
 
 def add_learning_item(owner_id: int, project_path: str, title: str, *,
@@ -350,7 +363,8 @@ def append_learning_note(item_id: str, text: str) -> None:
 
 def rename(session_id: str, title: str) -> None:
     with closing(_connect()) as c:
-        c.execute("UPDATE sessions SET title=? WHERE id=?", (title, session_id))
+        c.execute("UPDATE sessions SET title=?, title_source='manual' WHERE id=?",
+                  (title, session_id))
 
 
 def archive(session_id: str, archived: bool = True) -> None:
@@ -376,7 +390,7 @@ def start_turn(session_id: str, turn_id: str, prompt: str,
         c.execute("UPDATE sessions SET updated=? WHERE id=?", (now, session_id))
         cur = c.execute("SELECT title FROM sessions WHERE id=?", (session_id,)).fetchone()
         if cur is not None and not cur["title"]:
-            c.execute("UPDATE sessions SET title=? WHERE id=?",
+            c.execute("UPDATE sessions SET title=?, title_source='auto' WHERE id=?",
                       (prompt.strip()[:60] or "New chat", session_id))
         c.execute("COMMIT")
 
