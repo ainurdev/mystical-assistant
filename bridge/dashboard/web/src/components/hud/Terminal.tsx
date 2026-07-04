@@ -6,6 +6,7 @@ import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { MemoryView } from "../MemoryView";
 import { ViewTabs, type View } from "./ViewTabs";
+import { SuggestionChips } from "./SuggestionChips";
 
 const FRESH_QUOTES = [
   "the prompt is blank, the potential is not.",
@@ -27,8 +28,8 @@ function basename(rel: string | null | undefined): string | null {
 
 // The assistant's idle expressions. Eyes + mouth are simple glowing primitives;
 // faces are crossfaded (not morphed) so any shape pairs read smoothly.
-const FACE_TEAL = "#7fe9d8";
-const EYE_GLOW = "0 0 8px #7fe9d8";
+const FACE_TEAL = "var(--acc)";
+const EYE_GLOW = "0 0 8px var(--acc)";
 type EyeV = "open" | "round" | "line" | "happy";
 type MouthV = "smile" | "grin" | "flat" | "o";
 
@@ -75,10 +76,10 @@ function FreshState({ project }: { project: string | null }) {
     <div style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, textAlign: "center", animation: "mfadeup .5s ease both" }}>
       <div style={{ position: "relative", width: 150, height: 150, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <svg viewBox="0 0 100 100" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", opacity: 0.5 }}>
-          <circle cx="50" cy="50" r="46" fill="none" stroke="#7fe9d8" strokeWidth="1" strokeDasharray="5 9" style={{ transformOrigin: "50px 50px", animation: "introspin 11s linear infinite" }} />
-          <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(185,166,255,.4)" strokeWidth="1" strokeDasharray="3 13" style={{ transformOrigin: "50px 50px", animation: "introspinr 16s linear infinite" }} />
+          <circle cx="50" cy="50" r="46" fill="none" stroke="var(--acc)" strokeWidth="1" strokeDasharray="5 9" style={{ transformOrigin: "50px 50px", animation: "introspin 11s linear infinite" }} />
+          <circle cx="50" cy="50" r="38" fill="none" stroke="color-mix(in srgb, var(--purple) 40%, transparent)" strokeWidth="1" strokeDasharray="3 13" style={{ transformOrigin: "50px 50px", animation: "introspinr 16s linear infinite" }} />
         </svg>
-        <div style={{ position: "relative", width: 92, height: 92, borderRadius: "50%", border: "1.5px solid rgba(127,233,216,.5)", background: "radial-gradient(circle at 50% 36%,rgba(127,233,216,.16),rgba(7,13,13,.6))", boxShadow: "0 0 28px rgba(127,233,216,.18),inset 0 0 22px rgba(127,233,216,.1)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, animation: "bob 4.5s ease-in-out infinite" }}>
+        <div style={{ position: "relative", width: 92, height: 92, borderRadius: "50%", border: "1.5px solid color-mix(in srgb, var(--acc) 50%, transparent)", background: "radial-gradient(circle at 50% 36%,color-mix(in srgb, var(--acc) 16%, transparent),color-mix(in srgb, var(--panel2) 60%, transparent))", boxShadow: "0 0 28px color-mix(in srgb, var(--acc) 18%, transparent),inset 0 0 22px color-mix(in srgb, var(--acc) 10%, transparent)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, animation: "bob 4.5s ease-in-out infinite" }}>
           {/* Expressions are stacked and crossfaded so the face dissolves
               between moods on the 10s interval rather than popping. */}
           <div style={{ position: "relative", width: 60, height: 42 }}>
@@ -96,24 +97,24 @@ function FreshState({ project }: { project: string | null }) {
             ))}
           </div>
         </div>
-        <span style={{ position: "absolute", top: 4, right: 8, color: "#b9a6ff", fontSize: 13, animation: "twinkle 3s infinite" }}>✦</span>
-        <span style={{ position: "absolute", bottom: 10, left: 4, color: "#7fe9d8", fontSize: 10, animation: "twinkle 4s infinite .5s" }}>✦</span>
-        <span style={{ position: "absolute", top: 26, left: -2, color: "#8fd9a8", fontSize: 9, animation: "twinkle 3.5s infinite 1s" }}>+</span>
+        <span style={{ position: "absolute", top: 4, right: 8, color: "var(--purple)", fontSize: 13, animation: "twinkle 3s infinite" }}>✦</span>
+        <span style={{ position: "absolute", bottom: 10, left: 4, color: "var(--acc)", fontSize: 10, animation: "twinkle 4s infinite .5s" }}>✦</span>
+        <span style={{ position: "absolute", top: 26, left: -2, color: "var(--ok)", fontSize: 9, animation: "twinkle 3.5s infinite 1s" }}>+</span>
       </div>
       <div style={{ maxWidth: 450 }}>
-        <div style={{ fontSize: 9.5, letterSpacing: 3, color: "#3c544f", marginBottom: 13 }}>
+        <div style={{ fontSize: 9.5, letterSpacing: 3, color: "var(--txl)", marginBottom: 13 }}>
           {(basename(project) || "WORKSPACE").toUpperCase()} · FRESH SESSION
         </div>
-        <div style={{ fontSize: 16, lineHeight: 1.55, color: "#cfe9e3", fontStyle: "italic", minHeight: 50 }}>
+        <div style={{ fontSize: 16, lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
           <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) both, quoteglow 7.2s ease-in-out infinite" }}>
             “{FRESH_QUOTES[qi % FRESH_QUOTES.length]}”
           </span>
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
-        <span style={{ color: "#b9a6ff" }}>~ ❯</span>
-        <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,#3c544f 0%,#3c544f 28%,#9fe9dd 50%,#3c544f 72%,#3c544f 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>awaiting your command</span>
-        <span style={{ width: 7, height: 14, background: "#7fe9d8", display: "inline-block", boxShadow: "0 0 8px rgba(127,233,216,.7)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
+        <span style={{ color: "var(--purple)" }}>~ ❯</span>
+        <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>awaiting your command</span>
+        <span style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
       </div>
     </div>
   );
@@ -125,8 +126,8 @@ function FreshState({ project }: { project: string | null }) {
 function ChannelTuning() {
   return (
     <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease both" }}>
-      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "#7fe9d8", boxShadow: "0 0 20px 2px rgba(127,233,216,.8), 0 0 4px rgba(127,233,216,1)", animation: "chanline 1.15s ease-in-out infinite" }} />
-      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: 10, letterSpacing: 3, background: "linear-gradient(90deg,#3c544f 0%,#3c544f 28%,#9fe9dd 50%,#3c544f 72%,#3c544f 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s linear infinite" }}>TUNING SIGNAL…</span>
+      <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s ease-in-out infinite" }} />
+      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: 10, letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s linear infinite" }}>TUNING SIGNAL…</span>
     </div>
   );
 }
@@ -135,7 +136,7 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   onReviewResolve,
   error, scrollRef, contentRef, composer, onOpenFromHistory, liveTurns, trailingWorking,
-  loading, sessionId, onOpenRunner,
+  loading, sessionId, onSuggestPick,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -157,7 +158,7 @@ export function Terminal({
   trailingWorking?: boolean;
   loading?: boolean;
   sessionId?: string | null;
-  onOpenRunner?: () => void;
+  onSuggestPick?: (text: string) => void;
 }) {
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
@@ -186,8 +187,8 @@ export function Terminal({
     el.animate(
       [
         { clipPath: "inset(50% 0 50% 0)", filter: "brightness(3) saturate(.4)", opacity: 0.5 },
-        { clipPath: "inset(48.4% 0 48.4% 0)", filter: "brightness(2.8) drop-shadow(0 0 14px rgba(127,233,216,.9))", opacity: 1, offset: 0.15 },
-        { clipPath: "inset(0 0 0 0)", transform: "translateX(2px) skewX(-1.2deg)", filter: "brightness(1.75) drop-shadow(0 0 8px rgba(127,233,216,.4))", offset: 0.42 },
+        { clipPath: "inset(48.4% 0 48.4% 0)", filter: "brightness(2.8) drop-shadow(0 0 14px color-mix(in srgb, var(--acc) 90%, transparent))", opacity: 1, offset: 0.15 },
+        { clipPath: "inset(0 0 0 0)", transform: "translateX(2px) skewX(-1.2deg)", filter: "brightness(1.75) drop-shadow(0 0 8px color-mix(in srgb, var(--acc) 40%, transparent))", offset: 0.42 },
         { transform: "translateX(-1px) skewX(.4deg)", filter: "brightness(1.18)", offset: 0.62 },
         { clipPath: "inset(0 0 0 0)", transform: "none", filter: "none", opacity: 1 },
       ],
@@ -199,7 +200,7 @@ export function Terminal({
     <div
       className="panel"
       data-ctx-type="terminal"
-      style={{ border: "1px solid rgba(127,233,216,.2)", background: "rgba(7,13,13,.6)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      style={{ border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, overflow: "hidden" }}>
@@ -209,34 +210,23 @@ export function Terminal({
               {projectLabel || "—"}
             </span>
             {branch && (
-              <span title="session branch" style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, letterSpacing: ".5px", color: "#a78bf0", border: "1px solid rgba(185,166,255,.28)", padding: "2px 7px" }}>
-                <span style={{ color: "#b9a6ff" }}>⎇</span>{branch}
+              <span title="session branch" style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px" }}>
+                <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
               </span>
             )}
-            <span style={{ fontSize: 11, letterSpacing: ".5px", color: "#9fc7c0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span style={{ fontSize: 11, letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {selected?.title || "new session"}
             </span>
           </div>
-          {lastPrompt && (
-            <span title={lastPrompt} style={{ fontSize: 10.5, lineHeight: 1.35, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>
-              {lastPrompt}
-            </span>
-          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
           <span style={{ fontSize: 9, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
           </span>
-          {onOpenRunner && (
-            <button onClick={onOpenRunner} title="Open the running-project preview"
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "rgba(127,233,216,.06)", color: "#bfe6de", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "3px 8px" }}>
-              ⊞ PREVIEW
-            </button>
-          )}
           <ViewTabs view={view} onView={onView} />
         </div>
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
@@ -249,16 +239,26 @@ export function Terminal({
       ) : (
         <>
           <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
+            {lastPrompt && !empty && (
+              <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "-16px -18px 13px", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
+                <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
+                <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: 12 }}>~ ❯</span>
+                <span style={{ color: "var(--txh)", fontSize: 12, lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
+              </div>
+            )}
             <div ref={contentRef}>
               {empty && loading ? (
                 <ChannelTuning />
               ) : empty ? (
-                <FreshState project={sessionProject} />
+                <>
+                  <FreshState project={sessionProject} />
+                  <SuggestionChips project={sessionProject} onPick={onSuggestPick} />
+                </>
               ) : (
                 <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} />
               )}
               {error && (
-                <div style={{ marginTop: 8, border: "1px solid rgba(224,137,122,.3)", background: "rgba(224,137,122,.06)", padding: "4px 8px", fontSize: 12, color: "#e0897a" }}>
+                <div style={{ marginTop: 8, border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", padding: "4px 8px", fontSize: 12, color: "var(--err)" }}>
                   {error}
                 </div>
               )}

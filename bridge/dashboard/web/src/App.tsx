@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   api,
   AUTH_REQUIRED,
@@ -26,6 +26,8 @@ import {
   themeDef,
   themeFilter,
   themeFont,
+  themeVars,
+  THEME_TOKEN_KEYS,
   type HudSettings,
   type ThemeKey,
 } from "./lib/theme";
@@ -44,7 +46,6 @@ import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal } from "./components/hud/AnalyzeModal";
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
-import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { RunningWindow } from "./components/design/RunningWindow";
 import { AgentsPill } from "./components/AgentsPill";
 import { usePreviewQueue } from "./components/design/usePreviewQueue";
@@ -83,7 +84,6 @@ export function App() {
   const skipBoot = new URLSearchParams(location.search).has("skipboot");
   const [booting, setBooting] = useState(!skipBoot);
   const [showDashboard, setShowDashboard] = useState(skipBoot);
-  const [runnerOpen, setRunnerOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [previewProject, setPreviewProject] = useState<string | null>(null);
   // Manage-projects bookkeeping. TODO(phase2-data): session-local only — the
@@ -133,7 +133,18 @@ export function App() {
 
   // Apply theme: hue-rotate filter on the dashboard, glow var, ambient bg.
   useEffect(() => {
-    document.documentElement.style.setProperty("--glow", settings.glow ? "8px" : "0px");
+    const root = document.documentElement;
+    root.style.setProperty("--glow", settings.glow ? "8px" : "0px");
+    // Palette themes override the design tokens on :root (not just the themed
+    // wrapper) so the DERIVED tokens (--primary/--card/--border/--ac-*, defined
+    // via var() in :root) re-resolve to the palette too. Filter themes clear
+    // these and recolour via the container `filter` instead.
+    const vars = themeVars(settings.theme);
+    for (const k of THEME_TOKEN_KEYS) {
+      const v = vars[k];
+      if (v != null) root.style.setProperty(k, v);
+      else root.style.removeProperty(k);
+    }
     saveSettings(settings);
   }, [settings]);
 
@@ -272,7 +283,6 @@ export function App() {
         else if (previewProject) setPreviewProject(null);
         else if (manageOpen) setManageOpen(false);
         else if (paletteOpen) setPaletteOpen(false);
-        else if (runnerOpen) setRunnerOpen(false);
         else if (themeOpen) setThemeOpen(false);
         else if (settingsOpen) setSettingsOpen(false);
         else if (analyzeProject) setAnalyzeProject(null);
@@ -281,7 +291,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, previewProject, manageOpen, paletteOpen, runnerOpen, themeOpen, settingsOpen, analyzeProject]);
+  }, [ctxMenu, previewProject, manageOpen, paletteOpen, themeOpen, settingsOpen, analyzeProject]);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
@@ -539,7 +549,7 @@ export function App() {
   const wsRoot = (activeProject || "/").replace(/\/[^/]*$/, "") || "/";
 
   return (
-    <div className="flex h-full flex-col" style={{ background: "#060a0a", position: "relative" }}>
+    <div className="flex h-full flex-col" style={{ background: "var(--panel3)", position: "relative" }}>
       {settings.scanlines && <div className="crt" />}
       {settings.sweep && <div className="sweep" />}
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: -1, background: td.bg, transition: "background .5s ease" }} />
@@ -558,7 +568,8 @@ export function App() {
             filter: themeFilter(settings.theme),
             background: themeCanvas(settings.theme),
             fontFamily: themeFont(settings.theme) || undefined,
-          }}
+            ...themeVars(settings.theme),
+          } as CSSProperties}
         >
             <Strip
               radio={radio.radio}
@@ -593,15 +604,15 @@ export function App() {
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
                 activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} onReviewResolve={onReviewResolve} error={error}
                 scrollRef={scrollRef} contentRef={contentRef}
+                onSuggestPick={(t) => feed([t])}
                 onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession}
-                onOpenRunner={() => setRunnerOpen(true)}
                 composer={
                   <>
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} effort={effort}
-                      permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce}
+                      permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onCompact={() => void send("/compact", [])}
@@ -639,16 +650,16 @@ export function App() {
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}
                 onNewSession={(rel) => { void newSession(rel); setAnalyzeProject(null); }}
                 onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
+                attachedSessionId={sessionId}
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
-            {runnerOpen && (
+            {previewProject && (
               <RunningWindow
-                project={selected?.project ?? activeProject}
-                branch={selected?.branch ?? activeBadge?.branch}
-                cwd={selected?.cwd}
+                project={previewProject}
+                branch={gitBadges.get(previewProject)?.branch}
                 sessionId={sessionId}
-                onClose={() => setRunnerOpen(false)}
+                onClose={() => setPreviewProject(null)}
               />
             )}
             {manageOpen && (
@@ -665,10 +676,6 @@ export function App() {
                 onClose={() => setManageOpen(false)}
               />
             )}
-            {previewProject && (
-              <ProjectPreviewModal project={previewProject} onClose={() => setPreviewProject(null)} />
-            )}
-
             {themeOpen && (
               <ThemeModal settings={settings} onTheme={setTheme} onToggle={toggleCrt}
                 onReplayBoot={replayBoot} onClose={() => setThemeOpen(false)} />
@@ -685,7 +692,7 @@ export function App() {
       )}
 
       {booting && (
-        <BootIntro onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
+        <BootIntro theme={settings.theme} scanlines={settings.scanlines} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
     </div>
   );
