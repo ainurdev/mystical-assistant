@@ -650,7 +650,6 @@ export function App() {
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}
                 onNewSession={(rel) => { void newSession(rel); setAnalyzeProject(null); }}
                 onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
-                attachedSessionId={sessionId}
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />

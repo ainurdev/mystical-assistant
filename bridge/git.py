@@ -158,6 +158,69 @@ def commit_paths(cwd: str, message: str, paths: list[str]) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
+# --- editor: browse / read / write the working tree ------------------------
+# Backs the EDITOR tab. Every path is confined to cwd by _safe_path; the caller
+# resolves cwd to a project/worktree already inside BASE_PATH.
+_MAX_FILE = 1_000_000  # 1 MB — above this the editor won't load/edit the file
+
+
+def list_tree(cwd: str) -> list[str]:
+    """Every editable file in the working tree — tracked plus untracked, minus
+    anything .gitignore excludes — as sorted repo-relative paths. `-z` keeps
+    non-ASCII paths verbatim; empty list if cwd isn't a repo."""
+    if not is_repo(cwd):
+        return []
+    rc, out, _ = _run(cwd, "-c", "core.quotePath=false", "ls-files", "-z",
+                      "--cached", "--others", "--exclude-standard")
+    if rc != 0:
+        return []
+    return sorted(set(_ztokens(out)))
+
+
+def read_file(cwd: str, path: str) -> dict:
+    """Load a working-tree file for the editor. Returns {ok, path, content,
+    binary, too_large, size}; content is "" when binary or too_large. Binary is
+    detected by a NUL byte, so genuine source (UTF-8) always loads."""
+    safe = _safe_path(cwd, path)
+    if safe is None:
+        return {"ok": False, "error": "path escapes workspace"}
+    full = os.path.join(os.path.realpath(cwd), safe)
+    if not os.path.isfile(full):
+        return {"ok": False, "error": "not a file"}
+    try:
+        size = os.path.getsize(full)
+        if size > _MAX_FILE:
+            return {"ok": True, "path": safe, "content": "", "binary": False,
+                    "too_large": True, "size": size}
+        with open(full, "rb") as f:
+            raw = f.read()
+    except OSError as e:
+        return {"ok": False, "error": str(e)}
+    if b"\x00" in raw:
+        return {"ok": True, "path": safe, "content": "", "binary": True,
+                "too_large": False, "size": size}
+    return {"ok": True, "path": safe, "content": raw.decode("utf-8", "replace"),
+            "binary": False, "too_large": False, "size": size}
+
+
+def write_file(cwd: str, path: str, content: str) -> tuple[bool, str]:
+    """Save `content` to a working-tree file (creating parent dirs). newline=""
+    keeps the browser's LF line endings verbatim. Returns (ok, path-or-error)."""
+    safe = _safe_path(cwd, path)
+    if safe is None:
+        return False, "path escapes workspace"
+    full = os.path.join(os.path.realpath(cwd), safe)
+    try:
+        parent = os.path.dirname(full)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(full, "w", encoding="utf-8", newline="") as f:
+            f.write(content)
+        return True, safe
+    except OSError as e:
+        return False, str(e)
+
+
 def diff_multi(cwd: str, paths: list[str], limit: int = 8000) -> str:
     """Concatenated working-tree diff for `paths` (tracked + untracked), capped at
     `limit` chars — feeds commit-message generation without unbounded token cost."""
