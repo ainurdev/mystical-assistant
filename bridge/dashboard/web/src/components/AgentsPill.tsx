@@ -10,6 +10,7 @@ export function AgentsPill({
   running: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [hov, setHov] = useState(false);
   const [data, setData] = useState<AgentsInfo | null>(null);
   const runningRef = useRef(running);
   runningRef.current = running;
@@ -32,23 +33,32 @@ export function AgentsPill({
   }, [sessionId, running]);
 
   if (!sessionId || !data || data.total === 0) return null;
-  const label =
-    data.running > 0 ? `⚡ ${data.running} agents working` : `${data.total} agents ran`;
+  const working = data.running > 0;
+  const label = working ? `${data.running} agents working` : `${data.total} agents ran`;
   return (
     <>
       <button
         onClick={() => setOpen(true)}
+        onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
         style={{ appearance: "none", cursor: "pointer", alignSelf: "flex-start",
-                 border: "1px solid rgba(127,233,216,.35)", background: "rgba(127,233,216,.06)",
-                 color: "#7fe9d8", fontFamily: "inherit", fontSize: 11, letterSpacing: 0.5,
-                 padding: "4px 11px", borderRadius: 999 }}
+                 display: "inline-flex", alignItems: "center", gap: 7,
+                 border: `1px solid rgba(127,233,216,${working ? 0.45 : 0.28})`,
+                 background: hov ? "color-mix(in srgb, var(--acc) 12%, transparent)"
+                                 : `rgba(127,233,216,${working ? 0.08 : 0.04})`,
+                 color: working ? "var(--acc)" : "var(--txm)", fontFamily: "inherit", fontSize: 11,
+                 letterSpacing: 0.5, padding: "4px 12px", borderRadius: 999,
+                 transition: "background .15s ease" }}
       >
+        <span style={{ width: 6, height: 6, borderRadius: "50%",
+                       background: working ? "var(--ok)" : "var(--txl)",
+                       animation: working ? "mpulse 2.4s infinite" : "none" }} />
         {label}
       </button>
       {open && (
         <AgentsModal
           sessionId={sessionId}
           agents={data.agents}
+          workflows={data.workflows ?? []}
           onClose={() => setOpen(false)}
         />
       )}

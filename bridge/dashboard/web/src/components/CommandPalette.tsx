@@ -69,15 +69,15 @@ export function CommandPalette({
   return (
     <div
       onClick={requestClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(4,7,7,.7)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}
+      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 70%, transparent)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "14vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className="panel"
-        style={{ width: 560, maxWidth: "92vw", border: "1px solid rgba(127,233,216,.4)", background: "rgba(7,13,13,.97)", boxShadow: "0 0 60px rgba(0,0,0,.7),0 0 30px rgba(127,233,216,.08)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
+        style={{ width: 560, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 97%, transparent)", boxShadow: "0 0 60px rgba(0,0,0,.7),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 16px", borderBottom: "1px solid rgba(127,233,216,.16)" }}>
-          <span style={{ color: "#7fe9d8" }}>~ ❯</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
+          <span style={{ color: "var(--acc)" }}>~ ❯</span>
           <input
             autoFocus
             value={query}
@@ -99,13 +99,13 @@ export function CommandPalette({
               }
             }}
             placeholder="search projects, sessions, or run a command…"
-            style={{ flex: 1, background: "transparent", border: 0, outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 13.5 }}
+            style={{ flex: 1, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 13.5 }}
           />
-          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f", border: "1px solid rgba(127,233,216,.2)", padding: "2px 7px" }}>ESC</span>
+          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 7px" }}>ESC</span>
         </div>
         <div className="mscroll" style={{ maxHeight: "46vh", overflowY: "auto", padding: 6 }}>
           {filtered.length === 0 ? (
-            <div style={{ padding: "24px 12px", textAlign: "center", fontSize: 12, letterSpacing: 1, color: "#3c544f" }}>// no commands</div>
+            <div style={{ padding: "24px 12px", textAlign: "center", fontSize: 12, letterSpacing: 1, color: "var(--txl)" }}>// no commands</div>
           ) : (
             filtered.map((c, i) => (
               <button
@@ -115,14 +115,14 @@ export function CommandPalette({
                 style={{
                   width: "100%", appearance: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left",
                   display: "flex", alignItems: "center", gap: 12, padding: "9px 11px",
-                  border: 0, borderLeft: `2px solid ${i === highlight ? "#7fe9d8" : "transparent"}`,
-                  background: i === highlight ? "rgba(127,233,216,.08)" : "transparent",
+                  border: 0, borderLeft: `2px solid ${i === highlight ? "var(--acc)" : "transparent"}`,
+                  background: i === highlight ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
                   animation: "mfadeup .3s ease both", animationDelay: `${i * 50}ms`,
                 }}
               >
-                <span style={{ fontSize: 11, color: c.iconColor ?? "#7fe9d8", width: 18, textAlign: "center", flex: "none" }}>{c.icon}</span>
-                <span style={{ flex: 1, fontSize: 12.5, color: "#cfe9e3" }}>{c.label}</span>
-                <span style={{ fontSize: 9.5, letterSpacing: 1, color: "#3c544f" }}>{c.group.toUpperCase()}</span>
+                <span style={{ fontSize: 11, color: c.iconColor ?? "var(--acc)", width: 18, textAlign: "center", flex: "none" }}>{c.icon}</span>
+                <span style={{ flex: 1, fontSize: 12.5, color: "var(--txh)" }}>{c.label}</span>
+                <span style={{ fontSize: 9.5, letterSpacing: 1, color: "var(--txl)" }}>{c.group.toUpperCase()}</span>
               </button>
             ))
           )}

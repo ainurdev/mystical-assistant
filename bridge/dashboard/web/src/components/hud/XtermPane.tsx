@@ -6,16 +6,16 @@ import { api } from "../../api";
 
 // Phosphor-matched theme so the terminal reads as part of the HUD.
 const THEME = {
-  background: "#070d0d",
-  foreground: "#cfe9e3",
-  cursor: "#7fe9d8",
-  cursorAccent: "#070d0d",
-  selectionBackground: "rgba(127,233,216,.25)",
-  black: "#0b1414", red: "#e0897a", green: "#8fd9a8", yellow: "#e3c279",
-  blue: "#7fb0e9", magenta: "#b9a6ff", cyan: "#7fe9d8", white: "#cfe9e3",
-  brightBlack: "#3c544f", brightRed: "#e0897a", brightGreen: "#8fd9a8",
-  brightYellow: "#e3c279", brightBlue: "#7fb0e9", brightMagenta: "#b9a6ff",
-  brightCyan: "#9fe9dd", brightWhite: "#dff8f2",
+  background: "var(--panel2)",
+  foreground: "var(--txh)",
+  cursor: "var(--acc)",
+  cursorAccent: "var(--panel2)",
+  selectionBackground: "color-mix(in srgb, var(--acc) 25%, transparent)",
+  black: "#0b1414", red: "var(--err)", green: "var(--ok)", yellow: "var(--warn)",
+  blue: "#7fb0e9", magenta: "var(--purple)", cyan: "var(--acc)", white: "var(--txh)",
+  brightBlack: "var(--txl)", brightRed: "var(--err)", brightGreen: "var(--ok)",
+  brightYellow: "var(--warn)", brightBlue: "#7fb0e9", brightMagenta: "var(--purple)",
+  brightCyan: "#9fe9dd", brightWhite: "var(--txb)",
 };
 
 /** One interactive terminal: an xterm.js instance wired to the backend PTY over a

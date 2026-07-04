@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectTint } from "../../lib/surfaces";
@@ -20,10 +21,10 @@ interface Props {
 }
 
 const STATUS_VIEW: Record<string, { c: string; l: string }> = {
-  working: { c: "#8fd9a8", l: "WORK" },
-  awaiting: { c: "#e3c279", l: "WAIT" },
-  live: { c: "#6fb5ff", l: "LIVE" },
-  idle: { c: "#5a6f6a", l: "IDLE" },
+  working: { c: "var(--ok)", l: "WORK" },
+  awaiting: { c: "var(--warn)", l: "WAIT" },
+  live: { c: "var(--info)", l: "LIVE" },
+  idle: { c: "var(--txf)", l: "IDLE" },
 };
 
 function statusView(s: SessionStatus | undefined) {
@@ -31,7 +32,7 @@ function statusView(s: SessionStatus | undefined) {
 }
 
 function SessionRow({
-  s, i, on, loading, sv, branch, onAttach, onAnalyzeProj,
+  s, i, on, loading, sv, branch, onAttach, onAnalyzeProj, animate = true,
 }: {
   s: SessionBrief;
   i: number;
@@ -41,6 +42,7 @@ function SessionRow({
   branch: string;
   onAttach: () => void;
   onAnalyzeProj: () => void;
+  animate?: boolean;
 }) {
   const [hov, setHov] = useState(false);
   const [tagHov, setTagHov] = useState(false);
@@ -53,35 +55,36 @@ function SessionRow({
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
       style={{
         display: "flex", gap: 10, padding: "10px 11px", marginBottom: 7, cursor: "pointer",
-        border: `1px solid ${on ? "rgba(127,233,216,.3)" : "rgba(127,233,216,.1)"}`,
-        borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`,
-        background: on ? "rgba(127,233,216,.08)" : hov ? "rgba(127,233,216,.06)" : "rgba(7,13,13,.35)",
-        transition: "background .18s ease", animation: "mfadeup .4s ease both",
-        animationDelay: `${Math.min(i, 10) * 35}ms`,
+        border: `1px solid ${on ? "color-mix(in srgb, var(--acc) 30%, transparent)" : "color-mix(in srgb, var(--acc) 10%, transparent)"}`,
+        borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
+        background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : hov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "color-mix(in srgb, var(--panel2) 35%, transparent)",
+        transition: "background .18s ease",
+        animation: animate ? "mfadeup .4s ease both" : "none",
+        animationDelay: animate ? `${Math.min(i, 10) * 35}ms` : undefined,
       }}
     >
       {loading ? (
-        <span style={{ color: "#7fe9d8", flex: "none", marginTop: 3, display: "flex" }}><Spinner className="h-[9px] w-[9px] border" /></span>
+        <span style={{ color: "var(--acc)", flex: "none", marginTop: 3, display: "flex" }}><Spinner className="h-[9px] w-[9px] border" /></span>
       ) : (
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: sv.c, flex: "none", marginTop: 4, boxShadow: `0 0 7px ${idle ? "transparent" : sv.c}` }} />
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, lineHeight: 1.4, color: on ? "#eafff9" : "#cfe9e3", fontWeight: on ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ fontSize: 12.5, lineHeight: 1.4, color: on ? "#eafff9" : "var(--txh)", fontWeight: on ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {s.title || "untitled session"}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6 }}>
           <button
             onClick={(e) => { e.stopPropagation(); onAnalyzeProj(); }} title="analyze project"
             onMouseEnter={() => setTagHov(true)} onMouseLeave={() => setTagHov(false)}
-            style={{ appearance: "none", cursor: "pointer", flex: "none", fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, background: tagHov ? "rgba(127,233,216,.08)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
+            style={{ appearance: "none", cursor: "pointer", flex: "none", fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, background: tagHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
           >{tint.tag}</button>
-          <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: "#a78bf0", minWidth: 0 }} title="worktree">
-            <span style={{ color: "#b9a6ff", flex: "none" }}>⎇</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: "var(--purple-d)", minWidth: 0 }} title="worktree">
+            <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 8.5, letterSpacing: 1, color: sv.c, flex: "none" }}>{loading ? "LOADING…" : sv.l}</span>
-          <span style={{ fontSize: 9, color: "#3c544f", flex: "none" }}>{ago(s.updated)}</span>
+          <span style={{ fontSize: 9, color: "var(--txl)", flex: "none" }}>{ago(s.updated)}</span>
         </div>
       </div>
     </div>
@@ -96,9 +99,9 @@ function ShowMore({ count, onClick }: { count: number; onClick: () => void }) {
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         width: "100%", margin: "1px 0 9px", appearance: "none", cursor: "pointer",
-        border: `1px dashed ${hov ? "rgba(127,233,216,.4)" : "rgba(127,233,216,.22)"}`,
-        background: hov ? "rgba(127,233,216,.05)" : "transparent",
-        color: hov ? "#bfe6de" : "#7f9d97", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5,
+        border: `1px dashed ${hov ? "color-mix(in srgb, var(--acc) 40%, transparent)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`,
+        background: hov ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent",
+        color: hov ? "var(--tx)" : "#7f9d97", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5,
         padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
       }}
     >SHOW MORE · {count}<span style={{ fontSize: 12, lineHeight: 0 }}>→</span></button>
@@ -125,7 +128,6 @@ export function SessionsPanel(props: Props) {
   // Browser state.
   const [tab, setTab] = useState<"recent" | "grouped">("recent");
   const [drill, setDrill] = useState<string | null>(null);
-  const [recentLimit, setRecentLimit] = useState(8);
 
   // Hovers.
   const [nsBtnHov, setNsBtnHov] = useState(false);
@@ -154,6 +156,29 @@ export function SessionsPanel(props: Props) {
   const sessionTotal = groups.reduce((n, g) => n + g.sessionCount, 0);
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
   const sorted = [...sessions].sort((a, b) => b.updated - a.updated);
+  // RECENT tab: newest-first, matching the design mock's "newest first".
+  const recentSorted = [...sessions].sort((a, b) => b.updated - a.updated);
+
+  // Virtualize the uncapped RECENT list against the shared .mscroll scroller.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const recentActive = !drill && tab === "recent";
+  const rowV = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: recentActive ? recentSorted.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 66,
+    overscan: 8,
+    scrollMargin,
+  });
+  // The new-session form + tab header sit above the list inside the scroller, so the
+  // list's start offset shifts when they open/close — re-measure and feed it back.
+  useLayoutEffect(() => {
+    const sc = scrollRef.current, li = listRef.current;
+    if (!sc || !li) return;
+    const m = li.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    setScrollMargin((prev) => (Math.abs(prev - m) > 0.5 ? m : prev));
+  });
 
   function toggleForm() {
     if (!nsOpen) {
@@ -182,9 +207,9 @@ export function SessionsPanel(props: Props) {
     setNsParent(branches[(i + 1) % Math.max(1, branches.length)] || nsParent);
   }
 
-  const rowFor = (s: SessionBrief, i: number) => (
+  const rowFor = (s: SessionBrief, i: number, animate = true) => (
     <SessionRow
-      key={s.id} s={s} i={i}
+      key={s.id} s={s} i={i} animate={animate}
       on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
       sv={statusView(status.get(s.id))}
       branch={s.branch || branchOf.get(s.project) || "main"}
@@ -198,12 +223,12 @@ export function SessionsPanel(props: Props) {
   const drillTint = projectTint(drill ?? "");
 
   return (
-    <div className="panel" style={{ border: "1px solid rgba(127,233,216,.16)", background: "rgba(9,16,16,.86)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", flex: "none" }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "#3c544f" }}>SESSIONS</span>
-        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#7fe9d8" }}>{groups.length} PROJ · {sessionTotal} SESS</span>
+        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>SESSIONS</span>
+        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} PROJ · {sessionTotal} SESS</span>
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))", transformOrigin: "left", animation: "drawline .7s ease both .16s", flex: "none" }} />
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .16s", flex: "none" }} />
 
       <div style={{ flex: "none", display: "flex", gap: 7, padding: "10px 10px 3px" }}>
         <button
@@ -211,29 +236,29 @@ export function SessionsPanel(props: Props) {
           onMouseEnter={() => setNsBtnHov(true)} onMouseLeave={() => setNsBtnHov(false)}
           style={{
             flex: 1, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-            border: `1px solid ${nsOpen ? "rgba(185,166,255,.5)" : "rgba(127,233,216,.3)"}`,
-            background: nsOpen ? "rgba(185,166,255,.12)" : "rgba(127,233,216,.06)",
-            color: nsOpen ? "#e7deff" : "#bfe6de",
+            border: `1px solid ${nsOpen ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
+            background: nsOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
+            color: nsOpen ? "var(--purple-b)" : "var(--tx)",
             fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: "10px 8px",
             transition: "all .15s ease", filter: nsBtnHov ? "brightness(1.18)" : "none",
           }}
         ><span style={{ fontSize: 14, lineHeight: 0 }}>+</span>NEW SESSION</button>
       </div>
 
-      <div className="mscroll" style={{ flex: 1, padding: "9px 9px 11px" }}>
+      <div ref={scrollRef} className="mscroll" style={{ flex: 1, padding: "9px 9px 11px" }}>
         {nsOpen && (
-          <div style={{ border: "1px solid rgba(185,166,255,.3)", background: "linear-gradient(160deg,rgba(185,166,255,.07),rgba(9,16,16,.4))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
+          <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--purple) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#b9a6ff", flex: "none" }} />
-              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "#cbb8ff" }}>NEW SESSION</span>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--purple)", flex: "none" }} />
+              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--purple-h)" }}>NEW SESSION</span>
               <span style={{ flex: 1 }} />
               <button
                 onClick={toggleForm} title="close"
                 onMouseEnter={() => setCloseHov(true)} onMouseLeave={() => setCloseHov(false)}
-                style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: closeHov ? "#cbb8ff" : "#6f6088", fontFamily: "inherit", fontSize: 13, lineHeight: 1, padding: "2px 4px" }}
+                style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: closeHov ? "var(--purple-h)" : "var(--purple-g)", fontFamily: "inherit", fontSize: 13, lineHeight: 1, padding: "2px 4px" }}
               >✕</button>
             </div>
-            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "#3c544f", marginBottom: 6 }}>PROJECT</div>
+            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 6 }}>PROJECT</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               {groups.map((g) => {
                 const on = g.rel === nsProject;
@@ -245,9 +270,9 @@ export function SessionsPanel(props: Props) {
                     onMouseEnter={() => setChipHov(`p:${g.rel}`)} onMouseLeave={() => setChipHov("")}
                     style={{
                       appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-                      border: `1px solid ${on || hov ? "#7fe9d8" : "rgba(127,233,216,.18)"}`,
-                      background: on ? "rgba(127,233,216,.1)" : "rgba(7,13,13,.4)",
-                      color: on ? "#dff8f2" : "#9fc7c0",
+                      border: `1px solid ${on || hov ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
+                      background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "color-mix(in srgb, var(--panel2) 40%, transparent)",
+                      color: on ? "var(--txb)" : "var(--txm)",
                       fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px", minWidth: 0, maxWidth: "100%",
                     }}
                   >
@@ -257,7 +282,7 @@ export function SessionsPanel(props: Props) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "#3c544f", margin: "12px 0 6px" }}>WORKTREE</div>
+            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", margin: "12px 0 6px" }}>WORKTREE</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               {branches.map((b) => {
                 const on = !nsNewOpen && b === nsBranch;
@@ -268,58 +293,58 @@ export function SessionsPanel(props: Props) {
                     onMouseEnter={() => setChipHov(`b:${b}`)} onMouseLeave={() => setChipHov("")}
                     style={{
                       appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-                      border: `1px solid ${on || hov ? "#b9a6ff" : "rgba(185,166,255,.3)"}`,
-                      background: on ? "rgba(185,166,255,.16)" : "rgba(185,166,255,.06)",
-                      color: on ? "#e7deff" : "#cbb8ff",
+                      border: `1px solid ${on || hov ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`,
+                      background: on ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)",
+                      color: on ? "var(--purple-b)" : "var(--purple-h)",
                       fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 8px", maxWidth: "100%", minWidth: 0,
                     }}
                   >
-                    <span style={{ color: "#b9a6ff", flex: "none" }}>⎇</span>
+                    <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
                     <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
                   </button>
                 );
               })}
               <button
                 onClick={() => setNsNewOpen((o) => !o)} title="create a new worktree branch"
-                style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "#b9a6ff" : "rgba(185,166,255,.3)"}`, background: nsNewOpen ? "rgba(185,166,255,.14)" : "transparent", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 0.5, padding: "5px 9px" }}
+                style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: nsNewOpen ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 0.5, padding: "5px 9px" }}
               >+ NEW WORKTREE</button>
             </div>
             {nsNewOpen && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-                  <span style={{ fontSize: 8, letterSpacing: 1, color: "#6f6088", flex: "none" }}>FROM</span>
+                  <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>FROM</span>
                   <button
                     onClick={cycleParent} title="parent branch — click to cycle"
-                    style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, border: "1px solid rgba(185,166,255,.3)", background: "rgba(185,166,255,.06)", color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 7px", minWidth: 0 }}
+                    style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 7px", minWidth: 0 }}
                   >
-                    <span style={{ color: "#b9a6ff", flex: "none" }}>⎇</span>
+                    <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
                     <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{nsParent || "main"}</span>
-                    <span style={{ color: "#6f6088", flex: "none" }}>⟳</span>
+                    <span style={{ color: "var(--purple-g)", flex: "none" }}>⟳</span>
                   </button>
                 </div>
                 <input
                   value={nsNewBranch} onChange={(e) => setNsNewBranch(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && nsNewBranch.trim()) start(); }}
                   placeholder="new-worktree-branch"
-                  style={{ width: "100%", boxSizing: "border-box", marginTop: 7, background: "rgba(7,13,13,.6)", border: "1px solid rgba(185,166,255,.35)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "7px 9px" }}
+                  style={{ width: "100%", boxSizing: "border-box", marginTop: 7, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "7px 9px" }}
                 />
               </>
             )}
             <textarea
               value={nsTask} onChange={(e) => setNsTask(e.target.value)}
               placeholder="first instruction for Claude…"
-              style={{ width: "100%", boxSizing: "border-box", minHeight: 58, resize: "vertical", marginTop: 10, background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 12, lineHeight: 1.5, padding: "9px 10px" }}
+              style={{ width: "100%", boxSizing: "border-box", minHeight: 58, resize: "vertical", marginTop: 10, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 12, lineHeight: 1.5, padding: "9px 10px" }}
             />
             <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
               <button
                 onClick={start}
                 onMouseEnter={() => setStartHov(true)} onMouseLeave={() => setStartHov(false)}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #b9a6ff", background: startHov ? "rgba(185,166,255,.26)" : "rgba(185,166,255,.16)", color: "#e7deff", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-              ><span style={{ color: "#b9a6ff" }}>▸</span>START SESSION</button>
+                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: startHov ? "color-mix(in srgb, var(--purple) 26%, transparent)" : "color-mix(in srgb, var(--purple) 16%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+              ><span style={{ color: "var(--purple)" }}>▸</span>START SESSION</button>
               <button
                 onClick={toggleForm}
                 onMouseEnter={() => setCancelHov(true)} onMouseLeave={() => setCancelHov(false)}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.2)", background: cancelHov ? "rgba(127,233,216,.06)" : "transparent", color: "#6f938d", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "9px 12px" }}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: cancelHov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "9px 12px" }}
               >CANCEL</button>
             </div>
           </div>
@@ -331,37 +356,45 @@ export function SessionsPanel(props: Props) {
               <button
                 onClick={() => setDrill(null)} title="back to projects"
                 onMouseEnter={() => setBackHov(true)} onMouseLeave={() => setBackHov(false)}
-                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, border: "1px solid rgba(127,233,216,.25)", background: backHov ? "rgba(127,233,216,.16)" : "rgba(127,233,216,.06)", color: "#bfe6de", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "5px 10px" }}
+                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: backHov ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "5px 10px" }}
               ><span style={{ fontSize: 13, lineHeight: 0 }}>←</span>BACK</button>
               <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: drillTint.color, border: `1px solid ${drillTint.border}`, padding: "1px 6px", flex: "none" }}>{drillTint.tag}</span>
-              <span style={{ fontSize: 10.5, color: "#cfe9e3", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{drillGroup?.name ?? drill}</span>
-              <span style={{ fontSize: 8.5, letterSpacing: 1, color: "#5a6f6a", flex: "none" }}>{drillSessions.length} SESS</span>
+              <span style={{ fontSize: 10.5, color: "var(--txh)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{drillGroup?.name ?? drill}</span>
+              <span style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txf)", flex: "none" }}>{drillSessions.length} SESS</span>
             </div>
             {drillSessions.map((s, i) => rowFor(s, i))}
           </>
         ) : (
           <>
-            <div style={{ display: "flex", gap: 3, margin: "4px 2px 11px", border: "1px solid rgba(127,233,216,.14)", background: "rgba(7,13,13,.3)", padding: 3 }}>
+            <div style={{ display: "flex", gap: 3, margin: "4px 2px 11px", border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 3 }}>
               <button
                 onClick={() => setTab("recent")}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "recent" ? "rgba(127,233,216,.14)" : "transparent", color: tab === "recent" ? "#dff8f2" : "#5a6f6a", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
+                style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "recent" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "recent" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
               >RECENT</button>
               <button
                 onClick={() => setTab("grouped")}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "grouped" ? "rgba(127,233,216,.14)" : "transparent", color: tab === "grouped" ? "#dff8f2" : "#5a6f6a", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
+                style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
               >BY PROJECT</button>
             </div>
             {tab === "recent" ? (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px" }}>
-                  <span style={{ fontSize: 9.5, letterSpacing: 2, color: "#3c544f", flex: "none" }}>RECENT SESSIONS</span>
-                  <span style={{ flex: 1, height: 1, background: "rgba(127,233,216,.1)" }} />
-                  <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: "#5a6f6a", flex: "none" }}>newest first</span>
+                  <span style={{ fontSize: 9.5, letterSpacing: 2, color: "var(--txl)", flex: "none" }}>RECENT SESSIONS</span>
+                  <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+                  <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: "var(--txf)", flex: "none" }}>newest first</span>
                 </div>
-                {sorted.slice(0, recentLimit).map((s, i) => rowFor(s, i))}
-                {sorted.length > recentLimit && (
-                  <ShowMore count={sorted.length - recentLimit} onClick={() => setRecentLimit((l) => l + 10)} />
-                )}
+                <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>
+                  {rowV.getVirtualItems().map((vi) => (
+                    <div
+                      key={vi.key}
+                      data-index={vi.index}
+                      ref={rowV.measureElement}
+                      style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vi.start - scrollMargin}px)` }}
+                    >
+                      {rowFor(recentSorted[vi.index], vi.index, false)}
+                    </div>
+                  ))}
+                </div>
               </>
             ) : (
               groups.map((g) => {
@@ -372,9 +405,9 @@ export function SessionsPanel(props: Props) {
                     <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "13px 2px 8px" }}>
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint.color, flex: "none" }} />
                       <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, padding: "1px 6px", flex: "none" }}>{tint.tag}</span>
-                      <span style={{ fontSize: 10.5, color: "#9fc7c0", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-                      <span style={{ flex: 1, height: 1, background: "rgba(127,233,216,.1)" }} />
-                      <span style={{ fontSize: 8.5, color: "#5a6f6a", flex: "none" }}>{g.sessionCount} SESS</span>
+                      <span style={{ fontSize: 10.5, color: "var(--txm)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                      <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+                      <span style={{ fontSize: 8.5, color: "var(--txf)", flex: "none" }}>{g.sessionCount} SESS</span>
                     </div>
                     {g.sessions.map((s, i) => rowFor(s, i))}
                     {more > 0 && <ShowMore count={more} onClick={() => setDrill(g.rel)} />}
@@ -385,7 +418,7 @@ export function SessionsPanel(props: Props) {
           </>
         )}
         {groups.length === 0 && (
-          <div style={{ fontSize: 11, color: "#3c544f", padding: "10px 4px" }}>No projects with sessions yet.</div>
+          <div style={{ fontSize: 11, color: "var(--txl)", padding: "10px 4px" }}>No projects with sessions yet.</div>
         )}
       </div>
     </div>

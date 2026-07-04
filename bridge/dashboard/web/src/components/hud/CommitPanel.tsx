@@ -5,7 +5,7 @@ import { api, type GitFile } from "../../api";
    generate a message (one-shot Claude), and commit just those — leaving the rest
    dirty. Sits behind the "Working Tree" toggle in the Changes tab. */
 
-const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "#8fd9a8" : s === "D" ? "#e0897a" : "#e3c279");
+const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
 
 export function CommitPanel({ project, branch }: { project: string; branch: string }) {
   const [files, setFiles] = useState<GitFile[]>([]);
@@ -71,32 +71,32 @@ export function CommitPanel({ project, branch }: { project: string; branch: stri
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", animation: "mslide .3s ease both" }}>
       {banner && (
-        <div style={{ border: "1px solid rgba(127,233,216,.35)", background: "rgba(127,233,216,.06)", color: "#bfe6de", fontSize: 10.5, padding: "8px 11px", marginBottom: 11, fontFamily: "'JetBrains Mono',monospace", flex: "none" }}>▸ {banner}</div>
+        <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontSize: 10.5, padding: "8px 11px", marginBottom: 11, fontFamily: "'JetBrains Mono',monospace", flex: "none" }}>▸ {banner}</div>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, flex: "none" }}>
-        <button onClick={toggleAll} disabled={!files.length} style={{ appearance: "none", cursor: files.length ? "pointer" : "default", border: "1px solid rgba(127,233,216,.25)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 9px" }}>{allOn ? "NONE" : "ALL"}</button>
-        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#3c544f" }}>{sel.size}/{files.length} SELECTED · <span style={{ color: "#cbb8ff", fontFamily: "'JetBrains Mono',monospace" }}>⎇ {branch || "—"}</span></span>
+        <button onClick={toggleAll} disabled={!files.length} style={{ appearance: "none", cursor: files.length ? "pointer" : "default", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 9px" }}>{allOn ? "NONE" : "ALL"}</button>
+        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>{sel.size}/{files.length} SELECTED · <span style={{ color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace" }}>⎇ {branch || "—"}</span></span>
       </div>
 
       {files.length === 0 ? (
-        <div style={{ fontSize: 12, color: "#6f938d", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>Working tree clean on {branch || "this branch"}.</div>
+        <div style={{ fontSize: 12, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>Working tree clean on {branch || "this branch"}.</div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid rgba(127,233,216,.12)", flex: 1, minHeight: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", flex: 1, minHeight: 0 }}>
             {/* file list with checkboxes */}
-            <div style={{ borderRight: "1px solid rgba(127,233,216,.12)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", padding: "11px 12px 8px", flex: "none" }}>CHANGES · {files.length}</div>
+            <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)", padding: "11px 12px 8px", flex: "none" }}>CHANGES · {files.length}</div>
               <div className="mscroll" style={{ flex: 1, minHeight: 0 }}>
                 {files.map((f) => {
                   const on = f.path === focusName;
                   const checked = sel.has(f.path);
                   return (
-                    <div key={f.path} onClick={() => setFocus(f.path)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", cursor: "pointer", borderLeft: `2px solid ${on ? "#7fe9d8" : "transparent"}`, background: on ? "rgba(127,233,216,.08)" : "transparent" }}>
+                    <div key={f.path} onClick={() => setFocus(f.path)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", cursor: "pointer", borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent" }}>
                       <input type="checkbox" checked={checked} onChange={() => toggle(f.path)} onClick={(e) => e.stopPropagation()}
-                        style={{ accentColor: "#7fe9d8", cursor: "pointer", flex: "none", width: 13, height: 13 }} />
+                        style={{ accentColor: "var(--acc)", cursor: "pointer", flex: "none", width: 13, height: 13 }} />
                       <span style={{ fontSize: 11, fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status), fontFamily: "'JetBrains Mono',monospace" }}>{f.status}</span>
-                      <span style={{ fontSize: 11, color: on ? "#dff8f2" : checked ? "#9fc7c0" : "#5a6f6a", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left", fontFamily: "'JetBrains Mono',monospace" }}>{f.path}</span>
-                      <span style={{ fontSize: 10, flex: "none", display: "flex", gap: 5, fontFamily: "'JetBrains Mono',monospace" }}><span style={{ color: "#8fd9a8" }}>+{f.add}</span><span style={{ color: "#e0897a" }}>−{f.del}</span></span>
+                      <span style={{ fontSize: 11, color: on ? "var(--txb)" : checked ? "var(--txm)" : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left", fontFamily: "'JetBrains Mono',monospace" }}>{f.path}</span>
+                      <span style={{ fontSize: 10, flex: "none", display: "flex", gap: 5, fontFamily: "'JetBrains Mono',monospace" }}><span style={{ color: "var(--ok)" }}>+{f.add}</span><span style={{ color: "var(--err)" }}>−{f.del}</span></span>
                     </div>
                   );
                 })}
@@ -104,14 +104,14 @@ export function CommitPanel({ project, branch }: { project: string; branch: stri
             </div>
             {/* diff of the focused file */}
             <div style={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid rgba(127,233,216,.1)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, flex: "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, flex: "none" }}>
                 <span style={{ color: FILE_COLOR(focusFile?.status ?? "M"), fontWeight: 700 }}>{focusFile?.status ?? ""}</span>
-                <span style={{ flex: 1, color: "#dff8f2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{focusName || ""}</span>
+                <span style={{ flex: 1, color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{focusName || ""}</span>
               </div>
               <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowX: "auto", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.7 }}>
                 {lines.map((ln, i) => {
                   const kind = ln.startsWith("@@") ? "hunk" : ln.startsWith("+") ? "add" : ln.startsWith("-") ? "del" : "ctx";
-                  const map = { add: { bg: "rgba(143,217,168,.07)", c: "#a7e6c3" }, del: { bg: "rgba(224,137,122,.07)", c: "#f0b0a8" }, hunk: { bg: "rgba(127,233,216,.06)", c: "#7fe9d8" }, ctx: { bg: "transparent", c: "#6f938d" } }[kind];
+                  const map = { add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", c: "#a7e6c3" }, del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", c: "#f0b0a8" }, hunk: { bg: "color-mix(in srgb, var(--acc) 6%, transparent)", c: "var(--acc)" }, ctx: { bg: "transparent", c: "var(--txd)" } }[kind];
                   return <div key={i} style={{ display: "flex", background: map.bg, padding: "0 10px", minWidth: "max-content" }}><span style={{ color: map.c, whiteSpace: "pre", flex: 1 }}>{ln || " "}</span></div>;
                 })}
               </div>
@@ -119,24 +119,24 @@ export function CommitPanel({ project, branch }: { project: string; branch: stri
           </div>
 
           {/* commit bar */}
-          <div style={{ flex: "none", marginTop: 11, border: "1px solid rgba(185,166,255,.28)", background: "rgba(185,166,255,.04)", padding: "10px 12px" }}>
+          <div style={{ flex: "none", marginTop: 11, border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", background: "color-mix(in srgb, var(--purple) 4%, transparent)", padding: "10px 12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f" }}>COMMIT MESSAGE</span>
+              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)" }}>COMMIT MESSAGE</span>
               <span style={{ flex: 1 }} />
-              {note && <span style={{ fontSize: 9.5, color: "#e3c279", fontFamily: "'JetBrains Mono',monospace" }}>{note}</span>}
+              {note && <span style={{ fontSize: 9.5, color: "var(--warn)", fontFamily: "'JetBrains Mono',monospace" }}>{note}</span>}
               <button onClick={generate} disabled={!sel.size || generating}
                 title={sel.size ? "generate from selected files" : "select files first"}
-                style={{ appearance: "none", cursor: sel.size && !generating ? "pointer" : "not-allowed", border: "1px solid rgba(185,166,255,.4)", background: "rgba(185,166,255,.08)", color: "#cbb8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "5px 10px", opacity: generating ? 0.6 : 1 }}>{generating ? "✦ GENERATING…" : "✦ GENERATE MESSAGE"}</button>
+                style={{ appearance: "none", cursor: sel.size && !generating ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "5px 10px", opacity: generating ? 0.6 : 1 }}>{generating ? "✦ GENERATING…" : "✦ GENERATE MESSAGE"}</button>
             </div>
             <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="commit message…" rows={2}
-              style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.5, padding: "7px 9px" }} />
+              style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.5, padding: "7px 9px" }} />
             <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 9 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 9.5, letterSpacing: 1, color: "#6f938d" }}>
-                <input type="checkbox" checked={pushAfter} onChange={(e) => setPushAfter(e.target.checked)} style={{ accentColor: "#7fe9d8", cursor: "pointer" }} />PUSH AFTER
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 9.5, letterSpacing: 1, color: "var(--txd)" }}>
+                <input type="checkbox" checked={pushAfter} onChange={(e) => setPushAfter(e.target.checked)} style={{ accentColor: "var(--acc)", cursor: "pointer" }} />PUSH AFTER
               </label>
               <span style={{ flex: 1 }} />
               <button onClick={commit} disabled={!sel.size || !message.trim() || busy}
-                style={{ appearance: "none", cursor: sel.size && message.trim() && !busy ? "pointer" : "not-allowed", border: "1px solid #8fd9a8", background: "rgba(143,217,168,.12)", color: "#dff8f2", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 16px", opacity: !sel.size || !message.trim() || busy ? 0.45 : 1 }}>▸ COMMIT {sel.size} FILE{sel.size === 1 ? "" : "S"}</button>
+                style={{ appearance: "none", cursor: sel.size && message.trim() && !busy ? "pointer" : "not-allowed", border: "1px solid var(--ok)", background: "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 16px", opacity: !sel.size || !message.trim() || busy ? 0.45 : 1 }}>▸ COMMIT {sel.size} FILE{sel.size === 1 ? "" : "S"}</button>
             </div>
           </div>
         </>

@@ -39,7 +39,7 @@ import json
 import os
 import sys
 
-from bridge import config, devserver, native_activity, pubsub, state, store, tunnel
+from bridge import config, devserver, native_activity, pubsub, recovery, state, store, tunnel
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -110,10 +110,14 @@ def main():
     store.init()
     if not config.ALLOWED_CHAT_IDS:
         print("⚠️  No ALLOWED_CHAT_IDS — DISCOVERY mode (won't execute Claude).")
+        recovery.recover()             # flip restart-orphaned turns (no resume in discovery)
     else:
         _setup_miniapp()
         _setup_dashboard()
         native_activity.start()        # tail live VS Code/terminal sessions
+        resumed = recovery.recover()   # resume turns a restart interrupted (--resume + nudge)
+        if resumed:
+            print(f"↻ Auto-resumed {resumed} interrupted session(s) after restart.")
 
     offset = 0
     try:

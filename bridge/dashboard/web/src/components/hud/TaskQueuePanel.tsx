@@ -16,11 +16,11 @@ type Task = {
 const STORAGE_KEY = "hud-tasks";
 
 const PROJ_COLORS = [
-  "#7fe9d8",
-  "#b9a6ff",
-  "#8fd9a8",
-  "#6fb5ff",
-  "#e3c279",
+  "var(--acc)",
+  "var(--purple)",
+  "var(--ok)",
+  "var(--info)",
+  "var(--warn)",
   "#ff7ad9",
 ];
 
@@ -131,8 +131,8 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
     <div
       className="panel"
       style={{
-        border: "1px solid rgba(127,233,216,.16)",
-        background: "rgba(9,16,16,.5)",
+        border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+        background: "color-mix(in srgb, var(--panel) 50%, transparent)",
         animation: "enterLeftUp .55s cubic-bezier(.2,.8,.2,1) both .3s",
         flex: "none",
       }}
@@ -145,17 +145,17 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
           padding: "8px 12px",
         }}
       >
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "#3c544f" }}>
+        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--txl)" }}>
           QUEUE
         </span>
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "#7fe9d8" }}>
+        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--acc)" }}>
           TASK QUEUE
         </span>
       </div>
       <div
         style={{
           height: "1px",
-          background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))",
+          background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))",
           transformOrigin: "left",
           animation: "drawline .7s ease both .36s",
         }}
@@ -165,7 +165,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
           style={{
             fontSize: "9.5px",
             letterSpacing: "1px",
-            color: "#3c544f",
+            color: "var(--txl)",
             padding: "0 2px 4px",
           }}
         >
@@ -175,9 +175,9 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
         {tasks.map((t, i) => {
           const color = projColor(t.project);
           const bd = projBorder(color);
-          const textColor = t.done ? "#3c544f" : "#cfe9e3";
-          const boxBg = t.done ? "#7fe9d8" : "transparent";
-          const boxBorder = t.done ? "#7fe9d8" : "rgba(127,233,216,.35)";
+          const textColor = t.done ? "var(--txl)" : "var(--txh)";
+          const boxBg = t.done ? "var(--acc)" : "transparent";
+          const boxBorder = t.done ? "var(--acc)" : "color-mix(in srgb, var(--acc) 35%, transparent)";
           const canFeed = !t.done && !t.sent;
           return (
             <div
@@ -187,7 +187,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                 alignItems: "flex-start",
                 gap: "9px",
                 padding: "9px 4px",
-                borderBottom: "1px solid rgba(127,233,216,.06)",
+                borderBottom: "1px solid color-mix(in srgb, var(--acc) 6%, transparent)",
                 animation: "mfadeup .35s ease both",
                 animationDelay: i * 50 + "ms",
               }}
@@ -203,7 +203,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                   cursor: "pointer",
                   border: `1px solid ${boxBorder}`,
                   background: boxBg,
-                  color: "#06100e",
+                  color: "var(--acc-on)",
                   fontSize: "10px",
                   lineHeight: 1,
                   display: "flex",
@@ -269,7 +269,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                       style={{
                         fontSize: "8.5px",
                         letterSpacing: "1px",
-                        color: "#8fd9a8",
+                        color: "var(--ok)",
                       }}
                     >
                       QUEUED ▸ CLAUDE
@@ -285,9 +285,9 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                     flex: "none",
                     appearance: "none",
                     cursor: "pointer",
-                    border: "1px solid #7fe9d8",
-                    background: "rgba(127,233,216,.12)",
-                    color: "#dff8f2",
+                    border: "1px solid var(--acc)",
+                    background: "color-mix(in srgb, var(--acc) 12%, transparent)",
+                    color: "var(--txb)",
                     fontFamily: "inherit",
                     fontSize: "11px",
                     padding: "4px 9px",
@@ -307,8 +307,8 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
             alignItems: "center",
             gap: "7px",
             marginTop: "11px",
-            border: "1px solid rgba(127,233,216,.18)",
-            background: "rgba(7,13,13,.6)",
+            border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)",
+            background: "color-mix(in srgb, var(--panel2) 60%, transparent)",
             padding: "7px 8px",
           }}
         >
@@ -345,7 +345,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
               background: "transparent",
               border: 0,
               outline: "none",
-              color: "#dff8f2",
+              color: "var(--txb)",
               fontFamily: "inherit",
               fontSize: "12px",
             }}
@@ -357,7 +357,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
               cursor: "pointer",
               border: 0,
               background: "transparent",
-              color: "#7fe9d8",
+              color: "var(--acc)",
               fontFamily: "inherit",
               fontSize: "10.5px",
               letterSpacing: "1px",
@@ -376,9 +376,9 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
             width: "100%",
             appearance: "none",
             cursor: "pointer",
-            border: "1px solid rgba(127,233,216,.3)",
-            background: feedAllHover ? "rgba(127,233,216,.14)" : "rgba(127,233,216,.06)",
-            color: "#bfe6de",
+            border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+            background: feedAllHover ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
+            color: "var(--tx)",
             fontFamily: "inherit",
             fontSize: "10px",
             letterSpacing: "2px",

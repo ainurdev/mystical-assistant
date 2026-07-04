@@ -168,6 +168,28 @@ export function Terminal({
   // The most recent prompt, shown beneath the title in the header (clamped to 2 lines).
   const lastPrompt = turns.length ? (turns[turns.length - 1].prompt || "").trim() : "";
 
+  // The sticky "LAST" peek surfaces only once the real prompt has scrolled up out
+  // of view — while it's on screen the peek would just duplicate what you can see.
+  const lastPromptRef = useRef<HTMLDivElement | null>(null);
+  const [peek, setPeek] = useState(false);
+  const lastTurnId = turns.length ? turns[turns.length - 1].id : null;
+  useEffect(() => {
+    setPeek(false);
+    const root = scrollRef.current;
+    const target = lastPromptRef.current;
+    if (view !== "chat" || empty || !root || !target) return;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        const rootTop = e.rootBounds?.top ?? root.getBoundingClientRect().top;
+        // Fully out of view AND above the top edge → scrolled past upward.
+        setPeek(!e.isIntersecting && e.boundingClientRect.top < rootTop);
+      },
+      { root, threshold: 0 },
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, [scrollRef, view, empty, lastTurnId]);
+
   // CRT channel-change: when a switched-to session's content lands, "retune" the
   // viewport — collapse to a bright scanline, then bloom open with a glitch. Driven
   // on the scroll container (fixed viewport height) so the line sits on screen even
@@ -238,15 +260,15 @@ export function Terminal({
         </div>
       ) : (
         <>
-          <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
-            {lastPrompt && !empty && (
-              <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "-16px -18px 13px", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
+          <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
+            {lastPrompt && !empty && peek && (
+              <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -18px 13px", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
                 <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
                 <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: 12 }}>~ ❯</span>
                 <span style={{ color: "var(--txh)", fontSize: 12, lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
               </div>
             )}
-            <div ref={contentRef}>
+            <div ref={contentRef} style={{ padding: "16px 0" }}>
               {empty && loading ? (
                 <ChannelTuning />
               ) : empty ? (
@@ -255,7 +277,7 @@ export function Terminal({
                   <SuggestionChips project={sessionProject} onPick={onSuggestPick} />
                 </>
               ) : (
-                <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} />
+                <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} />
               )}
               {error && (
                 <div style={{ marginTop: 8, border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", padding: "4px 8px", fontSize: 12, color: "var(--err)" }}>

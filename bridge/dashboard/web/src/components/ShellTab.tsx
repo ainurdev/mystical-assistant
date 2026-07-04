@@ -98,7 +98,7 @@ export function ShellTab() {
         {running ? (
           <button
             onClick={() => void api.shellKill()}
-            className="border border-danger bg-[rgba(224,137,122,.12)] px-3 py-1.5 text-[11px] tracking-[1px] text-danger hover:bg-[rgba(224,137,122,.22)]"
+            className="border border-danger bg-[color-mix(in srgb, var(--err) 12%, transparent)] px-3 py-1.5 text-[11px] tracking-[1px] text-danger hover:bg-[color-mix(in srgb, var(--err) 22%, transparent)]"
           >
             KILL
           </button>

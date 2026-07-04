@@ -16,8 +16,8 @@ export interface StripProps {
 // Segmented-control button style for the popover's 24H/12H and °C/°F pickers.
 const seg = (on: boolean): CSSProperties => ({
   flex: 1, appearance: "none", cursor: "pointer", border: 0,
-  background: on ? "rgba(127,233,216,.16)" : "transparent",
-  color: on ? "#dff8f2" : "#6f938d",
+  background: on ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent",
+  color: on ? "var(--txb)" : "var(--txd)",
   fontFamily: "inherit", fontSize: "10px", letterSpacing: "1px", padding: "7px",
 });
 
@@ -60,12 +60,18 @@ export function Strip(props: StripProps) {
   return (
     <div
       style={{
+        // position + z-index lift the strip's stacking context above the main
+        // grid: the `enterDown` fill-mode:both animation leaves the strip a
+        // stacking context, which otherwise traps the clock/weather popover
+        // (z 60) below the panels that follow it in the DOM.
+        position: "relative",
+        zIndex: 40,
         flex: "none",
         display: "flex",
         alignItems: "center",
         gap: "11px",
         padding: "7px 16px",
-        borderBottom: "1px solid rgba(127,233,216,.14)",
+        borderBottom: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
         animation: "enterDown .55s cubic-bezier(.2,.8,.2,1) both",
       }}
     >
@@ -78,7 +84,7 @@ export function Strip(props: StripProps) {
           cy="50"
           r="40"
           fill="none"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="3"
           strokeDasharray="7 11"
           style={{ transformOrigin: "50px 50px", animation: "introspin 12s linear infinite" }}
@@ -89,7 +95,7 @@ export function Strip(props: StripProps) {
           width="40"
           height="40"
           fill="none"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="3"
           style={{ transformOrigin: "50px 50px", transform: "rotate(45deg)" }}
         />
@@ -98,12 +104,12 @@ export function Strip(props: StripProps) {
           y="41"
           width="18"
           height="18"
-          fill="#b9a6ff"
+          fill="var(--purple)"
           style={{ transformOrigin: "50px 50px", transform: "rotate(45deg)" }}
         />
       </svg>
       <span
-        style={{ fontSize: "12px", letterSpacing: "3px", color: "#7fe9d8" }}
+        style={{ fontSize: "12px", letterSpacing: "3px", color: "var(--acc)" }}
         className="glow"
       >
         MYSTICAL//ASSISTANT
@@ -120,8 +126,8 @@ export function Strip(props: StripProps) {
           style={{
             appearance: "none",
             cursor: "pointer",
-            border: `1px solid ${clockHover ? "rgba(127,233,216,.3)" : "rgba(127,233,216,.14)"}`,
-            background: "rgba(7,13,13,.4)",
+            border: `1px solid ${clockHover ? "color-mix(in srgb, var(--acc) 30%, transparent)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
+            background: "color-mix(in srgb, var(--panel2) 40%, transparent)",
             display: "flex",
             alignItems: "center",
             gap: "8px",
@@ -129,18 +135,18 @@ export function Strip(props: StripProps) {
             fontFamily: "inherit",
           }}
         >
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "12px", color: "#cfe9e3", letterSpacing: ".5px" }}>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "12px", color: "var(--txh)", letterSpacing: ".5px" }}>
             {clockMini}
           </span>
           {fmt12 && (
-            <span style={{ fontSize: "7px", letterSpacing: "1px", color: "#6f938d" }}>{ampm}</span>
+            <span style={{ fontSize: "7px", letterSpacing: "1px", color: "var(--txd)" }}>{ampm}</span>
           )}
-          <span style={{ width: "1px", height: "11px", background: "rgba(127,233,216,.16)", flex: "none" }}></span>
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#e3c279" strokeWidth="1.6" strokeLinecap="round" style={{ flex: "none" }}>
+          <span style={{ width: "1px", height: "11px", background: "color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none" }}></span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--warn)" strokeWidth="1.6" strokeLinecap="round" style={{ flex: "none" }}>
             <circle cx="12" cy="12" r="4" />
             <path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" />
           </svg>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "11px", color: "#9fc7c0" }}>{wxTempStr}</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "11px", color: "var(--txm)" }}>{wxTempStr}</span>
         </button>
         {clockOpen && (
           <div
@@ -150,39 +156,39 @@ export function Strip(props: StripProps) {
               left: 0,
               zIndex: 60,
               width: "240px",
-              border: "1px solid rgba(127,233,216,.4)",
-              background: "rgba(7,13,13,.99)",
+              border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
+              background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
               boxShadow: "0 16px 44px rgba(0,0,0,.7)",
               padding: "13px",
               animation: "mslide .16s ease both",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "11px" }}>
-              <span style={{ fontSize: "9px", letterSpacing: "2px", color: "#7fe9d8" }}>CLOCK &amp; WEATHER</span>
+              <span style={{ fontSize: "9px", letterSpacing: "2px", color: "var(--acc)" }}>CLOCK &amp; WEATHER</span>
               <span style={{ flex: 1 }}></span>
               <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "9px", color: "#456b65" }}>
                 {weather.cond} {wxTempStr}
               </span>
             </div>
-            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "#3c544f", marginBottom: "6px" }}>LOCATION</div>
+            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "var(--txl)", marginBottom: "6px" }}>LOCATION</div>
             <input
               value={city}
               onChange={(e) => setCityInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void submitCity(); }}
               placeholder="City"
               disabled={saving}
-              style={{ width: "100%", boxSizing: "border-box", background: "rgba(4,7,7,.6)", border: `1px solid ${cityErr ? "#e0897a" : "rgba(127,233,216,.22)"}`, outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: "12px", padding: "7px 9px" }}
+              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: `1px solid ${cityErr ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "12px", padding: "7px 9px" }}
             />
             {cityErr && (
-              <div style={{ fontSize: "8.5px", color: "#e0897a", marginTop: "4px" }}>{cityErr}</div>
+              <div style={{ fontSize: "8.5px", color: "var(--err)", marginTop: "4px" }}>{cityErr}</div>
             )}
-            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "#3c544f", margin: "12px 0 6px" }}>TIME FORMAT</div>
-            <div style={{ display: "flex", gap: "2px", border: "1px solid rgba(127,233,216,.18)" }}>
+            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>TIME FORMAT</div>
+            <div style={{ display: "flex", gap: "2px", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
               <button onClick={() => setFmt12(false)} style={seg(!fmt12)}>24H</button>
               <button onClick={() => setFmt12(true)} style={seg(fmt12)}>12H</button>
             </div>
-            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "#3c544f", margin: "12px 0 6px" }}>UNITS</div>
-            <div style={{ display: "flex", gap: "2px", border: "1px solid rgba(127,233,216,.18)" }}>
+            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>UNITS</div>
+            <div style={{ display: "flex", gap: "2px", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
               <button onClick={() => void onSetUnit("celsius")} style={seg(weather.unit === "C")}>°C</button>
               <button onClick={() => void onSetUnit("fahrenheit")} style={seg(weather.unit === "F")}>°F</button>
             </div>
@@ -195,8 +201,8 @@ export function Strip(props: StripProps) {
           display: "flex",
           alignItems: "center",
           gap: "8px",
-          border: "1px solid rgba(127,233,216,.18)",
-          background: "rgba(7,13,13,.45)",
+          border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)",
+          background: "color-mix(in srgb, var(--panel2) 45%, transparent)",
           padding: "3px 5px 3px 7px",
           width: "248px",
           flex: "none",
@@ -210,7 +216,7 @@ export function Strip(props: StripProps) {
             cursor: "pointer",
             border: 0,
             background: "transparent",
-            color: "#7fe9d8",
+            color: "var(--acc)",
             fontFamily: "inherit",
             padding: 0,
             display: "flex",
@@ -233,7 +239,7 @@ export function Strip(props: StripProps) {
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span
-              style={{ fontSize: "7.5px", letterSpacing: "1.5px", color: "#7fe9d8", flex: "none" }}
+              style={{ fontSize: "7.5px", letterSpacing: "1.5px", color: "var(--acc)", flex: "none" }}
             >
               CLAUDE·FM
             </span>
@@ -251,7 +257,7 @@ export function Strip(props: StripProps) {
                   style={{
                     width: "2px",
                     height: "8px",
-                    background: "#8fd9a8",
+                    background: "var(--ok)",
                     transformOrigin: "bottom",
                     animation: "eqbar .8s ease-in-out infinite",
                   }}
@@ -260,7 +266,7 @@ export function Strip(props: StripProps) {
                   style={{
                     width: "2px",
                     height: "8px",
-                    background: "#8fd9a8",
+                    background: "var(--ok)",
                     transformOrigin: "bottom",
                     animation: "eqbar .8s ease-in-out infinite .18s",
                   }}
@@ -269,7 +275,7 @@ export function Strip(props: StripProps) {
                   style={{
                     width: "2px",
                     height: "8px",
-                    background: "#8fd9a8",
+                    background: "var(--ok)",
                     transformOrigin: "bottom",
                     animation: "eqbar .8s ease-in-out infinite .36s",
                   }}
@@ -291,7 +297,7 @@ export function Strip(props: StripProps) {
           <div
             style={{
               fontSize: "10px",
-              color: "#bfe6de",
+              color: "var(--tx)",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -299,7 +305,7 @@ export function Strip(props: StripProps) {
               lineHeight: 1.3,
             }}
           >
-            {radio.title} <span style={{ color: "#5a6f6a" }}>· {radio.artist}</span>
+            {radio.title} <span style={{ color: "var(--txf)" }}>· {radio.artist}</span>
           </div>
         </div>
         <button
@@ -312,7 +318,7 @@ export function Strip(props: StripProps) {
             cursor: "pointer",
             border: 0,
             background: "transparent",
-            color: nextHover ? "#dff8f2" : "#9fc7c0",
+            color: nextHover ? "var(--txb)" : "var(--txm)",
             fontFamily: "inherit",
             padding: "0 1px",
             flex: "none",
@@ -326,7 +332,7 @@ export function Strip(props: StripProps) {
         </button>
       </div>
       <span
-        style={{ width: "1px", height: "18px", background: "rgba(127,233,216,.18)" }}
+        style={{ width: "1px", height: "18px", background: "color-mix(in srgb, var(--acc) 18%, transparent)" }}
       ></span>
       <button
         onClick={onOpenSettings}
@@ -336,9 +342,9 @@ export function Strip(props: StripProps) {
         style={{
           appearance: "none",
           cursor: "pointer",
-          border: "1px solid rgba(127,233,216,.25)",
-          background: gearHover ? "rgba(127,233,216,.08)" : "transparent",
-          color: gearHover ? "#dff8f2" : "#9fc7c0",
+          border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+          background: gearHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+          color: gearHover ? "var(--txb)" : "var(--txm)",
           fontFamily: "inherit",
           padding: "4px 6px",
           display: "flex",

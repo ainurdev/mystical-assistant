@@ -17,7 +17,7 @@ export function PreviewFrame({
   return (
     <div ref={(el) => setContainerW(el?.clientWidth ?? 0)}
       style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "center",
-        overflow: "auto", background: "#05080a", cursor: selecting ? "crosshair" : "default" }}>
+        overflow: "auto", background: "var(--panel3)", cursor: selecting ? "crosshair" : "default" }}>
       <div style={{ width, flex: "none", transform: `scale(${scale})`, transformOrigin: "top center",
         height: scale < 1 ? `${100 / scale}%` : "100%" }}>
         <iframe ref={iframeRef} src={url} title="preview"

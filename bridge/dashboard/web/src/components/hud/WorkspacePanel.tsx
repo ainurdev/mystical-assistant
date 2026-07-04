@@ -53,7 +53,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     setSaving(false);
   }
 
-  const hostStateColor = host.state === "BUSY" ? "#e3c279" : "#8fd9a8";
+  const hostStateColor = host.state === "BUSY" ? "var(--warn)" : "var(--ok)";
   const netUp = fmtNet(host.net_up);
   const netDown = fmtNet(host.net_down);
   const wxTemp = weather.temp === null ? "—" : `${weather.temp}`;
@@ -62,8 +62,8 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     <div
       className="panel"
       style={{
-        border: "1px solid rgba(127,233,216,.16)",
-        background: "rgba(9,16,16,.5)",
+        border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+        background: "color-mix(in srgb, var(--panel) 50%, transparent)",
         animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .06s",
         flex: "none",
       }}
@@ -76,17 +76,17 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
           padding: "8px 12px",
         }}
       >
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "#3c544f" }}>
+        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--txl)" }}>
           PANEL
         </span>
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "#7fe9d8" }}>
+        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--acc)" }}>
           WORKSPACE
         </span>
       </div>
       <div
         style={{
           height: "1px",
-          background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))",
+          background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))",
           transformOrigin: "left",
           animation: "drawline .7s ease both .1s",
         }}
@@ -95,7 +95,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       <div style={{ padding: "14px 14px 12px" }}>
         <div
           className="glow"
-          style={{ fontSize: "46px", lineHeight: 1, letterSpacing: "2px", color: "#dff8f2" }}
+          style={{ fontSize: "46px", lineHeight: 1, letterSpacing: "2px", color: "var(--txb)" }}
         >
           {clock.split("").map((ch, i) =>
             ch === ":" ? (
@@ -124,11 +124,11 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
             marginTop: "8px",
             fontSize: "11px",
             letterSpacing: "1.5px",
-            color: "#6f938d",
+            color: "var(--txd)",
           }}
         >
           <span>{date}</span>
-          <span style={{ color: "#2e423f" }}>//</span>
+          <span style={{ color: "var(--txg)" }}>//</span>
           <span>SESSION {turns} TURNS</span>
         </div>
 
@@ -136,7 +136,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
         <div
           style={{
             marginTop: "18px",
-            borderTop: "1px dashed rgba(127,233,216,.14)",
+            borderTop: "1px dashed color-mix(in srgb, var(--acc) 14%, transparent)",
             paddingTop: "13px",
           }}
         >
@@ -147,7 +147,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               justifyContent: "space-between",
               fontSize: "9.5px",
               letterSpacing: "1.5px",
-              color: "#3c544f",
+              color: "var(--txl)",
             }}
           >
             <span>HOST · {host.host}</span>
@@ -160,7 +160,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               style={{
                 fontSize: "9.5px",
                 letterSpacing: "1px",
-                color: "#6f938d",
+                color: "var(--txd)",
                 width: "30px",
                 flex: "none",
               }}
@@ -171,7 +171,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               style={{
                 flex: 1,
                 height: "5px",
-                background: "rgba(127,233,216,.12)",
+                background: "color-mix(in srgb, var(--acc) 12%, transparent)",
                 position: "relative",
                 overflow: "hidden",
               }}
@@ -183,7 +183,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
                   bottom: 0,
                   left: 0,
                   width: `${host.cpu}%`,
-                  background: "linear-gradient(90deg,#7fe9d8,#b9a6ff)",
+                  background: "linear-gradient(90deg,var(--acc),var(--purple))",
                   transition: "width .8s ease",
                 }}
               ></span>
@@ -191,7 +191,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
             <span
               style={{
                 fontSize: "10px",
-                color: "#bfe6de",
+                color: "var(--tx)",
                 width: "34px",
                 textAlign: "right",
                 flex: "none",
@@ -205,7 +205,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               style={{
                 fontSize: "9.5px",
                 letterSpacing: "1px",
-                color: "#6f938d",
+                color: "var(--txd)",
                 width: "30px",
                 flex: "none",
               }}
@@ -216,7 +216,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               style={{
                 flex: 1,
                 height: "5px",
-                background: "rgba(127,233,216,.12)",
+                background: "color-mix(in srgb, var(--acc) 12%, transparent)",
                 position: "relative",
                 overflow: "hidden",
               }}
@@ -228,7 +228,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
                   bottom: 0,
                   left: 0,
                   width: `${host.mem_pct}%`,
-                  background: "#8fd9a8",
+                  background: "var(--ok)",
                   transition: "width .8s ease",
                 }}
               ></span>
@@ -236,7 +236,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
             <span
               style={{
                 fontSize: "10px",
-                color: "#bfe6de",
+                color: "var(--tx)",
                 width: "50px",
                 textAlign: "right",
                 flex: "none",
@@ -253,18 +253,18 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               marginTop: "10px",
               fontSize: "10px",
               letterSpacing: ".5px",
-              color: "#6f938d",
+              color: "var(--txd)",
             }}
           >
             <span>
-              NET <span style={{ color: "#8fd9a8" }}>↑{netUp}</span>{" "}
-              <span style={{ color: "#6fb5ff" }}>↓{netDown}</span>
+              NET <span style={{ color: "var(--ok)" }}>↑{netUp}</span>{" "}
+              <span style={{ color: "var(--info)" }}>↓{netDown}</span>
             </span>
             <span>
-              LOAD <span style={{ color: "#bfe6de" }}>{host.load}</span>
+              LOAD <span style={{ color: "var(--tx)" }}>{host.load}</span>
             </span>
             <span>
-              PROCS <span style={{ color: "#bfe6de" }}>{host.procs}</span>
+              PROCS <span style={{ color: "var(--tx)" }}>{host.procs}</span>
             </span>
           </div>
         </div>
@@ -273,7 +273,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
         <div
           style={{
             marginTop: "16px",
-            borderTop: "1px dashed rgba(127,233,216,.14)",
+            borderTop: "1px dashed color-mix(in srgb, var(--acc) 14%, transparent)",
             paddingTop: "13px",
             display: "flex",
             alignItems: "center",
@@ -281,9 +281,9 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
           }}
         >
           <div style={{ flex: "none" }}>
-            <div className="glow" style={{ lineHeight: 1, color: "#dff8f2" }}>
+            <div className="glow" style={{ lineHeight: 1, color: "var(--txb)" }}>
               <span style={{ fontSize: "23px" }}>{focus.h}</span>
-              <span style={{ fontSize: "11px", color: "#6f938d", letterSpacing: ".5px" }}>
+              <span style={{ fontSize: "11px", color: "var(--txd)", letterSpacing: ".5px" }}>
                 {" "}
                 / {focus.goal}H
               </span>
@@ -292,7 +292,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               style={{
                 fontSize: "8.5px",
                 letterSpacing: "1px",
-                color: "#7fe9d8",
+                color: "var(--acc)",
                 marginTop: "4px",
               }}
             >
@@ -302,7 +302,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               style={{
                 width: "124px",
                 height: "3px",
-                background: "rgba(127,233,216,.12)",
+                background: "color-mix(in srgb, var(--acc) 12%, transparent)",
                 marginTop: "6px",
                 overflow: "hidden",
               }}
@@ -311,7 +311,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
                 style={{
                   height: "100%",
                   width: `${focus.pct}%`,
-                  background: "linear-gradient(90deg,#7fe9d8,#b9a6ff)",
+                  background: "linear-gradient(90deg,var(--acc),var(--purple))",
                   animation: "grow 1s ease both .3s",
                 }}
               ></div>
@@ -321,22 +321,22 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
             style={{ marginLeft: "auto", display: "flex", gap: "15px", textAlign: "right" }}
           >
             <div>
-              <div style={{ fontSize: "8px", letterSpacing: "1px", color: "#3c544f" }}>SESS</div>
-              <div style={{ fontSize: "14px", color: "#bfe6de", marginTop: "2px" }}>
+              <div style={{ fontSize: "8px", letterSpacing: "1px", color: "var(--txl)" }}>SESS</div>
+              <div style={{ fontSize: "14px", color: "var(--tx)", marginTop: "2px" }}>
                 {focus.sessions}
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "8px", letterSpacing: "1px", color: "#3c544f" }}>CMTS</div>
-              <div style={{ fontSize: "14px", color: "#bfe6de", marginTop: "2px" }}>
+              <div style={{ fontSize: "8px", letterSpacing: "1px", color: "var(--txl)" }}>CMTS</div>
+              <div style={{ fontSize: "14px", color: "var(--tx)", marginTop: "2px" }}>
                 {focus.commits}
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "8px", letterSpacing: "1px", color: "#3c544f" }}>
+              <div style={{ fontSize: "8px", letterSpacing: "1px", color: "var(--txl)" }}>
                 STREAK
               </div>
-              <div style={{ fontSize: "14px", color: "#8fd9a8", marginTop: "2px" }}>
+              <div style={{ fontSize: "14px", color: "var(--ok)", marginTop: "2px" }}>
                 {focus.streak}d
               </div>
             </div>
@@ -351,7 +351,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
           title="right-click for weather settings"
           style={{
             marginTop: "16px",
-            borderTop: "1px dashed rgba(127,233,216,.14)",
+            borderTop: "1px dashed color-mix(in srgb, var(--acc) 14%, transparent)",
             paddingTop: "13px",
             display: "flex",
             alignItems: "center",
@@ -362,8 +362,8 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
             viewBox="0 0 48 48"
             style={{ width: "32px", height: "32px", flex: "none", overflow: "visible" }}
           >
-            <circle cx="17" cy="16" r="7" fill="none" stroke="#e3c279" strokeWidth="1.6" />
-            <g stroke="#e3c279" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="17" cy="16" r="7" fill="none" stroke="var(--warn)" strokeWidth="1.6" />
+            <g stroke="var(--warn)" strokeWidth="1.5" strokeLinecap="round">
               <line x1="17" y1="3" x2="17" y2="6" />
               <line x1="6" y1="16" x2="9" y2="16" />
               <line x1="8" y1="7" x2="10" y2="9" />
@@ -372,19 +372,19 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
             <path
               d="M16 42 a7 7 0 0 1 1 -13.9 a9 9 0 0 1 17 2 a6 6 0 0 1 -1 11.9 Z"
               fill="#0b1414"
-              stroke="#7fe9d8"
+              stroke="var(--acc)"
               strokeWidth="1.8"
             />
           </svg>
           <div style={{ flex: "none" }}>
-            <div className="glow" style={{ fontSize: "23px", lineHeight: 1, color: "#dff8f2" }}>
-              {wxTemp}°<span style={{ fontSize: "13px", color: "#7fe9d8" }}>{weather.unit}</span>
+            <div className="glow" style={{ fontSize: "23px", lineHeight: 1, color: "var(--txb)" }}>
+              {wxTemp}°<span style={{ fontSize: "13px", color: "var(--acc)" }}>{weather.unit}</span>
             </div>
             <div
               style={{
                 fontSize: "8.5px",
                 letterSpacing: "1px",
-                color: "#7fe9d8",
+                color: "var(--acc)",
                 marginTop: "3px",
               }}
             >
@@ -397,7 +397,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               textAlign: "right",
               fontSize: "9.5px",
               letterSpacing: ".5px",
-              color: "#6f938d",
+              color: "var(--txd)",
               lineHeight: 1.75,
             }}
           >
@@ -414,7 +414,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
                   onBlur={() => { if (!saving) { setEditLoc(false); setCityErr(null); } }}
                   placeholder="city…"
                   disabled={saving}
-                  style={{ width: 130, background: "rgba(7,13,13,.6)", border: `1px solid ${cityErr ? "#e0897a" : "rgba(127,233,216,.3)"}`, outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: "9.5px", letterSpacing: ".5px", padding: "3px 6px", textAlign: "right" }}
+                  style={{ width: 130, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: `1px solid ${cityErr ? "var(--err)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "9.5px", letterSpacing: ".5px", padding: "3px 6px", textAlign: "right" }}
                 />
                 <div style={{ display: "flex", gap: 4 }}>
                   {(["C", "F"] as const).map((u) => {
@@ -426,31 +426,31 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
                         onClick={() => void pickUnit(u)}
                         disabled={saving || !onSetUnit}
                         title={u === "C" ? "Celsius" : "Fahrenheit"}
-                        style={{ appearance: "none", cursor: saving ? "default" : "pointer", border: `1px solid ${on ? "#7fe9d8" : "rgba(127,233,216,.22)"}`, background: on ? "rgba(127,233,216,.16)" : "transparent", color: on ? "#dff8f2" : "#6f938d", fontFamily: "inherit", fontSize: "9.5px", letterSpacing: ".5px", padding: "2px 8px" }}
+                        style={{ appearance: "none", cursor: saving ? "default" : "pointer", border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`, background: on ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent", color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: "9.5px", letterSpacing: ".5px", padding: "2px 8px" }}
                       >
                         °{u}
                       </button>
                     );
                   })}
                 </div>
-                {cityErr && <div style={{ fontSize: "8.5px", color: "#e0897a" }}>{cityErr}</div>}
+                {cityErr && <div style={{ fontSize: "8.5px", color: "var(--err)" }}>{cityErr}</div>}
               </div>
             ) : (
               <div
                 onClick={onSetCity ? () => { setEditLoc(true); setCityErr(null); setCity(""); } : undefined}
                 title={onSetCity ? "click to change city" : undefined}
-                style={{ cursor: onSetCity ? "pointer" : "default", color: cityErr ? "#e0897a" : "#6f938d" }}
+                style={{ cursor: onSetCity ? "pointer" : "default", color: cityErr ? "var(--err)" : "var(--txd)" }}
               >
                 {saving ? "…" : cityErr ? "not found" : weather.loc}
               </div>
             )}
             <div>
-              H <span style={{ color: "#bfe6de" }}>{weather.hi}°</span> · L{" "}
-              <span style={{ color: "#bfe6de" }}>{weather.lo}°</span>
+              H <span style={{ color: "var(--tx)" }}>{weather.hi}°</span> · L{" "}
+              <span style={{ color: "var(--tx)" }}>{weather.lo}°</span>
             </div>
             <div>
-              WIND <span style={{ color: "#9fc7c0" }}>{weather.wind}</span> · HUM{" "}
-              <span style={{ color: "#9fc7c0" }}>{weather.hum}</span>
+              WIND <span style={{ color: "var(--txm)" }}>{weather.wind}</span> · HUM{" "}
+              <span style={{ color: "var(--txm)" }}>{weather.hum}</span>
             </div>
           </div>
         </div>

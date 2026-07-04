@@ -129,9 +129,9 @@ export function PreviewTab(p: PreviewTabProps) {
         <input type="number" value={p.width} onChange={(e) => p.onWidth(Number(e.target.value) || p.width)}
           style={{ ...ctlInput, width: 62, padding: "4px 7px" }} />
         <button data-no-drag onClick={p.onToggleSelect} disabled={!p.canSelect}
-          title={p.canSelect ? "Pick elements in the preview" : "Element select needs localhost"}
+          title={p.canSelect ? "Mark up elements in the preview" : "Element markup needs localhost"}
           style={{ ...tinyBtn(p.selecting), opacity: p.canSelect ? 1 : 0.4, marginLeft: "auto" }}>
-          {p.selecting ? "◉ SELECTING" : "⊕ SELECT"}
+          {p.selecting ? "◉ MARKUP" : "⊕ MARKUP"}
         </button>
         {p.hoverLabel && <span style={{ fontSize: 10, color: "var(--muted-foreground)", fontFamily: MONO, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1 1 100%" }}>{p.hoverLabel}</span>}
       </div>
@@ -330,7 +330,7 @@ export function QueueTab(p: QueueTabProps) {
         </button>
       </div>
       {p.paused && (
-        <div style={{ margin: "0 12px 8px", padding: "6px 9px", border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)", background: "rgba(227,194,121,.07)", fontSize: 10, letterSpacing: 0.5, color: "var(--warning)" }}>
+        <div style={{ margin: "0 12px 8px", padding: "6px 9px", border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)", background: "color-mix(in srgb, var(--warn) 7%, transparent)", fontSize: 10, letterSpacing: 0.5, color: "var(--warning)" }}>
           queue paused — the running task finishes, then nothing new starts.
         </div>
       )}

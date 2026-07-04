@@ -20,9 +20,9 @@ function basename(rel: string | null): string {
 const tinyBtn = (on: boolean) => ({
   appearance: "none" as const, cursor: "pointer", fontFamily: "inherit", fontSize: 9,
   letterSpacing: 1, padding: "3px 8px",
-  border: `1px solid ${on ? "#7fe9d8" : "rgba(127,233,216,.16)"}`,
-  background: on ? "rgba(127,233,216,.08)" : "transparent",
-  color: on ? "#dff8f2" : "#6c8a84",
+  border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 16%, transparent)"}`,
+  background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+  color: on ? "var(--txb)" : "var(--txd)",
 });
 
 /** The single floating, draggable, collapsible tooltip that holds every preview
@@ -58,25 +58,25 @@ export function PreviewControls(props: {
 
   return (
     <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 70, width: props.collapsed ? "auto" : 340,
-      border: "1px solid rgba(127,233,216,.3)", background: "rgba(7,13,13,.96)", boxShadow: "0 18px 60px rgba(0,0,0,.55)",
+      border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 96%, transparent)", boxShadow: "0 18px 60px rgba(0,0,0,.55)",
       display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 48px)" }}>
       {/* drag handle / header */}
       <div onPointerDown={onPointerDown}
         style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", cursor: "move",
-          userSelect: "none", borderBottom: props.collapsed ? "none" : "1px solid rgba(127,233,216,.15)", flex: "none" }}>
-        <span style={{ fontSize: 9, letterSpacing: 1, color: "#7fe9d8", border: "1px solid rgba(127,233,216,.4)", padding: "2px 7px", flex: "none" }}>PREVIEW</span>
-        <span style={{ fontSize: 11, color: "#dff8f2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{basename(props.project)}</span>
+          userSelect: "none", borderBottom: props.collapsed ? "none" : "1px solid color-mix(in srgb, var(--acc) 15%, transparent)", flex: "none" }}>
+        <span style={{ fontSize: 9, letterSpacing: 1, color: "var(--acc)", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", padding: "2px 7px", flex: "none" }}>PREVIEW</span>
+        <span style={{ fontSize: 11, color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{basename(props.project)}</span>
         {props.branch && (
-          <span style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, color: "#a78bf0", border: "1px solid rgba(185,166,255,.28)", padding: "2px 7px" }}>
-            <span style={{ color: "#b9a6ff" }}>⎇</span>{props.branch}
+          <span style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px" }}>
+            <span style={{ color: "var(--purple)" }}>⎇</span>{props.branch}
           </span>
         )}
         <button data-no-drag onClick={() => props.onCollapsed(!props.collapsed)} title={props.collapsed ? "Expand" : "Collapse"}
-          style={{ marginLeft: "auto", appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: "transparent", color: "#9fc7c0", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>
+          style={{ marginLeft: "auto", appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>
           {props.collapsed ? "▣" : "▁"}
         </button>
         <button data-no-drag onClick={props.onClose} title="Close preview"
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(224,137,122,.4)", background: "transparent", color: "#e0897a", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>✕</button>
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>✕</button>
       </div>
 
       {!props.collapsed && (
@@ -97,7 +97,7 @@ export function PreviewControls(props: {
             onStart={props.onStart} onStop={props.onStop} onSave={props.onSave}
             onLearn={props.onLearn} learning={props.learning} busy={props.busyRun} />
 
-          <div style={{ height: 1, background: "rgba(127,233,216,.1)" }} />
+          <div style={{ height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
 
           {/* viewport presets + select */}
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: "8px 10px" }}>
@@ -107,7 +107,7 @@ export function PreviewControls(props: {
               </button>
             ))}
             <input type="number" value={props.width} onChange={(e) => props.onWidth(Number(e.target.value) || props.width)}
-              style={{ width: 64, background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "3px 6px" }} />
+              style={{ width: 64, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "3px 6px" }} />
             <button onClick={props.onToggleSelect} disabled={!props.canSelect}
               title={props.canSelect ? "Toggle element select" : "Element select needs the dev server (localhost)"}
               style={{ ...tinyBtn(props.selecting), opacity: props.canSelect ? 1 : 0.4 }}>SELECT</button>
@@ -123,23 +123,23 @@ export function PreviewControls(props: {
             )}
             <textarea value={props.instruction} onChange={(e) => props.onInstruction(e.target.value)}
               placeholder="What should Claude change?" rows={3}
-              style={{ width: "100%", resize: "vertical", background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 12, padding: "6px 8px" }} />
+              style={{ width: "100%", resize: "vertical", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 12, padding: "6px 8px" }} />
             <button onClick={props.onSubmit} disabled={props.sending || !props.instruction.trim() || !props.items.length}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid #7fe9d8", background: "rgba(127,233,216,.14)", color: "#dff8f2", fontFamily: "inherit", fontSize: 11, letterSpacing: 1, padding: "7px 10px", opacity: props.sending || !props.instruction.trim() || !props.items.length ? 0.4 : 1 }}>
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: "color-mix(in srgb, var(--acc) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, letterSpacing: 1, padding: "7px 10px", opacity: props.sending || !props.instruction.trim() || !props.items.length ? 0.4 : 1 }}>
               SEND TO CLAUDE ▸
             </button>
           </div>
 
           {/* concurrent previews switcher */}
           {others.length > 1 && (
-            <div style={{ borderTop: "1px solid rgba(127,233,216,.12)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "#3c544f" }}>RUNNING PREVIEWS</span>
+            <div style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)" }}>RUNNING PREVIEWS</span>
               {others.map((s) => {
                 const on = s.dir === props.activeDir;
                 return (
                   <button key={s.dir} onClick={() => props.onSwitch(s)}
                     style={{ ...tinyBtn(on), display: "flex", alignItems: "center", gap: 6, textAlign: "left", padding: "4px 7px" }}>
-                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#8fd9a8", flex: "none" }} />
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)", flex: "none" }} />
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{basename(s.project || s.dir)}{s.branch ? ` ⎇${s.branch}` : ""}</span>
                     <span style={{ marginLeft: "auto", opacity: 0.6, flex: "none" }}>{s.port ? `:${s.port}` : "…"}</span>
                   </button>

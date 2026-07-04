@@ -4,72 +4,89 @@
 
 :root {
   color-scheme: dark;
-  /* === HUD identity (dashboard + Mini App). Keep BOTH index.css in sync. ===
-     Everything is authored in this aqua palette; theme COLOUR comes only from
-     the CSS `filter` on the themed container (src/lib/theme.ts). [data-theme]
-     drives panel/edge SHAPE only — see the rules under "HUD primitives". */
+  /* === Design palette tokens = the source of truth (aqua base). ===
+     The 5 palette themes (adventure/normal/newsprint/candy/blueprint) OVERRIDE
+     these per-theme via inline vars from theme.ts `pal{}` with filter:none; the 4
+     filter themes (aqua/green/amber/magenta) keep these aqua and recolour the whole
+     UI via the container CSS filter. [data-theme] still drives panel/edge SHAPE. */
+  --acc: #7fe9d8;   --acc-on: #06100e;
+  --ok: #8fd9a8;    --warn: #e3c279;
+  --err: #e0897a;   --err-hi: #f0d0c8;  --err-b: #f4d5cd;  --err-g: #9a6f68;
+  --info: #6fb5ff;  --info-hi: #9fc8ff; --info-b: #dbeeff;
+  --purple: #b9a6ff; --purple-d: #a78bf0; --purple-h: #cbb8ff; --purple-b: #e7deff; --purple-g: #6f6088;
+  --txb: #dff8f2;   --txh: #cfe9e3;  --tx: #bfe6de;   --txm: #9fc7c0;
+  --txd: #6f938d;   --txf: #5a6f6a;  --txl: #3c544f;  --txg: #2e423f;
+  --panel: #091010; --panel2: #070d0d; --panel3: #040707; --canvas: #060a0a;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* aqua accent as an RGB triplet for the existing rgb(var(--accent-rgb)/x) chrome
+     (scrollbars, panel corner-brackets, glow, sweep) — those bits are hidden/off
+     under the palette themes, so keeping this static aqua is fine. */
   --accent-rgb: 127 233 216;
-  --primary: #7fe9d8;
-  --foreground: #bfe6de;
-  --foreground-bright: #dff8f2;
 
-  --background: #060a0a;
-  --panel: rgba(9, 16, 16, 0.5);
-  --card: rgba(7, 13, 13, 0.6);
-  --card-foreground: #bfe6de;
-  --popover: rgba(7, 13, 13, 0.97);
-  --popover-foreground: #dff8f2;
+  /* --- impl semantic tokens, re-expressed via the design tokens above so they
+     theme together when pal{} overrides the design tokens --- */
+  --primary: var(--acc);
+  --foreground: var(--tx);
+  --foreground-bright: var(--txb);
 
-  --primary-foreground: #060a0a;
-  --brand: var(--primary);
-  --brand-soft: var(--primary);
-  --brand-bright: var(--foreground-bright);
-  --brand-glow: rgb(var(--accent-rgb) / 0.25);
+  --background: var(--canvas);
+  --panel-surface: color-mix(in srgb, var(--panel) 50%, transparent);
+  --card: color-mix(in srgb, var(--panel2) 60%, transparent);
+  --card-foreground: var(--tx);
+  --popover: color-mix(in srgb, var(--panel2) 97%, transparent);
+  --popover-foreground: var(--txb);
 
-  --secondary: rgb(var(--accent-rgb) / 0.08);
-  --secondary-foreground: #bfe6de;
-  --muted: rgb(var(--accent-rgb) / 0.05);
-  --muted-foreground: #6f938d;
-  --muted-2: #3c544f;
-  --accent: rgb(var(--accent-rgb) / 0.08);
-  --accent-foreground: #dff8f2;
+  --primary-foreground: var(--acc-on);
+  --brand: var(--acc);
+  --brand-soft: var(--acc);
+  --brand-bright: var(--txb);
+  --brand-glow: color-mix(in srgb, var(--acc) 25%, transparent);
+
+  --secondary: color-mix(in srgb, var(--acc) 8%, transparent);
+  --secondary-foreground: var(--tx);
+  --muted: color-mix(in srgb, var(--acc) 5%, transparent);
+  --muted-foreground: var(--txd);
+  --muted-2: var(--txl);
+  --accent: color-mix(in srgb, var(--acc) 8%, transparent);
+  --accent-foreground: var(--txb);
 
   /* extra named accent fills (single-token; class- and style-safe) */
-  --ac-03: rgb(var(--accent-rgb) / 0.03);
-  --ac-06: rgb(var(--accent-rgb) / 0.06);
-  --ac-08: rgb(var(--accent-rgb) / 0.08);
-  --ac-12: rgb(var(--accent-rgb) / 0.12);
-  --ac-16: rgb(var(--accent-rgb) / 0.16);
-  --ac-22: rgb(var(--accent-rgb) / 0.22);
+  --ac-03: color-mix(in srgb, var(--acc) 3%, transparent);
+  --ac-06: color-mix(in srgb, var(--acc) 6%, transparent);
+  --ac-08: color-mix(in srgb, var(--acc) 8%, transparent);
+  --ac-12: color-mix(in srgb, var(--acc) 12%, transparent);
+  --ac-16: color-mix(in srgb, var(--acc) 16%, transparent);
+  --ac-22: color-mix(in srgb, var(--acc) 22%, transparent);
 
-  --success: #8fd9a8;
-  --warning: #e3c279;
-  --danger: #e0897a;
-  --destructive: #e0897a;
-  --destructive-foreground: #060a0a;
-  --violet: #b9a6ff;
-  --blue: #6fb5ff;
+  --success: var(--ok);
+  --warning: var(--warn);
+  --danger: var(--err);
+  --destructive: var(--err);
+  --destructive-foreground: var(--acc-on);
+  --violet: var(--purple);
+  --blue: var(--info);
 
   /* Surface chips: VS=accent, WEB=green, TG=blue, MA=violet */
-  --surface-vs: var(--primary);  --surface-vs-bg: rgb(var(--accent-rgb) / 0.08);
-  --surface-tg: #6fb5ff;  --surface-tg-bg: rgba(111, 181, 255, 0.06);
-  --surface-ma: #b9a6ff;  --surface-ma-bg: rgba(185, 166, 255, 0.06);
-  --surface-web: #8fd9a8; --surface-web-bg: rgba(143, 217, 168, 0.06);
+  --surface-vs: var(--acc);    --surface-vs-bg: color-mix(in srgb, var(--acc) 8%, transparent);
+  --surface-tg: var(--info);   --surface-tg-bg: color-mix(in srgb, var(--info) 6%, transparent);
+  --surface-ma: var(--purple); --surface-ma-bg: color-mix(in srgb, var(--purple) 6%, transparent);
+  --surface-web: var(--ok);    --surface-web-bg: color-mix(in srgb, var(--ok) 6%, transparent);
 
-  --border: rgb(var(--accent-rgb) / 0.16);
-  --border-bright: rgb(var(--accent-rgb) / 0.4);
-  --input: rgb(var(--accent-rgb) / 0.2);
-  --ring: var(--primary);
+  --border: color-mix(in srgb, var(--acc) 16%, transparent);
+  --border-bright: color-mix(in srgb, var(--acc) 40%, transparent);
+  --input: color-mix(in srgb, var(--acc) 20%, transparent);
+  --ring: var(--acc);
 
   /* legacy tg-* aliases still referenced by shared components */
   --tg-bg: var(--background);
   --tg-text: var(--foreground);
   --tg-hint: var(--muted-foreground);
   --tg-secondary-bg: var(--card);
-  --tg-button: var(--primary);
-  --tg-button-text: var(--primary-foreground);
-  --tg-link: var(--primary);
-  --surface-2: var(--panel);
+  --tg-button: var(--acc);
+  --tg-button-text: var(--acc-on);
+  --tg-link: var(--acc);
+  --surface-2: var(--panel-surface);
 
   /* Preview Console: the UI/label voice + house easing (from the design system). */
   --font-display: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;

@@ -72,7 +72,7 @@ export function RunTab({
       <div className="flex items-center gap-2 text-[12px]">
         <span
           className="h-1.5 w-1.5 rounded-full"
-          style={{ background: running ? "#8fd9a8" : "#3c544f" }}
+          style={{ background: running ? "var(--ok)" : "var(--txl)" }}
         />
         <span className="text-card-foreground">
           {(server?.status ?? "not started").toUpperCase()}
@@ -112,7 +112,7 @@ export function RunTab({
           <button
             onClick={() => void stop()}
             disabled={busy}
-            className="border border-danger bg-[rgba(224,137,122,.12)] px-3 py-1.5 text-[11px] tracking-[1px] text-danger hover:bg-[rgba(224,137,122,.22)] disabled:opacity-40"
+            className="border border-danger bg-[color-mix(in srgb, var(--err) 12%, transparent)] px-3 py-1.5 text-[11px] tracking-[1px] text-danger hover:bg-[color-mix(in srgb, var(--err) 22%, transparent)] disabled:opacity-40"
           >
             STOP ■
           </button>

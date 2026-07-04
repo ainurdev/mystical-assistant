@@ -46,7 +46,7 @@ export function WorkspaceGitPanel({
         {repos.map((p, i) => {
           const active = p.name === activeProject;
           const dirty = p.badge?.dirty ?? 0;
-          const dot = p.running ? "#8fd9a8" : dirty > 0 ? "#e3c279" : "#3c544f";
+          const dot = p.running ? "var(--ok)" : dirty > 0 ? "var(--warn)" : "var(--txl)";
           return (
             <div
               key={p.name}
@@ -62,7 +62,7 @@ export function WorkspaceGitPanel({
                 <span className="h-[7px] w-[7px] flex-none rounded-full" style={{ background: dot }} />
                 <span className="flex-1 truncate text-[12.5px] text-foreground-bright">{p.name}</span>
                 {p.running && (
-                  <span className="border border-[rgba(143,217,168,.3)] px-[5px] py-px text-[9px] tracking-[1px] text-success">
+                  <span className="border border-[color-mix(in srgb, var(--ok) 30%, transparent)] px-[5px] py-px text-[9px] tracking-[1px] text-success">
                     LIVE
                   </span>
                 )}
@@ -71,7 +71,7 @@ export function WorkspaceGitPanel({
                 <div className="mt-1.5 flex items-center gap-2.5 pl-[15px] text-[10.5px] text-muted-foreground">
                   <span className="text-primary">⎇ {p.badge.branch || "—"}</span>
                   <span className="ml-auto flex gap-2.5">
-                    <span style={{ color: dirty > 0 ? "#e3c279" : "#3c544f" }}>●{dirty}</span>
+                    <span style={{ color: dirty > 0 ? "var(--warn)" : "var(--txl)" }}>●{dirty}</span>
                     <span>↑{p.badge.ahead}</span>
                     <span>↓{p.badge.behind}</span>
                   </span>

@@ -43,7 +43,7 @@ export function TelemetryPanel({
         </div>
         <svg viewBox="0 0 320 42" preserveAspectRatio="none" className="mt-[5px] h-[42px] w-full overflow-visible">
           <line x1="0" y1="21" x2="320" y2="21" className="stroke-border" strokeWidth="1" />
-          <polyline points={poly(tele.sparkB, 320, 42, 4)} fill="none" stroke="#b9a6ff" strokeWidth="1.4" />
+          <polyline points={poly(tele.sparkB, 320, 42, 4)} fill="none" stroke="var(--purple)" strokeWidth="1.4" />
         </svg>
 
         <div className="mt-3.5 grid grid-cols-4 gap-2 border-t border-dashed border-border pt-3">

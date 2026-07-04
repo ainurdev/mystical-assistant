@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import type { AnswerSelection } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import { RunStream } from "./RunStream";
@@ -43,6 +44,7 @@ export function Transcript({
   onReviewResolve,
   liveTurns,
   trailingWorking,
+  lastPromptRef,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -50,19 +52,21 @@ export function Transcript({
   onReviewResolve?: (itemId: string, action: "keep" | "skip") => void;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
+  lastPromptRef?: RefObject<HTMLDivElement | null>;
 }) {
   if (!turns.length) {
     return <RuneSpirit variant="block" />;
   }
   return (
     <div className="flex flex-col gap-3">
-      {turns.map((turn) => {
+      {turns.map((turn, i) => {
         const isActive = turn.id === activeId;
+        const isLast = i === turns.length - 1;
         const working = isActive && turn.status === "running" && turn.pending.length === 0;
         return (
           <div key={turn.id} className="flex flex-col gap-1.5">
             {turn.prompt && (
-              <div className="flex gap-[9px]">
+              <div ref={isLast ? lastPromptRef : undefined} className="flex gap-[9px]">
                 <span className="flex-none text-violet">~ ❯</span>
                 <span className="min-w-0 whitespace-pre-wrap break-words text-foreground-bright">
                   {turn.prompt}

@@ -60,9 +60,9 @@ function Typewriter({
 // Tool-tag colors (HUD terminal). Mirrors the design's BASH/READ/WRITE accents.
 function toolTag(name: string): { color: string; border: string } {
   if (name === "Bash") return { color: "var(--primary)", border: "var(--border-bright)" };
-  if (name === "Read") return { color: "#b9a6ff", border: "rgba(185,166,255,.35)" };
+  if (name === "Read") return { color: "var(--purple)", border: "color-mix(in srgb, var(--purple) 35%, transparent)" };
   if (name === "Edit" || name === "Write" || name === "MultiEdit")
-    return { color: "#8fd9a8", border: "rgba(143,217,168,.35)" };
+    return { color: "var(--ok)", border: "color-mix(in srgb, var(--ok) 35%, transparent)" };
   return { color: "var(--primary)", border: "var(--border-bright)" };
 }
 
@@ -82,10 +82,10 @@ function FinalResult({
   const flash = animate && !typedResults.has(idKey);
   return (
     <div
-      className="my-2 ml-[18px] border border-[rgba(143,217,168,.28)] bg-[rgba(143,217,168,.04)]"
+      className="my-2 ml-[18px] border border-[color-mix(in srgb, var(--ok) 28%, transparent)] bg-[color-mix(in srgb, var(--ok) 4%, transparent)]"
       style={flash ? { animation: "resultflash 1.2s ease both" } : undefined}
     >
-      <div className="border-b border-[rgba(143,217,168,.18)] px-3 py-1.5 text-[9.5px] tracking-[2px] text-success">
+      <div className="border-b border-[color-mix(in srgb, var(--ok) 18%, transparent)] px-3 py-1.5 text-[9.5px] tracking-[2px] text-success">
         RESULT // OK
       </div>
       <div className="px-3 py-2.5">
@@ -141,7 +141,7 @@ export function RunStream({
           case "text":
             return (
               <div key={i} style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
-                <Markdown className="pl-[18px] leading-relaxed text-[#9fc7c0]">{event.text}</Markdown>
+                <Markdown className="pl-[18px] leading-relaxed text-[var(--txm)]">{event.text}</Markdown>
               </div>
             );
           case "tool": {

@@ -18,7 +18,7 @@ export function JobsPanel({
       <div className="px-2.5 pb-2.5 pt-2">
         {jobs.map((j, i) => {
           const awaiting = j.activity.state === "awaiting";
-          const color = awaiting ? "#e3c279" : "#8fd9a8";
+          const color = awaiting ? "var(--warn)" : "var(--ok)";
           return (
             <div
               key={j.job_id}
@@ -39,7 +39,7 @@ export function JobsPanel({
                 <span className="inline-flex h-2 w-2 rounded-full" style={{ background: color }} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] text-[#cfe9e3]">{j.title || "new session"}</div>
+                <div className="truncate text-[12px] text-[var(--txh)]">{j.title || "new session"}</div>
                 <div className="mt-0.5 truncate text-[9.5px] tracking-[.5px] text-muted-2">
                   {j.project || "—"} · {j.activity.label}
                 </div>

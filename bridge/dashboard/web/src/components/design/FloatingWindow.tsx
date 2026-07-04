@@ -66,18 +66,18 @@ export function FloatingWindow({
   };
 
   return (
-    <div style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 60, display: "flex", flexDirection: "column", border: "1px solid rgba(127,233,216,.3)", background: "rgba(7,13,13,.94)", boxShadow: "0 18px 60px rgba(0,0,0,.55)" }}>
+    <div style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 60, display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 94%, transparent)", boxShadow: "0 18px 60px rgba(0,0,0,.55)" }}>
       <div onPointerDown={startMove}
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", cursor: "move", flex: "none", borderBottom: "1px solid rgba(127,233,216,.15)", userSelect: "none" }}>
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", cursor: "move", flex: "none", borderBottom: "1px solid color-mix(in srgb, var(--acc) 15%, transparent)", userSelect: "none" }}>
         {header}
         <button data-no-drag onClick={onClose} title="Close"
-          style={{ marginLeft: "auto", appearance: "none", cursor: "pointer", border: "1px solid rgba(224,137,122,.4)", background: "transparent", color: "#e0897a", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>✕</button>
+          style={{ marginLeft: "auto", appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>✕</button>
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {children}
       </div>
       <div onPointerDown={startResize} title="Drag to resize"
-        style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", background: "linear-gradient(135deg,transparent 45%,rgba(127,233,216,.55) 45%)" }} />
+        style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", background: "linear-gradient(135deg,transparent 45%,color-mix(in srgb, var(--acc) 55%, transparent) 45%)" }} />
     </div>
   );
 }

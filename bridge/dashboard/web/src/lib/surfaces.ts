@@ -40,7 +40,7 @@ export function liveSurfaceFor(
 // A stable accent per project (the design colours each repo distinctly). Hashes
 // the project name to a fixed phosphor palette so the same repo always looks the
 // same across the strip, sidebar, terminal header, and analyze modal.
-const PROJ_PALETTE = ["#7fe9d8", "#b9a6ff", "#8fd9a8", "#6fb5ff", "#e3c279", "#ff7ad9"];
+const PROJ_PALETTE = ["var(--acc)", "var(--purple)", "var(--ok)", "var(--info)", "var(--warn)", "#ff7ad9"];
 
 export interface ProjectTint {
   color: string;

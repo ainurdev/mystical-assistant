@@ -32,15 +32,15 @@ function ProjectRow({
   const [eyeHov, setEyeHov] = useState(false);
   const [anHov, setAnHov] = useState(false);
   const dirty = g.badge?.dirty ?? 0;
-  const dot = g.running ? "#8fd9a8" : dirty > 0 ? "#e3c279" : "#3c544f";
+  const dot = g.running ? "var(--ok)" : dirty > 0 ? "var(--warn)" : "var(--txl)";
   return (
     <div
       data-ctx-type="project" data-ctx-id={g.rel} data-ctx-label={g.name}
       style={{
         display: "flex", alignItems: "center", gap: 9, padding: "9px 10px",
-        border: "1px solid rgba(127,233,216,.1)",
-        borderLeft: `2px solid ${active ? "#7fe9d8" : "transparent"}`,
-        background: active ? "rgba(127,233,216,.06)" : "rgba(7,13,13,.3)",
+        border: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
+        borderLeft: `2px solid ${active ? "var(--acc)" : "transparent"}`,
+        background: active ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "color-mix(in srgb, var(--panel2) 30%, transparent)",
         animation: "mfadeup .4s ease both",
       }}
     >
@@ -50,19 +50,19 @@ function ProjectRow({
       >
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flex: "none" }} />
         <span style={{ flex: 1, minWidth: 0, display: "block" }}>
-          <span style={{ display: "block", fontSize: 12.5, color: "#dff8f2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, fontSize: 9, color: "#6f938d" }}>
+          <span style={{ display: "block", fontSize: 12.5, color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, fontSize: 9, color: "var(--txd)" }}>
             <span style={{ flex: "none" }}>{g.sessionCount} sess</span>
           </span>
         </span>
       </button>
       {g.running && (
-        <span style={{ fontSize: 8, letterSpacing: 1, color: "#8fd9a8", border: "1px solid rgba(143,217,168,.3)", padding: "1px 5px", flex: "none" }}>LIVE</span>
+        <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 5px", flex: "none" }}>LIVE</span>
       )}
       <button
         onClick={() => onPreview(g.rel)} title="preview the running app"
         onMouseEnter={() => setEyeHov(true)} onMouseLeave={() => setEyeHov(false)}
-        style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(143,217,168,.3)", background: eyeHov ? "rgba(143,217,168,.16)" : "rgba(143,217,168,.06)", color: "#8fd9a8", fontFamily: "inherit", padding: "5px 7px", flex: "none", display: "flex", alignItems: "center", lineHeight: 0 }}
+        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", background: eyeHov ? "color-mix(in srgb, var(--ok) 16%, transparent)" : "color-mix(in srgb, var(--ok) 6%, transparent)", color: "var(--ok)", fontFamily: "inherit", padding: "5px 7px", flex: "none", display: "flex", alignItems: "center", lineHeight: 0 }}
       >
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
@@ -72,7 +72,7 @@ function ProjectRow({
       <button
         onClick={() => onAnalyze(g.rel)} title="open project details"
         onMouseEnter={() => setAnHov(true)} onMouseLeave={() => setAnHov(false)}
-        style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.3)", background: anHov ? "rgba(127,233,216,.16)" : "rgba(127,233,216,.06)", color: "#bfe6de", fontFamily: "inherit", padding: "5px 7px", flex: "none", display: "flex", alignItems: "center", lineHeight: 0 }}
+        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: anHov ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontFamily: "inherit", padding: "5px 7px", flex: "none", display: "flex", alignItems: "center", lineHeight: 0 }}
       >
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14 4h6v6M20 4l-8 8" />
@@ -94,43 +94,43 @@ export function ProjectsPanel(props: Props) {
   const [cancelHov, setCancelHov] = useState(false);
 
   return (
-    <div className="panel" style={{ border: "1px solid rgba(127,233,216,.16)", background: "rgba(9,16,16,.86)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .18s", flex: "none" }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .18s", flex: "none" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "#3c544f" }}>PROJECTS</span>
+        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>PROJECTS</span>
         <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "#7fe9d8" }}>{groups.length} REPOS</span>
+          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} REPOS</span>
           <button
             onClick={onManage}
             title="manage projects — hide, remove, import"
             onMouseEnter={() => setManageHov(true)} onMouseLeave={() => setManageHov(false)}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.25)", background: manageHov ? "rgba(127,233,216,.14)" : "rgba(127,233,216,.05)", color: manageHov ? "#dff8f2" : "#9fc7c0", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px" }}
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: manageHov ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "color-mix(in srgb, var(--acc) 5%, transparent)", color: manageHov ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px" }}
           >MANAGE</button>
           <button
             onClick={() => setNewOpen((o) => !o)} title="new project from a prompt"
             onMouseEnter={() => setNewHov(true)} onMouseLeave={() => setNewHov(false)}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(111,181,255,.32)", background: newHov ? "rgba(111,181,255,.16)" : "rgba(111,181,255,.06)", color: "#9fc8ff", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px" }}
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--info) 32%, transparent)", background: newHov ? "color-mix(in srgb, var(--info) 16%, transparent)" : "color-mix(in srgb, var(--info) 6%, transparent)", color: "var(--info-hi)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px" }}
           >+ NEW</button>
         </span>
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))", transformOrigin: "left", animation: "drawline .7s ease both .22s" }} />
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .22s" }} />
       <div style={{ padding: "9px 10px 11px", display: "flex", flexDirection: "column", gap: 7 }}>
         {newOpen && (
-          <div style={{ border: "1px solid rgba(111,181,255,.32)", background: "rgba(111,181,255,.05)", padding: "11px 12px", marginBottom: 10, animation: "mslide .2s ease both" }}>
-            <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#3c544f", marginBottom: 9 }}>NEW PROJECT</div>
+          <div style={{ border: "1px solid color-mix(in srgb, var(--info) 32%, transparent)", background: "color-mix(in srgb, var(--info) 5%, transparent)", padding: "11px 12px", marginBottom: 10, animation: "mslide .2s ease both" }}>
+            <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>NEW PROJECT</div>
             <input value={npName} onChange={(e) => setNpName(e.target.value)} placeholder="project-name"
-              style={{ width: "100%", boxSizing: "border-box", background: "rgba(7,13,13,.6)", border: "1px solid rgba(111,181,255,.25)", outline: "none", color: "#dff8f2", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "6px 9px" }} />
+              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--info) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "6px 9px" }} />
             <textarea value={npPrompt} onChange={(e) => setNpPrompt(e.target.value)} placeholder="starting prompt — what should Claude build first?"
-              style={{ width: "100%", boxSizing: "border-box", minHeight: 60, resize: "vertical", marginTop: 8, background: "rgba(7,13,13,.6)", border: "1px solid rgba(127,233,216,.18)", outline: "none", color: "#dff8f2", fontFamily: "inherit", fontSize: 12, lineHeight: 1.5, padding: "8px 9px" }} />
+              style={{ width: "100%", boxSizing: "border-box", minHeight: 60, resize: "vertical", marginTop: 8, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 12, lineHeight: 1.5, padding: "8px 9px" }} />
             <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
               <button
                 onClick={() => { if (npName.trim() && npPrompt.trim()) { onCreateProject(npName.trim(), npPrompt.trim()); setNpName(""); setNpPrompt(""); setNewOpen(false); } }}
                 onMouseEnter={() => setCreateHov(true)} onMouseLeave={() => setCreateHov(false)}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid #6fb5ff", background: createHov ? "rgba(111,181,255,.24)" : "rgba(111,181,255,.14)", color: "#dbeeff", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <span style={{ color: "#6fb5ff" }}>▸</span>CREATE & START</button>
+                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--info)", background: createHov ? "color-mix(in srgb, var(--info) 24%, transparent)" : "color-mix(in srgb, var(--info) 14%, transparent)", color: "var(--info-b)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <span style={{ color: "var(--info)" }}>▸</span>CREATE & START</button>
               <button
                 onClick={() => setNewOpen(false)}
                 onMouseEnter={() => setCancelHov(true)} onMouseLeave={() => setCancelHov(false)}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(127,233,216,.2)", background: cancelHov ? "rgba(127,233,216,.06)" : "transparent", color: "#6f938d", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 12px" }}>CANCEL</button>
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: cancelHov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 12px" }}>CANCEL</button>
             </div>
           </div>
         )}
@@ -139,7 +139,7 @@ export function ProjectsPanel(props: Props) {
             onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
         ))}
         {groups.length === 0 && (
-          <div style={{ fontSize: 11, color: "#3c544f", padding: "10px 4px" }}>No projects with sessions yet.</div>
+          <div style={{ fontSize: 11, color: "var(--txl)", padding: "10px 4px" }}>No projects with sessions yet.</div>
         )}
       </div>
     </div>

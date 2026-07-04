@@ -57,7 +57,7 @@ export function SettingsModal(props: SettingsModalProps) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(4,7,7,.72)",
+        background: "color-mix(in srgb, var(--panel3) 72%, transparent)",
         zIndex: 93,
         display: "flex",
         alignItems: "flex-start",
@@ -75,9 +75,9 @@ export function SettingsModal(props: SettingsModalProps) {
           maxHeight: "86vh",
           display: "flex",
           flexDirection: "column",
-          border: "1px solid rgba(127,233,216,.4)",
-          background: "rgba(7,13,13,.98)",
-          boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px rgba(127,233,216,.08)",
+          border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
+          background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
+          boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)",
           animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both",
         }}
       >
@@ -88,7 +88,7 @@ export function SettingsModal(props: SettingsModalProps) {
             alignItems: "center",
             gap: 11,
             padding: "14px 18px",
-            borderBottom: "1px solid rgba(127,233,216,.16)",
+            borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
             flex: "none",
           }}
         >
@@ -97,7 +97,7 @@ export function SettingsModal(props: SettingsModalProps) {
             width="17"
             height="17"
             fill="none"
-            stroke="#7fe9d8"
+            stroke="var(--acc)"
             strokeWidth="1.6"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -106,11 +106,11 @@ export function SettingsModal(props: SettingsModalProps) {
             <circle cx="12" cy="12" r="3.2" />
             <path d="M12 3.3v2.4M12 18.3v2.4M20.7 12h-2.4M5.7 12H3.3M18.16 5.84l-1.7 1.7M7.54 16.46l-1.7 1.7M18.16 18.16l-1.7-1.7M7.54 7.54l-1.7-1.7" />
           </svg>
-          <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "#3c544f" }}>
+          <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>
             CONFIGURE
           </span>
           <span
-            style={{ fontSize: 15, color: "#dff8f2", letterSpacing: ".5px" }}
+            style={{ fontSize: 15, color: "var(--txb)", letterSpacing: ".5px" }}
             className="glow"
           >
             DASHBOARD SETTINGS
@@ -123,9 +123,9 @@ export function SettingsModal(props: SettingsModalProps) {
             style={{
               appearance: "none",
               cursor: "pointer",
-              border: "1px solid rgba(127,233,216,.25)",
-              background: escHover ? "rgba(127,233,216,.08)" : "transparent",
-              color: "#9fc7c0",
+              border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+              background: escHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+              color: "var(--txm)",
               fontFamily: "inherit",
               fontSize: 9.5,
               letterSpacing: 1.5,
@@ -145,7 +145,7 @@ export function SettingsModal(props: SettingsModalProps) {
             style={{
               fontSize: 9.5,
               letterSpacing: 1.5,
-              color: "#3c544f",
+              color: "var(--txl)",
               marginBottom: 10,
             }}
           >
@@ -155,7 +155,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <span
               style={{
                 fontSize: 14,
-                color: "#7fe9d8",
+                color: "var(--acc)",
                 flex: "none",
                 fontFamily: "'JetBrains Mono',monospace",
               }}
@@ -169,10 +169,10 @@ export function SettingsModal(props: SettingsModalProps) {
               style={{
                 flex: 1,
                 minWidth: 0,
-                background: "rgba(7,13,13,.6)",
-                border: "1px solid rgba(127,233,216,.18)",
+                background: "color-mix(in srgb, var(--panel2) 60%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)",
                 outline: "none",
-                color: "#dff8f2",
+                color: "var(--txb)",
                 fontFamily: "'JetBrains Mono',monospace",
                 fontSize: 12.5,
                 padding: "9px 11px",
@@ -184,11 +184,11 @@ export function SettingsModal(props: SettingsModalProps) {
               style={{
                 appearance: "none",
                 cursor: "pointer",
-                border: "1px solid rgba(127,233,216,.3)",
+                border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
                 background: rescanHover
-                  ? "rgba(127,233,216,.16)"
-                  : "rgba(127,233,216,.06)",
-                color: "#bfe6de",
+                  ? "color-mix(in srgb, var(--acc) 16%, transparent)"
+                  : "color-mix(in srgb, var(--acc) 6%, transparent)",
+                color: "var(--tx)",
                 fontFamily: "inherit",
                 fontSize: 10,
                 letterSpacing: 1.5,
@@ -204,7 +204,7 @@ export function SettingsModal(props: SettingsModalProps) {
             style={{
               fontSize: 9.5,
               letterSpacing: 1.5,
-              color: "#3c544f",
+              color: "var(--txl)",
               marginBottom: 11,
             }}
           >
@@ -216,7 +216,7 @@ export function SettingsModal(props: SettingsModalProps) {
             style={{
               fontSize: 9.5,
               letterSpacing: 1.5,
-              color: "#3c544f",
+              color: "var(--txl)",
               margin: "20px 0 11px",
             }}
           >
@@ -239,7 +239,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 style={{
                   fontSize: 9.5,
                   letterSpacing: 1.5,
-                  color: "#3c544f",
+                  color: "var(--txl)",
                   marginBottom: 10,
                 }}
               >
@@ -247,7 +247,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </div>
               <div
                 style={{
-                  border: "1px solid rgba(127,233,216,.12)",
+                  border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
                   padding: "12px 13px",
                 }}
               >
@@ -259,11 +259,11 @@ export function SettingsModal(props: SettingsModalProps) {
                   }}
                 >
                   <span
-                    style={{ fontSize: 10, letterSpacing: 1, color: "#6f938d" }}
+                    style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)" }}
                   >
                     HOST
                   </span>
-                  <span style={{ fontSize: 11, color: "#bfe6de" }}>{host}</span>
+                  <span style={{ fontSize: 11, color: "var(--tx)" }}>{host}</span>
                 </div>
                 <div
                   style={{
@@ -274,7 +274,7 @@ export function SettingsModal(props: SettingsModalProps) {
                   }}
                 >
                   <span
-                    style={{ fontSize: 10, letterSpacing: 1, color: "#6f938d" }}
+                    style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)" }}
                   >
                     PORT
                   </span>
@@ -284,10 +284,10 @@ export function SettingsModal(props: SettingsModalProps) {
                     style={{
                       width: 88,
                       textAlign: "right",
-                      background: "rgba(7,13,13,.6)",
-                      border: "1px solid rgba(127,233,216,.18)",
+                      background: "color-mix(in srgb, var(--panel2) 60%, transparent)",
+                      border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)",
                       outline: "none",
-                      color: "#dff8f2",
+                      color: "var(--txb)",
                       fontFamily: "'JetBrains Mono',monospace",
                       fontSize: 11,
                       padding: "4px 7px",
@@ -303,7 +303,7 @@ export function SettingsModal(props: SettingsModalProps) {
                   }}
                 >
                   <span
-                    style={{ fontSize: 10, letterSpacing: 1, color: "#6f938d" }}
+                    style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)" }}
                   >
                     STATUS
                   </span>
@@ -313,7 +313,7 @@ export function SettingsModal(props: SettingsModalProps) {
                       alignItems: "center",
                       gap: 6,
                       fontSize: 10,
-                      color: "#8fd9a8",
+                      color: "var(--ok)",
                     }}
                   >
                     <span
@@ -321,7 +321,7 @@ export function SettingsModal(props: SettingsModalProps) {
                         width: 6,
                         height: 6,
                         borderRadius: "50%",
-                        background: "#8fd9a8",
+                        background: "var(--ok)",
                         animation: "mpulse 2.4s infinite",
                       }}
                     ></span>
@@ -337,7 +337,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 style={{
                   fontSize: 9.5,
                   letterSpacing: 1.5,
-                  color: "#3c544f",
+                  color: "var(--txl)",
                   marginBottom: 10,
                 }}
               >
@@ -345,7 +345,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </div>
               <div
                 style={{
-                  border: "1px solid rgba(127,233,216,.12)",
+                  border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
                   padding: "12px 13px",
                   display: "flex",
                   flexDirection: "column",
@@ -357,7 +357,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     style={{
                       fontSize: 10,
                       letterSpacing: 1,
-                      color: "#6f938d",
+                      color: "var(--txd)",
                       marginBottom: 6,
                     }}
                   >
@@ -367,7 +367,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     style={{
                       display: "flex",
                       gap: 2,
-                      border: "1px solid rgba(127,233,216,.2)",
+                      border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
                     }}
                   >
                     {MODEL_OPTS.map((m) => {
@@ -381,8 +381,8 @@ export function SettingsModal(props: SettingsModalProps) {
                             appearance: "none",
                             cursor: "pointer",
                             border: 0,
-                            background: active ? "#7fe9d8" : "transparent",
-                            color: active ? "#06100e" : "#6f938d",
+                            background: active ? "var(--acc)" : "transparent",
+                            color: active ? "var(--acc-on)" : "var(--txd)",
                             fontFamily: "inherit",
                             fontSize: 10,
                             letterSpacing: 1,
@@ -400,7 +400,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     style={{
                       fontSize: 10,
                       letterSpacing: 1,
-                      color: "#6f938d",
+                      color: "var(--txd)",
                       marginBottom: 6,
                     }}
                   >
@@ -410,7 +410,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     style={{
                       display: "flex",
                       gap: 2,
-                      border: "1px solid rgba(127,233,216,.2)",
+                      border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
                     }}
                   >
                     {MODE_OPTS.map((m) => {
@@ -424,8 +424,8 @@ export function SettingsModal(props: SettingsModalProps) {
                             appearance: "none",
                             cursor: "pointer",
                             border: 0,
-                            background: active ? "#7fe9d8" : "transparent",
-                            color: active ? "#06100e" : "#6f938d",
+                            background: active ? "var(--acc)" : "transparent",
+                            color: active ? "var(--acc-on)" : "var(--txd)",
                             fontFamily: "inherit",
                             fontSize: 9,
                             letterSpacing: ".5px",
@@ -468,11 +468,11 @@ export function SettingsModal(props: SettingsModalProps) {
               style={{
                 appearance: "none",
                 cursor: "pointer",
-                border: "1px solid #7fe9d8",
+                border: "1px solid var(--acc)",
                 background: doneHover
-                  ? "rgba(127,233,216,.22)"
-                  : "rgba(127,233,216,.12)",
-                color: "#dff8f2",
+                  ? "color-mix(in srgb, var(--acc) 22%, transparent)"
+                  : "color-mix(in srgb, var(--acc) 12%, transparent)",
+                color: "var(--txb)",
                 fontFamily: "inherit",
                 fontSize: 10,
                 letterSpacing: 2,

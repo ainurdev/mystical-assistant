@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from "react";
+import { themeCanvas, themeFilter, type ThemeKey } from "../../lib/theme";
 
 const bootLines: { label: string; status: string; statusColor: string }[] = [
-  { label: "ESTABLISHING BRIDGE", status: "OK", statusColor: "#8fd9a8" },
-  { label: "CLAUDE CODE RUNTIME", status: "OK", statusColor: "#8fd9a8" },
-  { label: "SURFACES · TG / MA / VSCODE", status: "OK", statusColor: "#8fd9a8" },
-  { label: "CONVERSATION STORE", status: "SYNCED", statusColor: "#7fe9d8" },
-  { label: "AUTH · REUSE CLAUDE LOGIN", status: "OK", statusColor: "#8fd9a8" },
+  { label: "ESTABLISHING BRIDGE", status: "OK", statusColor: "var(--ok)" },
+  { label: "CLAUDE CODE RUNTIME", status: "OK", statusColor: "var(--ok)" },
+  { label: "SURFACES · TG / MA / VSCODE", status: "OK", statusColor: "var(--ok)" },
+  { label: "CONVERSATION STORE", status: "SYNCED", statusColor: "var(--acc)" },
+  { label: "AUTH · REUSE CLAUDE LOGIN", status: "OK", statusColor: "var(--ok)" },
 ];
 
-export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
-  const { onReveal, onDone } = props;
+export function BootIntro(props: { onReveal: () => void; onDone: () => void; theme: ThemeKey; scanlines: boolean }) {
+  const { onReveal, onDone, theme, scanlines } = props;
   const [fade, setFade] = useState(false);
 
   // Keep the latest callbacks in a ref so the auto-exit timers below can run
@@ -46,7 +47,8 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
         position: "fixed",
         inset: 0,
         zIndex: 95,
-        background: "#060a0a",
+        background: themeCanvas(theme),
+        filter: themeFilter(theme),
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -58,7 +60,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
         animation: fade ? "crtoff .62s cubic-bezier(.7,0,.3,1) forwards" : "none",
       }}
     >
-      <div className="crt" style={{ zIndex: 4 }}></div>
+      {scanlines && <div className="crt" style={{ zIndex: 4 }}></div>}
 
       {/* animated field */}
       <div
@@ -78,7 +80,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             bottom: "-12%",
             height: "72%",
             backgroundImage:
-              "linear-gradient(rgba(127,233,216,.15) 1px,transparent 1px),linear-gradient(90deg,rgba(127,233,216,.15) 1px,transparent 1px)",
+              "linear-gradient(color-mix(in srgb, var(--acc) 15%, transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb, var(--acc) 15%, transparent) 1px,transparent 1px)",
             backgroundSize: "46px 46px",
             transform: "perspective(440px) rotateX(64deg)",
             transformOrigin: "bottom center",
@@ -96,7 +98,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             height: "780px",
             margin: "-390px 0 0 -390px",
             background:
-              "conic-gradient(from 0deg,rgba(127,233,216,.12),transparent 28%,rgba(185,166,255,.12) 54%,transparent 78%,rgba(127,233,216,.12))",
+              "conic-gradient(from 0deg,color-mix(in srgb, var(--acc) 12%, transparent),transparent 28%,color-mix(in srgb, var(--purple) 12%, transparent) 54%,transparent 78%,color-mix(in srgb, var(--acc) 12%, transparent))",
             borderRadius: "50%",
             animation: "auraspin 20s linear infinite",
             filter: "blur(3px)",
@@ -110,7 +112,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "220px",
             height: "220px",
             margin: "-110px 0 0 -110px",
-            border: "1px solid rgba(127,233,216,.35)",
+            border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
             borderRadius: "50%",
             animation: "radar 3.4s ease-out infinite",
           }}
@@ -123,7 +125,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "220px",
             height: "220px",
             margin: "-110px 0 0 -110px",
-            border: "1px solid rgba(185,166,255,.3)",
+            border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)",
             borderRadius: "50%",
             animation: "radar 3.4s ease-out infinite 1.7s",
           }}
@@ -136,8 +138,8 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "3px",
             height: "3px",
             borderRadius: "50%",
-            background: "#7fe9d8",
-            boxShadow: "0 0 6px #7fe9d8",
+            background: "var(--acc)",
+            boxShadow: "0 0 6px var(--acc)",
             animation: "drift 5s ease-in-out infinite,twinkle 3s ease-in-out infinite",
           }}
         ></div>
@@ -149,8 +151,8 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "2px",
             height: "2px",
             borderRadius: "50%",
-            background: "#b9a6ff",
-            boxShadow: "0 0 6px #b9a6ff",
+            background: "var(--purple)",
+            boxShadow: "0 0 6px var(--purple)",
             animation: "drift 6.5s ease-in-out infinite .6s,twinkle 4s ease-in-out infinite",
           }}
         ></div>
@@ -162,8 +164,8 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "3px",
             height: "3px",
             borderRadius: "50%",
-            background: "#7fe9d8",
-            boxShadow: "0 0 6px #7fe9d8",
+            background: "var(--acc)",
+            boxShadow: "0 0 6px var(--acc)",
             animation: "drift 5.6s ease-in-out infinite 1.1s,twinkle 3.4s ease-in-out infinite",
           }}
         ></div>
@@ -175,8 +177,8 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "2px",
             height: "2px",
             borderRadius: "50%",
-            background: "#8fd9a8",
-            boxShadow: "0 0 6px #8fd9a8",
+            background: "var(--ok)",
+            boxShadow: "0 0 6px var(--ok)",
             animation: "drift 7s ease-in-out infinite .3s,twinkle 4.6s ease-in-out infinite",
           }}
         ></div>
@@ -188,8 +190,8 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "2px",
             height: "2px",
             borderRadius: "50%",
-            background: "#7fe9d8",
-            boxShadow: "0 0 5px #7fe9d8",
+            background: "var(--acc)",
+            boxShadow: "0 0 5px var(--acc)",
             animation: "drift 6s ease-in-out infinite .9s,twinkle 3.8s ease-in-out infinite",
           }}
         ></div>
@@ -201,8 +203,8 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             width: "2px",
             height: "2px",
             borderRadius: "50%",
-            background: "#b9a6ff",
-            boxShadow: "0 0 5px #b9a6ff",
+            background: "var(--purple)",
+            boxShadow: "0 0 5px var(--purple)",
             animation: "drift 5.4s ease-in-out infinite 1.4s,twinkle 4.2s ease-in-out infinite",
           }}
         ></div>
@@ -225,7 +227,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           cy="50"
           r="44"
           fill="none"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="1.4"
           strokeDasharray="8 12"
           style={{ transformOrigin: "50px 50px", animation: "introspin 9s linear infinite" }}
@@ -235,7 +237,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           cy="50"
           r="40"
           fill="none"
-          stroke="rgba(127,233,216,.45)"
+          stroke="color-mix(in srgb, var(--acc) 45%, transparent)"
           strokeWidth="1"
           strokeDasharray="280"
           strokeDashoffset="280"
@@ -246,7 +248,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           cy="50"
           r="33"
           fill="none"
-          stroke="rgba(127,233,216,.18)"
+          stroke="color-mix(in srgb, var(--acc) 18%, transparent)"
           strokeWidth="1"
           style={{ transformOrigin: "50px 50px", animation: "introspinr 14s linear infinite" }}
         />
@@ -256,7 +258,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           width="40"
           height="40"
           fill="none"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="1.6"
           style={{
             transformOrigin: "50px 50px",
@@ -268,11 +270,11 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           y="41"
           width="18"
           height="18"
-          fill="#b9a6ff"
+          fill="var(--purple)"
           style={{
             transformOrigin: "50px 50px",
             animation: "introdiamond .6s ease both .8s",
-            filter: "drop-shadow(0 0 6px rgba(185,166,255,.7))",
+            filter: "drop-shadow(0 0 6px color-mix(in srgb, var(--purple) 70%, transparent))",
           }}
         />
         <line
@@ -280,7 +282,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           y1="2"
           x2="50"
           y2="11"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="1.4"
           style={{ animation: "tickfade .4s ease both 1s" }}
         />
@@ -289,7 +291,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           y1="89"
           x2="50"
           y2="98"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="1.4"
           style={{ animation: "tickfade .4s ease both 1.1s" }}
         />
@@ -298,7 +300,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           y1="50"
           x2="11"
           y2="50"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="1.4"
           style={{ animation: "tickfade .4s ease both 1.05s" }}
         />
@@ -307,7 +309,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           y1="50"
           x2="98"
           y2="50"
-          stroke="#7fe9d8"
+          stroke="var(--acc)"
           strokeWidth="1.4"
           style={{ animation: "tickfade .4s ease both 1.15s" }}
         />
@@ -327,13 +329,13 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           style={{
             fontSize: "34px",
             letterSpacing: "10px",
-            color: "#dff8f2",
+            color: "var(--txb)",
             animation: "wordflick 1.4s steps(1) both .9s",
           }}
         >
           MYSTICAL//ASSISTANT
         </div>
-        <div style={{ fontSize: "11px", letterSpacing: "6px", color: "#3c544f", marginTop: "8px" }}>
+        <div style={{ fontSize: "11px", letterSpacing: "6px", color: "var(--txl)", marginTop: "8px" }}>
           REMOTE DEV BRIDGE · CLAUDE CODE
         </div>
       </div>
@@ -349,7 +351,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           fontFamily: "'JetBrains Mono',monospace",
           fontSize: "11.5px",
           lineHeight: 1.9,
-          color: "#6f938d",
+          color: "var(--txd)",
         }}
       >
         {bootLines.map((b, i) => (
@@ -363,7 +365,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             }}
           >
             <span>
-              <span style={{ color: "#7fe9d8" }}>›</span> {b.label}
+              <span style={{ color: "var(--acc)" }}>›</span> {b.label}
             </span>
             <span style={{ color: b.statusColor, letterSpacing: "1px" }}>{b.status}</span>
           </div>
@@ -371,7 +373,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
         <div
           style={{
             height: "3px",
-            background: "rgba(127,233,216,.12)",
+            background: "color-mix(in srgb, var(--acc) 12%, transparent)",
             marginTop: "14px",
             overflow: "hidden",
           }}
@@ -379,7 +381,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
           <div
             style={{
               height: "100%",
-              background: "linear-gradient(90deg,#7fe9d8,#b9a6ff)",
+              background: "linear-gradient(90deg,var(--acc),var(--purple))",
               width: 0,
               animation: "barfill 2.4s cubic-bezier(.4,0,.2,1) both .6s",
             }}
@@ -392,7 +394,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void }) {
             marginTop: "9px",
             fontSize: "10px",
             letterSpacing: "2px",
-            color: "#3c544f",
+            color: "var(--txl)",
             animation: "tickfade .5s ease both 1.4s",
           }}
         >

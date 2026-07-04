@@ -179,25 +179,25 @@ export function RunningWindow({
         : "starts on the running server";
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "#05080a" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "var(--panel3)" }}>
       {activeUrl ? (
         <PreviewFrame url={activeUrl} iframeRef={iframeRef} width={width} selecting={sel.state.mode === "select"} />
       ) : learning ? (
-        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", gap: 8, alignItems: "center", justifyContent: "center", color: "#9fc7c0", fontSize: 13, textAlign: "center", padding: 24 }}>
-          <div style={{ color: "#7fe9d8" }}>Learning how to start this project…</div>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", gap: 8, alignItems: "center", justifyContent: "center", color: "var(--txm)", fontSize: 13, textAlign: "center", padding: 24 }}>
+          <div style={{ color: "var(--acc)" }}>Learning how to start this project…</div>
           <div style={{ fontSize: 11, opacity: 0.6 }}>Inspecting the repo (and asking Claude if it's a tricky setup).</div>
         </div>
       ) : source !== "deployed" && status === "exited" ? (
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", gap: 10, alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div style={{ color: "#e0897a", fontSize: 13 }}>Dev server exited — check the command.</div>
+          <div style={{ color: "var(--err)", fontSize: 13 }}>Dev server exited — check the command.</div>
           {(ctxServer?.tail?.length ?? 0) > 0 && (
-            <pre style={{ maxWidth: "min(800px,90vw)", maxHeight: "50vh", overflow: "auto", margin: 0, padding: "10px 12px", background: "rgba(224,137,122,.07)", border: "1px solid rgba(224,137,122,.3)", color: "#e7b3a8", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+            <pre style={{ maxWidth: "min(800px,90vw)", maxHeight: "50vh", overflow: "auto", margin: 0, padding: "10px 12px", background: "color-mix(in srgb, var(--err) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", color: "var(--err-hi)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
               {ctxServer!.tail.join("\n")}
             </pre>
           )}
         </div>
       ) : (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#9fc7c0", fontSize: 13, fontStyle: "italic", textAlign: "center", padding: 24 }}>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--txm)", fontSize: 13, fontStyle: "italic", textAlign: "center", padding: 24 }}>
           {source === "deployed"
             ? "no production URL set — add one in the controls."
             : status === "running"

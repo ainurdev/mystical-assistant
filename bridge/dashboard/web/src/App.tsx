@@ -46,7 +46,7 @@ import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal } from "./components/hud/AnalyzeModal";
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
-import { RunningWindow } from "./components/design/RunningWindow";
+import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { usePreviewQueue } from "./components/design/usePreviewQueue";
 
@@ -655,9 +655,8 @@ export function App() {
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
             {previewProject && (
-              <RunningWindow
+              <ProjectPreviewModal
                 project={previewProject}
-                branch={gitBadges.get(previewProject)?.branch}
                 sessionId={sessionId}
                 onClose={() => setPreviewProject(null)}
               />

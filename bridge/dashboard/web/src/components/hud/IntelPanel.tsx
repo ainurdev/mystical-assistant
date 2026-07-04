@@ -10,10 +10,10 @@ const INTEL: { tag: string; text: string }[] = [
 ];
 
 const intelColor: Record<string, string> = {
-  FACT: "#8fd9a8",
-  HISTORY: "#b9a6ff",
-  LORE: "#e3c279",
-  TRIVIA: "#6fb5ff",
+  FACT: "var(--ok)",
+  HISTORY: "var(--purple)",
+  LORE: "var(--warn)",
+  TRIVIA: "var(--info)",
 };
 
 export function IntelPanel() {
@@ -32,8 +32,8 @@ export function IntelPanel() {
     <div
       className="panel"
       style={{
-        border: "1px solid rgba(127,233,216,.16)",
-        background: "rgba(9,16,16,.5)",
+        border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+        background: "color-mix(in srgb, var(--panel) 50%, transparent)",
         animation: "enterSkew .55s cubic-bezier(.2,.8,.2,1) both .24s",
         flex: "none",
       }}
@@ -46,13 +46,13 @@ export function IntelPanel() {
           padding: "8px 12px",
         }}
       >
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "#3c544f" }}>INTEL</span>
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "#7fe9d8" }}>FIELD NOTES</span>
+        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--txl)" }}>INTEL</span>
+        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--acc)" }}>FIELD NOTES</span>
       </div>
       <div
         style={{
           height: "1px",
-          background: "linear-gradient(90deg,#7fe9d8,rgba(127,233,216,.05))",
+          background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))",
           transformOrigin: "left",
           animation: "drawline .7s ease both .28s",
         }}
@@ -70,7 +70,7 @@ export function IntelPanel() {
           >
             {current.tag}
           </span>
-          <span style={{ fontSize: "8.5px", letterSpacing: "1px", color: "#3c544f" }}>
+          <span style={{ fontSize: "8.5px", letterSpacing: "1px", color: "var(--txl)" }}>
             {index + 1} / {total}
           </span>
           <div style={{ display: "flex", gap: "3px", marginLeft: "auto" }}>
@@ -80,7 +80,7 @@ export function IntelPanel() {
                 style={{
                   width: "10px",
                   height: "3px",
-                  background: i === index ? "#7fe9d8" : "rgba(127,233,216,.18)",
+                  background: i === index ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)",
                 }}
               />
             ))}
@@ -92,9 +92,9 @@ export function IntelPanel() {
             style={{
               appearance: "none",
               cursor: "pointer",
-              border: "1px solid rgba(127,233,216,.25)",
-              background: nextHover ? "rgba(127,233,216,.08)" : "transparent",
-              color: "#9fc7c0",
+              border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+              background: nextHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+              color: "var(--txm)",
               fontFamily: "inherit",
               fontSize: "9px",
               letterSpacing: "1.5px",
@@ -111,7 +111,7 @@ export function IntelPanel() {
             marginTop: "9px",
             fontSize: "11.5px",
             lineHeight: 1.5,
-            color: "#bfe6de",
+            color: "var(--tx)",
             animation: `${index % 2 === 0 ? "mfadeup" : "mfadeup2"} .45s ease both`,
           }}
         >

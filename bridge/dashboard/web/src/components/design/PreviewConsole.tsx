@@ -86,7 +86,7 @@ export function PreviewConsole(p: PreviewConsoleProps) {
 
       <div style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.w, height: collapsed ? "auto" : rect.h,
         zIndex: 66, display: "flex", flexDirection: "column", border: "1px solid var(--border-bright)",
-        background: "rgba(7,13,13,.96)", boxShadow: "0 22px 64px rgba(0,0,0,.55)", animation: "mpop .3s var(--ease-hud) both" }}>
+        background: "color-mix(in srgb, var(--panel2) 96%, transparent)", boxShadow: "0 22px 64px rgba(0,0,0,.55)", animation: "mpop .3s var(--ease-hud) both" }}>
 
         {/* header / drag handle */}
         <div onPointerDown={startMove} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
@@ -94,7 +94,7 @@ export function PreviewConsole(p: PreviewConsoleProps) {
           <span style={{ fontSize: 9, letterSpacing: 1, color: "var(--primary)", border: "1px solid var(--border-bright)", padding: "2px 7px", flex: "none" }}>PREVIEW</span>
           <span style={{ fontSize: 12, color: "var(--foreground-bright)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.project ?? "—"}</span>
           {p.branch && (
-            <span style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, color: "var(--violet)", border: "1px solid rgba(185,166,255,.28)", padding: "2px 7px" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, color: "var(--violet)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px" }}>
               <span>⎇</span>{p.branch}
             </span>
           )}
@@ -104,7 +104,7 @@ export function PreviewConsole(p: PreviewConsoleProps) {
           <button data-no-drag onClick={() => setCollapsed((v) => !v)} title={collapsed ? "Expand" : "Collapse"}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--border)", background: "transparent", color: "var(--muted-foreground)", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>{collapsed ? "▣" : "▁"}</button>
           <button data-no-drag onClick={p.onClose} title="Close preview"
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid rgba(224,137,122,.4)", background: "transparent", color: "var(--danger)", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>✕</button>
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)", background: "transparent", color: "var(--danger)", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "3px 8px" }}>✕</button>
         </div>
 
         {!collapsed && (
