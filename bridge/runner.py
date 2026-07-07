@@ -124,6 +124,27 @@ def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
     threading.Thread(target=work, daemon=True).start()
 
 
+# --- ponytail (per-run code-minimalism intensity) ----------------------------
+# The ponytail plugin's SessionStart hook reads PONYTAIL_DEFAULT_MODE from the
+# child's env; absent means the plugin's own default (full). One env var is the
+# whole integration — no tokens, no config writes, native sessions untouched.
+
+_PONYTAIL_LEVELS = ("off", "lite", "full", "ultra")
+
+
+def normalize_ponytail(level) -> "str | None":
+    lv = str(level or "").strip().lower()
+    return lv if lv in _PONYTAIL_LEVELS else None
+
+
+def _run_env(ponytail: "str | None") -> "dict | None":
+    """Env for the claude subprocess: None (inherit) unless a run picked a
+    ponytail intensity."""
+    if not ponytail:
+        return None
+    return {**os.environ, "PONYTAIL_DEFAULT_MODE": ponytail}
+
+
 # ---------------------------------------------------------------------------
 # Resolve the `claude` launcher without trusting the ambient PATH
 # ---------------------------------------------------------------------------
@@ -209,13 +230,14 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 
 def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  cwd: str | None = None, timeout: int | None = None, *,
-                 model: str | None = None, skip_pack: bool = False):
+                 model: str | None = None, skip_pack: bool = False,
+                 ponytail: str | None = None):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
                     cwd=cwd, model=model, skip_pack=skip_pack)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
-                              text=True, timeout=timeout)
+                              text=True, timeout=timeout, env=_run_env(ponytail))
     except subprocess.TimeoutExpired:
         return (f"⏱️ Timed out after {timeout // 60} min.", None, None, True)
     except FileNotFoundError:
@@ -705,7 +727,7 @@ def _watchdog(job: Job, proc) -> None:
 
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
-                   permission_mode: str | None = None):
+                   permission_mode: str | None = None, ponytail: str | None = None):
     proc = None
     try:
         full_prompt = prompt
@@ -718,7 +740,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, bufsize=1)
+                                    text=True, bufsize=1, env=_run_env(ponytail))
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -913,7 +935,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         model: str | None = None, effort: str | None = None,
                         permission_mode: str | None = None,
                         session_id: str | None = None,
-                        origin: str | None = None) -> Job | None:
+                        origin: str | None = None, ponytail: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -937,7 +959,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                          [os.path.basename(p) for p in image_paths], model=model)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
-                         args=(job, prompt, image_paths, cwd, model, effort, perm),
+                         args=(job, prompt, image_paths, cwd, model, effort, perm,
+                               ponytail),
                          daemon=True).start()
         return job
     except BaseException:
