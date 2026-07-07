@@ -15,6 +15,7 @@ import queue
 import shlex
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -39,8 +40,8 @@ def _journal_one(item: tuple[str, str, dict]) -> None:
     try:
         seq = store.append_event(session_id, turn_id, ev)
         pubsub.publish(f"session:{session_id}", {**ev, "seq": seq})
-    except Exception:  # noqa: BLE001  (never let journaling break a run)
-        pass
+    except Exception as e:  # noqa: BLE001  (never let journaling break a run)
+        print(f"[journal] dropped event for session {session_id}: {e}", file=sys.stderr)
 
 
 def _journal_worker() -> None:
@@ -244,8 +245,10 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         store.start_turn(session["id"], job_id, prompt, [])
         result, sid, cost, is_error = run_blocking(
             chat_id, prompt, resume_id=session["claude_session_id"])
-        store.append_event(session["id"], job_id,
-                           {"type": "result", "result": result, "cost": cost})
+        # Journal (persist + publish) so SSE subscribers see bot-driven turns
+        # live, exactly like streaming-path events.
+        _journal_one((session["id"], job_id,
+                      {"type": "result", "result": result, "cost": cost}))
         if sid:
             store.set_claude_session_id(session["id"], sid)
         store.finish_turn(job_id, "error" if is_error else "done", cost,
@@ -293,6 +296,7 @@ class Job:
         self.proc = None                 # subprocess.Popen, for control responses
         self.pending: list[dict] = []    # unresolved can_use_tool requests
         self.interrupted = False         # user pressed Stop
+        self.timed_out = False           # watchdog killed the run
         self.texts: list[str] = []       # assistant text this turn (memory capture)
         self.edited: list[str] = []      # files edited this turn (Edit/Write/MultiEdit)
         self._interrupt_timer: threading.Timer | None = None
@@ -583,7 +587,11 @@ def _register(job: Job):
     with _jobs_lock:
         _jobs[job.id] = job
         if len(_jobs) > _JOBS_MAX:
-            for old in sorted(_jobs.values(), key=lambda j: j.started)[:-_JOBS_MAX]:
+            # Evict finished jobs only — dropping a running job would 404 its
+            # respond/interrupt endpoints and strand a pending permission card.
+            done = [j for j in _jobs.values() if j.status != "running"]
+            excess = len(_jobs) - _JOBS_MAX
+            for old in sorted(done, key=lambda j: j.started)[:excess]:
                 _jobs.pop(old.id, None)
 
 
@@ -696,6 +704,7 @@ def _watchdog(job: Job, proc) -> None:
         if not job.pending and not job.interrupted:
             active += 1.0
     if proc.poll() is None and active >= config.RUN_TIMEOUT:
+        job.timed_out = True
         proc.kill()
 
 
@@ -720,6 +729,23 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.status = "error"
             return
         job.proc = proc
+
+        # Drain stderr continuously: a child that writes more than the OS pipe
+        # buffer mid-run would otherwise block against our unread pipe while we
+        # block on stdout — deadlock. Keep only a tail for error reporting.
+        stderr_tail: list[str] = []
+
+        def _drain_stderr():
+            try:
+                for eline in proc.stderr:
+                    stderr_tail.append(eline)
+                    if len(stderr_tail) > 50:
+                        del stderr_tail[:-50]
+            except (ValueError, OSError):
+                pass
+
+        if proc.stderr is not None:
+            threading.Thread(target=_drain_stderr, daemon=True).start()
 
         # Watchdog: kill the run if it spends RUN_TIMEOUT *working* — time spent
         # blocked on you (a permission/question card) doesn't count, so a slow
@@ -756,10 +782,13 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 job.status = "done"
             job.add({"type": "stopped"})
         elif job.status == "running":
-            # No terminal result event — surface stderr / exit code.
-            err = (proc.stderr.read() if proc.stderr else "").strip()
-            job.add({"type": "error",
-                     "message": err[:1500] or f"claude exited {proc.returncode}"})
+            # No terminal result event — surface the timeout / stderr / exit code.
+            err = "".join(stderr_tail).strip()
+            if job.timed_out:
+                msg = f"⏱️ Timed out after {config.RUN_TIMEOUT // 60} min."
+            else:
+                msg = err[:1500] or f"claude exited {proc.returncode}"
+            job.add({"type": "error", "message": msg})
             job.status = "error"
     except Exception as e:  # noqa: BLE001
         job.add({"type": "error", "message": str(e)})
@@ -767,6 +796,17 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
     finally:
         if job._interrupt_timer:
             job._interrupt_timer.cancel()
+        # Never leave the finally with the child alive: the run slot is released
+        # below, and a second --resume against a still-running claude would
+        # corrupt its session transcript. Normal exits reaped already; this is
+        # the exception/error path's safety net.
+        if proc is not None:
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+                proc.wait(timeout=5)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                pass
         if job.elapsed is None:
             job.elapsed = int(time.time() - job.started)
         if job.store_session_id:

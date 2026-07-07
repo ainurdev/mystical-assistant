@@ -40,8 +40,11 @@ def release_run(session_id: str) -> None:
     with _run_guard:
         lock = _run_locks.get(session_id)
         _run_chats.pop(session_id, None)
-    if lock is not None and lock.locked():
-        lock.release()
+    if lock is not None:
+        try:
+            lock.release()
+        except RuntimeError:  # already free — release is idempotent, not TOCTOU
+            pass
 
 
 def is_running(session_id: str) -> bool:

@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS turns (
   model       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
+CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
+CREATE INDEX IF NOT EXISTS ix_sessions_csid ON sessions(claude_session_id);
 
 CREATE TABLE IF NOT EXISTS events (
   session_id  TEXT NOT NULL,
@@ -290,13 +292,6 @@ def set_cwd(session_id: str, cwd: str | None) -> None:
 def set_origin(session_id: str, origin: str | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET origin=? WHERE id=?", (origin, session_id))
-
-
-def set_title(session_id: str, title: str) -> None:
-    """Set the title only if it is currently empty (auto-title from first prompt)."""
-    with closing(_connect()) as c:
-        c.execute("UPDATE sessions SET title=? WHERE id=? AND (title IS NULL OR title='')",
-                  (title, session_id))
 
 
 def set_subject_title(session_id: str, title: str) -> None:

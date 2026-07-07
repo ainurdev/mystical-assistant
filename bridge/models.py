@@ -9,6 +9,7 @@ curated config list when the token or API is unavailable.
 """
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -19,6 +20,8 @@ _CREDS = os.path.expanduser("~/.claude/.credentials.json")
 _TTL = 3600.0     # cache a good fetch this long (s)
 _RETRY = 60.0     # after a failure, retry the API this soon (s)
 _cache: tuple[float, list[dict]] | None = None  # (expires_at_monotonic, models)
+_cache_lock = threading.Lock()
+_refreshing = False
 
 
 def _oauth_token() -> str | None:
@@ -62,20 +65,33 @@ def _fetch() -> list[dict] | None:
     return out or None
 
 
+def _refresh() -> None:
+    """One in-flight fetch at a time; stores the result (or a retry-windowed
+    fallback) and never raises."""
+    global _cache, _refreshing
+    fetched = _fetch()
+    now = time.monotonic()
+    with _cache_lock:
+        if fetched is not None:
+            _cache = (now + _TTL, fetched)
+        elif _cache is None or now >= _cache[0]:
+            _cache = (now + _RETRY, _fallback())  # retry soon; don't hammer it
+        _refreshing = False
+
+
 def get_models() -> list[dict]:
     """[{id, label}] the account can use, in the API's order (newest first).
-    Cached; falls back to the config list on any failure."""
-    global _cache
-    now = time.monotonic()
-    if _cache and now < _cache[0]:
-        return _cache[1]
-    fetched = _fetch()
-    if fetched is not None:
-        _cache = (now + _TTL, fetched)
-        return fetched
-    result = _fallback()
-    _cache = (now + _RETRY, result)  # retry the API soon; don't hammer it
-    return result
+    Never blocks on the network: this sits on the /state poll and the run-submit
+    path, so a stale (or missing) cache serves the last-known/fallback list
+    immediately and refreshes in a background thread."""
+    global _refreshing
+    with _cache_lock:
+        cached = _cache
+        stale = cached is None or time.monotonic() >= cached[0]
+        if stale and not _refreshing:
+            _refreshing = True
+            threading.Thread(target=_refresh, daemon=True).start()
+    return cached[1] if cached else _fallback()
 
 
 def model_ids() -> set[str]:
