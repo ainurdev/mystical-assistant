@@ -118,6 +118,8 @@ function HistoryPage() {
                     />
                   ) : st === "working" ? (
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                  ) : st === "live" ? (
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/50" />
                   ) : null}
                   <span className="min-w-0 flex-1 truncate text-sm">
                     {s.title || "New chat"}

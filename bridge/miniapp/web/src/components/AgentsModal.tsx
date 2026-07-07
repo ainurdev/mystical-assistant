@@ -15,6 +15,8 @@ export function AgentsModal({
 }) {
   const [selected, setSelected] = useState<string | null>(agents[0]?.agent_id ?? null);
   const cursorRef = useRef(0);
+  const selectedRef = useRef(selected);   // current selection, for stale-free reads
+  selectedRef.current = selected;
   const [events, setEvents] = useState<AgentActivityRow[]>([]);
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -27,7 +29,12 @@ export function AgentsModal({
     queryKey: ["agent-activity", sessionId, selected, "poll"],
     enabled: selected !== null,
     queryFn: async () => {
-      const a = await api.agentActivity(sessionId, selected as string, cursorRef.current);
+      const forAgent = selected as string;
+      const a = await api.agentActivity(sessionId, forAgent, cursorRef.current);
+      // A fetch for the previously-selected agent can resolve after the effect
+      // above reset events/cursor for a new agent; without seq dedupe it would
+      // append the wrong agent's feed. Discard it if we've switched away.
+      if (selectedRef.current !== forAgent) return a;
       if (a.events.length) {
         setEvents((prev) => [...prev, ...a.events]);
       }

@@ -38,7 +38,7 @@ function RunPage() {
               <div className="max-w-[85%] space-y-1">
                 {turn.attachments.length > 0 && (
                   <div className="flex flex-wrap justify-end gap-1.5">
-                    {turn.attachments.map((a) => (
+                    {turn.attachments.filter((a) => a.dataUrl).map((a) => (
                       <img
                         key={a.id}
                         src={a.dataUrl}
@@ -46,6 +46,13 @@ function RunPage() {
                         className="h-16 w-16 rounded-lg object-cover"
                       />
                     ))}
+                    {/* Rehydrated history has no blob to render — show a count. */}
+                    {turn.attachments.filter((a) => !a.dataUrl).length > 0 && (
+                      <span className="text-xs text-[var(--tg-hint)]">
+                        📎 {turn.attachments.filter((a) => !a.dataUrl).length} image
+                        {turn.attachments.filter((a) => !a.dataUrl).length > 1 ? "s" : ""}
+                      </span>
+                    )}
                   </div>
                 )}
                 {turn.prompt && (
@@ -66,7 +73,6 @@ function RunPage() {
                   onReviewResolve={reviewResolve}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
-                {turn.stale && <Banner tone="info">Session ended — start a new chat.</Banner>}
               </div>
             )}
           </div>

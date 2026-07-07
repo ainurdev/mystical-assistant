@@ -193,9 +193,12 @@ export interface AwaitingSession {
   session_id: string;
   kind: "question" | "permission";
 }
-export type SessionState = "working" | "awaiting" | "idle";
+// "live" = a native session touched very recently but not writing this instant
+// (the backend emits it; runner._build_status). Missing it here silently dropped
+// the indicator for live VS Code/terminal sessions.
+export type SessionState = "working" | "awaiting" | "live" | "idle";
 // One unified per-session status, identical on every surface. Bridge sessions can
-// be any state; native (VS Code/terminal) sessions are working/idle only.
+// be any state; native (VS Code/terminal) sessions are working/live/idle.
 export interface SessionStatus {
   state: SessionState;
   kind: "question" | "permission" | null;

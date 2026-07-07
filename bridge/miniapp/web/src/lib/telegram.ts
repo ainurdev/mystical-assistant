@@ -24,8 +24,9 @@ export function getInitData(): string {
   return getWebApp()?.initData ?? "";
 }
 
-/** Our fixed brand background — keep in sync with --tg-bg in index.css. */
-const BRAND_BG = "#130d20";
+/** Our fixed brand background — keep in sync with --tg-bg in index.css
+ *  (--tg-bg → --background → #060a0a after the HUD reskin). */
+const BRAND_BG = "#060a0a";
 
 /**
  * Boot the Telegram WebApp. The Mini App ships its own fixed violet theme

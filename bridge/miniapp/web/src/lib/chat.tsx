@@ -32,10 +32,8 @@ export interface Turn {
   attachments: Attachment[];
   jobId: string;
   events: RunEvent[];
-  cursor: number; // unused under the transcript model; kept for the view's shape
   status: "running" | "done" | "error";
   pending: PendingRequest[];
-  stale?: boolean;
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -90,16 +88,25 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
   for (const st of t.turns) {
     storeSeq.set(st.id, st.seq);
     const ex = map.get(st.id);
+    // Prefer client-held attachments (just-sent, with data: URLs we can render);
+    // otherwise rehydrate from the store's filenames so a reopened session still
+    // shows that images were attached (the blob isn't persisted — see run.tsx).
+    const fromStore = (): Attachment[] =>
+      st.attachments.map((n, i) => ({ id: `${st.id}-a${i}`, name: n }));
     if (ex) {
-      map.set(st.id, { ...ex, status: st.status, prompt: ex.prompt || st.prompt });
+      map.set(st.id, {
+        ...ex,
+        status: st.status,
+        prompt: ex.prompt || st.prompt,
+        attachments: ex.attachments.length ? ex.attachments : fromStore(),
+      });
     } else {
       map.set(st.id, {
         id: st.id,
         prompt: st.prompt,
-        attachments: [], // history image blobs aren't persisted
+        attachments: fromStore(),
         jobId: st.id,
         events: [],
-        cursor: 0,
         status: st.status,
         pending: [],
       });
@@ -271,7 +278,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     queryKey: ["transcript", sessionId],
     enabled: sessionId !== null,
     queryFn: async () => {
-      const t = await api.getSession(sessionId as string, seqRef.current);
+      const forId = sessionId as string;
+      const t = await api.getSession(forId, seqRef.current);
+      // A session switch (openSession) resets seqRef/turns and changes the key,
+      // but this in-flight fetch for the OLD session must not merge into the new
+      // one's list or clobber its cursor. Bail if we've since switched away.
+      if (sessionIdRef.current !== forId) return t;
       setTurns((prev) => mergeDelta(prev, t));
       seqRef.current = t.next_cursor;
       return t;
@@ -321,7 +333,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           attachments,
           jobId: res.job_id,
           events: [],
-          cursor: 0,
           status: "running",
           pending: [],
         },

@@ -103,7 +103,7 @@ function HeaderBar({
                   const st = status[s.id]?.state;
                   return (
                     <option key={s.id} value={s.id}>
-                      {(st === "awaiting" ? "❓ " : st === "working" ? "● " : "") +
+                      {(st === "awaiting" ? "❓ " : st === "working" ? "● " : st === "live" ? "○ " : "") +
                         (s.title || "New chat")}
                     </option>
                   );

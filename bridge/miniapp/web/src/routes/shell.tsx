@@ -10,22 +10,30 @@ function ShellPage() {
   const [cmd, setCmd] = useState("");
   const cursor = useRef(0);
   const lines = useRef<{ seq: number; line: string }[]>([]);
+  const inFlight = useRef(false);
   const scrollRef = useRef<HTMLPreElement>(null);
   const running = snap?.running ?? false;
 
   useEffect(() => {
     let live = true;
     const tick = async () => {
+      if (inFlight.current) return;   // don't overlap: two ticks from the same
+      inFlight.current = true;        // cursor would append the same lines twice
       try {
         const s = await api.getShell(cursor.current);
         if (!live) return;
-        if (s.lines.length) {
-          lines.current = [...lines.current, ...s.lines].slice(-2000);
-          cursor.current = s.cursor;
+        // Only take lines beyond our cursor and never let the cursor regress,
+        // so an out-of-order response can't duplicate or rewind output.
+        const fresh = s.lines.filter((l) => l.seq > cursor.current);
+        if (fresh.length) {
+          lines.current = [...lines.current, ...fresh].slice(-2000);
         }
+        if (s.cursor > cursor.current) cursor.current = s.cursor;
         setSnap(s);
       } catch {
         /* ignore */
+      } finally {
+        inFlight.current = false;
       }
     };
     void tick();
