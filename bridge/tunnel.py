@@ -31,17 +31,11 @@ _tunnel_port: int | None = None
 _tunnel_lock = threading.Lock()
 
 
-def _drain(proc: subprocess.Popen):
-    if proc.stdout:
-        for _ in proc.stdout:
-            pass
-
-
 def _spawn_tunnel(port: int):
     """Start cloudflared, return (proc, url) or (None, None) on failure.
 
-    The returned proc still has an open stdout pipe; the caller must drain it
-    (e.g. via a _drain thread) to avoid blocking once the buffer fills.
+    A daemon watch thread scans stdout for the URL and then keeps draining the
+    pipe for the process's lifetime, so the caller need not drain it.
     """
     try:
         proc = subprocess.Popen(
@@ -49,18 +43,25 @@ def _spawn_tunnel(port: int):
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     except FileNotFoundError:
         return None, None
-    url, deadline = None, time.time() + 30
-    assert proc.stdout is not None
-    while time.time() < deadline:
-        line = proc.stdout.readline()
-        if not line:
-            if proc.poll() is not None:
-                break
-            continue
-        m = _TRYCF_RE.search(line)
-        if m:
-            url = m.group(0)
-            break
+    # A reader thread scans for the URL and keeps draining the pipe; we bound the
+    # wait with an Event (mirrors _spawn_named). A blocking readline() here would
+    # ignore the deadline until cloudflared prints — and start_tunnel holds the
+    # tunnel lock, so a silent/hung cloudflared would wedge every /preview request.
+    found = {"url": None}
+    ready = threading.Event()
+
+    def _watch():
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            m = _TRYCF_RE.search(line)
+            if m and not ready.is_set():
+                found["url"] = m.group(0)
+                ready.set()
+        ready.set()   # stdout closed (process exited) without a URL — unblock
+
+    threading.Thread(target=_watch, daemon=True).start()
+    ready.wait(timeout=30)
+    url = found["url"]
     if not url:
         proc.terminate()
         return None, None
@@ -68,11 +69,9 @@ def _spawn_tunnel(port: int):
 
 
 def open_quick_tunnel(port: int):
-    """Start a standalone quick tunnel and return (proc, url). Caller owns the proc."""
-    proc, url = _spawn_tunnel(port)
-    if proc and url:
-        threading.Thread(target=_drain, args=(proc,), daemon=True).start()
-    return proc, url
+    """Start a standalone quick tunnel and return (proc, url). Caller owns the proc.
+    _spawn_tunnel's watch thread already drains stdout, so nothing to do here."""
+    return _spawn_tunnel(port)
 
 
 def _write_config(port: int) -> str:

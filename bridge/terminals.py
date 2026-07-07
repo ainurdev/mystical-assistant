@@ -52,6 +52,8 @@ class Term:
         self.last_detached = 0.0
         self._subs: set = set()                  # {(send, on_close)}
         self._subs_lock = threading.Lock()
+        self._close_lock = threading.Lock()
+        self._master_closed = False
 
         self.pid, self.master = pty.fork()
         if self.pid == 0:                        # child: become the shell
@@ -71,6 +73,19 @@ class Term:
         try:
             fcntl.ioctl(self.master, termios.TIOCSWINSZ,
                         struct.pack("HHHH", rows, cols, 0, 0))
+        except OSError:
+            pass
+
+    def _close_master(self) -> None:
+        """Close the PTY master exactly once. Both close() and _read_loop's
+        cleanup can fire; a double os.close could shut an unrelated fd that the
+        threaded server was handed for the same number in between."""
+        with self._close_lock:
+            if self._master_closed:
+                return
+            self._master_closed = True
+        try:
+            os.close(self.master)
         except OSError:
             pass
 
@@ -100,10 +115,7 @@ class Term:
                     pass
         # Shell exited on its own (e.g. `exit`/Ctrl-D): drop it so reconnects 404,
         # close the master, and reap the child (no zombie).
-        try:
-            os.close(self.master)
-        except OSError:
-            pass
+        self._close_master()
         with _lock:
             _terms.pop(self.id, None)
         self._reap()
@@ -204,10 +216,7 @@ def close(tid: str) -> dict:
         os.killpg(os.getpgid(t.pid), signal.SIGHUP)
     except OSError:
         pass
-    try:
-        os.close(t.master)
-    except OSError:
-        pass
+    t._close_master()
     threading.Thread(target=t._reap, daemon=True).start()
     return {"ok": True}
 

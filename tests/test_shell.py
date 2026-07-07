@@ -20,11 +20,14 @@ _CWD = tempfile.mkdtemp()
 
 
 def _wait_done(timeout=5.0):
+    # Wait for the terminal status, not just process exit: the reader thread sets
+    # status→done/error slightly AFTER the process exits, so gating on `running`
+    # alone races the status assertion.
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if not shell.snapshot()["running"]:
+        if shell.snapshot()["status"] in ("done", "error", "killed"):
             return
-        time.sleep(0.03)
+        time.sleep(0.02)
 
 
 def test_runs_command_and_captures_output():

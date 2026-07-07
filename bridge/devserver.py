@@ -78,6 +78,7 @@ class DevServer:
         self.branch = branch
         self.created = time.time()
         self.log: deque = deque(maxlen=300)
+        self._log_lock = threading.Lock()   # reader appends while state()/tail read
         self.url: "str | None" = None
         self.port: "int | None" = None
         self.logfile = _open_logfile(cwd)
@@ -94,7 +95,8 @@ class DevServer:
         if self.proc.stdout:
             for line in self.proc.stdout:
                 line = line.rstrip("\n")
-                self.log.append(line)
+                with self._log_lock:
+                    self.log.append(line)
                 if self.url is None:
                     hit = _detect_url(line)
                     if hit:
@@ -115,6 +117,10 @@ class DevServer:
                 pass
             self.logfile = None
 
+    def tail(self, n: int) -> list:
+        with self._log_lock:      # snapshot under the lock — reader appends concurrently
+            return list(self.log)[-n:]
+
     def state(self) -> dict:
         running = self.alive()
         return {
@@ -126,7 +132,7 @@ class DevServer:
             "port": self.port,
             "project": self.project,
             "branch": self.branch,
-            "tail": list(self.log)[-12:],
+            "tail": self.tail(12),
         }
 
     def terminate(self) -> None:
@@ -138,7 +144,8 @@ class DevServer:
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
-            except OSError:
+                self.proc.wait(timeout=5)     # reap the killed group leader
+            except (OSError, subprocess.TimeoutExpired):
                 pass
         self._close_logfile()
 
@@ -220,7 +227,20 @@ def _tail(cwd: str, n: int) -> list:
     cwd = os.path.realpath(cwd)
     with _lock:
         srv = _servers.get(cwd)
-    return list(srv.log)[-n:] if srv else []
+    return srv.tail(n) if srv else []
+
+
+def stop_all() -> None:
+    """Stop every registered dev server. Called on bridge shutdown — servers run
+    in their own session (start_new_session=True) so they'd otherwise survive as
+    orphans squatting ports the registry can no longer see."""
+    global _primary
+    with _lock:
+        srvs = list(_servers.values())
+        _servers.clear()
+        _primary = None
+    for srv in srvs:
+        srv.terminate()
 
 
 # --- legacy single-server helpers (Mini App + Telegram) --------------------

@@ -12,10 +12,9 @@ import os
 import signal
 import subprocess
 import threading
-import time
 from collections import deque
 
-from bridge import config, pubsub
+from bridge import pubsub
 from bridge.browser import rel
 
 # Cap a runaway command (a hung process with no output). Generous; an explicit
@@ -34,9 +33,13 @@ _seq = 0
 
 def _append(text: str) -> None:
     global _seq
-    _seq += 1
-    _lines.append((_seq, text))
-    pubsub.publish("shell", {"seq": _seq, "line": text})
+    # Under _lock: the reader thread appends while snapshot() iterates _lines;
+    # an unlocked mutation raises "deque mutated during iteration" (flaky 500s).
+    with _lock:
+        _seq += 1
+        seq = _seq
+        _lines.append((seq, text))
+    pubsub.publish("shell", {"seq": seq, "line": text})
 
 
 def alive() -> bool:
@@ -65,15 +68,15 @@ def _kill_proc(proc: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except OSError:
+            proc.wait(timeout=5)      # reap, so the killed child isn't left a zombie
+        except (OSError, subprocess.TimeoutExpired):
             pass
 
 
 def _watchdog(proc: subprocess.Popen) -> None:
-    t0 = time.time()
-    while proc.poll() is None and time.time() - t0 < SHELL_TIMEOUT:
-        time.sleep(1.0)
-    if proc.poll() is None:
+    try:
+        proc.wait(timeout=SHELL_TIMEOUT)
+    except subprocess.TimeoutExpired:
         _kill_proc(proc)
 
 

@@ -86,7 +86,7 @@ def _setup_dashboard():
 def _shutdown():
     native_activity.stop()
     tunnel.stop_tunnel()
-    devserver.stop_server()
+    devserver.stop_all()      # every registered dev server, not just the primary
     if config.MINIAPP_ENABLE:
         from bridge.miniapp import server as miniapp
         miniapp.stop()
