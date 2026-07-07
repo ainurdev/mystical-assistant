@@ -133,3 +133,109 @@ def test_explain_truncates(monkeypatch, tmp_path):
     monkeypatch.setattr(graphmap.subprocess, "run", lambda *a, **k: FakeProc())
     out = graphmap.explain(d, "x")
     assert len(out) < 4000 and out.endswith("…(truncated)")
+
+
+# --- update / exclude / refresh ---------------------------------------------
+
+_real_subprocess_run = subprocess.run  # Save before any monkeypatching
+
+
+def _fake_update_ok(d):
+    """A subprocess.run stub that fabricates graphify's output artifact."""
+    def run(cmd, cwd=None, **k):
+        # Only intercept graphify commands; let git commands through to the real subprocess
+        if cmd and "graphify" in str(cmd[0]):
+            _write_graph(cwd, _head8(cwd))
+            class P:
+                returncode = 0
+                stdout = "Code graph updated."
+                stderr = ""
+            return P()
+        # For non-graphify commands (e.g., git), use the real subprocess
+        return _real_subprocess_run(cmd, cwd=cwd, **k)
+    return run
+
+
+def test_update_builds_and_excludes(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    monkeypatch.setattr(graphmap.subprocess, "run", _fake_update_ok(d))
+    ok, msg = graphmap.update(d)
+    assert ok is True
+    with open(os.path.join(d, ".git", "info", "exclude")) as f:
+        assert "graphify-out/" in f.read()
+
+
+def test_update_exclude_not_duplicated(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    monkeypatch.setattr(graphmap.subprocess, "run", _fake_update_ok(d))
+    graphmap.update(d)
+    os.remove(os.path.join(d, graphmap.OUT_DIR, "graph.json"))  # force "first build" again
+    graphmap.update(d)
+    with open(os.path.join(d, ".git", "info", "exclude")) as f:
+        assert f.read().count("graphify-out/") == 1
+
+
+def test_update_no_binary(tmp_path, monkeypatch):
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: None)
+    ok, msg = graphmap.update(str(tmp_path))
+    assert ok is False and "not installed" in msg
+
+
+def test_update_second_caller_skips(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    lock = graphmap._lock_for(d)
+    lock.acquire()          # simulate an in-flight build
+    try:
+        ok, msg = graphmap.update(d)
+        assert ok is False and msg == "already building"
+    finally:
+        lock.release()
+
+
+def test_update_failure_message(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+
+    class P:
+        returncode = 2
+        stdout = ""
+        stderr = "boom"
+    monkeypatch.setattr(graphmap.subprocess, "run", lambda *a, **k: P())
+    ok, msg = graphmap.update(d)
+    assert ok is False and "boom" in msg
+
+
+def test_refresh_async_noop_without_graph(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    called = []
+    monkeypatch.setattr(graphmap.threading, "Thread",
+                        lambda *a, **k: called.append(1) or _NopThread())
+    graphmap.refresh_async(d)          # no graph yet -> must not spawn
+    assert called == []
+    graphmap.refresh_async(None)       # no cwd -> must not spawn
+    assert called == []
+
+
+class _NopThread:
+    def start(self):
+        pass
+
+
+def test_refresh_async_spawns_with_graph(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    _write_graph(d, _head8(d))
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    spawned = {}
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            spawned["args"] = args
+        def start(self):
+            spawned["started"] = True
+    monkeypatch.setattr(graphmap.threading, "Thread", FakeThread)
+    graphmap.refresh_async(d)
+    assert spawned.get("started") and spawned["args"] == (d, graphmap.REFRESH_TIMEOUT)

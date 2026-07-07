@@ -122,3 +122,72 @@ def explain(cwd: str, query: str) -> str:
     if len(out) > EXPLAIN_MAX_CHARS:
         out = out[:EXPLAIN_MAX_CHARS] + "\n…(truncated)"
     return out or "(no output)"
+
+
+def _exclude_artifacts(cwd: str) -> None:
+    """Keep artifacts out of the user's repo: append graphify-out/ to
+    .git/info/exclude (repo-local, never committed). Best-effort."""
+    try:
+        info = os.path.join(cwd, ".git", "info")
+        if not os.path.isdir(info):
+            return
+        path = os.path.join(info, "exclude")
+        try:
+            with open(path, encoding="utf-8") as f:
+                if "graphify-out/" in f.read():
+                    return
+        except OSError:
+            pass
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\ngraphify-out/\n")
+    except OSError:
+        log.debug("graphmap exclude_artifacts failed", exc_info=True)
+
+
+def update(cwd: str, timeout: int = BUILD_TIMEOUT) -> "tuple[bool, str]":
+    """Build or refresh a project's graph (`graphify update .`). Serialized per
+    project; a concurrent caller returns immediately instead of stacking."""
+    bin_ = graphify_bin()
+    if not bin_:
+        return False, "graphify is not installed (pipx install graphifyy)."
+    lock = _lock_for(cwd)
+    if not lock.acquire(blocking=False):
+        return False, "already building"
+    key = os.path.realpath(cwd)
+    _building.add(key)
+    try:
+        first = not has_graph(cwd)
+        proc = subprocess.run([bin_, "update", "."], cwd=cwd,
+                              capture_output=True, text=True, timeout=timeout)
+        if proc.returncode != 0:
+            tail = (proc.stderr or proc.stdout or "").strip()[-500:]
+            return False, f"graphify update failed: {tail or proc.returncode}"
+        if first:
+            _exclude_artifacts(cwd)
+        return True, "graph updated"
+    except subprocess.TimeoutExpired:
+        log.debug("graphmap update timed out", exc_info=True)
+        return False, f"graphify update timed out after {timeout}s"
+    except OSError as e:
+        log.debug("graphmap update OSError", exc_info=True)
+        return False, f"graphify update failed: {e}"
+    finally:
+        _building.discard(key)
+        lock.release()
+
+
+def update_async(cwd: str, timeout: int = BUILD_TIMEOUT) -> dict:
+    """Kick off a build/refresh in a daemon thread and return the current state.
+    HTTP handlers use this so long builds never hold a request (tunnel-safe);
+    clients poll graph_state's `building` flag."""
+    threading.Thread(target=update, args=(cwd, timeout), daemon=True).start()
+    return graph_state(cwd)
+
+
+def refresh_async(cwd: "str | None") -> None:
+    """Post-turn refresh for projects that already have a graph. Fire-and-forget;
+    the per-project lock drops overlapping refreshes. Never blocks a turn."""
+    if not cwd or not has_graph(cwd) or not graphify_bin():
+        return
+    threading.Thread(target=update, args=(cwd, REFRESH_TIMEOUT),
+                     daemon=True).start()
