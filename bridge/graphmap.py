@@ -191,3 +191,94 @@ def refresh_async(cwd: "str | None") -> None:
         return
     threading.Thread(target=update, args=(cwd, REFRESH_TIMEOUT),
                      daemon=True).start()
+
+
+# --- graph pack (system-prompt structure summary) ----------------------------
+# Injected by runner._compose_system_prompt. MUST stay byte-identical across
+# turns until graph.json changes on disk (Claude Code prompt cache), so it
+# contains no commit hashes or timestamps — structure only.
+
+PACK_TOKEN_BUDGET = 400
+PACK_COMMUNITIES = 8
+PACK_HUBS = 6
+
+_pack_cache: "dict[str, tuple[float, str]]" = {}
+
+
+def _estimate_tokens(text: str) -> int:
+    """Same deterministic ~4-chars/token estimate as bridge.memory."""
+    return (len(text) + 3) // 4
+
+
+def _render_pack(data: dict, labels: dict) -> str:
+    nodes = data.get("nodes") or []
+    links = data.get("links") or []
+    if not nodes:
+        return ""
+    degree: dict = {}
+    for e in links:
+        for end in ("source", "target"):
+            nid = e.get(end)
+            if nid is not None:
+                degree[nid] = degree.get(nid, 0) + 1
+    by_comm: dict = {}
+    for n in nodes:
+        by_comm.setdefault(n.get("community"), []).append(n)
+    ranked = sorted(by_comm.items(), key=lambda kv: -len(kv[1]))
+    comm_lines = []
+    for cid, members in ranked[:PACK_COMMUNITIES]:
+        label = labels.get(str(cid)) or f"community {cid}"
+        hubs = sorted(members, key=lambda n: -degree.get(n.get("id"), 0))[:3]
+        names = ", ".join(str(h.get("label", "?")) for h in hubs)
+        comm_lines.append(f"- {label} ({len(members)} nodes): {names}")
+    files = [n for n in nodes if (n.get("metadata") or {}).get("kind") == "file"]
+    top = sorted(files, key=lambda n: -degree.get(n.get("id"), 0))[:PACK_HUBS]
+    hub_line = ", ".join(str(n.get("label")) for n in top)
+
+    head = ["# Project map (graphify; auto-generated structure)", "Subsystems:"]
+    tail = ["Structure questions: run `graphify explain \"<thing>\"` in the "
+            "project root (or use the dashboard MAP tab)."]
+    lines = comm_lines + ([f"Hub files: {hub_line}"] if hub_line else [])
+    while lines:
+        text = "\n".join(head + lines + tail)
+        if _estimate_tokens(text) <= PACK_TOKEN_BUDGET:
+            return text
+        lines.pop()
+    return ""
+
+
+def graph_pack(cwd: "str | None") -> str:
+    """≤~400-token structure summary for the system prompt; "" when the project
+    has no graph. Memoized by graph.json mtime so repeat turns get the exact
+    same string (cache-eligible) without re-parsing megabytes of JSON."""
+    if not cwd:
+        return ""
+    path = _graph_json(cwd)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    key = os.path.realpath(cwd)
+    cached = _pack_cache.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    labels: dict = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return ""
+        try:
+            with open(os.path.join(cwd, OUT_DIR, ".graphify_labels.json"),
+                      encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                labels = loaded
+        except (OSError, ValueError):
+            pass
+        text = _render_pack(data, labels)
+    except (OSError, ValueError):
+        log.debug("graphmap graph_pack failed", exc_info=True)
+        return ""
+    _pack_cache[key] = (mtime, text)
+    return text

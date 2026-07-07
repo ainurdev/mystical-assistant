@@ -260,3 +260,80 @@ def test_update_async_fires_thread_and_returns_state(tmp_path, monkeypatch):
     assert spawned["args"] == (d, 42)
     assert spawned.get("started") is True
     assert set(st) == {"available", "exists", "built_commit", "head", "stale", "building"}
+
+
+# --- graph_pack ----------------------------------------------------------------
+
+def _write_rich_graph(d):
+    """Two communities; file `big.py` has the highest degree (3 links)."""
+    out = os.path.join(d, graphmap.OUT_DIR)
+    os.makedirs(out, exist_ok=True)
+    nodes = [
+        {"id": "big", "label": "big.py", "community": 0,
+         "metadata": {"kind": "file"}},
+        {"id": "fn1", "label": "fn1()", "community": 0, "metadata": {"kind": "function"}},
+        {"id": "fn2", "label": "fn2()", "community": 0, "metadata": {"kind": "function"}},
+        {"id": "small", "label": "small.py", "community": 1,
+         "metadata": {"kind": "file"}},
+    ]
+    links = [
+        {"source": "big", "target": "fn1", "relation": "contains"},
+        {"source": "big", "target": "fn2", "relation": "contains"},
+        {"source": "small", "target": "big", "relation": "imports_from"},
+    ]
+    with open(os.path.join(out, "graph.json"), "w") as f:
+        json.dump({"built_at_commit": "deadbeef", "nodes": nodes, "links": links}, f)
+    with open(os.path.join(out, ".graphify_labels.json"), "w") as f:
+        json.dump({"0": "core engine", "1": "helpers"}, f)
+
+
+def test_pack_empty_without_graph(tmp_path):
+    assert graphmap.graph_pack(str(tmp_path)) == ""
+    assert graphmap.graph_pack(None) == ""
+
+
+def test_pack_content_and_no_volatile_fields(tmp_path):
+    d = _mkrepo(tmp_path)
+    _write_rich_graph(d)
+    pack = graphmap.graph_pack(d)
+    assert pack.startswith("# Project map")
+    assert "core engine" in pack and "big.py" in pack
+    assert "deadbeef" not in pack          # no commit hashes in the prompt
+
+
+def test_pack_byte_stable_and_memoized(tmp_path):
+    d = _mkrepo(tmp_path)
+    _write_rich_graph(d)
+    a = graphmap.graph_pack(d)
+    b = graphmap.graph_pack(d)
+    assert a == b and a is b               # identical object => cache hit
+
+
+def test_pack_respects_budget(tmp_path):
+    d = _mkrepo(tmp_path)
+    out = os.path.join(d, graphmap.OUT_DIR)
+    os.makedirs(out, exist_ok=True)
+    nodes = [{"id": f"n{i}", "label": "x" * 80, "community": i,
+              "metadata": {"kind": "file"}} for i in range(60)]
+    with open(os.path.join(out, "graph.json"), "w") as f:
+        json.dump({"built_at_commit": "c", "nodes": nodes, "links": []}, f)
+    pack = graphmap.graph_pack(d)
+    assert (len(pack) + 3) // 4 <= graphmap.PACK_TOKEN_BUDGET
+
+
+def test_pack_corrupt_json_is_empty(tmp_path):
+    d = _mkrepo(tmp_path)
+    out = os.path.join(d, graphmap.OUT_DIR)
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "graph.json"), "w") as f:
+        f.write("{nope")
+    assert graphmap.graph_pack(d) == ""
+
+
+def test_pack_wrong_shape_json_is_empty(tmp_path):
+    d = _mkrepo(tmp_path)
+    out = os.path.join(d, graphmap.OUT_DIR)
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "graph.json"), "w") as f:
+        json.dump([], f)
+    assert graphmap.graph_pack(d) == ""
