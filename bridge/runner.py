@@ -595,15 +595,10 @@ def _register(job: Job):
                 _jobs.pop(old.id, None)
 
 
-def _summarize_tool(name: str, inp: dict) -> str:
-    if not isinstance(inp, dict):
-        return ""
-    if name == "Bash":
-        return (inp.get("command") or "")[:120]
-    for key in ("file_path", "path", "pattern", "url", "query", "command", "prompt"):
-        if inp.get(key):
-            return str(inp[key])[:120]
-    return ""
+# One canonical tool summarizer, defined in the dependency-free transcript module
+# and reused here (and in agents.py) so a tool call renders identically whether it
+# comes from the live stream or a native transcript.
+_summarize_tool = transcript_jsonl._summarize_tool
 
 
 def _format_answers(questions: list, answers: list) -> str:

@@ -5,11 +5,18 @@ import glob
 import json
 import os
 import re
+import threading
 
 from bridge import transcript_jsonl
 
 _AGENT_ID_RE = re.compile(r"^agent-[A-Za-z0-9_]+$")
 _RUN_ID_RE = re.compile(r"^wf_[A-Za-z0-9_-]+$")
+
+# The main transcript's completed tool_use ids are re-read on every agents poll
+# (1s/1.5s) to mark subagents done; memoize by (mtime, size) so a poll of an
+# unchanged transcript is a stat, not a full read.
+_completed_cache: "dict[str, tuple]" = {}   # main_path -> ((mtime, size), set)
+_completed_lock = threading.Lock()
 
 
 def _subagents_dir(session: dict) -> str | None:
@@ -26,11 +33,20 @@ def _subagents_dir(session: dict) -> str | None:
 def _completed_tool_use_ids(session: dict) -> set[str]:
     sid = session.get("claude_session_id")
     main = transcript_jsonl.find_transcript(sid) if sid else None
-    done: set[str] = set()
     if not main:
-        return done
+        return set()
     try:
-        with open(main, encoding="utf-8") as fh:
+        st = os.stat(main)
+        key = (st.st_mtime, st.st_size)
+    except OSError:
+        return set()
+    with _completed_lock:
+        ent = _completed_cache.get(main)
+        if ent and ent[0] == key:
+            return ent[1]
+    done: set[str] = set()
+    try:
+        with open(main, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -38,6 +54,8 @@ def _completed_tool_use_ids(session: dict) -> set[str]:
                 try:
                     rec = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+                if not isinstance(rec, dict):
                     continue
                 msg = rec.get("message") if isinstance(rec.get("message"), dict) else {}
                 content = msg.get("content")
@@ -49,6 +67,11 @@ def _completed_tool_use_ids(session: dict) -> set[str]:
                                 done.add(tid)
     except OSError:
         pass
+    with _completed_lock:
+        _completed_cache[main] = (key, done)
+        if len(_completed_cache) > 64:
+            for k in list(_completed_cache)[:len(_completed_cache) - 64]:
+                _completed_cache.pop(k, None)
     return done
 
 
@@ -186,7 +209,7 @@ def agent_activity(session: dict, agent_id: str, cursor: int = 0,
     events: list[dict] = []
     idx = 0
     try:
-        with open(jsonl, encoding="utf-8") as fh:
+        with open(jsonl, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -199,7 +222,7 @@ def agent_activity(session: dict, agent_id: str, cursor: int = 0,
                     rec = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if rec.get("type") != "assistant":        # feed = what the agent did
+                if not isinstance(rec, dict) or rec.get("type") != "assistant":
                     continue
                 msg = rec.get("message") if isinstance(rec.get("message"), dict) else {}
                 for b in msg.get("content") or []:

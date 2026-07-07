@@ -12,6 +12,7 @@ is refreshed in place, not duplicated or reclassified. Stdlib only.
 """
 
 import os
+import threading
 import time
 
 from bridge import config, store, transcript_jsonl
@@ -19,6 +20,11 @@ from bridge.browser import rel, within_base
 
 _last_scan = 0.0
 _SCAN_MIN_INTERVAL = 5.0
+_scan_lock = threading.Lock()
+# path -> (mtime, indexed?) of transcripts already processed, so a rescan skips
+# unchanged files (each scan otherwise re-reads every transcript twice: cwd +
+# title). The indexed flag lets the return count stay correct without re-reading.
+_scanned: "dict[str, tuple]" = {}
 
 # Prefix stamped on the bridge's internal one-shot prompts (commit-message
 # generation, preview detection). Those headless runs still persist a JSONL under
@@ -49,9 +55,11 @@ def refresh(chat_id: int | None = None, *, force: bool = False) -> int:
     just started in VSCode shows up without rescanning on every poll."""
     global _last_scan
     now = time.time()
-    if not force and (now - _last_scan) < _SCAN_MIN_INTERVAL:
-        return 0
-    _last_scan = now
+    with _scan_lock:
+        if not force and (now - _last_scan) < _SCAN_MIN_INTERVAL:
+            return 0
+        _last_scan = now       # claim the scan under the lock — two concurrent
+        # request threads must not both pass the debounce and rescan at once.
     return scan(chat_id)
 
 
@@ -77,19 +85,31 @@ def scan(chat_id: int | None = None) -> int:
         for f in files:
             path = os.path.join(pdir, f)
             uid = f[:-len(".jsonl")]
-            cwd = transcript_jsonl.recover_cwd(path)
-            if not cwd or not within_base(cwd):
-                continue
-            title = transcript_jsonl.first_user_text(path)
-            if title and _is_internal_oneshot(title):
-                continue  # bridge-internal one-shot — never list
-            if title:
-                title = title.strip()[:60]
             try:
                 mtime = os.path.getmtime(path)
             except OSError:
-                mtime = None
-            store.upsert_native_session(uid, owner, rel(cwd), cwd,
-                                        title=title, updated=mtime, origin="vscode")
-            count += 1
+                continue
+            # Unchanged since we last processed it → skip the two full-file reads
+            # (upsert uses MAX(updated) + preserves title/archived, so re-running
+            # it is a no-op). Still count it if it was an indexed under-base
+            # session, so the return value matches a cold scan.
+            cached = _scanned.get(path)
+            if cached and cached[0] == mtime:
+                if cached[1]:
+                    count += 1
+                continue
+            cwd = transcript_jsonl.recover_cwd(path)
+            indexed = bool(cwd and within_base(cwd))
+            if indexed:
+                title = transcript_jsonl.first_user_text(path)
+                if title and _is_internal_oneshot(title):
+                    indexed = False               # bridge-internal one-shot — never list
+                else:
+                    store.upsert_native_session(uid, owner, rel(cwd), cwd,
+                                                title=title.strip()[:60] if title else None,
+                                                updated=mtime, origin="vscode")
+                    count += 1
+            # Classification is a pure function of file content, so cache it: an
+            # unchanged file always yields the same indexed/skip outcome.
+            _scanned[path] = (mtime, indexed)
     return count

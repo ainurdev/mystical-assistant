@@ -16,9 +16,22 @@ import glob
 import json
 import os
 import re
+import threading
 from datetime import datetime
 
 PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
+
+# Parse memoization. Both HTTP servers poll a native transcript every ~1.5s while
+# it's open; without this, every poll re-reads and re-parses the whole JSONL. We
+# cache the full parse keyed on (mtime, size) so an unchanged file costs a stat +
+# a slice, and only a grown transcript triggers a real re-parse.
+_parse_cache: "dict[str, tuple]" = {}   # path -> ((mtime, size), full_result)
+_parse_lock = threading.Lock()
+_PARSE_CACHE_MAX = 64
+# session-uuid -> resolved path; the uuid filename is stable, so a cached hit that
+# still exists on disk saves the per-request directory glob.
+_path_cache: "dict[str, str]" = {}
+_path_lock = threading.Lock()
 
 # Leading system/IDE injections Claude Code prepends to a user turn (e.g.
 # <ide_opened_file>…</ide_opened_file>, <command-name>…</command-name>); stripped
@@ -60,11 +73,23 @@ def _cost_from_usage(model: str | None, u: dict) -> float:
 
 def find_transcript(claude_session_id: str) -> str | None:
     """Locate the JSONL for a native session UUID, regardless of which project
-    directory it lives in (the filename is globally unique)."""
+    directory it lives in (the filename is globally unique). The uuid→path map is
+    cached and re-globbed only if the cached path has vanished."""
     if not claude_session_id:
         return None
+    with _path_lock:
+        cached = _path_cache.get(claude_session_id)
+    # Tie the cached path to the current PROJECTS_DIR: in production it never
+    # changes, but tests reassign it, and a uuid must resolve under the active root.
+    if (cached and cached.startswith(PROJECTS_DIR + os.sep)
+            and os.path.exists(cached)):
+        return cached
     matches = glob.glob(os.path.join(PROJECTS_DIR, "*", claude_session_id + ".jsonl"))
-    return matches[0] if matches else None
+    path = matches[0] if matches else None
+    if path:
+        with _path_lock:
+            _path_cache[claude_session_id] = path
+    return path
 
 
 def _summarize_tool(name: str, inp) -> str:
@@ -173,7 +198,36 @@ def recover_cwd(path: str) -> str | None:
 def parse_jsonl(path: str, cursor: int = 0) -> dict:
     """Parse a native transcript into {turns, events, next_cursor}. `seq` is a
     stable, monotonic per-session counter; events with seq < cursor are dropped so
-    the same incremental-polling contract as store.transcript() holds."""
+    the same incremental-polling contract as store.transcript() holds.
+
+    Memoized on (mtime, size): a repeat poll of an unchanged file returns a slice
+    of the cached parse instead of re-reading the whole JSONL."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return {"turns": [], "events": [], "next_cursor": cursor}
+    key = (st.st_mtime, st.st_size)
+    with _parse_lock:
+        entry = _parse_cache.get(path)
+        full = entry[1] if entry and entry[0] == key else None
+    if full is None:
+        full = _parse_full(path)
+        with _parse_lock:
+            _parse_cache[path] = (key, full)
+            if len(_parse_cache) > _PARSE_CACHE_MAX:      # drop oldest entries
+                for k in list(_parse_cache)[:len(_parse_cache) - _PARSE_CACHE_MAX]:
+                    _parse_cache.pop(k, None)
+    total = full["next_cursor"]
+    if cursor <= 0:
+        return {"turns": full["turns"], "events": full["events"], "next_cursor": total}
+    events = [e for e in full["events"] if e["seq"] >= cursor]
+    return {"turns": full["turns"], "events": events,
+            "next_cursor": total if total > cursor else cursor}
+
+
+def _parse_full(path: str) -> dict:
+    """The actual JSONL→transcript parse, emitting every event (cursor filtering
+    happens in parse_jsonl against the cached result)."""
     turns: list[dict] = []
     events: list[dict] = []
     state = {"seq": 0, "turn": None}
@@ -183,10 +237,8 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
         cur = state["turn"]
         if cur is None:
             return
-        full = {**ev, "seq": state["seq"], "turn_id": cur["id"]}
+        events.append({**ev, "seq": state["seq"], "turn_id": cur["id"]})
         state["seq"] += 1
-        if full["seq"] >= cursor:
-            events.append(full)
 
     def open_turn(rec, prompt: str):
         tid = rec.get("uuid") or f"turn{len(turns)}"
@@ -276,5 +328,4 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
             cur["cost"] = _cost_from_usage(cur.get("model"), usage)
         if last_ts and cur["started"]:
             cur["elapsed"] = max(0, int(last_ts - cur["started"]))
-    next_cursor = state["seq"] if state["seq"] > cursor else cursor
-    return {"turns": turns, "events": events, "next_cursor": next_cursor}
+    return {"turns": turns, "events": events, "next_cursor": state["seq"]}
