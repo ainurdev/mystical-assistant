@@ -21,6 +21,7 @@ BUILD_TIMEOUT = 300     # explicit build/refresh (first build = full AST pass)
 REFRESH_TIMEOUT = 120   # post-turn refresh (warm cache)
 EXPLAIN_TIMEOUT = 30
 EXPLAIN_MAX_CHARS = 3500
+GIT_TIMEOUT = 10        # short git operations (rev-parse, status)
 
 _GRAPHIFY_FALLBACKS = ("~/.local/bin/graphify",)   # pipx/uv tool bin dir
 _graphify_bin: "str | None" = None
@@ -54,17 +55,22 @@ def has_graph(cwd: str) -> bool:
 def _built_commit(cwd: str) -> "str | None":
     try:
         with open(_graph_json(cwd), encoding="utf-8") as f:
-            v = json.load(f).get("built_at_commit")
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+        v = data.get("built_at_commit")
         return str(v) if v else None
     except (OSError, ValueError):
+        log.debug("graphmap built_commit read failed", exc_info=True)
         return None
 
 
 def _head_commit(cwd: str) -> "str | None":
     try:
         proc = subprocess.run(["git", "rev-parse", "--short=8", "HEAD"], cwd=cwd,
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, timeout=GIT_TIMEOUT)
     except (OSError, subprocess.SubprocessError):
+        log.debug("graphmap head_commit read failed", exc_info=True)
         return None
     return (proc.stdout.strip() or None) if proc.returncode == 0 else None
 
@@ -107,8 +113,10 @@ def explain(cwd: str, query: str) -> str:
                               capture_output=True, text=True,
                               timeout=EXPLAIN_TIMEOUT)
     except subprocess.TimeoutExpired:
+        log.debug("graphify explain timed out", exc_info=True)
         return "graphify explain timed out."
     except OSError as e:
+        log.debug("graphify explain OSError", exc_info=True)
         return f"graphify explain failed: {e}"
     out = (proc.stdout or proc.stderr or "").strip()
     if len(out) > EXPLAIN_MAX_CHARS:

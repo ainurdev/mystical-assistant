@@ -96,6 +96,18 @@ def test_state_no_git_is_harmless(tmp_path, monkeypatch):
                   "head": None, "stale": False, "building": False}
 
 
+def test_state_wrong_shape_json_is_harmless(tmp_path, monkeypatch):
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: None)
+    d = _mkrepo(tmp_path)
+    out = os.path.join(d, graphmap.OUT_DIR)
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "graph.json"), "w") as f:
+        json.dump([], f)
+    st = graphmap.graph_state(d)
+    assert st["built_commit"] is None
+    assert st["exists"] is True
+
+
 # --- explain -----------------------------------------------------------------
 
 def test_explain_no_binary(monkeypatch, tmp_path):
