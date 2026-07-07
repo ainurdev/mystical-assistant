@@ -267,6 +267,7 @@ def graph_pack(cwd: "str | None") -> str:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
+            _pack_cache[key] = (mtime, "")
             return ""
         try:
             with open(os.path.join(cwd, OUT_DIR, ".graphify_labels.json"),
@@ -277,8 +278,9 @@ def graph_pack(cwd: "str | None") -> str:
         except (OSError, ValueError):
             pass
         text = _render_pack(data, labels)
-    except (OSError, ValueError):
+    except Exception:  # noqa: BLE001
         log.debug("graphmap graph_pack failed", exc_info=True)
+        _pack_cache[key] = (mtime, "")
         return ""
     _pack_cache[key] = (mtime, text)
     return text

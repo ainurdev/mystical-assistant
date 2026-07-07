@@ -313,11 +313,12 @@ def test_pack_respects_budget(tmp_path):
     d = _mkrepo(tmp_path)
     out = os.path.join(d, graphmap.OUT_DIR)
     os.makedirs(out, exist_ok=True)
-    nodes = [{"id": f"n{i}", "label": "x" * 80, "community": i,
+    nodes = [{"id": f"n{i}", "label": "x" * 200, "community": i,
               "metadata": {"kind": "file"}} for i in range(60)]
     with open(os.path.join(out, "graph.json"), "w") as f:
         json.dump({"built_at_commit": "c", "nodes": nodes, "links": []}, f)
     pack = graphmap.graph_pack(d)
+    assert pack != ""
     assert (len(pack) + 3) // 4 <= graphmap.PACK_TOKEN_BUDGET
 
 
@@ -336,4 +337,24 @@ def test_pack_wrong_shape_json_is_empty(tmp_path):
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "graph.json"), "w") as f:
         json.dump([], f)
+    assert graphmap.graph_pack(d) == ""
+
+
+def test_pack_malformed_node_metadata_is_empty(tmp_path):
+    d = _mkrepo(tmp_path)
+    out = os.path.join(d, graphmap.OUT_DIR)
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "graph.json"), "w") as f:
+        json.dump({"nodes": [{"id": "a", "community": 0, "metadata": "oops"}],
+                   "links": []}, f)
+    assert graphmap.graph_pack(d) == ""
+    assert graphmap.graph_pack(d) == ""          # repeat: served from cache
+
+
+def test_pack_string_node_is_empty(tmp_path):
+    d = _mkrepo(tmp_path)
+    out = os.path.join(d, graphmap.OUT_DIR)
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "graph.json"), "w") as f:
+        json.dump({"nodes": ["just-a-string"], "links": []}, f)
     assert graphmap.graph_pack(d) == ""
