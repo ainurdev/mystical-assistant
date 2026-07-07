@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { HudSettings, ThemeKey } from "../../lib/theme";
 import { CrtToggles, ThemeCardGrid } from "./ThemeModal";
 
-type Model = "fable" | "opus" | "sonnet" | "haiku";
+type Model = string; // full model id from the Models API, or a short CLI alias
 type Mode = "plan" | "acceptEdits" | "auto";
 
 export interface SettingsModalProps {
@@ -16,15 +16,9 @@ export interface SettingsModalProps {
   defMode: Mode;
   onDefModel: (m: Model) => void;
   onDefMode: (m: Mode) => void;
+  models: { id: Model; label: string }[];
   onClose: () => void;
 }
-
-const MODEL_OPTS: { label: string; value: Model }[] = [
-  { label: "HAIKU", value: "haiku" },
-  { label: "SONNET", value: "sonnet" },
-  { label: "OPUS", value: "opus" },
-  { label: "FABLE", value: "fable" },
-];
 
 const MODE_OPTS: { label: string; value: Mode }[] = [
   { label: "PLAN", value: "plan" },
@@ -44,6 +38,7 @@ export function SettingsModal(props: SettingsModalProps) {
     defMode,
     onDefModel,
     onDefMode,
+    models,
     onClose,
   } = props;
 
@@ -370,12 +365,12 @@ export function SettingsModal(props: SettingsModalProps) {
                       border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
                     }}
                   >
-                    {MODEL_OPTS.map((m) => {
-                      const active = defModel === m.value;
+                    {models.map((m) => {
+                      const active = defModel === m.id;
                       return (
                         <button
-                          key={m.value}
-                          onClick={() => onDefModel(m.value)}
+                          key={m.id}
+                          onClick={() => onDefModel(m.id)}
                           style={{
                             flex: 1,
                             appearance: "none",
@@ -389,7 +384,7 @@ export function SettingsModal(props: SettingsModalProps) {
                             padding: "6px 4px",
                           }}
                         >
-                          {m.label}
+                          {m.label.toUpperCase()}
                         </button>
                       );
                     })}

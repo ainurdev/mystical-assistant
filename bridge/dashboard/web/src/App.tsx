@@ -16,6 +16,7 @@ import {
   type SessionStatus,
   type UsageInfo,
 } from "./api";
+import { modelOptions } from "./models";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { ago } from "./lib/surfaces";
@@ -470,6 +471,14 @@ export function App() {
   const usedPct = Math.round(usage?.five_hour?.percent ?? 0);
   const resetLabel = fmtReset(usage?.five_hour?.resets_at);
   const projectNames = useMemo(() => projectGroups.map((g) => g.rel), [projectGroups]);
+  // Model picker options — the live list served from /local/state (Models API).
+  const modelOpts = useMemo(() => modelOptions(state?.models), [state?.models]);
+  // Once the live list loads, snap the selection to an available model (prefer
+  // Opus) if the current one isn't offered — the old default was a fixed alias.
+  useEffect(() => {
+    if (!modelOpts.length || modelOpts.some((m) => m.id === model)) return;
+    setModel((modelOpts.find((m) => m.id.includes("opus")) ?? modelOpts[0]).id);
+  }, [modelOpts, model]);
 
   const commands: Command[] = [
     { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => activeProject && void newSession(activeProject) },
@@ -481,10 +490,10 @@ export function App() {
     { id: "theme", label: "Theme & CRT…", group: "Display", icon: "◐", run: () => setThemeOpen(true) },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
     { id: "radio", label: radio.radio.playing ? "Pause Claude·FM" : "Play Claude·FM", group: "Audio", icon: "♪", run: () => radio.toggle() },
-    { id: "model-fable", label: "Use Fable", group: "Model", icon: "⌥", run: () => setModel("fable") },
-    { id: "model-opus", label: "Use Opus", group: "Model", icon: "⌥", run: () => setModel("opus") },
-    { id: "model-sonnet", label: "Use Sonnet", group: "Model", icon: "⌥", run: () => setModel("sonnet") },
-    { id: "model-haiku", label: "Use Haiku", group: "Model", icon: "⌥", run: () => setModel("haiku") },
+    ...modelOpts.map((m) => ({
+      id: `model-${m.id}`, label: `Use ${m.label}`, group: "Model",
+      icon: "⌥", run: () => setModel(m.id),
+    })),
   ];
 
   // Context-menu items per target type.
@@ -611,7 +620,7 @@ export function App() {
                   <>
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
-                      disabled={!sessionId || pendingCount > 0} running={running} model={model} effort={effort}
+                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={modelOpts} effort={effort}
                       permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
@@ -681,7 +690,7 @@ export function App() {
             {settingsOpen && (
               <SettingsModal wsRoot={wsRoot} host={host.host} port={location.port || "8790"}
                 settings={settings} onTheme={setTheme} onToggle={toggleCrt}
-                defModel={model} defMode={defMode}
+                defModel={model} defMode={defMode} models={modelOpts}
                 onDefModel={setModel} onDefMode={(m) => { setDefMode(m); setPermMode(m); }}
                 onClose={() => setSettingsOpen(false)} />
             )}

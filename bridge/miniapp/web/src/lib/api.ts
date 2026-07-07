@@ -27,6 +27,7 @@ export interface AppState {
   server: ServerInfo;
   preview: PreviewInfo;
   permission_mode?: string; // server-side default operating mode
+  models?: { id: string; label: string }[]; // live list from GET /v1/models (bridge/models.py)
 }
 
 export interface ProjectsListing {
@@ -125,7 +126,7 @@ export type LearningItem = {
   notes: string;
 };
 
-export type ModelId = "opus" | "sonnet" | "haiku";
+export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 export type PermissionMode =
   | "auto"

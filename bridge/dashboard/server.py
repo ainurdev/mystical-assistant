@@ -28,9 +28,9 @@ from urllib.parse import parse_qs, urlparse
 import re
 
 from bridge import (agents, browser, config, devserver, git, github, learning,
-                    memory, native, preview_detect, project_config, pubsub,
-                    queue_manager, runner, screenshot, shell, state, store,
-                    sysinfo, terminals, tunnel, usage, weather, wsutil)
+                    memory, models, native, preview_detect, project_config,
+                    pubsub, queue_manager, runner, screenshot, shell, state,
+                    store, sysinfo, terminals, tunnel, usage, weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -229,7 +229,8 @@ class Handler(BaseHTTPRequestHandler):
                 "server": devserver.server_state(), "preview": tunnel.tunnel_state(),
                 "servers": devserver.list_servers(),
                 "dev_port": config.PREVIEW_PORT,
-                "permission_mode": config.MINIAPP_PERMISSION_MODE})
+                "permission_mode": config.MINIAPP_PERMISSION_MODE,
+                "models": models.get_models()})
         if path == "/local/projects":
             relp = (qs.get("dir", [""])[0] or "").strip()
             cur = config.BASE_PATH if relp in ("", "/") else os.path.realpath(

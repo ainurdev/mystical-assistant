@@ -14,12 +14,6 @@ import {
   DropdownMenuRadioItem,
 } from "./ui/dropdown-menu";
 
-const MODELS: { id: ModelId; label: string }[] = [
-  { id: "opus", label: "Opus 4.8" },
-  { id: "sonnet", label: "Sonnet 4.6" },
-  { id: "haiku", label: "Haiku 4.5" },
-];
-
 const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
   { id: "low", label: "Low" },
@@ -57,6 +51,7 @@ export function Composer() {
     pending,
     model,
     setModel,
+    models,
     effort,
     setEffort,
     perm,
@@ -75,7 +70,7 @@ export function Composer() {
 
   const blocked = isRunning || pending.length > 0;
   const sendDisabled = blocked || draft.trim().length === 0;
-  const modelLabel = MODELS.find((m) => m.id === model)?.label ?? model;
+  const modelLabel = models.find((m) => m.id === model)?.label ?? model;
   const effortLabel = EFFORTS.find((e) => e.id === effort)?.label ?? "Auto";
   const permLabel = PERMS.find((p) => p.id === perm)?.label ?? "Session default";
 
@@ -96,7 +91,7 @@ export function Composer() {
               value={model}
               onValueChange={(v) => setModel(v as ModelId)}
             >
-              {MODELS.map((m) => (
+              {models.map((m) => (
                 <DropdownMenuRadioItem key={m.id} value={m.id}>
                   {m.label}
                 </DropdownMenuRadioItem>

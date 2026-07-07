@@ -30,9 +30,11 @@ EXTRA_CLAUDE_ARGS = os.environ.get("EXTRA_CLAUDE_ARGS", "--permission-mode accep
 MINIAPP_PERMISSION_MODE = os.environ.get("MINIAPP_PERMISSION_MODE", "auto")
 
 # Model/effort the Mini App chat may request per message (passed as `claude
-# --model`/`--effort`). The frontend pickers must stay within these; the server
-# rejects an unknown model and drops an unknown effort.
-MINIAPP_MODELS = {"fable", "opus", "sonnet", "haiku"}
+# --model`/`--effort`). The live model list now comes from the Anthropic Models
+# API (see bridge/models.py) and is served to both frontends via the state
+# endpoints; MINIAPP_MODELS is only the fallback used when that API/token is
+# unavailable. Efforts stay hardcoded frontend-side; an unknown one drops.
+MINIAPP_MODELS = ("opus", "sonnet", "haiku", "fable")
 MINIAPP_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 # Permission/operating modes the chat clients may request per message (passed as
 # `claude --permission-mode`); the server rejects anything outside this set.
@@ -76,6 +78,10 @@ NOTIFY_ENABLE = os.environ.get("NOTIFY_ENABLE", "1").lower() not in ("0", "false
 PREVIEW_PORT = int(os.environ.get("PREVIEW_PORT", "3000"))    # default dev port
 START_CMD = os.environ.get("START_CMD", "npm run dev")        # default /server cmd
 CLOUDFLARED_BIN = os.environ.get("CLOUDFLARED_BIN", "cloudflared")
+# The `claude` launcher. Left as a bare name so it resolves on PATH; the runner
+# additionally falls back to known install dirs so a stripped PATH (systemd,
+# cron, a non-login shell) can't make it vanish. Set to an absolute path to pin.
+CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
 
 # --- Named preview tunnel ----------------------------------------------------
 # /preview runs a *named* Cloudflare Tunnel so the public URL is stable

@@ -1,11 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { EffortLevel, ModelId } from "../api";
 
-const MODELS: { id: ModelId; label: string }[] = [
-  { id: "opus", label: "Opus" },
-  { id: "sonnet", label: "Sonnet" },
-  { id: "haiku", label: "Haiku" },
-];
 const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
   { id: "low", label: "Low" },
@@ -93,13 +88,14 @@ function fmtTokens(n: number): string {
 }
 
 export function Composer({
-  disabled, running, model, effort, perm, onPerm, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, effort, perm, onPerm, injectedText, injectNonce, sessionId,
   contextTokens, resetLabel, onModel, onEffort, onSend, onStop, onCompact,
   queued, onCancelQueued,
 }: {
   disabled: boolean;
   running: boolean;
   model: ModelId;
+  models: { id: ModelId; label: string }[];
   effort: EffortLevel | "";
   permissionMode?: string | null;
   perm: string;
@@ -243,7 +239,7 @@ export function Composer({
       {/* model / effort / mode dropdowns */}
       {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 9, position: "relative", zIndex: 26 }}>
-        <Drop label="MODEL" value={model} options={MODELS} open={openDrop === "model"}
+        <Drop label="MODEL" value={model} options={models} open={openDrop === "model"}
           onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
           onPick={(id) => { onModel(id); setOpenDrop(""); }} />
         <Drop label="EFFORT" value={effort} options={EFFORTS} open={openDrop === "effort"}
@@ -281,7 +277,7 @@ export function Composer({
           onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
         <button onClick={() => fileRef.current?.click()} title="Attach image"
           style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontSize: 13, flex: "none", marginTop: 2 }}>📎</button>
-        <span style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 8px", flex: "none", marginTop: 1 }}>{model.toUpperCase()}</span>
+        <span style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 8px", flex: "none", marginTop: 1 }}>{(models.find((m) => m.id === model)?.label ?? model).toUpperCase()}</span>
         {running ? (
           <>
             <button onClick={onStop}

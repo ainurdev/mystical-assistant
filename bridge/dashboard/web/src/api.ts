@@ -130,6 +130,7 @@ export interface DashState {
   servers?: DevServerInfo[]; // all concurrent dev servers
   dev_port?: number; // legacy default dev-server port (config.PREVIEW_PORT)
   permission_mode?: string | null;
+  models?: { id: string; label: string }[]; // live list from GET /v1/models (bridge/models.py)
 }
 export interface ProjectsListing {
   rel: string;
@@ -202,7 +203,7 @@ export interface ProjectSettings {
   log_path: string;
 }
 
-export type ModelId = "fable" | "opus" | "sonnet" | "haiku";
+export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 // One prompt in the preview console's per-session queue. `text` is the human

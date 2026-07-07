@@ -123,6 +123,45 @@ def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
     threading.Thread(target=work, daemon=True).start()
 
 
+# ---------------------------------------------------------------------------
+# Resolve the `claude` launcher without trusting the ambient PATH
+# ---------------------------------------------------------------------------
+# The bridge may be started from a context whose PATH omits ~/.local/bin — where
+# Claude installs its launcher — e.g. systemd, cron, a non-login shell, or a
+# nested agent. There, subprocess(["claude", ...]) raises FileNotFoundError and
+# the turn dies with "claude not found on PATH". We resolve to an absolute path
+# once (override -> PATH -> known install dirs) and re-resolve only if the cached
+# path disappears (e.g. a self-update repointing the symlink).
+
+_CLAUDE_FALLBACKS = (
+    "~/.local/bin/claude",
+    "~/.claude/local/claude",
+)
+_claude_bin: str | None = None
+
+
+def claude_bin() -> str:
+    """Absolute path to the `claude` launcher. Falls back to config.CLAUDE_BIN
+    verbatim when nothing resolves, so the FileNotFoundError branch below can
+    still surface the friendly 'not found on PATH' error."""
+    global _claude_bin
+    if _claude_bin and os.path.exists(_claude_bin):
+        return _claude_bin
+    name = config.CLAUDE_BIN
+    if os.sep in name:                                   # explicit path override
+        _claude_bin = os.path.expanduser(name)
+        return _claude_bin
+    found = shutil.which(name)
+    if not found:
+        for cand in _CLAUDE_FALLBACKS:
+            cand = os.path.expanduser(cand)
+            if os.access(cand, os.X_OK):
+                found = cand
+                break
+    _claude_bin = found or name
+    return _claude_bin
+
+
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
@@ -140,7 +179,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     validates them before they reach here.
     """
     fmt = "stream-json" if stream else "json"
-    cmd = ["claude", "-p"]
+    cmd = [claude_bin(), "-p"]
     if not interactive:
         cmd.append(prompt)  # text input as an arg
     cmd += ["--output-format", fmt]

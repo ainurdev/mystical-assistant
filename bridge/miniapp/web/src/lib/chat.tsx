@@ -18,6 +18,7 @@ import type {
   Transcript,
 } from "./api";
 import { usePersistentState } from "./persistentState";
+import { modelOptions } from "./models";
 
 export interface Attachment {
   id: string;
@@ -140,6 +141,7 @@ export interface ChatContextValue {
   sendError: ApiError | null;
   model: ModelId;
   setModel: (m: ModelId) => void;
+  models: { id: ModelId; label: string }[];
   effort: EffortLevel | "";
   setEffort: (e: EffortLevel | "") => void;
   perm: string;
@@ -185,6 +187,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refetchInterval: 5000,
   });
   const project = stateQuery.data?.project?.rel ?? null;
+  // Model picker options — the live list served from /api/state (Models API).
+  const models = modelOptions(stateQuery.data?.models);
+  // Once the live list loads, snap the persisted selection to an available
+  // model (prefer Opus) if the stored one isn't offered.
+  useEffect(() => {
+    if (!models.length || models.some((m) => m.id === model)) return;
+    setModel((models.find((m) => m.id.includes("opus")) ?? models[0]).id);
+  }, [models, model, setModel]);
 
   const lastTurn = turns.length ? turns[turns.length - 1] : null;
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;
@@ -407,6 +417,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sendError,
     model,
     setModel,
+    models,
     effort,
     setEffort,
     perm,

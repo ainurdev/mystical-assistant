@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import type { TrayItem } from "@selector/controller";
 import type { QueueItem } from "../../api";
+import { modelOptions } from "../../models";
 import { ProjectRunBar } from "./ProjectRunBar";
 import { SelectionTray } from "./SelectionTray";
 
@@ -19,7 +20,9 @@ const ctlInput: CSSProperties = {
 };
 const PRESETS: [string, number][] = [["Mobile", 375], ["Tablet", 768], ["Laptop", 1280], ["Desktop", 1440]];
 
-const MODELS = [{ id: "opus", label: "Opus" }, { id: "sonnet", label: "Sonnet" }, { id: "haiku", label: "Haiku" }];
+// Shared model source (config.MINIAPP_MODELS + frontend labels). This floating
+// console has no state fetch of its own, so it uses the module's fallback set.
+const MODELS = modelOptions();
 const EFFORTS = [{ id: "", label: "Auto" }, { id: "low", label: "Low" }, { id: "medium", label: "Medium" },
   { id: "high", label: "High" }, { id: "xhigh", label: "XHigh" }, { id: "max", label: "Max" }];
 const PERMS = [{ id: "default", label: "Ask" }, { id: "acceptEdits", label: "Accept Edits" },

@@ -19,8 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, git, github, learning,
-                    memory, native, project_config, runner, screenshot, shell,
-                    state, store, transcript_jsonl, tunnel, usage)
+                    memory, models, native, project_config, runner, screenshot,
+                    shell, state, store, transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -66,7 +66,8 @@ def normalize_model_effort(model, effort) -> tuple[bool, str | None, str | None]
     effort becomes None (use the CLI default); an unknown effort is dropped."""
     m = (model or "").strip() or None
     e = (effort or "").strip() or None
-    if m is not None and m not in config.MINIAPP_MODELS:
+    if (m is not None and m not in models.model_ids()
+            and m not in config.MINIAPP_MODELS and not m.startswith("claude-")):
         return False, None, None
     if e is not None and e not in config.MINIAPP_EFFORTS:
         e = None
@@ -288,6 +289,7 @@ class Handler(BaseHTTPRequestHandler):
             "server": devserver.server_state(),
             "preview": tunnel.tunnel_state(),
             "permission_mode": config.MINIAPP_PERMISSION_MODE,
+            "models": models.get_models(),
         })
 
     def _api_projects(self, qs):
