@@ -239,3 +239,24 @@ def test_refresh_async_spawns_with_graph(tmp_path, monkeypatch):
     monkeypatch.setattr(graphmap.threading, "Thread", FakeThread)
     graphmap.refresh_async(d)
     assert spawned.get("started") and spawned["args"] == (d, graphmap.REFRESH_TIMEOUT)
+
+
+def test_update_async_fires_thread_and_returns_state(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    spawned = {}
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            spawned["target"] = target
+            spawned["args"] = args
+
+        def start(self):
+            spawned["started"] = True
+
+    monkeypatch.setattr(graphmap.threading, "Thread", FakeThread)
+    st = graphmap.update_async(d, 42)
+    assert spawned["target"] is graphmap.update
+    assert spawned["args"] == (d, 42)
+    assert spawned.get("started") is True
+    assert set(st) == {"available", "exists", "built_commit", "head", "stale", "building"}
