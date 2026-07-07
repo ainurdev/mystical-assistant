@@ -120,7 +120,9 @@ export function AnalyzeModal(props: Props) {
   function saveTagEdit() {
     const t = (tagDraft.trim() || tag).toUpperCase().slice(0, 5);
     const c = tagColorDraft || tagColor;
-    setTagOv({ tag: t, color: c, bd: hexRgba(c, 0.45) });
+    // c is a palette color (mostly var(--…)); color-mix handles both var() and
+    // hex, unlike hexRgba which yields rgba(NaN,…) for a var() string.
+    setTagOv({ tag: t, color: c, bd: `color-mix(in srgb, ${c} 45%, transparent)` });
     setTagEditOpen(false);
   }
 
@@ -330,8 +332,12 @@ function OverviewTab({ project, git, dotColor, issueCount, worktrees, branches, 
   }
 
   async function archive(s: SessionBrief) {
-    try { await api.archiveSession(s.id); } catch { /* ignore */ }
-    setHidden((h) => new Set(h).add(s.id));
+    // Only hide on success — hiding after a failed call makes the row vanish
+    // locally but reappear on the next sessions refresh, with no feedback.
+    try {
+      await api.archiveSession(s.id);
+      setHidden((h) => new Set(h).add(s.id));
+    } catch { /* leave the row visible on failure */ }
   }
 
   return (
@@ -800,7 +806,7 @@ function IssuesTab({ project, info, onFeed, onReload }: {
               const on = label === l.name;
               return (
                 <button key={l.name} onClick={() => setLabel(l.name)}
-                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on ? hexRgba(l.color, 0.6) : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? hexRgba(l.color, 0.12) : "transparent", color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: ".5px", padding: "4px 9px", display: "flex", alignItems: "center", gap: 5 }}>
+                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on ? `color-mix(in srgb, ${l.color} 60%, transparent)` : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? `color-mix(in srgb, ${l.color} 12%, transparent)` : "transparent", color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: ".5px", padding: "4px 9px", display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: l.color }} />{l.name}</button>
               );
             })}

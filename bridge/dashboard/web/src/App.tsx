@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   api,
   AUTH_REQUIRED,
-  logStream,
   TOKEN,
   type AnswerSelection,
   type DashState,
@@ -10,8 +9,6 @@ import {
   type EnrichedSession,
   type GitBadge,
   type ModelId,
-  type RunningJob,
-  type RunningSession,
   type SessionBrief,
   type SessionStatus,
   type UsageInfo,
@@ -68,14 +65,11 @@ export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false); // true from select until its transcript first resolves
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [, setLogs] = useState<string[]>([]);
   const [model, setModel] = useState<ModelId>("opus");
   const [effort, setEffort] = useState<EffortLevel | "">("");
   const [permMode, setPermMode] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"chat" | "history" | "memory">("chat");
-  const [external, setExternal] = useState<RunningSession[]>([]);
-  const [jobs, setJobs] = useState<RunningJob[]>([]);
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [usage, setUsage] = useState<UsageInfo | null>(null);
@@ -206,7 +200,7 @@ export function App() {
   useEffect(() => {
     if (!sessionId) return;
     let live = true;
-    const tick = async () => {
+    const fetchOnce = async () => {
       try {
         const t = await api.transcript(sessionId, seqRef.current);
         if (!live) return;
@@ -215,10 +209,15 @@ export function App() {
       } catch { /* ignore */ }
       finally { if (live) setLoadingSession(false); }
     };
-    void tick();
-    const id = setInterval(tick, 1500);
+    void fetchOnce();                                   // always load once on open
+    // Then poll only while the session is actually producing output; an idle
+    // session doesn't change, so re-effect on the running/working transitions
+    // (this also captures the final delta the moment a turn completes).
+    const id = setInterval(() => {
+      if (running || openWorking) void fetchOnce();
+    }, 1500);
     return () => { live = false; clearInterval(id); };
-  }, [sessionId]);
+  }, [sessionId, running, openWorking]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -234,16 +233,12 @@ export function App() {
     return () => { el.removeEventListener("scroll", onScroll); ro.disconnect(); };
   }, [view, showDashboard]);
 
-  useEffect(() => logStream((line) => setLogs((prev) => [...prev.slice(-2000), line])), []);
-
   useEffect(() => {
     let live = true;
     const tick = async () => {
       try {
         const r = await api.running();
         if (!live) return;
-        setExternal(r.external);
-        setJobs(r.jobs ?? []);
         setStatusMap(new Map(Object.entries(r.status ?? {})));
       } catch { /* ignore */ }
     };
@@ -621,7 +616,7 @@ export function App() {
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={modelOpts} effort={effort}
-                      permissionMode={state?.permission_mode} injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
+                      injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onCompact={() => void send("/compact", [])}
@@ -653,6 +648,7 @@ export function App() {
 
             {analyzeProject && (
               <AnalyzeModal
+                key={analyzeProject}
                 project={analyzeProject} badge={gitBadges.get(analyzeProject)}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}

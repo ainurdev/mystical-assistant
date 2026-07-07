@@ -55,11 +55,10 @@ export function projectTint(name: string | null | undefined): ProjectTint {
   for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
   const color = PROJ_PALETTE[h % PROJ_PALETTE.length];
   const tag = (base.replace(/[^a-z0-9]/gi, "").slice(0, 4) || "proj").toUpperCase();
-  // Convert the hex accent to a translucent border.
-  const r = parseInt(color.slice(1, 3), 16);
-  const g = parseInt(color.slice(3, 5), 16);
-  const b = parseInt(color.slice(5, 7), 16);
-  return { color, border: `rgba(${r},${g},${b},.45)`, tag };
+  // Translucent border. Most palette entries are CSS var() strings, so hex-slicing
+  // them yielded rgba(NaN,NaN,NaN,.45) (dropped by the browser); color-mix works
+  // for both var() and literal hex.
+  return { color, border: `color-mix(in srgb, ${color} 45%, transparent)`, tag };
 }
 
 export function ago(sec: number | null): string {

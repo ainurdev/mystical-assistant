@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { projectTint } from "../../lib/surfaces";
 
 export type TaskQueuePanelProps = {
   projects: string[];
@@ -14,44 +15,6 @@ type Task = {
 };
 
 const STORAGE_KEY = "hud-tasks";
-
-const PROJ_COLORS = [
-  "var(--acc)",
-  "var(--purple)",
-  "var(--ok)",
-  "var(--info)",
-  "var(--warn)",
-  "#ff7ad9",
-];
-
-/** basename of a project path (last path segment). */
-function basename(name: string): string {
-  const parts = name.split("/").filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : name;
-}
-
-/** stable djb2-ish hash → index into PROJ_COLORS. */
-function projColor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) {
-    h = (h * 31 + name.charCodeAt(i)) | 0;
-  }
-  return PROJ_COLORS[Math.abs(h) % PROJ_COLORS.length];
-}
-
-/** 4-letter uppercase tag from the basename. */
-function projTag(name: string): string {
-  const base = basename(name).replace(/[^a-z0-9]/gi, "");
-  return (base.slice(0, 4) || "proj").toUpperCase();
-}
-
-/** convert a hex color (#rrggbb) to an rgba() border string at the given alpha. */
-function projBorder(color: string): string {
-  const r = parseInt(color.slice(1, 3), 16);
-  const g = parseInt(color.slice(3, 5), 16);
-  const b = parseInt(color.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},.45)`;
-}
 
 function loadTasks(): Task[] {
   try {
@@ -173,8 +136,9 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
         </div>
 
         {tasks.map((t, i) => {
-          const color = projColor(t.project);
-          const bd = projBorder(color);
+          const tint = projectTint(t.project);
+          const color = tint.color;
+          const bd = tint.border;
           const textColor = t.done ? "var(--txl)" : "var(--txh)";
           const boxBg = t.done ? "var(--acc)" : "transparent";
           const boxBorder = t.done ? "var(--acc)" : "color-mix(in srgb, var(--acc) 35%, transparent)";
@@ -261,7 +225,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                           background: color,
                         }}
                       />
-                      {projTag(t.project)}
+                      {projectTint(t.project).tag}
                     </button>
                   )}
                   {t.sent && (
@@ -319,9 +283,9 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
               style={{
                 appearance: "none",
                 cursor: "pointer",
-                border: `1px solid ${projBorder(projColor(newProject))}`,
+                border: `1px solid ${projectTint(newProject).border}`,
                 background: "transparent",
-                color: projColor(newProject),
+                color: projectTint(newProject).color,
                 fontFamily: "inherit",
                 fontSize: "8.5px",
                 letterSpacing: "1px",
@@ -329,7 +293,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                 flex: "none",
               }}
             >
-              {projTag(newProject)}
+              {projectTint(newProject).tag}
             </button>
           )}
           <input

@@ -97,7 +97,6 @@ export function Composer({
   model: ModelId;
   models: { id: ModelId; label: string }[];
   effort: EffortLevel | "";
-  permissionMode?: string | null;
   perm: string;
   onPerm: (p: string) => void;
   injectedText?: string;

@@ -4,8 +4,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "../../api";
 
-// Phosphor-matched theme so the terminal reads as part of the HUD.
-const THEME = {
+// Phosphor-matched theme so the terminal reads as part of the HUD. Values are CSS
+// var()/color-mix expressions; xterm's color parser can't read those (it silently
+// falls back to stock colors), so resolveTheme() turns them into concrete rgb()
+// via the browser before we hand the theme to xterm.
+const THEME: Record<string, string> = {
   background: "var(--panel2)",
   foreground: "var(--txh)",
   cursor: "var(--acc)",
@@ -17,6 +20,26 @@ const THEME = {
   brightYellow: "var(--warn)", brightBlue: "#7fb0e9", brightMagenta: "var(--purple)",
   brightCyan: "#9fe9dd", brightWhite: "var(--txb)",
 };
+
+/** Resolve CSS var()/color-mix()/hex expressions to concrete rgb() strings by
+ *  letting the browser compute them on a throwaway element. */
+function resolveTheme(spec: Record<string, string>): Record<string, string> {
+  const probe = document.createElement("span");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  document.body.appendChild(probe);
+  const out: Record<string, string> = {};
+  try {
+    for (const [k, v] of Object.entries(spec)) {
+      probe.style.color = "";
+      probe.style.color = v;                       // invalid value → stays ""
+      out[k] = probe.style.color ? getComputedStyle(probe).color : v;
+    }
+  } finally {
+    probe.remove();
+  }
+  return out;
+}
 
 /** One interactive terminal: an xterm.js instance wired to the backend PTY over a
  *  websocket. Client→server frames are binary with a 1-byte channel prefix
@@ -42,7 +65,7 @@ export function XtermPane({ id, active, onEnded }: {
     const term = new Terminal({
       fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       fontSize: 12, lineHeight: 1.15, cursorBlink: true, scrollback: 5000,
-      theme: THEME, allowProposedApi: true,
+      theme: resolveTheme(THEME), allowProposedApi: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
