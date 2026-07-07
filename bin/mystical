@@ -54,13 +54,21 @@ bridge_pid() {
     p="$(cat "$PID_FILE" 2>/dev/null || true)"
     if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then printf '%s' "$p"; return 0; fi
   fi
-  p="$(pgrep -f "$ENTRY" | head -n1 || true)"
+  # Scope to THIS checkout's absolute entry path (run.sh execs it that way), so
+  # we don't match another repo's bridge, a tail, or an editor on the same file.
+  p="$(pgrep -f "$REPO/$ENTRY" | head -n1 || true)"
   [ -n "$p" ] && printf '%s' "$p"
+}
+
+env_port() {   # $1 = var name in .env, $2 = default — mirror dash_url's parsing
+  local p
+  p="$(grep -oE "$1=\"?[0-9]+" "$ENV_FILE" 2>/dev/null | head -n1 | grep -oE '[0-9]+' || true)"
+  printf '%s' "${p:-$2}"
 }
 
 dash_url() {
   local port token
-  port="$(grep -oE 'DASH_PORT="?[0-9]+' "$ENV_FILE" 2>/dev/null | head -n1 | grep -oE '[0-9]+' || true)"; port="${port:-8790}"
+  port="$(env_port DASH_PORT 8790)"
   token="$(grep -oE 'DASH_TOKEN="?[A-Za-z0-9_-]+' "$ENV_FILE" 2>/dev/null | head -n1 | sed 's/.*=//; s/\"//g' || true)"
   if [ -n "$token" ]; then printf 'http://127.0.0.1:%s/?token=%s' "$port" "$token"
   else printf 'http://127.0.0.1:%s/' "$port"; fi
@@ -80,10 +88,10 @@ cmd_start() {
   local newpid=$!
   printf '%s' "$newpid" > "$PID_FILE"
   # wait for the dashboard to answer, but fail fast if the process dies
-  local i
+  local i dport; dport="$(env_port DASH_PORT 8790)"
   for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
     kill -0 "$newpid" 2>/dev/null || { warn "Process exited early — last log lines:"; tail -n 15 "$LOG" 2>/dev/null || true; return 1; }
-    curl -s -o /dev/null "http://127.0.0.1:8790/" 2>/dev/null && break
+    curl -s -o /dev/null "http://127.0.0.1:$dport/" 2>/dev/null && break
     sleep 1
   done
   cmd_status
@@ -112,11 +120,12 @@ cmd_status() {
   local pid; pid="$(bridge_pid || true)"
   if [ -z "$pid" ]; then say "${c_r}●${c_0} stopped"; return 0; fi
   ok "running (pid $pid)"
-  local d m
-  d="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8790/" 2>/dev/null || echo 000)"
-  m="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8787/" 2>/dev/null || echo 000)"
-  say "  dashboard 8790 : HTTP $d"
-  say "  mini app  8787 : HTTP $m"
+  local d m dport mport
+  dport="$(env_port DASH_PORT 8790)"; mport="$(env_port MINIAPP_PORT 8787)"
+  d="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dport/" 2>/dev/null || echo 000)"
+  m="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$mport/" 2>/dev/null || echo 000)"
+  say "  dashboard $dport : HTTP $d"
+  say "  mini app  $mport : HTTP $m"
   say "  dashboard URL  : $(dash_url)"
   local turl; turl="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' "$LOG" 2>/dev/null | tail -n1 || true)"
   [ -n "$turl" ] && say "  mini app tunnel: $turl"

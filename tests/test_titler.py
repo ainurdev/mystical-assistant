@@ -8,6 +8,8 @@ import os
 import sys
 import tempfile
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
@@ -18,6 +20,18 @@ os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 from bridge import config, runner, store, titler  # noqa: E402
 
 store.init()
+
+
+@pytest.fixture(autouse=True)
+def _restore_run_blocking():
+    """Every test here swaps runner.run_blocking for a stub; restore the real one
+    afterward so the stub can't leak into later test modules (test_native,
+    test_running_status, … all import runner)."""
+    orig = runner.run_blocking
+    try:
+        yield
+    finally:
+        runner.run_blocking = orig
 
 
 def _session_with_first_turn(prompt="help me center a div in CSS",

@@ -93,7 +93,7 @@ Design specs live in [docs/superpowers/specs/](docs/superpowers/specs/).
 
 ## Quick start
 
-**Prerequisites:** the `claude` CLI (installed and logged in) and Python 3.9+
+**Prerequisites:** the `claude` CLI (installed and logged in) and Python 3.10+
 with `requests`. `cloudflared` and Node are optional (only for the Mini App panel
 and rebuilding the web UI).
 

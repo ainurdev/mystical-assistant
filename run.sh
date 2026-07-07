@@ -15,4 +15,6 @@ set -a
 . ./.env
 set +a
 
-exec python3 claude_telegram_bridge.py
+# Absolute path so the process cmdline uniquely identifies THIS checkout — lets
+# `mystical` scope its pgrep fallback and never signal another repo's bridge.
+exec python3 "$(pwd)/claude_telegram_bridge.py"

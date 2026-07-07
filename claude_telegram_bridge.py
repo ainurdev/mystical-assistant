@@ -24,7 +24,7 @@ Design: docs/superpowers/specs/2026-06-23-unified-sessions-dashboard-design.md
 
 Requirements
 ------------
-- Python 3.9+, `pip install requests`
+- Python 3.10+, `pip install requests`
 - `claude` CLI installed and logged in (auth is reused; no API key).
 - `cloudflared` for /preview and the Mini App tunnel.
 - Mini App + Dashboard UIs built once:

@@ -21,7 +21,7 @@ doctor() {
   if have claude; then ok "claude found"
   else bad "claude not found — install & log in: https://claude.com/claude-code"; hard=1; fi
   if have python3; then ok "python3 $(python3 -c 'import platform;print(platform.python_version())')"
-  else bad "python3 not found (need 3.9+)"; hard=1; fi
+  else bad "python3 not found (need 3.10+)"; hard=1; fi
   if python3 -c 'import requests' >/dev/null 2>&1; then ok "python 'requests' available"
   else bad "python 'requests' missing — pip install requests"; hard=1; fi
   if have cloudflared; then ok "cloudflared found"

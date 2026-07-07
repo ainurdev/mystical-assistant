@@ -10,13 +10,16 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-_BASE = tempfile.mkdtemp()
-os.environ["BASE_PATH"] = _BASE                       # override any shell leak
+os.environ.setdefault("BASE_PATH", tempfile.mkdtemp())   # standalone run: a tmp base
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
 from bridge import config, store, native, transcript_jsonl   # noqa: E402
+
+# Build fixtures under the base config actually froze (conftest pins it suite-wide;
+# standalone it's the setdefault above), so within_base() checks are order-proof.
+_BASE = config.BASE_PATH
 
 store.init()
 transcript_jsonl.PROJECTS_DIR = tempfile.mkdtemp()    # fake ~/.claude/projects

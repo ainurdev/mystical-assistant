@@ -276,7 +276,10 @@ def test_interactive_base_cmd():
 
 def test_blocking_base_cmd_unchanged():
     cmd = runner._base_cmd("hi", 555, stream=False)
-    assert cmd[:3] == ["claude", "-p", "hi"]
+    # cmd[0] is the resolved claude launcher (may be an absolute path), not the
+    # literal "claude"; the contract is that -p and the prompt come next.
+    assert os.path.basename(cmd[0]) == "claude"
+    assert cmd[1:3] == ["-p", "hi"]
     assert "--input-format" not in cmd
     assert "--permission-prompt-tool" not in cmd
 
@@ -816,12 +819,12 @@ def test_store_import_transcript_loads_turns_events_idempotent():
     assert len(store.transcript(s["id"])["turns"]) == 1
 
 
-def test_transcript_for_bridge_falls_back_to_jsonl_when_store_empty():
+def test_transcript_for_bridge_falls_back_to_jsonl_when_store_empty(monkeypatch):
     import tempfile
     from bridge import transcript_jsonl as _T
     from bridge.miniapp.server import transcript_for
     root = tempfile.mkdtemp()
-    _T.PROJECTS_DIR = root
+    monkeypatch.setattr(_T, "PROJECTS_DIR", root)   # auto-restored (was leaking)
     uid = "fallback-uuid-1"
     sub = os.path.join(root, "p")
     os.makedirs(sub)
@@ -834,11 +837,11 @@ def test_transcript_for_bridge_falls_back_to_jsonl_when_store_empty():
     assert any(x["prompt"] == "jsonl only" for x in t["turns"])   # fell back to JSONL
 
 
-def test_resolve_context_adopts_native_session_into_store():
+def test_resolve_context_adopts_native_session_into_store(monkeypatch):
     import tempfile
     from bridge import transcript_jsonl as _T
     root = tempfile.mkdtemp()
-    _T.PROJECTS_DIR = root
+    monkeypatch.setattr(_T, "PROJECTS_DIR", root)   # auto-restored (was leaking)
     uid = "adopt-uuid-1"
     sub = os.path.join(root, "p")
     os.makedirs(sub)
