@@ -1027,9 +1027,9 @@ class Handler(BaseHTTPRequestHandler):
         q = pubsub.subscribe(topic)    # subscribe FIRST, then backfill, dedupe by seq
         last = cursor - 1
         try:
-            if not self._emit_backfill(backfill, cursor, lambda s: None):
+            ok, last = self._emit_backfill(backfill, cursor, last)
+            if not ok:
                 return
-            last = self._max_seq(backfill(cursor), last)
             try:
                 self.connection.settimeout(120)
             except OSError:
@@ -1058,11 +1058,15 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             pubsub.unsubscribe(topic, q)
 
-    def _emit_backfill(self, backfill, cursor, _):
+    def _emit_backfill(self, backfill, cursor, last):
+        """Emit the backfill in ONE pass and return (ok, max_seq_emitted). A single
+        backfill() call closes the window where an event published between two
+        calls would bump `last` without ever being framed (then get deduped away)."""
         for ev in backfill(cursor):
+            last = self._max_seq([ev], last)
             if not self._frame(ev):
-                return False
-        return True
+                return False, last
+        return True, last
 
     @staticmethod
     def _max_seq(evs, last):

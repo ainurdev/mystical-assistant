@@ -55,7 +55,9 @@ def validate_init_data(init_data: str) -> int | None:
         uid = int(json.loads(data.get("user", "{}")).get("id"))
     except (ValueError, TypeError, json.JSONDecodeError):
         return None
-    if config.ALLOWED_CHAT_IDS and uid not in config.ALLOWED_CHAT_IDS:
+    # Fail closed: this server is reachable from the public internet through the
+    # cloudflared tunnel, and an empty allowlist must never mean "allow anyone".
+    if not config.ALLOWED_CHAT_IDS or uid not in config.ALLOWED_CHAT_IDS:
         return None
     return uid
 
@@ -149,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         try:
             self.wfile.write(data)
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionResetError):
             pass
 
     def _json(self, obj: dict, code: int = 200):
@@ -183,7 +185,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/projects":
                     return self._api_projects(qs)
                 if path == "/api/logs":
-                    return self._api_logs(qs)
+                    return self._api_logs(chat_id, qs)
                 if path == "/api/history":
                     return self._api_history(chat_id, qs)
                 if path == "/api/running":
@@ -206,7 +208,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_session_get(
                         chat_id, path[len("/api/sessions/"):], qs)
                 if path.startswith("/api/run/"):
-                    return self._api_run_poll(path[len("/api/run/"):], qs)
+                    return self._api_run_poll(chat_id, path[len("/api/run/"):], qs)
                 if path == "/api/shell":
                     try:
                         cursor = int(qs.get("cursor", ["0"])[0])
@@ -244,10 +246,10 @@ class Handler(BaseHTTPRequestHandler):
                     chat_id, path[len("/api/sessions/"):-len("/archive")], body)
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
-                    path[len("/api/run/"):-len("/respond")], body)
+                    chat_id, path[len("/api/run/"):-len("/respond")], body)
             if path.startswith("/api/run/") and path.endswith("/interrupt"):
                 return self._api_run_interrupt(
-                    path[len("/api/run/"):-len("/interrupt")], body)
+                    chat_id, path[len("/api/run/"):-len("/interrupt")], body)
             if path == "/api/run":
                 return self._api_run(chat_id, body)
             if path == "/api/server":
@@ -286,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json({
             "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)} if pd else None,
             "busy": state.any_running(),
-            "server": devserver.server_state(),
+            "server": devserver.server_state(pd),
             "preview": tunnel.tunnel_state(),
             "permission_mode": config.MINIAPP_PERMISSION_MODE,
             "models": models.get_models(),
@@ -375,12 +377,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "busy"}, 409)
         self._json({"job_id": job.id, "session_id": job.store_session_id})
 
-    def _api_run_poll(self, job_id: str, qs):
+    def _owned_job(self, chat_id: int, job_id: str):
+        """Fetch a job only if it belongs to this chat. On the public miniapp,
+        another allowed user must not poll/answer/interrupt someone else's run."""
+        job = runner.get_job(job_id)
+        if not job or job.chat_id != chat_id:
+            return None
+        return job
+
+    def _api_run_poll(self, chat_id: int, job_id: str, qs):
         try:
             cursor = int(qs.get("cursor", ["0"])[0])
         except ValueError:
             cursor = 0
-        job = runner.get_job(job_id)
+        job = self._owned_job(chat_id, job_id)
         if not job:
             return self._json({"error": "not found"}, 404)
         self._json(job.snapshot(cursor))
@@ -451,7 +461,8 @@ class Handler(BaseHTTPRequestHandler):
             cursor = int(qs.get("cursor", ["0"])[0])
         except ValueError:
             cursor = 0
-        self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor))
+        self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor,
+                                          qs.get("workflow", [""])[0] or None))
 
     def _api_sessions_list(self, chat_id: int, qs):
         native.refresh(chat_id)            # surface VSCode sessions started since last poll
@@ -487,9 +498,9 @@ class Handler(BaseHTTPRequestHandler):
         store.archive(sid)
         self._json({"ok": True})
 
-    def _api_run_respond(self, job_id: str, body: dict):
+    def _api_run_respond(self, chat_id: int, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""
-        job = runner.get_job(job_id)
+        job = self._owned_job(chat_id, job_id)
         if not job:
             return self._json({"error": "not found"}, 404)
         request_id = (body.get("request_id") or "").strip()
@@ -505,10 +516,10 @@ class Handler(BaseHTTPRequestHandler):
             cursor = 0
         self._json(job.snapshot(cursor))
 
-    def _api_run_interrupt(self, job_id: str, body: dict):
+    def _api_run_interrupt(self, chat_id: int, job_id: str, body: dict):
         """Stop a running turn. The session is preserved, so the next message
         resumes the conversation."""
-        job = runner.get_job(job_id)
+        job = self._owned_job(chat_id, job_id)
         if not job:
             return self._json({"error": "not found"}, 404)
         if not job.interrupt():
@@ -520,15 +531,16 @@ class Handler(BaseHTTPRequestHandler):
         self._json(job.snapshot(cursor))
 
     def _api_server(self, chat_id: int, body: dict):
+        pd = state.project_dir(chat_id)
         action = body.get("action", "start")
         if action == "stop":
-            msg = devserver.stop_server()
+            msg = devserver.stop_server(pd)
         else:
             cmd = ((body.get("cmd") or "").strip()
                    or project_config.run_cmd(state.project_key(chat_id))
                    or config.START_CMD)
-            msg = devserver.start_server(cmd, state.project_dir(chat_id))
-        self._json({"server": devserver.server_state(), "message": msg})
+            msg = devserver.start_server(cmd, pd)
+        self._json({"server": devserver.server_state(pd), "message": msg})
 
     def _api_project_settings(self, chat_id: int):
         self._json({
@@ -543,12 +555,12 @@ class Handler(BaseHTTPRequestHandler):
                                          (body.get("run_cmd") or "")[:1000])
         self._json({"ok": True, "run_cmd": cmd})
 
-    def _api_logs(self, qs):
+    def _api_logs(self, chat_id: int, qs):
         try:
             n = int(qs.get("n", ["200"])[0])
         except ValueError:
             n = 200
-        self._json({"lines": devserver.log_tail(n)})
+        self._json({"lines": devserver.log_tail(n, state.project_dir(chat_id))})
 
     def _api_preview(self, chat_id: int, body: dict):
         action = body.get("action", "start")

@@ -94,6 +94,13 @@ def test_empty_init_data_rejected():
     assert validate_init_data("") is None
 
 
+def test_empty_allowlist_fails_closed(monkeypatch):
+    """An empty ALLOWED_CHAT_IDS must reject everyone — this server is reachable
+    over the public cloudflared tunnel, so empty must never mean 'allow anyone'."""
+    monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", set())
+    assert validate_init_data(make_init_data(config.TOKEN, 555)) is None
+
+
 # --- stream-json parsing ----------------------------------------------------
 
 def test_stream_event_parsing():

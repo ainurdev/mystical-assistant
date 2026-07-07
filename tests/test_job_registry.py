@@ -37,6 +37,25 @@ def test_register_never_evicts_running_jobs():
         runner._jobs.update(saved)
 
 
+def test_owned_job_rejects_other_chats():
+    """The miniapp job endpoints (poll/respond/interrupt) must only act on the
+    caller's own jobs — another allowed user must not touch someone else's run."""
+    from bridge.miniapp.server import Handler
+
+    h = object.__new__(Handler)  # no socket; _owned_job only reads the registry
+    saved = dict(runner._jobs)
+    runner._jobs.clear()
+    try:
+        j = runner.Job("jX", chat_id=555)
+        runner._register(j)
+        assert h._owned_job(555, "jX") is j            # owner
+        assert h._owned_job(999, "jX") is None         # different chat
+        assert h._owned_job(555, "missing") is None    # unknown job
+    finally:
+        runner._jobs.clear()
+        runner._jobs.update(saved)
+
+
 def test_get_models_serves_fallback_without_blocking(monkeypatch):
     monkeypatch.setattr(models, "_cache", None)
     monkeypatch.setattr(models, "_refreshing", False)

@@ -312,12 +312,14 @@ def branches(cwd: str) -> list[str]:
 
 
 def checkout(cwd: str, ref: str) -> tuple[bool, str]:
-    rc, out, err = _run(cwd, "checkout", ref)
+    # --end-of-options: a ref beginning with '-' must be treated as a ref, never
+    # parsed as a git option (plain '--' would make checkout read it as a pathspec).
+    rc, out, err = _run(cwd, "checkout", "--end-of-options", ref)
     return rc == 0, (out + err).strip()
 
 
 def create_branch(cwd: str, name: str, start: str = "") -> tuple[bool, str]:
-    args = ["branch", name] + ([start] if start else [])
+    args = ["branch", "--end-of-options", name] + ([start] if start else [])
     rc, out, err = _run(cwd, *args)
     return rc == 0, (out + err).strip()
 
@@ -325,13 +327,13 @@ def create_branch(cwd: str, name: str, start: str = "") -> tuple[bool, str]:
 def delete_branch(cwd: str, name: str, force: bool = False) -> tuple[bool, str]:
     if name in ("main", "master", current_branch(cwd)):
         return False, "refusing to delete the current/default branch"
-    rc, out, err = _run(cwd, "branch", "-D" if force else "-d", name)
+    rc, out, err = _run(cwd, "branch", "-D" if force else "-d", "--end-of-options", name)
     return rc == 0, (out + err).strip()
 
 
 def merge(cwd: str, branch: str, ff_only: bool = False) -> tuple[bool, str]:
     """Merge `branch` into the current branch."""
-    args = ["merge", "--ff-only" if ff_only else "--no-edit", branch]
+    args = ["merge", "--ff-only" if ff_only else "--no-edit", "--end-of-options", branch]
     rc, out, err = _run(cwd, *args, timeout=30)
     return rc == 0, (out + err).strip()
 
@@ -369,16 +371,18 @@ def worktree_add(cwd: str, path: str, branch: str, start: str = "",
                  create: bool = True) -> tuple[bool, str]:
     """Add a worktree at `path`. create=True makes a new branch `branch` from
     `start`; create=False checks out an existing `branch` into the worktree."""
+    # --end-of-options guards the positional path/commit-ish against a leading '-'
+    # being read as an option (the -b value is consumed literally, so it's safe).
     if create:
-        args = ["worktree", "add", "-b", branch, path] + ([start] if start else [])
+        args = ["worktree", "add", "-b", branch, "--end-of-options", path] + ([start] if start else [])
     else:
-        args = ["worktree", "add", path, branch]
+        args = ["worktree", "add", "--end-of-options", path, branch]
     rc, out, err = _run(cwd, *args, timeout=30)
     return rc == 0, (out + err).strip()
 
 
 def worktree_remove(cwd: str, path: str, force: bool = True) -> tuple[bool, str]:
-    args = ["worktree", "remove"] + (["--force"] if force else []) + [path]
+    args = ["worktree", "remove"] + (["--force"] if force else []) + ["--end-of-options", path]
     rc, out, err = _run(cwd, *args, timeout=20)
     return rc == 0, (out + err).strip()
 

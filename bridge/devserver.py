@@ -229,24 +229,29 @@ def start_server(cmd: str, cwd: str) -> str:
     return start(cwd, cmd, project=_safe_rel(cwd))
 
 
-def stop_server() -> str:
-    if _primary is None:
+def stop_server(cwd: "str | None" = None) -> str:
+    """Stop the server for ``cwd`` (Mini App passes the chat's project dir so it
+    never stops a different project's server); falls back to the primary."""
+    target = os.path.realpath(cwd) if cwd else _primary
+    if target is None:
         return "No server is running."
-    return stop(_primary)
+    return stop(target)
 
 
-def server_state() -> dict:
-    """Structured status of the primary (last-started) server, for the Mini App."""
-    if _primary is None:
+def server_state(cwd: "str | None" = None) -> dict:
+    """Structured status of the server for ``cwd`` (Mini App), else the primary."""
+    target = os.path.realpath(cwd) if cwd else _primary
+    if target is None:
         return {"status": "not started", "cmd": None, "dir": None, "pid": None}
-    s = state_for(_primary)
+    s = state_for(target)
     return {"status": s["status"], "cmd": s["cmd"], "dir": s["dir"], "pid": s["pid"]}
 
 
-def log_tail(n: int = 200) -> list:
-    if _primary is None:
+def log_tail(n: int = 200, cwd: "str | None" = None) -> list:
+    target = os.path.realpath(cwd) if cwd else _primary
+    if target is None:
         return []
-    return _tail(_primary, n)
+    return _tail(target, n)
 
 
 def server_status() -> str:
