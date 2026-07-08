@@ -96,10 +96,22 @@ def _memory_pack_for(chat_id: int, cwd: "str | None") -> str:
         return ""
 
 
-def _compose_system_prompt(pack: str = "") -> str:
-    """Stable content first (ASK prompt + dev-log note), then the memory pack —
-    which is byte-stable within a session, so the prefix stays cache-eligible."""
-    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, pack.strip()) if p]
+def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
+    """Graphify structure pack for injection. Best-effort like the memory pack:
+    no graph, no module, any failure — empty string, never blocks a turn."""
+    try:
+        from bridge import graphmap
+        return graphmap.graph_pack(cwd or state.project_dir(chat_id))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _compose_system_prompt(pack: str = "", graph: str = "") -> str:
+    """Stable content first (ASK prompt + dev-log note), then the memory pack,
+    then the graph pack — each byte-stable within a session, so the prefix
+    stays cache-eligible."""
+    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE,
+                         pack.strip(), graph.strip()) if p]
     return "\n\n".join(parts)
 
 
@@ -218,7 +230,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     if claude_session_id:
         cmd += ["--resume", claude_session_id]
     pack = "" if skip_pack else _memory_pack_for(chat_id, cwd)
-    cmd += ["--append-system-prompt", _compose_system_prompt(pack)]
+    graph = "" if skip_pack else _graph_pack_for(chat_id, cwd)
+    cmd += ["--append-system-prompt", _compose_system_prompt(pack, graph)]
     if not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd
