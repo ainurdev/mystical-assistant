@@ -450,6 +450,7 @@ export interface RunBody {
   model?: string;
   effort?: string;
   permission_mode?: string; // per-message operating mode; omit to use the session's
+  ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
 }
 
 export interface ShellSnapshot {

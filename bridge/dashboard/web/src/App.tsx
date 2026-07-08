@@ -68,6 +68,7 @@ export function App() {
   const [model, setModel] = useState<ModelId>("opus");
   const [effort, setEffort] = useState<EffortLevel | "">("");
   const [permMode, setPermMode] = useState<string>("");
+  const [ponytail, setPonytail] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"chat" | "history" | "memory">("chat");
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
@@ -325,7 +326,7 @@ export function App() {
       const res = await api.run({
         prompt: text, images, project,
         session_id: sessionId, model, effort: effort || undefined,
-        permission_mode: permMode || undefined,
+        permission_mode: permMode || undefined, ponytail: ponytail || undefined,
       });
       liveTurns.current.add(res.job_id);
       stickRef.current = true;
@@ -618,7 +619,8 @@ export function App() {
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={modelOpts} effort={effort}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
-                      perm={permMode} onPerm={setPermMode} onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
+                      perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
+                      onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onCompact={() => void send("/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       onCancelQueued={(id) => queue.remove(id)}
