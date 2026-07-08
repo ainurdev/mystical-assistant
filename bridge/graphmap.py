@@ -179,9 +179,12 @@ def update(cwd: str, timeout: int = BUILD_TIMEOUT) -> "tuple[bool, str]":
 def update_async(cwd: str, timeout: int = BUILD_TIMEOUT) -> dict:
     """Kick off a build/refresh in a daemon thread and return the current state.
     HTTP handlers use this so long builds never hold a request (tunnel-safe);
-    clients poll graph_state's `building` flag."""
+    clients poll graph_state's `building` flag. `building` is forced True in the
+    returned state: the worker thread may not have acquired the lock yet, and a
+    poller that saw building=False here would think the build already finished
+    and render the stale graph."""
     threading.Thread(target=update, args=(cwd, timeout), daemon=True).start()
-    return graph_state(cwd)
+    return {**graph_state(cwd), "building": True}
 
 
 def refresh_async(cwd: "str | None") -> None:

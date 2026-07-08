@@ -260,6 +260,7 @@ def test_update_async_fires_thread_and_returns_state(tmp_path, monkeypatch):
     assert spawned["args"] == (d, 42)
     assert spawned.get("started") is True
     assert set(st) == {"available", "exists", "built_commit", "head", "stale", "building"}
+    assert st["building"] is True   # forced True so a poller doesn't render stale graph
 
 
 # --- graph_pack ----------------------------------------------------------------
