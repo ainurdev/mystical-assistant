@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { Weather } from "../../api";
+import { NotificationCenter } from "./Notifications";
 
 export interface StripProps {
   radio: { playing: boolean; title: string; artist: string; elapsed: string };
@@ -334,6 +335,7 @@ export function Strip(props: StripProps) {
       <span
         style={{ width: "1px", height: "18px", background: "color-mix(in srgb, var(--acc) 18%, transparent)" }}
       ></span>
+      <NotificationCenter />
       <button
         onClick={onOpenSettings}
         title="dashboard settings"

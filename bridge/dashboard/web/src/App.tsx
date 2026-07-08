@@ -38,6 +38,7 @@ import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel";
 import { SessionsPanel } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
+import { notify } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
 import { ThemeModal } from "./components/hud/ThemeModal";
 import { SettingsModal } from "./components/hud/SettingsModal";
@@ -69,7 +70,6 @@ export function App() {
   const [effort, setEffort] = useState<EffortLevel | "">("");
   const [permMode, setPermMode] = useState<string>("");
   const [ponytail, setPonytail] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"chat" | "history" | "memory">("chat");
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
@@ -323,7 +323,6 @@ export function App() {
 
   async function send(text: string, images: string[]) {
     if (!sessionId) return;
-    setError(null);
     const project = selected?.project ?? state?.project?.rel ?? undefined;
     const enqueue = () => queue.enqueue({
       text, prompt: text, images, project,
@@ -348,7 +347,7 @@ export function App() {
       // Lost the race: the run slot filled between our check and the request.
       // Queue it rather than surfacing a "busy" error.
       if ((e as Error).message === "busy") enqueue();
-      else setError((e as Error).message);
+      else notify("error", (e as Error).message);
     }
   }
 
@@ -392,12 +391,12 @@ export function App() {
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string) {
     try {
       const wt = await api.worktreeAdd(rel, branch, parent, create);
-      if (!wt.ok) { setError(wt.output || "worktree failed"); return; }
+      if (!wt.ok) { notify("error", wt.output || "worktree failed"); return; }
       const { session } = await api.createSession(rel, wt.path);
       await loadSessions();
       openSession(session.id);
       setView("chat");
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { notify("error", (e as Error).message); }
   }
 
   async function createProject(name: string, prompt: string) {
@@ -407,7 +406,7 @@ export function App() {
       await loadSessions();
       if (r.session) openSession(r.session.id);
       setView("chat");
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { notify("error", (e as Error).message); }
   }
 
   async function openFromHistory(s: EnrichedSession) {
@@ -616,7 +615,7 @@ export function App() {
               <Terminal
                 view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
-                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} onReviewResolve={onReviewResolve} error={error}
+                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} onReviewResolve={onReviewResolve}
                 scrollRef={scrollRef} contentRef={contentRef}
                 onSuggestPick={(t) => feed([t])}
                 onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
