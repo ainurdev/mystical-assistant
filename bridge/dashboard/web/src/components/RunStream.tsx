@@ -69,13 +69,11 @@ function toolTag(name: string): { color: string; border: string } {
 function FinalResult({
   result,
   elapsed,
-  cost,
   animate,
   idKey,
 }: {
   result: string;
   elapsed?: number;
-  cost?: number;
   animate: boolean;
   idKey: string;
 }) {
@@ -90,12 +88,8 @@ function FinalResult({
       </div>
       <div className="px-3 py-2.5">
         <Typewriter text={result} animate={animate} idKey={idKey} className="leading-relaxed text-[#c4e8df]" />
-        {(typeof elapsed === "number" || typeof cost === "number") && (
-          <div className="mt-1.5 text-[10px] tracking-[1px] text-muted-2">
-            {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
-            {typeof elapsed === "number" && typeof cost === "number" ? " · " : ""}
-            {typeof cost === "number" ? `$${cost.toFixed(4)}` : ""}
-          </div>
+        {typeof elapsed === "number" && (
+          <div className="mt-1.5 text-[10px] tracking-[1px] text-muted-2">{elapsed.toFixed(1)}s</div>
         )}
       </div>
     </div>
@@ -172,7 +166,6 @@ export function RunStream({
                 key={i}
                 result={event.result}
                 elapsed={event.elapsed}
-                cost={event.cost}
                 animate={animate}
                 idKey={`${turnId}:${i}`}
               />

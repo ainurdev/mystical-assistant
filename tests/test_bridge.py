@@ -26,16 +26,17 @@ from bridge.miniapp.server import (                       # noqa: E402
 store.init()
 
 
-def test_lists_exclude_sessions_idle_over_3_days():
-    """Lists (sidebar/history) drop sessions whose last message is >3 days old,
+def test_lists_exclude_sessions_idle_past_window():
+    """Lists (sidebar/history) drop sessions idle past LIST_MAX_AGE_SECS,
     but the session stays resumable (latest_session) and viewable (get_session)."""
     from contextlib import closing
     chat = 7733
+    stale = store.LIST_MAX_AGE_SECS + 86400   # one day past the window
     fresh = store.create_session(chat, "/stale_proj")
     old = store.create_session(chat, "/stale_proj")
-    with closing(store._connect()) as c:  # backdate `old` to 4 days ago
+    with closing(store._connect()) as c:  # backdate `old` past the window
         c.execute("UPDATE sessions SET updated=? WHERE id=?",
-                  (time.time() - 4 * 86400, old["id"]))
+                  (time.time() - stale, old["id"]))
         c.commit()
 
     all_ids = {r["id"] for r in store.list_sessions_all(chat)}
@@ -48,7 +49,7 @@ def test_lists_exclude_sessions_idle_over_3_days():
     only_old = store.create_session(chat, "/ghost_proj")
     with closing(store._connect()) as c:
         c.execute("UPDATE sessions SET updated=? WHERE id=?",
-                  (time.time() - 4 * 86400, only_old["id"]))
+                  (time.time() - stale, only_old["id"]))
         c.commit()
     assert store.latest_session(chat, "/ghost_proj")["id"] == only_old["id"]
     assert store.get_session(old["id"]) is not None

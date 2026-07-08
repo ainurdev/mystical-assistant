@@ -263,7 +263,7 @@ function QueueCard(p: QueueCardProps) {
         <span style={{ fontSize: 9, letterSpacing: 1, color: s.c, border: `1px solid color-mix(in srgb, ${s.c} 40%, transparent)`, padding: "2px 6px" }}>{s.t}</span>
         {it.status === "running" && p.runningTool && <span style={{ fontSize: 10, color: "var(--muted-foreground)", fontFamily: MONO, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.runningTool}</span>}
         <span style={{ flex: 1 }} />
-        {it.status === "done" && it.elapsed != null && <span style={{ fontSize: 9.5, color: "var(--muted-2)", fontFamily: MONO }}>{it.elapsed}s{it.cost != null ? ` · $${it.cost.toFixed(4)}` : ""}</span>}
+        {it.status === "done" && it.elapsed != null && <span style={{ fontSize: 9.5, color: "var(--muted-2)", fontFamily: MONO }}>{it.elapsed}s</span>}
       </div>
 
       {editing ? (

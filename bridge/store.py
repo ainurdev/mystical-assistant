@@ -219,7 +219,7 @@ def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str,
 # Sessions whose last message is older than this drop off the shared lists
 # (sidebar + history) across every surface. Resuming/viewing a session by id is
 # unaffected — the full transcript is always preserved.
-LIST_MAX_AGE_SECS = 3 * 86400
+LIST_MAX_AGE_SECS = 30 * 86400
 
 
 def list_sessions(chat_id: int, project: str, include_archived: bool = False,

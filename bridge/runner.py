@@ -258,8 +258,6 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         if not is_error:
             _capture_async(chat_id, session["id"], job_id, None, result, [])
         footer = f"\n\n— {int(time.time() - started)}s"
-        if cost is not None:
-            footer += f" · ${cost:.4f}"
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
         if not is_error:
             from bridge import learning, titler  # local import: runner<->* cycle
