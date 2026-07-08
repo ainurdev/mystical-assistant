@@ -20,6 +20,24 @@ interface Props {
   onCreateProject: (name: string, prompt: string) => void;
 }
 
+/** Cluster repos sharing a parent folder (org dirs like "ainurhq/unideck-mono")
+ * under one header; top-level repos stay their own headerless cluster so the
+ * incoming activity order is preserved. Cluster position = most active member. */
+function clusterByParent(groups: ProjectGroup[]): { parent: string; items: ProjectGroup[] }[] {
+  const clusters: { parent: string; items: ProjectGroup[] }[] = [];
+  const at = new Map<string, number>();
+  for (const g of groups) {
+    const clean = g.rel.replace(/^\/+|\/+$/g, "");
+    const i = clean.lastIndexOf("/");
+    const parent = i < 0 ? "" : clean.slice(0, i);
+    const key = parent || `~${clean}`;
+    const idx = at.get(key);
+    if (idx == null) { at.set(key, clusters.length); clusters.push({ parent, items: [g] }); }
+    else clusters[idx].items.push(g);
+  }
+  return clusters;
+}
+
 function ProjectRow({
   g, active, onSelectProject, onAnalyze, onPreview,
 }: {
@@ -134,10 +152,26 @@ export function ProjectsPanel(props: Props) {
             </div>
           </div>
         )}
-        {groups.map((g) => (
-          <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
-            onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
-        ))}
+        {clusterByParent(groups).map(({ parent, items }) =>
+          parent ? (
+            <div key={parent} style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txd)", padding: "2px 2px 0" }}>
+                {parent.toUpperCase()} /
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 7, borderLeft: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)" }}>
+                {items.map((g) => (
+                  <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
+                    onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            items.map((g) => (
+              <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
+                onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
+            ))
+          ),
+        )}
         {groups.length === 0 && (
           <div style={{ fontSize: 11, color: "var(--txl)", padding: "10px 4px" }}>No projects with sessions yet.</div>
         )}

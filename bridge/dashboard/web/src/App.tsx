@@ -455,9 +455,9 @@ export function App() {
         return st === "working" || st === "awaiting" || st === "live";
       });
       groups.push({
-        // Full rel as the name: org-nested repos ("ainurhq/unideck-mono/unideck")
-        // keep their path context; for top-level repos this equals the basename.
-        rel, name: rel.replace(/^\/+|\/+$/g, "") || rel,
+        // Basename only — the PROJECTS panel groups rows under a parent-path
+        // header, so the org context lives on the group, not the row.
+        rel, name: rel.replace(/\/+$/, "").split("/").pop() || rel,
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
