@@ -20,15 +20,16 @@ interface Props {
   onCreateProject: (name: string, prompt: string) => void;
 }
 
-/** Cluster repos sharing a parent folder (org dirs like "ainurhq/unideck-mono")
- * under one header; top-level repos stay their own headerless cluster so the
- * incoming activity order is preserved. Cluster position = most active member. */
+/** Cluster nested repos under their top-level org folder (one level only:
+ * "ainurhq/unideck-mono/unideck-api" groups under "ainurhq"); top-level repos
+ * stay their own headerless cluster so the incoming activity order is
+ * preserved. Cluster position = most active member. */
 function clusterByParent(groups: ProjectGroup[]): { parent: string; items: ProjectGroup[] }[] {
   const clusters: { parent: string; items: ProjectGroup[] }[] = [];
   const at = new Map<string, number>();
   for (const g of groups) {
     const clean = g.rel.replace(/^\/+|\/+$/g, "");
-    const i = clean.lastIndexOf("/");
+    const i = clean.indexOf("/");
     const parent = i < 0 ? "" : clean.slice(0, i);
     const key = parent || `~${clean}`;
     const idx = at.get(key);

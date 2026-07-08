@@ -23,8 +23,11 @@ def test_list_projects_recurses_org_folders(tmp_path, monkeypatch):
     _mk(base, "aligned", git="dir")                                # top-level repo
     _mk(base, "ainurhq", "invoicer", git="dir")                    # org/repo
     _mk(base, "ainurhq", "unideck-mono", "unideck", git="dir")     # org/mono/repo
-    _mk(base, "ainurhq", "unideck-mono", "unideck-api", git="file")  # worktree-style .git file
+    _mk(base, "ainurhq", "unideck-mono", "unideck-api", git="dir")
     _mk(base, "ainurhq", "poc")                                    # bare folder — not a repo
+    _mk(base, "wt", git="file")                                    # worktree checkout — skipped
+    _mk(base, "wt2", "inner", git="dir")                           # nested under a worktree...
+    _mk(base, "wt2", git="file")                                   # ...not entered either
     _mk(base, ".hidden", "x", git="dir")                           # dotdir skipped
     _mk(base, "node_modules", "y", git="dir")                      # SKIP_DIRS skipped
     _mk(base, "deep", "a", "b", "c", git="dir")                    # depth 4 — beyond cap

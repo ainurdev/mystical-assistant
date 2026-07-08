@@ -18,16 +18,17 @@ def list_dirs(path: str) -> list[str]:
 
 def list_projects(max_depth: int = 3) -> list[str]:
     """Git repos under BASE_PATH as rel paths ('/org/repo'), descending into
-    non-repo folders (org dirs). A repo stops the descent; a `.git` file
-    (worktree/submodule checkout) counts as a repo too."""
+    non-repo folders (org dirs). Only a `.git` directory counts: a `.git` file
+    marks a worktree/submodule checkout, which is neither listed nor entered."""
     out: list[str] = []
 
     def scan(path: str, depth: int):
         for name in list_dirs(path):
             p = os.path.join(path, name)
-            if os.path.exists(os.path.join(p, ".git")):
+            git = os.path.join(p, ".git")
+            if os.path.isdir(git):
                 out.append(rel(p))
-            elif depth < max_depth:
+            elif not os.path.exists(git) and depth < max_depth:
                 scan(p, depth + 1)
 
     # ponytail: depth 3 covers org/monorepo/repo (deepest real layout); bump if one nests deeper
