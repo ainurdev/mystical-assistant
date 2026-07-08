@@ -106,6 +106,16 @@ def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
         return ""
 
 
+def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
+    """Keep an existing graph fresh after a successful turn (fire-and-forget;
+    refresh_async no-ops for projects that were never mapped)."""
+    try:
+        from bridge import graphmap
+        graphmap.refresh_async(cwd or state.project_dir(chat_id))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _compose_system_prompt(pack: str = "", graph: str = "") -> str:
     """Stable content first (ASK prompt + dev-log note), then the memory pack,
     then the graph pack — each byte-stable within a session, so the prefix
@@ -290,6 +300,7 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                           int(time.time() - started))
         if not is_error:
             _capture_async(chat_id, session["id"], job_id, None, result, [])
+            _graph_refresh_after_turn(chat_id, None)
         footer = f"\n\n— {int(time.time() - started)}s"
         if cost is not None:
             footer += f" · ${cost:.4f}"
@@ -860,6 +871,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _capture_async(job.chat_id, job.store_session_id, job.id, cwd,
                            "\n\n".join(job.texts), list(job.edited))
+            _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted:
             notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
         # Teacher-mode capture (best-effort, background thread). Streaming has

@@ -43,3 +43,22 @@ def test_graph_pack_for_swallows_errors(monkeypatch):
     monkeypatch.setattr(graphmap, "graph_pack",
                         lambda _cwd: (_ for _ in ()).throw(RuntimeError("boom")))
     assert runner._graph_pack_for(555, "/tmp") == ""
+
+
+def test_refresh_after_turn_helper(monkeypatch):
+    from bridge import graphmap
+    calls = []
+    monkeypatch.setattr(graphmap, "refresh_async", lambda cwd: calls.append(cwd))
+    monkeypatch.setattr(runner.state, "project_dir", lambda _c: "/proj")
+    runner._graph_refresh_after_turn(555, None)
+    assert calls == ["/proj"]
+    runner._graph_refresh_after_turn(555, "/explicit")
+    assert calls == ["/proj", "/explicit"]
+
+
+def test_refresh_after_turn_swallows_errors(monkeypatch):
+    from bridge import graphmap
+    monkeypatch.setattr(graphmap, "refresh_async",
+                        lambda _cwd: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(runner.state, "project_dir", lambda _c: "/proj")
+    runner._graph_refresh_after_turn(555, None)   # must not raise
