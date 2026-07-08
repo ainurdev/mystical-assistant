@@ -155,11 +155,13 @@ export function ProjectsPanel(props: Props) {
         )}
         {clusterByParent(groups).map(({ parent, items }) =>
           parent ? (
-            <div key={parent} style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div key={parent} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 }}>
               <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txd)", padding: "2px 2px 0" }}>
                 {parent.toUpperCase()} /
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 7, borderLeft: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)" }}>
+              {/* stronger indent + rail: only these rows are in the org folder — rows
+                  below the group are top-level repos, not members */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 12, borderLeft: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)" }}>
                 {items.map((g) => (
                   <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
                     onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
