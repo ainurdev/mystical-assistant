@@ -331,12 +331,12 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
             <button onClick={() => sel.setMode(selecting ? "idle" : "select")} disabled={!selectorOrigin}
               title={!selectorOrigin ? "element select needs the localhost dev server"
                 : selecting ? "exit element select" : "select elements in the live preview & send to Claude"}
-              style={{ ...iconBtn, opacity: selectorOrigin ? 1 : 0.4,
+              style={{ ...iconBtn, fontSize: 9.5, letterSpacing: 1.5, padding: "6px 11px", opacity: selectorOrigin ? 1 : 0.4,
                 color: selecting ? "var(--acc)" : "var(--txm)",
                 borderColor: selecting ? "color-mix(in srgb, var(--acc) 55%, transparent)" : "color-mix(in srgb, var(--acc) 25%, transparent)",
                 background: selecting ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent" }}
               onMouseEnter={(e) => { if (!selecting) e.currentTarget.style.background = "color-mix(in srgb, var(--acc) 8%, transparent)"; }}
-              onMouseLeave={(e) => { if (!selecting) e.currentTarget.style.background = "transparent"; }}>{selecting ? "◉" : "⊕"}</button>
+              onMouseLeave={(e) => { if (!selecting) e.currentTarget.style.background = "transparent"; }}>{selecting ? "◉ SELECTING" : "⊕ SELECT"}</button>
           )}
           <button onClick={() => void reload()} title="restart the dev server" style={iconBtn} disabled={busyRun}
             onMouseEnter={(e) => (e.currentTarget.style.background = "color-mix(in srgb, var(--acc) 8%, transparent)")}
@@ -491,7 +491,7 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
                     )}
                   </div>
                   {selecting && !sel.state.ready && (
-                    <span style={{ fontSize: 9, color: "var(--warn)", lineHeight: 1.5 }}>selector agent not detected — the previewed app must run the mysticalSelector() vite plugin on its dev server.</span>
+                    <span style={{ fontSize: 9, color: "var(--warn)", lineHeight: 1.5 }}>selector agent not detected — press RUN so the bridge starts the dev server with the selector plugin injected, or add mysticalSelector() to the app's vite config.</span>
                   )}
                   {selecting && sel.state.ready && (
                     <span style={{ fontSize: 9, color: "var(--txf)", fontFamily: "var(--mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
