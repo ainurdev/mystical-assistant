@@ -40,7 +40,8 @@ import os
 import signal
 import sys
 
-from bridge import config, devserver, native_activity, pubsub, recovery, state, store, tunnel
+from bridge import (config, devserver, limits, native_activity, pubsub, recovery,
+                    state, store, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -130,6 +131,7 @@ def main():
         resumed = recovery.recover()   # resume turns a restart interrupted (--resume + nudge)
         if resumed:
             print(f"↻ Auto-resumed {resumed} interrupted session(s) after restart.")
+        limits.boot()                  # re-arm sessions parked on a usage-limit reset
 
     offset = 0
     try:

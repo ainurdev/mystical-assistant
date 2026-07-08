@@ -20,8 +20,9 @@ import threading
 import time
 import uuid
 
-from bridge import (config, devserver, git, machine, memory, native_activity,
-                    project_config, pubsub, state, store, transcript_jsonl)
+from bridge import (config, devserver, git, limits, machine, memory,
+                    native_activity, project_config, pubsub, state, store,
+                    transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -306,6 +307,13 @@ def handle_task(chat_id: int, prompt: str, session: dict):
             return   # restart killed the run: stay 'running' for boot recovery
         store.finish_turn(job_id, "error" if is_error else "done", cost,
                           int(time.time() - started))
+        if (is_error and config.AUTO_RESUME and limits.is_limit_error(result)
+                and (sid or session["claude_session_id"])):
+            d = limits.defer(session["id"], chat_id, None)
+            if d is not None:
+                send(chat_id, "⏳ Claude usage limit hit — this session will auto-"
+                              f"resume when the limit resets (~{limits.when_str(d[0])}).")
+                return
         if not is_error:
             _capture_async(chat_id, session["id"], job_id, None, result, [])
             _graph_refresh_after_turn(chat_id, None)
@@ -349,6 +357,7 @@ class Job:
         self.pending: list[dict] = []    # unresolved can_use_tool requests
         self.interrupted = False         # user pressed Stop
         self.timed_out = False           # watchdog killed the run
+        self.error_msg: str | None = None  # stderr/exit error when no result event came
         self.texts: list[str] = []       # assistant text this turn (memory capture)
         self.edited: list[str] = []      # files edited this turn (Edit/Write/MultiEdit)
         self._interrupt_timer: threading.Timer | None = None
@@ -638,10 +647,13 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
 # ---------------------------------------------------------------------------
 # Auto-resume: only the user may stop a turn
 # ---------------------------------------------------------------------------
-# Two non-user ways a turn dies, two answers:
+# Three non-user ways a turn dies, three answers:
 #   - The bridge is restarting (group SIGINT/SIGKILL takes the Claude child down):
 #     leave the turn 'running' so startup recovery (bridge/recovery.py) claims and
 #     resumes it on the next boot.
+#   - The account hit a usage limit: an immediate resume can only fail again, so
+#     the session is parked in bridge/limits.py, which resumes it when the limit
+#     resets.
 #   - Claude crashed while the bridge stays up (API drop, OOM, CLI failure):
 #     resume the session right here with a nudge. Consecutive failures are capped
 #     per session — a completed turn resets the cap — so a session whose resume
@@ -673,11 +685,27 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         return False
     if job.status == "done":
         _resume_fails.pop(sid, None)             # healthy turn resets the cap
+        limits.note_ok(sid)                      # ...and closes any limit episode
         return False
     if job.status != "error" or job.interrupted or job.timed_out:
         return False
     if not config.AUTO_RESUME or state.shutting_down:
         return False                              # shutdown → boot recovery's job
+    if limits.is_limit_error(job.result or job.error_msg):
+        # Usage window exhausted: an immediate resume would just fail again.
+        # Park the session; limits fires it back up when the limit resets.
+        sess = store.get_session(sid)
+        if not sess or not sess.get("claude_session_id"):
+            return False                          # died before init — nothing to resume
+        d = limits.defer(sid, job.chat_id, cwd, model, effort)
+        if d is None:
+            return False                          # kept failing past resets — stay stopped
+        when, first = d
+        if first:
+            _notify(job.chat_id,
+                    f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
+                    f"will auto-resume when the limit resets (~{limits.when_str(when)}).")
+        return True
     fails = _resume_fails.get(sid, 0) + 1
     _resume_fails[sid] = fails
     if fails > AUTO_RESUME_MAX:
@@ -898,6 +926,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 msg = f"⏱️ Timed out after {config.RUN_TIMEOUT // 60} min."
             else:
                 msg = err[:1500] or f"claude exited {proc.returncode}"
+            job.error_msg = msg
             job.add({"type": "error", "message": msg})
             job.status = "error"
     except Exception as e:  # noqa: BLE001
