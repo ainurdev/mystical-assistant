@@ -2109,3 +2109,332 @@ git commit -m "build(web): rebuild dists; docs + gitignore for graphify/ponytail
 - [ ] **Step 7: Hand off**
 
 Merge/PR decision via superpowers:finishing-a-development-branch. The bridge must be **restarted by the user** to load the backend (restart kills bridge-hosted sessions — coordinate first). After restart: `/map build` in Telegram, open the dashboard MAP tab, pick a ponytail level, and send one run to see `PONYTAIL_DEFAULT_MODE` take effect.
+
+---
+
+### Task 15: graph-aware capture narrowing (added 2026-07-08)
+
+**Files:**
+- Modify: `bridge/memory.py` (`_build_capture_prompt` ~line 184, `propose` ~line 213)
+- Modify: `bridge/runner.py` (`_capture_async` `work()` body ~line 117)
+- Create: `tests/test_capture_narrowing.py`
+
+**Interfaces:**
+- Consumes: `graphmap.has_graph(cwd)` (Task 1).
+- Produces: `_build_capture_prompt(existing, assistant_text, edited_files, has_graph=False)`; `propose(..., has_graph: bool = False)`. Both backward-compatible keywords.
+
+**Why:** the graph pack (Task 5) already tells every turn the project's structure; Keep/Skip cards proposing structure facts are noise. When a graph exists, capture proposes only what code cannot say. The `convention` type stays allowed (commit-message style etc. is not in the AST).
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# tests/test_capture_narrowing.py
+"""Graph-aware capture: structure facts are skipped when a project has a graph.
+Run: python -m pytest tests/test_capture_narrowing.py -v"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from bridge import memory, runner  # noqa: E402
+
+
+def test_prompt_narrows_when_graph_exists():
+    p = memory._build_capture_prompt([], "text", [], has_graph=True)
+    assert "code map" in p and "Do NOT propose" in p
+
+
+def test_prompt_unchanged_without_graph():
+    assert "code map" not in memory._build_capture_prompt([], "text", [])
+
+
+def test_propose_threads_has_graph(monkeypatch):
+    captured = {}
+
+    def fake_run(prompt):
+        captured["prompt"] = prompt
+        return "[]"
+    memory.propose(555, "sid", "tid", "proj", None, "turn text", [],
+                   run=fake_run, has_graph=True)
+    assert "code map" in captured["prompt"]
+    memory.propose(555, "sid", "tid", "proj", None, "turn text", [],
+                   run=fake_run)
+    assert "code map" not in captured["prompt"]
+
+
+def test_capture_async_passes_has_graph(monkeypatch):
+    from bridge import graphmap
+    calls = {}
+    monkeypatch.setattr(runner.memory, "propose",
+                        lambda *a, **k: calls.update(k) or [])
+    monkeypatch.setattr(graphmap, "has_graph", lambda _cwd: True)
+    monkeypatch.setattr(runner, "_project_key", lambda _c, _w: "proj")
+    monkeypatch.setattr(runner, "_branch_for", lambda _c, _w: None)
+    monkeypatch.setattr(runner.state, "project_dir", lambda _c: "/proj")
+    monkeypatch.setattr(runner.project_config, "memory_mode", lambda _p: "ask")
+
+    class InlineThread:
+        def __init__(self, target=None, daemon=None):
+            self._t = target
+
+        def start(self):
+            self._t()
+    monkeypatch.setattr(runner.threading, "Thread", InlineThread)
+    runner._capture_async(555, "sid", "tid", None, "some text", [])
+    assert calls.get("has_graph") is True
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python3 -m pytest tests/test_capture_narrowing.py -v`
+Expected: FAIL — `_build_capture_prompt() got an unexpected keyword argument 'has_graph'`.
+
+- [ ] **Step 3: Implement**
+
+3a. Replace `_build_capture_prompt` in `bridge/memory.py`:
+
+```python
+def _build_capture_prompt(existing: list[dict], assistant_text: str,
+                          edited_files: list[str], has_graph: bool = False) -> str:
+    known = "\n".join(f"- [{m['id']}] ({m['type']}) {m['title']}" for m in existing) or "(none)"
+    files = ", ".join(edited_files) if edited_files else "(none)"
+    structure_note = (
+        "This project has an auto-generated code map covering its structure "
+        "(subsystems, files, call/import relationships). Do NOT propose facts "
+        "derivable from reading the code itself — architecture, file layout, "
+        "what-calls-what. Only propose what the code cannot say: a decision "
+        "(with the why), the user's cross-project preference, an active goal, "
+        "or a gotcha.\n\n") if has_graph else ""
+    return (
+        "You maintain a curated project memory. From the assistant turn below, "
+        "propose at most 2 durable facts worth remembering for future sessions: a "
+        "convention, a decision (with the why), the user's cross-project preference, "
+        "an active goal, or a gotcha. " + structure_note +
+        "Reconcile against the KNOWN memories: if a fact "
+        "is already known, use op SKIP; if it updates or contradicts one, use op "
+        "UPDATE with that memory's id; otherwise op ADD.\n\n"
+        "Return STRICT JSON only — an array of "
+        '{op:"ADD"|"UPDATE"|"SKIP", id?, '
+        'type:"convention|decision|preference|goal|gotcha", scope:"user|project", '
+        "title, body}. Use scope \"user\" only for the user's cross-project "
+        "preferences. Keep title and body terse (one line each). Return [] if nothing "
+        f"is worth keeping.\n\nKNOWN memories:\n{known}\n\nEdited files: {files}\n\n"
+        f"Assistant turn:\n{assistant_text[:4000]}")
+```
+
+3b. `propose(...)` in `bridge/memory.py`: add `has_graph: bool = False` after `auto: bool = False` in the signature, and change the ops line to:
+
+```python
+        ops = _parse_ops(run(_build_capture_prompt(existing, assistant_text,
+                                                   edited_files, has_graph)) or "")
+```
+
+3c. In `bridge/runner.py` `_capture_async`, replace the `work()` body's propose call:
+
+```python
+    def work():
+        try:
+            from bridge import graphmap
+            memory.propose(chat_id, session_id, turn_id, project,
+                           _branch_for(chat_id, cwd), assistant_text, edited_files,
+                           auto=(mode == "auto"),
+                           has_graph=graphmap.has_graph(cwd or state.project_dir(chat_id)))
+        except Exception:  # noqa: BLE001
+            pass
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python3 -m pytest tests/test_capture_narrowing.py tests/test_memory_capture.py tests/test_memory_runner.py -v`
+Expected: all pass (existing capture/runner suites guard backward compatibility).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add bridge/memory.py bridge/runner.py tests/test_capture_narrowing.py
+git commit -m "feat(memory): skip structure facts in capture when a project graph exists"
+```
+
+---
+
+### Task 16: MEMORY tab restore + manual add (added 2026-07-08)
+
+**Files:**
+- Modify: `bridge/memory.py` (append to the action layer, after `items`)
+- Modify: `bridge/dashboard/server.py` (`_post_api`, after the `/local/memory/pin` block)
+- Modify: `bridge/dashboard/web/src/api.ts` (after `memoryPin`)
+- Modify: `bridge/dashboard/web/src/components/hud/MemoryTab.tsx` (add ADD form)
+- Modify: `bridge/dashboard/web/src/components/hud/AnalyzeModal.tsx` (import + Tab union + tabs array + body branch — same 4-edit pattern as the MAP tab)
+- Create: `tests/test_memory_add.py`
+
+**Interfaces:**
+- Consumes: existing `store.add_memory`, `memory._TYPES`/`_SCOPES`, existing api.ts `req` + `Memory` type, existing `MemoryTab` component (fully functional: posture, Keep/Skip, pin, archive).
+- Produces: `memory.add_manual(owner_id, scope, mem_type, title, body, project, branch=None) -> dict | None`; `POST /local/memory/add`; `api.memoryAdd(...)`; MEMORY tab visible in the PROJECT ANALYSIS modal.
+
+**Context:** `MemoryTab.tsx` already implements see/remove (archive)/pin/posture — it was wired into AnalyzeModal before the HUD redesign dropped it. This task re-wires it and adds the one missing capability: manual creation.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# tests/test_memory_add.py
+"""Manual memory creation: memory.add_manual + POST /local/memory/add.
+Run: python -m pytest tests/test_memory_add.py -v"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from bridge import memory  # noqa: E402
+from bridge.dashboard import server as dash  # noqa: E402
+
+OWNER = 555
+
+
+def test_add_manual_happy_path():
+    m = memory.add_manual(OWNER, "project", "gotcha", "T", "B", "proj/x")
+    assert m and m["status"] == "active" and m["type"] == "gotcha"
+    assert m["project_path"] == "proj/x"
+
+
+def test_add_manual_user_scope_ignores_project():
+    m = memory.add_manual(OWNER, "user", "preference", "T", "B", "proj/x")
+    assert m and m["project_path"] is None
+
+
+def test_add_manual_rejects_bad_input():
+    assert memory.add_manual(OWNER, "project", "nope", "T", "B", "p") is None
+    assert memory.add_manual(OWNER, "bad", "gotcha", "T", "B", "p") is None
+    assert memory.add_manual(OWNER, "project", "gotcha", " ", "B", "p") is None
+    assert memory.add_manual(OWNER, "project", "gotcha", "T", "B", None) is None
+
+
+def _handler():
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    return h, box
+
+
+def test_memory_add_endpoint(monkeypatch):
+    monkeypatch.setattr(dash, "_chat", lambda: OWNER)
+    h, box = _handler()
+    h._post_api("/local/memory/add", {"project": "proj/y", "type": "decision",
+                                      "title": "T", "body": "B"})
+    assert box["code"] == 200 and box["obj"]["item"]["type"] == "decision"
+    h._post_api("/local/memory/add", {"project": "proj/y", "type": "bogus",
+                                      "title": "T", "body": "B"})
+    assert box["code"] == 400
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python3 -m pytest tests/test_memory_add.py -v`
+Expected: FAIL — `AttributeError: module 'bridge.memory' has no attribute 'add_manual'`.
+
+- [ ] **Step 3: Backend implementation**
+
+3a. Append to `bridge/memory.py`'s action layer (after `items`):
+
+```python
+def add_manual(owner_id: int, scope: str, mem_type: str, title: str, body: str,
+               project: "str | None", branch: "str | None" = None) -> "dict | None":
+    """User-created fact (Memory tab ADD form): validated, active immediately —
+    the human gate is the human typing it."""
+    if scope not in _SCOPES or mem_type not in _TYPES:
+        return None
+    title, body = (title or "").strip(), (body or "").strip()
+    if not title or not body:
+        return None
+    proj = None if scope == "user" else ((project or "").strip() or None)
+    if scope == "project" and not proj:
+        return None
+    return store.add_memory(owner_id, scope, mem_type, title, body,
+                            project_path=proj,
+                            branch=(branch if mem_type == "goal" else None),
+                            status="active")
+```
+
+3b. In `bridge/dashboard/server.py` `_post_api`, after the `/local/memory/pin` block:
+
+```python
+        if path == "/local/memory/add":
+            m = memory.add_manual(chat, str(body.get("scope") or "project"),
+                                  str(body.get("type", "")), body.get("title", ""),
+                                  body.get("body", ""), body.get("project"),
+                                  body.get("branch"))
+            return self._json({"item": m}) if m else self._json({"error": "invalid memory"}, 400)
+```
+
+- [ ] **Step 4: Run backend tests**
+
+Run: `python3 -m pytest tests/test_memory_add.py tests/test_memory_actions.py tests/test_memory_store.py -v`
+Expected: all pass.
+
+- [ ] **Step 5: Frontend — api.ts + ADD form + tab wiring**
+
+5a. `api.ts`, after `memoryPin`:
+
+```ts
+  memoryAdd: (project: string, type: string, title: string, body: string,
+              scope: "project" | "user" = "project") =>
+    req<{ item: Memory }>("/local/memory/add", {
+      method: "POST", body: { project, type, title, body, scope },
+    }),
+```
+
+5b. `MemoryTab.tsx`: add an ADD form rendered above the kept-facts list. State + handler at the top of the component:
+
+```tsx
+  const [draft, setDraft] = useState({ type: "gotcha", title: "", body: "" });
+  const add = async () => {
+    if (!draft.title.trim() || !draft.body.trim()) return;
+    setBusy("add");
+    try {
+      await api.memoryAdd(project, draft.type, draft.title, draft.body);
+      setDraft({ type: "gotcha", title: "", body: "" });
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+```
+
+Form JSX (style it to match the component's existing rows — same fonts/borders it already uses; select over `Object.entries(TYPE_LABEL)`, two text inputs, ADD button disabled while `busy === "add"` or fields empty):
+
+```tsx
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <select value={draft.type}
+          onChange={(e) => setDraft((d) => ({ ...d, type: e.target.value }))}>
+          {Object.entries(TYPE_LABEL).map(([k, l]) => (
+            <option key={k} value={k}>{l}</option>
+          ))}
+        </select>
+        <input placeholder="title" value={draft.title}
+          onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} />
+        <input placeholder="fact" value={draft.body} style={{ flex: 1 }}
+          onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
+          onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button onClick={add}
+          disabled={busy === "add" || !draft.title.trim() || !draft.body.trim()}>
+          ADD
+        </button>
+      </div>
+```
+
+5c. `AnalyzeModal.tsx` — the same 4 edits as the MAP tab: `import { MemoryTab } from "./MemoryTab";`, extend the Tab union with `"memory"`, add `{ k: "memory", l: "MEMORY", badge: candidateCount || undefined }` to the tabs array **only if a candidate count is already available in scope — otherwise no badge**, and add the body branch `{tab === "memory" && <MemoryTab project={project} />}`.
+
+- [ ] **Step 6: Verify the build**
+
+Run: `npm --prefix bridge/dashboard/web run build`
+Expected: `tsc -b && vite build` clean.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add bridge/memory.py bridge/dashboard/server.py bridge/dashboard/web/src/api.ts bridge/dashboard/web/src/components/hud/MemoryTab.tsx bridge/dashboard/web/src/components/hud/AnalyzeModal.tsx tests/test_memory_add.py
+git commit -m "feat(dashboard): restore MEMORY tab in project analysis + manual add"
+```
+
+**Execution-order note:** Tasks 15-16 run after Task 13; Task 14 (dist rebuilds + full suite) stays LAST.
