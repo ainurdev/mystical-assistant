@@ -162,3 +162,21 @@ tab, the picker, and the graph pack go live.
   rejected for now.
 - **Ponytail via slash-command turns** (`/ponytail lite` as a message) — spends
   a turn and pollutes transcripts; the env-var seam is free and per-run.
+
+## Addendum (2026-07-08): graph-aware capture + MEMORY tab restore
+
+Decided with the user after Tasks 1-4 shipped:
+
+- **Graph-aware capture narrowing** (plan Task 15). When a project has a graph,
+  the memory capture prompt tells the model to skip facts derivable from the
+  code itself (architecture, layout, call graph — the code map covers those)
+  and propose only decisions-with-why, user preferences, active goals, and
+  gotchas. The `convention` type stays allowed — commit-style conventions and
+  the like are not in the AST. No posture/default changes; `ask|auto|off`
+  per-project stays as is.
+- **MEMORY tab restored + manual add** (plan Task 16). The fully-functional
+  `MemoryTab.tsx` (posture control, Keep/Skip, pin, archive) was orphaned by
+  the HUD redesign; it is re-wired into the PROJECT ANALYSIS modal alongside
+  the new MAP tab, and gains a manual ADD form backed by
+  `POST /local/memory/add` → `memory.add_manual()` (validated, active
+  immediately — the human gate is the human typing it).

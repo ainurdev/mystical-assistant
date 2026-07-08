@@ -96,10 +96,32 @@ def _memory_pack_for(chat_id: int, cwd: "str | None") -> str:
         return ""
 
 
-def _compose_system_prompt(pack: str = "") -> str:
-    """Stable content first (ASK prompt + dev-log note), then the memory pack —
-    which is byte-stable within a session, so the prefix stays cache-eligible."""
-    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, pack.strip()) if p]
+def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
+    """Graphify structure pack for injection. Best-effort like the memory pack:
+    no graph, no module, any failure — empty string, never blocks a turn."""
+    try:
+        from bridge import graphmap
+        return graphmap.graph_pack(cwd or state.project_dir(chat_id))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
+    """Keep an existing graph fresh after a successful turn (fire-and-forget;
+    refresh_async no-ops for projects that were never mapped)."""
+    try:
+        from bridge import graphmap
+        graphmap.refresh_async(cwd or state.project_dir(chat_id))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _compose_system_prompt(pack: str = "", graph: str = "") -> str:
+    """Stable content first (ASK prompt + dev-log note), then the memory pack,
+    then the graph pack — each byte-stable within a session, so the prefix
+    stays cache-eligible."""
+    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE,
+                         pack.strip(), graph.strip()) if p]
     return "\n\n".join(parts)
 
 
@@ -122,6 +144,27 @@ def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
         except Exception:  # noqa: BLE001
             pass
     threading.Thread(target=work, daemon=True).start()
+
+
+# --- ponytail (per-run code-minimalism intensity) ----------------------------
+# The ponytail plugin's SessionStart hook reads PONYTAIL_DEFAULT_MODE from the
+# child's env; absent means the plugin's own default (full). One env var is the
+# whole integration — no tokens, no config writes, native sessions untouched.
+
+_PONYTAIL_LEVELS = ("off", "lite", "full", "ultra")
+
+
+def normalize_ponytail(level) -> "str | None":
+    lv = str(level or "").strip().lower()
+    return lv if lv in _PONYTAIL_LEVELS else None
+
+
+def _run_env(ponytail: "str | None") -> "dict | None":
+    """Env for the claude subprocess: None (inherit) unless a run picked a
+    ponytail intensity."""
+    if not ponytail:
+        return None
+    return {**os.environ, "PONYTAIL_DEFAULT_MODE": ponytail}
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +240,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     if claude_session_id:
         cmd += ["--resume", claude_session_id]
     pack = "" if skip_pack else _memory_pack_for(chat_id, cwd)
-    cmd += ["--append-system-prompt", _compose_system_prompt(pack)]
+    graph = "" if skip_pack else _graph_pack_for(chat_id, cwd)
+    cmd += ["--append-system-prompt", _compose_system_prompt(pack, graph)]
     if not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd
@@ -209,13 +253,14 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 
 def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  cwd: str | None = None, timeout: int | None = None, *,
-                 model: str | None = None, skip_pack: bool = False):
+                 model: str | None = None, skip_pack: bool = False,
+                 ponytail: str | None = None):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
                     cwd=cwd, model=model, skip_pack=skip_pack)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
-                              text=True, timeout=timeout)
+                              text=True, timeout=timeout, env=_run_env(ponytail))
     except subprocess.TimeoutExpired:
         return (f"⏱️ Timed out after {timeout // 60} min.", None, None, True)
     except FileNotFoundError:
@@ -257,6 +302,7 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                           int(time.time() - started))
         if not is_error:
             _capture_async(chat_id, session["id"], job_id, None, result, [])
+            _graph_refresh_after_turn(chat_id, None)
         footer = f"\n\n— {int(time.time() - started)}s"
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
         if not is_error:
@@ -768,7 +814,7 @@ def _watchdog(job: Job, proc) -> None:
 
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
-                   permission_mode: str | None = None):
+                   permission_mode: str | None = None, ponytail: str | None = None):
     proc = None
     try:
         full_prompt = prompt
@@ -781,7 +827,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, bufsize=1)
+                                    text=True, bufsize=1, env=_run_env(ponytail))
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -891,6 +937,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _capture_async(job.chat_id, job.store_session_id, job.id, cwd,
                            "\n\n".join(job.texts), list(job.edited))
+            _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
             notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
         # Teacher-mode capture (best-effort, background thread). Streaming has
@@ -979,7 +1026,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         model: str | None = None, effort: str | None = None,
                         permission_mode: str | None = None,
                         session_id: str | None = None,
-                        origin: str | None = None) -> Job | None:
+                        origin: str | None = None, ponytail: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -1003,7 +1050,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                          [os.path.basename(p) for p in image_paths], model=model)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
-                         args=(job, prompt, image_paths, cwd, model, effort, perm),
+                         args=(job, prompt, image_paths, cwd, model, effort, perm,
+                               ponytail),
                          daemon=True).start()
         return job
     except BaseException:

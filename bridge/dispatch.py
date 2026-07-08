@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 
-from bridge import config, state, store
+from bridge import config, graphmap, state, store
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -23,6 +23,7 @@ HELP = (
     "/server [cmd] — start the dev server · /server stop\n"
     "/logs [n] — recent server output\n"
     f"/preview [port] — public link (default {config.PREVIEW_PORT}) · /preview stop\n"
+    "/map [query] — project map: summary · /map build · /map <thing>\n"
     "/status — everything at a glance\n"
     "/help — this message")
 
@@ -36,6 +37,32 @@ def _open_app(chat_id: int):
                {"text": "🛠 Open Panel", "web_app": {"url": state.miniapp_url}}]]}))
     else:
         send(chat_id, "Mini App URL not ready yet — try again in a moment.")
+
+
+def _handle_map(chat_id: int, arg: str):
+    """Runs in a thread — graphify build/explain shell out for seconds."""
+    cwd = state.project_dir(chat_id)
+    if arg == "build":
+        send(chat_id, "🗺 Building the project map…")
+        ok, msg = graphmap.update(cwd)
+        st = graphmap.graph_state(cwd)
+        tag = f" (commit {st['built_commit']})" if ok and st["built_commit"] else ""
+        send(chat_id, ("✅ " if ok else "⚠️ ") + msg + tag)
+        return
+    st = graphmap.graph_state(cwd)
+    if not st["available"]:
+        send(chat_id, "graphify is not installed (pipx install graphifyy).")
+        return
+    if not st["exists"]:
+        send(chat_id, "No project map yet — /map build to create one.")
+        return
+    if arg:
+        send(chat_id, graphmap.explain(cwd, arg))
+        return
+    stale = " · stale (repo has moved on)" if st["stale"] else ""
+    send(chat_id, f"🗺 Map built @{st['built_commit']}{stale}\n\n"
+                  f"{graphmap.graph_pack(cwd)}\n\n"
+                  "/map <thing> to explain it · /map build to refresh")
 
 
 def on_message(msg: dict):
@@ -84,6 +111,11 @@ def on_message(msg: dict):
     if cmd0 == "/preview":
         threading.Thread(target=handle_preview,
                          args=(chat_id, text[len("/preview"):].strip()),
+                         daemon=True).start()
+        return
+    if cmd0 == "/map":
+        threading.Thread(target=_handle_map,
+                         args=(chat_id, text[len("/map"):].strip()),
                          daemon=True).start()
         return
     if text == "/status":

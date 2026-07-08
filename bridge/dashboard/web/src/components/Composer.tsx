@@ -19,6 +19,14 @@ const PERMS: { id: string; label: string }[] = [
   { id: "auto", label: "Auto-run" },
   { id: "bypassPermissions", label: "Full Auto" },
 ];
+// Per-run code-minimalism intensity, threaded to the runner's env (Task 4/8).
+const PONYTAILS: { id: string; label: string }[] = [
+  { id: "", label: "Default" },
+  { id: "off", label: "Off" },
+  { id: "lite", label: "Lite" },
+  { id: "full", label: "Full" },
+  { id: "ultra", label: "Ultra" },
+];
 
 const COMPACT_SUGGEST_TOKENS = 100_000;
 const CONTEXT_MAX_TOKENS = 200_000;
@@ -88,7 +96,7 @@ function fmtTokens(n: number): string {
 }
 
 export function Composer({
-  disabled, running, model, models, effort, perm, onPerm, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, effort, perm, onPerm, ponytail, onPonytail, injectedText, injectNonce, sessionId,
   contextTokens, resetLabel, onModel, onEffort, onSend, onStop, onCompact,
   queued, onCancelQueued,
 }: {
@@ -99,6 +107,8 @@ export function Composer({
   effort: EffortLevel | "";
   perm: string;
   onPerm: (p: string) => void;
+  ponytail: string;
+  onPonytail: (v: string) => void;
   injectedText?: string;
   injectNonce?: number;
   sessionId?: string | null;
@@ -115,7 +125,7 @@ export function Composer({
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "model" | "effort" | "mode">("");
+  const [openDrop, setOpenDrop] = useState<"" | "model" | "effort" | "mode" | "pony">("");
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -247,6 +257,17 @@ export function Composer({
         <Drop label="MODE" value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
           onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
           onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
+        <Drop label="PONYTAIL" value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
+          onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
+          onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
+        <button onClick={() => onSend("/ponytail-review", [])} disabled={disabled} title="ponytail review of the working tree"
+          style={{ appearance: "none", cursor: disabled ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", opacity: disabled ? 0.4 : 1 }}>
+          PT REVIEW
+        </button>
+        <button onClick={() => onSend("/ponytail-audit", [])} disabled={disabled} title="ponytail repo audit"
+          style={{ appearance: "none", cursor: disabled ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", opacity: disabled ? 0.4 : 1 }}>
+          PT AUDIT
+        </button>
       </div>
 
       {/* command line */}

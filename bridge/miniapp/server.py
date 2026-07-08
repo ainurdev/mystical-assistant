@@ -18,9 +18,10 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (agents, browser, config, devserver, git, github, learning,
-                    memory, models, native, project_config, runner, screenshot,
-                    shell, state, store, transcript_jsonl, tunnel, usage)
+from bridge import (agents, browser, config, devserver, git, github, graphmap,
+                    learning, memory, models, native, project_config, runner,
+                    screenshot, shell, state, store, transcript_jsonl, tunnel,
+                    usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -217,6 +218,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(shell.snapshot(cursor))
                 if path == "/api/memory/items":
                     return self._api_memory_items(chat_id, qs)
+                if path == "/api/graph/state":
+                    return self._api_graph(chat_id, "state", qs, None)
+                if path == "/api/graph/html":
+                    return self._api_graph(chat_id, "html", qs, None)
+                if path == "/api/graph/explain":
+                    return self._api_graph(chat_id, "explain", qs, None)
                 return self._json({"error": "not found"}, 404)
             self._serve_static(path)
         except Exception as e:  # noqa: BLE001
@@ -254,6 +261,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_run(chat_id, body)
             if path == "/api/server":
                 return self._api_server(chat_id, body)
+            if path == "/api/graph/update":
+                return self._api_graph(chat_id, "update", {}, body)
             if path == "/api/shell":
                 return self._json(shell.run(state.project_dir(chat_id), body.get("command", "")))
             if path == "/api/shell/kill":
@@ -362,6 +371,7 @@ class Handler(BaseHTTPRequestHandler):
         if not ok:
             return self._json({"error": "invalid model"}, 400)
         permission_mode = normalize_permission_mode(body.get("permission_mode"))
+        ponytail = runner.normalize_ponytail(body.get("ponytail"))
         session_id = (body.get("session_id") or "").strip() or None
         job_id = uuid.uuid4().hex
         try:
@@ -372,7 +382,8 @@ class Handler(BaseHTTPRequestHandler):
         job = runner.start_streaming_job(chat_id, prompt, paths, project_path,
                                          job_id=job_id, model=model, effort=effort,
                                          permission_mode=permission_mode,
-                                         session_id=session_id, origin="miniapp")
+                                         session_id=session_id, origin="miniapp",
+                                         ponytail=ponytail)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
@@ -545,6 +556,36 @@ class Handler(BaseHTTPRequestHandler):
                    or config.START_CMD)
             msg = devserver.start_server(cmd, pd)
         self._json({"server": devserver.server_state(pd), "message": msg})
+
+    def _api_graph(self, chat_id: int, action: str, qs: dict, body: "dict | None"):
+        """Graph endpoints share one resolver: explicit ?project= (validated
+        under BASE_PATH) else the chat's active project."""
+        src = (body or {}).get("project") if body is not None else \
+            (qs.get("project", [None])[0])
+        cwd = None
+        if src:
+            cand = os.path.realpath(os.path.join(config.BASE_PATH, str(src).lstrip("/")))
+            if browser.within_base(cand) and os.path.isdir(cand):
+                cwd = cand
+            else:
+                return self._json({"error": "invalid project"}, 400)
+        cwd = cwd or state.project_dir(chat_id)
+        if action == "state":
+            return self._json(graphmap.graph_state(cwd))
+        if action == "html":
+            fp = os.path.join(cwd, graphmap.OUT_DIR, "graph.html")
+            if not os.path.isfile(fp):
+                return self._json({"error": "no graph"}, 404)
+            with open(fp, "rb") as f:
+                return self._send_bytes(f.read(), 200, "text/html; charset=utf-8")
+        if action == "explain":
+            q = (qs.get("q", [""])[0] or "").strip()
+            if not q:
+                return self._json({"error": "empty query"}, 400)
+            return self._json({"text": graphmap.explain(cwd, q)})
+        if action == "update":
+            return self._json(graphmap.update_async(cwd))
+        return self._json({"error": "not found"}, 404)
 
     def _api_project_settings(self, chat_id: int):
         self._json({

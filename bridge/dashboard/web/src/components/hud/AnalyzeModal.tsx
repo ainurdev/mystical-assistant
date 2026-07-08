@@ -12,6 +12,7 @@ import {
 } from "../../api";
 import { ago, projectTint, surfaceFor } from "../../lib/surfaces";
 import { EditorTab, type BranchOpt } from "./EditorTab";
+import { MapTab } from "./MapTab";
 import { SkillsTab } from "./SkillsTab";
 import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
@@ -20,7 +21,7 @@ import { XtermPane } from "./XtermPane";
    530–1258): header with editable short tag, 7-tab bar (OVERVIEW / GIT /
    WORKTREES / EDITOR / TERMINAL / SKILLS / ISSUES), and per-tab bodies. */
 
-type Tab = "overview" | "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues";
+type Tab = "overview" | "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map";
 
 interface Props {
   project: string;
@@ -148,6 +149,7 @@ export function AnalyzeModal(props: Props) {
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
     { k: "skills", l: "SKILLS" },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
+    { k: "map", l: "MAP" },
   ];
 
   return (
@@ -235,6 +237,7 @@ export function AnalyzeModal(props: Props) {
             <IssuesTab project={project} info={issues} onFeed={props.onFeed}
               onReload={() => void api.issues(project).then(setIssues).catch(() => {})} />
           )}
+          {tab === "map" && <MapTab project={project} />}
         </div>
       </div>
     </div>

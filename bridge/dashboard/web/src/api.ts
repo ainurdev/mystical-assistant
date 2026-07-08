@@ -451,6 +451,7 @@ export interface RunBody {
   model?: string;
   effort?: string;
   permission_mode?: string; // per-message operating mode; omit to use the session's
+  ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
 }
 
 export interface ShellSnapshot {
@@ -487,6 +488,16 @@ export interface Memory {
   pinned: number;
   created_at: number;
   updated_at: number;
+}
+
+// graphify knowledge-graph state for a project (Task 8's /local/graph/* endpoints).
+export interface GraphState {
+  available: boolean;
+  exists: boolean;
+  built_commit: string | null;
+  head: string | null;
+  stale: boolean;
+  building: boolean;
 }
 
 export const api = {
@@ -741,6 +752,17 @@ export const api = {
     mode: "explain" | "quiz" | "exercise" | "grade";
     user_answer?: string;
   }) => req<{ text: string }>("/local/learning/teach", { method: "POST", body }),
+  // --- MAP tab: graphify knowledge graph (graph.html) ---
+  graphState: (project: string) =>
+    req<GraphState>(`/local/graph/state?project=${encodeURIComponent(project)}`),
+  graphExplain: (project: string, q: string) =>
+    req<{ text: string }>(
+      `/local/graph/explain?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}`,
+    ),
+  graphUpdate: (project: string) =>
+    req<GraphState>("/local/graph/update", { method: "POST", body: { project } }),
+  graphHtmlUrl: (project: string) =>
+    `/local/graph/html?project=${encodeURIComponent(project)}`,
 };
 
 /** Query string for a preview context (cwd/project/branch), omitting blanks. */

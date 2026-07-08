@@ -27,8 +27,8 @@ from urllib.parse import parse_qs, urlparse
 
 import re
 
-from bridge import (agents, browser, config, devserver, git, github, learning,
-                    memory, models, native, preview_detect, project_config,
+from bridge import (agents, browser, config, devserver, git, github, graphmap,
+                    learning, memory, models, native, preview_detect, project_config,
                     pubsub, queue_manager, runner, screenshot, shell, state,
                     store, sysinfo, terminals, tunnel, usage, weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
@@ -415,6 +415,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"items": memory.items(
                 chat, project=(qs.get("project", [None])[0] or None),
                 status=(qs.get("status", ["active"])[0] or "active"))})
+        if path == "/local/graph/state":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(graphmap.graph_state(abs_p))
+        if path == "/local/graph/html":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            fp = os.path.join(abs_p, graphmap.OUT_DIR, "graph.html")
+            if not os.path.isfile(fp):
+                return self._json({"error": "no graph"}, 404)
+            with open(fp, "rb") as f:
+                return self._send(f.read(), 200, "text/html; charset=utf-8")
+        if path == "/local/graph/explain":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            q = (qs.get("q", [""])[0] or "").strip()
+            if abs_p is None or not q:
+                return self._json({"error": "invalid project or query"}, 400)
+            return self._json({"text": graphmap.explain(abs_p, q)})
         if path == "/local/learning/items":
             project = qs.get("project", [""])[0]
             return self._json({"items": store.list_learning_items(
@@ -430,6 +450,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._respond(path[len("/local/run/"):-len("/respond")], body)
         if path.startswith("/local/run/") and path.endswith("/interrupt"):
             return self._interrupt(path[len("/local/run/"):-len("/interrupt")], body)
+        if path == "/local/graph/update":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(graphmap.update_async(abs_p))
         if path.startswith("/local/queue/"):
             return self._queue(path[len("/local/queue/"):], chat, body)
         if path == "/local/shell":
@@ -734,6 +759,7 @@ class Handler(BaseHTTPRequestHandler):
         if not ok:
             return self._json({"error": "invalid model"}, 400)
         permission_mode = normalize_permission_mode(body.get("permission_mode"))
+        ponytail = runner.normalize_ponytail(body.get("ponytail"))
         session_id = (body.get("session_id") or "").strip() or None
         job_id = uuid.uuid4().hex
         try:
@@ -744,7 +770,8 @@ class Handler(BaseHTTPRequestHandler):
         job = runner.start_streaming_job(chat, prompt, paths, project_path, job_id=job_id,
                                          model=model, effort=effort,
                                          permission_mode=permission_mode,
-                                         session_id=session_id, origin="dashboard")
+                                         session_id=session_id, origin="dashboard",
+                                         ponytail=ponytail)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
