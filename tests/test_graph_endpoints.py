@@ -79,3 +79,54 @@ def test_graph_update_endpoint(monkeypatch):
     h, box = _handler()
     h._post_api("/local/graph/update", {"project": name})
     assert box["code"] == 200 and box["obj"]["building"] is True
+
+
+# --- miniapp ------------------------------------------------------------------
+
+from bridge.miniapp import server as mini  # noqa: E402
+
+
+def _mini_handler():
+    h = mini.Handler.__new__(mini.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._send_bytes = lambda data, code, ctype, cache="no-cache": box.update(
+        data=data, code=code, ctype=ctype)
+    return h, box
+
+
+def test_mini_graph_state(monkeypatch):
+    name, _d = _mkproject("proj_mstate")
+    monkeypatch.setattr(graphmap, "graph_state", lambda _c: {"exists": True,
+        "available": True, "built_commit": "a", "head": "a",
+        "stale": False, "building": False})
+    h, box = _mini_handler()
+    h._api_graph(555, "state", {"project": [name]}, None)
+    assert box["obj"]["exists"] is True
+
+
+def test_mini_graph_html(monkeypatch):
+    name, d = _mkproject("proj_mhtml")
+    os.makedirs(os.path.join(d, graphmap.OUT_DIR), exist_ok=True)
+    with open(os.path.join(d, graphmap.OUT_DIR, "graph.html"), "w") as f:
+        f.write("<html>M</html>")
+    h, box = _mini_handler()
+    h._api_graph(555, "html", {"project": [name]}, None)
+    assert box["code"] == 200 and b"M" in box["data"]
+
+
+def test_mini_graph_update(monkeypatch):
+    name, _d = _mkproject("proj_mupd")
+    monkeypatch.setattr(graphmap, "update_async", lambda _c: {"building": True})
+    h, box = _mini_handler()
+    h._api_graph(555, "update", {}, {"project": name})
+    assert box["obj"]["building"] is True
+
+
+def test_mini_graph_defaults_to_active_project(monkeypatch):
+    _name, d = _mkproject("proj_mdflt")
+    monkeypatch.setattr(mini.state, "project_dir", lambda _c: d)
+    monkeypatch.setattr(graphmap, "graph_state", lambda cwd: {"cwd": cwd})
+    h, box = _mini_handler()
+    h._api_graph(555, "state", {}, None)
+    assert box["obj"]["cwd"] == d
