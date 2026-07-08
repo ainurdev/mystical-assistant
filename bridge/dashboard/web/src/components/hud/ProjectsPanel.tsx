@@ -22,8 +22,8 @@ interface Props {
 
 /** Cluster nested repos under their top-level org folder (one level only:
  * "ainurhq/unideck-mono/unideck-api" groups under "ainurhq"); top-level repos
- * stay their own headerless cluster so the incoming activity order is
- * preserved. Cluster position = most active member. */
+ * stay their own headerless cluster so the incoming (alphabetical) order is
+ * preserved. Cluster position = first member. */
 function clusterByParent(groups: ProjectGroup[]): { parent: string; items: ProjectGroup[] }[] {
   const clusters: { parent: string; items: ProjectGroup[] }[] = [];
   const at = new Map<string, number>();

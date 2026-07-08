@@ -462,14 +462,10 @@ export function App() {
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
-    // Order by most-recent session activity. We deliberately do NOT pin the
-    // active project to the top — selecting a project should highlight it in
-    // place, not yank it to position 0 under the cursor.
-    groups.sort((a, b) => {
-      const am = a.sessions[0]?.updated ?? 0;
-      const bm = b.sessions[0]?.updated ?? 0;
-      return bm - am;
-    });
+    // Alphabetical by path — a fixed order. Activity sorting reshuffled rows
+    // on every session update, and zero-session ties followed Map insertion
+    // order, so selecting a project moved it (and others) under the cursor.
+    groups.sort((a, b) => a.rel.localeCompare(b.rel));
     return groups;
   }, [sessions, gitBadges, statusMap, activeProject, discovered]);
 
