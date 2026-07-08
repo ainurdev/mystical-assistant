@@ -17,7 +17,8 @@ store.init()
 
 def _fake_run(result):
     """Return a run_blocking stand-in yielding `result` as the text field."""
-    def _f(chat_id, prompt, resume_id=None, cwd=None, timeout=None, model=None):
+    def _f(chat_id, prompt, resume_id=None, cwd=None, timeout=None, model=None,
+           skip_pack=False):
         _f.last_prompt = prompt
         _f.last_model = model
         return (result, None, None, False)

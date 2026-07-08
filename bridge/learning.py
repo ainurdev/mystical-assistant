@@ -60,7 +60,8 @@ def propose_review_items(owner_id: int, project_path: str | None, assistant_text
     try:
         text, _sid, _cost, is_error = runner.run_blocking(
             owner_id, native.INTERNAL_ONESHOT_TAG + "\n" + prompt,
-            cwd=project_path or None, timeout=60, model="haiku")
+            cwd=project_path or None, timeout=60, model="haiku",
+            skip_pack=True)  # pure text transform: no pack, no tools (injection)
     except Exception as e:  # noqa: BLE001
         print(f"[learning] extract call failed: {e}", file=sys.stderr)
         return []

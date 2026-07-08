@@ -242,7 +242,13 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     pack = "" if skip_pack else _memory_pack_for(chat_id, cwd)
     graph = "" if skip_pack else _graph_pack_for(chat_id, cwd)
     cmd += ["--append-system-prompt", _compose_system_prompt(pack, graph)]
-    if not interactive and config.EXTRA_CLAUDE_ARGS.strip():
+    if skip_pack:
+        # Internal one-shots (titler/memory/commit-msg) are pure text transforms
+        # whose prompts embed untrusted conversation text. No tools and no
+        # EXTRA_CLAUDE_ARGS (acceptEdits!) — an agentic run here is an injection
+        # vector: a first message like "scan the project" gets executed, not named.
+        cmd += ["--tools", ""]
+    elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd
 
