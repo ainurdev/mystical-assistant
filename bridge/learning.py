@@ -47,7 +47,7 @@ def _parse_candidates(raw: str) -> list[dict]:
     return out
 
 
-def propose_review_items(owner_id: int, project_path: str, assistant_text: str,
+def propose_review_items(owner_id: int, project_path: str | None, assistant_text: str,
                          edits_summary: str, *, edited: bool | None) -> list[dict]:
     if not getattr(config, "LEARNING_ENABLE", True):
         return []
@@ -64,7 +64,12 @@ def propose_review_items(owner_id: int, project_path: str, assistant_text: str,
     except Exception as e:  # noqa: BLE001
         print(f"[learning] extract call failed: {e}", file=sys.stderr)
         return []
-    return [] if is_error else _parse_candidates(text)
+    if is_error:
+        # run_blocking reports errors as data, not exceptions — without this
+        # line a failing one-shot is indistinguishable from "no candidates".
+        print(f"[learning] extract error: {str(text)[:200]}", file=sys.stderr)
+        return []
+    return _parse_candidates(text)
 
 
 def capture_after_turn(chat_id: int, session: dict, turn_id: str, *,
@@ -87,7 +92,9 @@ def capture_after_turn(chat_id: int, session: dict, turn_id: str, *,
             texts = [e.get("result", "") for e in evs if e.get("type") == "result"]
         assistant_text = "\n\n".join(t for t in texts if t)[:6000]
         edits_summary = "\n".join(e.get("summary", "") for e in edited_tools)[:2000]
-        cands = propose_review_items(chat_id, session["project"], assistant_text,
+        # cwd, not project: `project` is a display slug, not a real directory —
+        # as a cwd it made every extract one-shot die silently (same titler bug).
+        cands = propose_review_items(chat_id, session.get("cwd"), assistant_text,
                                      edits_summary,
                                      edited=(edited if tool_visibility else None))
         for c in cands:

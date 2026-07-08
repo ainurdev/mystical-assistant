@@ -65,6 +65,21 @@ def test_generates_subject_from_first_turn():
     assert "display:flex" in calls[0]             # assistant reply fed too
 
 
+def test_one_shot_runs_in_session_cwd_not_project_slug():
+    # Regression: the display slug (session["project"], e.g. "/p") was passed as
+    # cwd — a nonexistent directory, so every titling one-shot died silently.
+    seen = {}
+    def fake(chat_id, prompt, *a, **k):
+        seen.update(k)
+        return ("A Title", "sid", 0.0, False)
+    runner.run_blocking = fake
+    s = store.create_session(1, "/p", cwd="/real/dir")
+    tid = s["id"] + "-t1"
+    store.start_turn(s["id"], tid, "hello", None)
+    titler.generate_after_turn(1, store.get_session(s["id"]), tid)
+    assert seen.get("cwd") == "/real/dir"
+
+
 def test_prompt_is_tagged_internal():
     # The titler runs a headless one-shot that persists a JSONL; the internal tag
     # keeps native.scan from surfacing it as a phantom session in the list.
