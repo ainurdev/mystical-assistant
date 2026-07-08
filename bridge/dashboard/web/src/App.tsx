@@ -16,7 +16,7 @@ import {
 import { modelOptions } from "./models";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
-import { ago } from "./lib/surfaces";
+import { ago, useProjectTints } from "./lib/surfaces";
 import {
   loadSettings,
   saveSettings,
@@ -61,6 +61,7 @@ function fmtReset(iso: string | null | undefined): string {
 }
 
 export function App() {
+  useProjectTints(); // re-render on saved project tag/colour edits
   const [state, setState] = useState<DashState | null>(null);
   const [sessions, setSessions] = useState<SessionBrief[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);

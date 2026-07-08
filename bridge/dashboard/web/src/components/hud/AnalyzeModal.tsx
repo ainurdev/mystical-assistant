@@ -10,7 +10,7 @@ import {
   type TermInfo,
   type Worktree,
 } from "../../api";
-import { ago, projectTint, surfaceFor } from "../../lib/surfaces";
+import { ago, projectTint, setProjectTint, surfaceFor } from "../../lib/surfaces";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { MapTab } from "./MapTab";
 import { SkillsTab } from "./SkillsTab";
@@ -37,15 +37,10 @@ interface Props {
 
 const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
 
-/* tag-edit swatches (design TAG_COLORS) */
+/* tag-edit swatches (design TAG_COLORS + extended range) */
 const TAG_COLORS = [
-  { color: "var(--acc)", bd: "color-mix(in srgb, var(--acc) 45%, transparent)" },
-  { color: "var(--purple)", bd: "color-mix(in srgb, var(--purple) 45%, transparent)" },
-  { color: "var(--ok)", bd: "color-mix(in srgb, var(--ok) 45%, transparent)" },
-  { color: "var(--warn)", bd: "color-mix(in srgb, var(--warn) 45%, transparent)" },
-  { color: "var(--info)", bd: "color-mix(in srgb, var(--info) 45%, transparent)" },
-  { color: "#ff7ad9", bd: "rgba(255,122,217,.4)" },
-  { color: "var(--err)", bd: "color-mix(in srgb, var(--err) 45%, transparent)" },
+  "var(--acc)", "var(--purple)", "var(--ok)", "var(--warn)", "var(--info)", "var(--err)",
+  "#ff7ad9", "#ffab6b", "#c8ef6a", "#7fd8ff", "#ff8ba7", "#b8c9d4",
 ];
 
 function name(rel: string): string {
@@ -79,15 +74,14 @@ export function AnalyzeModal(props: Props) {
   // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
   const [selectedBranch, setSelectedBranch] = useState("");
 
-  // editable short tag + color. TODO(phase2-data): no persistence endpoint yet —
-  // the override lives for this modal instance only.
-  const [tagOv, setTagOv] = useState<{ tag: string; color: string; bd: string } | null>(null);
+  // editable short tag + color — persisted per project via setProjectTint, so
+  // the strip, panels and future opens all reflect it.
   const [tagEditOpen, setTagEditOpen] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const [tagColorDraft, setTagColorDraft] = useState("");
-  const tag = tagOv?.tag ?? tint.tag;
-  const tagColor = tagOv?.color ?? tint.color;
-  const tagBd = tagOv?.bd ?? tint.border;
+  const tag = tint.tag;
+  const tagColor = tint.color;
+  const tagBd = tint.border;
 
   const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
   const refreshWt = () => { void api.worktrees(project).then((w) => setWorktrees(w.worktrees)).catch(() => {}); };
@@ -97,7 +91,7 @@ export function AnalyzeModal(props: Props) {
 
   useEffect(() => {
     setSelectedBranch("");
-    setTagOv(null); setTagEditOpen(false);
+    setTagEditOpen(false);
     refreshGit();
     void api.issues(project).then(setIssues).catch(() => {});
     refreshBranches();
@@ -121,10 +115,7 @@ export function AnalyzeModal(props: Props) {
   }
   function saveTagEdit() {
     const t = (tagDraft.trim() || tag).toUpperCase().slice(0, 5);
-    const c = tagColorDraft || tagColor;
-    // c is a palette color (mostly var(--…)); color-mix handles both var() and
-    // hex, unlike hexRgba which yields rgba(NaN,…) for a var() string.
-    setTagOv({ tag: t, color: c, bd: `color-mix(in srgb, ${c} 45%, transparent)` });
+    setProjectTint(project, { tag: t, color: tagColorDraft || tagColor });
     setTagEditOpen(false);
   }
 
@@ -175,8 +166,8 @@ export function AnalyzeModal(props: Props) {
                 <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", margin: "11px 0 7px" }}>COLOR</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {TAG_COLORS.map((c) => (
-                    <button key={c.color} onClick={() => setTagColorDraft(c.color)}
-                      style={{ width: 20, height: 20, borderRadius: "50%", border: 0, cursor: "pointer", background: c.color, boxShadow: tagColorDraft === c.color ? `0 0 0 2px #060a0a, 0 0 0 3px ${c.color}` : "0 0 0 0 transparent", padding: 0, flex: "none" }} />
+                    <button key={c} onClick={() => setTagColorDraft(c)}
+                      style={{ width: 20, height: 20, borderRadius: "50%", border: 0, cursor: "pointer", background: c, boxShadow: tagColorDraft === c ? `0 0 0 2px #060a0a, 0 0 0 3px ${c}` : "0 0 0 0 transparent", padding: 0, flex: "none" }} />
                   ))}
                 </div>
                 <div style={{ display: "flex", gap: 7, marginTop: 13 }}>

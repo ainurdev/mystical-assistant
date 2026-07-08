@@ -1,4 +1,5 @@
 // Maps a session/run origin to its surface chip (code + colors) and shared time helpers.
+import { useSyncExternalStore } from "react";
 export interface Surface {
   code: string;
   label: string;
@@ -48,13 +49,49 @@ export interface ProjectTint {
   tag: string;
 }
 
-export function projectTint(name: string | null | undefined): ProjectTint {
+// User-picked tag/colour overrides (analyze modal's tag editor), keyed by
+// project basename — the same key the hash tints by, so every projectTint()
+// caller (strip, panels, terminal, modals) picks them up.
+// ponytail: localStorage = per-browser like every other HUD pref; move to a
+// bridge endpoint if cross-device sync ever matters.
+const TINT_KEY = "hud-project-tints";
+type TintOverride = { tag?: string; color?: string };
+let tintOverrides: Record<string, TintOverride> = {};
+try {
+  tintOverrides = (JSON.parse(localStorage.getItem(TINT_KEY) || "{}") as Record<string, TintOverride>) || {};
+} catch { /* ignore */ }
+
+let tintVersion = 0;
+const tintSubs = new Set<() => void>();
+
+function tintBase(name: string | null | undefined): string {
   const clean = (name ?? "").replace(/\/+$/, "");
-  const base = clean.split("/").pop() || clean || "proj";
+  return clean.split("/").pop() || clean || "proj";
+}
+
+export function setProjectTint(name: string | null | undefined, ov: TintOverride): void {
+  tintOverrides[tintBase(name)] = ov;
+  try { localStorage.setItem(TINT_KEY, JSON.stringify(tintOverrides)); } catch { /* ignore */ }
+  tintVersion++;
+  tintSubs.forEach((fn) => fn());
+}
+
+/** Subscribe to tint-override changes — call once near the root so a saved
+ *  tag/colour re-renders every projectTint() consumer immediately. */
+export function useProjectTints(): number {
+  return useSyncExternalStore(
+    (fn) => { tintSubs.add(fn); return () => { tintSubs.delete(fn); }; },
+    () => tintVersion,
+  );
+}
+
+export function projectTint(name: string | null | undefined): ProjectTint {
+  const base = tintBase(name);
+  const ov = tintOverrides[base];
   let h = 0;
   for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
-  const color = PROJ_PALETTE[h % PROJ_PALETTE.length];
-  const tag = (base.replace(/[^a-z0-9]/gi, "").slice(0, 4) || "proj").toUpperCase();
+  const color = ov?.color || PROJ_PALETTE[h % PROJ_PALETTE.length];
+  const tag = ov?.tag || (base.replace(/[^a-z0-9]/gi, "").slice(0, 4) || "proj").toUpperCase();
   // Translucent border. Most palette entries are CSS var() strings, so hex-slicing
   // them yielded rgba(NaN,NaN,NaN,.45) (dropped by the browser); color-mix works
   // for both var() and literal hex.
