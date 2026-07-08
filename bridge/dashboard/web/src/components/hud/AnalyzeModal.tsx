@@ -74,6 +74,7 @@ export function AnalyzeModal(props: Props) {
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [termCount, setTermCount] = useState(0);
   const [closing, setClosing] = useState(false);
+  const [full, setFull] = useState(false);
   // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
   const [selectedBranch, setSelectedBranch] = useState("");
 
@@ -151,9 +152,9 @@ export function AnalyzeModal(props: Props) {
 
   return (
     <div onClick={close}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "7vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
+      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: full ? "3vh" : "7vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: 880, maxWidth: "94vw", maxHeight: "84vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ width: full ? "96vw" : 880, maxWidth: full ? "96vw" : "94vw", height: full ? "93vh" : undefined, maxHeight: full ? "93vh" : "84vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
@@ -191,6 +192,8 @@ export function AnalyzeModal(props: Props) {
           </span>
           {live && <span style={{ fontSize: 9, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 6px" }}>LIVE</span>}
           <span style={{ flex: 1 }} />
+          <button onClick={() => setFull((v) => !v)} title={full ? "restore size" : "expand"} {...hp("full")}
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "full" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 11, padding: "3px 9px", lineHeight: 1.4 }}>{full ? "⤡" : "⤢"}</button>
           <button onClick={close} style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px" }}>ESC ✕</button>
         </div>
         {/* tabs */}
@@ -532,7 +535,11 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
   useEffect(() => { setSel(null); setMsg(""); load(); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, branch]);
 
-  const files = st?.files ?? [];
+  // A branch with no worktree makes the backend fall back to the project
+  // checkout — whose status would masquerade as this branch's. Detect the
+  // mismatch and show nothing rather than another branch's changes.
+  const wrongTree = !!(st?.is_repo && branch && st.branch !== branch);
+  const files = wrongTree ? [] : st?.files ?? [];
   const selName = sel ?? files[0]?.path ?? null;
   const allChecked = files.length > 0 && checked.size === files.length;
   const toggleCheck = (p: string) =>
@@ -590,9 +597,40 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
 
   return (
     <div style={{ animation: "mslide .3s ease both" }}>
-      <div style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 11 }}>WORKING TREE</div>
+      {/* Header row always renders the branch switcher — inside the file grid it
+          unmounted on a clean branch, leaving no way to switch back. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>WORKING TREE</span>
+        <span style={{ flex: 1 }} />
+        <div style={{ position: "relative", flex: "none" }}>
+          <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
+            style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px", maxWidth: 160 }}>
+            <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
+            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch || "—"}</span>
+            <span style={{ color: "var(--purple-g)", flex: "none" }}>▾</span>
+          </button>
+          {menuOpen && (
+            <div style={{ position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
+              <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
+              {branchOpts.map((b) => (
+                <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
+                  style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "7px 9px", textAlign: "left" }}>
+                  <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
+                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
+                  {b.hasWorktree && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
+                  {b.on && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
       {st && files.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>Working tree clean.</div>
+        <div style={{ fontSize: 12, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>
+          {wrongTree
+            ? <>⎇ {branch} isn't checked out — no working tree to show. Create a worktree for it in the WORKTREES tab.</>
+            : "Working tree clean."}
+        </div>
       )}
       {files.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", minHeight: 362 }}>
@@ -602,29 +640,6 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
               <button onClick={toggleAll} disabled={!files.length} title={allChecked ? "deselect all" : "select all"} {...hp("all")}
                 style={{ appearance: "none", cursor: files.length ? "pointer" : "default", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "all" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "3px 7px", flex: "none" }}>{allChecked ? "NONE" : "ALL"}</button>
               <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)" }}>{checked.size}/{files.length} SEL</span>
-              <span style={{ flex: 1 }} />
-              <div style={{ position: "relative", flex: "none" }}>
-                <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
-                  style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px", maxWidth: 160 }}>
-                  <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch || "—"}</span>
-                  <span style={{ color: "var(--purple-g)", flex: "none" }}>▾</span>
-                </button>
-                {menuOpen && (
-                  <div style={{ position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
-                    <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
-                    {branchOpts.map((b) => (
-                      <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
-                        style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "7px 9px", textAlign: "left" }}>
-                        <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-                        <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
-                        {b.hasWorktree && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
-                        {b.on && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
             <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               {files.map((f) => {
