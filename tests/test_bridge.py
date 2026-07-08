@@ -1054,6 +1054,72 @@ def test_allowed_screenshot_url():
     assert not _allowed_screenshot_url("file:///etc/passwd", {3000}, None)
 
 
+# --- auto-resume: only the user may stop a turn ------------------------------
+
+def test_restart_killed_only_for_shutdown_errors(monkeypatch):
+    from bridge import state
+    job = runner.Job("rk1", 555, "s-rk")
+    job.status = "error"
+    monkeypatch.setattr(state, "shutting_down", True)
+    assert runner._restart_killed(job)
+    job.interrupted = True                        # user Stop → not a restart kill
+    assert not runner._restart_killed(job)
+    job.interrupted, job.timed_out = False, True  # watchdog brake → keep the error
+    assert not runner._restart_killed(job)
+    job.timed_out, job.status = False, "done"     # finished fine → record it
+    assert not runner._restart_killed(job)
+    job.status = "error"
+    monkeypatch.setattr(state, "shutting_down", False)
+    assert not runner._restart_killed(job)        # bridge alive → real error
+
+
+def test_midrun_crash_auto_resumes_capped(monkeypatch):
+    s = store.create_session(555, "p-crash")
+    store.set_claude_session_id(s["id"], "csid-crash")
+    started = []
+    monkeypatch.setattr(runner, "start_streaming_job",
+                        lambda *a, **kw: (started.append((a, kw)), object())[1])
+    monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)
+
+    def crashed_turn():
+        job = runner.Job(f"jc{len(started)}", 555, s["id"])
+        job.status = "error"
+        return runner._maybe_auto_resume(job, "/tmp", None, None)
+
+    assert crashed_turn() and crashed_turn()      # consecutive crashes resume…
+    assert not crashed_turn()                     # …until AUTO_RESUME_MAX gives up
+    assert len(started) == 2
+    assert started[0][0][1] == runner.RESUME_NUDGE
+    ok = runner.Job("jok", 555, s["id"])          # a healthy turn resets the cap
+    ok.status = "done"
+    runner._maybe_auto_resume(ok, "/tmp", None, None)
+    assert crashed_turn()
+
+
+def test_midrun_no_resume_for_user_stop_timeout_or_shutdown(monkeypatch):
+    from bridge import state
+    s = store.create_session(555, "p-noresume")
+    store.set_claude_session_id(s["id"], "csid-noresume")
+
+    def boom(*a, **kw):
+        raise AssertionError("must not spawn a resume")
+    monkeypatch.setattr(runner, "start_streaming_job", boom)
+
+    job = runner.Job("jn", 555, s["id"])
+    job.status, job.interrupted = "error", True
+    assert not runner._maybe_auto_resume(job, "/tmp", None, None)   # user Stop
+    job.interrupted, job.timed_out = False, True
+    assert not runner._maybe_auto_resume(job, "/tmp", None, None)   # watchdog
+    job.timed_out = False
+    monkeypatch.setattr(state, "shutting_down", True)
+    assert not runner._maybe_auto_resume(job, "/tmp", None, None)   # restarting
+    monkeypatch.setattr(state, "shutting_down", False)
+    fresh = store.create_session(555, "p-noinit")                   # never got an init event
+    job2 = runner.Job("jn2", 555, fresh["id"])
+    job2.status = "error"
+    assert not runner._maybe_auto_resume(job2, "/tmp", None, None)  # no claude session id
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

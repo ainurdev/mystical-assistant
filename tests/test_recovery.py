@@ -47,14 +47,14 @@ class _Rec:
         return self._job
 
 
-def _recover(run, *, notify=None, now=10_000.0):
+def _recover(run, *, notify=None):
     """Run recovery with a known allowed-chat set, isolating the test from the real
     ALLOWED_CHAT_IDS that leaks into the process env (config parses it once at
     import, so import order across test files would otherwise decide it)."""
     saved = config.ALLOWED_CHAT_IDS
     config.ALLOWED_CHAT_IDS = {CHAT}
     try:
-        return recovery.recover(run=run, notify=notify or _Rec(), now=now)
+        return recovery.recover(run=run, notify=notify or _Rec())
     finally:
         config.ALLOWED_CHAT_IDS = saved
 
@@ -83,7 +83,6 @@ def test_recover_resumes_eligible():
     assert call["project"] == "/tmp/rez" and call["model"] == "sonnet"
     assert call["prompt"] == recovery.NUDGE and call["images"] == []
     assert len(notify.calls) == 1 and notify.calls[0]["chat_id"] == CHAT
-    assert store.get_session(sid)["last_auto_resume"] == 10_000.0
 
 
 def test_recover_skips_turn_without_claude_session_id():
@@ -94,20 +93,15 @@ def test_recover_skips_turn_without_claude_session_id():
     assert sid not in store.running_session_ids(CHAT)  # still flipped to error
 
 
-def test_recover_skips_within_cooldown():
-    sid = _orphan("cool", claude_sid="c-3")
-    store.set_last_auto_resume(sid, 9_950.0)          # 50s ago, inside the 600s window
-    run = _Rec()
-    n = _recover(run)
-    assert n == 0 and run.calls == []
-
-
-def test_recover_resumes_after_cooldown_elapsed():
+def test_recover_resumes_on_every_boot():
+    """Back-to-back restarts each resume the interrupted turn — no cooldown skip
+    (every boot-resume traces to a human restarting the bridge, so it can't loop)."""
     sid = _orphan("warm", claude_sid="c-4")
-    store.set_last_auto_resume(sid, 1_000.0)          # long ago
     run = _Rec()
-    n = _recover(run)
-    assert n == 1 and run.calls[0]["session_id"] == sid
+    assert _recover(run) == 1
+    store.start_turn(sid, f"{sid}-again", "still going", [])   # next restart hits it too
+    assert _recover(run) == 1
+    assert [c["session_id"] for c in run.calls] == [sid, sid]
 
 
 def test_recover_skips_disallowed_chat():

@@ -22,6 +22,11 @@ _run_chats: dict[str, int] = {}            # session id -> chat that owns the in
 miniapp_url: str | None = None             # current public Mini App URL
 miniapp_tunnel_proc = None                 # subprocess.Popen for the Mini App tunnel
 
+# True once the bridge is stopping (SIGINT/SIGTERM/shutdown). Runner threads that
+# see their Claude child die while this is set treat it as the restart killing the
+# turn — they leave it 'running' so startup recovery resumes it — not as an error.
+shutting_down = False
+
 
 def acquire_run(session_id: str, chat_id: int) -> bool:
     """Claim the single run slot for one session (non-blocking). Returns False if

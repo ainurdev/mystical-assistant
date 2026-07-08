@@ -1,14 +1,15 @@
 """Startup recovery: resume turns a restart interrupted.
 
-When the bridge is stopped/restarted mid-turn it group-SIGKILLs its Claude child
-(surfaced as "claude exited -9") and the turn is left 'running'. On the next
-start we claim those orphaned turns and, for each resumable one, resume its Claude
-session (--resume) with a short "you were interrupted, continue" nudge. A per-
-session cooldown stops a crash-looping session from being resumed on every boot.
+When the bridge is stopped/restarted mid-turn its Claude child dies with it and
+the turn is left 'running' (the runner skips finish_turn once state.shutting_down
+is set). On the next start we claim those orphaned turns and, for each resumable
+one, resume its Claude session (--resume) with a short "you were interrupted,
+continue" nudge. No cooldown: every boot-resume traces to a human restarting the
+bridge, so it cannot self-loop — the crash-loop cap for resumes that keep dying
+lives in the runner's mid-run auto-resume (runner.AUTO_RESUME_MAX).
 """
 
 import sys
-import time
 
 from bridge import config, runner, store, telegram
 
@@ -18,13 +19,12 @@ NUDGE = (
     "finish the task you were doing. Don't start over.")
 
 
-def recover(*, run=None, notify=None, now=None) -> int:
+def recover(*, run=None, notify=None) -> int:
     """Claim orphaned turns and auto-resume the resumable ones; returns the number
     resumed. Claiming always flips the orphans to 'error' (UI hygiene) even when
-    auto-resume is off. `run`/`notify`/`now` are injectable for tests."""
+    auto-resume is off. `run`/`notify` are injectable for tests."""
     run = run or runner.start_streaming_job
     notify = notify or telegram.send
-    now = time.time() if now is None else now
 
     orphaned = store.claim_orphaned_turns()          # also flips them to 'error'
     if not config.AUTO_RESUME:
@@ -40,11 +40,8 @@ def recover(*, run=None, notify=None, now=None) -> int:
             continue                                  # died before init — nothing to resume
         if t["chat_id"] not in config.ALLOWED_CHAT_IDS:
             continue
-        if now - (t["last_auto_resume"] or 0) < config.AUTO_RESUME_COOLDOWN:
-            continue                                  # crash-loop guard
         resumed_sessions.add(sid)
-        store.set_last_auto_resume(sid, now)          # stamp before running: a failed
-        try:                                          # resume still counts against the cooldown
+        try:
             job = run(t["chat_id"], NUDGE, [], project=t["cwd"],
                       session_id=sid, model=t["model"])
         except Exception as e:  # noqa: BLE001

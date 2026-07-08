@@ -37,6 +37,7 @@ Requirements
 
 import json
 import os
+import signal
 import sys
 
 from bridge import config, devserver, native_activity, pubsub, recovery, state, store, tunnel
@@ -83,7 +84,16 @@ def _setup_dashboard():
     print(f"Dashboard (localhost only): {url}")
 
 
+def _on_stop_signal(signum, frame):
+    # Flag first, then unwind: runner threads watching their Claude child die must
+    # already see shutting_down, or they'd record the killed turn as an error and
+    # startup recovery would find nothing to resume.
+    state.shutting_down = True
+    raise KeyboardInterrupt
+
+
 def _shutdown():
+    state.shutting_down = True
     native_activity.stop()
     tunnel.stop_tunnel()
     devserver.stop_all()      # every registered dev server, not just the primary
@@ -107,6 +117,8 @@ def main():
     if not me:
         sys.exit("Could not reach Telegram. Check the token / network.")
     print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
+    signal.signal(signal.SIGINT, _on_stop_signal)
+    signal.signal(signal.SIGTERM, _on_stop_signal)   # bare `kill` now shuts down cleanly too
     store.init()
     if not config.ALLOWED_CHAT_IDS:
         print("⚠️  No ALLOWED_CHAT_IDS — DISCOVERY mode (won't execute Claude).")

@@ -30,8 +30,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   origin            TEXT,
   cwd               TEXT,
   permission_mode   TEXT,
-  title_source      TEXT DEFAULT 'auto',
-  last_auto_resume  REAL
+  title_source      TEXT DEFAULT 'auto'
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -140,9 +139,8 @@ def init() -> None:
         # Title provenance: 'auto' (first-prompt), 'subject' (LLM), 'manual'.
         if "title_source" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN title_source TEXT DEFAULT 'auto'")
-        # Per-session auto-resume cooldown timestamp (idempotent; old DBs predate it).
-        if "last_auto_resume" not in scols:
-            c.execute("ALTER TABLE sessions ADD COLUMN last_auto_resume REAL")
+        # (Old DBs may carry a dead last_auto_resume column from the retired
+        # auto-resume cooldown — harmless, never read.)
         # Turns left 'running' at startup are orphaned (the bridge restarted). They
         # are claimed — flipped to 'error' AND returned for auto-resume — by
         # claim_orphaned_turns(), which the startup recovery step calls.
@@ -301,12 +299,6 @@ def set_subject_title(session_id: str, title: str) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET title=?, title_source='subject' "
                   "WHERE id=? AND title_source='auto'", (title, session_id))
-
-
-def set_last_auto_resume(session_id: str, ts: float) -> None:
-    """Stamp when this session was last auto-resumed (crash-loop cooldown)."""
-    with closing(_connect()) as c:
-        c.execute("UPDATE sessions SET last_auto_resume=? WHERE id=?", (ts, session_id))
 
 
 # --- learning items ---------------------------------------------------------
@@ -499,7 +491,7 @@ def claim_orphaned_turns() -> list[dict]:
         c.execute("BEGIN IMMEDIATE")
         rows = c.execute(
             "SELECT t.id AS turn_id, t.session_id, t.prompt, t.model, "
-            "s.chat_id, s.cwd, s.project, s.claude_session_id, s.last_auto_resume "
+            "s.chat_id, s.cwd, s.project, s.claude_session_id "
             "FROM turns t JOIN sessions s ON s.id=t.session_id "
             "WHERE t.status='running'").fetchall()
         c.execute("UPDATE turns SET status='error' WHERE status='running'")

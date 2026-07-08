@@ -58,12 +58,11 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
 
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
 
-# Auto-resume: a restart group-SIGKILLs the in-flight Claude child (surfaced as
-# "claude exited -9") and leaves the turn 'running'. On the next start we resume
-# each such turn on its own Claude session with a "continue" nudge. The per-session
-# cooldown stops a crash-looping session from being resumed on every boot.
+# Auto-resume: only the user may stop a turn. A restart leaves the in-flight turn
+# 'running' and the next boot resumes it (bridge/recovery.py); a Claude crash while
+# the bridge stays up is resumed immediately (runner._maybe_auto_resume, capped per
+# session so a crash-looping resume can't burn tokens forever).
 AUTO_RESUME = os.environ.get("AUTO_RESUME", "1").lower() not in ("0", "false", "no", "")
-AUTO_RESUME_COOLDOWN = int(os.environ.get("AUTO_RESUME_COOLDOWN", "600"))  # s
 
 # --- Project memory ----------------------------------------------------------
 # Curated, project+branch-scoped memory injected into every turn's system prompt

@@ -251,6 +251,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                       {"type": "result", "result": result, "cost": cost}))
         if sid:
             store.set_claude_session_id(session["id"], sid)
+        if is_error and state.shutting_down:
+            return   # restart killed the run: stay 'running' for boot recovery
         store.finish_turn(job_id, "error" if is_error else "done", cost,
                           int(time.time() - started))
         if not is_error:
@@ -583,6 +585,69 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}")
 
 
+# ---------------------------------------------------------------------------
+# Auto-resume: only the user may stop a turn
+# ---------------------------------------------------------------------------
+# Two non-user ways a turn dies, two answers:
+#   - The bridge is restarting (group SIGINT/SIGKILL takes the Claude child down):
+#     leave the turn 'running' so startup recovery (bridge/recovery.py) claims and
+#     resumes it on the next boot.
+#   - Claude crashed while the bridge stays up (API drop, OOM, CLI failure):
+#     resume the session right here with a nudge. Consecutive failures are capped
+#     per session — a completed turn resets the cap — so a session whose resume
+#     itself keeps dying can't burn tokens in a loop.
+# User Stop (job.interrupted) and the RUN_TIMEOUT watchdog (job.timed_out — the
+# deliberate runaway-cost brake) are never auto-resumed.
+
+RESUME_NUDGE = (
+    "⏮ Your previous turn was cut off by an error — not by the user. "
+    "Review your recent transcript and continue exactly where you left off; "
+    "finish the task you were doing. Don't start over.")
+AUTO_RESUME_MAX = 2                 # consecutive crashed turns before giving up
+_resume_fails: dict[str, int] = {}  # session id -> consecutive error-ended turns
+
+
+def _restart_killed(job: "Job") -> bool:
+    """An error end while the bridge is shutting down is the restart killing the
+    child, not a real failure — the turn must stay 'running' for boot recovery."""
+    return (state.shutting_down and job.status == "error"
+            and not job.interrupted and not job.timed_out)
+
+
+def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
+                       effort: str | None) -> bool:
+    """Resume a session whose turn died without the user behind it. Returns True
+    when a resume run was started (the caller then skips the error notification)."""
+    sid = job.store_session_id
+    if not sid:
+        return False
+    if job.status == "done":
+        _resume_fails.pop(sid, None)             # healthy turn resets the cap
+        return False
+    if job.status != "error" or job.interrupted or job.timed_out:
+        return False
+    if not config.AUTO_RESUME or state.shutting_down:
+        return False                              # shutdown → boot recovery's job
+    fails = _resume_fails.get(sid, 0) + 1
+    _resume_fails[sid] = fails
+    if fails > AUTO_RESUME_MAX:
+        return False                              # crash-looping — stay stopped
+    sess = store.get_session(sid)
+    if not sess or not sess.get("claude_session_id"):
+        return False                              # died before init — nothing to resume
+    try:
+        job2 = start_streaming_job(job.chat_id, RESUME_NUDGE, [], project=cwd,
+                                   session_id=sid, model=model, effort=effort)
+    except Exception as e:  # noqa: BLE001
+        print(f"[auto-resume] failed for {sid}: {e}", file=sys.stderr)
+        return False
+    if job2 is None:
+        return False                              # slot taken (e.g. the queue advanced)
+    _notify(job.chat_id,
+            f"🔄 The turn was interrupted by an error — resuming {_session_label(sid)}.")
+    return True
+
+
 def _register(job: Job):
     with _jobs_lock:
         _jobs[job.id] = job
@@ -804,10 +869,12 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 pass
         if job.elapsed is None:
             job.elapsed = int(time.time() - job.started)
+        restart_killed = _restart_killed(job)   # freeze: the flag can flip mid-finally
         if job.store_session_id:
             if job.session_id:
                 store.set_claude_session_id(job.store_session_id, job.session_id)
-            store.finish_turn(job.id, job.status, job.cost, job.elapsed)
+            if not restart_killed:   # else leave 'running' for boot recovery to resume
+                store.finish_turn(job.id, job.status, job.cost, job.elapsed)
         job.clear_pending()
         job.close_stdin()
         _cleanup_uploads(job.id)
@@ -822,10 +889,11 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                     job.result, job.cost, job.elapsed)
             except Exception:  # noqa: BLE001 — never let the queue break a run
                 pass
+        resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _capture_async(job.chat_id, job.store_session_id, job.id, cwd,
                            "\n\n".join(job.texts), list(job.edited))
-        if not job.interrupted:
+        if not job.interrupted and not resumed and not restart_killed:
             notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
         # Teacher-mode capture (best-effort, background thread). Streaming has
         # tool visibility, so we trust Edit/Write detection.
