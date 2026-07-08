@@ -10,21 +10,28 @@ const mono: React.CSSProperties = {
 
 export function MapTab({ project }: { project: string }) {
   const [st, setSt] = useState<GraphState | null>(null);
+  const [err, setErr] = useState(false);
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState("");
   const [asking, setAsking] = useState(false);
   const [gen, setGen] = useState(0); // bump to reload the iframe after a rebuild
   const timer = useRef<number | null>(null);
+  const pendingBuild = useRef(false);
 
   const load = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current);
     api.graphState(project).then((s) => {
+      setErr(false);
       setSt((prev) => {
         if (prev?.building && !s.building) setGen((g) => g + 1);
         return s;
       });
+      if (!s.building && pendingBuild.current) {
+        pendingBuild.current = false;
+        setGen((g) => g + 1);
+      }
       if (s.building) timer.current = window.setTimeout(load, 1500);
-    }).catch(() => setSt(null));
+    }).catch(() => { setErr(true); setSt(null); });
   }, [project]);
 
   useEffect(() => {
@@ -32,7 +39,7 @@ export function MapTab({ project }: { project: string }) {
     return () => { if (timer.current) window.clearTimeout(timer.current); };
   }, [load]);
 
-  const build = () => { api.graphUpdate(project).then(() => load()); };
+  const build = () => { pendingBuild.current = true; api.graphUpdate(project).then(() => load()); };
   const ask = () => {
     const q = query.trim();
     if (!q || asking) return;
@@ -43,7 +50,23 @@ export function MapTab({ project }: { project: string }) {
       .finally(() => setAsking(false));
   };
 
-  if (!st) return <div style={{ ...mono, color: "var(--txd)" }}>loading…</div>;
+  if (!st) {
+    if (err) {
+      return (
+        <div style={{ ...mono, color: "var(--txm)", display: "flex", alignItems: "center", gap: 10 }}>
+          <span>failed to load graph state.</span>
+          <button onClick={load}
+            style={{ appearance: "none", cursor: "pointer",
+              border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+              background: "transparent", color: "var(--txm)", fontFamily: "inherit",
+              fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px" }}>
+            RETRY
+          </button>
+        </div>
+      );
+    }
+    return <div style={{ ...mono, color: "var(--txd)" }}>loading…</div>;
+  }
   if (!st.available) {
     return <div style={{ ...mono, color: "var(--txm)" }}>
       graphify is not installed on the bridge machine.{"\n"}pipx install graphifyy
