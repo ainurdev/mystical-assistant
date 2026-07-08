@@ -86,6 +86,9 @@ export function App() {
   const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>({});
   const [removedProjects, setRemovedProjects] = useState<Record<string, boolean>>({});
   const [importedProjects, setImportedProjects] = useState<string[]>([]);
+  // Git repos discovered on disk (org-folder nesting included) — so sessionless
+  // projects still show up in the PROJECTS panel.
+  const [discovered, setDiscovered] = useState<string[]>([]);
 
   // HUD chrome state.
   const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
@@ -176,6 +179,13 @@ export function App() {
     void tick();
     const id = setInterval(tick, 3000);
     return () => { live = false; clearInterval(id); };
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    void api.projects().then((p) => { if (live) setDiscovered(p.projects ?? []); })
+      .catch(() => { /* old backend without discovery — panel stays session-derived */ });
+    return () => { live = false; };
   }, []);
 
   const loadSessions = useCallback(async () => {
@@ -436,6 +446,7 @@ export function App() {
       byProj.set(s.project, arr);
     }
     if (activeProject && !byProj.has(activeProject)) byProj.set(activeProject, []);
+    for (const rel of discovered) if (!byProj.has(rel)) byProj.set(rel, []);
     const groups: ProjectGroup[] = [];
     for (const [rel, ss] of byProj) {
       ss.sort((a, b) => b.updated - a.updated);
@@ -444,7 +455,9 @@ export function App() {
         return st === "working" || st === "awaiting" || st === "live";
       });
       groups.push({
-        rel, name: rel.replace(/\/+$/, "").split("/").pop() || rel,
+        // Full rel as the name: org-nested repos ("ainurhq/unideck-mono/unideck")
+        // keep their path context; for top-level repos this equals the basename.
+        rel, name: rel.replace(/^\/+|\/+$/g, "") || rel,
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
@@ -457,7 +470,7 @@ export function App() {
       return bm - am;
     });
     return groups;
-  }, [sessions, gitBadges, statusMap, activeProject]);
+  }, [sessions, gitBadges, statusMap, activeProject, discovered]);
 
   // HIDE keeps a project out of the sidebar; REMOVE detaches it (design manage modal).
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && !removedProjects[g.rel]);

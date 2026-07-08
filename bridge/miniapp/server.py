@@ -308,6 +308,7 @@ class Handler(BaseHTTPRequestHandler):
             "at_base": real == config.BASE_PATH,
             "can_up": real != config.BASE_PATH,
             "dirs": browser.list_dirs(cur),
+            "projects": browser.list_projects(),
         })
 
     def _api_select(self, chat_id: int, body: dict):

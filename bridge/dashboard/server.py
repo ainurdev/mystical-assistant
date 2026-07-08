@@ -240,7 +240,8 @@ class Handler(BaseHTTPRequestHandler):
             real = os.path.realpath(cur)
             return self._json({"rel": browser.rel(cur), "at_base": real == config.BASE_PATH,
                                "can_up": real != config.BASE_PATH,
-                               "dirs": browser.list_dirs(cur)})
+                               "dirs": browser.list_dirs(cur),
+                               "projects": browser.list_projects()})
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"

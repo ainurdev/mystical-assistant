@@ -35,6 +35,7 @@ export interface ProjectsListing {
   at_base: boolean;
   can_up: boolean;
   dirs: string[];
+  projects?: string[]; // git repos under BASE_PATH, org-folder nesting included
 }
 
 export interface SelectResponse {
