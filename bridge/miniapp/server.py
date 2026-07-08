@@ -470,6 +470,9 @@ class Handler(BaseHTTPRequestHandler):
         project = (qs.get("project", [""])[0] or "").strip()
         rows = (store.list_sessions(chat_id, project) if project
                 else store.list_sessions_all(chat_id))    # no project -> all sessions
+        # Sessions of a since-deleted dir (e.g. a removed worktree checkout)
+        # stay out of the lists; their transcripts remain viewable by id.
+        rows = [r for r in rows if browser.project_exists(r["project"])]
         self._json({"sessions": [_session_brief(s) for s in rows]})
 
     def _api_sessions_create(self, chat_id: int, body: dict):

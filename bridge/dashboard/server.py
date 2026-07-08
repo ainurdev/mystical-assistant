@@ -259,6 +259,9 @@ class Handler(BaseHTTPRequestHandler):
             project = qs.get("project", [None])[0]
             rows = (store.list_sessions(chat, project) if project is not None
                     else store.list_sessions_all(chat))
+            # Sessions of a since-deleted dir (e.g. a removed worktree checkout)
+            # stay out of the lists; their transcripts remain viewable by id.
+            rows = [r for r in rows if browser.project_exists(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         if path.startswith("/local/sessions/"):
             sid = path[len("/local/sessions/"):].split("/")[0]
