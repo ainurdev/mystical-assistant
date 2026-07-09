@@ -72,6 +72,9 @@ function ProjectRow({
           <span style={{ display: "block", fontSize: 12.5, color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, fontSize: 9, color: "var(--txd)" }}>
             <span style={{ flex: "none" }}>{g.sessionCount} sess</span>
+            {g.badge?.branches != null && (
+              <span style={{ flex: "none" }}>{g.badge.branches} br · {g.badge.worktrees} wt</span>
+            )}
           </span>
         </span>
       </button>

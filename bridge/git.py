@@ -104,7 +104,10 @@ def badge(cwd: str) -> dict | None:
     if not is_repo(cwd):
         return None
     branch, ahead, behind, entries = _parse(_porcelain(cwd) or "")
-    return {"branch": branch, "ahead": ahead, "behind": behind, "dirty": len(entries)}
+    return {"branch": branch, "ahead": ahead, "behind": behind, "dirty": len(entries),
+            "branches": len(branches(cwd)),
+            # linked worktrees only (main checkout excluded), matching WORKTREES tab
+            "worktrees": sum(1 for w in worktrees(cwd) if not w.get("is_main"))}
 
 
 def status(cwd: str) -> dict:

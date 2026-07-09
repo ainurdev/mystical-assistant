@@ -188,6 +188,19 @@ def test_push_to_bare_remote():
     assert local and local == remote
 
 
+def test_badge_counts_branches_and_worktrees():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    b = g.badge(d)
+    assert b["branches"] == 1 and b["worktrees"] == 0
+    _run(d, "branch", "feat")
+    _run(d, "worktree", "add", os.path.join(tempfile.mkdtemp(), "w1"), "feat")
+    b = g.badge(d)
+    assert b["branches"] == 2 and b["worktrees"] == 1
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

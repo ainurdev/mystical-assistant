@@ -159,6 +159,8 @@ export interface GitBadge {
   ahead: number;
   behind: number;
   dirty: number;
+  branches?: number; // local branch count (absent until the bridge restarts on an old backend)
+  worktrees?: number; // linked worktrees, main checkout excluded
 }
 
 // A working-tree file loaded into the EDITOR tab. `content` is empty when the
