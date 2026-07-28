@@ -28,3 +28,6 @@ tools/selector-plugin/.vite/
 
 # Session store (default lives in $HOME; ignore any local copy)
 .bridge_state/
+
+# graphify knowledge-graph output (regenerable, ~20MB incl. cache)
+graphify-out/

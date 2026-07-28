@@ -15,6 +15,89 @@ browser is just a remote control; the work happens on your machine, in your repo
 
 ---
 
+## Setup
+
+**Before you start**
+
+| You need | Why | Note |
+|---|---|---|
+| [`claude` CLI](https://claude.com/claude-code), installed and logged in | the bridge shells out to it | reuses your existing login — no API key |
+| Python 3.10+ | runs the bridge | stdlib only — nothing to `pip install` |
+| A Telegram account | it's your remote control | you create the bot in step 1 |
+
+`cloudflared` (only for the phone Mini App) and Node (only if you edit the web UI)
+are optional — setup offers to install `cloudflared` for you.
+
+**Install**
+
+```bash
+git clone https://github.com/mhzrerfani/mystical-assistant
+cd mystical-assistant
+./setup.sh
+```
+
+`setup.sh` asks four questions and handles everything else. It's idempotent —
+re-run it any time and it only asks for what's still missing.
+
+1. **Bot token.** It walks you through [@BotFather](https://t.me/BotFather) →
+   `/newbot` → paste the token. Setup checks the token against Telegram and
+   prints your bot's `t.me` link, so a typo fails here instead of at first run.
+2. **Projects root** — the folder your repos live in (default `~/projects`).
+3. **Mini App?** — the phone control panel; it needs `cloudflared`, and if that's
+   missing setup offers to install it (Homebrew on macOS, a release binary into
+   `~/.local/bin` on Linux). Say no and you still get the bot + dashboard.
+4. **Start it now?** — launches the bridge.
+
+Everything else is automatic: it captures your Telegram chat id (it asks you to
+message the bot, then reads the id off that message), generates the dashboard
+token, links `mystical` onto your `PATH`, and offers to add `~/.local/bin` to
+your shell rc if it isn't there. The web clients ship prebuilt, so there is **no
+build step**.
+
+Then message your bot, or open the dashboard URL setup prints at the end.
+
+**Day-to-day**
+
+```
+mystical            start in the background (logs → ~/.bridge_state/mystical.log)
+mystical stop       graceful stop
+mystical restart    stop, then start
+mystical status     running? + ports, dashboard URL, public tunnel link
+mystical doctor     check prerequisites
+mystical logs       follow the log
+mystical run        run in the foreground (Ctrl-C to quit)
+```
+
+**If something's off**
+
+| Symptom | Fix |
+|---|---|
+| `mystical: command not found` | open a new shell, or `export PATH="$HOME/.local/bin:$PATH"` |
+| `claude not found` from `mystical doctor` | install the CLI and run `claude` once to log in |
+| Setup said "No message received in time" | re-run `./setup.sh` — it resumes at the chat-id step |
+| Bot ignores you | your chat id isn't in `ALLOWED_CHAT_IDS`; check `mystical logs` |
+| No 🛠 Open Panel button | `MINIAPP_ENABLE="0"` in `.env`, or `cloudflared` is missing |
+| Port already in use | set `DASH_PORT` / `MINIAPP_PORT` in `.env`, then `mystical restart` |
+
+**Config & advanced**
+
+- **Config lives in `.env`** (git-ignored, `chmod 600`; `setup.sh` writes it).
+  `.env.example` documents every option. Required: `TELEGRAM_BOT_TOKEN`,
+  `BASE_PATH`, `ALLOWED_CHAT_IDS`.
+- **Dashboard only, no tunnel:** set `MINIAPP_ENABLE="0"`.
+- **Stable preview URL:** `/preview` uses ephemeral `*.trycloudflare.com` links by
+  default. For a fixed hostname, provision a named Cloudflare Tunnel and set
+  `PREVIEW_HOSTNAME` / `TUNNEL_NAME` / `TUNNEL_ID` / `TUNNEL_CREDENTIALS_FILE`.
+- **Rebuild the web UI** (only if you change the frontend):
+  `npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build`
+  (same for `bridge/dashboard/web`). The dashboard build also needs the selector
+  plugin's deps: `npm --prefix tools/selector-plugin install`.
+- **Chat-id discovery mode:** start `mystical` with `ALLOWED_CHAT_IDS` empty,
+  message the bot, and copy the id it prints. Setup only; never leave it empty
+  otherwise.
+
+---
+
 ## Surfaces
 
 | Surface | How you reach it | What it's for |
@@ -88,52 +171,6 @@ browser is just a remote control; the work happens on your machine, in your repo
   - `tunnel.py`, `devserver.py`, `usage.py`, `browser.py`, `state.py`, `pubsub.py`.
 
 Design specs live in [docs/superpowers/specs/](docs/superpowers/specs/).
-
----
-
-## Quick start
-
-**Prerequisites:** the `claude` CLI (installed and logged in) and Python 3.10+
-with `requests`. `cloudflared` and Node are optional (only for the Mini App panel
-and rebuilding the web UI).
-
-```bash
-git clone https://github.com/mhzrerfani/mystical-assistant
-cd mystical-assistant
-./setup.sh      # checks prereqs, walks you through @BotFather, writes .env
-mystical        # start it — then message your bot
-```
-
-`./setup.sh` captures your Telegram chat id automatically (just message the bot
-when it asks) and links a `mystical` launcher onto your `PATH`. The web clients
-ship prebuilt, so there is **no build step**.
-
-```
-mystical            start in the background (logs → ~/.bridge_state/mystical.log)
-mystical stop       graceful stop
-mystical restart    stop, then start
-mystical status     running? + ports, dashboard URL, public tunnel link
-mystical doctor     check prerequisites
-mystical logs       follow the log
-mystical run        run in the foreground (Ctrl-C to quit)
-```
-
-### Manual / advanced setup
-
-- **Config lives in `.env`** (git-ignored; `setup.sh` writes it). See
-  `.env.example` for every option. Required: `TELEGRAM_BOT_TOKEN`, `BASE_PATH`,
-  `ALLOWED_CHAT_IDS`.
-- **Dashboard only (no cloudflared):** set `MINIAPP_ENABLE="0"` in `.env`.
-- **Stable preview URL:** by default `/preview` uses ephemeral
-  `*.trycloudflare.com` links. To get a fixed hostname, provision a named
-  Cloudflare Tunnel and set `PREVIEW_HOSTNAME`/`TUNNEL_NAME`/`TUNNEL_ID`/
-  `TUNNEL_CREDENTIALS_FILE` in `.env`.
-- **Rebuild the web UI** (only if you change the frontend):
-  `npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build`
-  (same for `bridge/dashboard/web`). The dashboard build also needs the selector
-  plugin's deps: `npm --prefix tools/selector-plugin install`.
-- **First-run discovery mode:** if chat-id capture times out, start `mystical`
-  with `ALLOWED_CHAT_IDS` empty, message the bot, and copy the printed id.
 
 ---
 

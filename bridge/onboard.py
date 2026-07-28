@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Onboarding helpers for setup.sh — stdlib + `requests` (imported lazily so the
-unit tests can inject a fake fetcher without the dependency)."""
+"""Onboarding helpers for setup.sh — stdlib only."""
+import json
 import sys
 import time
+from urllib.request import urlopen
 
 
 def poll_chat_id(token, *, get_updates, attempts=60, sleep=2, sleep_fn=time.sleep):
@@ -40,10 +41,13 @@ def set_env(path, key, value):
         f.write("\n".join(out) + "\n")
 
 
+def _call(token, method):
+    with urlopen(f"https://api.telegram.org/bot{token}/{method}", timeout=30) as r:
+        return json.loads(r.read())
+
+
 def _get_updates(token):
-    import requests
-    r = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", timeout=30)
-    return r.json()
+    return _call(token, "getUpdates")
 
 
 def main(argv):
@@ -53,11 +57,22 @@ def main(argv):
             return 1
         print(cid)
         return 0
+    if len(argv) >= 3 and argv[1] == "get-me":
+        # Validates the token AND yields the @username, so setup can hand the user
+        # a t.me link instead of "go find your bot".
+        try:
+            data = _call(argv[2], "getMe")
+        except Exception:  # noqa: BLE001 — bad token, no network: same answer
+            return 1
+        if not data.get("ok"):
+            return 1
+        print(data["result"].get("username", ""))
+        return 0
     if len(argv) >= 5 and argv[1] == "set-env":
         set_env(argv[2], argv[3], argv[4])
         return 0
-    print("usage: onboard.py capture-chat-id <token> | set-env <path> <key> <value>",
-          file=sys.stderr)
+    print("usage: onboard.py capture-chat-id <token> | get-me <token> "
+          "| set-env <path> <key> <value>", file=sys.stderr)
     return 2
 
 
