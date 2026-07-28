@@ -48,6 +48,7 @@ export interface Question {
 export interface AnswerSelection {
   header: string;
   labels: string[];
+  notes?: string;   // free text when the prepared options don't fit
 }
 
 export type RunEvent =

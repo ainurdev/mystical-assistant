@@ -266,6 +266,14 @@ def test_format_answers_multiselect():
     assert "Features" in msg and "Auth, Billing" in msg
 
 
+def test_format_answers_free_text():
+    qs = [{"header": "Approach", "question": "Which?"}]
+    both = runner._format_answers(qs, [{"header": "Approach", "labels": ["A"], "notes": "but cache it"}])
+    assert "A" in both and "but cache it" in both
+    only = runner._format_answers(qs, [{"header": "Approach", "labels": [], "notes": "do C instead"}])
+    assert "do C instead" in only and "did not select" not in only
+
+
 def test_interactive_base_cmd():
     cmd = runner._base_cmd("hello-prompt", 555, stream=True, interactive=True)
     assert "--input-format" in cmd and "stream-json" in cmd

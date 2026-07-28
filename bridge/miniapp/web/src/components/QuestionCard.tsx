@@ -14,6 +14,7 @@ export function QuestionCard({
   onSubmit: (answers: AnswerSelection[]) => void;
 }) {
   const [sel, setSel] = useState<Record<string, string[]>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   if (!active) {
     // Resolved / historical: still show the prepared answers as buttons, with the
@@ -21,7 +22,8 @@ export function QuestionCard({
     return (
       <Card className="space-y-3 border border-[var(--tg-button)]/30">
         {questions.map((q) => {
-          const chosen = answered?.find((x) => x.header === q.header)?.labels ?? [];
+          const given = answered?.find((x) => x.header === q.header);
+          const chosen = given?.labels ?? [];
           return (
             <div key={q.header} className="space-y-1.5">
               <div className="text-sm font-medium">{q.question}</div>
@@ -47,6 +49,9 @@ export function QuestionCard({
                   );
                 })}
               </div>
+              {given?.notes && (
+                <div className="text-xs text-[var(--tg-hint)]">Note: {given.notes}</div>
+              )}
             </div>
           );
         })}
@@ -69,7 +74,10 @@ export function QuestionCard({
     });
   }
 
-  const ready = questions.every((q) => (sel[q.header]?.length ?? 0) > 0);
+  // The options are Claude's guesses; when none fits, free text counts as the answer.
+  const ready = questions.every(
+    (q) => (sel[q.header]?.length ?? 0) > 0 || (notes[q.header] ?? "").trim() !== "",
+  );
   const multi = questions.some((q) => q.multiSelect);
 
   return (
@@ -102,13 +110,31 @@ export function QuestionCard({
               );
             })}
           </div>
+          <details>
+            <summary className="cursor-pointer text-xs text-[var(--tg-hint)]">
+              None of these? Answer in your own words
+            </summary>
+            <textarea
+              rows={2}
+              value={notes[q.header] ?? ""}
+              onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
+              placeholder="Your own answer, or extra context for this question"
+              className="mt-1.5 w-full resize-y rounded-lg bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none"
+            />
+          </details>
         </div>
       ))}
       <Button
         className="w-full"
         disabled={!ready}
         onClick={() =>
-          onSubmit(questions.map((q) => ({ header: q.header, labels: sel[q.header] ?? [] })))
+          onSubmit(
+            questions.map((q) => ({
+              header: q.header,
+              labels: sel[q.header] ?? [],
+              notes: (notes[q.header] ?? "").trim() || undefined,
+            })),
+          )
         }
       >
         {multi ? "Submit" : "Send answer"}

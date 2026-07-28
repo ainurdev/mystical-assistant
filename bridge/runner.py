@@ -746,16 +746,24 @@ _summarize_tool = transcript_jsonl._summarize_tool
 
 def _format_answers(questions: list, answers: list) -> str:
     """Turn the user's AskUserQuestion selections into a message Claude reads as
-    the tool result (we feed it via a `deny` whose message is the answer)."""
-    by_header = {a.get("header"): a.get("labels", []) for a in answers if isinstance(a, dict)}
+    the tool result (we feed it via a `deny` whose message is the answer).
+    An answer may carry free-text `notes` instead of / alongside its labels —
+    the escape hatch for when none of the prepared options fit."""
+    by_header = {a.get("header"): a for a in answers if isinstance(a, dict)}
     parts: list[str] = []
     for q in questions:
         header = q.get("header") or q.get("question") or ""
-        labels = by_header.get(header)
-        if labels is None and len(answers) == 1 and len(questions) == 1:
-            labels = answers[0].get("labels", []) if isinstance(answers[0], dict) else []
-        if labels:
+        a = by_header.get(header)
+        if a is None and len(answers) == 1 and len(questions) == 1:
+            a = answers[0] if isinstance(answers[0], dict) else None
+        labels = (a or {}).get("labels") or []
+        notes = ((a or {}).get("notes") or "").strip()
+        if labels and notes:
+            parts.append(f'For "{header}": {", ".join(labels)} — note: {notes}')
+        elif labels:
             parts.append(f'For "{header}": {", ".join(labels)}')
+        elif notes:
+            parts.append(f'For "{header}": none of the options — {notes}')
     if not parts:
         return "The user did not select an option."
     return "The user answered. " + "; ".join(parts)
