@@ -31,6 +31,18 @@ _tunnel_port: int | None = None
 _tunnel_lock = threading.Lock()
 
 
+def _cf_env() -> dict:
+    """The environment cloudflared should run with: ours, minus every TUNNEL_*.
+
+    run.sh exports the whole .env, and cloudflared reads TUNNEL_* env vars as CLI
+    flags — so our TUNNEL_ID/TUNNEL_NAME arrive as `--id`/`--name` and turn a
+    quick tunnel into a named-tunnel run that fails on a missing origin cert.
+    Both spawners pass their tunnel's identity explicitly (--url / --config), so
+    nothing here needs them.
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith("TUNNEL_")}
+
+
 def _spawn_tunnel(port: int):
     """Start cloudflared, return (proc, url) or (None, None) on failure.
 
@@ -40,7 +52,8 @@ def _spawn_tunnel(port: int):
     try:
         proc = subprocess.Popen(
             [config.CLOUDFLARED_BIN, "tunnel", "--url", f"http://localhost:{port}"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+            env=_cf_env())
     except FileNotFoundError:
         return None, None
     # A reader thread scans for the URL and keeps draining the pipe; we bound the
@@ -102,7 +115,8 @@ def _spawn_named(port: int):
     try:
         proc = subprocess.Popen(
             [config.CLOUDFLARED_BIN, "tunnel", "--config", cfg, "run"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+            env=_cf_env())
     except FileNotFoundError:
         return None, "missing-bin"
 
