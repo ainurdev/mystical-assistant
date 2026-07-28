@@ -17,7 +17,7 @@ warn() { printf '%s!%s %s\n' "$c_y" "$c_0" "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 PATH_ORIG="$PATH"                      # remember what the user's shell really has
-export PATH="$HOME/.local/bin:$PATH"   # so a cloudflared/mystical we install is visible now
+export PATH="$HOME/.local/bin:$PATH"   # so a tunnel client/mystical we install is visible now
 
 doctor() {
   local hard=0
@@ -27,23 +27,23 @@ doctor() {
   elif python3 -c 'import sys;sys.exit(sys.version_info<(3,10))'; then
     ok "python3 $(python3 -c 'import platform;print(platform.python_version())') (no pip packages needed)"
   else bad "python3 is $(python3 -c 'import platform;print(platform.python_version())') — need 3.10+"; hard=1; fi
-  if have cloudflared; then ok "cloudflared found"
-  else warn "cloudflared not found — only needed for the Mini App panel and /preview"; fi
+  if have cloudflared; then ok "tunnel client found"
+  else warn "tunnel client not found — only needed for the Mini App panel and /preview"; fi
   if have npm; then ok "npm found (only needed to rebuild the web UI)"
   else warn "npm not found — fine unless you rebuild the web clients"; fi
   return $hard
 }
 
-# Fetch cloudflared for the user rather than sending them to a download page.
-install_cloudflared() {
+# Fetch the tunnel client for the user rather than sending them to a download page.
+install_tunnel_client() {
   mkdir -p "$HOME/.local/bin"
   if [ "$(uname -s)" = "Darwin" ]; then
-    have brew || { warn "Homebrew not found — install cloudflared manually."; return 1; }
+    have brew || { warn "Homebrew not found — install the tunnel client manually."; return 1; }
     brew install cloudflared >/dev/null || return 1
   else
     local a; case "$(uname -m)" in
       x86_64) a=amd64;; aarch64|arm64) a=arm64;; armv7l) a=arm;;
-      *) warn "unsupported arch $(uname -m) — install cloudflared manually."; return 1;;
+      *) warn "unsupported arch $(uname -m) — install the tunnel client manually."; return 1;;
     esac
     curl -fsSL -o "$HOME/.local/bin/cloudflared" \
       "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$a" || return 1
@@ -113,10 +113,10 @@ if [ -z "$(get_env MINIAPP_ENABLE)" ]; then
   printf "Enable the Telegram Mini App control panel (phone UI)? [Y/n]: "
   read -r ans; case "${ans:-y}" in [Nn]*) mini=0;; *) mini=1;; esac
   if [ "$mini" = 1 ] && ! have cloudflared; then
-    printf "It needs cloudflared, which isn't installed. Install it now? [Y/n]: "
+    printf "It needs a small tunnel client, which isn't installed. Install it now? [Y/n]: "
     read -r ans; case "${ans:-y}" in
       [Nn]*) mini=0;;
-      *) if install_cloudflared; then ok "cloudflared installed"
+      *) if install_tunnel_client; then ok "tunnel client installed"
          else warn "install failed — disabling the Mini App (bot + dashboard still work)."; mini=0; fi;;
     esac
   fi

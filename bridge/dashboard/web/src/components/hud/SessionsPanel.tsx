@@ -10,6 +10,7 @@ interface Props {
   sessions: SessionBrief[]; // full list — the RECENT view + drill-down need more than the capped group slices
   groups: ProjectGroup[];
   status: Map<string, SessionStatus>;
+  done: Set<string>; // finished a turn, not opened since
   selectedSessionId: string | null;
   loadingSessionId: string | null;
   activeProject: string | null;
@@ -25,10 +26,15 @@ const STATUS_VIEW: Record<string, { c: string; l: string }> = {
   awaiting: { c: "var(--warn)", l: "WAIT" },
   live: { c: "var(--info)", l: "LIVE" },
   idle: { c: "var(--txf)", l: "IDLE" },
+  done: { c: "var(--acc)", l: "DONE" },
 };
 
-function statusView(s: SessionStatus | undefined) {
-  return STATUS_VIEW[s?.state ?? "idle"] ?? STATUS_VIEW.idle;
+function statusView(s: SessionStatus | undefined, done = false) {
+  // DONE (finished, unopened) outranks idle/live, but never a live working or
+  // awaiting state — those are what it's doing *now*.
+  const state = s?.state ?? "idle";
+  if (done && state !== "working" && state !== "awaiting") return STATUS_VIEW.done;
+  return STATUS_VIEW[state] ?? STATUS_VIEW.idle;
 }
 
 function SessionRow({
@@ -91,11 +97,13 @@ function SessionRow({
   );
 }
 
-function ShowMore({ count, onClick }: { count: number; onClick: () => void }) {
+/** Dashed full-width row action under a project group — SHOW MORE, or START
+ *  SESSION for a project with none yet. */
+function DashedRow({ label, onClick, title }: { label: string; onClick: () => void; title?: string }) {
   const [hov, setHov] = useState(false);
   return (
     <button
-      onClick={onClick}
+      onClick={onClick} title={title}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         width: "100%", margin: "1px 0 9px", appearance: "none", cursor: "pointer",
@@ -104,13 +112,13 @@ function ShowMore({ count, onClick }: { count: number; onClick: () => void }) {
         color: hov ? "var(--tx)" : "#7f9d97", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5,
         padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
       }}
-    >SHOW MORE · {count}<span style={{ fontSize: 12, lineHeight: 0 }}>→</span></button>
+    >{label}</button>
   );
 }
 
 export function SessionsPanel(props: Props) {
   const {
-    sessions, groups, status, selectedSessionId, loadingSessionId, activeProject,
+    sessions, groups, status, done, selectedSessionId, loadingSessionId, activeProject,
     onSelectSession, onAnalyze, onNewSession, onWorktreeSession, onFeed,
   } = props;
 
@@ -156,6 +164,9 @@ export function SessionsPanel(props: Props) {
   const sessionTotal = groups.reduce((n, g) => n + g.sessionCount, 0);
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
   const sorted = [...sessions].sort((a, b) => b.updated - a.updated);
+  // BY PROJECT: most-recently-used project first. g.sessions is already
+  // newest-first, so [0] is the project's last activity; no sessions → last.
+  const byLastUsed = [...groups].sort((a, b) => (b.sessions[0]?.updated ?? 0) - (a.sessions[0]?.updated ?? 0));
   // RECENT tab: newest-first, matching the design mock's "newest first".
   const recentSorted = [...sessions].sort((a, b) => b.updated - a.updated);
 
@@ -211,7 +222,7 @@ export function SessionsPanel(props: Props) {
     <SessionRow
       key={s.id} s={s} i={i} animate={animate}
       on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
-      sv={statusView(status.get(s.id))}
+      sv={statusView(status.get(s.id), done.has(s.id))}
       branch={s.branch || branchOf.get(s.project) || "main"}
       onAttach={() => onSelectSession(s)}
       onAnalyzeProj={() => onAnalyze(s.project)}
@@ -397,7 +408,7 @@ export function SessionsPanel(props: Props) {
                 </div>
               </>
             ) : (
-              groups.map((g) => {
+              byLastUsed.map((g) => {
                 const tint = projectTint(g.rel);
                 const more = g.sessionCount - g.sessions.length;
                 return (
@@ -410,7 +421,11 @@ export function SessionsPanel(props: Props) {
                       <span style={{ fontSize: 8.5, color: "var(--txf)", flex: "none" }}>{g.sessionCount} SESS</span>
                     </div>
                     {g.sessions.map((s, i) => rowFor(s, i))}
-                    {more > 0 && <ShowMore count={more} onClick={() => setDrill(g.rel)} />}
+                    {more > 0 && <DashedRow label={`SHOW MORE · ${more} →`} onClick={() => setDrill(g.rel)} />}
+                    {g.sessionCount === 0 && (
+                      <DashedRow label="+ START SESSION" title="start a session in this project"
+                        onClick={() => onNewSession(g.rel)} />
+                    )}
                   </div>
                 );
               })

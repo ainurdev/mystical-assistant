@@ -4,6 +4,7 @@ cwd already confined to BASE_PATH by the dashboard's _abs_project."""
 
 import os
 import re
+import shutil
 import subprocess
 import time
 
@@ -31,6 +32,15 @@ def _safe_path(cwd: str, path: str) -> str | None:
     if full == root or full.startswith(root + os.sep):
         return os.path.relpath(full, root)
     return None
+
+
+def _mutable_path(cwd: str, path: str) -> str | None:
+    """_safe_path for writes: also refuses the repo root itself and anything
+    under .git, so an editor request can't rewrite or delete the repository."""
+    safe = _safe_path(cwd, path)
+    if safe is None or safe == "." or safe.split(os.sep)[0] == ".git":
+        return None
+    return safe
 
 
 def _status_letter(xy: str) -> str:
@@ -209,7 +219,7 @@ def read_file(cwd: str, path: str) -> dict:
 def write_file(cwd: str, path: str, content: str) -> tuple[bool, str]:
     """Save `content` to a working-tree file (creating parent dirs). newline=""
     keeps the browser's LF line endings verbatim. Returns (ok, path-or-error)."""
-    safe = _safe_path(cwd, path)
+    safe = _mutable_path(cwd, path)
     if safe is None:
         return False, "path escapes workspace"
     full = os.path.join(os.path.realpath(cwd), safe)
@@ -222,6 +232,90 @@ def write_file(cwd: str, path: str, content: str) -> tuple[bool, str]:
         return True, safe
     except OSError as e:
         return False, str(e)
+
+
+def grep(cwd: str, query: str, limit: int = 200) -> list[dict]:
+    """EDITOR search-in-files: case-insensitive fixed-string search over the
+    working tree (tracked + untracked, .gitignore honored, binaries skipped) →
+    [{path, line, text}]. `-e` keeps a query starting with `-` from being read
+    as a flag. rc 1 just means no matches."""
+    if not query or not is_repo(cwd):
+        return []
+    base = ("-c", "core.quotePath=false", "grep", "-I", "-n", "-i", "-F",
+            "--untracked", "--exclude-standard")
+    rc, out, _ = _run(cwd, *base, "--max-count", "20", "-e", query, timeout=15)
+    if rc > 1:   # --max-count wants git ≥ 2.38 — fall back to an uncapped grep
+        rc, out, _ = _run(cwd, *base, "-e", query, timeout=15)
+    if rc > 1:
+        return []
+    hits: list[dict] = []
+    for line in out.splitlines():
+        path, _, rest = line.partition(":")
+        num, _, text = rest.partition(":")
+        if not num.isdigit():
+            continue
+        hits.append({"path": path, "line": int(num), "text": text.strip()[:200]})
+        if len(hits) >= limit:
+            break
+    return hits
+
+
+def create_path(cwd: str, path: str, directory: bool = False) -> tuple[bool, str]:
+    """New empty file (with parents) or new directory. Refuses to clobber."""
+    safe = _mutable_path(cwd, path)
+    if safe is None:
+        return False, "path escapes workspace"
+    full = os.path.join(os.path.realpath(cwd), safe)
+    if os.path.exists(full):
+        return False, "already exists"
+    try:
+        if directory:
+            os.makedirs(full)
+        else:
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "x"):
+                pass
+    except OSError as e:
+        return False, str(e)
+    return True, safe
+
+
+def rename_path(cwd: str, path: str, to: str) -> tuple[bool, str]:
+    """Rename/move a file or directory inside the working tree."""
+    src = _mutable_path(cwd, path)
+    dst = _mutable_path(cwd, to)
+    if src is None or dst is None:
+        return False, "path escapes workspace"
+    root = os.path.realpath(cwd)
+    full_src, full_dst = os.path.join(root, src), os.path.join(root, dst)
+    if not os.path.exists(full_src):
+        return False, "not found"
+    if os.path.exists(full_dst):
+        return False, "already exists"
+    try:
+        parent = os.path.dirname(full_dst)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        os.rename(full_src, full_dst)
+    except OSError as e:
+        return False, str(e)
+    return True, dst
+
+
+def delete_path(cwd: str, path: str) -> tuple[bool, str]:
+    """Delete a file, or a directory and its contents."""
+    safe = _mutable_path(cwd, path)
+    if safe is None:
+        return False, "path escapes workspace"
+    full = os.path.join(os.path.realpath(cwd), safe)
+    try:
+        if os.path.isdir(full) and not os.path.islink(full):
+            shutil.rmtree(full)
+        else:
+            os.remove(full)
+    except OSError as e:
+        return False, str(e)
+    return True, safe
 
 
 def diff_multi(cwd: str, paths: list[str], limit: int = 8000) -> str:

@@ -34,7 +34,7 @@ In the same change, **refactor** the 500-line single-file bot into a focused
 | Decision | Choice |
 |---|---|
 | App scope | **Full control panel** (project, prompt+screenshots, server, logs, preview) |
-| Hosting | **cloudflared quick tunnel**, started on launch; menu button auto-updated |
+| Hosting | **quick tunnel**, started on launch; menu button auto-updated |
 | Progress | **Live progress stream** (`--output-format stream-json`) |
 | Auth | Validate Telegram signed `initData` (HMAC-SHA256 w/ bot token) + `ALLOWED_CHAT_IDS` |
 | Frontend | **React + Vite + TanStack (Router + Query)**, built to static assets served by the bot |
@@ -50,7 +50,7 @@ claude_telegram_bridge.py (entry point)
 ├── Telegram long-poll loop      (existing; slash-commands)
 ├── HTTP server thread (NEW)     ThreadingHTTPServer on 127.0.0.1:MINIAPP_PORT (8787)
 │     serves index.html + /api/* JSON
-└── Mini-app tunnel (NEW)        cloudflared quick tunnel → HTTP server, on launch;
+└── Mini-app tunnel (NEW)        quick tunnel → HTTP server, on launch;
                                   URL pushed to Telegram menu button
 ```
 
@@ -84,7 +84,7 @@ today after the split (verified by manual command pass + smoke tests).
 ## 5. Backend HTTP API
 
 Server: `http.server.ThreadingHTTPServer`, bound to `127.0.0.1:8787` (only reachable
-via the cloudflared tunnel, never directly public). JSON in/out.
+via the tunnel, never directly public). JSON in/out.
 
 **Auth (every `/api/*` request):** the client sends `X-Telegram-Init-Data: <initData>`.
 The server:
@@ -185,7 +185,7 @@ the active tab needs it.
 
 On launch, after `getMe`:
 1. start the HTTP server thread on `127.0.0.1:8787`,
-2. start a cloudflared quick tunnel to it, capture the `*.trycloudflare.com` URL
+2. start a quick tunnel to it, capture the throwaway-hostname URL
    (reuses `tunnel.py`; this is a second, always-on tunnel distinct from `/preview`),
 3. call `setChatMenuButton` for each allowed chat:
    `menu_button = {type:"web_app", text:"🛠 Open Panel", web_app:{url:<tunnel_url>}}`,
@@ -210,7 +210,7 @@ git-ignored because it holds the token.
 
 - initData HMAC validation + `ALLOWED_CHAT_IDS` on **every** API call (same trust
   boundary as the bot's chat-id gate).
-- HTTP server binds `127.0.0.1` only; the sole ingress is the cloudflared tunnel.
+- HTTP server binds `127.0.0.1` only; the sole ingress is the tunnel.
 - The tunnel URL is unguessable but **not** a secret — auth is what protects it; an
   unauthenticated request gets `401/403` and does nothing.
 - `run.sh` (token) and `.bridge_uploads/` are git-ignored; `.gitignore` added.

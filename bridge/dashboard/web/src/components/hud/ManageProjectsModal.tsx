@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { projectTint } from "../../lib/surfaces";
-import type { ProjectGroup } from "./ProjectsPanel";
+import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
 /* MANAGE PROJECTS modal — matches the HUD design mock (hud.dc.html lines
    1283–1318): project rows (dot, name, tag, HIDDEN badge, sess count,
@@ -10,9 +10,10 @@ interface Props {
   groups: ProjectGroup[]; // manageable projects (removed ones filtered out; hidden included)
   imported: string[];     // locally imported repo paths — TODO(phase2-data): no bridge endpoint yet
   hidden: Record<string, boolean>;
-  onToggleHide: (rel: string) => void;
+  onSetHidden: (rels: string[], hidden: boolean) => void; // one row, or a whole org
   onRemove: (rel: string) => void;
   onImport: (path: string) => void;
+  onRefresh: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -22,9 +23,10 @@ function basename(rel: string): string {
 }
 
 export function ManageProjectsModal(props: Props) {
-  const { groups, imported, hidden, onToggleHide, onRemove, onImport, onClose } = props;
+  const { groups, imported, hidden, onSetHidden, onRemove, onImport, onRefresh, onClose } = props;
   const [importPath, setImportPath] = useState("");
   const [hov, setHov] = useState("");
+  const [scanning, setScanning] = useState(false);
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const rows = [
@@ -40,7 +42,20 @@ export function ManageProjectsModal(props: Props) {
     ...imported
       .filter((rel) => !groups.some((g) => g.rel === rel))
       .map((rel) => ({ rel, name: basename(rel), dot: "var(--txl)", sessionCount: 0 })),
-  ];
+  ].sort((a, b) => a.rel.localeCompare(b.rel));
+
+  // One section per owning folder — "ainurhq", then "ainurhq/efas" — so a whole
+  // org or sub-org can be shown/hidden in one click. Top-level repos share the
+  // "~" section. Section position = first member, keeping an org's sub-orgs next
+  // to it.
+  const sections: { parent: string; rows: typeof rows }[] = [];
+  const at = new Map<string, number>();
+  for (const r of rows) {
+    const parent = parentOf(r.rel);
+    const i = at.get(parent);
+    if (i == null) { at.set(parent, sections.length); sections.push({ parent, rows: [r] }); }
+    else sections[i].rows.push(r);
+  }
 
   const doImport = () => {
     const raw = importPath.trim();
@@ -58,13 +73,41 @@ export function ManageProjectsModal(props: Props) {
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>MANAGE</span>
           <span style={{ fontSize: 15, color: "var(--txb)", letterSpacing: ".5px" }}>Projects</span>
           <span style={{ flex: 1 }} />
+          <button
+            onClick={() => { setScanning(true); void onRefresh().finally(() => setScanning(false)); }}
+            disabled={scanning} title="rescan disk for newly added repos" {...hp("refresh")}
+            style={{ appearance: "none", cursor: scanning ? "default" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "refresh" && !scanning ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: scanning ? "var(--txd)" : "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "6px 12px" }}>{scanning ? "SCANNING…" : "↻ REFRESH"}</button>
           <button onClick={onClose} {...hp("esc")}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "esc" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "6px 12px" }}>ESC ✕</button>
         </div>
         <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
           <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>HIDE keeps a project out of the sidebar · REMOVE detaches it from the bridge</div>
+          {sections.map(({ parent, rows: srows }) => {
+            const segs = parent ? parent.split("/") : [];
+            const allHidden = srows.every((r) => hidden[r.rel]);
+            const hiddenCount = srows.filter((r) => hidden[r.rel]).length;
+            return (
+          <div key={parent || "~"} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px 6px" }}>
+              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txd)" }}>
+                {segs.length === 0 ? "~ /" : (
+                  <>
+                    {segs.slice(0, -1).map((s) => <span key={s} style={{ opacity: 0.45 }}>{s.toUpperCase()} / </span>)}
+                    <span style={{ color: segs.length > 1 ? "var(--acc)" : "var(--txd)" }}>{segs[segs.length - 1].toUpperCase()} /</span>
+                  </>
+                )}
+              </span>
+              <span style={{ fontSize: 8.5, color: "var(--txd)", opacity: 0.7 }}>
+                {srows.length} repo{srows.length === 1 ? "" : "s"}{hiddenCount ? ` · ${hiddenCount} hidden` : ""}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button onClick={() => onSetHidden(srows.map((r) => r.rel), !allHidden)}
+                title={allHidden ? "show every repo in this org" : "hide every repo in this org"} {...hp(`org:${parent}`)}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `org:${parent}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 8, letterSpacing: 1, padding: "3px 8px", flex: "none" }}>
+                {allHidden ? "SHOW ALL" : "HIDE ALL"}</button>
+            </div>
           <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)" }}>
-            {rows.map((r) => {
+            {srows.map((r) => {
               const tint = projectTint(r.rel);
               const isHidden = !!hidden[r.rel];
               return (
@@ -78,7 +121,7 @@ export function ManageProjectsModal(props: Props) {
                   )}
                   <span style={{ flex: 1 }} />
                   <span style={{ fontSize: 9, color: "var(--txd)", flex: "none" }}>{r.sessionCount} sess</span>
-                  <button onClick={() => onToggleHide(r.rel)} title="hide / show in sidebar" {...hp(`hide:${r.rel}`)}
+                  <button onClick={() => onSetHidden([r.rel], !isHidden)} title="hide / show in sidebar" {...hp(`hide:${r.rel}`)}
                     style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `hide:${r.rel}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "5px 10px", flex: "none" }}>{isHidden ? "SHOW" : "HIDE"}</button>
                   <button onClick={() => onRemove(r.rel)} title="remove project" {...hp(`rm:${r.rel}`)}
                     style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 28%, transparent)", background: hov === `rm:${r.rel}` ? "color-mix(in srgb, var(--err) 12%, transparent)" : "transparent", color: hov === `rm:${r.rel}` ? "var(--err)" : "var(--err-g)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "5px 9px", flex: "none" }}>REMOVE</button>
@@ -86,6 +129,9 @@ export function ManageProjectsModal(props: Props) {
               );
             })}
           </div>
+          </div>
+            );
+          })}
           <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)", margin: "18px 0 9px" }}>IMPORT EXISTING REPOSITORY</div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "color-mix(in srgb, var(--info) 5%, transparent)", padding: "9px 11px" }}>
             <span style={{ fontSize: 12, color: "var(--info)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>⌂</span>

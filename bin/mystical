@@ -35,7 +35,7 @@ mystical — control the mystical-assistant bridge
   mystical stop      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
   mystical restart   stop, then start
   mystical status    is it running? ports + dashboard URL + tunnel link
-  mystical doctor    check prerequisites (claude, python, cloudflared, npm)
+  mystical doctor    check prerequisites (claude, python, tunnel client, npm)
   mystical logs      follow the log (Ctrl-C to stop following)
   mystical run       run in the foreground (live logs, Ctrl-C to quit)
 EOF
@@ -101,7 +101,7 @@ cmd_stop() {
   local pid; pid="$(bridge_pid || true)"
   if [ -z "$pid" ]; then warn "Not running."; rm -f "$PID_FILE"; return 0; fi
   # When we started it (setsid), the bridge leads its own process group, so its
-  # cloudflared child shares the pgid. Signal the whole group then, so a SIGKILL
+  # tunnel-client child shares the pgid. Signal the whole group then, so a SIGKILL
   # fallback reaps the tunnel too instead of orphaning it. Otherwise (foreign
   # group) only signal the pid, to avoid hitting unrelated processes.
   local pgid; pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"

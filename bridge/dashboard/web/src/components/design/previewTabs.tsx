@@ -87,6 +87,7 @@ export interface PreviewTabProps {
   items: TrayItem[]; onNote: (id: string, n: string) => void; onRemove: (id: string) => void;
   instruction: string; onInstruction: (v: string) => void;
   onSend: () => void; sendLabel: string; sendHint: string;
+  onSteer: () => void; canSteer: boolean;   // canSteer: a turn is in flight right now
   model: string; onModel: (m: string) => void;
   effort: string; onEffort: (e: string) => void;
   mode: string; onMode: (m: string) => void;
@@ -159,6 +160,13 @@ export function PreviewTab(p: PreviewTabProps) {
           style={{ ...ctlInput, resize: "vertical", lineHeight: 1.5 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 10, color: "var(--muted-foreground)", fontStyle: "italic", flex: 1, lineHeight: 1.4 }}>{p.sendHint}</span>
+          {p.canSteer && (
+            <button data-no-drag onClick={p.onSteer} disabled={!p.instruction.trim()}
+              title="Send into the task already running — it lands at its next step"
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--violet)", background: "transparent", color: "var(--violet)", fontFamily: UI, fontSize: 11, letterSpacing: 1.5, padding: "8px 12px", opacity: p.instruction.trim() ? 1 : 0.4 }}>
+              ⚡ STEER
+            </button>
+          )}
           <button data-no-drag onClick={p.onSend} disabled={!p.instruction.trim()}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--primary)", background: "var(--ac-12)", color: "var(--foreground-bright)", fontFamily: UI, fontSize: 11, letterSpacing: 1.5, padding: "8px 14px", opacity: p.instruction.trim() ? 1 : 0.4 }}>
             {p.sendLabel}

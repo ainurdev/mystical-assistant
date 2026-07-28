@@ -6,7 +6,7 @@ Modules:
   telegram  Telegram Bot API helpers
   browser   project folder browser
   devserver dev-server process management
-  tunnel    cloudflared quick tunnels
+  tunnel    public quick tunnels
   runner    Claude Code runner (blocking + streaming jobs)
   dispatch  Telegram message/callback handlers (slash commands)
   miniapp   HTTP server + web UI for the Telegram Mini App

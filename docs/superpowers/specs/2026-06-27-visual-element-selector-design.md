@@ -19,7 +19,7 @@ change; no new run path; the existing preview tunnel is unchanged.
 The hard part is **not** the frame, the prompt, or the Claude turn — those exist:
 
 - Preview already exposes the target dev server at `preview.mhzrerfani.dev` via the
-  named Cloudflare tunnel (`bridge/tunnel.py`, `bridge/miniapp/web/src/routes/preview.tsx`).
+  named tunnel (`bridge/tunnel.py`, `bridge/miniapp/web/src/routes/preview.tsx`).
 - Prompts already flow UI → `POST /api/run` → `runner.start_streaming_job` → `claude`
   CLI (`bridge/runner.py:732`, `:588`), and images already attach via base64 →
   `_save_images` → prepended to the prompt (`bridge/miniapp/server.py:112`,

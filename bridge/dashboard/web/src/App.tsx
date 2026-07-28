@@ -60,6 +60,29 @@ function fmtReset(iso: string | null | undefined): string {
   return `${h}H${String(m).padStart(2, "0")}M`;
 }
 
+// Manage-projects choices survive a reload / bridge restart.
+// ponytail: localStorage = per-browser, like every other HUD pref (see
+// lib/surfaces.ts); move to a bridge endpoint if cross-device sync matters.
+const MANAGE_KEY = "hud-project-manage";
+type ManagePrefs = { hidden: Record<string, boolean>; removed: Record<string, boolean>; imported: string[] };
+
+function loadManage(): ManagePrefs {
+  try {
+    const r = JSON.parse(localStorage.getItem(MANAGE_KEY) || "{}") as Partial<ManagePrefs>;
+    return { hidden: r.hidden ?? {}, removed: r.removed ?? {}, imported: r.imported ?? [] };
+  } catch { return { hidden: {}, removed: {}, imported: [] }; }
+}
+
+// Sessions that finished a turn while you were looking elsewhere — flagged DONE
+// in the session list until you open them. Persisted so a reload doesn't lose
+// "you haven't seen this yet".
+const DONE_KEY = "hud-sessions-done";
+
+function loadDone(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || "[]") as string[]); }
+  catch { return new Set(); }
+}
+
 export function App() {
   useProjectTints(); // re-render on saved project tag/colour edits
   const [state, setState] = useState<DashState | null>(null);
@@ -73,6 +96,7 @@ export function App() {
   const [ponytail, setPonytail] = useState<string>("");
   const [view, setView] = useState<"chat" | "history" | "memory">("chat");
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
+  const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
@@ -83,11 +107,11 @@ export function App() {
   const [showDashboard, setShowDashboard] = useState(skipBoot);
   const [manageOpen, setManageOpen] = useState(false);
   const [previewProject, setPreviewProject] = useState<string | null>(null);
-  // Manage-projects bookkeeping. TODO(phase2-data): session-local only — the
-  // bridge has no hide/remove/import endpoints yet.
-  const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>({});
-  const [removedProjects, setRemovedProjects] = useState<Record<string, boolean>>({});
-  const [importedProjects, setImportedProjects] = useState<string[]>([]);
+  // Manage-projects bookkeeping. TODO(phase2-data): the bridge has no
+  // hide/remove/import endpoints, so the choices persist client-side.
+  const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>(() => loadManage().hidden);
+  const [removedProjects, setRemovedProjects] = useState<Record<string, boolean>>(() => loadManage().removed);
+  const [importedProjects, setImportedProjects] = useState<string[]>(() => loadManage().imported);
   // Git repos discovered on disk (org-folder nesting included) — so sessionless
   // projects still show up in the PROJECTS panel.
   const [discovered, setDiscovered] = useState<string[]>([]);
@@ -163,6 +187,7 @@ export function App() {
     setTurns([]);
     setLoadingSession(true);
     setSessionId(id);
+    setDoneIds((d) => { if (!d.has(id)) return d; const n = new Set(d); n.delete(id); return n; });
   }
 
   async function selectSession(s: SessionBrief) {
@@ -184,11 +209,17 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    let live = true;
-    void api.projects().then((p) => { if (live) setDiscovered(p.projects ?? []); })
-      .catch(() => { /* old backend without discovery — panel stays session-derived */ });
-    return () => { live = false; };
+    try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects, removed: removedProjects, imported: importedProjects })); }
+    catch { /* ignore */ }
+  }, [hiddenProjects, removedProjects, importedProjects]);
+
+  // Discovery is a one-shot on load — repos cloned since then arrive via the
+  // PROJECTS panel's REFRESH.
+  const refreshProjects = useCallback(async () => {
+    try { const p = await api.projects(); setDiscovered(p.projects ?? []); }
+    catch { /* old backend without discovery — panel stays session-derived */ }
   }, []);
+  useEffect(() => { void refreshProjects(); }, [refreshProjects]);
 
   const loadSessions = useCallback(async () => {
     try { const { sessions: list } = await api.sessions(); setSessions(list); return list; }
@@ -258,6 +289,26 @@ export function App() {
     const id = setInterval(tick, 4000);
     return () => { live = false; clearInterval(id); };
   }, []);
+
+  // working → not-working (and not awaiting, which the list already flags) on a
+  // session you don't have open = it finished without you = DONE.
+  // ponytail: only transitions this tab actually polls get flagged — a session
+  // that finishes while the dashboard is closed won't. Needs a bridge-side
+  // finished_at/seen_at pair to cover that.
+  const prevStatus = useRef(statusMap);
+  useEffect(() => {
+    const prev = prevStatus.current;
+    prevStatus.current = statusMap;
+    const finished = [...prev]
+      .filter(([id, st]) => st.state === "working" && id !== sessionId
+        && !["working", "awaiting"].includes(statusMap.get(id)?.state ?? ""))
+      .map(([id]) => id);
+    if (finished.length) setDoneIds((d) => new Set([...d, ...finished]));
+  }, [statusMap, sessionId]);
+
+  useEffect(() => {
+    try { localStorage.setItem(DONE_KEY, JSON.stringify([...doneIds])); } catch { /* ignore */ }
+  }, [doneIds]);
 
   useEffect(() => {
     let live = true;
@@ -601,7 +652,7 @@ export function App() {
               {/* LEFT */}
               <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
                 <SessionsPanel
-                  sessions={sessions} groups={projectGroups} status={statusMap}
+                  sessions={sessions} groups={projectGroups} status={statusMap} done={doneIds}
                   selectedSessionId={sessionId} loadingSessionId={loadingSession ? sessionId : null}
                   activeProject={activeProject}
                   onSelectSession={(s) => void selectSession(s)}
@@ -646,6 +697,7 @@ export function App() {
                   onAnalyze={(rel) => setAnalyzeProject(rel)}
                   onPreview={(rel) => setPreviewProject(rel)}
                   onManage={() => setManageOpen(true)}
+                  onRefresh={refreshProjects}
                   onCreateProject={(name, prompt) => void createProject(name, prompt)}
                 />
                 <TaskQueuePanel projects={projectNames} onFeed={feed} />
@@ -681,12 +733,17 @@ export function App() {
                 groups={projectGroups.filter((g) => !removedProjects[g.rel])}
                 imported={importedProjects.filter((rel) => !removedProjects[rel])}
                 hidden={hiddenProjects}
-                onToggleHide={(rel) => setHiddenProjects((p) => ({ ...p, [rel]: !p[rel] }))}
+                onSetHidden={(rels, hide) => setHiddenProjects((p) => {
+                  const next = { ...p };
+                  for (const rel of rels) next[rel] = hide;
+                  return next;
+                })}
                 onRemove={(rel) => {
                   setRemovedProjects((p) => ({ ...p, [rel]: true }));
                   setPreviewProject((cur) => (cur === rel ? null : cur));
                 }}
                 onImport={importProject}
+                onRefresh={refreshProjects}
                 onClose={() => setManageOpen(false)}
               />
             )}

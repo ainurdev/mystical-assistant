@@ -150,7 +150,7 @@ one session.
   it down for a single message.
 - The bot path is unchanged (already `--dangerously-skip-permissions` via
   `EXTRA_CLAUDE_ARGS`).
-- **Security note (accepted):** the Mini App is exposed via the public cloudflared
+- **Security note (accepted):** the Mini App is exposed via the public the tunnel client
   tunnel (gated by signed `initData` + `ALLOWED_CHAT_IDS`). Full permission removes
   the last interactive guardrail on that surface — consistent with the bot's
   existing posture on this single-user, locked-down machine.

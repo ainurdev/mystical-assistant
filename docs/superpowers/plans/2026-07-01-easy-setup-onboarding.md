@@ -6,7 +6,7 @@
 
 **Architecture:** Split secrets out of a hand-written `run.sh` into a git-ignored `.env` loaded by a committed `run.sh`; ship prebuilt web assets so no build is needed; remove the maintainer's account from `config.py` defaults and make `/preview` fall back to an ephemeral tunnel; add a `setup.sh` wizard (prereq doctor → BotFather walkthrough → auto-capture chat id → link `mystical`).
 
-**Tech Stack:** Python 3.9+ (stdlib + `requests`), bash, React 19 + Vite (prebuilt), Telegram Bot API, cloudflared (optional), SQLite. Tests: stdlib-style, run with `pytest`.
+**Tech Stack:** Python 3.9+ (stdlib + `requests`), bash, React 19 + Vite (prebuilt), Telegram Bot API, the tunnel client (optional), SQLite. Tests: stdlib-style, run with `pytest`.
 
 ## Global Constraints
 
@@ -97,13 +97,13 @@ EXTRA_CLAUDE_ARGS="--permission-mode acceptEdits"
 # (localhost convenience). setup.sh generates a secret here.
 DASH_TOKEN=""
 
-# ── Mini App (optional; needs cloudflared) ─────────────────────────────────
-# 0 disables the Telegram Mini App panel so cloudflared isn't required.
+# ── Mini App (optional; needs a tunnel client) ─────────────────────────────
+# 0 disables the Telegram Mini App panel so no tunnel client is required.
 MINIAPP_ENABLE="1"
 
 # ── named preview tunnel (optional) ────────────────────────────────────────
-# Leave empty for ephemeral *.trycloudflare.com links on /preview. For a stable
-# URL, provision a named Cloudflare Tunnel and set these four.
+# Leave empty for throwaway public links on /preview. For a stable
+# URL, provision a named tunnel and set these four.
 PREVIEW_HOSTNAME=""
 TUNNEL_NAME=""
 TUNNEL_ID=""
@@ -202,7 +202,7 @@ git commit -m "feat(setup): .env config split + committed run.sh launcher"
 
 ### Task 2: Remove author-specific defaults + `/preview` quick-tunnel fallback
 
-Fixes the correctness bug where a new user's `/preview` targets the maintainer's Cloudflare tunnel. Empties the account-specific defaults and makes `start_tunnel` fall back to an ephemeral `*.trycloudflare.com` tunnel when no named tunnel is configured.
+Fixes the correctness bug where a new user's `/preview` targets the maintainer's tunnel. Empties the account-specific defaults and makes `start_tunnel` fall back to an ephemeral throwaway-hostname tunnel when no named tunnel is configured.
 
 **Files:**
 - Modify: `bridge/config.py:73-79`
@@ -210,7 +210,7 @@ Fixes the correctness bug where a new user's `/preview` targets the maintainer's
 - Test: `tests/test_preview_fallback.py`
 
 **Interfaces:**
-- Consumes: `tunnel.open_quick_tunnel(port) -> (proc, url) | (None, None)`, `tunnel._spawn_named(port) -> (proc, url) | (None, reason)`, `tunnel._which_cloudflared() -> bool` (all existing).
+- Consumes: `tunnel.open_quick_tunnel(port) -> (proc, url) | (None, None)`, `tunnel._spawn_named(port) -> (proc, url) | (None, reason)`, `tunnel._which_the tunnel client() -> bool` (all existing).
 - Produces: `tunnel._named_configured() -> bool`; `start_tunnel(port) -> (url|None, message)` now choosing quick-vs-named by configuration.
 
 - [ ] **Step 1: Write the failing test**
@@ -246,11 +246,11 @@ def test_quick_tunnel_when_unconfigured(monkeypatch):
 
     monkeypatch.setattr(tunnel, "_spawn_named", _no_named)
     monkeypatch.setattr(tunnel, "open_quick_tunnel",
-                        lambda port: (_FakeProc(), "https://demo.trycloudflare.com"))
+                        lambda port: (_FakeProc(), "https://demo.example-tunnel.com"))
 
     url, msg = tunnel.start_tunnel(4000)
-    assert url == "https://demo.trycloudflare.com"
-    assert "trycloudflare.com" in msg
+    assert url == "https://demo.example-tunnel.com"
+    assert "example-tunnel.com" in msg
 
 
 def test_named_tunnel_when_configured(monkeypatch, tmp_path):
@@ -317,8 +317,8 @@ Replace the body of the `with _tunnel_lock:` block in `start_tunnel` (lines 148-
         if not _named_configured():
             proc, url = open_quick_tunnel(port)
             if not proc or not url:
-                if not _which_cloudflared():
-                    return (None, "❌ `cloudflared` not found. Install it first.")
+                if not _have_tunnel_client():
+                    return (None, "❌ Tunnel client not found. Run ./setup.sh to install it.")
                 return (None, "❌ Couldn't establish a quick tunnel.")
             _tunnel_proc, _tunnel_url, _tunnel_port = proc, url, port
             return url, (f"🔗 Preview live (port {port}):\n{url}\n\n"
@@ -326,10 +326,10 @@ Replace the body of the `with _tunnel_lock:` block in `start_tunnel` (lines 148-
                          "it's running. /preview stop when done.")
         proc, info = _spawn_named(port)
         if not proc:
-            if info == "missing-bin" or not _which_cloudflared():
-                return (None, "❌ `cloudflared` not found. Install it first.")
-            return (None, "❌ Couldn't establish the preview tunnel — cloudflared "
-                          "didn't register with Cloudflare. Check the credentials "
+            if info == "missing-bin" or not _have_tunnel_client():
+                return (None, "❌ Tunnel client not found. Run ./setup.sh to install it.")
+            return (None, "❌ Couldn't establish the preview tunnel — it didn't "
+                          "register with the tunnel provider. Check the credentials "
                           f"file ({config.TUNNEL_CREDENTIALS_FILE}) and connectivity.")
         _tunnel_proc, _tunnel_url, _tunnel_port = proc, info, port
         return info, (f"🔗 Preview live (port {port}):\n{info}\n\n"
@@ -610,8 +610,8 @@ doctor() {
   else bad "python3 not found (need 3.9+)"; hard=1; fi
   if python3 -c 'import requests' >/dev/null 2>&1; then ok "python 'requests' available"
   else bad "python 'requests' missing — pip install requests"; hard=1; fi
-  if have cloudflared; then ok "cloudflared found"
-  else warn "cloudflared not found — only needed for the Mini App panel and /preview"; fi
+  if have tunnel_client; then ok "tunnel client found"
+  else warn "tunnel client not found — only needed for the Mini App panel and /preview"; fi
   if have npm; then ok "npm found (only needed to rebuild the web UI)"
   else warn "npm not found — fine unless you rebuild the web clients"; fi
   return $hard
@@ -669,11 +669,11 @@ fi
 
 # -- Mini App toggle ---------------------------------------------------------
 if [ -z "$(get_env MINIAPP_ENABLE)" ]; then
-  if have cloudflared; then
+  if have tunnel_client; then
     printf "Enable the Telegram Mini App control panel? [Y/n]: "
     read -r ans; case "${ans:-y}" in [Nn]*) mini=0;; *) mini=1;; esac
   else
-    warn "cloudflared missing — disabling the Mini App (bot + dashboard still work)."
+    warn "tunnel client missing — disabling the Mini App (bot + dashboard still work)."
     mini=0
   fi
   "${ONBOARD[@]}" set-env "$ENV_FILE" MINIAPP_ENABLE "$mini"
@@ -715,7 +715,7 @@ Add a case branch in the `case` block (after the `run|fg)` line):
 Add a usage line in `usage()` after the `run` line:
 
 ```bash
-  mystical doctor    check prerequisites (claude, python, cloudflared, npm)
+  mystical doctor    check prerequisites (claude, python, tunnel client, npm)
 ```
 
 - [ ] **Step 4: Verify the doctor path**
@@ -764,7 +764,7 @@ Replace the entire `## Quick start` section (through the end of the `mystical` c
 ## Quick start
 
 **Prerequisites:** the `claude` CLI (installed and logged in) and Python 3.9+
-with `requests`. `cloudflared` and Node are optional (only for the Mini App
+with `requests`. A tunnel client and Node are optional (only for the Mini App
 panel and rebuilding the web UI).
 
 ```bash
@@ -801,10 +801,10 @@ Immediately after the Quick start, add:
 - **Config lives in `.env`** (git-ignored; `setup.sh` writes it). See
   `.env.example` for every option. Required: `TELEGRAM_BOT_TOKEN`, `BASE_PATH`,
   `ALLOWED_CHAT_IDS`.
-- **Dashboard only (no cloudflared):** set `MINIAPP_ENABLE="0"` in `.env`.
+- **Dashboard only (no tunnel):** set `MINIAPP_ENABLE="0"` in `.env`.
 - **Stable preview URL:** by default `/preview` uses ephemeral
-  `*.trycloudflare.com` links. To get a fixed hostname, provision a named
-  Cloudflare Tunnel and set `PREVIEW_HOSTNAME`/`TUNNEL_NAME`/`TUNNEL_ID`/
+  throwaway links. To get a fixed hostname, provision a named
+  tunnel and set `PREVIEW_HOSTNAME`/`TUNNEL_NAME`/`TUNNEL_ID`/
   `TUNNEL_CREDENTIALS_FILE` in `.env`.
 - **First-run discovery mode:** if chat-id capture times out, start `mystical`
   with `ALLOWED_CHAT_IDS` empty, message the bot, and copy the printed id.
@@ -841,4 +841,4 @@ git commit -m "docs: rewrite README around ./setup.sh happy path"
 
 **Placeholder scan:** No `TBD`/`TODO`/"handle edge cases"/"similar to Task N". The one `<!-- DEMO_GIF … -->` is a deliberate, labeled hand-off to the marketing track, not a plan gap.
 
-**Type consistency:** `poll_chat_id`, `set_env`, `_named_configured`, `open_quick_tunnel`, `_spawn_named`, `_which_cloudflared`, `start_tunnel(port) -> (url|None, message)`, and the `capture-chat-id`/`set-env` CLI verbs are used identically across Tasks 4, 5, and 2. `.env` key names match `.env.example` (Task 1), `config.py`, and every `set-env` call in `setup.sh` (Task 5).
+**Type consistency:** `poll_chat_id`, `set_env`, `_named_configured`, `open_quick_tunnel`, `_spawn_named`, `_which_the tunnel client`, `start_tunnel(port) -> (url|None, message)`, and the `capture-chat-id`/`set-env` CLI verbs are used identically across Tasks 4, 5, and 2. `.env` key names match `.env.example` (Task 1), `config.py`, and every `set-env` call in `setup.sh` (Task 5).

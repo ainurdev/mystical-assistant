@@ -82,12 +82,13 @@ CLOUDFLARED_BIN = os.environ.get("CLOUDFLARED_BIN", "cloudflared")
 # cron, a non-login shell) can't make it vanish. Set to an absolute path to pin.
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
 
-# --- Named preview tunnel ----------------------------------------------------
-# /preview runs a *named* Cloudflare Tunnel so the public URL is stable
-# (https://PREVIEW_HOSTNAME) instead of a random *.trycloudflare.com link. The
-# tunnel + DNS are provisioned once via the Cloudflare API; the credentials file
-# (git-ignored, in $HOME) lets cloudflared run it locally. The Mini App control
-# panel still uses an ephemeral quick tunnel (see tunnel.open_quick_tunnel).
+# --- Named tunnel ------------------------------------------------------------
+# The Mini App panel runs behind a *named* tunnel so its URL is stable
+# (https://PREVIEW_HOSTNAME) instead of a random throwaway hostname that would
+# break every panel link already sent to Telegram on each restart. The tunnel +
+# DNS are provisioned once with the provider's API; the credentials file
+# (git-ignored, in $HOME) lets the client run it locally. Unset -> the panel falls
+# back to a quick tunnel. /preview always uses a quick tunnel.
 PREVIEW_HOSTNAME = os.environ.get("PREVIEW_HOSTNAME", "")
 TUNNEL_NAME = os.environ.get("TUNNEL_NAME", "")
 TUNNEL_ID = os.environ.get("TUNNEL_ID", "")

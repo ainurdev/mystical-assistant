@@ -12,7 +12,7 @@
 
 - The selector agent + Vite plugin are **dev-only** — `apply: 'serve'` and gated so they never enter a production bundle.
 - **No DB schema change. No new run path.** Submission reuses `api.run` (dashboard `/local/run`, miniapp `/api/run`) and the existing base64-image attach pipeline.
-- The preview Cloudflare tunnel is **unchanged**; the agent is served by the target project's own Vite dev server (same-origin to the page).
+- The preview tunnel is **unchanged**; the agent is served by the target project's own Vite dev server (same-origin to the page).
 - `postMessage` validates **origin + per-session nonce** in both directions.
 - Single source of truth for the wire contract: `tools/selector-plugin/src/protocol.ts`, imported by both the agent and the host.
 - The two web apps already duplicate UI per surface — **follow that convention**: shared *logic* lives in the package; *view* components are per-app.

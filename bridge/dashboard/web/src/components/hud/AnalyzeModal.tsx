@@ -138,16 +138,16 @@ export function AnalyzeModal(props: Props) {
     { k: "worktrees", l: "WORKTREES", badge: linkedWt || undefined },
     { k: "editor", l: "EDITOR" },
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
-    { k: "skills", l: "SKILLS" },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
-    { k: "map", l: "MAP" },
+    // ponytail: SKILLS + MAP hidden for now — bodies below stay wired, so
+    // re-enabling is just these two entries back.
   ];
 
   return (
     <div onClick={close}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: full ? "3vh" : "7vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
+      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: full ? "3vh" : "7vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both", transition: "padding-top .38s cubic-bezier(.25,.9,.25,1)" }}>
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: full ? "96vw" : 880, maxWidth: full ? "96vw" : "94vw", height: full ? "93vh" : undefined, maxHeight: full ? "93vh" : "84vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ width: full ? "96vw" : 880, maxWidth: full ? "96vw" : "94vw", height: full ? "93vh" : "auto", maxHeight: full ? "93vh" : "84vh", interpolateSize: "allow-keywords", transition: "width .38s cubic-bezier(.25,.9,.25,1),max-width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1),max-height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
@@ -626,8 +626,11 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
             : "Working tree clean."}
         </div>
       )}
+      {/* Fixed height (not min-height): the file list and diff then scroll
+          inside their columns, keeping the commit box pinned at the bottom
+          instead of pushing it below the modal's own scroll. */}
       {files.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", minHeight: 362 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", height: "clamp(362px, 58vh, 700px)" }}>
           {/* file list */}
           <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 12px 8px", flex: "none" }}>
@@ -1025,7 +1028,7 @@ function TerminalTab({ project, worktrees, branch, onCount }: {
     : [{ name: branch || "main", rel: project }];
 
   return (
-    <div style={{ animation: "mslide .3s ease both" }}>
+    <div style={{ animation: "mslide .3s ease both", height: "100%", display: "flex", flexDirection: "column" }}>
       {/* run project */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, border: "1px solid color-mix(in srgb, var(--ok) 24%, transparent)", background: "color-mix(in srgb, var(--ok) 4%, transparent)", padding: "9px 11px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--ok)", flex: "none" }}>RUN PROJECT</span>
@@ -1046,7 +1049,7 @@ function TerminalTab({ project, worktrees, branch, onCount }: {
         <div style={{ border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", color: "var(--err)", fontSize: 10.5, padding: "7px 11px", marginBottom: 9, fontFamily: "'JetBrains Mono',monospace" }}>{error}</div>
       )}
       {/* terminal box */}
-      <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", display: "flex", flexDirection: "column", height: 430, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
+      <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 430, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
         <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: "color-mix(in srgb, var(--panel2) 50%, transparent)", overflowX: "auto" }}>
           {terms.map((t) => {
             const on = t.id === activeId;

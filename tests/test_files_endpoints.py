@@ -99,6 +99,36 @@ def test_write_endpoint_rejects_non_string_content():
     assert box["code"] == 400
 
 
+def test_grep_endpoint_returns_hits():
+    name, _ = _mkproject("proj_grep")
+    h, box = _handler()
+    h._get_api("/local/files/grep", {"project": [name], "q": ["hello"], "branch": [""]})
+    assert box["code"] == 200
+    assert box["obj"]["hits"] == [{"path": "a.txt", "line": 1, "text": "hello"}], box["obj"]
+
+
+def test_op_endpoint_new_rename_delete():
+    name, d = _mkproject("proj_ops")
+    h, box = _handler()
+    h._post_api("/local/files/op", {"project": name, "op": "new", "path": "src/x.ts"})
+    assert box["obj"]["ok"] is True and os.path.isfile(os.path.join(d, "src/x.ts"))
+    h._post_api("/local/files/op", {"project": name, "op": "rename", "path": "src/x.ts", "to": "src/y.ts"})
+    assert box["obj"]["ok"] is True and os.path.isfile(os.path.join(d, "src/y.ts"))
+    h._post_api("/local/files/op", {"project": name, "op": "delete", "path": "src"})
+    assert box["obj"]["ok"] is True and not os.path.exists(os.path.join(d, "src"))
+
+
+def test_op_endpoint_guards():
+    name, d = _mkproject("proj_ops_guard")
+    h, box = _handler()
+    h._post_api("/local/files/op", {"project": name, "op": "delete", "path": ".git"})
+    assert box["obj"]["ok"] is False and os.path.isdir(os.path.join(d, ".git"))
+    h._post_api("/local/files/op", {"project": name, "op": "sudo", "path": "a.txt"})
+    assert box["code"] == 400
+    h._post_api("/local/files/op", {"project": name, "op": "delete", "path": ""})
+    assert box["code"] == 400
+
+
 def test_tree_endpoint_invalid_project():
     h, box = _handler()
     h._get_api("/local/files/tree", {"project": ["does_not_exist_xyz"], "branch": [""]})

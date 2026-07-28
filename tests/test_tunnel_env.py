@@ -1,4 +1,4 @@
-"""cloudflared reads TUNNEL_* env vars as CLI flags, and run.sh exports every
+"""The tunnel client reads TUNNEL_* env vars as CLI flags, and run.sh exports every
 .env key — so our TUNNEL_ID/TUNNEL_NAME silently became `--id`/`--name` and
 turned the Mini App's quick tunnel into a named-tunnel run that dies on a
 missing origin cert. The child env must be scrubbed.
@@ -31,7 +31,7 @@ def _spy_popen(seen, lines):
 def test_quick_tunnel_child_env_has_no_tunnel_vars(monkeypatch):
     monkeypatch.setenv("TUNNEL_ID", "612b1ee2")
     monkeypatch.setenv("TUNNEL_NAME", "mystical-preview")
-    monkeypatch.setenv("TUNNEL_CREDENTIALS_FILE", "/home/u/.cloudflared/x.json")
+    monkeypatch.setenv("TUNNEL_CREDENTIALS_FILE", "/home/u/.tunnel/x.json")
     seen = {}
     monkeypatch.setattr(tunnel.subprocess, "Popen",
                         _spy_popen(seen, ["https://x-y-z.trycloudflare.com\n"]))
@@ -41,7 +41,7 @@ def test_quick_tunnel_child_env_has_no_tunnel_vars(monkeypatch):
     env = seen["env"]
     assert env is not None, "quick tunnel inherited the bridge env verbatim"
     assert not [k for k in env if k.startswith("TUNNEL_")], \
-        f"TUNNEL_* leaked to cloudflared: {[k for k in env if k.startswith('TUNNEL_')]}"
+        f"TUNNEL_* leaked to the tunnel client: {[k for k in env if k.startswith('TUNNEL_')]}"
 
 
 def test_named_tunnel_child_env_has_no_tunnel_vars(monkeypatch, tmp_path):
@@ -62,7 +62,7 @@ def test_scrub_keeps_the_rest_of_the_environment(monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin")
     env = tunnel._cf_env()
     assert "TUNNEL_ID" not in env
-    assert env["PATH"] == "/usr/bin"   # cloudflared still needs a working env
+    assert env["PATH"] == "/usr/bin"   # the client still needs a working env
 
 
 if __name__ == "__main__":

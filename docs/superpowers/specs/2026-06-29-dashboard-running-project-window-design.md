@@ -32,7 +32,7 @@ Two changes to the dashboard:
   No caching today.
 - **Design view**: `DesignView.tsx` is shown when `view==="design"` (`App.tsx:503`).
   It renders a VISUAL SELECTOR header + `ViewTabs` + `ProjectRunBar` (start/stop dev
-  server, editable run command, kicks the cloudflare tunnel) + body: `PreviewFrame`
+  server, editable run command, kicks the tunnel) + body: `PreviewFrame`
   (device-width presets, **Select**/**Pin** mode buttons, scaled iframe of the
   **tunnel** URL `state.preview.url`) + `SelectionTray` + instruction + Send to Claude.
 - **`ViewTabs`** (`View = "chat"|"history"|"design"`, labels CHAT/HIST/DSGN) lives in
@@ -165,6 +165,6 @@ no new deps.
   (crosshair), select an element, Send to Claude.
 
 ## Out of scope
-- The cloudflare tunnel stays as-is (other surfaces use it); the window doesn't depend on it.
+- The tunnel stays as-is (other surfaces use it); the window doesn't depend on it.
 - No git checkout on session-select (display + project-sync only).
 - Pin mode is hidden, not deleted (agent still supports it).

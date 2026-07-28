@@ -1,6 +1,17 @@
+<div align="center">
+
+<img src="docs/assets/mystical.svg" width="128" alt="mystical-assistant" />
+
 # mystical-assistant
 
-> Control Claude Code on your own machine from your phone — Telegram-native.
+**Claude Code runs on your machine. You drive it from your phone.**
+
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-7fe9d8?style=flat-square&labelColor=060a0a)](https://www.python.org/)
+[![Dependencies 0](https://img.shields.io/badge/dependencies-0-b9a6ff?style=flat-square&labelColor=060a0a)](#)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-required-7fe9d8?style=flat-square&labelColor=060a0a)](https://claude.com/claude-code)
+[![Telegram](https://img.shields.io/badge/Telegram-bot%20%2B%20mini%20app-6fb5ff?style=flat-square&labelColor=060a0a)](https://t.me/BotFather)
+
+</div>
 
 <!-- DEMO_GIF: 45–60s screen recording (marketing track) goes here -->
 
@@ -13,9 +24,20 @@ continue it from any other, without caring where it started.
 The bridge runs `claude` locally and reuses its login (no API key). Your phone or
 browser is just a remote control; the work happens on your machine, in your repos.
 
----
+<br />
 
-## Setup
+## ✦ Surfaces
+
+| Surface | How you reach it | What it's for |
+|---|---|---|
+| **Telegram bot** | DM your bot | Quick plain-text prompts, `/projects`, `/server`, `/preview`, `/logs` |
+| **Telegram Mini App** | bot menu → 🛠 Open Panel | Full chat: prompts + screenshots, model/effort/permission pickers, live stream, dev-server controls, preview link, per-repo history |
+| **Desktop dashboard** | `http://127.0.0.1:8790/?token=…` (localhost only, never exposed) | A full-parity Claude client: project-grouped session sidebar, chat + cards, dual live logs, usage |
+| **Native Claude Code** (VS Code / terminal) | the `claude` you already run | Discovered automatically and made resumable from the surfaces above |
+
+<br />
+
+## ✦ Setup
 
 **Before you start**
 
@@ -25,8 +47,8 @@ browser is just a remote control; the work happens on your machine, in your repo
 | Python 3.10+ | runs the bridge | stdlib only — nothing to `pip install` |
 | A Telegram account | it's your remote control | you create the bot in step 1 |
 
-`cloudflared` (only for the phone Mini App) and Node (only if you edit the web UI)
-are optional — setup offers to install `cloudflared` for you.
+A small tunnel client (only for the phone Mini App — setup offers to install it)
+and Node (only if you edit the web UI) are optional.
 
 **Install**
 
@@ -43,9 +65,10 @@ re-run it any time and it only asks for what's still missing.
    `/newbot` → paste the token. Setup checks the token against Telegram and
    prints your bot's `t.me` link, so a typo fails here instead of at first run.
 2. **Projects root** — the folder your repos live in (default `~/projects`).
-3. **Mini App?** — the phone control panel; it needs `cloudflared`, and if that's
-   missing setup offers to install it (Homebrew on macOS, a release binary into
-   `~/.local/bin` on Linux). Say no and you still get the bot + dashboard.
+3. **Mini App?** — the phone control panel; it needs a small tunnel client, and
+   if that's missing setup offers to install it (Homebrew on macOS, a release
+   binary into `~/.local/bin` on Linux). Say no and you still get the bot +
+   dashboard.
 4. **Start it now?** — launches the bridge.
 
 Everything else is automatic: it captures your Telegram chat id (it asks you to
@@ -62,7 +85,7 @@ Then message your bot, or open the dashboard URL setup prints at the end.
 mystical            start in the background (logs → ~/.bridge_state/mystical.log)
 mystical stop       graceful stop
 mystical restart    stop, then start
-mystical status     running? + ports, dashboard URL, public tunnel link
+mystical status     running? + ports, dashboard URL, public link
 mystical doctor     check prerequisites
 mystical logs       follow the log
 mystical run        run in the foreground (Ctrl-C to quit)
@@ -76,7 +99,7 @@ mystical run        run in the foreground (Ctrl-C to quit)
 | `claude not found` from `mystical doctor` | install the CLI and run `claude` once to log in |
 | Setup said "No message received in time" | re-run `./setup.sh` — it resumes at the chat-id step |
 | Bot ignores you | your chat id isn't in `ALLOWED_CHAT_IDS`; check `mystical logs` |
-| No 🛠 Open Panel button | `MINIAPP_ENABLE="0"` in `.env`, or `cloudflared` is missing |
+| No 🛠 Open Panel button | `MINIAPP_ENABLE="0"` in `.env`, or the tunnel client is missing |
 | Port already in use | set `DASH_PORT` / `MINIAPP_PORT` in `.env`, then `mystical restart` |
 
 **Config & advanced**
@@ -85,8 +108,8 @@ mystical run        run in the foreground (Ctrl-C to quit)
   `.env.example` documents every option. Required: `TELEGRAM_BOT_TOKEN`,
   `BASE_PATH`, `ALLOWED_CHAT_IDS`.
 - **Dashboard only, no tunnel:** set `MINIAPP_ENABLE="0"`.
-- **Stable preview URL:** `/preview` uses ephemeral `*.trycloudflare.com` links by
-  default. For a fixed hostname, provision a named Cloudflare Tunnel and set
+- **Stable preview URL:** `/preview` hands out a throwaway public link by
+  default. For a fixed hostname, provision a named tunnel and set
   `PREVIEW_HOSTNAME` / `TUNNEL_NAME` / `TUNNEL_ID` / `TUNNEL_CREDENTIALS_FILE`.
 - **Rebuild the web UI** (only if you change the frontend):
   `npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build`
@@ -96,20 +119,9 @@ mystical run        run in the foreground (Ctrl-C to quit)
   message the bot, and copy the id it prints. Setup only; never leave it empty
   otherwise.
 
----
+<br />
 
-## Surfaces
-
-| Surface | How you reach it | What it's for |
-|---|---|---|
-| **Telegram bot** | DM your bot | Quick plain-text prompts, `/projects`, `/server`, `/preview`, `/logs` |
-| **Telegram Mini App** | bot menu → 🛠 Open Panel | Full chat: prompts + screenshots, model/effort/permission pickers, live stream, dev-server controls, preview link, per-repo history |
-| **Desktop dashboard** | `http://127.0.0.1:8790/?token=…` (localhost only, never tunneled) | A full-parity Claude client: project-grouped session sidebar, chat + cards, dual live logs, usage |
-| **Native Claude Code (VS Code / terminal)** | the `claude` you already run | Discovered automatically and made resumable from the surfaces above |
-
----
-
-## Features
+## ✦ Features
 
 - **Cross-surface session continuity.** Every session — bot, Mini App, dashboard,
   or one you started natively in VS Code — appears in one unified list and is
@@ -134,7 +146,7 @@ mystical run        run in the foreground (Ctrl-C to quit)
   reasoning effort, and the operating mode. Sessions started from the dashboard or
   Mini App default to full autonomy (`bypassPermissions`), persisted per session.
 - **Dev server + preview.** Start/stop the project's dev server and watch its logs;
-  expose it on a stable public URL via a named Cloudflare Tunnel.
+  expose it on a stable public URL via a named tunnel.
 - **Claude usage.** Live 5-hour / 7-day utilization shown in both clients.
 - **Project memory.** After a turn, a cheap Haiku pass proposes durable facts —
   conventions, decisions, your preferences, the active goal — as **Keep/Skip** cards.
@@ -149,9 +161,9 @@ mystical run        run in the foreground (Ctrl-C to quit)
 - **One shared design system.** The dashboard and Mini App share the "Mystic"
   violet theme, tokens, and components.
 
----
+<br />
 
-## Architecture
+## ✦ Architecture
 
 - **`claude_telegram_bridge.py`** — entry point; wires the package together and
   runs the Telegram long-poll loop.
@@ -172,9 +184,9 @@ mystical run        run in the foreground (Ctrl-C to quit)
 
 Design specs live in [docs/superpowers/specs/](docs/superpowers/specs/).
 
----
+<br />
 
-## Security
+## ✦ Security
 
 Whoever is in `ALLOWED_CHAT_IDS` can run Claude Code and start dev servers on this
 machine. With `--dangerously-skip-permissions` that is arbitrary command execution.
@@ -184,9 +196,9 @@ machine. With `--dangerously-skip-permissions` that is arbitrary command executi
 - Treat `TELEGRAM_BOT_TOKEN` as a secret (it also signs Mini App `initData`).
   It lives in `.env`, which is git-ignored; keep it `chmod 600`.
 - The Mini App server binds `127.0.0.1` and is reachable only through the
-  cloudflared tunnel; unauthenticated requests get 401 (signed `initData` required).
-- The dashboard binds `127.0.0.1` and is **never tunneled**; it is gated by a Host
-  allow-list (anti DNS-rebinding) and `DASH_TOKEN` (anti-CSRF).
+  tunnel; unauthenticated requests get 401 (signed `initData` required).
+- The dashboard binds `127.0.0.1` and is **never exposed publicly**; it is gated by
+  a Host allow-list (anti DNS-rebinding) and `DASH_TOKEN` (anti-CSRF).
 - `RUN_TIMEOUT` caps runaway Claude runs.
 
 See the SECURITY section at the bottom of `claude_telegram_bridge.py` before

@@ -42,7 +42,7 @@ claude_telegram_bridge.py (one process)
 ```
 
 Key invariant: **only the Mini App port is tunneled.** The dashboard server is a
-*separate* port that is never passed to `cloudflared`, so unauthenticated localhost
+*separate* port that is never passed to the tunnel client, so unauthenticated localhost
 endpoints are not publicly reachable.
 
 ## 4. Data model (`bridge/store.py`, stdlib `sqlite3`)

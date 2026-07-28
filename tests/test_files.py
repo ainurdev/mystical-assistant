@@ -149,6 +149,60 @@ def test_read_after_write_roundtrips_unicode():
     assert r["ok"] is True and r["content"] == "café ☕\n"
 
 
+def test_grep_finds_tracked_and_untracked():
+    d = _mkrepo()
+    _write(d, "a.py", "def hello():\n    pass\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "b.ts", "export function Hello() {}\n")   # untracked
+    _write(d, ".gitignore", "skip/\n")
+    _write(d, "skip/c.ts", "hello there\n")             # ignored
+    hits = g.grep(d, "hello")                            # case-insensitive
+    paths = {h["path"] for h in hits}
+    assert "a.py" in paths and "b.ts" in paths, hits
+    assert "skip/c.ts" not in paths, hits
+    assert [h for h in hits if h["path"] == "a.py"][0]["line"] == 1, hits
+
+
+def test_grep_empty_and_no_match():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    assert g.grep(d, "") == []
+    assert g.grep(d, "nothing-here") == []
+    assert g.grep(tempfile.mkdtemp(), "x") == []        # not a repo
+
+
+def test_create_file_and_dir():
+    d = _mkrepo()
+    ok, _ = g.create_path(d, "src/new.ts")
+    assert ok is True and os.path.isfile(os.path.join(d, "src/new.ts"))
+    ok, _ = g.create_path(d, "src/sub", directory=True)
+    assert ok is True and os.path.isdir(os.path.join(d, "src/sub"))
+    ok, err = g.create_path(d, "src/new.ts")            # no clobbering
+    assert ok is False and err == "already exists"
+
+
+def test_rename_and_delete():
+    d = _mkrepo()
+    _write(d, "src/a.txt", "hi\n")
+    ok, _ = g.rename_path(d, "src/a.txt", "src/deep/b.txt")
+    assert ok is True
+    assert os.path.isfile(os.path.join(d, "src/deep/b.txt"))
+    assert not os.path.exists(os.path.join(d, "src/a.txt"))
+    ok, _ = g.delete_path(d, "src")                     # directory + contents
+    assert ok is True and not os.path.exists(os.path.join(d, "src"))
+
+
+def test_mutating_ops_refuse_git_dir_and_root():
+    d = _mkrepo()
+    assert g.delete_path(d, ".git")[0] is False
+    assert g.delete_path(d, ".")[0] is False
+    assert g.write_file(d, ".git/config", "boom")[0] is False
+    assert g.rename_path(d, ".git", "gone")[0] is False
+    assert g.create_path(d, "../escape.txt")[0] is False
+    assert os.path.isdir(os.path.join(d, ".git"))
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

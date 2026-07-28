@@ -28,7 +28,7 @@ reading `config.py`.
 - **Author-specific defaults are baked in.** `config.py:73-79` defaults
   `PREVIEW_HOSTNAME=preview.mhzrerfani.dev`, `TUNNEL_NAME=mystical-preview`,
   `TUNNEL_ID=612b1ee2-…`, and tunnel cred/config paths — i.e. *the maintainer's*
-  Cloudflare account. A new user's `/preview` targets someone else's tunnel out of
+  tunnel account. A new user's `/preview` targets someone else's tunnel out of
   the box. **Correctness bug for anyone but the author.**
 - **Discovery mode exists** for chat-id capture. Empty `ALLOWED_CHAT_IDS` →
   `dispatch.py:45-51` prints `[discovery] chat_id=… — add to ALLOWED_CHAT_IDS`
@@ -47,7 +47,7 @@ reading `config.py`.
   (start/stop/restart/status/logs/run). It `source`s nothing itself — it just
   execs `run.sh` and greps `DASH_PORT`/`DASH_TOKEN` out of it for the status URL
   (`:58-62`). Installed manually via `ln -sf … ~/.local/bin/mystical` (`:9`).
-- **`cloudflared` is effectively mandatory.** Needed for the Mini App's ephemeral
+- **the tunnel client is effectively mandatory.** Needed for the Mini App's ephemeral
   quick tunnel and for `/preview`. A user who only wants the localhost dashboard
   still can't cleanly avoid it today.
 
@@ -61,7 +61,7 @@ git clone …/mystical-assistant && cd mystical-assistant
   ✓ token saved to .env
   → Now open Telegram and send your bot any message… (waiting)
   ✓ captured chat id 12345678 — you're the only allowed user
-  → Enable the Telegram Mini App control panel? (needs cloudflared) [y/N]: n
+  → Enable the Telegram Mini App control panel? (needs a tunnel client) [y/N]: n
   ✓ wrote .env   ✓ linked `mystical` onto your PATH
 Start it:  mystical
 Dashboard: http://127.0.0.1:8790/?token=…
@@ -105,7 +105,7 @@ Deletes hard block #2.
 - Default `PREVIEW_HOSTNAME`, `TUNNEL_NAME`, `TUNNEL_ID`,
   `TUNNEL_CREDENTIALS_FILE`, `TUNNEL_CONFIG_FILE` to **empty/None**.
 - **`/preview` degrades gracefully:** when no named tunnel is configured, fall
-  back to an ephemeral `*.trycloudflare.com` quick tunnel (the same primitive the
+  back to an ephemeral throwaway-hostname quick tunnel (the same primitive the
   Mini App already uses via `tunnel.open_quick_tunnel`) instead of pointing at a
   stranger's hostname. A named, stable tunnel becomes an opt-in documented in
   `.env.example`, not a baked-in default.
@@ -118,7 +118,7 @@ A single committed bash script, idempotent (safe to re-run; it reads existing
 1. **Prereq doctor.** Check `claude` (and that it's logged in — e.g. a cheap
    `claude` invocation or presence of its creds), `python3` (≥3.9) + `requests`,
    `curl`, `jq` (or fall back to a python one-liner for JSON), and — only if the
-   user opts into the Mini App/preview — `cloudflared`, `node`/`npm`. Print each
+   user opts into the Mini App/preview — the tunnel client, `node`/`npm`. Print each
    result and an install hint for anything missing; hard-fail only on the truly
    required ones (`claude`, `python3`).
 2. **Bot token.** If absent from `.env`, print the 3-step @BotFather walkthrough
@@ -128,8 +128,8 @@ A single committed bash script, idempotent (safe to re-run; it reads existing
    extract `message.chat.id`, and write it to `ALLOWED_CHAT_IDS`. Confirms the
    token actually works as a side effect.
 4. **Mini App toggle.** Ask whether to enable the Mini App panel (needs
-   cloudflared). If no, set `MINIAPP_ENABLE=0` — the bot + dashboard run with
-   cloudflared entirely absent.
+   the tunnel client). If no, set `MINIAPP_ENABLE=0` — the bot + dashboard run with
+   the tunnel client entirely absent.
 5. **Assets.** Use the committed `dist/`. Only build if `--build` was passed or a
    `dist/` is somehow missing.
 6. **Install `mystical`.** `ln -sf "$PWD/bin/mystical" ~/.local/bin/mystical`
@@ -173,7 +173,7 @@ Backend-only, stdlib `unittest`, matching `tests/test_*.py`:
 - **No Docker/compose image, no hosted/managed option.** Self-hosted only, as
   today. Can layer later if setup-in-a-container is demanded.
 - **No systemd/launchd service install.** `mystical` background mode is enough.
-- **No auto-install of `claude`, `cloudflared`, or Node.** The doctor points at
+- **No auto-install of `claude`, the tunnel client, or Node.** The doctor points at
   install docs; it does not run package managers on the user's behalf.
 - **No GUI/onboarding inside the Mini App or dashboard.** Setup is terminal-only.
 - **No multi-user / team onboarding.** Single-owner model (`ALLOWED_CHAT_IDS`

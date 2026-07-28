@@ -160,6 +160,14 @@ export function RunStream({
           }
           case "tool_done":
             return null;
+          case "steer":
+            // Sent into this turn while it was already running — shown so the
+            // transcript explains why the agent changed course mid-task.
+            return (
+              <div key={i} className="my-1.5 ml-[18px] border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[12px] leading-relaxed text-[var(--violet)]">
+                ⚡ {event.text}
+              </div>
+            );
           case "result":
             return (
               <FinalResult

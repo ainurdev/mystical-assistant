@@ -17,21 +17,30 @@ interface Props {
   onAnalyze: (rel: string) => void;
   onPreview: (rel: string) => void;
   onManage: () => void;
+  onRefresh: () => Promise<void>;
   onCreateProject: (name: string, prompt: string) => void;
 }
 
-/** Cluster nested repos under their top-level org folder (one level only:
- * "ainurhq/unideck-mono/unideck-api" groups under "ainurhq"); top-level repos
- * stay their own headerless cluster so the incoming (alphabetical) order is
- * preserved. Cluster position = first member. */
+/** Owning folder of a repo path: "ainurhq/efas/app" → "ainurhq/efas",
+ *  "aligned" → "" (top level). Shared with the manage modal so both group
+ *  projects the same way. */
+export function parentOf(rel: string): string {
+  const clean = rel.replace(/^\/+|\/+$/g, "");
+  const i = clean.lastIndexOf("/");
+  return i < 0 ? "" : clean.slice(0, i);
+}
+
+/** Cluster repos under their full parent folder, so a sub-org gets its own
+ * group: "ainurhq/efas/app" clusters under "ainurhq/efas", "ainurhq/invoicer"
+ * under "ainurhq". Top-level repos stay their own headerless cluster so the
+ * incoming (alphabetical) order is preserved. Cluster position = first member,
+ * which keeps every "ainurhq/…" cluster adjacent. */
 function clusterByParent(groups: ProjectGroup[]): { parent: string; items: ProjectGroup[] }[] {
   const clusters: { parent: string; items: ProjectGroup[] }[] = [];
   const at = new Map<string, number>();
   for (const g of groups) {
-    const clean = g.rel.replace(/^\/+|\/+$/g, "");
-    const i = clean.indexOf("/");
-    const parent = i < 0 ? "" : clean.slice(0, i);
-    const key = parent || `~${clean}`;
+    const parent = parentOf(g.rel);
+    const key = parent || `~${g.rel}`;
     const idx = at.get(key);
     if (idx == null) { at.set(key, clusters.length); clusters.push({ parent, items: [g] }); }
     else clusters[idx].items.push(g);
@@ -48,7 +57,6 @@ function ProjectRow({
   onAnalyze: (rel: string) => void;
   onPreview: (rel: string) => void;
 }) {
-  const [eyeHov, setEyeHov] = useState(false);
   const [anHov, setAnHov] = useState(false);
   const dirty = g.badge?.dirty ?? 0;
   const dot = g.running ? "var(--ok)" : dirty > 0 ? "var(--warn)" : "var(--txl)";
@@ -81,16 +89,8 @@ function ProjectRow({
       {g.running && (
         <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 5px", flex: "none" }}>LIVE</span>
       )}
-      <button
-        onClick={() => onPreview(g.rel)} title="preview the running app"
-        onMouseEnter={() => setEyeHov(true)} onMouseLeave={() => setEyeHov(false)}
-        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", background: eyeHov ? "color-mix(in srgb, var(--ok) 16%, transparent)" : "color-mix(in srgb, var(--ok) 6%, transparent)", color: "var(--ok)", fontFamily: "inherit", padding: "5px 7px", flex: "none", display: "flex", alignItems: "center", lineHeight: 0 }}
-      >
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      </button>
+      {/* ponytail: preview (eye) button hidden — the preview flow isn't working
+          yet. onPreview plumbing kept so re-enabling is just this button back. */}
       <button
         onClick={() => onAnalyze(g.rel)} title="open project details"
         onMouseEnter={() => setAnHov(true)} onMouseLeave={() => setAnHov(false)}
@@ -106,11 +106,13 @@ function ProjectRow({
 }
 
 export function ProjectsPanel(props: Props) {
-  const { groups, activeProject, onSelectProject, onAnalyze, onPreview, onManage, onCreateProject } = props;
+  const { groups, activeProject, onSelectProject, onAnalyze, onPreview, onManage, onRefresh, onCreateProject } = props;
   const [newOpen, setNewOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [npName, setNpName] = useState("");
   const [npPrompt, setNpPrompt] = useState("");
   const [manageHov, setManageHov] = useState(false);
+  const [refreshHov, setRefreshHov] = useState(false);
   const [newHov, setNewHov] = useState(false);
   const [createHov, setCreateHov] = useState(false);
   const [cancelHov, setCancelHov] = useState(false);
@@ -121,6 +123,12 @@ export function ProjectsPanel(props: Props) {
         <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>PROJECTS</span>
         <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} REPOS</span>
+          <button
+            onClick={() => { setScanning(true); void onRefresh().finally(() => setScanning(false)); }}
+            disabled={scanning} title="rescan disk for newly added repos"
+            onMouseEnter={() => setRefreshHov(true)} onMouseLeave={() => setRefreshHov(false)}
+            style={{ appearance: "none", cursor: scanning ? "default" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: refreshHov && !scanning ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "color-mix(in srgb, var(--acc) 5%, transparent)", color: scanning ? "var(--txd)" : "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px" }}
+          >{scanning ? "…" : "↻"}</button>
           <button
             onClick={onManage}
             title="manage projects — hide, remove, import"
@@ -156,28 +164,37 @@ export function ProjectsPanel(props: Props) {
             </div>
           </div>
         )}
-        {clusterByParent(groups).map(({ parent, items }) =>
-          parent ? (
-            <div key={parent} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 }}>
+        {clusterByParent(groups).map(({ parent, items }) => {
+          if (!parent) {
+            return items.map((g) => (
+              <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
+                onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
+            ));
+          }
+          // "ainurhq/efas" — an org inside an org. Ancestors stay dim, the owning
+          // folder takes the accent, and the block indents another step so its
+          // rows read as efas's, not ainurhq's.
+          const segs = parent.split("/");
+          const sub = segs.length > 1;
+          return (
+            <div key={parent} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4, marginLeft: (segs.length - 1) * 12 }}>
               <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txd)", padding: "2px 2px 0" }}>
-                {parent.toUpperCase()} /
+                {segs.slice(0, -1).map((s) => (
+                  <span key={s} style={{ opacity: 0.45 }}>{s.toUpperCase()} / </span>
+                ))}
+                <span style={{ color: sub ? "var(--acc)" : "var(--txd)" }}>{segs[segs.length - 1].toUpperCase()} /</span>
               </div>
               {/* stronger indent + rail: only these rows are in the org folder — rows
                   below the group are top-level repos, not members */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 12, borderLeft: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 12, borderLeft: `1px solid color-mix(in srgb, var(--acc) ${sub ? 45 : 28}%, transparent)` }}>
                 {items.map((g) => (
                   <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
                     onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
                 ))}
               </div>
             </div>
-          ) : (
-            items.map((g) => (
-              <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
-                onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
-            ))
-          ),
-        )}
+          );
+        })}
         {groups.length === 0 && (
           <div style={{ fontSize: 11, color: "var(--txl)", padding: "10px 4px" }}>No projects with sessions yet.</div>
         )}

@@ -146,13 +146,19 @@ export function RunningWindow({
     catch { /* ignore */ } finally { setBusyRun(false); }
   };
 
-  // Compose + enqueue. Picks are optional; a bare instruction is fine.
+  // Picks are optional; a bare instruction is fine.
+  const compose = () => {
+    const items = sel.state.items;
+    return items.length
+      ? composePrompt({ project: ctxProject, width, items, instruction })
+      : instruction.trim();
+  };
+
+  // Compose + enqueue.
   const submit = async () => {
     if (!instruction.trim() || !sessionId) return;
     const items = sel.state.items;
-    const prompt = items.length
-      ? composePrompt({ project: ctxProject, width, items, instruction })
-      : instruction.trim();
+    const prompt = compose();
     let images: string[] = [];
     try {
       if (activeUrl) {
@@ -169,12 +175,21 @@ export function RunningWindow({
     setInstruction("");
   };
 
+  // Land the instruction in the turn that's already running (no screenshot: it
+  // joins mid-flight as text). Falls back to queueing if the run just finished.
+  const steer = async () => {
+    if (!instruction.trim() || !sessionId) return;
+    if (!(await q.steer(compose()))) return void submit();
+    sel.clear();
+    setInstruction("");
+  };
+
   const canSelect = source === "localhost" && !!localhostUrl;
   const queuedCount = q.queued.length;
   const sendLabel = (q.running || queuedCount) ? "ADD ▸" : "SEND ▸";
   const sendHint = !instruction.trim()
     ? "⌘↵ to send · joins the queue"
-    : q.running ? "runs after the current task — auto-advances"
+    : q.running ? "runs after the current task — or ⚡ steer it into the live one"
       : queuedCount ? `queues behind ${queuedCount} waiting`
         : "starts on the running server";
 
@@ -222,6 +237,7 @@ export function RunningWindow({
           canSelect, hoverLabel: sel.state.hoverLabel,
           items: sel.state.items, onNote: sel.setNote, onRemove: sel.remove,
           instruction, onInstruction: setInstruction, onSend: () => void submit(), sendLabel, sendHint,
+          onSteer: () => void steer(), canSteer: !!q.running,
           model, onModel: setModel, effort, onEffort: setEffort, mode, onMode: setMode,
         }}
         logsProps={{

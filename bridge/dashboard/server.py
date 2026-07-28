@@ -338,6 +338,13 @@ class Handler(BaseHTTPRequestHandler):
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(git.read_file(cwd, qs.get("path", [""])[0]))
+        if path == "/local/files/grep":
+            # EDITOR search-in-files (the palette's `#` mode)
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json({"hits": git.grep(cwd, (qs.get("q", [""])[0] or "")[:200])})
         if path == "/local/github/issues":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -537,6 +544,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "file too large"}, 413)
             ok, output = git.write_file(cwd, rel, content)
             return self._json({"ok": ok} if ok else {"ok": False, "error": output})
+        if path == "/local/files/op":
+            # EDITOR explorer file management — new file/folder, rename, delete
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            rel = (body.get("path") or "").strip()
+            op = (body.get("op") or "").strip()
+            if not rel:
+                return self._json({"error": "no path"}, 400)
+            if op == "new" or op == "newdir":
+                ok, output = git.create_path(cwd, rel, directory=op == "newdir")
+            elif op == "rename":
+                ok, output = git.rename_path(cwd, rel, (body.get("to") or "").strip())
+            elif op == "delete":
+                ok, output = git.delete_path(cwd, rel)
+            else:
+                return self._json({"error": "unknown op"}, 400)
+            return self._json({"ok": ok, "path": output} if ok else {"ok": False, "error": output})
         if path == "/local/github/issue":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:
@@ -835,6 +860,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
         if not sid:
             return self._json({"error": "session required"}, 400)
+        if op == "steer":
+            # Not a queue op: goes straight into the running turn (see runner.steer).
+            text = (body.get("text") or "").strip()
+            if not text:
+                return self._json({"error": "empty prompt"}, 400)
+            if not runner.steer(sid, text):
+                return self._json({"error": "nothing running"}, 409)
+            return self._json(queue_manager.snapshot(sid))
         item_id = (body.get("item_id") or "").strip()
         if op == "remove":
             queue_manager.remove(sid, item_id)

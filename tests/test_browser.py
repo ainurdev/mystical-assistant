@@ -22,9 +22,9 @@ def test_list_projects_recurses_org_folders(tmp_path, monkeypatch):
 
     _mk(base, "aligned", git="dir")                                # top-level repo
     _mk(base, "ainurhq", "invoicer", git="dir")                    # org/repo
-    _mk(base, "ainurhq", "unideck-mono", "unideck", git="dir")     # monorepo member — not a project
-    _mk(base, "ainurhq", "unideck-mono", "unideck-api", git="dir")
+    _mk(base, "ainurhq", "efas", "app", git="dir")                 # org/sub-org/repo
     _mk(base, "ainurhq", "poc")                                    # bare folder — not a repo
+    _mk(base, "ainurhq", "invoicer", "packages", "core", git="dir")  # inside a repo — not a project
     _mk(base, "wt", git="file")                                    # worktree checkout — skipped
     _mk(base, "wt2", "inner", git="dir")                           # nested under a worktree...
     _mk(base, "wt2", git="file")                                   # ...not entered either
@@ -32,6 +32,7 @@ def test_list_projects_recurses_org_folders(tmp_path, monkeypatch):
     _mk(base, "node_modules", "y", git="dir")                      # SKIP_DIRS skipped
 
     assert browser.list_projects() == [
+        "/ainurhq/efas/app",
         "/ainurhq/invoicer",
         "/aligned",
     ]

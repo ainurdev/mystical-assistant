@@ -26,7 +26,7 @@ Requirements
 ------------
 - Python 3.10+, `pip install requests`
 - `claude` CLI installed and logged in (auth is reused; no API key).
-- `cloudflared` for /preview and the Mini App tunnel.
+- A tunnel client for /preview and the Mini App panel (./setup.sh installs it).
 - Mini App + Dashboard UIs built once:
     npm --prefix bridge/miniapp/web ci   && npm --prefix bridge/miniapp/web run build
     npm --prefix bridge/dashboard/web ci && npm --prefix bridge/dashboard/web run build
@@ -57,9 +57,9 @@ def _setup_miniapp():
               "npm --prefix bridge/miniapp/web run build\n"
               "    (the panel will return 503 until then)")
     miniapp.start()
-    proc, url = tunnel.open_quick_tunnel(config.MINIAPP_PORT)
+    proc, url = tunnel.open_panel_tunnel(config.MINIAPP_PORT)
     if not url:
-        print("⚠️  Mini App tunnel failed (is cloudflared installed?). "
+        print("⚠️  Mini App tunnel failed (is the tunnel client installed?). "
               "Panel reachable only on localhost.")
         return
     state.miniapp_url = url
@@ -166,7 +166,7 @@ if __name__ == "__main__":
 #   2. Treat TELEGRAM_BOT_TOKEN as a secret (it also signs initData). run.sh is
 #      git-ignored; keep it chmod 600.
 #   3. The Mini App HTTP server binds 127.0.0.1 only; its sole ingress is the
-#      cloudflared tunnel, and unauthenticated requests get 401.
+#      public tunnel, and unauthenticated requests get 401.
 #   4. Pick your permission posture deliberately (acceptEdits vs skip-perms).
 #   5. RUN_TIMEOUT caps runaway Claude runs; keep it sane.
 # ============================================================================

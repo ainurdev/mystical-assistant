@@ -97,7 +97,7 @@ def test_empty_init_data_rejected():
 
 def test_empty_allowlist_fails_closed(monkeypatch):
     """An empty ALLOWED_CHAT_IDS must reject everyone — this server is reachable
-    over the public cloudflared tunnel, so empty must never mean 'allow anyone'."""
+    over the public tunnel, so empty must never mean 'allow anyone'."""
     monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", set())
     assert validate_init_data(make_init_data(config.TOKEN, 555)) is None
 
@@ -130,6 +130,40 @@ def test_result_is_error_sets_error_status():
     job = runner.Job("j2", 555)
     runner._handle_event(job, {"type": "result", "result": "boom", "is_error": True})
     assert job.status == "error"
+
+
+def test_steer_writes_user_message_to_the_live_turn():
+    """A steer must reach the RUNNING job's stdin as a stream-json user message
+    (that's what the CLI folds into the in-flight turn), and must refuse when the
+    session has no live job — the caller queues it instead."""
+    class FakeStdin:
+        closed = False
+        def __init__(self): self.lines = []
+        def write(self, s): self.lines.append(s)
+        def flush(self): pass
+
+    class FakeProc:
+        def __init__(self): self.stdin = FakeStdin()
+
+    saved = dict(runner._jobs)
+    runner._jobs.clear()
+    try:
+        job = runner.Job("j-steer", 555, "sess-steer")
+        job.proc = FakeProc()
+        runner._register(job)
+
+        assert runner.steer("sess-steer", "actually, use tabs") is True
+        sent = json.loads(job.proc.stdin.lines[-1])
+        assert sent == {"type": "user",
+                        "message": {"role": "user", "content": "actually, use tabs"}}
+        assert job.events[-1] == {"type": "steer", "text": "actually, use tabs"}
+
+        assert runner.steer("other-session", "hi") is False   # no such job
+        job.status = "done"
+        assert runner.steer("sess-steer", "hi") is False       # turn already over
+    finally:
+        runner._jobs.clear()
+        runner._jobs.update(saved)
 
 
 def test_summarize_tool():

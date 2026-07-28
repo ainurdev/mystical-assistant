@@ -1,13 +1,14 @@
-"""cloudflared tunnels.
+"""Public tunnels.
 
 Two uses:
-  - the preview tunnel for the dev server (/preview): a *named* Cloudflare Tunnel
-    giving a stable URL (https://config.PREVIEW_HOSTNAME), managed via module
-    globals. Provisioned once via the Cloudflare API; cloudflared runs it locally
-    from a credentials file + a generated config that points the hostname at the
-    chosen port.
-  - the always-on Mini App tunnel: an ephemeral quick tunnel, spawned with
-    open_quick_tunnel() and owned by the caller (so /preview never tears it down).
+  - the always-on Mini App panel tunnel: the *named* tunnel when one is configured,
+    so the panel keeps one fixed hostname (https://config.PREVIEW_HOSTNAME) across
+    restarts and the link in Telegram never rots. Spawned with open_panel_tunnel()
+    and owned by the caller (so /preview never tears it down).
+  - the preview tunnel for the dev server (/preview): an ephemeral quick tunnel,
+    managed via module globals. Its hostname is throwaway, which is fine — the link
+    is pasted fresh each time. The named tunnel can't be shared: two connectors on
+    one tunnel with different ingress make routing a coin flip.
 """
 
 import os
@@ -32,9 +33,9 @@ _tunnel_lock = threading.Lock()
 
 
 def _cf_env() -> dict:
-    """The environment cloudflared should run with: ours, minus every TUNNEL_*.
+    """The environment the tunnel client should run with: ours, minus every TUNNEL_*.
 
-    run.sh exports the whole .env, and cloudflared reads TUNNEL_* env vars as CLI
+    run.sh exports the whole .env, and the tunnel client reads TUNNEL_* env vars as CLI
     flags — so our TUNNEL_ID/TUNNEL_NAME arrive as `--id`/`--name` and turn a
     quick tunnel into a named-tunnel run that fails on a missing origin cert.
     Both spawners pass their tunnel's identity explicitly (--url / --config), so
@@ -44,7 +45,7 @@ def _cf_env() -> dict:
 
 
 def _spawn_tunnel(port: int):
-    """Start cloudflared, return (proc, url) or (None, None) on failure.
+    """Start the tunnel client, return (proc, url) or (None, None) on failure.
 
     A daemon watch thread scans stdout for the URL and then keeps draining the
     pipe for the process's lifetime, so the caller need not drain it.
@@ -58,8 +59,8 @@ def _spawn_tunnel(port: int):
         return None, None
     # A reader thread scans for the URL and keeps draining the pipe; we bound the
     # wait with an Event (mirrors _spawn_named). A blocking readline() here would
-    # ignore the deadline until cloudflared prints — and start_tunnel holds the
-    # tunnel lock, so a silent/hung cloudflared would wedge every /preview request.
+    # ignore the deadline until the client prints — and start_tunnel holds the
+    # tunnel lock, so a silent/hung client would wedge every /preview request.
     found = {"url": None}
     ready = threading.Event()
 
@@ -87,8 +88,22 @@ def open_quick_tunnel(port: int):
     return _spawn_tunnel(port)
 
 
+def open_panel_tunnel(port: int):
+    """Tunnel for the Mini App panel — named when configured, else quick.
+
+    A quick tunnel mints a new hostname every run, which silently kills the panel
+    link already baked into Telegram's menu button and every "Open Panel" button
+    in past messages. The named tunnel's hostname is fixed, so those keep working.
+    """
+    if _named_configured():
+        proc, info = _spawn_named(port)
+        if proc:
+            return proc, info
+    return open_quick_tunnel(port)
+
+
 def _write_config(port: int) -> str:
-    """Write the cloudflared ingress config pointing PREVIEW_HOSTNAME at `port`."""
+    """Write the tunnel client's ingress config pointing PREVIEW_HOSTNAME at `port`."""
     cfg = config.TUNNEL_CONFIG_FILE
     os.makedirs(os.path.dirname(cfg), exist_ok=True)
     with open(cfg, "w") as f:
@@ -158,8 +173,8 @@ def _named_configured() -> bool:
 
 
 def start_tunnel(port: int):
-    """Start the preview tunnel for `port` — a stable named tunnel if configured,
-    otherwise an ephemeral *.trycloudflare.com quick tunnel."""
+    """Start the preview tunnel for `port` — an ephemeral throwaway-hostname quick
+    tunnel (the named tunnel, when there is one, fronts the Mini App panel)."""
     if port in (config.MINIAPP_PORT, config.DASH_PORT):
         return (None, f"❌ Refusing to tunnel reserved port {port} "
                       "(Mini App / dashboard must never be public).")
@@ -171,31 +186,18 @@ def start_tunnel(port: int):
             if _tunnel_port == port:
                 return _tunnel_url, f"🔗 Already live (port {port}):\n{_tunnel_url}"
             _stop_tunnel_locked()
-        if not _named_configured():
-            proc, url = open_quick_tunnel(port)
-            if not proc or not url:
-                if not _which_cloudflared():
-                    return (None, "❌ `cloudflared` not found. Install it first.")
-                return (None, "❌ Couldn't establish a quick tunnel.")
-            _tunnel_proc, _tunnel_url, _tunnel_port = proc, url, port
-            return url, (f"🔗 Preview live (port {port}):\n{url}\n\n"
-                         "⚠️ Public link — anyone with it can reach your server while "
-                         "it's running. /preview stop when done.")
-        proc, info = _spawn_named(port)
-        if not proc:
-            if info == "missing-bin" or not _which_cloudflared():
-                return (None, "❌ `cloudflared` not found. Install it first.")
-            return (None, "❌ Couldn't establish the preview tunnel — cloudflared "
-                          "didn't register with Cloudflare. Check the credentials "
-                          f"file ({config.TUNNEL_CREDENTIALS_FILE}) and connectivity.")
-        _tunnel_proc, _tunnel_url, _tunnel_port = proc, info, port
-        # _spawn_named's watch thread already drains the pipe.
-        return info, (f"🔗 Preview live (port {port}):\n{info}\n\n"
-                      "⚠️ Public link — anyone with it can reach your server while "
-                      "it's running. /preview stop when done.")
+        proc, url = open_quick_tunnel(port)
+        if not proc or not url:
+            if not _have_tunnel_client():
+                return (None, "❌ Tunnel client not found. Run ./setup.sh to install it.")
+            return (None, "❌ Couldn't establish a quick tunnel.")
+        _tunnel_proc, _tunnel_url, _tunnel_port = proc, url, port
+        return url, (f"🔗 Preview live (port {port}):\n{url}\n\n"
+                     "⚠️ Public link — anyone with it can reach your server while "
+                     "it's running. /preview stop when done.")
 
 
-def _which_cloudflared() -> bool:
+def _have_tunnel_client() -> bool:
     import shutil
     return shutil.which(config.CLOUDFLARED_BIN) is not None
 

@@ -16,12 +16,13 @@ def list_dirs(path: str) -> list[str]:
         return []
 
 
-def list_projects(max_depth: int = 2) -> list[str]:
-    """Git repos under BASE_PATH as rel paths ('/org/repo'), descending one
-    level into non-repo folders (org dirs). Repos nested deeper (members of a
-    monorepo folder) are the monorepo's internals, not projects. Only a `.git`
-    directory counts: a `.git` file marks a worktree/submodule checkout, which
-    is neither listed nor entered."""
+def list_projects(max_depth: int = 3) -> list[str]:
+    """Git repos under BASE_PATH as rel paths ('/org/repo'), descending into
+    non-repo folders (org dirs) up to max_depth — deep enough for a sub-org
+    ('/ainurhq/efas/app'). A repo is never descended into, so a monorepo's
+    internals stay hidden; the dashboard's MANAGE modal hides the rest. Only a
+    `.git` directory counts: a `.git` file marks a worktree/submodule checkout,
+    which is neither listed nor entered."""
     out: list[str] = []
 
     def scan(path: str, depth: int):

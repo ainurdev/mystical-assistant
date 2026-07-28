@@ -58,6 +58,7 @@ export type RunEvent =
   | { type: "result"; result: string; cost: number; elapsed: number }
   | { type: "error"; message: string }
   | { type: "stopped" }
+  | { type: "steer"; text: string }
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
@@ -176,6 +177,14 @@ export interface FileContent {
   error?: string;
 }
 
+// One search-in-files match from `git grep` (EDITOR palette `#` mode).
+export interface GrepHit {
+  path: string;
+  line: number;
+  text: string;
+}
+export type FileOp = "new" | "newdir" | "rename" | "delete";
+
 export interface GitHubLabel {
   name: string;
   color: string;
@@ -240,7 +249,8 @@ export interface QueueSnapshot {
 }
 export type QueueOp =
   | "remove" | "edit" | "reorder" | "bump"
-  | "pause" | "resume" | "cancel" | "retry" | "clear-done";
+  | "pause" | "resume" | "cancel" | "retry" | "clear-done"
+  | "steer";   // not a queue mutation — folds text into the running turn
 
 // Host vitals (psutil) for the WORKSPACE panel.
 export interface HostStats {
@@ -641,6 +651,15 @@ export const api = {
     req<{ ok: boolean; error?: string }>("/local/files/write", {
       method: "POST",
       body: { project, path, content, ...(branch ? { branch } : {}) },
+    }),
+  filesGrep: (project: string, q: string, branch?: string) =>
+    req<{ hits: GrepHit[] }>(
+      `/local/files/grep?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
+  fileOp: (project: string, op: FileOp, path: string, to?: string, branch?: string) =>
+    req<{ ok: boolean; path?: string; error?: string }>("/local/files/op", {
+      method: "POST",
+      body: { project, op, path, ...(to ? { to } : {}), ...(branch ? { branch } : {}) },
     }),
   projectSettings: (ctx: PreviewCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),

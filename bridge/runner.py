@@ -515,6 +515,26 @@ def get_job(job_id: str) -> Job | None:
         return _jobs.get(job_id)
 
 
+def steer(session_id: str, text: str) -> bool:
+    """Fold a message into a session's IN-FLIGHT turn instead of queueing a new
+    one. A stream-json user message written to the live child mid-turn is picked
+    up at the next tool-loop boundary (the CLI's queued_command fold-in), so the
+    running prompt changes course. False if that session has no live job.
+
+    Verified against claude 2.1.220: a turn with no tool call has no fold point,
+    so a steer sent at the very end simply runs as a follow-up turn on the same
+    process. Same job either way — nothing to clean up.
+    """
+    with _jobs_lock:
+        job = next((j for j in _jobs.values()
+                    if j.store_session_id == session_id and j.status == "running"), None)
+    if job is None or job.proc is None:
+        return False
+    job._write_stdin({"type": "user", "message": {"role": "user", "content": text}})
+    job.add({"type": "steer", "text": text})
+    return True
+
+
 def awaiting_input() -> list[dict]:
     """Store-session ids whose live job is blocked on user input, with the kind
     ('question' | 'permission') — drives the 'waiting on you' indicator in the

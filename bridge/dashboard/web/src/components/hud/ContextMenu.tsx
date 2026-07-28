@@ -20,6 +20,7 @@ export interface CtxItem {
 const TYPE_LABEL: Record<string, string> = {
   session: "SESSION", project: "PROJECT", issue: "ISSUE",
   branch: "BRANCH", terminal: "TERMINAL", surface: "DASHBOARD",
+  file: "FILE", folder: "FOLDER",
 };
 
 /* CONTEXT MENU — matches the HUD design mock (hud.dc.html lines 1544–1567):

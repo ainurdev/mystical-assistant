@@ -62,6 +62,11 @@ export function ProgressSidebar(p: ProgressSidebarProps) {
                 ))}
               </div>
             )}
+            {progress.steers.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 7, fontSize: 11.5, lineHeight: 1.45, color: "var(--violet)", borderLeft: "2px solid var(--violet)", paddingLeft: 8 }}>
+                <span style={{ flex: "none" }}>⚡</span><span>{s}</span>
+              </div>
+            ))}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 9, letterSpacing: 1.5, color: "var(--muted-2)", marginTop: 2 }}>
               <span>TOOL STREAM</span><span>{tools.length}</span>
             </div>

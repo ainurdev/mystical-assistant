@@ -57,7 +57,7 @@ def validate_init_data(init_data: str) -> int | None:
     except (ValueError, TypeError, json.JSONDecodeError):
         return None
     # Fail closed: this server is reachable from the public internet through the
-    # cloudflared tunnel, and an empty allowlist must never mean "allow anyone".
+    # public tunnel, and an empty allowlist must never mean "allow anyone".
     if not config.ALLOWED_CHAT_IDS or uid not in config.ALLOWED_CHAT_IDS:
         return None
     return uid
