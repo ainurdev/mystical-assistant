@@ -9,7 +9,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-dist/
+/dist/          # Python build output at the repo root only — NOT the web bundles
 
 # Mini App frontend build artifacts (dist/ is committed — ships prebuilt)
 bridge/miniapp/web/node_modules/
@@ -19,6 +19,7 @@ bridge/miniapp/web/.vite/
 # Dashboard frontend build artifacts (dist/ is NOT committed — run `npm run build`)
 bridge/dashboard/web/node_modules/
 bridge/dashboard/web/.vite/
+bridge/dashboard/web/dist/
 
 # Selector plugin package (dist/agent.global.js is committed intentionally)
 tools/selector-plugin/node_modules/
