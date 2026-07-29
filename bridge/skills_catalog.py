@@ -714,7 +714,9 @@ def skill_md(entry: dict) -> str:
         "---\n"
         f"name: {entry['id']}\n"
         # json.dumps gives a valid YAML double-quoted scalar for any description.
-        f"description: {json.dumps(entry['description'])}\n"
+        # ensure_ascii=False keeps em-dashes literal: the escaped \uXXXX form is
+        # valid YAML but our own minimal front-matter reader shows it verbatim.
+        f"description: {json.dumps(entry['description'], ensure_ascii=False)}\n"
         "---\n\n"
         f"# {entry['name']}\n\n"
         f"{entry['description']}\n\n"

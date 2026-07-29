@@ -31,6 +31,8 @@ doctor() {
   else warn "tunnel client not found — only needed for the Mini App panel and /preview"; fi
   if have npm; then ok "npm found (only needed to rebuild the web UI)"
   else warn "npm not found — fine unless you rebuild the web clients"; fi
+  if have graphify; then ok "graphify found (projects map themselves after the first turn)"
+  else warn "graphify not found — no project maps. Install: pipx install graphifyy"; fi
   return $hard
 }
 

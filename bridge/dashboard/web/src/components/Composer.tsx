@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import type { EffortLevel, ModelId } from "../api";
+import { api, type EffortLevel, type GraphState, type ModelId } from "../api";
+import { ago } from "../lib/surfaces";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -97,11 +98,13 @@ function fmtTokens(n: number): string {
 
 export function Composer({
   disabled, running, model, models, effort, perm, onPerm, ponytail, onPonytail, injectedText, injectNonce, sessionId,
-  contextTokens, resetLabel, onModel, onEffort, onSend, onStop, onCompact,
-  queued, onCancelQueued,
+  contextTokens, resetLabel, onModel, onEffort, onSend, onSteer, onStop, onCompact,
+  queued, onCancelQueued, project, onOpenMap,
 }: {
   disabled: boolean;
   running: boolean;
+  project?: string | null;
+  onOpenMap?: () => void;
   model: ModelId;
   models: { id: ModelId; label: string }[];
   effort: EffortLevel | "";
@@ -117,6 +120,7 @@ export function Composer({
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
   onSend: (text: string, images: string[]) => void;
+  onSteer?: (text: string) => void;
   onStop: () => void;
   onCompact?: () => void;
   queued?: { id: string; text: string }[];
@@ -143,6 +147,25 @@ export function Composer({
     taRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // Project map freshness for the MAP button. Re-read when the project changes
+  // and when a turn ends — that's when the bridge rebuilds the graph — then
+  // follow the build so the age lands on the new map, not the one it replaced.
+  const [graph, setGraph] = useState<GraphState | null>(null);
+  useEffect(() => {
+    if (!project) { setGraph(null); return; }
+    let live = true;
+    let t = 0;
+    const poll = () => api.graphState(project)
+      .then((s) => {
+        if (!live) return;
+        setGraph(s);
+        if (s.building) t = window.setTimeout(poll, 3000);
+      })
+      .catch(() => { if (live) setGraph(null); });
+    void poll();
+    return () => { live = false; if (t) window.clearTimeout(t); };
+  }, [project, running]);
 
   // Auto-grow the input with its content (1 line → up to ~9 lines, then scroll).
   useLayoutEffect(() => {
@@ -172,6 +195,15 @@ export function Composer({
     onSend(t, images);
     setText("");
     setImages([]);
+  }
+
+  // Land the text in the turn that's already running. Images can't fold into a
+  // live turn, so they stay in the tray for the next send.
+  function steer() {
+    const t = text.trim();
+    if (!t || !onSteer) return;
+    onSteer(t);
+    setText("");
   }
 
   const ctx = contextTokens ?? 0;
@@ -268,6 +300,20 @@ export function Composer({
           style={{ appearance: "none", cursor: disabled ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", opacity: disabled ? 0.4 : 1 }}>
           PT AUDIT
         </button>
+        {onOpenMap && graph?.available && (
+          <button onClick={onOpenMap}
+            title={graph.building
+              ? "Learning your project for better and faster responses. Opens the MAP tab."
+              : graph.exists
+              ? `Project map — built ${ago(graph.built_at)} ago${graph.stale ? ", stale" : ""}. Opens the MAP tab.`
+              : "No project map yet — it builds itself after the first turn. Opens the MAP tab."}
+            style={{ appearance: "none", cursor: "pointer", border: `1px solid ${graph.building ? "var(--acc)" : "color-mix(in srgb, var(--acc) 20%, transparent)"}`, background: "transparent", color: graph.building ? "var(--acc)" : "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", display: "flex", alignItems: "center", gap: 6 }}>
+            MAP
+            <span style={{ color: graph.stale && !graph.building ? "var(--warn)" : "inherit" }}>
+              {graph.building ? "LEARNING…" : graph.exists ? ago(graph.built_at) : "—"}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* command line */}
@@ -302,6 +348,10 @@ export function Composer({
           <>
             <button onClick={onStop}
               style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--err)", background: "color-mix(in srgb, var(--err) 12%, transparent)", color: "var(--err)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none" }}>STOP ■</button>
+            {onSteer && (
+              <button onClick={steer} disabled={!text.trim()} title="Fold this into the turn that's running now (text only — falls back to queueing if the run just ended)"
+                style={{ appearance: "none", cursor: !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--warn)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none", opacity: !text.trim() ? 0.4 : 1 }}>STEER ⚡</button>
+            )}
             <button onClick={submit} disabled={disabled || !text.trim()} title="Queue this prompt to run after the current turn"
               style={{ appearance: "none", cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none", opacity: disabled || !text.trim() ? 0.4 : 1 }}>QUEUE ▸</button>
           </>

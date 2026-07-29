@@ -50,7 +50,7 @@ import { notify } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
-import { AnalyzeModal } from "./components/hud/AnalyzeModal";
+import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
 import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
@@ -142,6 +142,8 @@ export function App() {
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
   // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
   const [analyzeFile, setAnalyzeFile] = useState<{ path: string; branch?: string } | null>(null);
+  // Set only when something opens the modal straight onto a tab (composer MAP).
+  const [analyzeTab, setAnalyzeTab] = useState<AnalyzeTab | undefined>(undefined);
   const [ctxMenu, setCtxMenu] = useState<CtxState | null>(null);
   // The browser items we took away by preventDefault()-ing, rebuilt per open.
   const [nativeCtx, setNativeCtx] = useState<{ top: CtxItem[]; page: CtxItem[] }>({ top: [], page: [] });
@@ -229,8 +231,9 @@ export function App() {
 
   // Every AnalyzeModal open goes through here so a stale file deep-link can't
   // survive into the next (plain) open.
-  function openAnalyze(rel: string, file?: { path: string; branch?: string }) {
+  function openAnalyze(rel: string, file?: { path: string; branch?: string }, tab?: AnalyzeTab) {
     setAnalyzeFile(file ?? null);
+    setAnalyzeTab(tab);
     setAnalyzeProject(rel);
   }
 
@@ -863,9 +866,12 @@ export function App() {
                       contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
+                      onSteer={(t) => void queue.steer(t).then((ok) => { if (!ok) void send(t, []); })}
                       onCompact={() => void send("/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       onCancelQueued={(id) => queue.remove(id)}
+                      project={sessionProject}
+                      onOpenMap={sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                     />
                   </>
                 }
@@ -888,9 +894,10 @@ export function App() {
               <AnalyzeModal
                 // The file is part of the key so a second deep-link (same
                 // project, different file) remounts on that file.
-                key={`${analyzeProject}:${analyzeFile?.path ?? ""}`}
+                key={`${analyzeProject}:${analyzeFile?.path ?? ""}:${analyzeTab ?? ""}`}
                 project={analyzeProject} badge={gitBadges.get(analyzeProject)}
                 initialFile={analyzeFile?.path} initialBranch={analyzeFile?.branch}
+                initialTab={analyzeTab}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}

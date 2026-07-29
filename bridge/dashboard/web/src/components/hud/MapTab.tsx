@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type GraphState } from "../../api";
+import { ago } from "../../lib/surfaces";
 
 /* MAP tab — the project's graphify knowledge graph (graph.html) inline, with
    staleness header, build/refresh, and a one-line explain query. */
@@ -77,10 +78,13 @@ export function MapTab({ project }: { project: string }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
         <span style={{ ...mono, color: "var(--txm)" }}>
-          {st.exists ? `BUILT @${st.built_commit ?? "?"}` : "NO MAP YET"}
+          {st.exists
+            ? `BUILT @${st.built_commit ?? "?"}${st.built_at ? ` · ${ago(st.built_at)} ago` : ""}`
+            : "NO MAP YET"}
         </span>
         {st.stale && <span style={{ ...mono, color: "var(--warn, orange)" }}>STALE</span>}
-        {st.building && <span style={{ ...mono, color: "var(--acc)" }}>BUILDING…</span>}
+        {st.building && <span title="Learning your project for better and faster responses."
+          style={{ ...mono, color: "var(--acc)" }}>LEARNING YOUR PROJECT…</span>}
         <span style={{ flex: 1 }} />
         <button onClick={build} disabled={st.building}
           style={{ appearance: "none", cursor: st.building ? "default" : "pointer",

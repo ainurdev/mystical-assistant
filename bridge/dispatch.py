@@ -43,7 +43,7 @@ def _handle_map(chat_id: int, arg: str):
     """Runs in a thread — graphify build/explain shell out for seconds."""
     cwd = state.project_dir(chat_id)
     if arg == "build":
-        send(chat_id, "🗺 Building the project map…")
+        send(chat_id, "🗺 Learning your project — better and faster responses…")
         ok, msg = graphmap.update(cwd)
         st = graphmap.graph_state(cwd)
         tag = f" (commit {st['built_commit']})" if ok and st["built_commit"] else ""

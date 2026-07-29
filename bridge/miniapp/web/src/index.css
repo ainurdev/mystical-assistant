@@ -225,7 +225,19 @@ input {
 .md li { margin: 0.2em 0; }
 .md li > ul, .md li > ol { margin: 0.2em 0; }
 .md a { color: var(--brand-soft); text-decoration: underline; text-underline-offset: 2px; }
-.md strong { font-weight: 600; color: var(--foreground); }
+/* Bold reads as a highlight, Claude-style: a translucent accent wash (never a
+   solid fill) so contrast against the surface barely moves and the text stays
+   readable under every theme. */
+.md strong {
+  font-weight: 600;
+  color: var(--foreground-bright);
+  background: var(--ac-12);
+  border-radius: 4px;
+  padding: 0.06em 0.28em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.md strong code, .md h1 strong, .md h2 strong, .md h3 strong, .md h4 strong { background: none; padding: 0; }
 .md em { font-style: italic; }
 .md code {
   font-family: var(--font-mono);

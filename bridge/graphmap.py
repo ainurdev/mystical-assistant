@@ -65,6 +65,14 @@ def _built_commit(cwd: str) -> "str | None":
         return None
 
 
+def _built_at(cwd: str) -> "float | None":
+    """graph.json's mtime — when the map was last (re)built."""
+    try:
+        return os.path.getmtime(_graph_json(cwd))
+    except OSError:
+        return None
+
+
 def _head_commit(cwd: str) -> "str | None":
     try:
         proc = subprocess.run(["git", "rev-parse", "--short=8", "HEAD"], cwd=cwd,
@@ -93,6 +101,7 @@ def graph_state(cwd: str) -> dict:
         "available": graphify_bin() is not None,
         "exists": has_graph(cwd),
         "built_commit": built,
+        "built_at": _built_at(cwd),
         "head": head,
         # short-sha lengths may drift between tools; prefix-compare both ways
         "stale": bool(built and head
@@ -188,12 +197,18 @@ def update_async(cwd: str, timeout: int = BUILD_TIMEOUT) -> dict:
 
 
 def refresh_async(cwd: "str | None") -> None:
-    """Post-turn refresh for projects that already have a graph. Fire-and-forget;
-    the per-project lock drops overlapping refreshes. Never blocks a turn."""
-    if not cwd or not has_graph(cwd) or not graphify_bin():
+    """Post-turn build-or-refresh: the first turn in a project maps it, every
+    later turn keeps that map current as the code grows. Fire-and-forget; the
+    per-project lock drops overlapping runs. Never blocks a turn."""
+    if not cwd or not graphify_bin():
         return
-    threading.Thread(target=update, args=(cwd, REFRESH_TIMEOUT),
-                     daemon=True).start()
+    mapped = has_graph(cwd)
+    # A first build is a full AST pass, so only real repos get one — with no
+    # project selected cwd is the BASE_PATH root, which would map everything.
+    if not mapped and not os.path.exists(os.path.join(cwd, ".git")):
+        return
+    threading.Thread(target=update, daemon=True,
+                     args=(cwd, REFRESH_TIMEOUT if mapped else BUILD_TIMEOUT)).start()
 
 
 # --- graph pack (system-prompt structure summary) ----------------------------

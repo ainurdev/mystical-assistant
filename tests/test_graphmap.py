@@ -93,7 +93,7 @@ def test_state_no_git_is_harmless(tmp_path, monkeypatch):
     os.makedirs(d, exist_ok=True)
     st = graphmap.graph_state(d)
     assert st == {"available": False, "exists": False, "built_commit": None,
-                  "head": None, "stale": False, "building": False}
+                  "built_at": None, "head": None, "stale": False, "building": False}
 
 
 def test_state_wrong_shape_json_is_harmless(tmp_path, monkeypatch):
@@ -208,16 +208,33 @@ def test_update_failure_message(tmp_path, monkeypatch):
     assert ok is False and "boom" in msg
 
 
-def test_refresh_async_noop_without_graph(tmp_path, monkeypatch):
-    d = _mkrepo(tmp_path)
+def test_refresh_async_noop_without_repo(tmp_path, monkeypatch):
+    d = str(tmp_path / "plain")
+    os.makedirs(d)
     monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
     called = []
     monkeypatch.setattr(graphmap.threading, "Thread",
                         lambda *a, **k: called.append(1) or _NopThread())
-    graphmap.refresh_async(d)          # no graph yet -> must not spawn
+    graphmap.refresh_async(d)          # not a repo, no graph -> must not spawn
     assert called == []
     graphmap.refresh_async(None)       # no cwd -> must not spawn
     assert called == []
+
+
+def test_refresh_async_builds_first_map_in_a_repo(tmp_path, monkeypatch):
+    """First turn in a mapped-never project builds the graph (full-build timeout)."""
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    spawned = {}
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            spawned["args"] = args
+        def start(self):
+            spawned["started"] = True
+    monkeypatch.setattr(graphmap.threading, "Thread", FakeThread)
+    graphmap.refresh_async(d)
+    assert spawned.get("started") and spawned["args"] == (d, graphmap.BUILD_TIMEOUT)
 
 
 class _NopThread:
@@ -259,7 +276,8 @@ def test_update_async_fires_thread_and_returns_state(tmp_path, monkeypatch):
     assert spawned["target"] is graphmap.update
     assert spawned["args"] == (d, 42)
     assert spawned.get("started") is True
-    assert set(st) == {"available", "exists", "built_commit", "head", "stale", "building"}
+    assert set(st) == {"available", "exists", "built_commit", "built_at", "head",
+                       "stale", "building"}
     assert st["building"] is True   # forced True so a poller doesn't render stale graph
 
 

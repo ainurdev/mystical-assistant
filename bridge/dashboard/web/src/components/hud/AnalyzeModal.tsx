@@ -22,7 +22,7 @@ import { XtermPane } from "./XtermPane";
    530–1258): header with editable short tag, tab bar (EDITOR / GIT /
    WORKTREES / TERMINAL / ISSUES), and per-tab bodies. */
 
-type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map";
+export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map";
 
 interface Props {
   project: string;
@@ -33,6 +33,7 @@ interface Props {
   // on this file, in the branch's worktree the explorer was listing.
   initialFile?: string;
   initialBranch?: string;
+  initialTab?: Tab;
   onClose: () => void;
   onFeed: (texts: string[], project?: string) => void;
   onSelectSession: (s: SessionBrief) => void;
@@ -66,7 +67,7 @@ export function AnalyzeModal(props: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const [tab, setTab] = useState<Tab>("editor");
+  const [tab, setTab] = useState<Tab>(props.initialTab ?? "editor");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [issues, setIssues] = useState<IssuesInfo | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
@@ -144,8 +145,7 @@ export function AnalyzeModal(props: Props) {
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
     { k: "skills", l: "SKILLS" },
-    // ponytail: MAP hidden for now — its body below stays wired, so re-enabling
-    // is just that entry back.
+    { k: "map", l: "MAP" },
   ];
 
   return (

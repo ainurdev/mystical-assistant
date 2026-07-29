@@ -40,6 +40,16 @@ def test_install_scan_remove_project(tmp_path):
     assert skills.installed(proj)["project"] == []
 
 
+def test_description_survives_the_round_trip(tmp_path):
+    """Most catalog descriptions carry an em-dash; it must reach the panel as
+    one, not as a literal \\u2014."""
+    proj = str(tmp_path)
+    entry = next(e for e in CATALOG if e["id"] == "api-design")
+    assert "—" in entry["description"]
+    skills.install("api-design", "project", proj)
+    assert skills.installed(proj)["project"][0]["description"] == entry["description"]
+
+
 def test_community_entry_installs_the_upstream_file(tmp_path):
     proj = str(tmp_path)
     assert skills.install("brainstorming", "project", proj) == (True, "")

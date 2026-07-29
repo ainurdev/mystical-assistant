@@ -543,6 +543,7 @@ export interface GraphState {
   available: boolean;
   exists: boolean;
   built_commit: string | null;
+  built_at: number | null; // epoch seconds — graph.json's mtime ("last updated")
   head: string | null;
   stale: boolean;
   building: boolean;
