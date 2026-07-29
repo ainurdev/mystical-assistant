@@ -34,6 +34,7 @@ interface Props {
   branch: string;
   branchOpts: BranchOpt[];
   onPickBranch: (b: string) => void;
+  initialFile?: string; // opened straight away (sidebar FILES → editor modal)
 }
 
 // One row in the quick-open palette (a file, a symbol, or a search hit).
@@ -44,7 +45,7 @@ interface PalItem {
   sub: string;
 }
 
-interface TreeRow {
+export interface TreeRow {
   key: string;
   dir: boolean;
   depth: number;
@@ -57,13 +58,13 @@ const EXT_COLOR: Record<string, string> = {
   css: "var(--purple)", scss: "var(--purple)", md: "var(--txm)", json: "var(--warn)", py: "var(--ok)",
   html: "var(--err)", htm: "var(--err)", toml: "var(--txm)", yml: "var(--txm)", yaml: "var(--txm)",
 };
-function iconColor(name: string): string {
+export function iconColor(name: string): string {
   return EXT_COLOR[name.split(".").pop()?.toLowerCase() ?? ""] ?? "#7fa8a0";
 }
 
 /* Flatten a sorted path list into a collapsible directory tree (dirs before
    their files, honoring the collapsed set). */
-function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
+export function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
   const sorted = [...paths].sort((a, b) => a.localeCompare(b));
   const rows: TreeRow[] = [];
   const seen = new Set<string>();
@@ -86,7 +87,7 @@ function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
 }
 
 /* Every directory that appears in the path list — the expand/collapse-all set. */
-function dirsOf(paths: string[]): string[] {
+export function dirsOf(paths: string[]): string[] {
   const out = new Set<string>();
   for (const p of paths) {
     const parts = p.split("/");
@@ -185,7 +186,7 @@ const crtTheme = EditorView.theme({
   ".cm-selectionMatch": { backgroundColor: "color-mix(in srgb, var(--purple) 15%, transparent)" },
 }, { dark: true });
 
-export function EditorTab({ project, branch, branchOpts, onPickBranch }: Props) {
+export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFile }: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
@@ -230,15 +231,17 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch }: Props) 
       .then((r) => setPaths(r.files))
       .catch(() => setPaths([]));
 
-  // Load the file list whenever the project/branch changes.
+  // Load the file list whenever the project/branch changes. An `initialFile`
+  // (opened from the sidebar explorer) starts open — the tree is fully expanded
+  // here, so its row renders and the scroll-into-view below reveals it.
   useEffect(() => {
     let live = true;
-    setOpen(null); setMeta(null); setCollapsed(new Set());
+    setOpen(initialFile ?? null); setMeta(null); setCollapsed(new Set());
     void api.filesTree(project, branch || undefined)
       .then((r) => { if (live) setPaths(r.files); })
       .catch(() => { if (live) setPaths([]); });
     return () => { live = false; };
-  }, [project, branch]);
+  }, [project, branch, initialFile]);
 
   const rows = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);

@@ -27,6 +27,7 @@ import {
   themeVars,
   THEME_TOKEN_KEYS,
   type HudSettings,
+  type RightTab,
   type ThemeKey,
 } from "./lib/theme";
 import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
@@ -36,6 +37,8 @@ import { Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
 import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel";
+import { FilesPanel } from "./components/hud/FilesPanel";
+import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { SessionsPanel } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import { notify } from "./components/hud/Notifications";
@@ -121,6 +124,8 @@ export function App() {
   const [themeOpen, setThemeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
+  // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
+  const [analyzeFile, setAnalyzeFile] = useState<{ path: string; branch?: string } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxState | null>(null);
   const [ctxClosing, setCtxClosing] = useState(false);
   const ctxTimer = useRef<number | null>(null);
@@ -179,6 +184,20 @@ export function App() {
   }
   function toggleCrt(key: "scanlines" | "sweep" | "glow") {
     setSettings((s) => ({ ...s, [key]: !s[key] }));
+  }
+  function toggleRight() {
+    setSettings((s) => ({ ...s, rightOpen: !s.rightOpen }));
+  }
+  // Tab click: the active tab collapses the sidebar, any other opens on it.
+  function pickRightTab(id: string) {
+    setSettings((s) => ({ ...s, rightTab: id as RightTab, rightOpen: !(s.rightOpen && s.rightTab === id) }));
+  }
+
+  // Every AnalyzeModal open goes through here so a stale file deep-link can't
+  // survive into the next (plain) open.
+  function openAnalyze(rel: string, file?: { path: string; branch?: string }) {
+    setAnalyzeFile(file ?? null);
+    setAnalyzeProject(rel);
   }
 
   function openSession(id: string) {
@@ -523,6 +542,37 @@ export function App() {
   // HIDE keeps a project out of the sidebar; REMOVE detaches it (design manage modal).
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && !removedProjects[g.rel]);
 
+  // The open session's working tree — its worktree branch when it has one.
+  const sessionProject = selected?.project ?? activeProject;
+  const sessionBranch = selected?.branch;
+
+  const rightTabs: PanelTab[] = [
+    {
+      id: "projects", label: "Projects", icon: "⊞",
+      render: () => (
+        <ProjectsPanel
+          groups={visibleGroups} activeProject={activeProject}
+          onSelectProject={(rel) => void selectProject(rel)}
+          onAnalyze={(rel) => openAnalyze(rel)}
+          onPreview={(rel) => setPreviewProject(rel)}
+          onManage={() => setManageOpen(true)}
+          onRefresh={refreshProjects}
+          onCreateProject={(name, prompt) => void createProject(name, prompt)}
+        />
+      ),
+    },
+    {
+      id: "files", label: "Files", icon: "▤",
+      render: () => (
+        <FilesPanel
+          project={sessionProject} branch={sessionBranch}
+          onOpenFile={(path) => sessionProject && openAnalyze(sessionProject, { path, branch: sessionBranch })}
+        />
+      ),
+    },
+    { id: "queue", label: "Queue", icon: "≡", render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
+  ];
+
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
   const usedPct = Math.round(usage?.five_hour?.percent ?? 0);
   const resetLabel = fmtReset(usage?.five_hour?.resets_at);
@@ -542,7 +592,8 @@ export function App() {
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
     { id: "view-memory", label: "Go to Memory", group: "View", icon: "◆", run: () => setView("memory") },
-    { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && setAnalyzeProject(activeProject) },
+    { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
+    { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
     { id: "theme", label: "Theme & CRT…", group: "Display", icon: "◐", run: () => setThemeOpen(true) },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
     { id: "radio", label: radio.radio.playing ? "Pause Claude·FM" : "Play Claude·FM", group: "Audio", icon: "♪", run: () => radio.toggle() },
@@ -565,10 +616,10 @@ export function App() {
       items.push({ icon: "⌫", label: "Archive session", danger: true, onClick: () => void archiveSession(ctxMenu.id) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
-      items.push({ icon: "⊞", label: "Analyze project", onClick: () => setAnalyzeProject(ctxMenu.id) });
+      items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
-      items.push({ icon: "◎", label: "Open issues", onClick: () => setAnalyzeProject(ctxMenu.id) });
+      items.push({ icon: "◎", label: "Open issues", onClick: () => openAnalyze(ctxMenu.id) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "issue") {
       items.push({ icon: "▸", label: "Feed to Claude", onClick: () => feed([`Address issue #${ctxMenu.id} in ${cproj}`]) });
@@ -648,7 +699,10 @@ export function App() {
               openSettings={wxSettings}
             />
 
-            <div className="grid min-h-0 flex-1 gap-[13px] p-[13px]" style={{ gridTemplateColumns: "360px minmax(0,1fr) 358px", minWidth: 0 }}>
+            <div
+              className="grid min-h-0 flex-1 gap-[13px] p-[13px]"
+              style={{ gridTemplateColumns: `360px minmax(0,1fr) ${settings.rightOpen ? "372px" : "30px"}`, minWidth: 0 }}
+            >
               {/* LEFT */}
               <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
                 <SessionsPanel
@@ -656,7 +710,7 @@ export function App() {
                   selectedSessionId={sessionId} loadingSessionId={loadingSession ? sessionId : null}
                   activeProject={activeProject}
                   onSelectSession={(s) => void selectSession(s)}
-                  onAnalyze={(rel) => setAnalyzeProject(rel)}
+                  onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
                   onFeed={feed}
@@ -689,19 +743,12 @@ export function App() {
                 }
               />
 
-              {/* RIGHT */}
-              <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
-                <ProjectsPanel
-                  groups={visibleGroups} activeProject={activeProject}
-                  onSelectProject={(rel) => void selectProject(rel)}
-                  onAnalyze={(rel) => setAnalyzeProject(rel)}
-                  onPreview={(rel) => setPreviewProject(rel)}
-                  onManage={() => setManageOpen(true)}
-                  onRefresh={refreshProjects}
-                  onCreateProject={(name, prompt) => void createProject(name, prompt)}
-                />
-                <TaskQueuePanel projects={projectNames} onFeed={feed} />
-              </div>
+              {/* RIGHT — activity bar of icons; clicking the active one collapses
+                  the body and unmounts the panel (which stops its polling). */}
+              <RightPanel
+                tabs={rightTabs} activeId={settings.rightTab}
+                open={settings.rightOpen} onTab={pickRightTab}
+              />
             </div>
 
             <StatusBar
@@ -711,8 +758,11 @@ export function App() {
 
             {analyzeProject && (
               <AnalyzeModal
-                key={analyzeProject}
+                // The file is part of the key so a second deep-link (same
+                // project, different file) remounts on that file.
+                key={`${analyzeProject}:${analyzeFile?.path ?? ""}`}
                 project={analyzeProject} badge={gitBadges.get(analyzeProject)}
+                initialFile={analyzeFile?.path} initialBranch={analyzeFile?.branch}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}

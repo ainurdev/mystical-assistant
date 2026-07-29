@@ -1,57 +1,62 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 export interface PanelTab {
   id: string;
   label: string;
+  icon: string;
   badge?: string | null;
   render: () => ReactNode;
 }
 
+/** Right sidebar: the panel body plus a VS Code-style activity bar of icons on
+ *  the outer edge. The bar is always visible — clicking the active icon
+ *  collapses the body, any other icon opens on that tab. */
 export function RightPanel({
   tabs,
   activeId,
-  onActiveChange,
+  open,
+  onTab,
 }: {
   tabs: PanelTab[];
-  activeId?: string;
-  onActiveChange?: (id: string) => void;
+  activeId: string;
+  open: boolean;
+  onTab: (id: string) => void;
 }) {
-  const [internal, setInternal] = useState(tabs[0]?.id);
-  const active = activeId ?? internal;
-  const setActive = (id: string) => {
-    setInternal(id);
-    onActiveChange?.(id);
-  };
-  const current = tabs.find((t) => t.id === active) ?? tabs[0];
+  const current = tabs.find((t) => t.id === activeId) ?? tabs[0];
   return (
-    <div
-      className="panel flex min-h-0 flex-1 flex-col border border-border bg-panel"
-      style={{ animation: "boot .5s ease both .2s" }}
-    >
-      <div className="flex flex-none border-b border-border">
+    <div className="flex min-h-0 min-w-0 gap-[13px]">
+      {open && (
+        <div className="mscroll flex min-h-0 min-w-0 flex-1 flex-col gap-[13px] pr-0.5">
+          {current?.render()}
+        </div>
+      )}
+      <div
+        className="panel flex w-[30px] flex-none flex-col items-stretch gap-1 border border-border bg-panel py-1.5"
+        style={{ animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      >
         {tabs.map((t) => {
-          const on = t.id === current?.id;
+          const on = open && t.id === current?.id;
           return (
             <button
               key={t.id}
-              onClick={() => setActive(t.id)}
-              className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-1 py-[11px] text-[10.5px] tracking-[1.5px] hover:bg-accent ${
+              onClick={() => onTab(t.id)}
+              title={on ? `${t.label} — click to collapse` : t.label}
+              aria-label={t.label}
+              aria-current={on}
+              className={`relative flex h-[30px] items-center justify-center border-l-2 text-[13px] hover:bg-accent ${
                 on
                   ? "border-primary bg-[var(--ac-06)] text-foreground-bright"
-                  : "border-transparent text-muted-2"
+                  : "border-transparent text-muted-2 hover:text-primary"
               }`}
             >
-              {t.label.toUpperCase()}
+              {t.icon}
               {t.badge ? (
-                <span className="border border-[var(--border-bright)] px-[5px] text-[9px] text-primary">
-                  {t.badge}
-                </span>
+                <span className="absolute right-0 top-0 text-[7px] leading-none text-primary">●</span>
               ) : null}
             </button>
           );
         })}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{current?.render()}</div>
     </div>
   );
 }

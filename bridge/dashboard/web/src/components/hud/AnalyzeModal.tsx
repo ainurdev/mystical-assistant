@@ -28,6 +28,10 @@ interface Props {
   badge?: GitBadge;
   sessions: SessionBrief[];
   status: Map<string, SessionStatus>;
+  // Deep-link from the sidebar FILES explorer: open straight into the editor
+  // on this file, in the branch's worktree the explorer was listing.
+  initialFile?: string;
+  initialBranch?: string;
   onClose: () => void;
   onFeed: (texts: string[]) => void;
   onSelectSession: (s: SessionBrief) => void;
@@ -62,7 +66,7 @@ export function AnalyzeModal(props: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(props.initialFile ? "editor" : "overview");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [issues, setIssues] = useState<IssuesInfo | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
@@ -72,7 +76,7 @@ export function AnalyzeModal(props: Props) {
   const [closing, setClosing] = useState(false);
   const [full, setFull] = useState(false);
   // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
-  const [selectedBranch, setSelectedBranch] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState(props.initialBranch ?? "");
 
   // editable short tag + color — persisted per project via setProjectTint, so
   // the strip, panels and future opens all reflect it.
@@ -90,7 +94,7 @@ export function AnalyzeModal(props: Props) {
   };
 
   useEffect(() => {
-    setSelectedBranch("");
+    setSelectedBranch(props.initialBranch ?? "");
     setTagEditOpen(false);
     refreshGit();
     void api.issues(project).then(setIssues).catch(() => {});
@@ -218,7 +222,8 @@ export function AnalyzeModal(props: Props) {
               onRefresh={() => { refreshGit(); refreshWt(); refreshBranches(); }} />
           )}
           {tab === "editor" && (
-            <EditorTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts} onPickBranch={setSelectedBranch} />
+            <EditorTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
+              onPickBranch={setSelectedBranch} initialFile={props.initialFile} />
           )}
           {tab === "terminal" && (
             <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount} />

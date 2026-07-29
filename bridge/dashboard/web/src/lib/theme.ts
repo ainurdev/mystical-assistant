@@ -103,15 +103,22 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => (t.pal ? Object.keys(t.pal) : []))),
 ).map((k) => `--${k}`);
 
+export const RIGHT_TABS = ["projects", "files", "queue"] as const;
+export type RightTab = (typeof RIGHT_TABS)[number];
+
 export interface HudSettings {
   theme: ThemeKey;
   scanlines: boolean;
   sweep: boolean;
   glow: boolean;
+  rightOpen: boolean; // right sidebar expanded
+  rightTab: RightTab; // which sidebar tab it opens on
 }
 
 const KEY = "hud-settings";
-const DEFAULTS: HudSettings = { theme: "aqua", scanlines: true, sweep: true, glow: true };
+const DEFAULTS: HudSettings = {
+  theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "projects",
+};
 
 export function loadSettings(): HudSettings {
   try {
@@ -124,6 +131,8 @@ export function loadSettings(): HudSettings {
         scanlines: p.scanlines ?? true,
         sweep: p.sweep ?? true,
         glow: p.glow ?? true,
+        rightOpen: p.rightOpen ?? true,
+        rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "projects",
       };
     }
   } catch {
