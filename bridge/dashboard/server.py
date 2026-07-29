@@ -656,6 +656,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(weather.set_location((body.get("city") or "")[:120]))
         if path == "/local/weather/unit":
             return self._json(weather.set_unit((body.get("unit") or "")[:20]))
+        if path == "/local/skills/check":
+            # Network sweep (one request per installed catalog skill), so it is
+            # a POST behind the token rather than a free GET.
+            return self._json(skills.check_updates(_abs_project(body.get("project"))))
         if path in ("/local/skills/install", "/local/skills/remove"):
             scope = body.get("scope")
             if scope not in ("project", "system"):

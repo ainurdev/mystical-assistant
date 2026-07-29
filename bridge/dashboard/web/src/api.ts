@@ -430,7 +430,8 @@ export interface UsageInfo {
 }
 
 export type SkillScope = "project" | "system";
-export type SkillCategory = "technical" | "design" | "writing" | "other";
+export type SkillCategory =
+  | "development" | "design" | "writing" | "testing" | "workflow" | "other";
 export interface InstalledSkill {
   id: string;
   name: string;
@@ -444,6 +445,7 @@ export interface CatalogSkill {
   name: string;
   category: SkillCategory;
   description: string;
+  repo: string | null; // "owner/name" — set when installing downloads it from GitHub
 }
 export interface SkillsInfo {
   project: InstalledSkill[];
@@ -832,6 +834,10 @@ export const api = {
   installSkill: (id: string, scope: SkillScope, project?: string | null) =>
     req<{ ok: boolean; error: string | null; project: InstalledSkill[]; system: InstalledSkill[] }>(
       "/local/skills/install", { method: "POST", body: { id, scope, project } }),
+  // Re-installing IS the update — install overwrites what the catalog owns.
+  checkSkillUpdates: (project?: string | null) =>
+    req<{ outdated: { id: string; scope: SkillScope }[]; checked: number; unreachable: number }>(
+      "/local/skills/check", { method: "POST", body: { project } }),
   removeSkill: (id: string, scope: SkillScope, project?: string | null) =>
     req<{ ok: boolean; error: string | null; project: InstalledSkill[]; system: InstalledSkill[] }>(
       "/local/skills/remove", { method: "POST", body: { id, scope, project } }),

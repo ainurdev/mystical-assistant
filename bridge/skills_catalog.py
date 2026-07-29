@@ -1,15 +1,23 @@
-"""Built-in skill catalog — 30 starter skills across four categories, rendered
-to a SKILL.md on install. Data only; bridge/skills.py owns the filesystem."""
+"""Built-in skill catalog. Data only; bridge/skills.py owns the filesystem.
+
+Two kinds of entry:
+  · `steps`  — a starter skill written here, rendered to SKILL.md locally.
+  · `url`    — a real community skill; install downloads that SKILL.md verbatim
+               from GitHub, so the user gets the maintained original, not a
+               paraphrase. Only self-contained (single-file) skills are listed:
+               a skill whose SKILL.md points at sibling scripts/ or references/
+               would install broken, so those are deliberately left out.
+"""
 
 import json
 
-CATEGORIES = ("technical", "design", "writing", "other")
+CATEGORIES = ("development", "design", "writing", "testing", "workflow", "other")
 
 CATALOG = [
-    # ---------------------------------------------------------------- technical
+    # -------------------------------------------------------------- development
     {
         "id": "api-design",
-        "category": "technical",
+        "category": "development",
         "name": "API design review",
         "description": "Use when designing or reviewing an HTTP/RPC API — resource shapes, status codes, versioning, pagination, error bodies.",
         "steps": [
@@ -23,7 +31,7 @@ CATALOG = [
     },
     {
         "id": "sql-tuning",
-        "category": "technical",
+        "category": "development",
         "name": "SQL query tuning",
         "description": "Use when a query or report is slow — read the plan, fix the index, verify the win with numbers.",
         "steps": [
@@ -37,7 +45,7 @@ CATALOG = [
     },
     {
         "id": "test-writing",
-        "category": "technical",
+        "category": "development",
         "name": "Focused test writing",
         "description": "Use when adding tests — one behaviour per test, real failure modes, no mock theatre.",
         "steps": [
@@ -51,7 +59,7 @@ CATALOG = [
     },
     {
         "id": "refactor-safely",
-        "category": "technical",
+        "category": "development",
         "name": "Safe refactoring",
         "description": "Use when restructuring code that must keep behaving identically — characterization tests first, small steps after.",
         "steps": [
@@ -65,7 +73,7 @@ CATALOG = [
     },
     {
         "id": "perf-profiling",
-        "category": "technical",
+        "category": "development",
         "name": "Performance profiling",
         "description": "Use when something is slow — measure before optimising, and confirm the fix moved the number you started with.",
         "steps": [
@@ -79,7 +87,7 @@ CATALOG = [
     },
     {
         "id": "security-audit",
-        "category": "technical",
+        "category": "development",
         "name": "Change security review",
         "description": "Use when reviewing a change that touches auth, user input, secrets, or anything network-facing.",
         "steps": [
@@ -93,7 +101,7 @@ CATALOG = [
     },
     {
         "id": "dependency-hygiene",
-        "category": "technical",
+        "category": "development",
         "name": "Dependency hygiene",
         "description": "Use when adding, upgrading, or pruning dependencies — keep the tree small and the lockfile honest.",
         "steps": [
@@ -107,7 +115,7 @@ CATALOG = [
     },
     {
         "id": "ci-pipeline",
-        "category": "technical",
+        "category": "development",
         "name": "CI pipeline work",
         "description": "Use when authoring or repairing CI workflows — fast, reproducible, and honest about what it verifies.",
         "steps": [
@@ -121,7 +129,7 @@ CATALOG = [
     },
     {
         "id": "error-handling",
-        "category": "technical",
+        "category": "development",
         "name": "Error handling design",
         "description": "Use when deciding how a module reports failure — one taxonomy, useful context, no silent swallow.",
         "steps": [
@@ -135,7 +143,7 @@ CATALOG = [
     },
     {
         "id": "logging-observability",
-        "category": "technical",
+        "category": "development",
         "name": "Logging & observability",
         "description": "Use when adding logs, metrics, or traces — enough signal to debug production without drowning in noise.",
         "steps": [
@@ -429,6 +437,272 @@ CATALOG = [
             "Prefer primary sources, and record their date.",
             "End with the decision the reader now has enough to make.",
         ],
+    },
+
+    # ======================================================================
+    # Community skills — installed by downloading the upstream SKILL.md.
+    # Every entry below was checked to be self-contained (no sibling files).
+    # ======================================================================
+    # ---------------------------------------------------------------- design
+    {
+        "id": "frontend-design",
+        "category": "design",
+        "name": "Frontend design",
+        "description": "Anthropic's antidote to generic AI-generated frontends — make bold, deliberate design decisions in React and Tailwind.",
+        "repo": "anthropics/skills",
+        "url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/frontend-design/SKILL.md",
+    },
+    {
+        "id": "theme-factory",
+        "category": "design",
+        "name": "Theme factory",
+        "description": "Build a complete, coherent visual theme — palette, type, surfaces — and apply it consistently across a UI.",
+        "repo": "anthropics/skills",
+        "url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/theme-factory/SKILL.md",
+    },
+    {
+        "id": "web-design-guidelines",
+        "category": "design",
+        "name": "Web interface guidelines",
+        "description": "Vercel's review pass over UI code against 100+ interface rules covering accessibility, performance and UX.",
+        "repo": "vercel-labs/agent-skills",
+        "url": "https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/web-design-guidelines/SKILL.md",
+    },
+    {
+        "id": "make-interfaces-feel-better",
+        "category": "design",
+        "name": "Interface polish",
+        "description": "Design-engineering principles that separate a polished interface from a merely working one.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/make-interfaces-feel-better/SKILL.md",
+    },
+    {
+        "id": "apple-design",
+        "category": "design",
+        "name": "Apple-style motion & interface",
+        "description": "Apple's fluid, physical motion and interface language, translated into web technique.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/apple-design/SKILL.md",
+    },
+    {
+        "id": "emil-design-eng",
+        "category": "design",
+        "name": "Component polish (Emil Kowalski)",
+        "description": "Emil Kowalski's philosophy on UI polish and component design, as a working checklist.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/emil-design-eng/SKILL.md",
+    },
+    {
+        "id": "visual-style-presets",
+        "category": "design",
+        "name": "Visual style presets",
+        "description": "Nine complete style directions, each with a surface ladder, accent rule and signature motif.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/visual-style-presets/SKILL.md",
+    },
+    {
+        "id": "beautiful-shadows",
+        "category": "design",
+        "name": "Layered elevation shadows",
+        "description": "Three exact layered shadow recipes that read as real elevation instead of a grey blur.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/beautiful-shadows/SKILL.md",
+    },
+    {
+        "id": "glass-dark-ui",
+        "category": "design",
+        "name": "Dark glassmorphism",
+        "description": "Dark glass surfaces that stay readable — contrast rules and masked gradient borders.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/glass-dark-ui/SKILL.md",
+    },
+    {
+        "id": "landing-page",
+        "category": "design",
+        "name": "Landing page architecture",
+        "description": "Single-intent landing page IA — layout archetypes, headline formulas, and what not to index.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/landing-page/SKILL.md",
+    },
+    {
+        "id": "pricing-page",
+        "category": "design",
+        "name": "Pricing page architecture",
+        "description": "Value-metric-first pricing IA — plan ceilings, feature grouping, and the mobile rules.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/pricing-page/SKILL.md",
+    },
+    {
+        "id": "canvas-design",
+        "category": "design",
+        "name": "Canvas design",
+        "description": "Design real visual artwork as .png/.pdf, driven by stated design philosophies rather than defaults.",
+        "repo": "anthropics/skills",
+        "url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/canvas-design/SKILL.md",
+    },
+    {
+        "id": "algorithmic-art",
+        "category": "design",
+        "name": "Algorithmic art",
+        "description": "Generative art with p5.js — seeded randomness, flow fields and particle systems.",
+        "repo": "anthropics/skills",
+        "url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/algorithmic-art/SKILL.md",
+    },
+    {
+        "id": "brand-guidelines",
+        "category": "design",
+        "name": "Brand guidelines",
+        "description": "Hold a brand's colours, typography and voice consistent across everything generated.",
+        "repo": "anthropics/skills",
+        "url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/brand-guidelines/SKILL.md",
+    },
+    # ----------------------------------------------------------- development
+    {
+        "id": "react-best-practices",
+        "category": "development",
+        "name": "React & Next.js best practices",
+        "description": "Vercel Engineering's 40+ performance rules for React and Next.js, ordered by impact.",
+        "repo": "vercel-labs/agent-skills",
+        "url": "https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/react-best-practices/SKILL.md",
+    },
+    {
+        "id": "composition-patterns",
+        "category": "development",
+        "name": "Component composition patterns",
+        "description": "Composition patterns that keep component trees flexible instead of prop-drilled.",
+        "repo": "vercel-labs/agent-skills",
+        "url": "https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/composition-patterns/SKILL.md",
+    },
+    {
+        "id": "deploy-to-vercel",
+        "category": "development",
+        "name": "Deploy to Vercel",
+        "description": "Ship an app or site to Vercel from the CLI, including claimable deployments.",
+        "repo": "vercel-labs/agent-skills",
+        "url": "https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/deploy-to-vercel/SKILL.md",
+    },
+    # --------------------------------------------------------------- writing
+    {
+        "id": "stop-slop",
+        "category": "writing",
+        "name": "Stop AI slop",
+        "description": "Strip the tells out of AI-written prose — the patterns that make text read as generated.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/stop-slop/SKILL.md",
+    },
+    {
+        "id": "ogilvy",
+        "category": "writing",
+        "name": "Ogilvy on advertising",
+        "description": "David Ogilvy's principles — positioning, headlines, the promise, and brand voice.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/ogilvy/SKILL.md",
+    },
+    {
+        "id": "content-strategy",
+        "category": "writing",
+        "name": "Content strategy",
+        "description": "Plan content that earns traffic and authority instead of filling a calendar.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/content-strategy/SKILL.md",
+    },
+    {
+        "id": "writing-guidelines",
+        "category": "writing",
+        "name": "Vercel writing guidelines",
+        "description": "Vercel's house style for product and technical prose.",
+        "repo": "vercel-labs/agent-skills",
+        "url": "https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/writing-guidelines/SKILL.md",
+    },
+    {
+        "id": "doc-coauthoring",
+        "category": "writing",
+        "name": "Document co-authoring",
+        "description": "Draft long documents with a human in the loop — structure first, then prose, with real revision passes.",
+        "repo": "anthropics/skills",
+        "url": "https://raw.githubusercontent.com/anthropics/skills/main/skills/doc-coauthoring/SKILL.md",
+    },
+    # --------------------------------------------------------------- testing
+    {
+        "id": "systematic-debugging",
+        "category": "testing",
+        "name": "Systematic debugging",
+        "description": "A four-phase root-cause process — reproduce, isolate, identify, verify — instead of guess-and-patch.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/systematic-debugging/SKILL.md",
+    },
+    {
+        "id": "verification-before-completion",
+        "category": "testing",
+        "name": "Verification before completion",
+        "description": "Never claim done without running the check — evidence before assertions.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/verification-before-completion/SKILL.md",
+    },
+    {
+        "id": "adversarial-review",
+        "category": "testing",
+        "name": "Adversarial review",
+        "description": "Review a diff as a skeptic: assume it is broken and actively try to break it.",
+        "repo": "boraoztunc/skills",
+        "url": "https://raw.githubusercontent.com/boraoztunc/skills/main/adversarial-review/SKILL.md",
+    },
+    # -------------------------------------------------------------- workflow
+    {
+        "id": "brainstorming",
+        "category": "workflow",
+        "name": "Brainstorming",
+        "description": "Socratic design refinement — draw out intent and requirements before any code exists.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/brainstorming/SKILL.md",
+    },
+    {
+        "id": "writing-plans",
+        "category": "workflow",
+        "name": "Writing implementation plans",
+        "description": "Turn a spec into a plan another session can execute without re-deriving the context.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/writing-plans/SKILL.md",
+    },
+    {
+        "id": "using-git-worktrees",
+        "category": "workflow",
+        "name": "Using git worktrees",
+        "description": "Isolate feature work in its own worktree so parallel branches never fight over one checkout.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/using-git-worktrees/SKILL.md",
+    },
+    {
+        "id": "requesting-code-review",
+        "category": "workflow",
+        "name": "Requesting code review",
+        "description": "Prepare work for review so the reviewer spends their attention on the decisions, not the setup.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/requesting-code-review/SKILL.md",
+    },
+    {
+        "id": "receiving-code-review",
+        "category": "workflow",
+        "name": "Receiving code review",
+        "description": "Verify feedback technically instead of agreeing performatively — and push back when it is wrong.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/receiving-code-review/SKILL.md",
+    },
+    {
+        "id": "finishing-a-development-branch",
+        "category": "workflow",
+        "name": "Finishing a branch",
+        "description": "Decide how finished work gets integrated — merge, PR, or split — and leave the history clean.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/finishing-a-development-branch/SKILL.md",
+    },
+    {
+        "id": "dispatching-parallel-agents",
+        "category": "workflow",
+        "name": "Dispatching parallel agents",
+        "description": "Split genuinely independent work across agents without shared state or hidden ordering.",
+        "repo": "obra/superpowers",
+        "url": "https://raw.githubusercontent.com/obra/superpowers/main/skills/dispatching-parallel-agents/SKILL.md",
     },
 ]
 

@@ -10,25 +10,30 @@ import { api, type CatalogSkill, type InstalledSkill, type SkillCategory, type S
 
 const CATS: { k: SkillCategory | "all"; l: string }[] = [
   { k: "all", l: "ALL" },
-  { k: "technical", l: "TECHNICAL" },
+  { k: "development", l: "DEV" },
   { k: "design", l: "DESIGN" },
   { k: "writing", l: "WRITING" },
+  { k: "testing", l: "TESTING" },
+  { k: "workflow", l: "WORKFLOW" },
   { k: "other", l: "OTHER" },
 ];
 
 const CAT_COLOR: Record<SkillCategory, string> = {
-  technical: "var(--acc)",
+  development: "var(--acc)",
   design: "var(--purple)",
   writing: "var(--info)",
-  other: "var(--warn)",
+  testing: "var(--ok)",
+  workflow: "var(--warn)",
+  other: "var(--txd)",
 };
 
 const LABEL = { fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)" } as const;
 
 /** One installed skill — name, description, and (catalog skills only) remove. */
-function InstalledRow({ s, onRemove, busy }: {
+function InstalledRow({ s, onRemove, onUpdate, busy }: {
   s: InstalledSkill;
   onRemove: (() => void) | null;
+  onUpdate: (() => void) | null; // set when the source repo has moved on
   busy: boolean;
 }) {
   const [hov, setHov] = useState(false);
@@ -44,6 +49,10 @@ function InstalledRow({ s, onRemove, busy }: {
           <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 3, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{s.description}</div>
         )}
       </div>
+      {onUpdate && (
+        <button onClick={onUpdate} disabled={busy} title="the source repo changed — pull the new version"
+          style={{ appearance: "none", cursor: busy ? "default" : "pointer", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 14%, transparent)", color: "var(--warn)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "4px 6px", flex: "none", marginTop: 1, opacity: busy ? 0.45 : 1 }}>↻ UPDATE</button>
+      )}
       {onRemove ? (
         <button onClick={onRemove} disabled={busy} title="uninstall"
           style={{ appearance: "none", cursor: busy ? "default" : "pointer", border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 10, lineHeight: 1, padding: "4px 6px", flex: "none", opacity: busy ? 0.4 : hov ? 1 : 0.5 }}>✕</button>
@@ -83,12 +92,23 @@ export function SkillsView({ project, system }: { project: string | null; system
   const [cat, setCat] = useState<SkillCategory | "all">("all");
   const [q, setQ] = useState("");
 
+  // Skills we installed whose source repo has since changed — keyed "scope:id".
+  const [stale, setStale] = useState<Set<string>>(new Set());
+  const [checking, setChecking] = useState(false);
+
   useEffect(() => {
     let live = true;
-    setInfo(null); setErr("");
+    setInfo(null); setErr(""); setStale(new Set());
     void api.skills(project)
       .then((d) => { if (live) setInfo(d); })
       .catch((e: Error) => { if (live) setErr(e.message); });
+    // Follow the source repos: one sweep per open, results shown as ↻ UPDATE
+    // rather than applied behind your back.
+    setChecking(true);
+    void api.checkSkillUpdates(project)
+      .then((d) => { if (live) setStale(new Set(d.outdated.map((o) => `${o.scope}:${o.id}`))); })
+      .catch(() => { /* offline — just no badges */ })
+      .finally(() => { if (live) setChecking(false); });
     return () => { live = false; };
   }, [project]);
 
@@ -97,16 +117,29 @@ export function SkillsView({ project, system }: { project: string | null; system
     setBusy(`${scope}:${id}`); setErr("");
     try {
       // Both calls answer with the fresh installed lists, so no refetch.
+      // Installing over an existing catalog skill is exactly what "update" is.
       const r = await (on ? api.removeSkill : api.installSkill)(id, scope, project);
       setInfo((p) => (p ? { ...p, project: r.project, system: r.system } : p));
+      setStale((p) => { const n = new Set(p); n.delete(`${scope}:${id}`); return n; });
     } catch (e) {
       setErr((e as Error).message);
     }
     setBusy("");
   }
 
+  /** Re-install every skill whose source moved on, one at a time. */
+  async function updateAll() {
+    for (const key of [...stale]) {
+      const [scope, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+      if (scope === "system" && !system) continue; // modal never touches system
+      await toggle(id, scope as SkillScope, false);
+    }
+  }
+
   const inProject = useMemo(() => new Set((info?.project ?? []).map((s) => s.id)), [info]);
   const inSystem = useMemo(() => new Set((info?.system ?? []).map((s) => s.id)), [info]);
+  // The modal never shows or touches system skills, so it must not count them.
+  const visibleStale = [...stale].filter((k) => system || k.startsWith("project:")).length;
 
   const needle = q.trim().toLowerCase();
   const shown = (info?.catalog ?? []).filter(
@@ -130,7 +163,8 @@ export function SkillsView({ project, system }: { project: string | null; system
         <div style={{ marginBottom: 11 }}>
           {list.map((s) => (
             <InstalledRow key={s.id} s={s} busy={busy === `${scope}:${s.id}`}
-              onRemove={s.from_catalog ? () => void toggle(s.id, scope, true) : null} />
+              onRemove={s.from_catalog ? () => void toggle(s.id, scope, true) : null}
+              onUpdate={stale.has(`${scope}:${s.id}`) ? () => void toggle(s.id, scope, false) : null} />
           ))}
         </div>
       )}
@@ -153,6 +187,19 @@ export function SkillsView({ project, system }: { project: string | null; system
 
       {info && mode === "installed" && (
         <>
+          {checking && (
+            <div style={{ ...LABEL, marginBottom: 9 }}>CHECKING SOURCE REPOS…</div>
+          )}
+          {visibleStale > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginBottom: 10, border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", background: "color-mix(in srgb, var(--warn) 8%, transparent)" }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 10, color: "var(--warn)" }}>
+                {visibleStale} skill{visibleStale > 1 ? "s" : ""} changed upstream
+              </span>
+              <button onClick={() => void updateAll()} disabled={!!busy}
+                style={{ appearance: "none", cursor: busy ? "default" : "pointer", flex: "none", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 16%, transparent)", color: "var(--warn)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "5px 9px", opacity: busy ? 0.45 : 1 }}
+              >↻ UPDATE ALL</button>
+            </div>
+          )}
           {section("PROJECT", info.project, "project")}
           {system && section("SYSTEM", info.system, "system")}
         </>
@@ -183,6 +230,14 @@ export function SkillsView({ project, system }: { project: string | null; system
                 <div style={{ flex: 1, minWidth: 130 }}>
                   <div style={{ fontSize: 11.5, color: "var(--txb)" }}>{c.name}</div>
                   <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 3, lineHeight: 1.5 }}>{c.description}</div>
+                  {/* Sourced entries download the upstream SKILL.md verbatim —
+                      say so, and link the repo it comes from. */}
+                  {c.repo && (
+                    <a href={`https://github.com/${c.repo}`} target="_blank" rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()} title="view the source skill on GitHub"
+                      style={{ display: "inline-block", marginTop: 5, fontSize: 8.5, letterSpacing: 0.5, color: "var(--txf)", textDecoration: "none", borderBottom: "1px dotted color-mix(in srgb, var(--acc) 30%, transparent)" }}
+                    >↗ {c.repo}</a>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 5, flex: "none", marginTop: 1 }}>
                   <ScopeBtn label="PROJECT" on={inProject.has(c.id)} disabled={!project || busy === `project:${c.id}`}
