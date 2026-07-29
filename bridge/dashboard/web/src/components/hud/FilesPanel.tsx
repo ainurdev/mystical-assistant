@@ -83,7 +83,7 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
   ];
 
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .18s", flex: "none" }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both", flex: "none" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
         <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>FILES</span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>

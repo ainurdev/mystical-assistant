@@ -63,7 +63,7 @@ export function IntelPanel() {
             style={{
               fontSize: "8.5px",
               letterSpacing: "1.5px",
-              color: "#0b1414",
+              color: "var(--acc-on)",
               background: intelColor[current.tag],
               padding: "2px 7px",
             }}

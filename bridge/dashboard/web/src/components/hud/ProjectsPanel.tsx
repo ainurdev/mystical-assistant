@@ -17,7 +17,6 @@ interface Props {
   onAnalyze: (rel: string) => void;
   onPreview: (rel: string) => void;
   onManage: () => void;
-  onRefresh: () => Promise<void>;
   onCreateProject: (name: string, prompt: string) => void;
 }
 
@@ -106,29 +105,21 @@ function ProjectRow({
 }
 
 export function ProjectsPanel(props: Props) {
-  const { groups, activeProject, onSelectProject, onAnalyze, onPreview, onManage, onRefresh, onCreateProject } = props;
+  const { groups, activeProject, onSelectProject, onAnalyze, onPreview, onManage, onCreateProject } = props;
   const [newOpen, setNewOpen] = useState(false);
-  const [scanning, setScanning] = useState(false);
   const [npName, setNpName] = useState("");
   const [npPrompt, setNpPrompt] = useState("");
   const [manageHov, setManageHov] = useState(false);
-  const [refreshHov, setRefreshHov] = useState(false);
   const [newHov, setNewHov] = useState(false);
   const [createHov, setCreateHov] = useState(false);
   const [cancelHov, setCancelHov] = useState(false);
 
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .18s", flex: "none" }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both", flex: "none" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
         <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>PROJECTS</span>
         <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} REPOS</span>
-          <button
-            onClick={() => { setScanning(true); void onRefresh().finally(() => setScanning(false)); }}
-            disabled={scanning} title="rescan disk for newly added repos"
-            onMouseEnter={() => setRefreshHov(true)} onMouseLeave={() => setRefreshHov(false)}
-            style={{ appearance: "none", cursor: scanning ? "default" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: refreshHov && !scanning ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "color-mix(in srgb, var(--acc) 5%, transparent)", color: scanning ? "var(--txd)" : "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px" }}
-          >{scanning ? "…" : "↻"}</button>
           <button
             onClick={onManage}
             title="manage projects — hide, remove, import"
@@ -142,7 +133,7 @@ export function ProjectsPanel(props: Props) {
           >+ NEW</button>
         </span>
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .22s" }} />
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both" }} />
       <div style={{ padding: "9px 10px 11px", display: "flex", flexDirection: "column", gap: 7 }}>
         {newOpen && (
           <div style={{ border: "1px solid color-mix(in srgb, var(--info) 32%, transparent)", background: "color-mix(in srgb, var(--info) 5%, transparent)", padding: "11px 12px", marginBottom: 10, animation: "mslide .2s ease both" }}>

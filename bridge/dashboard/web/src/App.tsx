@@ -18,7 +18,9 @@ import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { ago, useProjectTints } from "./lib/surfaces";
 import {
+  autoTextScale,
   loadSettings,
+  sameFamily,
   saveSettings,
   themeCanvas,
   themeDef,
@@ -31,6 +33,7 @@ import {
   type ThemeKey,
 } from "./lib/theme";
 import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
+import { nativeCtxItems } from "./lib/nativeCtx";
 import { Composer } from "./components/Composer";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Strip } from "./components/hud/Strip";
@@ -43,7 +46,6 @@ import { SessionsPanel } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import { notify } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
-import { ThemeModal } from "./components/hud/ThemeModal";
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal } from "./components/hud/AnalyzeModal";
@@ -52,7 +54,6 @@ import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { usePreviewQueue } from "./components/design/usePreviewQueue";
 
-type PermDefault = "plan" | "acceptEdits" | "auto";
 
 function fmtReset(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -93,10 +94,6 @@ export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false); // true from select until its transcript first resolves
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [model, setModel] = useState<ModelId>("opus");
-  const [effort, setEffort] = useState<EffortLevel | "">("");
-  const [permMode, setPermMode] = useState<string>("");
-  const [ponytail, setPonytail] = useState<string>("");
   const [view, setView] = useState<"chat" | "history" | "memory">("chat");
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
@@ -121,15 +118,25 @@ export function App() {
 
   // HUD chrome state.
   const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
-  const [themeOpen, setThemeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The composer's four run knobs live in settings so they survive a reload —
+  // the SESSION tab and the composer's dropdowns write the same state.
+  const model = settings.model as ModelId;
+  const effort = settings.effort as EffortLevel | "";
+  const permMode = settings.perm;
+  const ponytail = settings.ponytail;
+  const setModel = (m: ModelId) => patchSettings({ model: m });
+  const setEffort = (e: EffortLevel | "") => patchSettings({ effort: e });
+  const setPermMode = (m: string) => patchSettings({ perm: m });
+  const setPonytail = (p: string) => patchSettings({ ponytail: p });
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
   // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
   const [analyzeFile, setAnalyzeFile] = useState<{ path: string; branch?: string } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxState | null>(null);
+  // The browser items we took away by preventDefault()-ing, rebuilt per open.
+  const [nativeCtx, setNativeCtx] = useState<{ top: CtxItem[]; page: CtxItem[] }>({ top: [], page: [] });
   const [ctxClosing, setCtxClosing] = useState(false);
   const ctxTimer = useRef<number | null>(null);
-  const [defMode, setDefMode] = useState<PermDefault>("acceptEdits");
 
   const seqRef = useRef(0);
   const liveTurns = useRef<Set<string>>(new Set());
@@ -137,11 +144,20 @@ export function App() {
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
 
+  // AUTO text size follows the window; a fixed textScale ignores this.
+  const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const uiScale = settings.textScale || autoTextScale(vp.w, vp.h);
+
   // Ambient widgets.
   const host = useHostVitals();
   const { weather, setCity, setUnit } = useWeather();
   const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
-  const radio = useRadio();
+  const radio = useRadio(settings.radioVolume);
   // Server-side per-session prompt queue: lets a new prompt be queued while a
   // turn is in flight (runs after it) instead of forcing a STOP first.
   const queue = usePreviewQueue(sessionId);
@@ -177,10 +193,15 @@ export function App() {
     saveSettings(settings);
   }, [settings]);
 
-  // Picking a theme also applies its default CRT toggles (design onPick).
+  // Picking a theme also applies its default CRT toggles (design onPick) —
+  // except within a family (AURORA's colours, CLAUDE's light/dark), which is one
+  // profile, so your toggles survive the switch.
   function setTheme(t: ThemeKey) {
     const d = themeDef(t);
-    setSettings((s) => ({ ...s, theme: t, scanlines: d.crt, sweep: d.swp, glow: d.glw }));
+    setSettings((s) =>
+      sameFamily(s.theme, t)
+        ? { ...s, theme: t }
+        : { ...s, theme: t, scanlines: d.crt, sweep: d.swp, glow: d.glw });
   }
   function toggleCrt(key: "scanlines" | "sweep" | "glow") {
     setSettings((s) => ({ ...s, [key]: !s[key] }));
@@ -235,13 +256,17 @@ export function App() {
     catch { /* ignore */ }
   }, [hiddenProjects, removedProjects, importedProjects]);
 
-  // Discovery is a one-shot on load — repos cloned since then arrive via the
-  // PROJECTS panel's REFRESH.
+  // Disk discovery polls like the session list, so a repo cloned or created
+  // after load appears on its own — no rescan button, no reload.
   const refreshProjects = useCallback(async () => {
     try { const p = await api.projects(); setDiscovered(p.projects ?? []); }
     catch { /* old backend without discovery — panel stays session-derived */ }
   }, []);
-  useEffect(() => { void refreshProjects(); }, [refreshProjects]);
+  useEffect(() => {
+    void refreshProjects();
+    const id = setInterval(refreshProjects, 10000);
+    return () => clearInterval(id);
+  }, [refreshProjects]);
 
   const loadSessions = useCallback(async () => {
     try { const { sessions: list } = await api.sessions(); setSessions(list); return list; }
@@ -364,7 +389,6 @@ export function App() {
         else if (previewProject) setPreviewProject(null);
         else if (manageOpen) setManageOpen(false);
         else if (paletteOpen) setPaletteOpen(false);
-        else if (themeOpen) setThemeOpen(false);
         else if (settingsOpen) setSettingsOpen(false);
         else if (analyzeProject) setAnalyzeProject(null);
       }
@@ -372,18 +396,21 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, previewProject, manageOpen, paletteOpen, themeOpen, settingsOpen, analyzeProject]);
+  }, [ctxMenu, previewProject, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
     const onCtx = (e: MouseEvent) => {
       const el = e.target as HTMLElement;
       if (el.closest?.("[data-ctxmenu]")) { e.preventDefault(); return; }
-      if (el.closest?.("input, textarea")) return;
+      // Text fields keep the real browser menu (spellcheck, undo, paste), and
+      // shift+right-click is the usual escape hatch to it everywhere else.
+      if (el.closest?.("input, textarea") || e.shiftKey) return;
       e.preventDefault();
       const node = el.closest?.("[data-ctx-type]") as HTMLElement | null;
       if (ctxTimer.current) window.clearTimeout(ctxTimer.current);
       setCtxClosing(false);
+      setNativeCtx(nativeCtxItems(e));
       setCtxMenu({
         x: e.clientX, y: e.clientY,
         type: node?.getAttribute("data-ctx-type") || "surface",
@@ -491,7 +518,7 @@ export function App() {
   }
 
   function replayBoot() {
-    setThemeOpen(false); setSettingsOpen(false);
+    setSettingsOpen(false);
     setShowDashboard(false); setBooting(true);
   }
 
@@ -559,7 +586,6 @@ export function App() {
           onAnalyze={(rel) => openAnalyze(rel)}
           onPreview={(rel) => setPreviewProject(rel)}
           onManage={() => setManageOpen(true)}
-          onRefresh={refreshProjects}
           onCreateProject={(name, prompt) => void createProject(name, prompt)}
         />
       ),
@@ -597,7 +623,6 @@ export function App() {
     { id: "view-memory", label: "Go to Memory", group: "View", icon: "◆", run: () => setView("memory") },
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
     { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
-    { id: "theme", label: "Theme & CRT…", group: "Display", icon: "◐", run: () => setThemeOpen(true) },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
     { id: "radio", label: radio.radio.playing ? "Pause Claude·FM" : "Play Claude·FM", group: "Audio", icon: "♪", run: () => radio.toggle() },
     ...modelOpts.map((m) => ({
@@ -610,7 +635,8 @@ export function App() {
   const ctxItems: CtxItem[] = useMemo(() => {
     if (!ctxMenu) return [];
     const cproj = analyzeProject || activeProject || "";
-    const items: CtxItem[] = [];
+    // Copy / open link / image act on what was under the cursor, so they lead.
+    const items: CtxItem[] = nativeCtx.top.length ? [...nativeCtx.top, { divider: true }] : [];
     const copy = (t: string) => { try { void navigator.clipboard?.writeText(t); } catch { /* ignore */ } };
     if (ctxMenu.type === "session") {
       const s = sessions.find((x) => x.id === ctxMenu.id);
@@ -640,12 +666,12 @@ export function App() {
     }
     items.push({ icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) });
     items.push({ icon: "♪", label: "Toggle Claude·FM", onClick: () => radio.toggle() });
-    items.push({ icon: "◐", label: "Theme & CRT", onClick: () => setThemeOpen(true) });
     items.push({ icon: "⚙", label: "Dashboard settings", onClick: () => setSettingsOpen(true) });
     items.push({ icon: "↻", label: "Replay boot", onClick: () => replayBoot() });
+    items.push({ divider: true }, ...nativeCtx.page);
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, sessions, analyzeProject, activeProject, selected, radio, weather, setUnit]);
+  }, [ctxMenu, nativeCtx, sessions, analyzeProject, activeProject, selected, radio, weather, setUnit]);
 
   async function archiveSession(id: string) {
     try {
@@ -684,6 +710,7 @@ export function App() {
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
+            zoom: uiScale,
             filter: themeFilter(settings.theme),
             background: themeCanvas(settings.theme),
             fontFamily: themeFont(settings.theme) || undefined,
@@ -700,6 +727,7 @@ export function App() {
               onSetCity={setCity}
               onSetUnit={setUnit}
               openSettings={wxSettings}
+              onFeed={feed}
             />
 
             <div
@@ -716,7 +744,6 @@ export function App() {
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
-                  onFeed={feed}
                 />
               </div>
 
@@ -769,7 +796,6 @@ export function App() {
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}
-                onNewSession={(rel) => { void newSession(rel); setAnalyzeProject(null); }}
                 onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
               />
             )}
@@ -796,20 +822,15 @@ export function App() {
                   setPreviewProject((cur) => (cur === rel ? null : cur));
                 }}
                 onImport={importProject}
-                onRefresh={refreshProjects}
                 onClose={() => setManageOpen(false)}
               />
             )}
-            {themeOpen && (
-              <ThemeModal settings={settings} onTheme={setTheme} onToggle={toggleCrt}
-                onReplayBoot={replayBoot} onClose={() => setThemeOpen(false)} />
-            )}
             {settingsOpen && (
-              <SettingsModal wsRoot={wsRoot} host={host.host} port={location.port || "8790"}
+              <SettingsModal host={host.host} port={location.port || "8790"}
                 settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
-                defModel={model} defMode={defMode} models={modelOpts}
-                onDefModel={setModel} onDefMode={(m) => { setDefMode(m); setPermMode(m); }}
-                onClose={() => setSettingsOpen(false)} />
+                models={modelOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
+                station={radio.station} onStation={radio.setStation} onFeed={feed}
+                onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
         </div>

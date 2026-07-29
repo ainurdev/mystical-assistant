@@ -18,7 +18,30 @@ interface Props {
   onAnalyze: (rel: string) => void;
   onNewSession: (rel: string) => void;
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
-  onFeed: (texts: string[]) => void; // first instruction → composer
+}
+
+type OrderMode = "recent" | "alpha" | "custom";
+
+const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
+
+const ORDER_LABEL: Record<OrderMode, string> = {
+  recent: "RECENTLY USED", alpha: "A → Z", custom: "CUSTOM",
+};
+
+// Which tab you were on, how BY PROJECT is ordered, and your hand-dragged order.
+// ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
+const PREFS_KEY = "hud-sessions-prefs";
+type Prefs = { tab: "recent" | "grouped"; order: OrderMode; custom: string[] };
+
+function loadPrefs(): Prefs {
+  try {
+    const r = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") as Partial<Prefs>;
+    return {
+      tab: r.tab === "grouped" ? "grouped" : "recent",
+      order: r.order === "alpha" || r.order === "custom" ? r.order : "recent",
+      custom: Array.isArray(r.custom) ? r.custom : [],
+    };
+  } catch { return { tab: "recent", order: "recent", custom: [] }; }
 }
 
 const STATUS_VIEW: Record<string, { c: string; l: string }> = {
@@ -116,10 +139,27 @@ function DashedRow({ label, onClick, title }: { label: string; onClick: () => vo
   );
 }
 
+/** Small square action on a project header — starts a session in that project. */
+function PlusBtn({ on, onClick }: { on: boolean; onClick: () => void }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button
+      onClick={onClick} title="new session in this project"
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        appearance: "none", cursor: "pointer", flex: "none", lineHeight: 0, padding: "3px 6px 4px",
+        border: `1px solid ${on || hov ? "var(--purple)" : "color-mix(in srgb, var(--purple) 28%, transparent)"}`,
+        background: on || hov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
+        color: on || hov ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "inherit", fontSize: 12,
+      }}
+    >{on ? "✕" : "+"}</button>
+  );
+}
+
 export function SessionsPanel(props: Props) {
   const {
     sessions, groups, status, done, selectedSessionId, loadingSessionId, activeProject,
-    onSelectSession, onAnalyze, onNewSession, onWorktreeSession, onFeed,
+    onSelectSession, onAnalyze, onNewSession, onWorktreeSession,
   } = props;
 
   // New-session form.
@@ -131,11 +171,24 @@ export function SessionsPanel(props: Props) {
   const [nsNewOpen, setNsNewOpen] = useState(false);
   const [nsNewBranch, setNsNewBranch] = useState("");
   const [nsParent, setNsParent] = useState("");
-  const [nsTask, setNsTask] = useState("");
+  const [nsScoped, setNsScoped] = useState(false); // opened from a project header — project is fixed
+  const [projQ, setProjQ] = useState("");
+  const [projAll, setProjAll] = useState(false);
+  const [branchQ, setBranchQ] = useState("");
 
-  // Browser state.
-  const [tab, setTab] = useState<"recent" | "grouped">("recent");
+  // Browser state — tab + project order remembered across reloads.
+  const [tab, setTab] = useState<"recent" | "grouped">(() => loadPrefs().tab);
+  const [order, setOrder] = useState<OrderMode>(() => loadPrefs().order);
+  const [customOrder, setCustomOrder] = useState<string[]>(() => loadPrefs().custom);
+  const [orderMenu, setOrderMenu] = useState(false);
+  const [dragRel, setDragRel] = useState<string | null>(null);
+  const [overRel, setOverRel] = useState<string | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ tab, order, custom: customOrder })); }
+    catch { /* ignore */ }
+  }, [tab, order, customOrder]);
 
   // Hovers.
   const [nsBtnHov, setNsBtnHov] = useState(false);
@@ -167,6 +220,13 @@ export function SessionsPanel(props: Props) {
   // BY PROJECT: most-recently-used project first. g.sessions is already
   // newest-first, so [0] is the project's last activity; no sessions → last.
   const byLastUsed = [...groups].sort((a, b) => (b.sessions[0]?.updated ?? 0) - (a.sessions[0]?.updated ?? 0));
+  // CUSTOM: pinned positions first (sort is stable, so anything you never
+  // dragged keeps its last-used order behind them).
+  const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
+  const ordered =
+    order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
+      : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
+        : byLastUsed;
   // RECENT tab: newest-first, matching the design mock's "newest first".
   const recentSorted = [...sessions].sort((a, b) => b.updated - a.updated);
 
@@ -191,13 +251,34 @@ export function SessionsPanel(props: Props) {
     setScrollMargin((prev) => (Math.abs(prev - m) > 0.5 ? m : prev));
   });
 
+  function resetForm() {
+    setBranches([]); setCurrent(""); setNsBranch(""); setNsParent("");
+    setNsNewOpen(false); setNsNewBranch(""); setBranchQ("");
+  }
+
   function toggleForm() {
-    if (!nsOpen) {
-      setNsProject((p) => p ?? activeProject ?? groups[0]?.rel ?? null);
-      setBranches([]); setCurrent(""); setNsBranch(""); setNsParent("");
-      setNsNewOpen(false); setNsNewBranch("");
+    if (nsOpen && !nsScoped) { setNsOpen(false); return; }
+    setNsProject((p) => p ?? activeProject ?? groups[0]?.rel ?? null);
+    resetForm(); setNsScoped(false); setProjQ(""); setProjAll(false); setNsOpen(true);
+  }
+
+  /** New session for one project — same form, project locked to it, opened
+   *  inline under that project's header. */
+  function openFor(rel: string) {
+    if (nsOpen && nsScoped && nsProject === rel) { setNsOpen(false); return; }
+    setNsProject(rel); setNsScoped(true); setNsOpen(true); resetForm();
+  }
+
+  /** Drop `dragRel` into `target`'s slot, materialising the visible order as the
+   *  custom one on first drag. */
+  function dropOn(target: string) {
+    if (dragRel && dragRel !== target) {
+      const next = ordered.map((g) => g.rel).filter((r) => r !== dragRel);
+      const at = next.indexOf(target);
+      next.splice(at < 0 ? next.length : at, 0, dragRel);
+      setCustomOrder(next);
     }
-    setNsOpen((o) => !o);
+    setDragRel(null); setOverRel(null);
   }
 
   function start() {
@@ -208,9 +289,7 @@ export function SessionsPanel(props: Props) {
     if (nb) onWorktreeSession(nsProject, nb, true, nsParent || undefined);
     else if (nsBranch && current && nsBranch !== current) onWorktreeSession(nsProject, nsBranch, false);
     else onNewSession(nsProject);
-    const t = nsTask.trim();
-    if (t) onFeed([t]); // pre-fill the composer with the first instruction
-    setNsOpen(false); setNsNewOpen(false); setNsNewBranch(""); setNsTask("");
+    setNsOpen(false); setNsNewOpen(false); setNsNewBranch("");
   }
 
   function cycleParent() {
@@ -229,9 +308,157 @@ export function SessionsPanel(props: Props) {
     />
   );
 
+  // Form pickers: searchable, and long lists stay collapsed until asked for.
+  const q = projQ.trim().toLowerCase();
+  // Selected project first, so it never hides behind SHOW ALL (sort is stable —
+  // everything else keeps its order).
+  const projList = (q ? groups.filter((g) => `${g.name} ${g.rel}`.toLowerCase().includes(q)) : groups)
+    .slice().sort((a, b) => Number(b.rel === nsProject) - Number(a.rel === nsProject));
+  const projShown = projAll ? projList : projList.slice(0, PROJ_CAP);
+  const projHidden = projList.length - projShown.length;
+  const bq = branchQ.trim().toLowerCase();
+  const branchList = bq ? branches.filter((b) => b.toLowerCase().includes(bq)) : branches;
+
   const drillGroup = drill ? groups.find((g) => g.rel === drill) : undefined;
   const drillSessions = drill ? sorted.filter((s) => s.project === drill) : [];
   const drillTint = projectTint(drill ?? "");
+
+  // The form renders under whatever opened it: the RECENT tab's NEW SESSION
+  // button (pinned above the scroller) or a project header's +.
+  const nsForm = (
+    <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--purple) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--purple)", flex: "none" }} />
+        <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--purple-h)" }}>NEW SESSION</span>
+        {nsScoped && (
+          <span style={{ fontSize: 9.5, color: "var(--txm)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            · {groups.find((g) => g.rel === nsProject)?.name ?? nsProject}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        <button
+          onClick={() => setNsOpen(false)} title="close"
+          onMouseEnter={() => setCloseHov(true)} onMouseLeave={() => setCloseHov(false)}
+          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: closeHov ? "var(--purple-h)" : "var(--purple-g)", fontFamily: "inherit", fontSize: 13, lineHeight: 1, padding: "2px 4px" }}
+        >✕</button>
+      </div>
+      {!nsScoped && (<>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+        <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>PROJECT</span>
+        <input
+          value={projQ} onChange={(e) => setProjQ(e.target.value)} placeholder="search projects…"
+          style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 7px" }}
+        />
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+        {projShown.map((g) => {
+          const on = g.rel === nsProject;
+          const hov = chipHov === `p:${g.rel}`;
+          const tint = projectTint(g.rel);
+          return (
+            <button
+              key={g.rel} onClick={() => setNsProject(g.rel)}
+              onMouseEnter={() => setChipHov(`p:${g.rel}`)} onMouseLeave={() => setChipHov("")}
+              style={{
+                appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                border: `1px solid ${on || hov ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
+                background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "color-mix(in srgb, var(--panel2) 40%, transparent)",
+                color: on ? "var(--txb)" : "var(--txm)",
+                fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px", minWidth: 0, maxWidth: "100%",
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint.color, flex: "none" }} />
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+            </button>
+          );
+        })}
+        {projHidden > 0 && (
+          <button
+            onClick={() => setProjAll(true)}
+            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 0.5, padding: "4px 8px" }}
+          >SHOW ALL · {projHidden} MORE</button>
+        )}
+        {projAll && projList.length > PROJ_CAP && (
+          <button
+            onClick={() => setProjAll(false)}
+            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 0.5, padding: "4px 8px" }}
+          >COLLAPSE</button>
+        )}
+        {projList.length === 0 && (
+          <span style={{ fontSize: 9.5, color: "var(--txl)", padding: "4px 2px" }}>no project matches “{projQ}”</span>
+        )}
+      </div>
+      </>)}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "12px 0 6px" }}>
+        <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>WORKTREE</span>
+        {branches.length > 5 && (
+          <input
+            value={branchQ} onChange={(e) => setBranchQ(e.target.value)} placeholder="search branches…"
+            style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 7px" }}
+          />
+        )}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+        {branchList.map((b) => {
+          const on = !nsNewOpen && b === nsBranch;
+          const hov = chipHov === `b:${b}`;
+          return (
+            <button
+              key={b} onClick={() => { setNsBranch(b); setNsNewOpen(false); }}
+              onMouseEnter={() => setChipHov(`b:${b}`)} onMouseLeave={() => setChipHov("")}
+              style={{
+                appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                border: `1px solid ${on || hov ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`,
+                background: on ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)",
+                color: on ? "var(--purple-b)" : "var(--purple-h)",
+                fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 8px", maxWidth: "100%", minWidth: 0,
+              }}
+            >
+              <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
+            </button>
+          );
+        })}
+        <button
+          onClick={() => setNsNewOpen((o) => !o)} title="create a new worktree branch"
+          style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: nsNewOpen ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 0.5, padding: "5px 9px" }}
+        >+ NEW WORKTREE</button>
+      </div>
+      {nsNewOpen && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+            <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>FROM</span>
+            <button
+              onClick={cycleParent} title="parent branch — click to cycle"
+              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 7px", minWidth: 0 }}
+            >
+              <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{nsParent || "main"}</span>
+              <span style={{ color: "var(--purple-g)", flex: "none" }}>⟳</span>
+            </button>
+          </div>
+          <input
+            value={nsNewBranch} onChange={(e) => setNsNewBranch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && nsNewBranch.trim()) start(); }}
+            placeholder="new-worktree-branch"
+            style={{ width: "100%", boxSizing: "border-box", marginTop: 7, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "7px 9px" }}
+          />
+        </>
+      )}
+      <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+        <button
+          onClick={start}
+          onMouseEnter={() => setStartHov(true)} onMouseLeave={() => setStartHov(false)}
+          style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: startHov ? "color-mix(in srgb, var(--purple) 26%, transparent)" : "color-mix(in srgb, var(--purple) 16%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+        ><span style={{ color: "var(--purple)" }}>▸</span>START SESSION</button>
+        <button
+          onClick={() => setNsOpen(false)}
+          onMouseEnter={() => setCancelHov(true)} onMouseLeave={() => setCancelHov(false)}
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: cancelHov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "9px 12px" }}
+        >CANCEL</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -241,125 +468,40 @@ export function SessionsPanel(props: Props) {
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .16s", flex: "none" }} />
 
-      <div style={{ flex: "none", display: "flex", gap: 7, padding: "10px 10px 3px" }}>
-        <button
-          onClick={toggleForm} title="start a session — current worktree or a new one"
-          onMouseEnter={() => setNsBtnHov(true)} onMouseLeave={() => setNsBtnHov(false)}
-          style={{
-            flex: 1, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-            border: `1px solid ${nsOpen ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
-            background: nsOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
-            color: nsOpen ? "var(--purple-b)" : "var(--tx)",
-            fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: "10px 8px",
-            transition: "all .15s ease", filter: nsBtnHov ? "brightness(1.18)" : "none",
-          }}
-        ><span style={{ fontSize: 14, lineHeight: 0 }}>+</span>NEW SESSION</button>
+      {/* Tabs pinned above the scroller so NEW SESSION sits right under them —
+          RECENT owns the catch-all button; BY PROJECT starts sessions from each
+          project's own header instead. */}
+      {!drill && (
+      <div style={{ flex: "none", padding: "10px 10px 2px" }}>
+        <div style={{ display: "flex", gap: 3, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 3 }}>
+          <button
+            onClick={() => { setTab("recent"); setNsOpen(false); }}
+            style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "recent" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "recent" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
+          >RECENT</button>
+          <button
+            onClick={() => { setTab("grouped"); setNsOpen(false); }}
+            style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
+          >BY PROJECT</button>
+        </div>
+        {tab === "recent" && (
+          <button
+            onClick={toggleForm} title="start a session — current worktree or a new one"
+            onMouseEnter={() => setNsBtnHov(true)} onMouseLeave={() => setNsBtnHov(false)}
+            style={{
+              width: "100%", marginTop: 7, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              border: `1px solid ${nsOpen ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
+              background: nsOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
+              color: nsOpen ? "var(--purple-b)" : "var(--tx)",
+              fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: "10px 8px",
+              transition: "all .15s ease", filter: nsBtnHov ? "brightness(1.18)" : "none",
+            }}
+          ><span style={{ fontSize: 14, lineHeight: 0 }}>+</span>NEW SESSION</button>
+        )}
       </div>
+      )}
 
       <div ref={scrollRef} className="mscroll" style={{ flex: 1, padding: "9px 9px 11px" }}>
-        {nsOpen && (
-          <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--purple) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--purple)", flex: "none" }} />
-              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--purple-h)" }}>NEW SESSION</span>
-              <span style={{ flex: 1 }} />
-              <button
-                onClick={toggleForm} title="close"
-                onMouseEnter={() => setCloseHov(true)} onMouseLeave={() => setCloseHov(false)}
-                style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: closeHov ? "var(--purple-h)" : "var(--purple-g)", fontFamily: "inherit", fontSize: 13, lineHeight: 1, padding: "2px 4px" }}
-              >✕</button>
-            </div>
-            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 6 }}>PROJECT</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {groups.map((g) => {
-                const on = g.rel === nsProject;
-                const hov = chipHov === `p:${g.rel}`;
-                const tint = projectTint(g.rel);
-                return (
-                  <button
-                    key={g.rel} onClick={() => setNsProject(g.rel)}
-                    onMouseEnter={() => setChipHov(`p:${g.rel}`)} onMouseLeave={() => setChipHov("")}
-                    style={{
-                      appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-                      border: `1px solid ${on || hov ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
-                      background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "color-mix(in srgb, var(--panel2) 40%, transparent)",
-                      color: on ? "var(--txb)" : "var(--txm)",
-                      fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px", minWidth: 0, maxWidth: "100%",
-                    }}
-                  >
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint.color, flex: "none" }} />
-                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", margin: "12px 0 6px" }}>WORKTREE</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {branches.map((b) => {
-                const on = !nsNewOpen && b === nsBranch;
-                const hov = chipHov === `b:${b}`;
-                return (
-                  <button
-                    key={b} onClick={() => { setNsBranch(b); setNsNewOpen(false); }}
-                    onMouseEnter={() => setChipHov(`b:${b}`)} onMouseLeave={() => setChipHov("")}
-                    style={{
-                      appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-                      border: `1px solid ${on || hov ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`,
-                      background: on ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)",
-                      color: on ? "var(--purple-b)" : "var(--purple-h)",
-                      fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 8px", maxWidth: "100%", minWidth: 0,
-                    }}
-                  >
-                    <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => setNsNewOpen((o) => !o)} title="create a new worktree branch"
-                style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: nsNewOpen ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 0.5, padding: "5px 9px" }}
-              >+ NEW WORKTREE</button>
-            </div>
-            {nsNewOpen && (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-                  <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>FROM</span>
-                  <button
-                    onClick={cycleParent} title="parent branch — click to cycle"
-                    style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 7px", minWidth: 0 }}
-                  >
-                    <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{nsParent || "main"}</span>
-                    <span style={{ color: "var(--purple-g)", flex: "none" }}>⟳</span>
-                  </button>
-                </div>
-                <input
-                  value={nsNewBranch} onChange={(e) => setNsNewBranch(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && nsNewBranch.trim()) start(); }}
-                  placeholder="new-worktree-branch"
-                  style={{ width: "100%", boxSizing: "border-box", marginTop: 7, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "7px 9px" }}
-                />
-              </>
-            )}
-            <textarea
-              value={nsTask} onChange={(e) => setNsTask(e.target.value)}
-              placeholder="first instruction for Claude…"
-              style={{ width: "100%", boxSizing: "border-box", minHeight: 58, resize: "vertical", marginTop: 10, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 12, lineHeight: 1.5, padding: "9px 10px" }}
-            />
-            <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
-              <button
-                onClick={start}
-                onMouseEnter={() => setStartHov(true)} onMouseLeave={() => setStartHov(false)}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: startHov ? "color-mix(in srgb, var(--purple) 26%, transparent)" : "color-mix(in srgb, var(--purple) 16%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-              ><span style={{ color: "var(--purple)" }}>▸</span>START SESSION</button>
-              <button
-                onClick={toggleForm}
-                onMouseEnter={() => setCancelHov(true)} onMouseLeave={() => setCancelHov(false)}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: cancelHov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "9px 12px" }}
-              >CANCEL</button>
-            </div>
-          </div>
-        )}
+        {nsOpen && !nsScoped && nsForm}
 
         {drill ? (
           <>
@@ -372,21 +514,13 @@ export function SessionsPanel(props: Props) {
               <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: drillTint.color, border: `1px solid ${drillTint.border}`, padding: "1px 6px", flex: "none" }}>{drillTint.tag}</span>
               <span style={{ fontSize: 10.5, color: "var(--txh)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{drillGroup?.name ?? drill}</span>
               <span style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txf)", flex: "none" }}>{drillSessions.length} SESS</span>
+              <PlusBtn on={nsOpen && nsScoped && nsProject === drill} onClick={() => openFor(drill)} />
             </div>
+            {nsOpen && nsScoped && nsProject === drill && nsForm}
             {drillSessions.map((s, i) => rowFor(s, i))}
           </>
         ) : (
           <>
-            <div style={{ display: "flex", gap: 3, margin: "4px 2px 11px", border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 3 }}>
-              <button
-                onClick={() => setTab("recent")}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "recent" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "recent" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
-              >RECENT</button>
-              <button
-                onClick={() => setTab("grouped")}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
-              >BY PROJECT</button>
-            </div>
             {tab === "recent" ? (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px" }}>
@@ -408,27 +542,75 @@ export function SessionsPanel(props: Props) {
                 </div>
               </>
             ) : (
-              byLastUsed.map((g) => {
-                const tint = projectTint(g.rel);
-                const more = g.sessionCount - g.sessions.length;
-                return (
-                  <div key={g.rel}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "13px 2px 8px" }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint.color, flex: "none" }} />
-                      <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, padding: "1px 6px", flex: "none" }}>{tint.tag}</span>
-                      <span style={{ fontSize: 10.5, color: "var(--txm)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-                      <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
-                      <span style={{ fontSize: 8.5, color: "var(--txf)", flex: "none" }}>{g.sessionCount} SESS</span>
-                    </div>
-                    {g.sessions.map((s, i) => rowFor(s, i))}
-                    {more > 0 && <DashedRow label={`SHOW MORE · ${more} →`} onClick={() => setDrill(g.rel)} />}
-                    {g.sessionCount === 0 && (
-                      <DashedRow label="+ START SESSION" title="start a session in this project"
-                        onClick={() => onNewSession(g.rel)} />
-                    )}
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px", position: "relative" }}>
+                  <span style={{ fontSize: 9.5, letterSpacing: 2, color: "var(--txl)", flex: "none" }}>PROJECTS</span>
+                  <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+                  <button
+                    onClick={() => setOrderMenu((o) => !o)} title="project order"
+                    style={{ appearance: "none", cursor: "pointer", flex: "none", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${orderMenu ? "var(--acc)" : "color-mix(in srgb, var(--acc) 20%, transparent)"}`, background: orderMenu ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: orderMenu ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "3px 7px" }}
+                  >⇅ {ORDER_LABEL[order]} ▾</button>
+                  {orderMenu && (
+                    <>
+                      <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+                      <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 97, minWidth: 132, border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)", boxShadow: "0 8px 22px rgba(0,0,0,.45)", padding: 3, animation: "mslide .16s ease both" }}>
+                        {(["recent", "alpha", "custom"] as OrderMode[]).map((m) => (
+                          <button
+                            key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
+                            style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0, background: order === m ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: order === m ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 8px" }}
+                          >{order === m ? "▸ " : "  "}{ORDER_LABEL[m]}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {order === "custom" && (
+                  <div style={{ fontSize: 8.5, letterSpacing: 0.5, color: "var(--txf)", margin: "-2px 2px 8px" }}>
+                    drag ⠿ to reorder — pinned projects stay on top
                   </div>
-                );
-              })
+                )}
+                {ordered.map((g) => {
+                  const tint = projectTint(g.rel);
+                  const more = g.sessionCount - g.sessions.length;
+                  const dragging = dragRel === g.rel;
+                  const dropHere = !!dragRel && overRel === g.rel && !dragging;
+                  return (
+                    <div
+                      key={g.rel}
+                      // ponytail: native HTML5 DnD, no library — and only the grip is
+                      // draggable, so a stray drag on a row can't reorder anything.
+                      onDragOver={dragRel ? (e) => { e.preventDefault(); setOverRel(g.rel); } : undefined}
+                      onDrop={dragRel ? (e) => { e.preventDefault(); dropOn(g.rel); } : undefined}
+                      style={{ opacity: dragging ? 0.4 : 1, borderTop: `2px solid ${dropHere ? "var(--acc)" : "transparent"}` }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "13px 2px 8px" }}>
+                        {order === "custom" && (
+                          <span
+                            draggable
+                            onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; setDragRel(g.rel); }}
+                            onDragEnd={() => { setDragRel(null); setOverRel(null); }}
+                            title="drag to reorder"
+                            style={{ cursor: "grab", flex: "none", color: "var(--txf)", fontSize: 11, lineHeight: 1, userSelect: "none" }}
+                          >⠿</span>
+                        )}
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint.color, flex: "none" }} />
+                        <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, padding: "1px 6px", flex: "none" }}>{tint.tag}</span>
+                        <span style={{ fontSize: 10.5, color: "var(--txm)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                        <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+                        <span style={{ fontSize: 8.5, color: "var(--txf)", flex: "none" }}>{g.sessionCount} SESS</span>
+                        <PlusBtn on={nsOpen && nsScoped && nsProject === g.rel} onClick={() => openFor(g.rel)} />
+                      </div>
+                      {nsOpen && nsScoped && nsProject === g.rel && nsForm}
+                      {g.sessions.map((s, i) => rowFor(s, i))}
+                      {more > 0 && <DashedRow label={`SHOW MORE · ${more} →`} onClick={() => setDrill(g.rel)} />}
+                      {g.sessionCount === 0 && (
+                        <DashedRow label="+ START SESSION" title="start a session in this project"
+                          onClick={() => openFor(g.rel)} />
+                      )}
+                    </div>
+                  );
+                })}
+              </>
             )}
           </>
         )}

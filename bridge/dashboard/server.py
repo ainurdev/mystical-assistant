@@ -29,8 +29,8 @@ import re
 
 from bridge import (agents, browser, config, devserver, git, github, graphmap,
                     learning, memory, models, native, preview_detect, project_config,
-                    pubsub, queue_manager, runner, screenshot, shell, state,
-                    store, sysinfo, terminals, tunnel, usage, weather, wsutil)
+                    pubsub, queue_manager, runner, screenshot, selfupdate, shell,
+                    state, store, sysinfo, terminals, tunnel, usage, weather, wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -446,6 +446,9 @@ class Handler(BaseHTTPRequestHandler):
             project = qs.get("project", [""])[0]
             return self._json({"items": store.list_learning_items(
                 chat, project or None, status="kept")})
+        if path == "/local/update":
+            # the platform's own checkout — new commits waiting upstream?
+            return self._json(selfupdate.check())
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -529,6 +532,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             ok, output = git.push(cwd)
             return self._json({"ok": ok, "output": output})
+        if path == "/local/update":
+            # pull the platform's new commits; on success the bridge restarts
+            # shortly after this response flushes.
+            ok, output = selfupdate.update()
+            return self._json({"ok": ok, "output": output})
+        if path == "/local/update/publish":
+            return self._publish_update(chat)
         if path == "/local/files/write":
             # EDITOR tab :w / Ctrl-S — save a working-tree file to disk
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
@@ -741,6 +751,24 @@ class Handler(BaseHTTPRequestHandler):
         if is_error or not (result or "").strip():
             return self._json({"error": "could not generate message"}, 502)
         return self._json({"message": git.clean_commit_message(result)})
+
+    def _publish_update(self, chat):
+        """The header button's other half: commit the platform checkout's own work
+        with a generated message (same one-shot as the git tab) and push it."""
+        st = git.status(selfupdate.REPO)
+        message = ""
+        if st["dirty"]:
+            diff = git.diff_multi(selfupdate.REPO,
+                                  [f["path"] for f in st["files"]][:500])
+            result, _sid, _cost, is_error = runner.run_blocking(
+                chat, _COMMIT_MSG_PROMPT + diff, cwd=selfupdate.REPO, timeout=180,
+                model="haiku", skip_pack=True)
+            message = "" if is_error else git.clean_commit_message(result)
+            if not message:
+                return self._json({"ok": False, "message": "",
+                                   "output": "could not generate a commit message"})
+        ok, output = selfupdate.publish(message)
+        return self._json({"ok": ok, "output": output, "message": message})
 
     def _create_project(self, chat, body):
         """Scaffold a new git repo under BASE_PATH and start a session on it with

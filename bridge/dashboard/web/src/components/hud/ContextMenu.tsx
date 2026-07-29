@@ -33,9 +33,10 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
 }) {
   const [hov, setHov] = useState(-1);
   const W = 216;
-  const H = 44 + items.length * 30;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  // Clamped to the viewport — the list scrolls when it doesn't fit.
+  const H = Math.min(44 + items.length * 30, vh - 12);
   const x = Math.max(6, Math.min(ctx.x, vw - W - 8));
   const y = Math.max(6, Math.min(ctx.y, vh - H - 8));
   return (
@@ -48,7 +49,7 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
           <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>{TYPE_LABEL[ctx.type] || "DASHBOARD"}</span>
           <span style={{ fontSize: 10, color: "var(--tx)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ctx.label || "all surfaces"}</span>
         </div>
-        <div style={{ padding: "4px 0" }}>
+        <div className="mscroll" style={{ padding: "4px 0", maxHeight: vh - 56, overflowY: "auto" }}>
           {items.map((it, i) =>
             it.divider ? (
               <div key={i} style={{ height: 1, background: "color-mix(in srgb, var(--acc) 12%, transparent)", margin: "4px 0" }} />

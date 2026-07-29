@@ -1,33 +1,55 @@
-import { useState, type CSSProperties } from "react";
-import { themeUnfilter, type HudSettings, type Indicator, type ThemeKey } from "../../lib/theme";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { api, type UpdateInfo, type Weather } from "../../api";
+import {
+  autoTextScale,
+  AURORA_KEYS,
+  CLAUDE_KEYS,
+  THEME_DEFS,
+  themeCompensator,
+  themeDef,
+  themeHasCrt,
+  themeUnfilter,
+  type HudSettings,
+  type Indicator,
+  type ThemeKey,
+} from "../../lib/theme";
 import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
-import { CrtToggles, ThemeCardGrid } from "./ThemeModal";
-
-type Model = string; // full model id from the Models API, or a short CLI alias
-type Mode = "plan" | "acceptEdits" | "auto";
+import { RADIO_STATIONS } from "../../lib/ambient";
+import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
+import { UpdateButton } from "./UpdateButton";
 
 export interface SettingsModalProps {
-  wsRoot: string;
   host: string;
   port: string;
   settings: HudSettings;
   onTheme: (t: ThemeKey) => void;
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
   onPatch: (patch: Partial<HudSettings>) => void;
-  defModel: Model;
-  defMode: Mode;
-  onDefModel: (m: Model) => void;
-  onDefMode: (m: Mode) => void;
-  models: { id: Model; label: string }[];
+  models: { id: string; label: string }[];
+  weather: Weather;
+  onSetCity: (city: string) => Promise<string | null>;
+  onSetUnit: (unit: string) => Promise<string | null>;
+  station: number;
+  onStation: (i: number) => void;
+  onFeed: (texts: string[]) => void; // a failed self-update hands git's error to Claude
+  onReplayBoot: () => void;
   onClose: () => void;
 }
 
-const MODE_OPTS: { label: string; value: Mode }[] = [
-  { label: "PLAN", value: "plan" },
-  { label: "ACCEPT", value: "acceptEdits" },
-  { label: "AUTO", value: "auto" },
+// ---- CATEGORIES -------------------------------------------------------------
+// The first three tabs are pure taste — how the HUD looks, what plays while it
+// works, what surrounds it. The last two are what a run and the bridge do.
+
+type Tab = "appearance" | "indicator" | "ambient" | "session" | "system";
+
+const TABS: { key: Tab; label: string; hint: string }[] = [
+  { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot" },
+  { key: "indicator", label: "INDICATOR", hint: "what plays while working" },
+  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM" },
+  { key: "session", label: "SESSION", hint: "model · mode · effort" },
+  { key: "system", label: "SYSTEM", hint: "bridge · updates" },
 ];
 
 // ---- WORKING INDICATOR ------------------------------------------------------
@@ -42,6 +64,21 @@ const INDICATOR_TABS: { key: Indicator; label: string; blurb: string }[] = [
   { key: "tiles", label: "TILES", blurb: "piano tiles — clear each falling note on the key that plays it" },
 ];
 
+// 0 = AUTO (viewport-derived); the rest are fixed whole-HUD zoom factors.
+const TEXT_SCALES: { label: string; value: string }[] = [
+  { label: "AUTO", value: "0" },
+  { label: "90%", value: "0.9" },
+  { label: "100%", value: "1" },
+  { label: "110%", value: "1.1" },
+  { label: "125%", value: "1.25" },
+];
+
+const CRT_TOGGLES: { key: "scanlines" | "sweep" | "glow"; label: string; desc: string }[] = [
+  { key: "scanlines", label: "SCANLINES", desc: "horizontal CRT raster lines" },
+  { key: "sweep", label: "SCAN SWEEP", desc: "roaming refresh glow band" },
+  { key: "glow", label: "TEXT GLOW", desc: "phosphor bloom on headings" },
+];
+
 const field = {
   background: "var(--panel3)",
   border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
@@ -52,6 +89,22 @@ const field = {
   letterSpacing: 1,
   padding: "6px 8px",
 };
+
+const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 10, marginTop: 11 };
+const CAPTION: CSSProperties = { fontSize: 9.5, letterSpacing: 1, color: "var(--txd)", flex: "none", width: 62 };
+const CARD: CSSProperties = { border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "12px 13px" };
+const KV: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between" };
+const KEY_TX: CSSProperties = { fontSize: 10, letterSpacing: 1, color: "var(--txd)" };
+const NOTE: CSSProperties = { fontSize: 9.5, color: "var(--txl)", marginTop: 11, lineHeight: 1.7 };
+
+/** Section caption above a settings block. */
+function Label({ children, top }: { children: ReactNode; top?: boolean }) {
+  return (
+    <div style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)", margin: top ? "20px 0 11px" : "0 0 11px" }}>
+      {children}
+    </div>
+  );
+}
 
 /** An ON/OFF pill, matching the CRT rows. */
 function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
@@ -101,8 +154,280 @@ function Volume({ value, disabled, onChange }: { value: number; disabled?: boole
   );
 }
 
-const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 10, marginTop: 11 };
-const CAPTION: CSSProperties = { fontSize: 9.5, letterSpacing: 1, color: "var(--txd)", flex: "none" };
+/** Segmented picker — one button per option, active one filled. */
+function Segmented<T extends string>({
+  options,
+  value,
+  onPick,
+  size = 10,
+}: {
+  options: { label: string; value: T }[];
+  value: T;
+  onPick: (v: T) => void;
+  size?: number;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            onClick={() => onPick(o.value)}
+            style={{
+              flex: 1,
+              appearance: "none",
+              cursor: "pointer",
+              border: 0,
+              background: active ? "var(--acc)" : "transparent",
+              color: active ? "var(--acc-on)" : "var(--txd)",
+              fontFamily: "inherit",
+              fontSize: size,
+              letterSpacing: 1,
+              padding: "6px 4px",
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A labelled <select> row over one of the composer's option lists. */
+function PickRow({
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  options: { id: string; label: string }[];
+  onPick: (v: string) => void;
+}) {
+  return (
+    <div style={ROW}>
+      <span style={CAPTION}>{label}</span>
+      <select value={value} onChange={(e) => onPick(e.target.value)} style={{ ...field, flex: 1, minWidth: 0 }}>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// The "DISPLAY PROFILE" grid. Because the whole app is run through the active
+// theme's CSS filter, every swatch/preview colour is pre-corrected by the
+// INVERSE of that filter's color matrix so the cards render TRUE colours.
+// AURORA's four hues and CLAUDE's two grounds each collapse into one card with
+// a variant row; every other theme is its own card.
+const CARDS: { key: ThemeKey; variants?: ThemeKey[]; ground?: boolean }[] = [
+  { key: "aqua", variants: AURORA_KEYS },
+  ...THEME_DEFS
+    .filter((t) => !AURORA_KEYS.includes(t.key) && !CLAUDE_KEYS.includes(t.key))
+    .map((t) => ({ key: t.key })),
+  { key: "claude", variants: CLAUDE_KEYS, ground: true },
+];
+
+function ThemeCardGrid({ settings, onTheme }: { settings: HudSettings; onTheme: (t: ThemeKey) => void }) {
+  const [hover, setHover] = useState<ThemeKey | null>(null);
+  const comp = themeCompensator(settings.theme);
+  // A family card wears whichever of its variants is live (the first otherwise).
+  const liveOf = (variants: ThemeKey[]): ThemeKey =>
+    variants.includes(settings.theme) ? settings.theme : variants[0];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 9 }}>
+      {CARDS.map((card) => {
+        const t = themeDef(card.variants ? liveOf(card.variants) : card.key);
+        const on = card.variants ? card.variants.includes(settings.theme) : settings.theme === card.key;
+        const name = card.variants ? themeDef(card.variants[0]).name : t.name;
+        const sw = comp(t.sw);
+        const cardBd = on ? comp(t.sw) : comp("#26413d");
+        const cardBg = on ? comp("#132824") : comp("#0d1517");
+        const dim = comp("#20332f");
+        const pbg = comp(t.pbg);
+        const nameC = comp("var(--txb)");
+        const descC = comp("#8fa8a2");
+        const chipC = comp("var(--acc-on)");
+        const pfont = t.font || "inherit";
+        const prad = t.prad || "0";
+        return (
+          <div
+            key={card.key}
+            onClick={() => onTheme(t.key)}
+            onMouseEnter={() => setHover(card.key)}
+            onMouseLeave={() => setHover(null)}
+            style={{
+              textAlign: "left",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              border: `1px solid ${hover === card.key ? "color-mix(in srgb, var(--acc) 45%, transparent)" : cardBd}`,
+              background: cardBg,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                position: "relative",
+                height: 38,
+                background: pbg,
+                borderBottom: `1px solid ${dim}`,
+                overflow: "hidden",
+                padding: "7px 9px",
+              }}
+            >
+              <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: "100%" }}>
+                <span style={{ flex: 1, height: "55%", background: sw, opacity: 0.8 }}></span>
+                <span style={{ flex: 1, height: "100%", background: sw }}></span>
+                <span style={{ flex: 1, height: "45%", background: sw, opacity: 0.5 }}></span>
+                <span style={{ flex: 1, height: "80%", background: sw, opacity: 0.8 }}></span>
+                <span style={{ flex: 1, height: "30%", background: sw, opacity: 0.35 }}></span>
+                <span style={{ flex: 1, height: "65%", background: sw, opacity: 0.8 }}></span>
+              </div>
+              {t.crt && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    pointerEvents: "none",
+                    background:
+                      "repeating-linear-gradient(0deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.28) 3px,rgba(0,0,0,0) 4px)",
+                    opacity: 0.55,
+                  }}
+                ></div>
+              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 9px" }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  background: sw,
+                  border: "1px solid rgba(0,0,0,.45)",
+                  flex: "none",
+                  borderRadius: prad,
+                }}
+              ></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    letterSpacing: 1,
+                    color: nameC,
+                    fontFamily: pfont,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {name}
+                </div>
+                <div
+                  style={{
+                    fontSize: 8,
+                    letterSpacing: 0.4,
+                    color: descC,
+                    marginTop: 1,
+                    fontFamily: pfont,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {t.feel}
+                </div>
+              </div>
+              {on && (
+                <span
+                  style={{
+                    fontSize: 7,
+                    letterSpacing: 1,
+                    color: chipC,
+                    background: sw,
+                    padding: "1px 5px",
+                    flex: "none",
+                  }}
+                >
+                  ON
+                </span>
+              )}
+            </div>
+
+            {card.variants && (
+              <div style={{ display: "flex", gap: 5, padding: "0 9px 8px" }}>
+                {card.variants.map((k) => {
+                  const c = themeDef(k);
+                  const live = settings.theme === k;
+                  return (
+                    <button
+                      key={k}
+                      title={c.name}
+                      onClick={(e) => { e.stopPropagation(); onTheme(k); }}
+                      style={{
+                        appearance: "none",
+                        cursor: "pointer",
+                        flex: 1,
+                        height: 12,
+                        padding: 0,
+                        background: comp(card.ground ? c.canvas : c.sw),
+                        border: `1px solid ${live ? comp("#f2fbf9") : "rgba(0,0,0,.45)"}`,
+                        borderRadius: t.prad || "0",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CrtToggles({
+  settings,
+  onToggle,
+}: {
+  settings: HudSettings;
+  onToggle: (key: "scanlines" | "sweep" | "glow") => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 1,
+        border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
+        background: "color-mix(in srgb, var(--acc) 8%, transparent)",
+      }}
+    >
+      {CRT_TOGGLES.map((g) => (
+        <div
+          key={g.key}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px 14px",
+            background: "color-mix(in srgb, var(--panel) 92%, transparent)",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: "var(--txh)", letterSpacing: 0.5 }}>{g.label}</div>
+            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 2 }}>{g.desc}</div>
+          </div>
+          <Switch on={settings[g.key]} onClick={() => onToggle(g.key)} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function IndicatorPicker({
   settings,
@@ -235,7 +560,7 @@ function IndicatorPicker({
                 ))}
               </select>
             </div>
-            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 11, lineHeight: 1.7 }}>
+            <div style={NOTE}>
               Notes fall down the lane of the key that plays them — hit that key as the tile lands.
               Mouse or computer keys, same as the piano, and it uses the VOICE picked on the PIANO
               tab.
@@ -271,7 +596,7 @@ function IndicatorPicker({
               </select>
               <Volume value={settings.pianoVolume} onChange={(pianoVolume) => onPatch({ pianoVolume })} />
             </div>
-            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 11, lineHeight: 1.7 }}>
+            <div style={NOTE}>
               Click the board to arm the computer keys — unfocused, they stay yours for typing.
               <br />
               <span style={{ color: "var(--txd)" }}>SAMPLES</span> are real recordings, one MP3 per
@@ -296,25 +621,146 @@ function IndicatorPicker({
   );
 }
 
+/** City + unit for the header clock's weather — the same bridge-side setting the
+ *  clock popover writes. */
+function WeatherCard({
+  weather,
+  onSetCity,
+  onSetUnit,
+}: {
+  weather: Weather;
+  onSetCity: (city: string) => Promise<string | null>;
+  onSetUnit: (unit: string) => Promise<string | null>;
+}) {
+  const [city, setCity] = useState(weather.loc);
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!city.trim() || saving) return;
+    setSaving(true);
+    setErr(null);
+    const e = await onSetCity(city.trim());
+    setSaving(false);
+    setErr(e);
+  }
+
+  return (
+    <div style={CARD}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <input
+          value={city}
+          onChange={(e) => setCity(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void save()}
+          placeholder="city — e.g. Tehran"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: "var(--panel3)",
+            border: `1px solid ${err ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`,
+            outline: "none",
+            color: "var(--txb)",
+            fontFamily: "inherit",
+            fontSize: 11.5,
+            padding: "7px 9px",
+          }}
+        />
+        <button
+          onClick={() => void save()}
+          disabled={saving}
+          style={{
+            appearance: "none",
+            cursor: saving ? "wait" : "pointer",
+            border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+            background: "color-mix(in srgb, var(--acc) 8%, transparent)",
+            color: "var(--tx)",
+            fontFamily: "inherit",
+            fontSize: 10,
+            letterSpacing: 1.5,
+            padding: "7px 13px",
+            flex: "none",
+          }}
+        >
+          {saving ? "…" : "SAVE"}
+        </button>
+      </div>
+      {err && <div style={{ fontSize: 9, color: "var(--err)", marginTop: 5 }}>{err}</div>}
+      <div style={{ ...ROW, marginTop: 12 }}>
+        <span style={CAPTION}>UNIT</span>
+        <Segmented
+          options={[
+            { label: "°C", value: "celsius" },
+            { label: "°F", value: "fahrenheit" },
+          ]}
+          value={weather.unit === "F" ? "fahrenheit" : "celsius"}
+          onPick={(u) => void onSetUnit(u)}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** What the bridge's own checkout is running, and the pull-and-restart button. */
+function UpdatePanel({ onFeed }: { onFeed: (texts: string[]) => void }) {
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.update().then((u) => { if (live) setInfo(u); }).catch(() => { /* ignore */ });
+    return () => { live = false; };
+  }, []);
+
+  return (
+    <div style={CARD}>
+      <div style={KV}>
+        <span style={KEY_TX}>BRANCH</span>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--tx)" }}>
+          {info ? `⎇ ${info.branch || "—"}` : "…"}
+        </span>
+      </div>
+      <div style={{ ...KV, marginTop: 10 }}>
+        <span style={KEY_TX}>UPSTREAM</span>
+        <span style={{ fontSize: 10.5, color: info && info.behind > 0 ? "var(--warn)" : "var(--ok)" }}>
+          {!info ? "…" : info.behind > 0 ? `${info.behind} COMMIT${info.behind === 1 ? "" : "S"} BEHIND` : "UP TO DATE"}
+        </span>
+      </div>
+      {info && info.dirty > 0 && (
+        <div style={{ ...KV, marginTop: 10 }}>
+          <span style={KEY_TX}>WORKING TREE</span>
+          <span style={{ fontSize: 10.5, color: "var(--warn)" }}>{info.dirty} UNCOMMITTED</span>
+        </div>
+      )}
+      {info && info.behind > 0 && (
+        <div style={{ marginTop: 12, display: "flex" }}>
+          <UpdateButton onFeed={onFeed} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
-    wsRoot,
     host,
     port,
     settings,
     onTheme,
     onToggle,
     onPatch,
-    defModel,
-    defMode,
-    onDefModel,
-    onDefMode,
     models,
+    weather,
+    onSetCity,
+    onSetUnit,
+    station,
+    onStation,
+    onFeed,
+    onReplayBoot,
     onClose,
   } = props;
 
+  const [tab, setTab] = useState<Tab>("appearance");
+  const autoPct = Math.round(autoTextScale(window.innerWidth, window.innerHeight) * 100);
   const [escHover, setEscHover] = useState(false);
-  const [rescanHover, setRescanHover] = useState(false);
+  const [replayHover, setReplayHover] = useState(false);
   const [doneHover, setDoneHover] = useState(false);
 
   return (
@@ -338,6 +784,7 @@ export function SettingsModal(props: SettingsModalProps) {
         style={{
           width: 720,
           maxWidth: "94vw",
+          height: "76vh",
           maxHeight: "86vh",
           display: "flex",
           flexDirection: "column",
@@ -402,364 +849,227 @@ export function SettingsModal(props: SettingsModalProps) {
           </button>
         </div>
 
-        {/* Body */}
-        <div
-          className="mscroll"
-          style={{ flex: 1, overflowY: "auto", padding: 18 }}
-        >
+        {/* Category rail + the active category's panel */}
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
           <div
             style={{
-              fontSize: 9.5,
-              letterSpacing: 1.5,
-              color: "var(--txl)",
-              marginBottom: 10,
-            }}
-          >
-            WORKSPACE ROOT · where projects are scanned
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span
-              style={{
-                fontSize: 14,
-                color: "var(--acc)",
-                flex: "none",
-                fontFamily: "'JetBrains Mono',monospace",
-              }}
-            >
-              ⌂
-            </span>
-            <input
-              value={wsRoot}
-              disabled
-              placeholder="/home/squared/dev"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                background: "color-mix(in srgb, var(--panel2) 60%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)",
-                outline: "none",
-                color: "var(--txb)",
-                fontFamily: "'JetBrains Mono',monospace",
-                fontSize: 12.5,
-                padding: "9px 11px",
-              }}
-            />
-            <button
-              onMouseEnter={() => setRescanHover(true)}
-              onMouseLeave={() => setRescanHover(false)}
-              style={{
-                appearance: "none",
-                cursor: "pointer",
-                border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
-                background: rescanHover
-                  ? "color-mix(in srgb, var(--acc) 16%, transparent)"
-                  : "color-mix(in srgb, var(--acc) 6%, transparent)",
-                color: "var(--tx)",
-                fontFamily: "inherit",
-                fontSize: 10,
-                letterSpacing: 1.5,
-                padding: "9px 13px",
-                flex: "none",
-              }}
-            >
-              RESCAN ↻
-            </button>
-          </div>
-
-          <div
-            style={{
-              fontSize: 9.5,
-              letterSpacing: 1.5,
-              color: "var(--txl)",
-              marginBottom: 11,
-            }}
-          >
-            THEME · DISPLAY PROFILE
-          </div>
-          <ThemeCardGrid settings={settings} onTheme={onTheme} />
-
-          <div
-            style={{
-              fontSize: 9.5,
-              letterSpacing: 1.5,
-              color: "var(--txl)",
-              margin: "20px 0 11px",
-            }}
-          >
-            CRT EFFECTS
-          </div>
-          <CrtToggles settings={settings} onToggle={onToggle} />
-
-          <div
-            style={{
-              fontSize: 9.5,
-              letterSpacing: 1.5,
-              color: "var(--txl)",
-              margin: "20px 0 11px",
-            }}
-          >
-            WORKING INDICATOR
-          </div>
-          <IndicatorPicker settings={settings} onPatch={onPatch} />
-
-          {/* 2-col grid */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 14,
-              marginTop: 20,
-            }}
-          >
-            {/* BRIDGE */}
-            <div>
-              <div
-                style={{
-                  fontSize: 9.5,
-                  letterSpacing: 1.5,
-                  color: "var(--txl)",
-                  marginBottom: 10,
-                }}
-              >
-                BRIDGE
-              </div>
-              <div
-                style={{
-                  border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
-                  padding: "12px 13px",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span
-                    style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)" }}
-                  >
-                    HOST
-                  </span>
-                  <span style={{ fontSize: 11, color: "var(--tx)" }}>{host}</span>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginTop: 10,
-                  }}
-                >
-                  <span
-                    style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)" }}
-                  >
-                    PORT
-                  </span>
-                  <input
-                    value={port}
-                    readOnly
-                    style={{
-                      width: 88,
-                      textAlign: "right",
-                      background: "color-mix(in srgb, var(--panel2) 60%, transparent)",
-                      border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)",
-                      outline: "none",
-                      color: "var(--txb)",
-                      fontFamily: "'JetBrains Mono',monospace",
-                      fontSize: 11,
-                      padding: "4px 7px",
-                    }}
-                  />
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginTop: 10,
-                  }}
-                >
-                  <span
-                    style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)" }}
-                  >
-                    STATUS
-                  </span>
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 10,
-                      color: "var(--ok)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: "var(--ok)",
-                        animation: "mpulse 2.4s infinite",
-                      }}
-                    ></span>
-                    ONLINE
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* SESSION DEFAULTS */}
-            <div>
-              <div
-                style={{
-                  fontSize: 9.5,
-                  letterSpacing: 1.5,
-                  color: "var(--txl)",
-                  marginBottom: 10,
-                }}
-              >
-                SESSION DEFAULTS
-              </div>
-              <div
-                style={{
-                  border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
-                  padding: "12px 13px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 11,
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      letterSpacing: 1,
-                      color: "var(--txd)",
-                      marginBottom: 6,
-                    }}
-                  >
-                    MODEL
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 2,
-                      border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
-                    }}
-                  >
-                    {models.map((m) => {
-                      const active = defModel === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => onDefModel(m.id)}
-                          style={{
-                            flex: 1,
-                            appearance: "none",
-                            cursor: "pointer",
-                            border: 0,
-                            background: active ? "var(--acc)" : "transparent",
-                            color: active ? "var(--acc-on)" : "var(--txd)",
-                            fontFamily: "inherit",
-                            fontSize: 10,
-                            letterSpacing: 1,
-                            padding: "6px 4px",
-                          }}
-                        >
-                          {m.label.toUpperCase()}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      letterSpacing: 1,
-                      color: "var(--txd)",
-                      marginBottom: 6,
-                    }}
-                  >
-                    PERMISSION MODE
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 2,
-                      border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
-                    }}
-                  >
-                    {MODE_OPTS.map((m) => {
-                      const active = defMode === m.value;
-                      return (
-                        <button
-                          key={m.value}
-                          onClick={() => onDefMode(m.value)}
-                          style={{
-                            flex: 1,
-                            appearance: "none",
-                            cursor: "pointer",
-                            border: 0,
-                            background: active ? "var(--acc)" : "transparent",
-                            color: active ? "var(--acc-on)" : "var(--txd)",
-                            fontFamily: "inherit",
-                            fontSize: 9,
-                            letterSpacing: ".5px",
-                            padding: "6px 4px",
-                          }}
-                        >
-                          {m.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div
-            style={{
+              width: 158,
+              flex: "none",
+              borderRight: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+              padding: "10px 0",
               display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginTop: 20,
+              flexDirection: "column",
+              gap: 1,
             }}
           >
-            <span
-              style={{
-                fontSize: 9,
-                letterSpacing: ".5px",
-                color: "#456b65",
-                flex: 1,
-              }}
-            >
-              Settings persist to ~/.mystical/config.toml on this host.
-            </span>
-            <button
-              onClick={onClose}
-              onMouseEnter={() => setDoneHover(true)}
-              onMouseLeave={() => setDoneHover(false)}
-              style={{
-                appearance: "none",
-                cursor: "pointer",
-                border: "1px solid var(--acc)",
-                background: doneHover
-                  ? "color-mix(in srgb, var(--acc) 22%, transparent)"
-                  : "color-mix(in srgb, var(--acc) 12%, transparent)",
-                color: "var(--txb)",
-                fontFamily: "inherit",
-                fontSize: 10,
-                letterSpacing: 2,
-                padding: "9px 22px",
-              }}
-            >
-              DONE
-            </button>
+            {TABS.map((t) => {
+              const on = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  style={{
+                    appearance: "none",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    border: 0,
+                    borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
+                    background: on ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent",
+                    color: on ? "var(--txb)" : "var(--txd)",
+                    fontFamily: "inherit",
+                    padding: "9px 12px",
+                  }}
+                >
+                  <div style={{ fontSize: 10, letterSpacing: 1.5 }}>{t.label}</div>
+                  <div style={{ fontSize: 8.5, letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
+                    {t.hint}
+                  </div>
+                </button>
+              );
+            })}
           </div>
+
+          <div className="mscroll" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
+            {tab === "appearance" && (
+              <>
+                <Label>THEME · DISPLAY PROFILE</Label>
+                <ThemeCardGrid settings={settings} onTheme={onTheme} />
+
+                {themeHasCrt(settings.theme) && (
+                  <>
+                    <Label top>CRT EFFECTS</Label>
+                    <CrtToggles settings={settings} onToggle={onToggle} />
+                    <div style={NOTE}>
+                      Kept when you recolour AURORA; reset when you switch profile. The paper
+                      and daylight themes have no CRT layer at all.
+                    </div>
+                  </>
+                )}
+
+                <Label top>TEXT SIZE</Label>
+                <Segmented
+                  options={TEXT_SCALES}
+                  value={String(settings.textScale)}
+                  onPick={(v) => onPatch({ textScale: Number(v) })}
+                />
+                <div style={NOTE}>
+                  Scales the whole HUD — type, icons and spacing together.{" "}
+                  <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window: {autoPct}% on
+                  this one.
+                </div>
+
+                <Label top>BOOT SEQUENCE</Label>
+                <div style={{ ...CARD, display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 9.5, color: "var(--txl)" }}>
+                    Replay the intro this dashboard boots with.
+                  </div>
+                  <button
+                    onClick={onReplayBoot}
+                    onMouseEnter={() => setReplayHover(true)}
+                    onMouseLeave={() => setReplayHover(false)}
+                    style={{
+                      appearance: "none",
+                      cursor: "pointer",
+                      border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+                      background: replayHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+                      color: "var(--tx)",
+                      fontFamily: "inherit",
+                      fontSize: 10,
+                      letterSpacing: 1.5,
+                      padding: "8px 13px",
+                      flex: "none",
+                    }}
+                  >
+                    ▸ REPLAY
+                  </button>
+                </div>
+              </>
+            )}
+
+            {tab === "indicator" && (
+              <>
+                <Label>WORKING INDICATOR</Label>
+                <IndicatorPicker settings={settings} onPatch={onPatch} />
+              </>
+            )}
+
+            {tab === "ambient" && (
+              <>
+                <Label>WEATHER · header clock</Label>
+                <WeatherCard weather={weather} onSetCity={onSetCity} onSetUnit={onSetUnit} />
+
+                <Label top>CLAUDE·FM</Label>
+                <div style={CARD}>
+                  <div style={{ ...ROW, marginTop: 0 }}>
+                    <span style={CAPTION}>STATION</span>
+                    <select
+                      value={station}
+                      onChange={(e) => onStation(Number(e.target.value))}
+                      style={{ ...field, flex: 1, minWidth: 0 }}
+                    >
+                      {RADIO_STATIONS.map((s, i) => (
+                        <option key={s.title} value={i}>
+                          {s.title} — {s.artist}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={ROW}>
+                    <span style={CAPTION}>VOLUME</span>
+                    <Volume value={settings.radioVolume} onChange={(radioVolume) => onPatch({ radioVolume })} />
+                  </div>
+                </div>
+                <div style={NOTE}>
+                  Play/pause and skip live on the header pill. Station resets to the first one on
+                  reload; volume is remembered.
+                </div>
+              </>
+            )}
+
+            {tab === "session" && (
+              <>
+                <Label>RUN DEFAULTS</Label>
+                <div style={CARD}>
+                  <div style={{ ...KEY_TX, marginBottom: 6 }}>MODEL</div>
+                  <Segmented
+                    options={models.map((m) => ({ label: m.label.toUpperCase(), value: m.id }))}
+                    value={settings.model}
+                    onPick={(model) => onPatch({ model })}
+                  />
+                  <PickRow label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
+                  <PickRow label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
+                  <PickRow label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
+                </div>
+                <div style={NOTE}>
+                  The composer&apos;s four dropdowns are these same knobs — set them here and they
+                  stick across reloads. MODE ·{" "}
+                  <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
+                  session was started with.
+                </div>
+              </>
+            )}
+
+            {tab === "system" && (
+              <>
+                <Label>BRIDGE</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <span style={KEY_TX}>HOST</span>
+                    <span style={{ fontSize: 11, color: "var(--tx)" }}>{host}</span>
+                  </div>
+                  <div style={{ ...KV, marginTop: 10 }}>
+                    <span style={KEY_TX}>PORT</span>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--tx)" }}>
+                      {port}
+                    </span>
+                  </div>
+                </div>
+
+                <Label top>PLATFORM</Label>
+                <UpdatePanel onFeed={onFeed} />
+                <div style={NOTE}>
+                  Updating pulls the bridge&apos;s own checkout, rebuilds this dashboard and
+                  restarts the bridge; running turns resume on their own.
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "12px 18px",
+            borderTop: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+            flex: "none",
+          }}
+        >
+          <span style={{ fontSize: 9, letterSpacing: ".5px", color: "var(--txl)", flex: 1 }}>
+            Stored in this browser — except weather, which the bridge keeps for every client.
+          </span>
+          <button
+            onClick={onClose}
+            onMouseEnter={() => setDoneHover(true)}
+            onMouseLeave={() => setDoneHover(false)}
+            style={{
+              appearance: "none",
+              cursor: "pointer",
+              border: "1px solid var(--acc)",
+              background: doneHover
+                ? "color-mix(in srgb, var(--acc) 22%, transparent)"
+                : "color-mix(in srgb, var(--acc) 12%, transparent)",
+              color: "var(--txb)",
+              fontFamily: "inherit",
+              fontSize: 10,
+              letterSpacing: 2,
+              padding: "9px 22px",
+            }}
+          >
+            DONE
+          </button>
         </div>
       </div>
     </div>

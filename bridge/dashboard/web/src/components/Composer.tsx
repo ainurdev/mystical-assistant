@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { EffortLevel, ModelId } from "../api";
 
-const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
+export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
@@ -11,7 +11,7 @@ const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
 ];
 // Per-message operating mode ("" keeps the session's). Mirrors the CLI permission
 // modes so you can flip a single run (ask / plan / full autonomy) remotely.
-const PERMS: { id: string; label: string }[] = [
+export const PERMS: { id: string; label: string }[] = [
   { id: "", label: "Session" },
   { id: "default", label: "Ask" },
   { id: "acceptEdits", label: "Accept Edits" },
@@ -20,7 +20,7 @@ const PERMS: { id: string; label: string }[] = [
   { id: "bypassPermissions", label: "Full Auto" },
 ];
 // Per-run code-minimalism intensity, threaded to the runner's env (Task 4/8).
-const PONYTAILS: { id: string; label: string }[] = [
+export const PONYTAILS: { id: string; label: string }[] = [
   { id: "", label: "Default" },
   { id: "off", label: "Off" },
   { id: "lite", label: "Lite" },
@@ -190,7 +190,7 @@ export function Composer({
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
               {onCancelQueued && (
                 <button onClick={() => onCancelQueued(q.id)} title="Remove from queue"
-                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "#a38fe0", fontSize: 11, lineHeight: 1, padding: 0, flex: "none" }}>✕</button>
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: 11, lineHeight: 1, padding: 0, flex: "none" }}>✕</button>
               )}
             </span>
           ))}

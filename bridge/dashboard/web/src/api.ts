@@ -513,8 +513,27 @@ export interface GraphState {
   building: boolean;
 }
 
+// The platform's own checkout vs its upstream — powers the header sync button,
+// both directions: behind/commits is theirs, ahead/dirty/files is ours.
+export interface UpdateInfo {
+  repo: boolean;
+  path: string; // the bridge's own checkout — named in the "fix with Claude" prompt
+  branch: string;
+  behind: number;
+  ahead: number;
+  dirty: number;
+  commits: { sha: string; subject: string }[];
+  files: { path: string; status: string; add: number; del: number }[];
+}
+
 export const api = {
   state: () => req<DashState>("/local/state"),
+  update: () => req<UpdateInfo>("/local/update"),
+  applyUpdate: () =>
+    req<{ ok: boolean; output: string }>("/local/update", { method: "POST", body: {} }),
+  publishUpdate: () =>
+    req<{ ok: boolean; output: string; message: string }>(
+      "/local/update/publish", { method: "POST", body: {} }),
   projects: (dir?: string) =>
     req<ProjectsListing>(`/local/projects${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`),
   sessions: (project?: string) =>

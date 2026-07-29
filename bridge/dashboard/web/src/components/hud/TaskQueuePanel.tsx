@@ -96,7 +96,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
       style={{
         border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
         background: "color-mix(in srgb, var(--panel) 50%, transparent)",
-        animation: "enterLeftUp .55s cubic-bezier(.2,.8,.2,1) both .3s",
+        animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both",
         flex: "none",
       }}
     >
@@ -120,7 +120,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
           height: "1px",
           background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))",
           transformOrigin: "left",
-          animation: "drawline .7s ease both .36s",
+          animation: "drawline .7s ease both",
         }}
       />
       <div style={{ padding: "10px 12px 13px" }}>
@@ -135,7 +135,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
           {openCount} OPEN · ASSIGN + FEED TO CLAUDE
         </div>
 
-        {tasks.map((t, i) => {
+        {tasks.map((t) => {
           const tint = projectTint(t.project);
           const color = tint.color;
           const bd = tint.border;
@@ -153,7 +153,6 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                 padding: "9px 4px",
                 borderBottom: "1px solid color-mix(in srgb, var(--acc) 6%, transparent)",
                 animation: "mfadeup .35s ease both",
-                animationDelay: i * 50 + "ms",
               }}
             >
               <button

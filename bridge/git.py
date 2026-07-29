@@ -353,6 +353,33 @@ def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
+def fetch(cwd: str, timeout: int = 20) -> bool:
+    """Refresh the remote-tracking refs, so status()'s behind count is current."""
+    rc, _o, _e = _run(cwd, "fetch", "--quiet", timeout=timeout)
+    return rc == 0
+
+
+def pull(cwd: str, timeout: int = 60) -> tuple[bool, str]:
+    """Fast-forward only: never merges or rebases local work behind your back —
+    a diverged or dirty tree fails loudly with git's own message."""
+    rc, out, err = _run(cwd, "pull", "--ff-only", timeout=timeout)
+    return rc == 0, (out + err).strip()
+
+
+def incoming(cwd: str, limit: int = 20) -> list[dict]:
+    """Commits the upstream branch has that this checkout doesn't (newest first).
+    Empty when there's no upstream configured. Needs a recent fetch() to be true."""
+    rc, out, _ = _run(cwd, "log", f"-{limit}", "--format=%h\t%s", "HEAD..@{u}")
+    if rc != 0:
+        return []
+    commits = []
+    for line in out.splitlines():
+        sha, _, subject = line.partition("\t")
+        if sha:
+            commits.append({"sha": sha, "subject": subject})
+    return commits
+
+
 # --- branches & worktrees (powers the unified projects+sessions view) ---
 
 def current_branch(cwd: str) -> str:
@@ -399,7 +426,7 @@ def branches(cwd: str) -> list[str]:
     """Local branch names, current first."""
     if not is_repo(cwd):
         return []
-    rc, out, _ = _run(cwd, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+    rc, out, _ = _run(cwd, "for-each-ref", "--format=%(refname:short)", "--sort=-committerdate", "refs/heads")
     names = [b.strip() for b in out.splitlines() if b.strip()] if rc == 0 else []
     cur = current_branch(cwd)
     if cur and cur in names:

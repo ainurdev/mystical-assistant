@@ -10,7 +10,8 @@ import {
   type TermInfo,
   type Worktree,
 } from "../../api";
-import { ago, projectTint, setProjectTint, surfaceFor } from "../../lib/surfaces";
+import { useStickyFlag } from "../../lib/prefs";
+import { ago, projectTint, setProjectTint } from "../../lib/surfaces";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { MapTab } from "./MapTab";
 import { SkillsTab } from "./SkillsTab";
@@ -18,10 +19,10 @@ import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
 
 /* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
-   530–1258): header with editable short tag, 7-tab bar (OVERVIEW / GIT /
-   WORKTREES / EDITOR / TERMINAL / SKILLS / ISSUES), and per-tab bodies. */
+   530–1258): header with editable short tag, tab bar (EDITOR / GIT /
+   WORKTREES / TERMINAL / ISSUES), and per-tab bodies. */
 
-type Tab = "overview" | "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map";
+type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map";
 
 interface Props {
   project: string;
@@ -35,7 +36,6 @@ interface Props {
   onClose: () => void;
   onFeed: (texts: string[]) => void;
   onSelectSession: (s: SessionBrief) => void;
-  onNewSession: (rel: string) => void;
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
 }
 
@@ -66,7 +66,7 @@ export function AnalyzeModal(props: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const [tab, setTab] = useState<Tab>(props.initialFile ? "editor" : "overview");
+  const [tab, setTab] = useState<Tab>("editor");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [issues, setIssues] = useState<IssuesInfo | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
@@ -74,7 +74,8 @@ export function AnalyzeModal(props: Props) {
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [termCount, setTermCount] = useState(0);
   const [closing, setClosing] = useState(false);
-  const [full, setFull] = useState(false);
+  // Maximize sticks per browser, so the next open comes back the way you left it.
+  const [full, setFull] = useStickyFlag("hud-modal-full");
   // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
   const [selectedBranch, setSelectedBranch] = useState(props.initialBranch ?? "");
 
@@ -137,10 +138,9 @@ export function AnalyzeModal(props: Props) {
   }, [branches, cur, selectedBranch, worktrees]);
 
   const tabs: { k: Tab; l: string; badge?: number }[] = [
-    { k: "overview", l: "OVERVIEW" },
+    { k: "editor", l: "EDITOR" },
     { k: "changes", l: "GIT", badge: git?.dirty || undefined },
     { k: "worktrees", l: "WORKTREES", badge: linkedWt || undefined },
-    { k: "editor", l: "EDITOR" },
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
     // ponytail: SKILLS + MAP hidden for now — bodies below stay wired, so
@@ -149,9 +149,13 @@ export function AnalyzeModal(props: Props) {
 
   return (
     <div onClick={close}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: full ? "3vh" : "7vh", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both", transition: "padding-top .38s cubic-bezier(.25,.9,.25,1)" }}>
+      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "center", justifyContent: "center", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
+      {/* Both sizes are viewport-relative and definite: half the screen by
+          default, near-full when maximized — never taller than the monitor, and
+          a definite height is what lets each tab scroll inside itself instead of
+          stretching the modal. */}
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: full ? "96vw" : 880, maxWidth: full ? "96vw" : "94vw", height: full ? "93vh" : "auto", maxHeight: full ? "93vh" : "84vh", interpolateSize: "allow-keywords", transition: "width .38s cubic-bezier(.25,.9,.25,1),max-width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1),max-height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ width: full ? "96vw" : "min(94vw, max(560px, 50vw))", height: full ? "94vh" : "min(90vh, max(440px, 50vh))", transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
@@ -204,13 +208,7 @@ export function AnalyzeModal(props: Props) {
           ))}
         </div>
         {/* body */}
-        <div className="mscroll" style={{ flex: 1, overflowY: "auto", padding: 18 }}>
-          {tab === "overview" && (
-            <OverviewTab project={project} git={git} dotColor={tagColor} issueCount={issueCount}
-              worktrees={worktrees} branches={branches} sessions={props.sessions} status={props.status}
-              onGoto={setTab} onFeed={props.onFeed} onSelectSession={props.onSelectSession}
-              onNewSession={props.onNewSession} onWorktreeSession={props.onWorktreeSession} />
-          )}
+        <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 18 }}>
           {tab === "changes" && (
             <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
               onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} />
@@ -240,227 +238,6 @@ export function AnalyzeModal(props: Props) {
   );
 }
 
-/* ---------------- OVERVIEW: stat tiles + sessions grouped by branch (design 575–655) ---------------- */
-
-const SURF_TINT: Record<string, { c: string; bd: string }> = {
-  VS: { c: "var(--acc)", bd: "color-mix(in srgb, var(--acc) 40%, transparent)" },
-  WEB: { c: "var(--ok)", bd: "color-mix(in srgb, var(--ok) 40%, transparent)" },
-  TG: { c: "var(--info)", bd: "color-mix(in srgb, var(--info) 40%, transparent)" },
-  MA: { c: "var(--purple)", bd: "color-mix(in srgb, var(--purple) 40%, transparent)" },
-};
-const SURF_FALLBACK = { c: "var(--txm)", bd: "color-mix(in srgb, var(--txm) 40%, transparent)" };
-
-const SESSION_ST: Record<string, { c: string; l: string }> = {
-  working: { c: "var(--ok)", l: "RUN" },
-  awaiting: { c: "var(--warn)", l: "AWAIT" },
-  live: { c: "var(--info)", l: "LIVE" },
-  idle: { c: "var(--txl)", l: "IDLE" },
-};
-
-function machineFor(origin: string | null | undefined): string {
-  if (origin === "dashboard") return "localhost";
-  if (origin === "bot" || origin === "miniapp") return "phone";
-  return "this machine";
-}
-
-function OverviewTab({ project, git, dotColor, issueCount, worktrees, branches, sessions, status, onGoto, onFeed, onSelectSession, onNewSession, onWorktreeSession }: {
-  project: string; git: GitStatus | null; dotColor: string; issueCount: number;
-  worktrees: Worktree[]; branches: string[]; sessions: SessionBrief[]; status: Map<string, SessionStatus>;
-  onGoto: (t: Tab) => void; onFeed: (texts: string[]) => void; onSelectSession: (s: SessionBrief) => void;
-  onNewSession: (rel: string) => void; onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
-}) {
-  const [hov, setHov] = useState("");
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
-  const cur = git?.branch || "main";
-
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
-
-  // new-session composer
-  const [nsOpen, setNsOpen] = useState(false);
-  const [nsBranch, setNsBranch] = useState("");
-  const [nsNewOpen, setNsNewOpen] = useState(false);
-  const [nsNewBranch, setNsNewBranch] = useState("");
-  const [nsParent, setNsParent] = useState("");
-  const [nsTask, setNsTask] = useState("");
-
-  const branchList = branches.length ? branches : [cur];
-  const nsBranchSel = nsNewOpen ? "" : (nsBranch && branchList.includes(nsBranch) ? nsBranch : cur);
-  const nsNewParent = nsParent && branchList.includes(nsParent) ? nsParent : cur;
-
-  const linked = worktrees.filter((w) => !w.is_main).length;
-  const visible = sessions.filter((s) => !hidden.has(s.id));
-
-  const groups = useMemo(() => {
-    const order: string[] = [];
-    const map = new Map<string, SessionBrief[]>();
-    for (const s of visible) {
-      const b = s.branch || cur;
-      const arr = map.get(b);
-      if (arr) arr.push(s);
-      else { map.set(b, [s]); order.push(b); }
-    }
-    return order.map((b) => ({ branch: b, sessions: map.get(b) ?? [] }));
-  }, [visible, cur]);
-
-  const tiles: { label: string; value: string; accent: string; valueColor: string; hint?: string; goto?: Tab }[] = [
-    { label: "BRANCH", value: cur, accent: "var(--acc)", valueColor: "var(--txb)", hint: "manage branches & worktrees", goto: "worktrees" },
-    { label: "CHANGES", value: String(git?.dirty ?? 0), accent: "var(--warn)", valueColor: (git?.dirty ?? 0) > 0 ? "var(--warn)" : "var(--txd)", hint: "view the working tree", goto: "changes" },
-    { label: "SYNC", value: `↑${git?.ahead ?? 0} ↓${git?.behind ?? 0}`, accent: "var(--ok)", valueColor: "var(--txb)", hint: "commit · push · pull", goto: "changes" },
-    { label: "SESSIONS", value: String(visible.length), accent: "var(--purple)", valueColor: "var(--purple-h)" },
-    { label: "WORKTREES", value: String(linked), accent: "var(--info)", valueColor: "var(--txb)", hint: "open worktrees", goto: "worktrees" },
-    { label: "ISSUES", value: String(issueCount), accent: "var(--err)", valueColor: "var(--txb)", hint: "open GitHub issues", goto: "issues" },
-  ];
-
-  function cycleNsParent() {
-    if (!branchList.length) return;
-    const i = Math.max(0, branchList.indexOf(nsNewParent));
-    setNsParent(branchList[(i + 1) % branchList.length]);
-  }
-
-  function startNewSession() {
-    const task = nsTask.trim();
-    if (task) onFeed([task]);
-    if (nsNewOpen) {
-      const b = nsNewBranch.trim().replace(/\s+/g, "-");
-      if (!b) return;
-      onWorktreeSession(project, b, true, nsNewParent || undefined);
-    } else if (nsBranchSel === cur) {
-      onNewSession(project);
-    } else {
-      onWorktreeSession(project, nsBranchSel, false);
-    }
-    setNsOpen(false); setNsTask(""); setNsNewBranch(""); setNsNewOpen(false);
-  }
-
-  async function archive(s: SessionBrief) {
-    // Only hide on success — hiding after a failed call makes the row vanish
-    // locally but reappear on the next sessions refresh, with no feedback.
-    try {
-      await api.archiveSession(s.id);
-      setHidden((h) => new Set(h).add(s.id));
-    } catch { /* leave the row visible on failure */ }
-  }
-
-  return (
-    <div style={{ animation: "mslide .3s ease both" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8, marginBottom: 17 }}>
-        {tiles.map((t) => (
-          <div key={t.label} onClick={t.goto ? () => onGoto(t.goto as Tab) : undefined} title={t.hint} {...hp(`tile:${t.label}`)}
-            style={{ border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", borderTop: `2px solid ${t.accent}`, background: hov === `tile:${t.label}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "color-mix(in srgb, var(--panel2) 32%, transparent)", padding: "10px 11px", cursor: t.goto ? "pointer" : "default" }}>
-            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", display: "flex", alignItems: "center", gap: 5 }}>
-              <span>{t.label}</span>
-              {t.goto && <span style={{ color: "#456b65" }}>›</span>}
-            </div>
-            <div style={{ fontSize: 15, color: t.valueColor, marginTop: 6, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.value}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>SESSIONS ON THIS PROJECT</span>
-        <span style={{ flex: 1 }} />
-        <button onClick={() => setNsOpen((o) => !o)} title="new session on this project" {...hp("nsnew")}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "nsnew" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 9px", display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: 12 }}>+</span>NEW</button>
-      </div>
-
-      {nsOpen && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 5%, transparent)", padding: 12, marginBottom: 9, animation: "mslide .25s ease both" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flex: "none" }} />
-            <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txd)" }}>NEW SESSION · {name(project)}</span>
-          </div>
-          <div style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txl)", margin: "2px 0 6px" }}>BRANCH</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {branchList.map((b) => {
-              const on = !nsNewOpen && b === nsBranchSel;
-              return (
-                <button key={b} onClick={() => { setNsBranch(b); setNsNewOpen(false); }} {...hp(`nsb:${b}`)}
-                  style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${on || hov === `nsb:${b}` ? "var(--purple)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "transparent", color: on ? "#e7deff" : "var(--txm)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 8px" }}>
-                  <span style={{ color: "var(--purple)" }}>⎇</span>{b}</button>
-              );
-            })}
-            <button onClick={() => setNsNewOpen((o) => !o)} title="create a new branch for this session"
-              style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: nsNewOpen ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: ".5px", padding: "5px 9px" }}>+ NEW</button>
-          </div>
-          {nsNewOpen && (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7 }}>
-                <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>BRANCH FROM</span>
-                <button onClick={cycleNsParent} title="change parent branch — click to cycle" {...hp("nsparent")}
-                  style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, border: `1px solid ${hov === "nsparent" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 7px", minWidth: 0 }}>
-                  <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{nsNewParent}</span>
-                  <span style={{ color: "var(--purple-g)", flex: "none" }}>⟳</span>
-                </button>
-              </div>
-              <input value={nsNewBranch} onChange={(e) => setNsNewBranch(e.target.value)} placeholder="new-branch-name"
-                style={{ width: "100%", boxSizing: "border-box", marginTop: 7, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "7px 9px" }} />
-            </>
-          )}
-          <textarea value={nsTask} onChange={(e) => setNsTask(e.target.value)} placeholder="first instruction for Claude…"
-            style={{ width: "100%", boxSizing: "border-box", minHeight: 62, resize: "vertical", marginTop: 9, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 12, lineHeight: 1.5, padding: "9px 10px" }} />
-          <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
-            <button onClick={startNewSession} {...hp("nsstart")}
-              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "nsstart" ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <span style={{ color: "var(--acc)" }}>▸</span>START</button>
-            <button onClick={() => setNsOpen(false)} {...hp("nscancel")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "nscancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 12px" }}>CANCEL</button>
-          </div>
-        </div>
-      )}
-
-      {groups.map((g) => (
-        <div key={g.branch}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0 7px" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, letterSpacing: ".5px", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace" }}>
-              <span style={{ color: "var(--purple)" }}>⎇</span>{g.branch}</span>
-            <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--purple) 16%, transparent)" }} />
-            <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--purple-g)" }}>{g.sessions.length} SESSION{g.sessions.length === 1 ? "" : "S"}</span>
-          </div>
-          {g.sessions.map((s) => {
-            const surf = surfaceFor(s.origin);
-            const st = SURF_TINT[surf.code] ?? SURF_FALLBACK;
-            const state = status.get(s.id)?.state ?? "idle";
-            const sc = SESSION_ST[state] ?? SESSION_ST.idle;
-            const open = expanded === s.id;
-            return (
-              <div key={s.id} style={{ border: `1px solid ${open ? "color-mix(in srgb, var(--acc) 35%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)"}`, marginBottom: 7, background: open ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent" }}>
-                <div onClick={() => setExpanded((e) => (e === s.id ? null : s.id))} {...hp(`sess:${s.id}`)}
-                  style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 10px", cursor: "pointer", background: hov === `sess:${s.id}` ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent" }}>
-                  <span style={{ fontSize: 9, letterSpacing: 1, color: st.c, border: `1px solid ${st.bd}`, padding: "3px 4px", flex: "none", width: 26, textAlign: "center" }}>{surf.code}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "untitled"}</div>
-                    <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 2 }}>{machineFor(s.origin)} · {ago(s.updated) || "now"}</div>
-                  </div>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5, flex: "none" }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: sc.c }} />
-                    <span style={{ fontSize: 9, letterSpacing: 1, color: sc.c }}>{sc.l}</span>
-                  </span>
-                  <span style={{ fontSize: 11, color: "var(--txd)", flex: "none", width: 10, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
-                </div>
-                {open && (
-                  <div style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", padding: "11px 11px 12px", animation: "mslide .2s ease both" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <span style={{ flex: 1 }} />
-                      <button onClick={() => void archive(s)} {...hp(`arch:${s.id}`)}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === `arch:${s.id}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "#cf9387", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 10px" }}>ARCHIVE</button>
-                      <button onClick={() => onSelectSession(s)} {...hp(`att:${s.id}`)}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === `att:${s.id}` ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 12px", display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ color: "var(--acc)" }}>▸</span>ATTACH</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ))}
-      {visible.length === 0 && <div style={{ fontSize: 11, color: "var(--txl)", padding: "6px 2px" }}>No active sessions on this project.</div>}
-    </div>
-  );
-}
-
 /* ---------------- GIT (changes): working-tree master-detail + commit/push (design 656–728) ---------------- */
 
 interface DiffLine {
@@ -471,8 +248,8 @@ interface DiffLine {
 }
 
 const DIFF_VIEW: Record<DiffLine["kind"], { bg: string; sign: string; color: string }> = {
-  add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", sign: "var(--ok)", color: "#a7e6c3" },
-  del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", sign: "var(--err)", color: "#f0b0a8" },
+  add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", sign: "var(--ok)", color: "var(--ok)" },
+  del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", sign: "var(--err)", color: "var(--err)" },
   ctx: { bg: "transparent", sign: "var(--txg)", color: "var(--txd)" },
   hunk: { bg: "color-mix(in srgb, var(--acc) 6%, transparent)", sign: "var(--acc)", color: "var(--acc)" },
 };
@@ -595,10 +372,10 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
   }
 
   return (
-    <div style={{ animation: "mslide .3s ease both" }}>
+    <div style={{ animation: "mslide .3s ease both", height: "100%", display: "flex", flexDirection: "column" }}>
       {/* Header row always renders the branch switcher — inside the file grid it
           unmounted on a clean branch, leaving no way to switch back. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, flex: "none" }}>
         <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>WORKING TREE</span>
         <span style={{ flex: 1 }} />
         <div style={{ position: "relative", flex: "none" }}>
@@ -631,11 +408,11 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
             : "Working tree clean."}
         </div>
       )}
-      {/* Fixed height (not min-height): the file list and diff then scroll
-          inside their columns, keeping the commit box pinned at the bottom
-          instead of pushing it below the modal's own scroll. */}
+      {/* Fills the modal body (not min-height): the file list and diff then
+          scroll inside their columns, keeping the commit box pinned at the
+          bottom instead of pushing it below the modal's own scroll. */}
       {files.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", height: "clamp(362px, 58vh, 700px)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", flex: 1, minHeight: 0, overflow: "hidden" }}>
           {/* file list */}
           <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 12px 8px", flex: "none" }}>
@@ -668,7 +445,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
                   <span style={{ width: 5, height: 5, background: "var(--purple)", transform: "rotate(45deg)" }} />{genBusy ? "THINKING…" : "GEN"}</button>
               </div>
               {gitOp && (
-                <div style={{ margin: "8px 9px 0", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: "color-mix(in srgb, var(--ok) 6%, transparent)", color: "#a7e6c3", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "6px 9px", display: "flex", alignItems: "center", gap: 7, animation: "mslide .2s ease both" }}>
+                <div style={{ margin: "8px 9px 0", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: "color-mix(in srgb, var(--ok) 6%, transparent)", color: "var(--ok)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "6px 9px", display: "flex", alignItems: "center", gap: 7, animation: "mslide .2s ease both" }}>
                   <span style={{ color: "var(--ok)", flex: "none" }}>✓</span>
                   <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gitOp}</span>
                 </div>
@@ -679,16 +456,16 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
               </div>
               <div style={{ display: "flex", gap: 7, padding: "0 9px 9px" }}>
                 <button onClick={() => void doPush()} title="push to origin" {...hp("push")}
-                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "push" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "push" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                   <span style={{ color: "var(--ok)" }}>↑</span>PUSH {st?.ahead ?? 0}</button>
                 <button onClick={doPull} title="pull from origin" {...hp("pull")}
-                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "pull" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "pull" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                   <span style={{ color: "var(--info)" }}>↓</span>PULL {st?.behind ?? 0}</button>
               </div>
             </div>
           </div>
           {/* diff panel */}
-          <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, flex: "none" }}>
               <span style={{ color: FILE_COLOR(selFile?.status ?? "M"), fontWeight: 700 }}>{selFile?.status ?? ""}</span>
               <span style={{ flex: 1, color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{selName || ""}</span>
@@ -807,7 +584,7 @@ function IssuesTab({ project, info, onFeed, onReload }: {
       </div>
 
       {banner && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "#a7e6c3", fontSize: 10.5, letterSpacing: ".5px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both" }}>
+        <div style={{ border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "var(--ok)", fontSize: 10.5, letterSpacing: ".5px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both" }}>
           <span style={{ color: "var(--ok)" }}>▸</span>{banner}
         </div>
       )}
@@ -830,7 +607,7 @@ function IssuesTab({ project, info, onFeed, onReload }: {
           </div>
           <div style={{ display: "flex", gap: 7, marginTop: 10 }}>
             <button onClick={() => void create()} {...hp("createissue")}
-              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "createissue" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "#e7deff", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 7 }}>CREATE ISSUE</button>
+              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "createissue" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 7 }}>CREATE ISSUE</button>
             <button onClick={() => setNewOpen(false)} {...hp("cancelissue")}
               style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "cancelissue" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
           </div>
@@ -849,11 +626,11 @@ function IssuesTab({ project, info, onFeed, onReload }: {
                 <div key={i.number} onClick={() => setOpen(i.number)} data-ctx-type="issue" data-ctx-id={String(i.number)} data-ctx-label={`#${i.number}`} {...hp(`row:${i.number}`)}
                   style={{ border: `1px solid ${isOpen ? "color-mix(in srgb, var(--acc) 40%, transparent)" : hov === `row:${i.number}` ? "color-mix(in srgb, var(--acc) 30%, transparent)" : isSel ? "color-mix(in srgb, var(--acc) 25%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)"}`, borderLeft: `2px solid ${isOpen ? "var(--acc)" : "transparent"}`, padding: "9px 10px", marginBottom: 7, cursor: "pointer", background: isOpen ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", display: "flex", gap: 9 }}>
                   <span onClick={(e) => { e.stopPropagation(); toggleSel(i.number); }} title="select"
-                    style={{ width: 15, height: 15, border: `1px solid ${isSel ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: isSel ? "var(--acc)" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#06100e", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
+                    style={{ width: 15, height: 15, border: `1px solid ${isSel ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: isSel ? "var(--acc)" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--acc-on)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
                       <div style={{ fontSize: 12, color: "var(--txh)", lineHeight: 1.35, flex: 1 }}>{i.title}</div>
-                      {fed.has(i.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "#06100e", background: "var(--ok)", padding: "2px 5px", flex: "none" }}>✓</span>}
+                      {fed.has(i.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 5px", flex: "none" }}>✓</span>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 9.5, color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{i.number}</span>
@@ -887,7 +664,7 @@ function IssuesTab({ project, info, onFeed, onReload }: {
                   <span style={{ fontSize: 10, color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{selIssue.number}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", padding: "2px 8px" }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--ok)" }} />OPEN</span>
-                  {fed.has(selIssue.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "#06100e", background: "var(--ok)", padding: "2px 6px" }}>✓ FED</span>}
+                  {fed.has(selIssue.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 6px" }}>✓ FED</span>}
                   <span style={{ flex: 1 }} />
                   <button onClick={() => setOpen(null)} title="close detail" {...hp("closedetail")}
                     style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "closedetail" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 11, padding: "2px 8px", lineHeight: 1 }}>✕</button>
@@ -903,7 +680,7 @@ function IssuesTab({ project, info, onFeed, onReload }: {
               </div>
               <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
                 <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>DESCRIPTION</div>
-                <div style={{ fontSize: 12, color: "#bfe6de", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{selIssue.body || "No description."}</div>
+                <div style={{ fontSize: 12, color: "var(--tx)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{selIssue.body || "No description."}</div>
                 <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", margin: "18px 0 11px" }}>ACTIVITY</div>
                 {/* TODO(phase2-data): no issue-activity endpoint yet */}
                 <div style={{ fontSize: 10.5, color: "var(--txg)" }}>No activity yet.</div>
@@ -915,7 +692,7 @@ function IssuesTab({ project, info, onFeed, onReload }: {
                 <span style={{ flex: 1 }} />
                 {/* TODO(phase2-data): no close-issue endpoint yet (unwired in the design too) */}
                 <button {...hp("closeissue")}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === "closeissue" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "#cf9387", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>CLOSE ISSUE</button>
+                  style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === "closeissue" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>CLOSE ISSUE</button>
               </div>
             </>
           ) : (
@@ -961,15 +738,22 @@ function TerminalTab({ project, worktrees, branch, onCount }: {
     return () => { live = false; };
   }, [project]);
 
-  // reconnect to this project's persisted terminals
+  // reconnect to this project's persisted terminals — with none open, start one on
+  // the checked-out branch (the main checkout) so the tab lands on a live prompt
+  const autoOpened = useRef("");
   useEffect(() => {
     let live = true;
     void api.terminals(project).then((d) => {
       if (!live) return;
       setTerms(d.terminals);
       setActiveId((cur) => (cur && d.terminals.some((t) => t.id === cur)) ? cur : (d.terminals[0]?.id ?? null));
+      if (!d.terminals.length && autoOpened.current !== project) {
+        autoOpened.current = project;
+        void create(project);
+      }
     }).catch(() => {});
     return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
   useEffect(() => { onCount(terms.length); }, [terms, onCount]);
@@ -1040,7 +824,7 @@ function TerminalTab({ project, worktrees, branch, onCount }: {
         <span style={{ fontSize: 13, color: "var(--ok)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>$</span>
         <input value={runCmd} onChange={(e) => setRunCmd(e.target.value)} placeholder="command to run this project…"
           style={{ flex: 1, minWidth: 120, background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, padding: "7px 9px" }} />
-        <span title="auto-detected" style={{ fontSize: 8, letterSpacing: ".5px", color: "#456b65", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{runSource}</span>
+        <span title="auto-detected" style={{ fontSize: 8, letterSpacing: ".5px", color: "var(--txf)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{runSource}</span>
         {detected && !runCmd && (
           <button onClick={() => void genRun()} title="complex project — let Claude generate the run command" {...hp("gen")}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "gen" ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "7px 11px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
@@ -1054,7 +838,7 @@ function TerminalTab({ project, worktrees, branch, onCount }: {
         <div style={{ border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", color: "var(--err)", fontSize: 10.5, padding: "7px 11px", marginBottom: 9, fontFamily: "'JetBrains Mono',monospace" }}>{error}</div>
       )}
       {/* terminal box */}
-      <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 430, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
+      <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
         <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: "color-mix(in srgb, var(--panel2) 50%, transparent)", overflowX: "auto" }}>
           {terms.map((t) => {
             const on = t.id === activeId;
@@ -1083,10 +867,10 @@ function TerminalTab({ project, worktrees, branch, onCount }: {
         )}
         {terms.length === 0 ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 11 }}>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 22, color: "#243634" }}>❯_</span>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 22, color: "var(--txg)" }}>❯_</span>
             <div style={{ fontSize: 11, letterSpacing: 1.5, color: "var(--txl)" }}>NO OPEN TERMINALS</div>
             <button onClick={() => setNewOpen(true)} {...hp("emptynew")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: hov === "emptynew" ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "#bfe6de", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 14px" }}>+ NEW TERMINAL</button>
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: hov === "emptynew" ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 14px" }}>+ NEW TERMINAL</button>
           </div>
         ) : (
           /* real PTY panes replace the design's simulated output/input; all stay

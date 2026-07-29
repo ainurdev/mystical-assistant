@@ -189,7 +189,20 @@ function fmtElapsed(s: number): string {
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
-export function useRadio(): { radio: RadioState; toggle: () => void; next: () => void } {
+export interface Station {
+  title: string;
+  artist: string;
+}
+
+export const RADIO_STATIONS: Station[] = STATIONS.map(({ title, artist }) => ({ title, artist }));
+
+export function useRadio(volume: number): {
+  radio: RadioState;
+  toggle: () => void;
+  next: () => void;
+  station: number;
+  setStation: (i: number) => void;
+} {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [track, setTrack] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -202,6 +215,10 @@ export function useRadio(): { radio: RadioState; toggle: () => void; next: () =>
     audioRef.current = a;
     return () => { a.pause(); a.src = ""; };
   }, []);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+  }, [volume]);
 
   useEffect(() => {
     if (!playing) return;
@@ -229,9 +246,15 @@ export function useRadio(): { radio: RadioState; toggle: () => void; next: () =>
     play(n);
   }, [track, play]);
 
+  // Picking a station tunes to it; it only starts playing if the radio is on.
+  const setStation = useCallback((i: number) => {
+    setTrack(i);
+    if (playing) play(i);
+  }, [playing, play]);
+
   const st = STATIONS[track % STATIONS.length];
   return {
     radio: { playing, title: st.title, artist: st.artist, elapsed: fmtElapsed(elapsed) },
-    toggle, next,
+    toggle, next, station: track, setStation,
   };
 }

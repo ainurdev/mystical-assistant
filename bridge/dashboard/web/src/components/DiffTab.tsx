@@ -4,8 +4,8 @@ import { parseDiff, type DiffRow } from "../lib/diff";
 import { Skeleton } from "./ui";
 
 const ROW: Record<DiffRow["kind"], { bg: string; sign: string; color: string }> = {
-  add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", sign: "var(--success)", color: "#a7e6c3" },
-  del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", sign: "var(--danger)", color: "#f0b0a8" },
+  add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", sign: "var(--success)", color: "var(--ok)" },
+  del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", sign: "var(--danger)", color: "var(--err)" },
   ctx: { bg: "transparent", sign: "var(--muted-2)", color: "var(--txd)" },
   hunk: { bg: "var(--ac-06)", sign: "var(--primary)", color: "var(--primary)" },
 };

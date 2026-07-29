@@ -165,12 +165,12 @@ const crtHighlight = HighlightStyle.define([
   { tag: [t.color, t.constant(t.name), t.standard(t.name), t.bool], color: "var(--ok)" },
   { tag: [t.typeName, t.className, t.number, t.annotation, t.modifier, t.self, t.namespace], color: "var(--warn)" },
   { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link], color: "var(--acc)" },
-  { tag: [t.meta, t.comment], color: "#5a7772", fontStyle: "italic" },
+  { tag: [t.meta, t.comment], color: "var(--txd)", fontStyle: "italic" },
   { tag: t.strong, fontWeight: "bold" },
   { tag: t.emphasis, fontStyle: "italic" },
   { tag: t.strikethrough, textDecoration: "line-through" },
-  { tag: [t.string, t.inserted, t.special(t.string)], color: "#a7e6c3" },
-  { tag: t.invalid, color: "#f0b0a8" },
+  { tag: [t.string, t.inserted, t.special(t.string)], color: "var(--ok)" },
+  { tag: t.invalid, color: "var(--err)" },
 ]);
 
 const crtTheme = EditorView.theme({
@@ -536,8 +536,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   return (
     <div style={{ animation: "mslide .3s ease both", height: "100%" }}>
-      {/* fills the modal body when expanded; 430 floor when the modal is auto-height */}
-      <div style={{ position: "relative", display: "grid", gridTemplateColumns: "230px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", height: "100%", minHeight: 430, overflow: "hidden" }}>
+      {/* Fills the modal body exactly — no floor. A floor taller than the body
+          made the whole modal scroll, so a long file list pushed the buffer out
+          of view; explorer and buffer now scroll inside their own columns. */}
+      <div style={{ position: "relative", display: "grid", gridTemplateColumns: "230px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", height: "100%", minHeight: 0, overflow: "hidden" }}>
         {/* explorer */}
         <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, background: "color-mix(in srgb, var(--panel2) 35%, transparent)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>
@@ -623,7 +625,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             {editable ? (
               <div ref={hostRef} className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto" }} />
             ) : (
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: "#5a7772" }}>
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: "var(--txd)" }}>
                 {!open ? "Select a file to edit."
                   : !meta ? "Loading…"
                   : !meta.ok ? (meta.error || "Can't open this file.")
@@ -634,7 +636,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             )}
           </div>
           <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5 }}>
-            <span style={{ background: dirty ? "var(--warn)" : "var(--acc)", color: "#06100e", fontWeight: 700, letterSpacing: 1.5, padding: "5px 12px", flex: "none" }}>{saving ? "SAVING" : dirty ? "UNSAVED" : "EDIT"}</span>
+            <span style={{ background: dirty ? "var(--warn)" : "var(--acc)", color: "var(--acc-on)", fontWeight: 700, letterSpacing: 1.5, padding: "5px 12px", flex: "none" }}>{saving ? "SAVING" : dirty ? "UNSAVED" : "EDIT"}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 12px", color: "var(--txm)", flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--acc) 5%, transparent)" }}>
               <span style={{ color: "var(--purple)", flex: "none" }}>⎇ {branch || "—"}</span>
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{open || "no file"}</span>

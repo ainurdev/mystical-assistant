@@ -7,10 +7,12 @@ import {
   type Worktree,
 } from "../../api";
 
-/* WORKTREES tab of the Analyze modal — one card per branch (base checkout row +
-   a card for every other branch), with open/merge/merged action states, a
-   new-worktree creator, PR creation, and the delete-worktree confirm dialog.
-   Matches the HUD design mock (hud.dc.html lines 729–875 + 1236–1258). */
+/* WORKTREES tab of the Analyze modal — a compact one-line row per branch that
+   expands (accordion, one at a time) into its actions: checkout, open worktree,
+   attach session, merge, delete. Rows are grouped (live worktrees first, plain
+   branches folded behind a count) and filterable, so a repo with 50 branches
+   stays a list instead of 50 stacked cards. Plus the new-worktree creator, PR
+   creation, and the delete confirm dialog. */
 
 interface Props {
   project: string;
@@ -32,6 +34,8 @@ interface ConfirmState {
 }
 
 const MARK_COLOR = (s: string) => (s === "A" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
+const SECTION: React.CSSProperties = { fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", margin: "12px 0 5px" };
+const BTN: React.CSSProperties = { appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "5px 10px", lineHeight: 1.4, flex: "none" };
 
 export function WorktreesTab({
   project, sessions, worktrees, branches, defaultBranch, git,
@@ -61,6 +65,9 @@ export function WorktreesTab({
   const [parent, setParent] = useState("");
   const [branchInput, setBranchInput] = useState("");
   const [confirmDel, setConfirmDel] = useState<ConfirmState | null>(null);
+  const [expanded, setExpanded] = useState("");
+  const [q, setQ] = useState("");
+  const [showAll, setShowAll] = useState(false);
 
   // PR creation (head = the checked-out branch).
   const [prOpen, setPrOpen] = useState(false);
@@ -74,6 +81,13 @@ export function WorktreesTab({
   const list = branches.filter((b) => b !== base);
   const wtOpenCount = linked.length;
   const parentName = parent && branches.includes(parent) ? parent : cur;
+
+  const needle = q.trim().toLowerCase();
+  const hits = list.filter((b) => !needle || b.toLowerCase().includes(needle));
+  const liveRows = hits.filter((b) => wtByBranch.has(b));
+  const plainRows = hits.filter((b) => !wtByBranch.has(b));
+  // fold the long tail of worktree-less branches unless asked for / filtering
+  const folded = !showAll && !needle && plainRows.length > 8;
 
   // ahead/behind/dirty for each open worktree branch (real per-worktree git status)
   useEffect(() => {
@@ -138,12 +152,6 @@ export function WorktreesTab({
     } finally { setBusy(false); setConfirmDel(null); }
   }
 
-  function cycleParent() {
-    if (!branches.length) return;
-    const i = Math.max(0, branches.indexOf(parentName));
-    setParent(branches[(i + 1) % branches.length]);
-  }
-
   function createAndOpen() {
     const v = branchInput.trim().replace(/\s+/g, "-");
     if (!v) return;
@@ -164,13 +172,117 @@ export function WorktreesTab({
     } finally { setBusy(false); }
   }
 
+  /* one collapsed line per branch; the expanded one shows its actions */
+  function branchRow(name: string) {
+    const wt = wtByBranch.get(name);
+    const open = !!wt;
+    const isMerged = merged.has(name);
+    const sess = sessions.filter((s) => (s.branch || base) === name);
+    const st = stats[name];
+    const current = name === cur;
+    const on = expanded === name;
+    const dot = isMerged ? "var(--ok)" : open ? "var(--acc)" : "var(--txf)";
+    const edge = current ? "var(--acc)" : isMerged ? "color-mix(in srgb, var(--ok) 45%, transparent)" : open ? "color-mix(in srgb, var(--acc) 32%, transparent)" : "transparent";
+    const targets = branches.filter((b) => b !== name);
+    const mtSel = targets.includes(mergeTarget[name] || "") ? mergeTarget[name] : (targets.includes(base) ? base : (targets[0] || base));
+
+    return (
+      <div key={name} data-ctx-type="branch" data-ctx-id={name} data-ctx-label={name}
+        style={{ borderLeft: `2px solid ${edge}`, borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", background: on ? "color-mix(in srgb, var(--acc) 6%, transparent)" : current ? "color-mix(in srgb, var(--acc) 3%, transparent)" : "transparent" }}>
+        <div onClick={() => setExpanded((v) => (v === name ? "" : name))} {...hp(`row:${name}`)}
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", cursor: "pointer", background: hov === `row:${name}` && !on ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: dot, flex: "none" }} />
+          <span style={{ flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: current ? "var(--txb)" : open ? "var(--txh)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+          {current && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "1px 5px", flex: "none" }}>HEAD</span>}
+          {isMerged && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--ok)", flex: "none" }}>MERGED</span>}
+          {open && (
+            <span style={{ display: "flex", gap: 6, flex: "none", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "var(--txd)" }}>
+              <span style={{ color: "var(--ok)" }}>↑{st?.ahead ?? 0}</span>
+              <span style={{ color: "var(--info)" }}>↓{st?.behind ?? 0}</span>
+              {(st?.dirty ?? 0) > 0 && <span style={{ color: "var(--warn)" }}>●{st?.dirty}</span>}
+            </span>
+          )}
+          {sess.length > 0 && <span style={{ fontSize: 9, color: "var(--purple-d)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{sess.length}⧉</span>}
+          <span style={{ fontSize: 8, color: "var(--txd)", flex: "none", width: 8, textAlign: "center" }}>{on ? "▾" : "▸"}</span>
+        </div>
+
+        {on && (
+          <div style={{ padding: "2px 9px 9px", animation: "mslide .16s ease both" }}>
+            {open && <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "var(--txf)", marginBottom: 7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={wt.path}>{wt.path}</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              {!current && (
+                <button onClick={() => void checkout(name)} title="checkout this branch here" {...hp(`co:${name}`)}
+                  style={{ ...BTN, border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: hov === `co:${name}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--tx)" }}>⎇ CHECKOUT</button>
+              )}
+              {!open && !isMerged && (
+                <button onClick={() => onWorktreeSession(project, name, false)} title="create a worktree and start a session" {...hp(`open:${name}`)}
+                  style={{ ...BTN, border: "1px solid var(--acc)", background: hov === `open:${name}` ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)" }}>▸ OPEN WORKTREE</button>
+              )}
+              {open && (
+                <>
+                  <button onClick={() => { const s = sess[0]; if (s) onSelectSession(s); else onWorktreeSession(project, name, false); }} title="attach a session on this worktree" {...hp(`att:${name}`)}
+                    style={{ ...BTN, border: "1px solid var(--acc)", background: hov === `att:${name}` ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)" }}>▸ ATTACH SESSION</button>
+                  <button onClick={() => onWorktreeSession(project, name, false)} title="start another session on this worktree" {...hp(`plus:${name}`)}
+                    style={{ ...BTN, border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", background: hov === `plus:${name}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txm)", fontSize: 11, padding: "4px 9px" }}>+</button>
+                </>
+              )}
+              <span style={{ flex: 1 }} />
+              <button onClick={() => setConfirmDel({ branch: name, path: wt?.path ?? "", sessCount: sess.length, hasWorktree: open })} title={open ? "delete branch + worktree" : "delete branch"} {...hp(`del:${name}`)}
+                style={{ ...BTN, border: "1px solid color-mix(in srgb, var(--err) 28%, transparent)", background: hov === `del:${name}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: hov === `del:${name}` ? "var(--err)" : "var(--err-g)", fontSize: 11, padding: "4px 9px" }}>✕</button>
+            </div>
+
+            {open && !isMerged && (
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, paddingTop: 8, borderTop: "1px dashed color-mix(in srgb, var(--acc) 12%, transparent)" }}>
+                <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txd)", flex: "none" }}>MERGE INTO</span>
+                <div style={{ position: "relative", flex: 1, minWidth: 0, maxWidth: 280 }}>
+                  <button onClick={() => setMergeMenu((m) => (m === name ? "" : name))} title="choose destination branch" {...hp(`mt:${name}`)}
+                    style={{ width: "100%", boxSizing: "border-box", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `mt:${name}` ? "var(--ok)" : "color-mix(in srgb, var(--ok) 35%, transparent)"}`, background: "color-mix(in srgb, var(--ok) 5%, transparent)", color: "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 8px" }}>
+                    <span style={{ color: "var(--ok)", flex: "none" }}>⎇</span>
+                    <span style={{ flex: 1, minWidth: 0, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{mtSel}</span>
+                    <span style={{ color: "var(--txd)", flex: "none" }}>▾</span>
+                  </button>
+                  {mergeMenu === name && (
+                    <div className="mscroll" style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 12px 34px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
+                      <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>MERGE {name} INTO</div>
+                      {targets.map((m) => {
+                        const sel = m === mtSel;
+                        return (
+                          <button key={m} onClick={() => { setMergeTarget((t) => ({ ...t, [name]: m })); setMergeMenu(""); }} {...hp(`mti:${name}:${m}`)}
+                            style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, borderLeft: `2px solid ${sel ? "var(--ok)" : "transparent"}`, background: hov === `mti:${name}:${m}` ? "color-mix(in srgb, var(--ok) 10%, transparent)" : sel ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "transparent", color: sel ? "var(--txb)" : "var(--txm)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "6px 9px", textAlign: "left" }}>
+                            <span style={{ color: "var(--ok)", flex: "none" }}>⎇</span>
+                            <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m}</span>
+                            {sel && <span style={{ color: "var(--ok)", flex: "none" }}>✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => void doMerge(name, mtSel)} title="merge into the selected branch" {...hp(`mg:${name}`)}
+                  style={{ ...BTN, border: "1px solid var(--ok)", background: hov === `mg:${name}` ? "color-mix(in srgb, var(--ok) 24%, transparent)" : "color-mix(in srgb, var(--ok) 14%, transparent)", color: "var(--txb)", padding: "5px 12px" }}>▸ MERGE</button>
+              </div>
+            )}
+            {isMerged && (
+              <div style={{ marginTop: 7, fontSize: 9.5, letterSpacing: ".5px", color: "var(--ok)" }}>✓ merged into {mtSel}</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ animation: "mslide .3s ease both" }}>
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>WORKTREES</span>
           <span style={{ fontSize: 8.5, letterSpacing: ".5px", color: "var(--purple-g)" }}>{wtOpenCount} OPEN</span>
+          <span style={{ fontSize: 8.5, letterSpacing: ".5px", color: "var(--txd)" }}>{branches.length} BRANCHES</span>
           <span style={{ flex: 1 }} />
+          {list.length > 8 && (
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="filter…"
+              style={{ width: 130, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: `1px solid ${q ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "3px 7px" }} />
+          )}
           <span style={{ fontSize: 9, letterSpacing: ".5px", color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace" }}>●{git?.dirty ?? 0} ↑{git?.ahead ?? 0} ↓{git?.behind ?? 0}</span>
         </div>
 
@@ -186,134 +298,38 @@ export function WorktreesTab({
           <span style={{ fontSize: 12, color: "var(--acc)", flex: "none" }}>⎇</span>
           <button onClick={() => void checkout(base)} title={`checkout ${base}`} {...hp("base")}
             style={{ flex: 1, minWidth: 0, appearance: "none", border: 0, background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: hov === "base" ? "var(--txb)" : "var(--txh)" }}>{base}</button>
-          <span style={{ fontSize: 8, letterSpacing: 1, color: "#456b65", flex: "none" }}>BASE</span>
+          <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--txf)", flex: "none" }}>BASE</span>
           {cur === base && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "2px 6px", flex: "none" }}>HEAD</span>}
         </div>
 
-        {/* one card per non-base branch */}
-        {list.map((name) => {
-          const wt = wtByBranch.get(name);
-          const open = !!wt;
-          const isMerged = merged.has(name);
-          const sess = sessions.filter((s) => (s.branch || base) === name);
-          const st = stats[name];
-          const ahead = st?.ahead ?? 0;
-          const behind = st?.behind ?? 0;
-          const dirty = st?.dirty ?? 0;
-          const current = name === cur;
-          const accent = current ? "var(--acc)" : isMerged ? "color-mix(in srgb, var(--ok) 45%, transparent)" : open ? "color-mix(in srgb, var(--acc) 32%, transparent)" : "color-mix(in srgb, var(--acc) 10%, transparent)";
-          const cardBg = current ? "color-mix(in srgb, var(--acc) 5%, transparent)" : isMerged ? "color-mix(in srgb, var(--ok) 4%, transparent)" : "transparent";
-          const nameColor = current ? "var(--txb)" : open ? "var(--txh)" : "var(--txm)";
-          const statusColor = isMerged ? "var(--ok)" : open ? "var(--acc)" : "var(--txf)";
-          const statusLabel = isMerged ? "MERGED" : open ? "WORKTREE LIVE" : "NOT OPENED";
-          const targets = branches.filter((b) => b !== name);
-          const mtSel = targets.includes(mergeTarget[name] || "") ? mergeTarget[name] : (targets.includes(base) ? base : (targets[0] || base));
-          const showOpen = !open && !isMerged;
-          const showMerge = open && !isMerged;
-
-          return (
-            <div key={name} data-ctx-type="branch" data-ctx-id={name} data-ctx-label={name}
-              style={{ border: `1px solid ${accent}`, borderLeft: `2px solid ${accent}`, background: cardBg, padding: "9px 11px", marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12, color: accent, flex: "none" }}>⎇</span>
-                <button onClick={() => void checkout(name)} title="checkout" {...hp(`co:${name}`)}
-                  style={{ flex: 1, minWidth: 0, appearance: "none", border: 0, background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: hov === `co:${name}` ? "var(--txb)" : nameColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</button>
-                {current && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "2px 6px", flex: "none" }}>HEAD</span>}
-                <span style={{ display: "flex", alignItems: "center", gap: 5, flex: "none" }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor }} />
-                  <span style={{ fontSize: 8, letterSpacing: 1, color: statusColor }}>{statusLabel}</span>
-                </span>
-              </div>
-              {open && (
-                <>
-                  <div style={{ marginTop: 7, fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "var(--txf)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={wt.path}>{wt.path}</div>
-                  <div style={{ marginTop: 5, display: "flex", alignItems: "center", gap: 10, fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "var(--txd)" }}>
-                    <span style={{ color: "var(--ok)" }}>↑{ahead}</span>
-                    <span style={{ color: "var(--info)" }}>↓{behind}</span>
-                    {dirty > 0 && <span style={{ color: "var(--warn)" }}>●{dirty} dirty</span>}
-                    <span style={{ flex: 1 }} />
-                    <span style={{ color: "var(--purple-d)" }}>{sess.length} session{sess.length === 1 ? "" : "s"}</span>
-                  </div>
-                </>
-              )}
-              <div style={{ marginTop: 10 }}>
-                {showOpen && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <button onClick={() => onWorktreeSession(project, name, false)} title="create a worktree and start a session" {...hp(`open:${name}`)}
-                      style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === `open:${name}` ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                      <span style={{ color: "var(--acc)" }}>▸</span>OPEN WORKTREE</button>
-                    <button onClick={() => setConfirmDel({ branch: name, path: "", sessCount: sess.length, hasWorktree: open })} title="delete branch" {...hp(`del:${name}`)}
-                      style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 28%, transparent)", background: hov === `del:${name}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: hov === `del:${name}` ? "var(--err)" : "var(--err-g)", fontFamily: "inherit", fontSize: 12, padding: "7px 10px", flex: "none", lineHeight: 1 }}>✕</button>
-                  </div>
-                )}
-                {showMerge && (
-                  <>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <button onClick={() => { const s = sess[0]; if (s) onSelectSession(s); else onWorktreeSession(project, name, false); }} title="attach a session on this worktree" {...hp(`att:${name}`)}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === `att:${name}` ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "7px 12px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ color: "var(--acc)" }}>▸</span>ATTACH SESSION</button>
-                      <button onClick={() => onWorktreeSession(project, name, false)} title="start another session on this worktree" {...hp(`plus:${name}`)}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", background: hov === `plus:${name}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 12, padding: "6px 10px", flex: "none", lineHeight: 1 }}>+</button>
-                      <span style={{ flex: 1 }} />
-                      <button onClick={() => setConfirmDel({ branch: name, path: wt?.path ?? "", sessCount: sess.length, hasWorktree: open })} title="delete branch + worktree" {...hp(`del:${name}`)}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 28%, transparent)", background: hov === `del:${name}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: hov === `del:${name}` ? "var(--err)" : "var(--err-g)", fontFamily: "inherit", fontSize: 12, padding: "6px 10px", flex: "none", lineHeight: 1 }}>✕</button>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, paddingTop: 9, borderTop: "1px dashed color-mix(in srgb, var(--acc) 12%, transparent)" }}>
-                      <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txd)", flex: "none" }}>MERGE INTO</span>
-                      <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-                        <button onClick={() => setMergeMenu((m) => (m === name ? "" : name))} title="choose destination branch" {...hp(`mt:${name}`)}
-                          style={{ width: "100%", boxSizing: "border-box", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `mt:${name}` ? "var(--ok)" : "color-mix(in srgb, var(--ok) 35%, transparent)"}`, background: "color-mix(in srgb, var(--ok) 5%, transparent)", color: "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "6px 9px" }}>
-                          <span style={{ color: "var(--ok)", flex: "none" }}>⎇</span>
-                          <span style={{ flex: 1, minWidth: 0, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{mtSel}</span>
-                          <span style={{ color: "var(--txd)", flex: "none" }}>▾</span>
-                        </button>
-                        {mergeMenu === name && (
-                          <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, zIndex: 30, border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 12px 34px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
-                            <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>MERGE {name} INTO</div>
-                            {targets.map((m) => {
-                              const on = m === mtSel;
-                              return (
-                                <button key={m} onClick={() => { setMergeTarget((t) => ({ ...t, [name]: m })); setMergeMenu(""); }} {...hp(`mti:${name}:${m}`)}
-                                  style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, borderLeft: `2px solid ${on ? "var(--ok)" : "transparent"}`, background: hov === `mti:${name}:${m}` ? "color-mix(in srgb, var(--ok) 10%, transparent)" : on ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "transparent", color: on ? "var(--txb)" : "var(--txm)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "7px 9px", textAlign: "left" }}>
-                                  <span style={{ color: "var(--ok)", flex: "none" }}>⎇</span>
-                                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m}</span>
-                                  {on && <span style={{ color: "var(--ok)", flex: "none" }}>✓</span>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      <button onClick={() => void doMerge(name, mtSel)} title="merge into the selected branch" {...hp(`mg:${name}`)}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === `mg:${name}` ? "color-mix(in srgb, var(--ok) 24%, transparent)" : "color-mix(in srgb, var(--ok) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 14px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ color: "var(--ok)" }}>▸</span>MERGE</button>
-                    </div>
-                  </>
-                )}
-                {isMerged && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 9.5, letterSpacing: ".5px", color: "var(--ok)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ flex: "none" }}>✓</span>merged into {mtSel}</span>
-                    <button onClick={() => setConfirmDel({ branch: name, path: wt?.path ?? "", sessCount: sess.length, hasWorktree: open })} title="delete merged branch + worktree" {...hp(`delm:${name}`)}
-                      style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)", background: hov === `delm:${name}` ? "color-mix(in srgb, var(--err) 18%, transparent)" : "color-mix(in srgb, var(--err) 8%, transparent)", color: "var(--err)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 11px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
-                      <span>✕</span>DELETE BRANCH</button>
-                  </div>
-                )}
-              </div>
+        {/* live worktrees, then the worktree-less tail */}
+        {liveRows.length > 0 && (
+          <>
+            <div style={SECTION}>LIVE WORKTREES · {liveRows.length}</div>
+            {liveRows.map(branchRow)}
+          </>
+        )}
+        {plainRows.length > 0 && (
+          <>
+            <div onClick={() => folded && setShowAll(true)} style={{ ...SECTION, cursor: folded ? "pointer" : "default", display: "flex", alignItems: "center", gap: 7 }}>
+              <span>BRANCHES · {plainRows.length}</span>
+              {folded && <span style={{ color: "var(--acc)" }}>▾ SHOW ALL</span>}
             </div>
-          );
-        })}
+            {(folded ? plainRows.slice(0, 8) : plainRows).map(branchRow)}
+          </>
+        )}
+        {hits.length === 0 && (
+          <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "10px 2px" }}>No branch matches “{q}”.</div>
+        )}
 
         {/* new worktree */}
-        <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 25%, transparent)", background: "color-mix(in srgb, var(--purple) 4%, transparent)", padding: "8px 9px" }}>
+        <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 25%, transparent)", background: "color-mix(in srgb, var(--purple) 4%, transparent)", padding: "8px 9px", marginTop: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
             <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>NEW WORKTREE FROM</span>
-            <button onClick={cycleParent} title="change parent branch — click to cycle" {...hp("cycle")}
-              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "cycle" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 35%, transparent)"}`, background: hov === "cycle" ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 8px", minWidth: 0 }}>
-              <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{parentName}</span>
-              <span style={{ color: "var(--purple-g)", fontSize: 10, flex: "none" }}>⟳</span>
-            </button>
+            <select value={parentName} onChange={(e) => setParent(e.target.value)} title="parent branch"
+              style={{ appearance: "none", cursor: "pointer", maxWidth: 200, border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 8px", outline: "none" }}>
+              {branches.map((b) => <option key={b} value={b} style={{ background: "var(--panel2)" }}>⎇ {b}</option>)}
+            </select>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ fontSize: 13, color: "var(--purple)", flex: "none" }}>⎇</span>
@@ -350,16 +366,10 @@ export function WorktreesTab({
             <input value={prTitle} onChange={(e) => setPrTitle(e.target.value)} placeholder="pull request title…"
               style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 11.5, padding: "7px 9px" }} />
             <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", margin: "10px 0 6px" }}>MERGE INTO · DESTINATION</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {prDests.map((d) => {
-                const on = d === prBaseSel;
-                return (
-                  <button key={d} onClick={() => setPrBase(d)} {...hp(`prb:${d}`)}
-                    style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on || hov === `prb:${d}` ? "var(--purple)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "transparent", color: on ? "var(--purple-b)" : "var(--txm)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "5px 8px", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ color: "var(--purple)" }}>⎇</span>{d}</button>
-                );
-              })}
-            </div>
+            <select value={prBaseSel} onChange={(e) => setPrBase(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-b)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "6px 9px", outline: "none" }}>
+              {prDests.map((d) => <option key={d} value={d} style={{ background: "var(--panel2)" }}>⎇ {d}</option>)}
+            </select>
             <div style={{ marginTop: 9, border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: "color-mix(in srgb, var(--panel2) 50%, transparent)", padding: "8px 10px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'JetBrains Mono',monospace", fontSize: 10 }}>
                 <span style={{ color: "var(--purple-h)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cur} → {prBaseSel}</span>
@@ -409,7 +419,7 @@ export function WorktreesTab({
             </div>
             <div style={{ padding: "16px 18px" }}>
               <div style={{ fontSize: 12.5, color: "var(--txh)", lineHeight: 1.6 }}>
-                Removes the worktree checkout and deletes branch <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "#e7b0a6" }}>⎇ {confirmDel.branch}</span>. This can’t be undone.
+                Removes the worktree checkout and deletes branch <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--err)" }}>⎇ {confirmDel.branch}</span>. This can’t be undone.
               </div>
               <div style={{ marginTop: 11, fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "var(--txf)", borderLeft: "2px solid color-mix(in srgb, var(--err) 30%, transparent)", padding: "3px 0 3px 10px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {confirmDel.hasWorktree ? confirmDel.path : "no worktree checkout — deletes the branch ref only"}

@@ -247,6 +247,25 @@ body {
 [data-theme="newsprint"] .glow { text-shadow: none; }
 [data-theme="blueprint"] .panel { border-style: dashed !important; border-radius: 0; }
 [data-theme="blueprint"] .glow { text-shadow: none; }
+/* claude = the app's own surfaces: soft cards, no corner ticks, no bloom. */
+[data-theme^="claude"] .panel::before,
+[data-theme^="claude"] .panel::after { display: none; }
+[data-theme^="claude"] .panel { border-radius: 12px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }
+[data-theme^="claude"] button,
+[data-theme^="claude"] input,
+[data-theme^="claude"] textarea { border-radius: 8px; }
+[data-theme^="claude"] .glow { text-shadow: none; }
+
+/* A one-sided rule — a tab underline, a rail marker, a row divider — must stay
+   square: a radius on a single border edge renders a stray floating arc. The
+   HUD draws those inline, so match the style attribute the element carries.
+   Higher specificity than the per-theme radius rules above, so it wins. */
+[data-theme] button[style*="border-bottom"],
+[data-theme] button[style*="border-left"],
+[data-theme] button[style*="border-top"],
+[data-theme] button[style*="border-right"],
+[data-theme] input[style*="border-bottom"],
+[data-theme] textarea[style*="border-bottom"] { border-radius: 0; }
 
 .crt {
   position: fixed;

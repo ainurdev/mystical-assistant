@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
+import { UpdateButton } from "./UpdateButton";
 
 export interface StripProps {
   radio: { playing: boolean; title: string; artist: string; elapsed: string };
@@ -12,6 +13,7 @@ export interface StripProps {
   onSetCity: (city: string) => Promise<string | null>;
   onSetUnit: (unit: string) => Promise<string | null>;
   openSettings?: number; // nonce — bump to open the clock & weather popover (from the context menu)
+  onFeed: (texts: string[]) => void; // composer inject — a failed update hands git's error to Claude
 }
 
 // Segmented-control button style for the popover's 24H/12H and °C/°F pickers.
@@ -23,7 +25,7 @@ const seg = (on: boolean): CSSProperties => ({
 });
 
 export function Strip(props: StripProps) {
-  const { radio, onToggleRadio, onNextRadio, onOpenSettings, clock, weather, onSetCity, onSetUnit, openSettings } = props;
+  const { radio, onToggleRadio, onNextRadio, onOpenSettings, clock, weather, onSetCity, onSetUnit, openSettings, onFeed } = props;
   const [nextHover, setNextHover] = useState(false);
   const [gearHover, setGearHover] = useState(false);
   const [clockHover, setClockHover] = useState(false);
@@ -167,7 +169,7 @@ export function Strip(props: StripProps) {
             <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "11px" }}>
               <span style={{ fontSize: "9px", letterSpacing: "2px", color: "var(--acc)" }}>CLOCK &amp; WEATHER</span>
               <span style={{ flex: 1 }}></span>
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "9px", color: "#456b65" }}>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "9px", color: "var(--txf)" }}>
                 {weather.cond} {wxTempStr}
               </span>
             </div>
@@ -287,7 +289,7 @@ export function Strip(props: StripProps) {
             <span
               style={{
                 fontSize: "7.5px",
-                color: "#456b65",
+                color: "var(--txf)",
                 flex: "none",
                 fontFamily: "'JetBrains Mono',monospace",
               }}
@@ -335,6 +337,7 @@ export function Strip(props: StripProps) {
       <span
         style={{ width: "1px", height: "18px", background: "color-mix(in srgb, var(--acc) 18%, transparent)" }}
       ></span>
+      <UpdateButton onFeed={onFeed} />
       <NotificationCenter />
       <button
         onClick={onOpenSettings}

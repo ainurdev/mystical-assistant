@@ -13,7 +13,6 @@ interface Props {
   onSetHidden: (rels: string[], hidden: boolean) => void; // one row, or a whole org
   onRemove: (rel: string) => void;
   onImport: (path: string) => void;
-  onRefresh: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -23,10 +22,9 @@ function basename(rel: string): string {
 }
 
 export function ManageProjectsModal(props: Props) {
-  const { groups, imported, hidden, onSetHidden, onRemove, onImport, onRefresh, onClose } = props;
+  const { groups, imported, hidden, onSetHidden, onRemove, onImport, onClose } = props;
   const [importPath, setImportPath] = useState("");
   const [hov, setHov] = useState("");
-  const [scanning, setScanning] = useState(false);
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const rows = [
@@ -73,10 +71,6 @@ export function ManageProjectsModal(props: Props) {
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>MANAGE</span>
           <span style={{ fontSize: 15, color: "var(--txb)", letterSpacing: ".5px" }}>Projects</span>
           <span style={{ flex: 1 }} />
-          <button
-            onClick={() => { setScanning(true); void onRefresh().finally(() => setScanning(false)); }}
-            disabled={scanning} title="rescan disk for newly added repos" {...hp("refresh")}
-            style={{ appearance: "none", cursor: scanning ? "default" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "refresh" && !scanning ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: scanning ? "var(--txd)" : "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "6px 12px" }}>{scanning ? "SCANNING…" : "↻ REFRESH"}</button>
           <button onClick={onClose} {...hp("esc")}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "esc" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "6px 12px" }}>ESC ✕</button>
         </div>

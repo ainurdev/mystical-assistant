@@ -41,7 +41,7 @@ import signal
 import sys
 
 from bridge import (config, devserver, limits, native_activity, pubsub, recovery,
-                    state, store, tunnel)
+                    selfupdate, state, store, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -149,6 +149,11 @@ def main():
         print("\nShutting down…")
     finally:
         _shutdown()
+    # The dashboard's "update" pulled new commits and asked for a restart: re-exec
+    # now that everything is stopped, so the fresh code runs in this same PID.
+    if selfupdate.restart_requested:
+        print("↻ Restarting after update…")
+        selfupdate.exec_self()
 
 
 if __name__ == "__main__":

@@ -19,7 +19,31 @@ export type ThemeKey =
   | "normal"
   | "newsprint"
   | "candy"
-  | "blueprint";
+  | "blueprint"
+  | "claude"
+  | "claude-dark";
+
+/**
+ * AURORA is one theme in four colours — same glass, same CRT, only the
+ * hue-rotate differs. The picker shows a single card with a colour row; each
+ * colour stays its own ThemeKey underneath so nothing else has to know.
+ */
+export const AURORA_KEYS: ThemeKey[] = ["aqua", "green", "amber", "magenta"];
+
+/** CLAUDE ships light and dark; same card, two grounds. */
+export const CLAUDE_KEYS: ThemeKey[] = ["claude", "claude-dark"];
+
+const FAMILIES: ThemeKey[][] = [AURORA_KEYS, CLAUDE_KEYS];
+
+/** Two keys that are the same profile in another colour/ground. */
+export function sameFamily(a: ThemeKey, b: ThemeKey): boolean {
+  return FAMILIES.some((f) => f.includes(a) && f.includes(b));
+}
+
+/** CRT effects belong to the sci-fi glass only; paper and daylight themes hide them. */
+export function themeHasCrt(t: ThemeKey): boolean {
+  return AURORA_KEYS.includes(t);
+}
 
 /** One decomposed CSS-filter op — feeds the inverse color matrix below. */
 export type FilterOp = readonly [
@@ -55,11 +79,14 @@ export const THEME_DEFS: ThemeDef[] = [
   { key: "magenta", name: "NOVA", feel: "neon district · synthwave", filter: "hue-rotate(132deg) saturate(1.6)", ops: [["hue", 132], ["sat", 1.6]], sw: "#ff7ad9", bg: "rgba(28,8,34,.55)", pbg: "#090410", crt: true, swp: true, glw: true, canvas: "#060a0a", font: "", prad: "0" },
   // The 5 palette themes: filter:"none" + an explicit `pal{}` (true colours), per
   // the design mock. `canvas` is the real (often light) ground; `sw` the picker swatch.
-  { key: "adventure", name: "ADVENTURE", feel: "quest log · tavern & gold", filter: "none", ops: [], sw: "#d9a94e", bg: "rgba(30,22,8,.5)", pbg: "#0c0805", crt: false, swp: false, glw: true, canvas: "radial-gradient(120% 90% at 50% 0%, #1a1208 0%, #0b0704 70%)", font: "'IM Fell English',Georgia,serif", prad: "2px", pal: { acc: "#d9a94e", "acc-on": "#241706", ok: "#9ec06a", warn: "#e0b45e", err: "#d0745a", "err-hi": "#f0c8b4", "err-b": "#f6d8c8", "err-g": "#a4735c", info: "#8fb6d9", "info-hi": "#aecfe8", "info-b": "#cfe4f4", purple: "#b591c9", "purple-d": "#a680ba", "purple-h": "#c8a8d8", "purple-b": "#e2ccec", "purple-g": "#7e6690", txb: "#f4e8ce", txh: "#e4d4b2", tx: "#d4c29a", txm: "#b6a17a", txd: "#93805c", txf: "#7a6848", txl: "#645430", txg: "#463a22", panel: "#171006", panel2: "#110b04", panel3: "#0a0702", mono: "'JetBrains Mono',monospace" } },
-  { key: "normal", name: "NORMAL", feel: "plain dashboard · daylight", filter: "none", ops: [], sw: "#2f7cc4", bg: "rgba(16,20,22,.4)", pbg: "#eef1f3", crt: false, swp: false, glw: false, canvas: "#eef1f4", font: "system-ui,-apple-system,'Segoe UI',sans-serif", prad: "6px", pal: { acc: "#2f7cc4", "acc-on": "#ffffff", ok: "#1e9e5a", warn: "#b0821c", err: "#d05252", "err-hi": "#8c3030", "err-b": "#7c2828", "err-g": "#c08a8a", info: "#2f6fc4", "info-hi": "#255ba6", "info-b": "#1c4680", purple: "#7b5bd6", "purple-d": "#8a6ee0", "purple-h": "#6a4ec2", "purple-b": "#523aa6", "purple-g": "#a89ac8", txb: "#111e28", txh: "#22343f", tx: "#31454f", txm: "#50666f", txd: "#71858e", txf: "#8fa0a8", txl: "#a2b1b8", txg: "#cdd8dc", panel: "#ffffff", panel2: "#f4f7f9", panel3: "#e8edf1", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
-  { key: "newsprint", name: "NEWSPRINT", feel: "morning paper · ink & pulp", filter: "none", ops: [], sw: "#1f1f1f", bg: "rgba(17,17,17,.4)", pbg: "#f2f0ea", crt: false, swp: false, glw: false, canvas: "#f0ede4", font: "Georgia,'Times New Roman',serif", prad: "0", pal: { acc: "#1f1f1f", "acc-on": "#f6f4ee", ok: "#2c5e3f", warn: "#87681d", err: "#9e3535", "err-hi": "#5e2020", "err-b": "#4e1a1a", "err-g": "#9a6a6a", info: "#2b4a68", "info-hi": "#223c56", "info-b": "#1a2e42", purple: "#50505e", "purple-d": "#606070", "purple-h": "#40404c", "purple-b": "#30303a", "purple-g": "#90909c", txb: "#141414", txh: "#242424", tx: "#333333", txm: "#4d4d4d", txd: "#6e6e6e", txf: "#8a8a8a", txl: "#9c9c9c", txg: "#c6c4bc", panel: "#faf8f2", panel2: "#f0eee6", panel3: "#e5e2d8", mono: "'Courier New',monospace" } },
-  { key: "candy", name: "CANDY", feel: "bubblegum · playful pop", filter: "none", ops: [], sw: "#e0559a", bg: "rgba(18,16,14,.4)", pbg: "#fdedf4", crt: false, swp: false, glw: false, canvas: "linear-gradient(180deg,#fdeef6,#f8e4ef)", font: "'Trebuchet MS','Comic Sans MS',sans-serif", prad: "99px", pal: { acc: "#e0559a", "acc-on": "#ffffff", ok: "#18a06c", warn: "#d0821e", err: "#e0556b", "err-hi": "#8c2c3c", "err-b": "#7a2434", "err-g": "#c88a96", info: "#4e7de0", "info-hi": "#3c67c2", "info-b": "#2c50a2", purple: "#a262e0", "purple-d": "#b47ae8", "purple-h": "#8e4cd0", "purple-b": "#7038b0", "purple-g": "#c8a2e0", txb: "#3a1226", txh: "#4e2036", tx: "#603046", txm: "#7c4a60", txd: "#96647e", txf: "#ac8298", txl: "#ba94a8", txg: "#e4c8d4", panel: "#fff8fc", panel2: "#fceaf3", panel3: "#f6dcea", mono: "Menlo,Consolas,monospace" } },
-  { key: "blueprint", name: "BLUEPRINT", feel: "drafting table · dashed ink", filter: "none", ops: [], sw: "#7fb0ff", bg: "rgba(5,10,22,.55)", pbg: "#061024", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(0deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),repeating-linear-gradient(90deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),#06101f", font: "", prad: "0", pal: { acc: "#7fb0ff", "acc-on": "#04101f", ok: "#74d0a6", warn: "#e0c279", err: "#e08a8a", "err-hi": "#f0cccc", "err-b": "#f6dada", "err-g": "#a06a6a", info: "#9cc2ff", "info-hi": "#c2daff", "info-b": "#e0edff", purple: "#a6b9ff", "purple-d": "#94a8f0", "purple-h": "#bccbff", "purple-b": "#dde5ff", "purple-g": "#68729e", txb: "#e8f0fc", txh: "#cdd9ee", tx: "#b4c4de", txm: "#93a6c4", txd: "#6d82a4", txf: "#586c8c", txl: "#465878", txg: "#32405c", panel: "#081226", panel2: "#060e1c", panel3: "#040912", mono: "'JetBrains Mono',monospace" } },
+  { key: "adventure", name: "ADVENTURE", feel: "quest log · tavern & gold", filter: "none", ops: [], sw: "#d9a94e", bg: "rgba(30,22,8,.5)", pbg: "#0c0805", crt: false, swp: false, glw: true, canvas: "radial-gradient(120% 90% at 50% 0%, #1a1208 0%, #0b0704 70%)", font: "'IM Fell English',Georgia,serif", prad: "2px", pal: { acc: "#d9a94e", "acc-on": "#241706", ok: "#9ec06a", warn: "#e0b45e", err: "#d0745a", "err-hi": "#f0c8b4", "err-b": "#f6d8c8", "err-g": "#a4735c", info: "#8fb6d9", "info-hi": "#aecfe8", "info-b": "#cfe4f4", purple: "#b591c9", "purple-d": "#a680ba", "purple-h": "#c8a8d8", "purple-b": "#e2ccec", "purple-g": "#7e6690", txb: "#f4e8ce", txh: "#e4d4b2", tx: "#d4c29a", txm: "#b6a17a", txd: "#9e8a63", txf: "#957f58", txl: "#907945", txg: "#463a22", panel: "#171006", panel2: "#110b04", panel3: "#0a0702", mono: "'JetBrains Mono',monospace" } },
+  { key: "normal", name: "NORMAL", feel: "plain dashboard · daylight", filter: "none", ops: [], sw: "#2f7cc4", bg: "rgba(16,20,22,.4)", pbg: "#eef1f3", crt: false, swp: false, glw: false, canvas: "#eef1f4", font: "system-ui,-apple-system,'Segoe UI',sans-serif", prad: "6px", pal: { acc: "#2f7cc4", "acc-on": "#ffffff", ok: "#1e9e5a", warn: "#b0821c", err: "#d05252", "err-hi": "#8c3030", "err-b": "#7c2828", "err-g": "#c08a8a", info: "#2f6fc4", "info-hi": "#255ba6", "info-b": "#1c4680", purple: "#7b5bd6", "purple-d": "#8a6ee0", "purple-h": "#6a4ec2", "purple-b": "#523aa6", "purple-g": "#a89ac8", txb: "#111e28", txh: "#22343f", tx: "#31454f", txm: "#485c64", txd: "#5a6a72", txf: "#61747d", txl: "#657a84", txg: "#cdd8dc", panel: "#ffffff", panel2: "#f4f7f9", panel3: "#e8edf1", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
+  { key: "newsprint", name: "NEWSPRINT", feel: "morning paper · ink & pulp", filter: "none", ops: [], sw: "#1f1f1f", bg: "rgba(17,17,17,.4)", pbg: "#f2f0ea", crt: false, swp: false, glw: false, canvas: "#f0ede4", font: "Georgia,'Times New Roman',serif", prad: "0", pal: { acc: "#1f1f1f", "acc-on": "#f6f4ee", ok: "#2c5e3f", warn: "#87681d", err: "#9e3535", "err-hi": "#5e2020", "err-b": "#4e1a1a", "err-g": "#9a6a6a", info: "#2b4a68", "info-hi": "#223c56", "info-b": "#1a2e42", purple: "#50505e", "purple-d": "#606070", "purple-h": "#40404c", "purple-b": "#30303a", "purple-g": "#90909c", txb: "#141414", txh: "#242424", tx: "#333333", txm: "#4d4d4d", txd: "#646464", txf: "#6d6d6d", txl: "#727272", txg: "#c6c4bc", panel: "#faf8f2", panel2: "#f0eee6", panel3: "#e5e2d8", mono: "'Courier New',monospace" } },
+  { key: "candy", name: "CANDY", feel: "bubblegum · playful pop", filter: "none", ops: [], sw: "#e0559a", bg: "rgba(18,16,14,.4)", pbg: "#fdedf4", crt: false, swp: false, glw: false, canvas: "linear-gradient(180deg,#fdeef6,#f8e4ef)", font: "'Trebuchet MS','Comic Sans MS',sans-serif", prad: "99px", pal: { acc: "#e0559a", "acc-on": "#ffffff", ok: "#18a06c", warn: "#d0821e", err: "#e0556b", "err-hi": "#8c2c3c", "err-b": "#7a2434", "err-g": "#c88a96", info: "#4e7de0", "info-hi": "#3c67c2", "info-b": "#2c50a2", purple: "#a262e0", "purple-d": "#b47ae8", "purple-h": "#8e4cd0", "purple-b": "#7038b0", "purple-g": "#c8a2e0", txb: "#3a1226", txh: "#4e2036", tx: "#603046", txm: "#78475d", txd: "#83586e", txf: "#905f79", txl: "#9a6380", txg: "#e4c8d4", panel: "#fff8fc", panel2: "#fceaf3", panel3: "#f6dcea", mono: "Menlo,Consolas,monospace" } },
+  // Claude's own surfaces: cream ground, clay accent, system type, no effects.
+  { key: "claude", name: "CLAUDE", feel: "the app itself · nothing to look at", filter: "none", ops: [], sw: "#c96442", bg: "rgba(240,238,230,.45)", pbg: "#f5f4ee", crt: false, swp: false, glw: false, canvas: "#faf9f5", font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", pal: { acc: "#c96442", "acc-on": "#ffffff", ok: "#3d8a5f", warn: "#a8761f", err: "#bc4b3c", "err-hi": "#8a3328", "err-b": "#742a21", "err-g": "#c49a92", info: "#3c6ea8", "info-hi": "#2f5a8a", "info-b": "#24466c", purple: "#7a63c4", "purple-d": "#8a75ce", "purple-h": "#6a52b4", "purple-b": "#54409a", "purple-g": "#a99ccc", txb: "#141413", txh: "#23231f", tx: "#3d3d3a", txm: "#57564f", txd: "#696860", txf: "#737167", txl: "#79776a", txg: "#d8d5c9", panel: "#ffffff", panel2: "#faf9f5", panel3: "#f0eee6", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
+  { key: "claude-dark", name: "CLAUDE", feel: "the app itself · lights out", filter: "none", ops: [], sw: "#d97757", bg: "rgba(30,30,29,.55)", pbg: "#262624", crt: false, swp: false, glw: false, canvas: "#262624", font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", pal: { acc: "#d97757", "acc-on": "#1f1f1e", ok: "#6bbf8a", warn: "#d8a657", err: "#e0796a", "err-hi": "#f2b5aa", "err-b": "#f8d3cc", "err-g": "#9c7068", info: "#7fb0e0", "info-hi": "#a8cbee", "info-b": "#cfe3f7", purple: "#a99cdb", "purple-d": "#9a8cd0", "purple-h": "#bfb4e8", "purple-b": "#dcd6f4", "purple-g": "#6e6890", txb: "#f5f4ef", txh: "#eceae5", tx: "#d7d5cd", txm: "#bfbdb4", txd: "#aba9a0", txf: "#a09d97", txl: "#999690", txg: "#4a4844", panel: "#30302e", panel2: "#262624", panel3: "#1f1f1e", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
+  { key: "blueprint", name: "BLUEPRINT", feel: "drafting table · dashed ink", filter: "none", ops: [], sw: "#7fb0ff", bg: "rgba(5,10,22,.55)", pbg: "#061024", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(0deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),repeating-linear-gradient(90deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),#06101f", font: "", prad: "0", pal: { acc: "#7fb0ff", "acc-on": "#04101f", ok: "#74d0a6", warn: "#e0c279", err: "#e08a8a", "err-hi": "#f0cccc", "err-b": "#f6dada", "err-g": "#a06a6a", info: "#9cc2ff", "info-hi": "#c2daff", "info-b": "#e0edff", purple: "#a6b9ff", "purple-d": "#94a8f0", "purple-h": "#bccbff", "purple-b": "#dde5ff", "purple-g": "#68729e", txb: "#e8f0fc", txh: "#cdd9ee", tx: "#b4c4de", txm: "#93a6c4", txd: "#7b8ead", txf: "#6f84a4", txl: "#677da6", txg: "#32405c", panel: "#081226", panel2: "#060e1c", panel3: "#040912", mono: "'JetBrains Mono',monospace" } },
 ];
 
 export const THEMES: ThemeKey[] = THEME_DEFS.map((t) => t.key);
@@ -154,6 +181,14 @@ export interface HudSettings {
   pianoVolume: number; // 0..1
   tilesSong: string; // which melody the tiles game drops
   tilesSpeed: TileSpeed; // how long a tile takes to fall
+  radioVolume: number; // 0..1, Claude·FM
+  textScale: number; // whole-HUD zoom; 0 = AUTO (derived from the viewport)
+  // The composer's four run knobs. Kept here so they survive a reload — the
+  // SESSION tab and the composer's dropdowns are the same state.
+  model: string; // model id, or a short CLI alias
+  effort: string; // "" = auto
+  perm: string; // "" = the session's own mode
+  ponytail: string; // "" = default
 }
 
 const KEY = "hud-settings";
@@ -161,8 +196,23 @@ const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "projects",
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
-  tilesSong: "fur-elise", tilesSpeed: "normal",
+  tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0,
+  model: "opus", effort: "", perm: "", ponytail: "",
 };
+
+/**
+ * AUTO text size: the HUD is authored for a 1440×900 window, so scale with the
+ * viewport and clamp it — small laptops stay readable, big displays stop
+ * rendering 9px captions. Height counts as much as width: the three-column
+ * layout runs out of vertical room first on a short screen. `textScale`
+ * overrides this when non-zero.
+ */
+export function autoTextScale(width: number, height: number): number {
+  const fit = Math.min(width / 1440, height / 900);
+  return Math.round(Math.min(1.25, Math.max(0.85, fit)) * 20) / 20;
+}
+
+const str = (v: unknown, fallback: string): string => (typeof v === "string" ? v : fallback);
 
 const legacyVoice = (p: Partial<HudSettings> & { pianoWave?: string }): unknown =>
   p.pianoVoice ?? p.pianoWave;
@@ -205,6 +255,16 @@ export function loadSettings(): HudSettings {
         tilesSpeed: TILE_SPEEDS.includes(p.tilesSpeed as TileSpeed)
           ? (p.tilesSpeed as TileSpeed)
           : "normal",
+        radioVolume: clamp01(p.radioVolume, 0.6),
+        textScale: typeof p.textScale === "number" && p.textScale >= 0.7 && p.textScale <= 1.6
+          ? p.textScale
+          : 0,
+        // A stored model id that the live Models API no longer offers is
+        // snapped to an available one on load (see App's modelOpts effect).
+        model: str(p.model, "opus"),
+        effort: str(p.effort, ""),
+        perm: str(p.perm, ""),
+        ponytail: str(p.ponytail, ""),
       };
     }
   } catch {

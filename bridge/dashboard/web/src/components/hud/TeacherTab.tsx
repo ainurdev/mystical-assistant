@@ -74,7 +74,7 @@ export function TeacherTab({ project }: { project: string }) {
             <div>
               <div style={{ fontSize: 15, color: "var(--txb)" }}>{sel.title}</div>
               {sel.why_it_matters && (
-                <div style={{ fontSize: 12, color: "#8fb3ac", marginTop: 6 }}>{sel.why_it_matters}</div>
+                <div style={{ fontSize: 12, color: "var(--txm)", marginTop: 6 }}>{sel.why_it_matters}</div>
               )}
               {sel.code_snippet && (
                 <pre style={{ fontSize: 11, color: "var(--tx)", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", padding: 10, marginTop: 8, overflowX: "auto" }}>{sel.code_snippet}</pre>
