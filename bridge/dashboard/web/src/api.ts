@@ -487,6 +487,17 @@ export interface RunBody {
   effort?: string;
   permission_mode?: string; // per-message operating mode; omit to use the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
+  force?: boolean; // skip the "unrelated to this session?" check (user already decided)
+}
+
+// /local/run either starts a job or holds the prompt because it looks unrelated to
+// the session it would resume. Nothing is persisted when held — the prompt lives
+// client-side until the user picks new-session / continue-anyway.
+export type RunStarted = { job_id: string; session_id: string };
+export interface RunHeld {
+  suggest_new: true;
+  reason: string;
+  suggested_title: string | null;
 }
 
 export interface ShellSnapshot {
@@ -564,10 +575,10 @@ export const api = {
     ),
   transcript: (id: string, cursor: number) =>
     req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
-  createSession: (project: string, cwd?: string) =>
+  createSession: (project: string, cwd?: string, title?: string) =>
     req<{ session: SessionBrief }>("/local/sessions", {
       method: "POST",
-      body: cwd ? { project, cwd } : { project },
+      body: { project, ...(cwd ? { cwd } : {}), ...(title ? { title } : {}) },
     }),
   archiveSession: (id: string) =>
     req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(id)}/archive`, {
@@ -575,7 +586,7 @@ export const api = {
       body: {},
     }),
   run: (body: RunBody) =>
-    req<{ job_id: string; session_id: string }>("/local/run", { method: "POST", body }),
+    req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
   respond: (
     jobId: string,
     body: { request_id: string; behavior?: "allow" | "deny"; answers?: AnswerSelection[] },

@@ -132,6 +132,13 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
   return out;
 }
 
+export interface HeldPrompt {
+  text: string;
+  attachments: Attachment[];
+  reason: string;
+  title: string | null;
+}
+
 export interface ChatContextValue {
   turns: Turn[];
   draft: string;
@@ -167,6 +174,12 @@ export interface ChatContextValue {
   ) => Promise<void>;
   reviewResolve: (itemId: string, action: "keep" | "skip") => void;
   newChat: () => Promise<void>;
+  held: HeldPrompt | null;
+  heldBusy: boolean;
+  checking: boolean;
+  heldStartNew: () => Promise<void>;
+  heldContinue: () => Promise<void>;
+  heldDismiss: () => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -177,6 +190,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState("");
   const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
   const [sendError, setSendError] = useState<ApiError | null>(null);
+  // A prompt the relevance guardrail held back — still client-side, nothing ran.
+  const [held, setHeld] = useState<HeldPrompt | null>(null);
+  const [heldBusy, setHeldBusy] = useState(false);
+  // /api/run is in flight. Normally ~instant, but a relevance check makes it
+  // block for ~10s — without this the composer looks dead after Send.
+  const [checking, setChecking] = useState(false);
   const [sessions, setSessions] = useState<SessionBrief[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [model, setModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
@@ -224,6 +243,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sessionIdRef.current = id;
     setTurns([]);
     setSessionId(id);
+    setHeld(null);          // a card about the session we're leaving
   }
 
   // Open a session that may live in a different repo: switch the active project
@@ -306,24 +326,38 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }
 
   // Start a run for an arbitrary prompt on the current session. `onSent` fires
-  // once the run is accepted (used by send() to clear the draft).
+  // once the run is accepted (used by send() to clear the draft). `opts.sessionId`
+  // targets a session React state doesn't know about yet (just created); `force`
+  // skips the "unrelated to this session?" check.
   async function runPrompt(
     text: string,
     attachments: Attachment[],
     onSent?: () => void,
+    opts?: { force?: boolean; sessionId?: string },
   ) {
-    if (!text || isRunning || pending.length > 0 || !sessionId) return;
+    const sid = opts?.sessionId ?? sessionId;
+    if (!text || !sid) return;
+    if (!opts?.sessionId && (isRunning || pending.length > 0)) return;
     setSendError(null);
+    setChecking(true);
     try {
       const res = await api.run(
         text,
         attachments.map((a) => a.dataUrl ?? "").filter(Boolean),
         project ?? undefined,
-        sessionId,
+        sid,
         model,
         effort || undefined,
         perm || undefined,
+        opts?.force,
       );
+      // Held: this looks like different work from the session it would resume.
+      // Nothing ran — park it on the card (draft untouched, so Dismiss is a no-op).
+      if ("suggest_new" in res) {
+        setHeld({ text, attachments, reason: res.reason, title: res.suggested_title });
+        return;
+      }
+      setHeld(null);
       onSent?.();
       setTurns((prev) => [
         ...prev,
@@ -341,14 +375,46 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       if (e instanceof ApiError) setSendError(e);
       else setSendError(new ApiError(0, "Failed to start run."));
+    } finally {
+      setChecking(false);
     }
   }
 
+  function clearDraft() {
+    setDraft("");
+    setDraftAttachments([]);
+  }
+
   async function send() {
-    await runPrompt(draft.trim(), draftAttachments, () => {
-      setDraft("");
-      setDraftAttachments([]);
-    });
+    await runPrompt(draft.trim(), draftAttachments, clearDraft);
+  }
+
+  // The held prompt's three exits. "Start new" routes it to a fresh session
+  // pre-named with the suggested title; both re-sends force so the check isn't
+  // paid twice. Dismiss just drops the card — the draft was never cleared.
+  async function heldStartNew() {
+    const h = held;
+    if (!h || !project) return;
+    setHeld(null);
+    setHeldBusy(true);
+    try {
+      const { session } = await api.createSession(project, h.title ?? undefined);
+      setSessions((prev) => [session, ...prev]);
+      openSession(session.id);
+      await runPrompt(h.text, h.attachments, clearDraft,
+                      { force: true, sessionId: session.id });
+    } catch {
+      setSendError(new ApiError(0, "Failed to start a new session."));
+    } finally {
+      setHeldBusy(false);
+    }
+  }
+
+  async function heldContinue() {
+    const h = held;
+    if (!h) return;
+    setHeld(null);
+    await runPrompt(h.text, h.attachments, clearDraft, { force: true });
   }
 
   // Compact the conversation to reclaim context. `/compact` is a Claude Code
@@ -444,6 +510,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     respond,
     reviewResolve,
     newChat,
+    held,
+    heldBusy,
+    checking,
+    heldStartNew,
+    heldContinue,
+    heldDismiss: () => setHeld(null),
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

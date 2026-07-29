@@ -106,7 +106,7 @@ freshly created empty session.
 | `RELEVANCE_MODEL` | `haiku` | model for the check call |
 | `RELEVANCE_MIN_CHARS` | `280` | substantial-prompt threshold |
 | `RELEVANCE_CONTEXT_TURNS` | `3` | recent turn prompts included as context |
-| `RELEVANCE_TIMEOUT` | `8` | seconds before the check fails open |
+| `RELEVANCE_TIMEOUT` | `25` | seconds before the check fails open |
 
 ## 5. Frontend card (shared)
 
@@ -130,11 +130,12 @@ card styling.
 
 ## Caveats
 
-- **Latency**: spawning `claude` even on haiku has real cold-start cost — likely
-  **2–4s**, not ~1s. Gating to substantial prompts keeps it off follow-ups; the
-  composer shows a brief "checking…" state while the call is in flight. If too
-  slow in practice, revisit (e.g. a persistent lightweight checker process). Out
-  of scope for v1.
+- **Latency**: spawning `claude` even on haiku has real cold-start cost —
+  **measured 8–15s** at implementation time (the 2–4s estimated here was
+  optimistic), hence `RELEVANCE_TIMEOUT=25`: a tighter bound just fails open on
+  every check and makes the guardrail a no-op. Gating to substantial prompts keeps
+  it off follow-ups. If the wait is intolerable, revisit (e.g. a persistent
+  lightweight checker process). Out of scope for v1.
 - Guards only the **current-session boundary**; it does not suggest *which
   existing* session a task best fits. Possible later extension, intentionally out
   of scope.

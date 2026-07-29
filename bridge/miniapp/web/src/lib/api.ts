@@ -47,6 +47,15 @@ export interface RunStartResponse {
   session_id: string;
 }
 
+// /api/run either starts a job or holds the prompt because it looks unrelated to
+// the session it would resume. Nothing is persisted when held — the prompt lives
+// client-side until the user picks new-session / continue-anyway.
+export interface RunHeldResponse {
+  suggest_new: true;
+  reason: string;
+  suggested_title: string | null;
+}
+
 export interface SessionBrief {
   id: string;
   title: string | null;
@@ -419,11 +428,12 @@ export const api = {
     model?: string,
     effort?: string,
     permission?: string,
+    force?: boolean,
   ) =>
-    request<RunStartResponse>("/api/run", {
+    request<RunStartResponse | RunHeldResponse>("/api/run", {
       method: "POST",
       body: { prompt, images, project, session_id: sessionId, model, effort,
-              permission_mode: permission || undefined },
+              permission_mode: permission || undefined, force: force || undefined },
     }),
 
   getRunning: () => request<RunningInfo>("/api/running"),
@@ -450,10 +460,10 @@ export const api = {
       `/api/sessions?project=${encodeURIComponent(project)}`,
     ),
 
-  createSession: (project: string) =>
+  createSession: (project: string, title?: string) =>
     request<{ session: SessionBrief }>("/api/sessions", {
       method: "POST",
-      body: { project },
+      body: { project, ...(title ? { title } : {}) },
     }),
 
   getSession: (id: string, cursor: number) =>

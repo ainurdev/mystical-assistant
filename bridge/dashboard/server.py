@@ -29,10 +29,10 @@ import re
 
 from bridge import (agents, browser, config, devserver, git, github, graphmap,
                     learning, memory, models, native, preview_detect, project_config,
-                    pubsub, queue_manager, runner, screenshot, selfupdate, shell,
-                    skills, state, store, sysinfo, terminals, tunnel, usage, weather,
-                    wsutil)
-from bridge.miniapp.server import (_save_images, _session_brief,
+                    pubsub, queue_manager, relevance, runner, screenshot, selfupdate,
+                    shell, skills, state, store, sysinfo, terminals, tunnel, usage,
+                    weather, wsutil)
+from bridge.miniapp.server import (_pre_title, _save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
 
@@ -508,6 +508,7 @@ class Handler(BaseHTTPRequestHandler):
                 or _abs_project(project) or state.project_dir(chat)
             s = store.create_session(chat, project, origin="dashboard", cwd=cwd,
                                      permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+            s = _pre_title(s, body.get("title"))
             return self._json({"session": _session_brief(s)})
         if path.startswith("/local/sessions/") and path.endswith("/archive"):
             sid = path[len("/local/sessions/"):-len("/archive")]
@@ -830,6 +831,13 @@ class Handler(BaseHTTPRequestHandler):
         permission_mode = normalize_permission_mode(body.get("permission_mode"))
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
         session_id = (body.get("session_id") or "").strip() or None
+        # Hold a prompt that doesn't belong in the session it would resume; the
+        # client re-sends with force=true (or against a fresh session). Before
+        # _save_images so a held prompt writes nothing.
+        held = relevance.gate(chat, project_path, session_id, prompt,
+                              bool(body.get("force")))
+        if held:
+            return self._json(held)
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []

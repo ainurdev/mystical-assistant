@@ -113,6 +113,18 @@ LEARNING_ENABLE = os.environ.get("LEARNING_ENABLE", "1").lower() \
 # (Claude-app style), replacing the first-prompt placeholder. Default on.
 TITLE_ENABLE = os.environ.get("TITLE_ENABLE", "1").lower() \
     not in ("0", "false", "no", "")
+# Context-aware "start a new session?" guardrail: before a substantial prompt
+# resumes a session that already has history, a cheap one-shot decides whether it
+# belongs there. Unrelated → the prompt is held and the user picks. Default on.
+RELEVANCE_CHECK = os.environ.get("RELEVANCE_CHECK", "1").lower() \
+    not in ("0", "false", "no", "")
+RELEVANCE_MODEL = os.environ.get("RELEVANCE_MODEL", "haiku")
+RELEVANCE_MIN_CHARS = int(os.environ.get("RELEVANCE_MIN_CHARS", "280"))
+RELEVANCE_CONTEXT_TURNS = int(os.environ.get("RELEVANCE_CONTEXT_TURNS", "3"))
+# Measured 8-15s per check (haiku, incl. CLI cold start) — not the ~2-4s the design
+# doc guessed. At a tighter timeout every check fails open and the guardrail is a
+# silent no-op, so this is deliberately generous; it only runs on long prompts.
+RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")

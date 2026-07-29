@@ -35,6 +35,7 @@ import {
 import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { Composer } from "./components/Composer";
+import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
@@ -101,6 +102,14 @@ export function App() {
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
+  // A prompt the relevance guardrail held back — still client-side, nothing ran.
+  const [held, setHeld] = useState<
+    { text: string; images: string[]; reason: string; title: string | null } | null
+  >(null);
+  const [heldBusy, setHeldBusy] = useState(false);
+  // /local/run is in flight. Normally ~instant, but a relevance check makes it
+  // block for ~10s — without this the composer looks dead after SEND.
+  const [checking, setChecking] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   // ?skipboot bypasses the intro (handy on revisits + for screenshots).
   const skipBoot = new URLSearchParams(location.search).has("skipboot");
@@ -423,8 +432,12 @@ export function App() {
     return () => window.removeEventListener("contextmenu", onCtx);
   }, []);
 
-  async function send(text: string, images: string[]) {
-    if (!sessionId) return;
+  async function send(
+    text: string, images: string[],
+    opts?: { force?: boolean; sessionId?: string },
+  ) {
+    const sid = opts?.sessionId ?? sessionId;
+    if (!sid) return;
     const project = selected?.project ?? state?.project?.rel ?? undefined;
     const enqueue = () => queue.enqueue({
       text, prompt: text, images, project,
@@ -432,13 +445,22 @@ export function App() {
     });
     // A turn is already in flight for this session — queue the prompt to run
     // after it (and any earlier queued prompts) instead of blocking on STOP.
-    if (running) { enqueue(); return; }
+    if (running && !opts?.sessionId) { enqueue(); return; }
+    setChecking(true);
     try {
       const res = await api.run({
         prompt: text, images, project,
-        session_id: sessionId, model, effort: effort || undefined,
+        session_id: sid, model, effort: effort || undefined,
         permission_mode: permMode || undefined, ponytail: ponytail || undefined,
+        force: opts?.force || undefined,
       });
+      // Held: this looks like different work from the session it would resume.
+      // Nothing ran — park the prompt on the card and let the user route it.
+      if ("suggest_new" in res) {
+        setHeld({ text, images, reason: res.reason, title: res.suggested_title });
+        return;
+      }
+      setHeld(null);
       liveTurns.current.add(res.job_id);
       stickRef.current = true;
       setTurns((prev) => [
@@ -450,6 +472,24 @@ export function App() {
       // Queue it rather than surfacing a "busy" error.
       if ((e as Error).message === "busy") enqueue();
       else notify("error", (e as Error).message);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // "Start new session" on the held-prompt card: route it to a fresh session
+  // pre-named with the suggested title, forced so the check isn't paid twice.
+  async function heldStartNew() {
+    const h = held;
+    const project = selected?.project ?? state?.project?.rel;
+    if (!h || !project) return;
+    setHeld(null);
+    setHeldBusy(true);
+    try {
+      await startIn(project, h.text,
+                    { images: h.images, title: h.title ?? undefined, force: true });
+    } finally {
+      setHeldBusy(false);
     }
   }
 
@@ -483,23 +523,19 @@ export function App() {
     setView("chat");
   }
 
-  // New session in `project`, then run `prompt` in it. send() can't be reused:
-  // it reads sessionId/running from state, which React has not updated yet for
-  // the session we just created — so the prompt would go to the old session.
-  async function startIn(project: string, prompt: string) {
+  // New session in `project`, then run `prompt` in it. The explicit sessionId is
+  // what makes send() reusable here: it otherwise reads sessionId from state,
+  // which React has not updated yet for the session we just created.
+  async function startIn(
+    project: string, prompt: string,
+    opts?: { images?: string[]; title?: string; force?: boolean },
+  ) {
     try {
-      const { session } = await api.createSession(project);
+      const { session } = await api.createSession(project, undefined, opts?.title);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       setView("chat");
-      const res = await api.run({
-        prompt, images: [], project, session_id: session.id, model,
-        effort: effort || undefined, permission_mode: permMode || undefined,
-        ponytail: ponytail || undefined,
-      });
-      liveTurns.current.add(res.job_id);
-      stickRef.current = true;
-      setTurns([{ id: res.job_id, prompt, events: [], status: "running", pending: [], attachments: [] }]);
+      await send(prompt, opts?.images ?? [], { sessionId: session.id, force: opts?.force });
     } catch (e) {
       notify("error", (e as Error).message);
     }
@@ -800,6 +836,26 @@ export function App() {
                 trailingWorking={openWorking && !running} loading={loadingSession} hud={settings}
                 composer={
                   <>
+                    {checking && !running && (
+                      <div style={{ margin: "0 16px 7px", fontSize: 10, letterSpacing: 1, color: "var(--purple)" }}>
+                        CHECKING THIS FITS THE SESSION…
+                      </div>
+                    )}
+                    {held && (
+                      <SuggestNewSessionCard
+                        currentTitle={selected?.title ?? ""}
+                        reason={held.reason}
+                        suggestedTitle={held.title}
+                        busy={heldBusy}
+                        onStartNew={() => void heldStartNew()}
+                        onContinue={() => {
+                          const h = held;
+                          setHeld(null);
+                          void send(h.text, h.images, { force: true });
+                        }}
+                        onDismiss={() => { feed([held.text]); setHeld(null); }}
+                      />
+                    )}
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} effort={effort}

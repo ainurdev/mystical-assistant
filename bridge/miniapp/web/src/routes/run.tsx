@@ -7,9 +7,13 @@ import { Composer } from "../components/Composer";
 import { RunningNow } from "../components/RunningNow";
 import { Banner } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
+import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 
 function RunPage() {
-  const { turns, activeTurn, sessionWorking, respond, reviewResolve, sendError, sessionId, isRunning } = useChat();
+  const {
+    turns, activeTurn, sessionWorking, respond, reviewResolve, sendError, sessionId, isRunning,
+    sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
+  } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to the latest message as the transcript grows.
@@ -93,6 +97,22 @@ function RunPage() {
               ? "Unauthorized"
               : "Failed to send."}
         </Banner>
+      )}
+
+      {checking && !isRunning && (
+        <div className="text-xs text-[var(--tg-hint)]">Checking this fits the session…</div>
+      )}
+
+      {held && (
+        <SuggestNewSessionCard
+          currentTitle={sessions.find((s) => s.id === sessionId)?.title ?? ""}
+          reason={held.reason}
+          suggestedTitle={held.title}
+          busy={heldBusy}
+          onStartNew={() => void heldStartNew()}
+          onContinue={() => void heldContinue()}
+          onDismiss={heldDismiss}
+        />
       )}
 
       <AgentsPill sessionId={sessionId} running={isRunning} />

@@ -257,17 +257,25 @@ def list_sessions_all(chat_id: int, include_archived: bool = False,
         return [dict(r) for r in c.execute(q, params).fetchall()]
 
 
+def resolve_session(chat_id: int, project: str,
+                    session_id: str | None = None) -> dict | None:
+    """The non-creating half of ensure_session: a valid given id for this chat,
+    else the latest for the project, else None. Lets a caller see which session a
+    run WOULD resume without creating one (the relevance guardrail)."""
+    if session_id:
+        s = get_session(session_id)
+        if s and s["chat_id"] == chat_id:
+            return s
+    return latest_session(chat_id, project)
+
+
 def ensure_session(chat_id: int, project: str, session_id: str | None = None, *,
                    origin: str | None = None, cwd: str | None = None,
                    permission_mode: str | None = None) -> dict:
     """Resolve a session: a valid given id for this chat, else the latest for the
     project, else a fresh one. The origin/cwd/permission_mode are applied ONLY
     when a new session is created (resuming an existing one leaves it untouched)."""
-    if session_id:
-        s = get_session(session_id)
-        if s and s["chat_id"] == chat_id:
-            return s
-    return latest_session(chat_id, project) or create_session(
+    return resolve_session(chat_id, project, session_id) or create_session(
         chat_id, project, origin=origin, cwd=cwd, permission_mode=permission_mode)
 
 
@@ -371,6 +379,15 @@ def archive(session_id: str, archived: bool = True) -> None:
 
 
 # --- turns + events ---------------------------------------------------------
+
+def recent_prompts(session_id: str, limit: int) -> list[str]:
+    """The session's most recent user prompts, newest first. Empty when it has no
+    turns yet — which is also how callers ask "does this session have history?"."""
+    with closing(_connect()) as c:
+        rows = c.execute("SELECT prompt FROM turns WHERE session_id=? "
+                         "ORDER BY seq DESC LIMIT ?", (session_id, limit)).fetchall()
+    return [r["prompt"] or "" for r in rows]
+
 
 def start_turn(session_id: str, turn_id: str, prompt: str,
                attachments: list[str] | None, model: str | None = None) -> None:

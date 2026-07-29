@@ -19,9 +19,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, git, github, graphmap,
-                    learning, memory, models, native, project_config, runner,
-                    screenshot, shell, state, store, transcript_jsonl, tunnel,
-                    usage)
+                    learning, memory, models, native, project_config, relevance,
+                    runner, screenshot, shell, state, store, transcript_jsonl,
+                    tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -92,6 +92,17 @@ def _session_brief(s: dict) -> dict:
             "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
             "branch": git.current_branch_cached(cwd) if cwd else ""}
+
+
+def _pre_title(s: dict, title) -> dict:
+    """Name a freshly created, still-empty session (the relevance guardrail routes
+    a split-off task into one pre-titled). Marks it manual so the auto-titler
+    won't overwrite the name after the first turn."""
+    title = " ".join(str(title or "").split())[:60]
+    if not title:
+        return s
+    store.rename(s["id"], title)
+    return store.get_session(s["id"])
 
 
 def transcript_for(session: dict, cursor: int = 0) -> dict:
@@ -373,6 +384,13 @@ class Handler(BaseHTTPRequestHandler):
         permission_mode = normalize_permission_mode(body.get("permission_mode"))
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
         session_id = (body.get("session_id") or "").strip() or None
+        # Hold a prompt that doesn't belong in the session it would resume; the
+        # client re-sends with force=true (or against a fresh session). Before
+        # _save_images so a held prompt writes nothing.
+        held = relevance.gate(chat_id, project_path, session_id, prompt,
+                              bool(body.get("force")))
+        if held:
+            return self._json(held)
         job_id = uuid.uuid4().hex
         try:
             paths = _save_images(job_id, images) if images else []
@@ -493,7 +511,7 @@ class Handler(BaseHTTPRequestHandler):
                else state.project_dir(chat_id))
         s = store.create_session(chat_id, project, origin="miniapp", cwd=cwd,
                                  permission_mode=config.NEW_SESSION_PERMISSION_MODE)
-        self._json({"session": _session_brief(s)})
+        self._json({"session": _session_brief(_pre_title(s, body.get("title")))})
 
     def _api_session_get(self, chat_id: int, rest: str, qs):
         sid = rest.split("/")[0]
