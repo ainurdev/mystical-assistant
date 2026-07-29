@@ -98,7 +98,7 @@ function SessionRow({
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: sv.c, flex: "none", marginTop: 4, boxShadow: `0 0 7px ${idle ? "transparent" : sv.c}` }} />
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, lineHeight: 1.4, color: on ? "#eafff9" : "var(--txh)", fontWeight: on ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ fontSize: 12.5, lineHeight: 1.4, color: on ? "var(--txb)" : "var(--txh)", fontWeight: on ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {s.title || "untitled session"}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6 }}>
@@ -147,10 +147,10 @@ function PlusBtn({ on, onClick }: { on: boolean; onClick: () => void }) {
       onClick={onClick} title="new session in this project"
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
-        appearance: "none", cursor: "pointer", flex: "none", lineHeight: 0, padding: "3px 6px 4px",
+        appearance: "none", cursor: "pointer", flex: "none", lineHeight: 0, padding: "5px 9px 6px",
         border: `1px solid ${on || hov ? "var(--purple)" : "color-mix(in srgb, var(--purple) 28%, transparent)"}`,
         background: on || hov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
-        color: on || hov ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "inherit", fontSize: 12,
+        color: on || hov ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "inherit", fontSize: 14,
       }}
     >{on ? "✕" : "+"}</button>
   );
@@ -488,14 +488,14 @@ export function SessionsPanel(props: Props) {
             onClick={toggleForm} title="start a session — current worktree or a new one"
             onMouseEnter={() => setNsBtnHov(true)} onMouseLeave={() => setNsBtnHov(false)}
             style={{
-              width: "100%", marginTop: 7, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              width: "100%", marginTop: 8, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
               border: `1px solid ${nsOpen ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
               background: nsOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
               color: nsOpen ? "var(--purple-b)" : "var(--tx)",
-              fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: "10px 8px",
+              fontFamily: "inherit", fontSize: 12, letterSpacing: 2, padding: "13px 10px",
               transition: "all .15s ease", filter: nsBtnHov ? "brightness(1.18)" : "none",
             }}
-          ><span style={{ fontSize: 14, lineHeight: 0 }}>+</span>NEW SESSION</button>
+          ><span style={{ fontSize: 17, lineHeight: 0 }}>+</span>NEW SESSION</button>
         )}
       </div>
       )}

@@ -429,6 +429,28 @@ export interface UsageInfo {
   }[];
 }
 
+export type SkillScope = "project" | "system";
+export type SkillCategory = "technical" | "design" | "writing" | "other";
+export interface InstalledSkill {
+  id: string;
+  name: string;
+  description: string;
+  scope: SkillScope;
+  category: SkillCategory;
+  from_catalog: boolean; // false → hand-written, so the UI never offers to delete it
+}
+export interface CatalogSkill {
+  id: string;
+  name: string;
+  category: SkillCategory;
+  description: string;
+}
+export interface SkillsInfo {
+  project: InstalledSkill[];
+  system: InstalledSkill[];
+  catalog: CatalogSkill[];
+}
+
 async function req<T>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
@@ -793,6 +815,15 @@ export const api = {
     mode: "explain" | "quiz" | "exercise" | "grade";
     user_answer?: string;
   }) => req<{ text: string }>("/local/learning/teach", { method: "POST", body }),
+  // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
+  skills: (project?: string | null) =>
+    req<SkillsInfo>(`/local/skills${project ? `?project=${encodeURIComponent(project)}` : ""}`),
+  installSkill: (id: string, scope: SkillScope, project?: string | null) =>
+    req<{ ok: boolean; error: string | null; project: InstalledSkill[]; system: InstalledSkill[] }>(
+      "/local/skills/install", { method: "POST", body: { id, scope, project } }),
+  removeSkill: (id: string, scope: SkillScope, project?: string | null) =>
+    req<{ ok: boolean; error: string | null; project: InstalledSkill[]; system: InstalledSkill[] }>(
+      "/local/skills/remove", { method: "POST", body: { id, scope, project } }),
   // --- MAP tab: graphify knowledge graph (graph.html) ---
   graphState: (project: string) =>
     req<GraphState>(`/local/graph/state?project=${encodeURIComponent(project)}`),

@@ -143,8 +143,9 @@ export function AnalyzeModal(props: Props) {
     { k: "worktrees", l: "WORKTREES", badge: linkedWt || undefined },
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
-    // ponytail: SKILLS + MAP hidden for now — bodies below stay wired, so
-    // re-enabling is just these two entries back.
+    { k: "skills", l: "SKILLS" },
+    // ponytail: MAP hidden for now — its body below stays wired, so re-enabling
+    // is just that entry back.
   ];
 
   return (

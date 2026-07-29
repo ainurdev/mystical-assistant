@@ -1,126 +1,237 @@
-import { useEffect, useState } from "react";
-import { api } from "../../api";
+import { useEffect, useMemo, useState } from "react";
+import { api, type CatalogSkill, type InstalledSkill, type SkillCategory, type SkillScope, type SkillsInfo } from "../../api";
 
-/* SKILLS tab of the Analyze modal — monorepo-aware skill browser. Matches the
-   HUD design mock (hud.dc.html lines 1121–1235). There is no skills backend
-   yet: the scope list is the repository root, SCAN wires to the closest real
-   call (run-command/stack detection), and suggested/installed/catalog render
-   their realistic empty states.
-   TODO(phase2-data): skills endpoints (scopes, scan, suggest, install, catalog). */
+/* SKILLS — what's installed as a Claude Code skill (a SKILL.md under
+   .claude/skills/) plus the built-in catalog you can install from.
 
-interface Props {
-  project: string;
-  name: string;
+   Two surfaces share this body:
+     · the right sidebar (SkillsPanel) — project AND system, installs to either;
+     · the ANALYZE modal (SkillsTab)   — project only, installs to the project.  */
+
+const CATS: { k: SkillCategory | "all"; l: string }[] = [
+  { k: "all", l: "ALL" },
+  { k: "technical", l: "TECHNICAL" },
+  { k: "design", l: "DESIGN" },
+  { k: "writing", l: "WRITING" },
+  { k: "other", l: "OTHER" },
+];
+
+const CAT_COLOR: Record<SkillCategory, string> = {
+  technical: "var(--acc)",
+  design: "var(--purple)",
+  writing: "var(--info)",
+  other: "var(--warn)",
+};
+
+const LABEL = { fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)" } as const;
+
+/** One installed skill — name, description, and (catalog skills only) remove. */
+function InstalledRow({ s, onRemove, busy }: {
+  s: InstalledSkill;
+  onRemove: (() => void) | null;
+  busy: boolean;
+}) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 9px", marginBottom: 5, border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: hov ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "color-mix(in srgb, var(--panel2) 35%, transparent)" }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: CAT_COLOR[s.category], flex: "none", marginTop: 5 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11.5, color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+        {s.description && (
+          <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 3, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{s.description}</div>
+        )}
+      </div>
+      {onRemove ? (
+        <button onClick={onRemove} disabled={busy} title="uninstall"
+          style={{ appearance: "none", cursor: busy ? "default" : "pointer", border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 10, lineHeight: 1, padding: "4px 6px", flex: "none", opacity: busy ? 0.4 : hov ? 1 : 0.5 }}>✕</button>
+      ) : (
+        <span title="hand-written skill — edit it on disk" style={{ ...LABEL, flex: "none", marginTop: 3 }}>OWN</span>
+      )}
+    </div>
+  );
 }
 
-export function SkillsTab({ project, name }: Props) {
-  const [hov, setHov] = useState("");
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+/** Install/uninstall toggle for one catalog entry in one scope. */
+function ScopeBtn({ label, on, disabled, onClick }: {
+  label: string; on: boolean; disabled: boolean; onClick: () => void;
+}) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button
+      onClick={onClick} disabled={disabled}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      title={on ? `uninstall from ${label.toLowerCase()}` : `install to ${label.toLowerCase()}`}
+      style={{
+        appearance: "none", cursor: disabled ? "default" : "pointer", flex: "none", whiteSpace: "nowrap",
+        border: `1px solid ${on ? "var(--ok)" : hov ? "var(--acc)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`,
+        background: on ? "color-mix(in srgb, var(--ok) 12%, transparent)" : hov ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
+        color: on ? "var(--ok)" : "var(--txm)", opacity: disabled ? 0.45 : 1,
+        fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 7px",
+      }}
+    >{on ? "✓ " : "+ "}{label}</button>
+  );
+}
 
-  const [scan, setScan] = useState<"idle" | "scanning" | "done">("idle");
-  const [detected, setDetected] = useState("");
-  const [browse, setBrowse] = useState(false);
+export function SkillsView({ project, system }: { project: string | null; system: boolean }) {
+  const [info, setInfo] = useState<SkillsInfo | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  const [mode, setMode] = useState<"installed" | "catalog">("installed");
+  const [cat, setCat] = useState<SkillCategory | "all">("all");
+  const [q, setQ] = useState("");
 
-  useEffect(() => { setScan("idle"); setDetected(""); setBrowse(false); }, [project]);
+  useEffect(() => {
+    let live = true;
+    setInfo(null); setErr("");
+    void api.skills(project)
+      .then((d) => { if (live) setInfo(d); })
+      .catch((e: Error) => { if (live) setErr(e.message); });
+    return () => { live = false; };
+  }, [project]);
 
-  async function runScan() {
-    if (scan === "scanning") return;
-    setScan("scanning");
+  async function toggle(id: string, scope: SkillScope, on: boolean) {
+    if (busy) return;
+    setBusy(`${scope}:${id}`); setErr("");
     try {
-      // Closest existing call: the run-command detector reads the project's
-      // dependencies/config to identify its stack.
-      const r = await api.detectPreview({ project });
-      setDetected(r.explanation || r.command || "no stack detected");
+      // Both calls answer with the fresh installed lists, so no refetch.
+      const r = await (on ? api.removeSkill : api.installSkill)(id, scope, project);
+      setInfo((p) => (p ? { ...p, project: r.project, system: r.system } : p));
     } catch (e) {
-      setDetected((e as Error).message || "scan failed");
+      setErr((e as Error).message);
     }
-    setScan("done");
+    setBusy("");
   }
 
-  // Single scope until a monorepo-scope endpoint exists.
-  const scopes = [{ label: name, sub: "repository root", icon: "⌂", count: "0" }];
+  const inProject = useMemo(() => new Set((info?.project ?? []).map((s) => s.id)), [info]);
+  const inSystem = useMemo(() => new Set((info?.system ?? []).map((s) => s.id)), [info]);
+
+  const needle = q.trim().toLowerCase();
+  const shown = (info?.catalog ?? []).filter(
+    (c) => (cat === "all" || c.category === cat)
+      && (!needle || `${c.name} ${c.id} ${c.description}`.toLowerCase().includes(needle)),
+  );
+  const counts = (info?.catalog ?? []).reduce<Record<string, number>>(
+    (a, c) => ({ ...a, [c.category]: (a[c.category] ?? 0) + 1 }), {});
+
+  const section = (title: string, list: InstalledSkill[], scope: SkillScope) => (
+    <>
+      <div style={{ ...LABEL, display: "flex", alignItems: "center", gap: 7, margin: "0 0 7px" }}>
+        <span>{title} · {list.length}</span>
+        <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+      </div>
+      {list.length === 0 ? (
+        <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "2px 2px 10px" }}>
+          {scope === "project" && !project ? "No project selected." : "Nothing installed here yet."}
+        </div>
+      ) : (
+        <div style={{ marginBottom: 11 }}>
+          {list.map((s) => (
+            <InstalledRow key={s.id} s={s} busy={busy === `${scope}:${s.id}`}
+              onRemove={s.from_catalog ? () => void toggle(s.id, scope, true) : null} />
+          ))}
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div style={{ animation: "mslide .3s ease both" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "230px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", minHeight: 420 }}>
-        {/* scope list */}
-        <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, background: "color-mix(in srgb, var(--panel2) 35%, transparent)" }}>
-          <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", padding: "11px 12px 9px", flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
-            <span>SCOPE</span>
-            {scopes.length > 1 && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--purple)", border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", padding: "1px 5px" }}>MONOREPO</span>}
-          </div>
-          <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-            {scopes.map((sc, i) => (
-              <button key={sc.label} {...hp(`sc:${i}`)}
-                style={{ width: "100%", appearance: "none", border: 0, borderLeft: "2px solid var(--acc)", background: hov === `sc:${i}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", cursor: "pointer", textAlign: "left", fontFamily: "inherit", padding: "9px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, color: "var(--purple)", flex: "none" }}>{sc.icon}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 11.5, color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sc.label}</span>
-                  <span style={{ display: "block", fontSize: 8.5, color: "var(--txl)", marginTop: 2 }}>{sc.sub}</span>
-                </span>
-                <span style={{ fontSize: 9, color: "var(--txd)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{sc.count}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* installed ↔ catalog */}
+      <div style={{ display: "flex", gap: 3, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 3, marginBottom: 11 }}>
+        {(["installed", "catalog"] as const).map((m) => (
+          <button key={m} onClick={() => setMode(m)}
+            style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: mode === m ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: mode === m ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
+          >{m === "installed" ? "INSTALLED" : `CATALOG · ${info?.catalog.length ?? 0}`}</button>
+        ))}
+      </div>
 
-        {/* skills for the selected scope */}
-        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 9, padding: "12px 14px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
-            <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>SKILLS ·</span>
-            <span style={{ fontSize: 12, color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
-            <span style={{ flex: 1 }} />
-            <span style={{ fontSize: 9, color: "var(--txd)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>0 installed</span>
+      {err && <div style={{ fontSize: 10, color: "var(--err)", marginBottom: 9 }}>{err}</div>}
+      {!info && !err && <div style={{ fontSize: 10.5, color: "var(--txl)" }}>Loading skills…</div>}
+
+      {info && mode === "installed" && (
+        <>
+          {section("PROJECT", info.project, "project")}
+          {system && section("SYSTEM", info.system, "system")}
+        </>
+      )}
+
+      {info && mode === "catalog" && (
+        <>
+          <input
+            value={q} onChange={(e) => setQ(e.target.value)} placeholder="search skills…"
+            style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "6px 8px", marginBottom: 8 }}
+          />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+            {CATS.map((c) => {
+              const on = cat === c.k;
+              const tint = c.k === "all" ? "var(--acc)" : CAT_COLOR[c.k];
+              return (
+                <button key={c.k} onClick={() => setCat(c.k)}
+                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on ? tint : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? `color-mix(in srgb, ${tint} 12%, transparent)` : "transparent", color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "4px 7px" }}
+                >{c.l} {c.k === "all" ? (info.catalog.length) : (counts[c.k] ?? 0)}</button>
+              );
+            })}
           </div>
-          <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "12px 14px" }}>
-            {/* scan card */}
-            <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel2) 35%, transparent)", padding: "12px 13px", marginBottom: 14 }}>
-              {scan === "idle" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--acc)" strokeWidth="1.6" strokeLinecap="round" style={{ flex: "none" }}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: "var(--txb)" }}>Scan this scope for skills</div>
-                    <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 2 }}>Detects the stack and suggests skills that match.</div>
-                  </div>
-                  <button onClick={() => void runScan()} {...hp("scan")}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "scan" ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "8px 13px", flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ color: "var(--acc)" }}>▸</span>SCAN PROJECT</button>
+          <div className="mscroll" style={{ maxHeight: 420, overflowY: "auto", paddingRight: 2 }}>
+            {shown.map((c: CatalogSkill) => (
+              <div key={c.id}
+                style={{ display: "flex", gap: 9, alignItems: "flex-start", flexWrap: "wrap", padding: "9px 10px", marginBottom: 5, border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: "color-mix(in srgb, var(--panel2) 30%, transparent)" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: CAT_COLOR[c.category], flex: "none", marginTop: 5 }} />
+                <div style={{ flex: 1, minWidth: 130 }}>
+                  <div style={{ fontSize: 11.5, color: "var(--txb)" }}>{c.name}</div>
+                  <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 3, lineHeight: 1.5 }}>{c.description}</div>
                 </div>
-              )}
-              {scan === "scanning" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 11, color: "var(--acc)" }}>
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--acc)" strokeWidth="2" style={{ flex: "none", transformOrigin: "center", animation: "introspin 1s linear infinite" }}><path d="M12 3a9 9 0 1 0 9 9" strokeLinecap="round" /></svg>
-                  <div style={{ flex: 1, minWidth: 0, fontSize: 11.5 }}>Scanning {name} — reading dependencies and source…</div>
+                <div style={{ display: "flex", gap: 5, flex: "none", marginTop: 1 }}>
+                  <ScopeBtn label="PROJECT" on={inProject.has(c.id)} disabled={!project || busy === `project:${c.id}`}
+                    onClick={() => void toggle(c.id, "project", inProject.has(c.id))} />
+                  {system && (
+                    <ScopeBtn label="SYSTEM" on={inSystem.has(c.id)} disabled={busy === `system:${c.id}`}
+                      onClick={() => void toggle(c.id, "system", inSystem.has(c.id))} />
+                  )}
                 </div>
-              )}
-              {scan === "done" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--ok)", flex: "none" }}>DETECTED</span>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 10.5, color: "var(--tx)", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{detected}</span>
-                  <button onClick={() => void runScan()} title="rescan" {...hp("rescan")}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "rescan" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "5px 9px", flex: "none" }}>↻ RESCAN</button>
-                </div>
-              )}
-            </div>
-
-            {/* installed */}
-            <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8, display: "flex", alignItems: "center", gap: 7 }}>
-              <span>INSTALLED · 0</span>
-              <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
-            </div>
-            <div style={{ fontSize: 11, color: "var(--txl)", padding: "2px 2px 6px" }}>No skills installed for this scope.</div>
-
-            <button onClick={() => setBrowse((b) => !b)} {...hp("browse")}
-              style={{ width: "100%", marginTop: 9, appearance: "none", cursor: "pointer", border: `1px dashed ${hov === "browse" ? "color-mix(in srgb, var(--acc) 40%, transparent)" : "color-mix(in srgb, var(--acc) 25%, transparent)"}`, background: hov === "browse" ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-              <span style={{ color: "var(--acc)", fontSize: 12, lineHeight: 0 }}>+</span>{browse ? "CLOSE CATALOG" : "BROWSE SKILL CATALOG"}</button>
-            {browse && (
-              <div style={{ marginTop: 10, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: 10, animation: "mslide .18s ease both" }}>
-                <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>SKILL CATALOG</div>
-                <div style={{ fontSize: 11, color: "var(--txl)", padding: "2px 0 4px" }}>Catalog unavailable — skills backend not wired yet.</div>
               </div>
+            ))}
+            {shown.length === 0 && (
+              <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "4px 2px" }}>No skill matches that filter.</div>
             )}
           </div>
-        </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** ANALYZE modal tab — project scope only. */
+export function SkillsTab({ project, name }: { project: string; name: string }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+        <span style={{ ...LABEL, letterSpacing: 1.5 }}>SKILLS ·</span>
+        <span style={{ fontSize: 12, color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 9, color: "var(--txd)" }}>.claude/skills</span>
+      </div>
+      <SkillsView project={project} system={false} />
+    </div>
+  );
+}
+
+/** Right-sidebar panel — project AND system, installs to either. */
+export function SkillsPanel({ project }: { project: string | null }) {
+  return (
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 50%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both", flex: "none" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
+        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>SKILLS</span>
+        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {project ? project.split("/").pop() : "NO PROJECT"}
+        </span>
+      </div>
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .16s" }} />
+      <div style={{ padding: 11 }}>
+        <SkillsView project={project} system />
       </div>
     </div>
   );

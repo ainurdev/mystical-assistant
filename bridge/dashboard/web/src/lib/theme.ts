@@ -186,6 +186,7 @@ export interface HudSettings {
   // The composer's four run knobs. Kept here so they survive a reload — the
   // SESSION tab and the composer's dropdowns are the same state.
   model: string; // model id, or a short CLI alias
+  allModels: boolean; // false = pickers show only the newest of each family
   effort: string; // "" = auto
   perm: string; // "" = the session's own mode
   ponytail: string; // "" = default
@@ -197,7 +198,7 @@ const DEFAULTS: HudSettings = {
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0,
-  model: "opus", effort: "", perm: "", ponytail: "",
+  model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
 };
 
 /**
@@ -262,6 +263,7 @@ export function loadSettings(): HudSettings {
         // A stored model id that the live Models API no longer offers is
         // snapped to an available one on load (see App's modelOpts effect).
         model: str(p.model, "opus"),
+        allModels: p.allModels === true,
         effort: str(p.effort, ""),
         perm: str(p.perm, ""),
         ponytail: str(p.ponytail, ""),

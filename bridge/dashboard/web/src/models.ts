@@ -16,3 +16,31 @@ const FALLBACK: ModelOption[] = [
 export function modelOptions(models?: ModelOption[]): ModelOption[] {
   return models && models.length ? models : FALLBACK;
 }
+
+/** "Claude Opus 4.8" -> "opus". Everything after the family word is version. */
+function family(label: string): string {
+  const words = label.replace(/claude/i, "").trim().split(/[\s-]+/);
+  return (words[0] || label).toLowerCase();
+}
+
+/**
+ * One entry per family — the newest, plus `keep` (the current selection) even
+ * when it is an older release. Pickers show this by default; the SHOW ALL
+ * switch in settings hands back the full list.
+ *
+ * ponytail: "newest" is the API's own ordering (/v1/models is newest-first),
+ * not a version parse. Sort here if that ever stops holding.
+ */
+export function latestPerFamily(models: ModelOption[], keep?: string): ModelOption[] {
+  const seen = new Set<string>();
+  return models.filter((m) => {
+    const f = family(m.label);
+    if (m.id === keep) {
+      seen.add(f);
+      return true;
+    }
+    if (seen.has(f)) return false;
+    seen.add(f);
+    return true;
+  });
+}

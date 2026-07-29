@@ -1,0 +1,449 @@
+"""Built-in skill catalog — 30 starter skills across four categories, rendered
+to a SKILL.md on install. Data only; bridge/skills.py owns the filesystem."""
+
+import json
+
+CATEGORIES = ("technical", "design", "writing", "other")
+
+CATALOG = [
+    # ---------------------------------------------------------------- technical
+    {
+        "id": "api-design",
+        "category": "technical",
+        "name": "API design review",
+        "description": "Use when designing or reviewing an HTTP/RPC API — resource shapes, status codes, versioning, pagination, error bodies.",
+        "steps": [
+            "Name resources as nouns; put verbs in the method, not the path.",
+            "Pick status codes from the actual outcome: 400 client, 404 missing, 409 conflict, 422 semantic, 5xx ours.",
+            "Give every error one shape: a stable machine code, a human message, and the offending field.",
+            "Paginate any list that can grow — cursor over offset once rows can shift.",
+            "Version only when a change breaks a client; additive fields never need a new version.",
+            "Write one example request/response per endpoint before the implementation.",
+        ],
+    },
+    {
+        "id": "sql-tuning",
+        "category": "technical",
+        "name": "SQL query tuning",
+        "description": "Use when a query or report is slow — read the plan, fix the index, verify the win with numbers.",
+        "steps": [
+            "Get EXPLAIN ANALYZE first; never guess at the plan.",
+            "Find the row-count blowup: where estimated and actual rows diverge is the bug.",
+            "Prefer one composite index in filter-then-sort order over several single-column ones.",
+            "Kill SELECT * on wide tables; fetching fewer columns can flip a plan to index-only.",
+            "Watch for functions on indexed columns — they disable the index unless it is expression-based.",
+            "Record before/after timings in the PR; a tuning change without a measurement is a guess.",
+        ],
+    },
+    {
+        "id": "test-writing",
+        "category": "technical",
+        "name": "Focused test writing",
+        "description": "Use when adding tests — one behaviour per test, real failure modes, no mock theatre.",
+        "steps": [
+            "Name the test after the behaviour it protects, not the function it calls.",
+            "Arrange–act–assert, one act per test; multiple acts hide which one broke.",
+            "Test at the highest layer that still fails fast — prefer a real object to a mock.",
+            "Cover the boundary and the empty case; the happy path rarely regresses alone.",
+            "Assert on values, not on call counts, unless the call itself is the contract.",
+            "Make the test fail once on purpose before trusting it.",
+        ],
+    },
+    {
+        "id": "refactor-safely",
+        "category": "technical",
+        "name": "Safe refactoring",
+        "description": "Use when restructuring code that must keep behaving identically — characterization tests first, small steps after.",
+        "steps": [
+            "Pin current behaviour with tests before touching anything.",
+            "Separate refactor commits from behaviour commits; never mix them in one diff.",
+            "Move in steps small enough that the suite stays green between each.",
+            "Keep the old entry point delegating to the new one until every caller has moved.",
+            "Grep for every caller before changing a signature — sibling callers break silently.",
+            "Delete the dead path in its own commit so it is trivial to revert.",
+        ],
+    },
+    {
+        "id": "perf-profiling",
+        "category": "technical",
+        "name": "Performance profiling",
+        "description": "Use when something is slow — measure before optimising, and confirm the fix moved the number you started with.",
+        "steps": [
+            "Write down the metric and the target before profiling anything.",
+            "Profile a realistic workload; a synthetic loop optimises the wrong thing.",
+            "Fix the top item in the profile, then re-profile — the second item usually moves.",
+            "Look for accidental O(n²) and per-item I/O before micro-optimising anything.",
+            "Cache last: correctness of invalidation costs more than the cycles saved.",
+            "Keep the benchmark in the repo so the regression is caught, not rediscovered.",
+        ],
+    },
+    {
+        "id": "security-audit",
+        "category": "technical",
+        "name": "Change security review",
+        "description": "Use when reviewing a change that touches auth, user input, secrets, or anything network-facing.",
+        "steps": [
+            "Map the trust boundary the change crosses; validate on the far side of it.",
+            "Parameterise every query and escape at the point of output, never at the input.",
+            "Check authorization per object, not just authentication per request.",
+            "Confirm secrets come from the environment and never reach logs or error bodies.",
+            "Review what the error message reveals to an unauthenticated caller.",
+            "For state-changing endpoints, confirm CSRF/origin checks and rate limits exist.",
+        ],
+    },
+    {
+        "id": "dependency-hygiene",
+        "category": "technical",
+        "name": "Dependency hygiene",
+        "description": "Use when adding, upgrading, or pruning dependencies — keep the tree small and the lockfile honest.",
+        "steps": [
+            "Before adding: check whether the stdlib or an installed dep already does it.",
+            "Weigh transitive weight and maintenance, not just the API you like.",
+            "Pin via the lockfile and commit it; a floating range is a future outage.",
+            "Upgrade one major at a time, reading its changelog, not the diff of your lockfile.",
+            "Remove deps orphaned by your own change in the same PR.",
+            "Run the audit tool and triage findings; suppressions need a written reason.",
+        ],
+    },
+    {
+        "id": "ci-pipeline",
+        "category": "technical",
+        "name": "CI pipeline work",
+        "description": "Use when authoring or repairing CI workflows — fast, reproducible, and honest about what it verifies.",
+        "steps": [
+            "Reproduce the failure locally with the same command CI runs before editing YAML.",
+            "Cache dependencies by lockfile hash; cache nothing that a build produces.",
+            "Fail fast: lint and typecheck before the slow test job.",
+            "Keep secrets in the CI secret store; never echo them into logs.",
+            "Make the pipeline deterministic — pin tool versions and the runner image.",
+            "A flaky job is a bug: quarantine it with an issue, do not add a blind retry.",
+        ],
+    },
+    {
+        "id": "error-handling",
+        "category": "technical",
+        "name": "Error handling design",
+        "description": "Use when deciding how a module reports failure — one taxonomy, useful context, no silent swallow.",
+        "steps": [
+            "Distinguish expected failures (return them) from bugs (raise/throw them).",
+            "Catch narrowly; a bare catch-all hides the crash you needed to see.",
+            "Attach context at the throw site — ids and inputs, never secrets.",
+            "Do not log and rethrow at every level; log once where it is handled.",
+            "Make the failure path preserve data: no partial write without a rollback or a retry.",
+            "Give the caller something actionable: what failed, and what they can do.",
+        ],
+    },
+    {
+        "id": "logging-observability",
+        "category": "technical",
+        "name": "Logging & observability",
+        "description": "Use when adding logs, metrics, or traces — enough signal to debug production without drowning in noise.",
+        "steps": [
+            "Log structured key/values, not sentences you will later regex.",
+            "One request id threaded end to end beats a hundred scattered prints.",
+            "Levels mean something: ERROR pages someone, WARN is degraded, INFO is a state change.",
+            "Never log secrets, tokens, or full request bodies.",
+            "Meter what users feel — latency, error rate, saturation — before internal counters.",
+            "Add the log line you wished you had during the last incident.",
+        ],
+    },
+    # ------------------------------------------------------------------- design
+    {
+        "id": "design-review",
+        "category": "design",
+        "name": "UI design review",
+        "description": "Use when critiquing a screen or component — hierarchy, spacing, states, and whether it reads as intentional.",
+        "steps": [
+            "Squint at it: does the eye land on the primary action first?",
+            "Check the spacing scale — inconsistent gaps read as sloppy before anything else does.",
+            "Every interactive element needs hover, focus, active, disabled, and loading.",
+            "Limit the type sizes and weights on screen; three of each is usually plenty.",
+            "Align to a grid, and align optically where the grid lies.",
+            "Ask what this screen looks like with zero items, one item, and a thousand.",
+        ],
+    },
+    {
+        "id": "design-tokens",
+        "category": "design",
+        "name": "Design tokens",
+        "description": "Use when setting up or auditing a token system — colour, spacing, radius, and type as named decisions.",
+        "steps": [
+            "Name tokens by role (surface, border, danger), not by value (grey-200).",
+            "Keep one spacing scale and use only its steps; ad-hoc pixel values erode it.",
+            "Define semantic tokens on top of primitives so theming swaps one layer.",
+            "Ship light and dark from the same semantic names, not two component trees.",
+            "Cap the palette — every extra shade is a decision someone must repeat.",
+            "Put the tokens in code, not a doc; a doc drifts within a sprint.",
+        ],
+    },
+    {
+        "id": "accessibility-audit",
+        "category": "design",
+        "name": "Accessibility audit",
+        "description": "Use when checking a UI against WCAG basics — keyboard, contrast, semantics, and announced state.",
+        "steps": [
+            "Tab through the whole flow: everything reachable, focus always visible, order sane.",
+            "Check contrast — 4.5:1 for body text, 3:1 for large text and UI boundaries.",
+            "Use the native element first; a div with a click handler is not a button.",
+            "Label every input and icon-only control; placeholder text is not a label.",
+            "Announce dynamic changes with a live region, and keep motion respectful of reduced-motion.",
+            "Confirm the page works at 200% zoom and at 320px wide.",
+        ],
+    },
+    {
+        "id": "responsive-layout",
+        "category": "design",
+        "name": "Responsive layout",
+        "description": "Use when making a layout work across sizes — fluid first, breakpoints only where the design actually breaks.",
+        "steps": [
+            "Start from the narrow layout; widening is easier than unwinding.",
+            "Reach for the native tool: grid auto-fit, flex-wrap, clamp() over JS measurement.",
+            "Add a breakpoint where the content breaks, not at a device name.",
+            "Constrain line length for readability rather than filling the viewport.",
+            "Test the awkward middle widths, not just phone and desktop.",
+            "Check the layout with real long strings and missing images.",
+        ],
+    },
+    {
+        "id": "color-palette",
+        "category": "design",
+        "name": "Colour palette",
+        "description": "Use when building or fixing a palette — accessible, consistent, and legible in both themes.",
+        "steps": [
+            "Pick one accent and earn every extra hue.",
+            "Build neutrals with a slight temperature shift toward the accent; pure grey reads dead.",
+            "Verify contrast at each step against the surfaces it will actually sit on.",
+            "Reserve semantic colours (success/warn/danger) and never use them decoratively.",
+            "Check the palette for the common colour-vision deficiencies before shipping.",
+            "Test in dark mode by adjusting lightness and chroma, not by inverting.",
+        ],
+    },
+    {
+        "id": "typography-scale",
+        "category": "design",
+        "name": "Typography scale",
+        "description": "Use when setting type — a small ramp, deliberate line height, and hierarchy that survives real content.",
+        "steps": [
+            "Build a ratio-based ramp and use only its steps.",
+            "Set line height inversely to size: tight for headings, roomy for body.",
+            "Keep body copy between 45 and 75 characters per line.",
+            "Use weight and colour for hierarchy before reaching for another size.",
+            "Set tabular figures for anything in a column of numbers.",
+            "Test the ramp with the longest real string you have, not lorem ipsum.",
+        ],
+    },
+    {
+        "id": "empty-states",
+        "category": "design",
+        "name": "Empty, loading & error states",
+        "description": "Use when a view can be empty, slow, or broken — design the other three states, not just the happy one.",
+        "steps": [
+            "Empty: say what goes here and give the one action that fills it.",
+            "First-run empty differs from filtered-empty; do not reuse one copy for both.",
+            "Loading: hold the layout with a skeleton so nothing jumps when data lands.",
+            "Skip the spinner under ~300ms; it reads as slower than nothing.",
+            "Error: say what failed, whether it was them or us, and offer a retry.",
+            "Keep already-loaded content on screen when a refresh fails.",
+        ],
+    },
+    {
+        "id": "micro-interactions",
+        "category": "design",
+        "name": "Micro-interactions",
+        "description": "Use when adding motion or feedback — fast, purposeful, interruptible, and reduced-motion aware.",
+        "steps": [
+            "Every action needs feedback inside 100ms, even if the result is slower.",
+            "Keep transitions in the 150–250ms range; longer reads as sluggish.",
+            "Ease out for entrances, ease in for exits.",
+            "Animate transform and opacity only — anything else costs a layout pass.",
+            "Motion should explain a change of state, never decorate an idle screen.",
+            "Honour prefers-reduced-motion with a cross-fade instead of movement.",
+        ],
+    },
+    # ------------------------------------------------------------------ writing
+    {
+        "id": "changelog",
+        "category": "writing",
+        "name": "Changelog & release notes",
+        "description": "Use when writing release notes — grouped by what users can now do, not by commit.",
+        "steps": [
+            "Group into Added / Changed / Fixed / Removed; drop empty groups.",
+            "Lead each entry with the user-visible outcome, not the internal module.",
+            "Call out breaking changes first, with the migration in the same bullet.",
+            "Skip refactors and chores unless a user can observe them.",
+            "Link the issue or PR for anyone who needs the detail.",
+            "Write in past tense, one line per entry.",
+        ],
+    },
+    {
+        "id": "readme",
+        "category": "writing",
+        "name": "README writing",
+        "description": "Use when writing or refreshing a README — what it is, how to run it, and how to work on it.",
+        "steps": [
+            "Open with one sentence on what this is and who it is for.",
+            "Put the quickstart above the fold: install, configure, run — copy-pasteable.",
+            "State the prerequisites and versions honestly.",
+            "Show one real example with its actual output.",
+            "Cover the two or three things that most often go wrong.",
+            "Cut anything that will rot — link to the source of truth instead.",
+        ],
+    },
+    {
+        "id": "adr",
+        "category": "writing",
+        "name": "Architecture decision record",
+        "description": "Use when recording a significant technical decision — context, options, choice, and consequences.",
+        "steps": [
+            "Title it as the decision, in the present tense.",
+            "State the context and the forces first, without naming the answer.",
+            "List the options actually considered, with the real trade-off of each.",
+            "Record the decision and, specifically, why the runners-up lost.",
+            "Write the consequences, including the ones you dislike.",
+            "Date it, and supersede rather than edit when it changes.",
+        ],
+    },
+    {
+        "id": "commit-messages",
+        "category": "writing",
+        "name": "Commit messages",
+        "description": "Use when committing — a subject that scans in a log, a body that explains why.",
+        "steps": [
+            "Subject: imperative mood, under ~60 chars, no trailing period.",
+            "Say what changed in the subject and why in the body.",
+            "Explain the reason and the alternative you rejected; the diff already shows the how.",
+            "One logical change per commit; unrelated fixes get their own.",
+            "Reference the issue rather than restating it.",
+            "Note behaviour changes and migrations explicitly.",
+        ],
+    },
+    {
+        "id": "pr-description",
+        "category": "writing",
+        "name": "Pull request descriptions",
+        "description": "Use when opening a PR — give the reviewer the context they cannot get from the diff.",
+        "steps": [
+            "Open with the problem, then the approach, in two or three sentences.",
+            "Point at the file or function where the interesting decision lives.",
+            "State how you verified it: the command, the test, the screenshot.",
+            "Call out anything deliberately left out of scope.",
+            "Flag risk and the rollback plan for anything user-facing.",
+            "Keep the diff reviewable — split it before writing an essay to excuse its size.",
+        ],
+    },
+    {
+        "id": "api-docs",
+        "category": "writing",
+        "name": "API documentation",
+        "description": "Use when documenting endpoints or a public interface — task-oriented, with real examples.",
+        "steps": [
+            "Document the task first, the endpoint second.",
+            "Give a complete runnable request and its real response for each operation.",
+            "Specify every parameter: type, required, default, and constraints.",
+            "List the errors a caller must handle, with the exact codes.",
+            "Cover auth, rate limits, and pagination once, up front.",
+            "Generate from the source where you can so the docs cannot drift.",
+        ],
+    },
+    {
+        "id": "plain-language",
+        "category": "writing",
+        "name": "Plain-language editing",
+        "description": "Use when tightening prose, UI copy, or docs — shorter, concrete, and free of filler.",
+        "steps": [
+            "Cut every word that carries no information; start with adverbs and hedges.",
+            "Prefer the active voice and a concrete subject.",
+            "Replace jargon with the thing it describes, or define it once.",
+            "One idea per sentence; split anything with two clauses fighting.",
+            "Lead with the conclusion, then the supporting detail.",
+            "Read it aloud — where you stumble, so will the reader.",
+        ],
+    },
+    # -------------------------------------------------------------------- other
+    {
+        "id": "meeting-notes",
+        "category": "other",
+        "name": "Meeting notes to decisions",
+        "description": "Use when turning raw notes or a transcript into decisions, owners, and next steps.",
+        "steps": [
+            "Lead with the decisions; discussion is context, not output.",
+            "Give every action an owner and a date, or drop it.",
+            "Separate what was decided from what was merely proposed.",
+            "Record open questions with who will answer them.",
+            "Keep it under a page — a wall of text is not read.",
+            "Send it the same day, while people can still correct it.",
+        ],
+    },
+    {
+        "id": "estimate-work",
+        "category": "other",
+        "name": "Breaking down & estimating",
+        "description": "Use when scoping a task — split it until each piece is verifiable, then estimate the pieces.",
+        "steps": [
+            "Split until each piece has a checkable done condition.",
+            "Estimate the pieces, never the whole; the whole is always optimistic.",
+            "Name the unknowns and time-box a spike instead of padding the estimate.",
+            "Include review, testing, and deployment in the number.",
+            "Give a range, and say what would push it to the high end.",
+            "Re-estimate once the first piece lands and the real shape is visible.",
+        ],
+    },
+    {
+        "id": "onboarding-guide",
+        "category": "other",
+        "name": "Onboarding guide",
+        "description": "Use when writing onboarding docs — get a newcomer to a working change on day one.",
+        "steps": [
+            "Start with the shortest path to a running app and a passing test suite.",
+            "Explain the mental model before the directory tree.",
+            "List the accounts, keys, and access needed, and who grants them.",
+            "Name the three things that trip up every new person.",
+            "End with a small starter task that touches the real codebase.",
+            "Have the next newcomer fix the guide as their first PR.",
+        ],
+    },
+    {
+        "id": "incident-postmortem",
+        "category": "other",
+        "name": "Blameless postmortem",
+        "description": "Use after an incident — timeline, contributing factors, and actions that make it structurally harder to repeat.",
+        "steps": [
+            "Write the timeline from logs and timestamps, not memory.",
+            "Describe impact in user terms: who, how many, how long.",
+            "Look for contributing factors, not a single root cause or a person.",
+            "Ask why detection took as long as it did, separately from why it broke.",
+            "Turn each action into an owned, dated change — not a resolve-to-be-careful.",
+            "Publish it; a postmortem nobody reads prevents nothing.",
+        ],
+    },
+    {
+        "id": "research-summary",
+        "category": "other",
+        "name": "Research summary",
+        "description": "Use when condensing sources into a decision-ready summary — claims, evidence, and what is still unknown.",
+        "steps": [
+            "Lead with the answer and your confidence in it.",
+            "Attribute every claim to its source; separate source from inference.",
+            "Note where sources disagree instead of averaging them away.",
+            "State what you could not find out and why it matters.",
+            "Prefer primary sources, and record their date.",
+            "End with the decision the reader now has enough to make.",
+        ],
+    },
+]
+
+
+def skill_md(entry: dict) -> str:
+    """Render a catalog entry as a SKILL.md (front matter + checklist)."""
+    steps = "\n".join(f"- {s}" for s in entry["steps"])
+    return (
+        "---\n"
+        f"name: {entry['id']}\n"
+        # json.dumps gives a valid YAML double-quoted scalar for any description.
+        f"description: {json.dumps(entry['description'])}\n"
+        "---\n\n"
+        f"# {entry['name']}\n\n"
+        f"{entry['description']}\n\n"
+        "## Checklist\n\n"
+        f"{steps}\n"
+    )

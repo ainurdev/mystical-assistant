@@ -30,7 +30,8 @@ import re
 from bridge import (agents, browser, config, devserver, git, github, graphmap,
                     learning, memory, models, native, preview_detect, project_config,
                     pubsub, queue_manager, runner, screenshot, selfupdate, shell,
-                    state, store, sysinfo, terminals, tunnel, usage, weather, wsutil)
+                    skills, state, store, sysinfo, terminals, tunnel, usage, weather,
+                    wsutil)
 from bridge.miniapp.server import (_save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -446,6 +447,10 @@ class Handler(BaseHTTPRequestHandler):
             project = qs.get("project", [""])[0]
             return self._json({"items": store.list_learning_items(
                 chat, project or None, status="kept")})
+        if path == "/local/skills":
+            # A blank/unknown project is fine — the system list still applies.
+            return self._json({**skills.installed(_abs_project(qs.get("project", [None])[0])),
+                               "catalog": skills.catalog()})
         if path == "/local/update":
             # the platform's own checkout — new commits waiting upstream?
             return self._json(selfupdate.check())
@@ -650,6 +655,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(weather.set_location((body.get("city") or "")[:120]))
         if path == "/local/weather/unit":
             return self._json(weather.set_unit((body.get("unit") or "")[:20]))
+        if path in ("/local/skills/install", "/local/skills/remove"):
+            scope = body.get("scope")
+            if scope not in ("project", "system"):
+                return self._json({"error": "bad scope"}, 400)
+            abs_p = _abs_project(body.get("project"))
+            if scope == "project" and abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            act = skills.install if path.endswith("/install") else skills.remove
+            ok, err = act(str(body.get("id", ""))[:100], scope, abs_p)
+            return self._json({"ok": ok, "error": err or None,
+                               **skills.installed(abs_p)}, 200 if ok else 400)
         if path == "/local/memory/suggest":
             abs_p = (_abs_within((body.get("cwd") or "").strip())
                      or _abs_project(body.get("cwd_rel") or body.get("project"))

@@ -13,7 +13,7 @@ import {
   type SessionStatus,
   type UsageInfo,
 } from "./api";
-import { modelOptions } from "./models";
+import { modelOptions, latestPerFamily } from "./models";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { ago, useProjectTints } from "./lib/surfaces";
@@ -41,6 +41,7 @@ import { StatusBar } from "./components/hud/StatusBar";
 import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
+import { SkillsPanel } from "./components/hud/SkillsTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { SessionsPanel } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -599,6 +600,10 @@ export function App() {
         />
       ),
     },
+    {
+      id: "skills", label: "Skills", icon: "✦",
+      render: () => <SkillsPanel project={sessionProject} />,
+    },
     { id: "queue", label: "Queue", icon: "≡", render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];
 
@@ -608,6 +613,12 @@ export function App() {
   const projectNames = useMemo(() => projectGroups.map((g) => g.rel), [projectGroups]);
   // Model picker options — the live list served from /local/state (Models API).
   const modelOpts = useMemo(() => modelOptions(state?.models), [state?.models]);
+  // The composer lists one model per family unless settings says otherwise;
+  // SettingsModal keeps the full list so it can offer the SHOW ALL switch.
+  const composerModels = useMemo(
+    () => (settings.allModels ? modelOpts : latestPerFamily(modelOpts, model)),
+    [modelOpts, settings.allModels, model],
+  );
   // Once the live list loads, snap the selection to an available model (prefer
   // Opus) if the current one isn't offered — the old default was a fixed alias.
   useEffect(() => {
@@ -760,7 +771,7 @@ export function App() {
                   <>
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
-                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={modelOpts} effort={effort}
+                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} effort={effort}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}

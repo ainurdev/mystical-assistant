@@ -87,7 +87,7 @@ function FinalResult({
         RESULT // OK
       </div>
       <div className="px-3 py-2.5">
-        <Typewriter text={result} animate={animate} idKey={idKey} className="leading-relaxed text-[#c4e8df]" />
+        <Typewriter text={result} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
         {typeof elapsed === "number" && (
           <div className="mt-1.5 text-[10px] tracking-[1px] text-muted-2">{elapsed.toFixed(1)}s</div>
         )}

@@ -18,6 +18,7 @@ import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
+import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
 
 export interface SettingsModalProps {
@@ -167,7 +168,7 @@ function Segmented<T extends string>({
   size?: number;
 }) {
   return (
-    <div style={{ display: "flex", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
       {options.map((o) => {
         const active = value === o.value;
         return (
@@ -175,7 +176,7 @@ function Segmented<T extends string>({
             key={o.value}
             onClick={() => onPick(o.value)}
             style={{
-              flex: 1,
+              flex: "1 1 72px",
               appearance: "none",
               cursor: "pointer",
               border: 0,
@@ -251,7 +252,9 @@ function ThemeCardGrid({ settings, onTheme }: { settings: HudSettings; onTheme: 
         const cardBg = on ? comp("#132824") : comp("#0d1517");
         const dim = comp("#20332f");
         const pbg = comp(t.pbg);
-        const nameC = comp("var(--txb)");
+        // The card ground is a hardcoded dark, so the name is a fixed light —
+        // following the live theme's --txb turned it invisible in light themes.
+        const nameC = comp("#e6f2ee");
         const descC = comp("#8fa8a2");
         const chipC = comp("var(--acc-on)");
         const pfont = t.font || "inherit";
@@ -990,9 +993,15 @@ export function SettingsModal(props: SettingsModalProps) {
               <>
                 <Label>RUN DEFAULTS</Label>
                 <div style={CARD}>
-                  <div style={{ ...KEY_TX, marginBottom: 6 }}>MODEL</div>
+                  <div style={{ ...ROW, marginTop: 0, marginBottom: 6 }}>
+                    <span style={KEY_TX}>MODEL</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ ...CAPTION, flex: "none" }}>SHOW ALL</span>
+                    <Switch on={settings.allModels} onClick={() => onPatch({ allModels: !settings.allModels })} />
+                  </div>
                   <Segmented
-                    options={models.map((m) => ({ label: m.label.toUpperCase(), value: m.id }))}
+                    options={(settings.allModels ? models : latestPerFamily(models, settings.model))
+                      .map((m) => ({ label: m.label.toUpperCase(), value: m.id }))}
                     value={settings.model}
                     onPick={(model) => onPatch({ model })}
                   />
