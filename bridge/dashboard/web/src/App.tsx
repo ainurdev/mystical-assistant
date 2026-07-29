@@ -468,10 +468,41 @@ export function App() {
     void api.learningItem(itemId, action);
   };
 
-  function feed(texts: string[]) {
+  // A queued task or a GitHub issue carries the project it belongs to. Feeding it
+  // into whatever session happens to be open would run it against the wrong repo,
+  // so a project that isn't the open session's gets a session of its own and the
+  // prompt starts there. No project (self-update errors, suggestions) = inject
+  // into the current composer, as before.
+  function feed(texts: string[], project?: string) {
     const text = texts.join("\n");
+    if (project && project !== sessionProject) {
+      void startIn(project, text);
+      return;
+    }
     setInject((p) => ({ text, nonce: p.nonce + 1 }));
     setView("chat");
+  }
+
+  // New session in `project`, then run `prompt` in it. send() can't be reused:
+  // it reads sessionId/running from state, which React has not updated yet for
+  // the session we just created — so the prompt would go to the old session.
+  async function startIn(project: string, prompt: string) {
+    try {
+      const { session } = await api.createSession(project);
+      setSessions((prev) => [session, ...prev]);
+      openSession(session.id);
+      setView("chat");
+      const res = await api.run({
+        prompt, images: [], project, session_id: session.id, model,
+        effort: effort || undefined, permission_mode: permMode || undefined,
+        ponytail: ponytail || undefined,
+      });
+      liveTurns.current.add(res.job_id);
+      stickRef.current = true;
+      setTurns([{ id: res.job_id, prompt, events: [], status: "running", pending: [], attachments: [] }]);
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
   }
 
   async function selectProject(rel: string) {
@@ -662,7 +693,7 @@ export function App() {
       items.push({ icon: "◎", label: "Open issues", onClick: () => openAnalyze(ctxMenu.id) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "issue") {
-      items.push({ icon: "▸", label: "Feed to Claude", onClick: () => feed([`Address issue #${ctxMenu.id} in ${cproj}`]) });
+      items.push({ icon: "▸", label: "Feed to Claude", onClick: () => feed([`Address issue #${ctxMenu.id} in ${cproj}`], cproj) });
       items.push({ icon: "⧉", label: "Copy issue ref", onClick: () => copy(`${cproj}#${ctxMenu.id}`) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "terminal") {

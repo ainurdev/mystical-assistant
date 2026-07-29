@@ -3,7 +3,7 @@ import { projectTint } from "../../lib/surfaces";
 
 export type TaskQueuePanelProps = {
   projects: string[];
-  onFeed: (texts: string[]) => void;
+  onFeed: (texts: string[], project?: string) => void;
 };
 
 type Task = {
@@ -80,14 +80,18 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
   function feedTask(task: Task) {
     if (task.done || task.sent) return;
     setTasks((s) => s.map((t) => (t.id === task.id ? { ...t, sent: true } : t)));
-    onFeed([task.text]);
+    onFeed([task.text], task.project);
   }
 
   function feedAll() {
     const open = tasks.filter((t) => !t.done && !t.sent);
     if (!open.length) return;
     setTasks((s) => s.map((t) => (!t.done && !t.sent ? { ...t, sent: true } : t)));
-    onFeed(open.map((t) => t.text));
+    // Tasks can target different projects, so each project's batch goes to its
+    // own session instead of all of them landing on whichever one is open.
+    for (const p of [...new Set(open.map((t) => t.project))]) {
+      onFeed(open.filter((t) => t.project === p).map((t) => t.text), p);
+    }
   }
 
   return (

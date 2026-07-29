@@ -34,7 +34,7 @@ interface Props {
   initialFile?: string;
   initialBranch?: string;
   onClose: () => void;
-  onFeed: (texts: string[]) => void;
+  onFeed: (texts: string[], project?: string) => void;
   onSelectSession: (s: SessionBrief) => void;
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
 }
@@ -229,7 +229,7 @@ export function AnalyzeModal(props: Props) {
           )}
           {tab === "skills" && <SkillsTab project={project} name={name(project)} />}
           {tab === "issues" && (
-            <IssuesTab project={project} info={issues} onFeed={props.onFeed}
+            <IssuesTab project={project} info={issues} onFeed={(t) => props.onFeed(t, project)}
               onReload={() => void api.issues(project).then(setIssues).catch(() => {})} />
           )}
           {tab === "map" && <MapTab project={project} />}
