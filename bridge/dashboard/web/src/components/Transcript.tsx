@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import type { AnswerSelection } from "../api";
 import type { PendingRequest, Turn } from "../chat";
+import type { HudSettings } from "../lib/theme";
 import { RunStream } from "./RunStream";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
@@ -45,6 +46,7 @@ export function Transcript({
   liveTurns,
   trailingWorking,
   lastPromptRef,
+  hud,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -53,6 +55,7 @@ export function Transcript({
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
   lastPromptRef?: RefObject<HTMLDivElement | null>;
+  hud?: HudSettings;
 }) {
   if (!turns.length) {
     return <RuneSpirit variant="block" />;
@@ -86,13 +89,13 @@ export function Transcript({
                 turnId={turn.id}
               />
             )}
-            {working && <WorkingIndicator />}
+            {working && <WorkingIndicator hud={hud} />}
           </div>
         );
       })}
       {/* Native (VS Code) live session: no turn is ever "running", so the working
           state comes from the unified status map instead of turn.status. */}
-      {trailingWorking && <WorkingIndicator />}
+      {trailingWorking && <WorkingIndicator hud={hud} />}
     </div>
   );
 }

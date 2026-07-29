@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import type { AnswerSelection, EnrichedSession, SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
+import type { HudSettings } from "../../lib/theme";
 import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { MemoryView } from "../MemoryView";
@@ -136,7 +137,7 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   onReviewResolve,
   scrollRef, contentRef, composer, onOpenFromHistory, liveTurns, trailingWorking,
-  loading, sessionId, onSuggestPick,
+  loading, sessionId, onSuggestPick, hud,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -158,6 +159,7 @@ export function Terminal({
   loading?: boolean;
   sessionId?: string | null;
   onSuggestPick?: (text: string) => void;
+  hud?: HudSettings;
 }) {
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
@@ -276,7 +278,7 @@ export function Terminal({
                   <SuggestionChips project={sessionProject} onPick={onSuggestPick} />
                 </>
               ) : (
-                <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} />
+                <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} />
               )}
             </div>
           </div>

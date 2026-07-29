@@ -295,6 +295,55 @@ body {
 @keyframes barfill { from { width: 0; } to { width: 100%; } }
 @keyframes tickfade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
+/* nyan.cat, plain: two parallax star layers scrolling past a static cat. */
+.nyan-sky {
+  background-image:
+    radial-gradient(#fff 1px, transparent 1px),
+    radial-gradient(rgba(255, 255, 255, 0.55) 1px, transparent 1px);
+  background-size: 46px 23px, 29px 37px;
+  animation: nyanstars 1.6s linear infinite;
+}
+@keyframes nyanstars { to { background-position: -46px 0, -29px 0; } }
+
+/* nyan.cat, EXTRA: the cat flies the length of the bar trailing the CSS
+   rainbow, over the blooming pixel stars. Geometry ported from nyan.cat's
+   base2.css at 2/7 scale so it fits a HUD row instead of a 200px stage. */
+.nyan-stage { position: relative; height: 46px; overflow: hidden; }
+.nyan-ride { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; animation: nyanfly 9s linear infinite; }
+.nyan-ride img { animation: nyanbob 0.3s steps(1) infinite; }
+@keyframes nyanfly { from { left: -14%; } to { left: 100%; } }
+@keyframes nyanbob { 0% { transform: translateY(-1px); } 50% { transform: translateY(1px); } }
+
+/* `.rainbows` — a strip of `.rainbow` columns, every other one dropped by 2em,
+   which is what makes the trail stair-step. Scrolls two columns per cycle so
+   the seam never shows. */
+/* `right` tucks the strip 12px under the cat so the GIF's transparent left
+   margin doesn't leave a gap between tart and trail. */
+.nyan-trail { position: absolute; right: calc(100% - 12px); top: 4px; display: flex; height: 38px; animation: nyantrail 0.36s linear infinite; }
+.nyan-trail > span { display: flex; flex-direction: column; width: 14px; flex: none; }
+.nyan-trail > span:nth-child(even) { padding-top: 8px; }
+.nyan-trail > span > i { height: 5px; flex: none; }
+@keyframes nyantrail { to { transform: translateX(-28px); } }
+
+/* `.star` — a 1px dot whose box-shadow blooms outward through nyan.cat's six
+   star frames, then vanishes. Offsets are its own em (font-size = dot size). */
+.nyan-star {
+  position: absolute;
+  width: 1em;
+  height: 1em;
+  color: inherit;
+  animation: nyanstar 0.66s step-end infinite, nyandrift 2.6s linear infinite;
+}
+@keyframes nyanstar {
+  0%     { box-shadow: 0 0; }
+  16.6%  { box-shadow: 0 1em, 0 -1em, 1em 0, -1em 0; }
+  33.3%  { box-shadow: 0 1em, 0 -1em, 1em 0, -1em 0, 0 2em, 0 -2em, 2em 0, -2em 0; }
+  50%    { box-shadow: 0 2em, 0 -2em, 2em 0, -2em 0, 0 3em, 0 -3em, 3em 0, -3em 0; }
+  66.6%  { box-shadow: 0 3em, 0 -3em, 3em 0, -3em 0, 2em 2em, -2em 2em, 2em -2em, -2em -2em; }
+  83.3%  { box-shadow: 0 3em, 0 -3em, 3em 0, -3em 0; }
+  100%   { box-shadow: none; }
+}
+@keyframes nyandrift { from { left: 102%; } to { left: -4%; } }
 @keyframes resultflash { 0% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45); filter: brightness(1.7); } 100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); filter: none; } }
 @keyframes quoteout { from { opacity: 1; filter: none; transform: none; } to { opacity: 0; filter: blur(3px) brightness(1.7); transform: translateX(7px); } }
 @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }

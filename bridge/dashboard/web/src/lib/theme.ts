@@ -6,6 +6,9 @@
 // `canvas`/`font` restyle the page ground + type voice. CRT effects
 // (scanlines / sweep / glow) have per-theme defaults applied on pick.
 
+import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
+import { VOICE_KEYS, type VoiceKey } from "./piano";
+
 export type ThemeKey =
   | "aqua"
   | "green"
@@ -81,6 +84,30 @@ export function themePrad(t: ThemeKey): string {
 }
 
 /**
+ * The CSS filter that UNDOES the active theme's filter — apply it to media that
+ * must keep its true colours inside the themed container (the nyan cat GIF; a
+ * hue-rotated nyan cat is not a nyan cat). Each op is inverted and the chain
+ * reversed. "none" for the palette themes, which don't filter at all. Only the
+ * cleanly invertible ops are undone — `gray`/`invert` are lossy, and no theme
+ * uses them today.
+ */
+export function themeUnfilter(t: ThemeKey): string {
+  const ops = themeDef(t).ops;
+  if (!ops.length) return "none";
+  const out = [...ops]
+    .reverse()
+    .map(([k, v]) =>
+      k === "hue" ? `hue-rotate(${-v}deg)`
+      : k === "sat" && v > 0 ? `saturate(${1 / v})`
+      : k === "bright" && v > 0 ? `brightness(${1 / v})`
+      : k === "contrast" && v > 0 ? `contrast(${1 / v})`
+      : "",
+    )
+    .filter(Boolean);
+  return out.length ? out.join(" ") : "none";
+}
+
+/**
  * CSS custom-property overrides for a palette theme, injected on the themed
  * container so every descendant recolours. Empty for the filter themes
  * (aqua/green/amber/magenta), which recolour via `filter` instead.
@@ -106,6 +133,10 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
 export const RIGHT_TABS = ["projects", "files", "queue"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
+/** What the transcript shows while the agent works. */
+export const INDICATORS = ["bar", "nyan", "piano"] as const;
+export type Indicator = (typeof INDICATORS)[number];
+
 export interface HudSettings {
   theme: ThemeKey;
   scanlines: boolean;
@@ -113,12 +144,27 @@ export interface HudSettings {
   glow: boolean;
   rightOpen: boolean; // right sidebar expanded
   rightTab: RightTab; // which sidebar tab it opens on
+  indicator: Indicator; // which working-indicator form is live
+  nyan: NyanMode; // which cat, when indicator === "nyan"
+  nyanSound: NyanSound; // "match" = the picked cat's own track
+  nyanVolume: number; // 0..1
+  nyanExtra: boolean; // fly the cat + draw nyan.cat's CSS rainbow and pixel stars
+  pianoVoice: VoiceKey; // instrument voice (see VOICES)
+  pianoVolume: number; // 0..1
 }
 
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "projects",
+  indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
+  pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
 };
+
+const legacyVoice = (p: Partial<HudSettings> & { pianoWave?: string }): unknown =>
+  p.pianoVoice ?? p.pianoWave;
+
+const clamp01 = (v: unknown, fallback: number): number =>
+  typeof v === "number" ? Math.min(1, Math.max(0, v)) : fallback;
 
 export function loadSettings(): HudSettings {
   try {
@@ -133,6 +179,24 @@ export function loadSettings(): HudSettings {
         glow: p.glow ?? true,
         rightOpen: p.rightOpen ?? true,
         rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "projects",
+        // `nyan` used to carry "off" to mean the stock bar; that role moved to
+        // `indicator`, so a stored "off" migrates to indicator:"bar".
+        indicator: INDICATORS.includes(p.indicator as Indicator)
+          ? (p.indicator as Indicator)
+          : NYAN_KEYS.includes(p.nyan as string)
+            ? "nyan"
+            : "bar",
+        nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
+        nyanSound:
+          p.nyanSound === "off" || p.nyanSound === "match" || NYAN_KEYS.includes(p.nyanSound as string)
+            ? (p.nyanSound as NyanSound)
+            : "match",
+        nyanVolume: clamp01(p.nyanVolume, 0.4),
+        nyanExtra: p.nyanExtra ?? true,
+        // `pianoWave` held a raw oscillator name before the instrument list;
+        // those names survive as SYNTH voice keys, so it carries straight over.
+        pianoVoice: VOICE_KEYS.includes(legacyVoice(p) as string) ? (legacyVoice(p) as VoiceKey) : "grand",
+        pianoVolume: clamp01(p.pianoVolume, 0.3),
       };
     }
   } catch {

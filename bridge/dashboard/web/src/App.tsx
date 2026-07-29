@@ -185,6 +185,9 @@ export function App() {
   function toggleCrt(key: "scanlines" | "sweep" | "glow") {
     setSettings((s) => ({ ...s, [key]: !s[key] }));
   }
+  function patchSettings(patch: Partial<HudSettings>) {
+    setSettings((s) => ({ ...s, ...patch }));
+  }
   function toggleRight() {
     setSettings((s) => ({ ...s, rightOpen: !s.rightOpen }));
   }
@@ -725,7 +728,7 @@ export function App() {
                 scrollRef={scrollRef} contentRef={contentRef}
                 onSuggestPick={(t) => feed([t])}
                 onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
-                trailingWorking={openWorking && !running} loading={loadingSession}
+                trailingWorking={openWorking && !running} loading={loadingSession} hud={settings}
                 composer={
                   <>
                     <AgentsPill sessionId={sessionId} running={running} />
@@ -803,7 +806,7 @@ export function App() {
             )}
             {settingsOpen && (
               <SettingsModal wsRoot={wsRoot} host={host.host} port={location.port || "8790"}
-                settings={settings} onTheme={setTheme} onToggle={toggleCrt}
+                settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
                 defModel={model} defMode={defMode} models={modelOpts}
                 onDefModel={setModel} onDefMode={(m) => { setDefMode(m); setPermMode(m); }}
                 onClose={() => setSettingsOpen(false)} />

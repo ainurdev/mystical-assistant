@@ -1,5 +1,7 @@
-import { useState } from "react";
-import type { HudSettings, ThemeKey } from "../../lib/theme";
+import { useState, type CSSProperties } from "react";
+import { themeUnfilter, type HudSettings, type Indicator, type ThemeKey } from "../../lib/theme";
+import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
+import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { CrtToggles, ThemeCardGrid } from "./ThemeModal";
 
 type Model = string; // full model id from the Models API, or a short CLI alias
@@ -12,6 +14,7 @@ export interface SettingsModalProps {
   settings: HudSettings;
   onTheme: (t: ThemeKey) => void;
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
+  onPatch: (patch: Partial<HudSettings>) => void;
   defModel: Model;
   defMode: Mode;
   onDefModel: (m: Model) => void;
@@ -26,6 +29,229 @@ const MODE_OPTS: { label: string; value: Mode }[] = [
   { label: "AUTO", value: "auto" },
 ];
 
+// ---- WORKING INDICATOR ------------------------------------------------------
+// Three forms share one tabbed panel so the modal stays one screen: the stock
+// equalizer, a nyan.cat ride, and a playable piano. Picking a tab IS picking
+// the form — `settings.indicator` is the tab state.
+
+const INDICATOR_TABS: { key: Indicator; label: string; blurb: string }[] = [
+  { key: "bar", label: "EQUALIZER", blurb: "the stock braille spinner, phrase ticker and level bars" },
+  { key: "nyan", label: "NYAN CAT", blurb: "a nyan.cat ride — 36 cats, their trails, their music" },
+  { key: "piano", label: "PIANO", blurb: "two octaves to play with mouse or keyboard while you wait" },
+];
+
+const field = {
+  background: "var(--panel3)",
+  border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
+  outline: "none",
+  color: "var(--txb)",
+  fontFamily: "inherit",
+  fontSize: 10,
+  letterSpacing: 1,
+  padding: "6px 8px",
+};
+
+/** An ON/OFF pill, matching the CRT rows. */
+function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        appearance: "none",
+        cursor: "pointer",
+        border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+        background: "var(--panel3)",
+        padding: 2,
+        display: "flex",
+        gap: 2,
+        flex: "none",
+        fontFamily: "inherit",
+      }}
+    >
+      <span style={{ fontSize: 9, letterSpacing: 1, padding: "3px 10px", background: on ? "var(--acc)" : "transparent", color: on ? "var(--acc-on)" : "var(--txl)" }}>
+        ON
+      </span>
+      <span style={{ fontSize: 9, letterSpacing: 1, padding: "3px 10px", background: on ? "transparent" : "color-mix(in srgb, var(--acc) 18%, transparent)", color: on ? "var(--txl)" : "var(--txb)" }}>
+        OFF
+      </span>
+    </button>
+  );
+}
+
+function Volume({ value, disabled, onChange }: { value: number; disabled?: boolean; onChange: (v: number) => void }) {
+  return (
+    <>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.05}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+        title={`Volume ${Math.round(value * 100)}%`}
+        style={{ width: 96, flex: "none", accentColor: "var(--acc)" }}
+      />
+      <span style={{ fontSize: 9.5, color: "var(--txl)", flex: "none", width: 30, textAlign: "right", fontFamily: "'JetBrains Mono',monospace" }}>
+        {Math.round(value * 100)}%
+      </span>
+    </>
+  );
+}
+
+const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 10, marginTop: 11 };
+const CAPTION: CSSProperties = { fontSize: 9.5, letterSpacing: 1, color: "var(--txd)", flex: "none" };
+
+function IndicatorPicker({
+  settings,
+  onPatch,
+}: {
+  settings: HudSettings;
+  onPatch: (patch: Partial<HudSettings>) => void;
+}) {
+  const unfilter = themeUnfilter(settings.theme);
+  const active = INDICATOR_TABS.find((t) => t.key === settings.indicator) ?? INDICATOR_TABS[0];
+
+  return (
+    <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel) 92%, transparent)" }}>
+      <div style={{ display: "flex", gap: 2, borderBottom: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)" }}>
+        {INDICATOR_TABS.map((t) => {
+          const on = settings.indicator === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => onPatch({ indicator: t.key })}
+              style={{
+                flex: 1,
+                appearance: "none",
+                cursor: "pointer",
+                border: 0,
+                borderBottom: `2px solid ${on ? "var(--acc)" : "transparent"}`,
+                background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent",
+                color: on ? "var(--txb)" : "var(--txd)",
+                fontFamily: "inherit",
+                fontSize: 9.5,
+                letterSpacing: 1.5,
+                padding: "8px 4px",
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: "12px 13px" }}>
+        <div style={{ fontSize: 9.5, color: "var(--txl)" }}>{active.blurb}</div>
+
+        {settings.indicator === "nyan" && (
+          <>
+            <div
+              className="mscroll"
+              style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(52px,1fr))", gap: 5, maxHeight: 172, overflowY: "auto", marginTop: 11 }}
+            >
+              {NYAN_MODES.map((m) => {
+                const on = settings.nyan === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    onClick={() => onPatch({ nyan: m.key })}
+                    title={m.label}
+                    style={{
+                      appearance: "none",
+                      cursor: "pointer",
+                      padding: 3,
+                      lineHeight: 0,
+                      background: on ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "var(--panel3)",
+                      border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
+                    }}
+                  >
+                    <img src={nyanThumb(m.thumb)} alt={m.label} loading="lazy" style={{ width: "100%", display: "block", filter: unfilter }} />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={ROW}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: "var(--txh)", letterSpacing: 0.5 }}>EXTRA ANIMATIONS</div>
+                <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 2 }}>
+                  fly the cat, draw nyan.cat's rainbow trail + pixel stars
+                </div>
+              </div>
+              <Switch on={settings.nyanExtra} onClick={() => onPatch({ nyanExtra: !settings.nyanExtra })} />
+            </div>
+
+            <div style={ROW}>
+              <span style={CAPTION}>SOUND</span>
+              <select
+                value={settings.nyanSound}
+                onChange={(e) => onPatch({ nyanSound: e.target.value as NyanSound })}
+                style={{ ...field, flex: 1, minWidth: 0 }}
+              >
+                <option value="match">MATCH THE CAT</option>
+                <option value="off">MUTE</option>
+                {NYAN_MODES.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <Volume
+                value={settings.nyanVolume}
+                disabled={settings.nyanSound === "off"}
+                onChange={(nyanVolume) => onPatch({ nyanVolume })}
+              />
+            </div>
+          </>
+        )}
+
+        {settings.indicator === "piano" && (
+          <>
+            <div style={ROW}>
+              <span style={CAPTION}>VOICE</span>
+              <select
+                value={settings.pianoVoice}
+                onChange={(e) => onPatch({ pianoVoice: e.target.value })}
+                style={{ ...field, flex: 1, minWidth: 0 }}
+              >
+                {VOICE_GROUPS.map((g) => (
+                  <optgroup key={g} label={g}>
+                    {VOICES.filter((v) => v.group === g).map((v) => (
+                      <option key={v.key} value={v.key}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <Volume value={settings.pianoVolume} onChange={(pianoVolume) => onPatch({ pianoVolume })} />
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 11, lineHeight: 1.7 }}>
+              Click the board to arm the computer keys — unfocused, they stay yours for typing.
+              <br />
+              <span style={{ color: "var(--txd)" }}>SAMPLES</span> are real recordings, one MP3 per
+              note, fetched on first use (~600&nbsp;KB a voice, then browser-cached); the synth
+              covers until they land.{" "}
+              <span style={{ color: "var(--txd)" }}>SYNTH</span> voices are generated locally and
+              need no network.
+              <br />
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
+                Z S X D C V G B H N J M
+              </span>{" "}
+              plays C3–B3 ·{" "}
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
+                Q 2 W 3 E R 5 T 6 Y 7 U I
+              </span>{" "}
+              plays C4–C5.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
     wsRoot,
@@ -34,6 +260,7 @@ export function SettingsModal(props: SettingsModalProps) {
     settings,
     onTheme,
     onToggle,
+    onPatch,
     defModel,
     defMode,
     onDefModel,
@@ -218,6 +445,18 @@ export function SettingsModal(props: SettingsModalProps) {
             CRT EFFECTS
           </div>
           <CrtToggles settings={settings} onToggle={onToggle} />
+
+          <div
+            style={{
+              fontSize: 9.5,
+              letterSpacing: 1.5,
+              color: "var(--txl)",
+              margin: "20px 0 11px",
+            }}
+          >
+            WORKING INDICATOR
+          </div>
+          <IndicatorPicker settings={settings} onPatch={onPatch} />
 
           {/* 2-col grid */}
           <div
