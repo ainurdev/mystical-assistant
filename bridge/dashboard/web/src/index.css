@@ -344,6 +344,45 @@ body {
   100%   { box-shadow: none; }
 }
 @keyframes nyandrift { from { left: 102%; } to { left: -4%; } }
+
+/* ---- PIANO TILES ---------------------------------------------------------
+   Tiles fall out of the dark toward a glowing hit line sitting on the keys.
+   The whole sheet is moved with one transform, so nothing here animates
+   per-tile except the hit/miss verdict. */
+.tiles-field {
+  background:
+    linear-gradient(180deg, var(--panel3) 0%, color-mix(in srgb, var(--panel3) 40%, transparent) 55%, transparent 100%),
+    color-mix(in srgb, var(--acc) 4%, transparent);
+  box-shadow: inset 0 -9px 16px -10px var(--acc);
+}
+.tile {
+  border-radius: 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 62%, transparent), var(--acc));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent),
+    0 0 7px color-mix(in srgb, var(--acc) 45%, transparent);
+  transition: opacity 0.16s ease, transform 0.16s ease, background 0.1s linear;
+}
+/* Black-key lanes read as a distinct colour, the way they do on the board. */
+.tile[data-black] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--purple) 65%, transparent), var(--purple));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent),
+    0 0 7px color-mix(in srgb, var(--purple) 45%, transparent);
+}
+/* Cleared: pop bright, then get out of the way. */
+.tile-hit {
+  opacity: 0;
+  transform: scaleY(0.4);
+  transform-origin: bottom;
+  background: #fff;
+}
+/* Fell through: stays as a dim red ghost so the mistake is visible. */
+.tile-miss {
+  opacity: 0.22;
+  background: var(--err);
+  box-shadow: none;
+}
 @keyframes resultflash { 0% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45); filter: brightness(1.7); } 100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); filter: none; } }
 @keyframes quoteout { from { opacity: 1; filter: none; transform: none; } to { opacity: 0; filter: blur(3px) brightness(1.7); transform: translateX(7px); } }
 @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }

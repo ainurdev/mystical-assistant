@@ -8,6 +8,7 @@
 
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { VOICE_KEYS, type VoiceKey } from "./piano";
+import { SONGS, TILE_SPEEDS, type TileSpeed } from "./songs";
 
 export type ThemeKey =
   | "aqua"
@@ -134,7 +135,7 @@ export const RIGHT_TABS = ["projects", "files", "queue"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 /** What the transcript shows while the agent works. */
-export const INDICATORS = ["bar", "nyan", "piano"] as const;
+export const INDICATORS = ["bar", "nyan", "piano", "tiles"] as const;
 export type Indicator = (typeof INDICATORS)[number];
 
 export interface HudSettings {
@@ -151,6 +152,8 @@ export interface HudSettings {
   nyanExtra: boolean; // fly the cat + draw nyan.cat's CSS rainbow and pixel stars
   pianoVoice: VoiceKey; // instrument voice (see VOICES)
   pianoVolume: number; // 0..1
+  tilesSong: string; // which melody the tiles game drops
+  tilesSpeed: TileSpeed; // how long a tile takes to fall
 }
 
 const KEY = "hud-settings";
@@ -158,6 +161,7 @@ const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "projects",
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
+  tilesSong: "fur-elise", tilesSpeed: "normal",
 };
 
 const legacyVoice = (p: Partial<HudSettings> & { pianoWave?: string }): unknown =>
@@ -197,6 +201,10 @@ export function loadSettings(): HudSettings {
         // those names survive as SYNTH voice keys, so it carries straight over.
         pianoVoice: VOICE_KEYS.includes(legacyVoice(p) as string) ? (legacyVoice(p) as VoiceKey) : "grand",
         pianoVolume: clamp01(p.pianoVolume, 0.3),
+        tilesSong: SONGS.some((x) => x.key === p.tilesSong) ? (p.tilesSong as string) : "fur-elise",
+        tilesSpeed: TILE_SPEEDS.includes(p.tilesSpeed as TileSpeed)
+          ? (p.tilesSpeed as TileSpeed)
+          : "normal",
       };
     }
   } catch {

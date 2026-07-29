@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { themeCompensator, themeUnfilter, type HudSettings } from "../../lib/theme";
 import { nyanGif, nyanLook, nyanTrack, type NyanMode } from "../../lib/nyan";
 import { PianoIndicator } from "./PianoIndicator";
+import { TilesIndicator } from "./TilesIndicator";
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const PHRASES = [
@@ -15,8 +16,9 @@ const PHRASES = [
 ];
 
 /** The "agent is working" line for the HUD terminal. `hud.indicator` picks the
- *  form: the stock braille spinner + equalizer, a nyan.cat ride, or a playable
- *  piano. All three share the tick, the cycling phrase and the elapsed count. */
+ *  form: the stock braille spinner + equalizer, a nyan.cat ride, a playable
+ *  piano, or a game of piano tiles. All of them share the tick, the cycling
+ *  phrase and the elapsed count. */
 export function WorkingIndicator({ hud }: { hud?: HudSettings }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -33,6 +35,9 @@ export function WorkingIndicator({ hud }: { hud?: HudSettings }) {
   }
   if (hud?.indicator === "piano") {
     return <PianoIndicator hud={hud} phrase={phrase} elapsed={elapsed} />;
+  }
+  if (hud?.indicator === "tiles") {
+    return <TilesIndicator hud={hud} phrase={phrase} elapsed={elapsed} />;
   }
 
   return (

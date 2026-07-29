@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { themeUnfilter, type HudSettings, type Indicator, type ThemeKey } from "../../lib/theme";
 import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
+import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { CrtToggles, ThemeCardGrid } from "./ThemeModal";
 
 type Model = string; // full model id from the Models API, or a short CLI alias
@@ -30,14 +31,15 @@ const MODE_OPTS: { label: string; value: Mode }[] = [
 ];
 
 // ---- WORKING INDICATOR ------------------------------------------------------
-// Three forms share one tabbed panel so the modal stays one screen: the stock
-// equalizer, a nyan.cat ride, and a playable piano. Picking a tab IS picking
-// the form — `settings.indicator` is the tab state.
+// Four forms share one tabbed panel so the modal stays one screen: the stock
+// equalizer, a nyan.cat ride, a playable piano, and piano tiles. Picking a tab
+// IS picking the form — `settings.indicator` is the tab state.
 
 const INDICATOR_TABS: { key: Indicator; label: string; blurb: string }[] = [
   { key: "bar", label: "EQUALIZER", blurb: "the stock braille spinner, phrase ticker and level bars" },
   { key: "nyan", label: "NYAN CAT", blurb: "a nyan.cat ride — 36 cats, their trails, their music" },
   { key: "piano", label: "PIANO", blurb: "two octaves to play with mouse or keyboard while you wait" },
+  { key: "tiles", label: "TILES", blurb: "piano tiles — clear each falling note on the key that plays it" },
 ];
 
 const field = {
@@ -202,6 +204,48 @@ function IndicatorPicker({
                 disabled={settings.nyanSound === "off"}
                 onChange={(nyanVolume) => onPatch({ nyanVolume })}
               />
+            </div>
+          </>
+        )}
+
+        {settings.indicator === "tiles" && (
+          <>
+            <div style={ROW}>
+              <span style={CAPTION}>SONG</span>
+              <select
+                value={settings.tilesSong}
+                onChange={(e) => onPatch({ tilesSong: e.target.value })}
+                style={{ ...field, flex: 1, minWidth: 0 }}
+              >
+                {SONGS.map((song) => (
+                  <option key={song.key} value={song.key}>
+                    {song.title} — {song.composer}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={settings.tilesSpeed}
+                onChange={(e) => onPatch({ tilesSpeed: e.target.value as TileSpeed })}
+                style={{ ...field, flex: "none" }}
+              >
+                {TILE_SPEEDS.map((sp) => (
+                  <option key={sp} value={sp}>
+                    {sp.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 11, lineHeight: 1.7 }}>
+              Notes fall down the lane of the key that plays them — hit that key as the tile lands.
+              Mouse or computer keys, same as the piano, and it uses the VOICE picked on the PIANO
+              tab.
+              <br />
+              Every melody is public domain; a modern chart hit&apos;s tune is a copyrighted
+              composition, so the directory sticks to the canon. Add your own in{" "}
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
+                src/lib/songs.ts
+              </span>
+              .
             </div>
           </>
         )}
