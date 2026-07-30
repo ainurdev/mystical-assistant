@@ -1,8 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="mystical-assistant">
-  <!-- ponytail: docs/assets/mystical.svg with the rings + SMIL stripped; they turn to mush at 16px -->
-  <rect width="200" height="200" rx="44" fill="#060a0a"/>
-  <g transform="translate(100 100) rotate(45)">
-    <rect x="-48" y="-48" width="96" height="96" rx="6" fill="none" stroke="#7fe9d8" stroke-width="14"/>
-    <rect x="-21" y="-21" width="42" height="42" rx="4" fill="#c3b0ff"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" aria-label="mystical-assistant" role="img" viewBox="0 0 200 200"><rect width="200" height="200" fill="#060a0a" rx="44"/><g transform="translate(100 100) rotate(45)"><rect width="96" height="96" x="-48" y="-48" fill="none" stroke="#7fe9d8" stroke-width="14" rx="6"/><rect width="42" height="42" x="-21" y="-21" fill="#c3b0ff" rx="4"/></g></svg>
