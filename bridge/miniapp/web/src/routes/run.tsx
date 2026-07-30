@@ -5,7 +5,7 @@ import { useChat } from "../lib/chat";
 import type { PendingRequest } from "../lib/api";
 import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
-import { RunningNow } from "../components/RunningNow";
+import { ActiveSessions } from "../components/ActiveSessions";
 import { Banner } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
@@ -31,7 +31,7 @@ function RunPage() {
   return (
     <div className="space-y-4 pb-44">
       {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
-      <RunningNow />
+      <ActiveSessions />
 
       {turns.length === 0 && (
         <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">

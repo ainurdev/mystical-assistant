@@ -255,13 +255,15 @@ export function SessionsPanel(props: Props) {
   // RECENT tab: newest-first, matching the design mock's "newest first".
   const recentSorted = [...sessions].sort((a, b) => b.updated - a.updated);
   // BY PROJECT rows: every session that's actually doing something (WORK/WAIT/
-  // LIVE/DONE) or holding a prompt of yours, never nothing — a quiet project
-  // still shows its newest one.
+  // LIVE/DONE), holding a prompt of yours, or currently open — never nothing, so
+  // a quiet project still shows its newest one. The open session stays listed
+  // even when idle and draft-free: hiding the chat you're looking at reads as
+  // "it's gone".
   // ponytail: ignores g.sessions' cap on purpose; the rest hide behind SHOW MORE.
   const rowsFor = (rel: string) => {
     const all = sorted.filter((s) => s.project === rel);
-    const busy = all.filter((s) =>
-      statusView(status.get(s.id), done.has(s.id)).l !== "IDLE" || flags.has(s.id));
+    const busy = all.filter((s) => s.id === selectedSessionId
+      || statusView(status.get(s.id), done.has(s.id)).l !== "IDLE" || flags.has(s.id));
     return busy.length ? busy : all.slice(0, 1);
   };
 

@@ -65,6 +65,14 @@ RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (
 # keeps timing out can't burn tokens forever).
 AUTO_RESUME = os.environ.get("AUTO_RESUME", "1").lower() not in ("0", "false", "no", "")
 
+# Fallback ladder: what a usage-limit death does beyond waiting for the reset.
+#   ask  — offer the available rungs (another Claude account, a free agent) and
+#          let the user pick; the session stays parked behind the card
+#   auto — take the best rung immediately and report which one
+#   wait — park only, the behaviour before the ladder existed
+# Per-session overrides live in sessions.fallback_policy; see bridge/ladder.py.
+FALLBACK_POLICY = os.environ.get("FALLBACK_POLICY", "ask").strip().lower()
+
 # --- Project memory ----------------------------------------------------------
 # Curated, project+branch-scoped memory injected into every turn's system prompt
 # and captured (with a Keep/Skip gate) after edits. See the project-memory design.

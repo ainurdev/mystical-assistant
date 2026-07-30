@@ -388,8 +388,20 @@ export function App() {
   }, [refreshProjects]);
 
   const loadSessions = useCallback(async () => {
-    try { const { sessions: list } = await api.sessions(); setSessions(list); return list; }
-    catch { return [] as SessionBrief[]; }
+    try {
+      const { sessions: list } = await api.sessions();
+      // A poll already in flight when a session is created comes back without
+      // it and would drop the chat you just opened (startIn/newSession add it
+      // optimistically) out of the lists — keep the open one until a poll
+      // carries it.
+      setSessions((prev) => {
+        const sid = sessionIdRef.current;
+        const open = sid && !list.some((s) => s.id === sid)
+          ? prev.find((s) => s.id === sid) : undefined;
+        return open ? [open, ...list] : list;
+      });
+      return list;
+    } catch { return [] as SessionBrief[]; }
   }, []);
 
   const projectRel = state?.project?.rel ?? null;

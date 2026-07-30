@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 
-from bridge import config, graphmap, state, store
+from bridge import accounts, config, graphmap, ladder, state, store
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -24,6 +24,8 @@ HELP = (
     "/logs [n] — recent server output\n"
     f"/preview [port] — public link (default {config.PREVIEW_PORT}) · /preview stop\n"
     "/map [query] — project map: summary · /map build · /map <thing>\n"
+    "/accounts — Claude logins and their usage · /accounts add\n"
+    "/policy — what to do when a chat hits the usage limit\n"
     "/status — everything at a glance\n"
     "/help — this message")
 
@@ -118,6 +120,11 @@ def on_message(msg: dict):
                          args=(chat_id, text[len("/map"):].strip()),
                          daemon=True).start()
         return
+    if cmd0 in ("/accounts", "/policy"):
+        # /accounts reads every account's usage meter — network, so off-thread.
+        threading.Thread(target=handle_fallback_command, args=(chat_id, text),
+                         daemon=True).start()
+        return
     if text == "/status":
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
@@ -138,6 +145,104 @@ def on_message(msg: dict):
         send(chat_id, "⏳ Still working on this session — please wait.")
         return
     threading.Thread(target=handle_task, args=(chat_id, text, session), daemon=True).start()
+
+
+# --- fallback ladder: the usage-limit approval card + /accounts, /policy ------
+
+def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
+    """Buttons on the usage-limit card: fb:a:<sid>:<slot> | fb:f:<sid>:<provider>
+    | fb:w:<sid>. Owner-scoped — a card only spends the accounts of the chat whose
+    session it belongs to."""
+    parts = data.split(":", 3)
+    sid = parts[2] if len(parts) > 2 else ""
+    session = store.get_session(sid) if sid else None
+    if not session or session["chat_id"] != chat_id:
+        answer_cb(cb["id"])
+        return
+    kind = parts[1]
+    if kind == "w":
+        answer_cb(cb["id"], "Waiting for reset")
+        edit(chat_id, msg_id, "⏳ Waiting for the usage limit to reset.")
+        return
+    if kind == "a" and len(parts) == 4 and parts[3].isdigit():
+        slot = int(parts[3])
+        rung = {"kind": "account", "slot": slot, "label": f"account {slot}"}
+    elif kind == "f" and len(parts) == 4 and parts[3]:
+        rung = {"kind": "free", "provider": parts[3],
+                "label": f"free agent ({parts[3]})"}
+    else:
+        answer_cb(cb["id"])
+        return
+    answer_cb(cb["id"], "Starting…")
+    taken = ladder.take(session, chat_id, rung)
+    edit(chat_id, msg_id,
+         f"↪ Continuing on {rung['label']}." if taken else
+         "⚠️ Couldn't hand the work over — still parked until the limit resets.")
+
+
+def _policy_text() -> str:
+    return ("Usage-limit fallback: what happens when a chat hits the limit.\n\n"
+            f"Current default: {config.FALLBACK_POLICY}\n\n"
+            "/policy ask — offer the choices, stay parked until you pick\n"
+            "/policy auto — switch to the best account (or free agent) at once\n"
+            "/policy wait — only wait for the reset\n\n"
+            "Sets the active project's latest chat; new chats use the default.")
+
+
+def _accounts_text() -> str:
+    rows = accounts.list_accounts()
+    if not rows:
+        return ("No Claude login found. Run `claude /login` in a terminal, then "
+                "/accounts add.")
+    lines = []
+    for a in rows:
+        left = accounts.headroom(a["slot"])
+        meter = f"{left}% left" if left is not None else "usage unknown"
+        tags = " (default)" if a["default"] else ""
+        tags += " (disabled)" if a["disabled"] else ""
+        lines.append(f"{a['slot']}. {a['email'] or 'unknown'} — {meter}{tags}")
+    return ("Claude accounts:\n" + "\n".join(lines) +
+            "\n\n/accounts add — snapshot the login currently in ~/.claude\n"
+            "/accounts remove <n> · /accounts disable <n> · /accounts enable <n>")
+
+
+def handle_fallback_command(chat_id: int, text: str) -> bool:
+    """Handle /accounts and /policy. Returns whether the text was ours."""
+    cmd, _, arg = text.strip().partition(" ")
+    arg = arg.strip()
+    if cmd == "/policy":
+        if not arg:
+            send(chat_id, _policy_text())
+        elif arg not in ladder.POLICIES:
+            send(chat_id, f"Unknown policy {arg!r}. Use: " +
+                 ", ".join(ladder.POLICIES))
+        else:
+            s = store.latest_session(chat_id, state.project_key(chat_id))
+            if not s:
+                send(chat_id, "No chat here yet — send a prompt first.")
+            else:
+                store.set_fallback_policy(s["id"], arg)
+                send(chat_id, f"✅ Fallback policy for this chat: {arg}")
+        return True
+    if cmd != "/accounts":
+        return False
+    verb, _, rest = arg.partition(" ")
+    rest = rest.strip()
+    try:
+        if verb == "add":
+            send(chat_id, f"✅ Added the current login as account {accounts.add()}. "
+                          "It stays available while you log back in as your usual one.")
+        elif verb in ("remove", "disable", "enable") and rest.isdigit():
+            getattr(accounts, verb)(int(rest))
+            send(chat_id, f"✅ Account {rest} {verb}d.")
+        else:
+            send(chat_id, _accounts_text())
+    except accounts.NoLogin:
+        send(chat_id, "No login in ~/.claude to copy. Run `claude /login` in a "
+                      "terminal first, then /accounts add.")
+    except ValueError as e:
+        send(chat_id, f"⚠️ {e}")
+    return True
 
 
 def handle_callback(cb: dict):
@@ -179,6 +284,9 @@ def handle_callback(cb: dict):
              "• /app to open the control panel\n"
              f"• /server to start it (default: {config.START_CMD})\n"
              "• /preview to open it in your browser")
+
+    elif data.startswith("fb:"):
+        _fallback_callback(cb, chat_id, msg_id, data)
 
     elif data.startswith("rvw:"):
         parts = data.split(":", 2)

@@ -236,7 +236,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const isRunning = activeTurn !== null;
   const pending = activeTurn?.pending ?? [];
 
-  // Unified status (shared ["running"] cache with RunningNow / the header). Tells
+  // Unified status (shared ["running"] cache with ActiveSessions / the header). Tells
   // us when the open session is a live native (VS Code) session so we both stream
   // its transcript and show a working indicator, even with no bridge turn.
   const runningQuery = useQuery({

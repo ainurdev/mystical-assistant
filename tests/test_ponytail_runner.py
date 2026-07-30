@@ -30,6 +30,26 @@ def test_run_env_sets_mode():
     assert env["PATH"] == os.environ["PATH"]       # full inherited env + override
 
 
+# --- multi-account: the same seam carries CLAUDE_CONFIG_DIR -------------------
+
+def test_run_env_inherits_for_the_default_account():
+    """Slot 1 is the ambient ~/.claude login — nothing to override."""
+    assert runner._run_env(None, account_slot=1) is None
+
+
+def test_run_env_points_claude_at_a_chosen_account():
+    from bridge import accounts
+    env = runner._run_env(None, account_slot=2)
+    assert env["CLAUDE_CONFIG_DIR"] == accounts.profile_dir(2)
+    assert env["PATH"] == os.environ["PATH"]       # still the full inherited env
+
+
+def test_run_env_combines_an_account_with_a_ponytail_mode():
+    env = runner._run_env("ultra", account_slot=3)
+    assert env["PONYTAIL_DEFAULT_MODE"] == "ultra"
+    assert "CLAUDE_CONFIG_DIR" in env
+
+
 def test_run_blocking_passes_env(monkeypatch):
     captured = {}
 

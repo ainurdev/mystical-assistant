@@ -103,6 +103,21 @@ def _worktree_path(project_rel: str, branch: str) -> str:
     return os.path.join(_WT_ROOT, repo, _slug(branch))
 
 
+def _worktree_for_branch(abs_p: str, branch: str) -> "str | None":
+    """The worktree git already has checked out on `branch`, wherever it lives, or
+    None. Git is the source of truth here, not our naming convention: a branch can
+    be checked out in exactly one tree, and that tree may be Claude Code's native
+    `<repo>/.claude/worktrees/<slug>`, a hand-made `git worktree add`, or the
+    project checkout itself. Paths outside BASE_PATH are ignored — we can't hand
+    those to a session — which leaves git to report the collision."""
+    if not branch:
+        return None
+    for w in git.worktrees(abs_p):
+        if w.get("branch") == branch:
+            return _abs_within(w.get("path") or "")
+    return None
+
+
 def _worktree_cwd(project, branch) -> "str | None":
     """The working-tree dir to operate on for a project+branch: the branch's linked
     worktree when one exists on disk, else the project checkout. None if the project
@@ -113,6 +128,9 @@ def _worktree_cwd(project, branch) -> "str | None":
     b = (branch or "").strip()
     if b:
         wt = _abs_within(_worktree_path(str(project), b))
+        if wt is not None:
+            return wt
+        wt = _worktree_for_branch(abs_p, b)
         if wt is not None:
             return wt
     return abs_p
@@ -753,6 +771,13 @@ class Handler(BaseHTTPRequestHandler):
         if os.path.isdir(wt):                      # already opened — reuse it
             return self._json({"ok": True, "path": wt, "rel": rel, "branch": branch,
                                "output": "worktree exists"})
+        # The branch may already be checked out somewhere that isn't our path —
+        # git would refuse a second worktree for it, so reuse the one that exists.
+        existing = _worktree_for_branch(abs_p, branch)
+        if existing is not None:
+            return self._json({"ok": True, "path": existing,
+                               "rel": browser.rel(existing), "branch": branch,
+                               "output": f"branch already checked out at {existing}"})
         os.makedirs(os.path.dirname(wt), exist_ok=True)
         parent = (body.get("parent") or git.current_branch(abs_p) or "main").strip()
         create = body.get("create", True)

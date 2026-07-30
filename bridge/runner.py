@@ -20,9 +20,9 @@ import threading
 import time
 import uuid
 
-from bridge import (agents, config, devserver, git, limits, machine, memory,
-                    native_activity, project_config, pubsub, state, store,
-                    transcript_jsonl)
+from bridge import (accounts, agents, config, devserver, git, ladder, limits,
+                    machine, memory, native_activity, project_config, pubsub,
+                    state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -160,12 +160,18 @@ def normalize_ponytail(level) -> "str | None":
     return lv if lv in _PONYTAIL_LEVELS else None
 
 
-def _run_env(ponytail: "str | None") -> "dict | None":
+def _run_env(ponytail: "str | None",
+             account_slot: "int | None" = None) -> "dict | None":
     """Env for the claude subprocess: None (inherit) unless a run picked a
-    ponytail intensity."""
-    if not ponytail:
+    ponytail intensity or a non-default Claude account. The account arrives as
+    CLAUDE_CONFIG_DIR, which is the whole multi-account mechanism -- every turn
+    is still the official binary, just pointed at one login's profile."""
+    over = accounts.env_for(account_slot)
+    if ponytail:
+        over["PONYTAIL_DEFAULT_MODE"] = ponytail
+    if not over:
         return None
-    return {**os.environ, "PONYTAIL_DEFAULT_MODE": ponytail}
+    return {**os.environ, **over}
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +371,7 @@ class Job:
         self.interrupted = False         # user pressed Stop
         self.timed_out = False           # watchdog killed the run
         self.error_msg: str | None = None  # stderr/exit error when no result event came
+        self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.texts: list[str] = []       # assistant text this turn (memory capture)
         self.edited: list[str] = []      # files edited this turn (Edit/Write/MultiEdit)
         self._interrupt_timer: threading.Timer | None = None
@@ -747,10 +754,17 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         sess = store.get_session(sid)
         if not sess or not sess.get("claude_session_id"):
             return False                          # died before init — nothing to resume
-        d = limits.defer(sid, job.chat_id, cwd, model, effort)
+        d = limits.defer(sid, job.chat_id, cwd, model, effort,
+                         slot=job.account_slot)
         if d is None:
             return False                          # kept failing past resets — stay stopped
         when, first = d
+        # Parked (the safety net). Now see whether the fallback ladder can do
+        # better than waiting: another account, or a free agent. A taken rung
+        # unparks the session and announces itself, so we stay quiet then.
+        if ladder.escalate(sess, job.chat_id, dead_slot=job.account_slot,
+                           model=model, effort=effort):
+            return True
         if first:
             _notify(job.chat_id,
                     f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
@@ -761,7 +775,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         sess = store.get_session(sid)
         if not sess or not sess.get("claude_session_id"):
             return False                          # died before init — nothing to resume
-        d = limits.defer_server(sid, job.chat_id, cwd, model, effort)
+        d = limits.defer_server(sid, job.chat_id, cwd, model, effort,
+                                slot=job.account_slot)
         if d is None:
             return False                          # ladder exhausted — stay stopped
         when, attempt = d
@@ -952,7 +967,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, bufsize=1, env=_run_env(ponytail))
+                                    text=True, bufsize=1,
+                                    env=_run_env(ponytail, job.account_slot))
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -1152,12 +1168,18 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         model: str | None = None, effort: str | None = None,
                         permission_mode: str | None = None,
                         session_id: str | None = None,
-                        origin: str | None = None, ponytail: str | None = None) -> Job | None:
+                        origin: str | None = None, ponytail: str | None = None,
+                        account_slot: int | None = None,
+                        runtime: str | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
     with its own permission posture; --resume continuity comes from that session's
     claude_session_id. `origin` marks where a newly-created session started.
+
+    account_slot picks which Claude login runs the turn (None = the ambient one);
+    runtime is set instead when a fallback-ladder free agent takes over. Both are
+    recorded on the turn so the transcript shows what produced it.
 
     Claims only THIS session's run slot, so a run in another project/session keeps
     going; returns None only if this very session already has an in-flight turn."""
@@ -1171,9 +1193,13 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             session, project_dir, permission_mode=permission_mode, origin=origin)
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.resume_id = session["claude_session_id"]
+        job.account_slot = account_slot
         _register(job)
+        if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
+            runtime = f"claude:{account_slot}"
         store.start_turn(session["id"], job.id, prompt,
-                         [os.path.basename(p) for p in image_paths], model=model)
+                         [os.path.basename(p) for p in image_paths], model=model,
+                         runtime=runtime)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,

@@ -45,7 +45,7 @@ def _usage(percent=100, resets_at=None):
             "five_hour": {"percent": percent, "resets_at": resets_at,
                           "severity": "normal"},
             "seven_day": None, "limits": []}
-    limits.usage.get_usage = lambda: data
+    limits.usage.get_usage = lambda _path=None: data
     return lambda: setattr(limits.usage, "get_usage", saved)
 
 
@@ -225,7 +225,7 @@ def test_fire_resumes_pending_and_clears():
         a, kw = run.calls[0]
         assert a[0] == CHAT and a[1] == limits.NUDGE and a[2] == []
         assert kw == {"project": "/tmp/rez", "session_id": "s-3",
-                      "model": "sonnet", "effort": None}
+                      "model": "sonnet", "effort": None, "account_slot": None}
         assert len(notify.calls) == 1                 # first attempt pings
         assert limits._pending == {} and limits._timer is None
         assert limits._last_tries.get("s-3") == 1     # episode memory survives the fire
@@ -348,7 +348,8 @@ def test_runner_defers_limit_killed_streaming_turn():
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/lim", "opus", None) is True
-        assert deferred == [((s["id"], CHAT, "/tmp/lim", "opus", None), {})]
+        assert deferred == [((s["id"], CHAT, "/tmp/lim", "opus", None),
+                             {"slot": None})]
         assert len(notes) == 1 and "usage limit" in notes[0]
         assert runner._resume_fails.get(s["id"]) is None   # cap untouched
     finally:
@@ -395,7 +396,8 @@ def test_runner_backs_off_server_error_turn():
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/srv", "opus", None) is True
-        assert deferred == [((s["id"], CHAT, "/tmp/srv", "opus", None), {})]
+        assert deferred == [((s["id"], CHAT, "/tmp/srv", "opus", None),
+                             {"slot": None})]
         assert len(notes) == 1 and "in 5 min" in notes[0] and "attempt 3/6" in notes[0]
         assert runner._resume_fails.get(s["id"]) is None   # crash cap untouched
     finally:
@@ -419,6 +421,157 @@ def test_runner_gives_up_after_backoff_ladder():
     try:
         assert runner._maybe_auto_resume(job, "/tmp/srv2", None, None) is False
     finally:
+        limits.defer_server, runner._notify = saved_defer, saved_notify
+        config.AUTO_RESUME = saved_auto
+
+
+# --- parking is per account ---------------------------------------------------
+
+def _usage_by_path(by_path: dict):
+    """Patch the usage lookup limits reads, keyed by credentials path."""
+    saved = limits.usage.get_usage
+    limits.usage.get_usage = lambda p=None: by_path.get(p, {"available": False})
+    return lambda: setattr(limits.usage, "get_usage", saved)
+
+
+def _spent(resets_at):
+    return {"available": True,
+            "five_hour": {"percent": 100, "resets_at": resets_at,
+                          "severity": "normal"},
+            "seven_day": None, "limits": []}
+
+
+def test_a_slot_two_session_waits_for_slot_twos_reset():
+    """Parking against the default account's clock would resume far too early."""
+    from bridge import accounts
+    _reset_limits()
+    soon, late = time.time() + 600, time.time() + 7200
+    restore = _usage_by_path({
+        accounts.credentials_path(1): _spent(soon),
+        accounts.credentials_path(2): _spent(late),
+    })
+    try:
+        at, _ = limits.defer("s-slot2", CHAT, "/tmp/s2", slot=2)
+        assert abs(at - (late + limits.RESET_BUFFER)) < 2, "used the wrong account"
+    finally:
+        _reset_limits()
+        restore()
+
+
+def test_the_parked_session_resumes_on_the_account_it_died_on():
+    _reset_limits()
+    restore = _usage_by_path({})
+    rec = _Rec()
+    try:
+        limits.defer("s-back", CHAT, "/tmp/back", slot=3)
+        limits._fire(run=rec, notify=lambda *a: None)
+        assert rec.calls, "session was never resumed"
+        assert rec.calls[0][1]["account_slot"] == 3
+    finally:
+        _reset_limits()
+        restore()
+
+
+def test_the_account_survives_a_bridge_restart():
+    _reset_limits()
+    restore = _usage_by_path({})
+    try:
+        limits.defer("s-boot", CHAT, "/tmp/boot", slot=4)
+        with limits._lock:                      # simulate a restart
+            limits._pending.clear()
+        limits.boot()
+        assert limits._pending["s-boot"]["slot"] == 4
+    finally:
+        _reset_limits()
+        restore()
+
+
+# --- the runner consults the ladder after parking -----------------------------
+
+def _ladder_stub(taken=None):
+    """Patch runner's ladder hook; records the escalate calls it receives."""
+    calls = []
+    saved = runner.ladder.escalate
+
+    def escalate(session, chat_id, **kw):
+        calls.append((session, chat_id, kw))
+        return taken
+
+    runner.ladder.escalate = escalate
+    return calls, (lambda: setattr(runner.ladder, "escalate", saved))
+
+
+def test_limit_death_parks_first_then_consults_the_ladder():
+    """Order matters: parking is the safety net, escalation is the bonus."""
+    s = store.create_session(CHAT, "lad1", cwd="/tmp/lad1")
+    store.set_claude_session_id(s["id"], "c-lad1")
+    job = runner.Job("j-lad1", CHAT, s["id"])
+    job.status = "error"
+    job.result = "You've hit your usage limit · resets 3pm"
+
+    order = []
+    calls, restore_ladder = _ladder_stub(taken=None)
+    saved_defer, saved_notify = limits.defer, runner._notify
+    saved_auto = config.AUTO_RESUME
+    limits.defer = lambda *a, **kw: order.append("park") or (time.time() + 60, True)
+    runner._notify = lambda chat, text: None
+    config.AUTO_RESUME = True
+    try:
+        runner._maybe_auto_resume(job, "/tmp/lad1", "opus", None)
+        assert order == ["park"]
+        assert len(calls) == 1, "ladder was never consulted"
+        assert calls[0][0]["id"] == s["id"] and calls[0][1] == CHAT
+        assert calls[0][2]["model"] == "opus"
+    finally:
+        restore_ladder()
+        limits.defer, runner._notify = saved_defer, saved_notify
+        config.AUTO_RESUME = saved_auto
+
+
+def test_a_taken_rung_suppresses_the_wait_for_reset_message():
+    """The ladder announced the handover — saying 'paused until reset' too is a lie."""
+    s = store.create_session(CHAT, "lad2", cwd="/tmp/lad2")
+    store.set_claude_session_id(s["id"], "c-lad2")
+    job = runner.Job("j-lad2", CHAT, s["id"])
+    job.status = "error"
+    job.result = "You've hit your usage limit · resets 3pm"
+
+    notes = []
+    calls, restore_ladder = _ladder_stub(
+        taken={"kind": "account", "slot": 2, "label": "Account 2"})
+    saved_defer, saved_notify = limits.defer, runner._notify
+    saved_auto = config.AUTO_RESUME
+    limits.defer = lambda *a, **kw: (time.time() + 60, True)
+    runner._notify = lambda chat, text: notes.append(text)
+    config.AUTO_RESUME = True
+    try:
+        assert runner._maybe_auto_resume(job, "/tmp/lad2", None, None) is True
+        assert notes == [], f"unexpected notification: {notes}"
+    finally:
+        restore_ladder()
+        limits.defer, runner._notify = saved_defer, saved_notify
+        config.AUTO_RESUME = saved_auto
+
+
+def test_a_server_error_never_reaches_the_ladder():
+    """A transient 5xx is not a quota problem — it must not spend an account."""
+    s = store.create_session(CHAT, "lad3", cwd="/tmp/lad3")
+    store.set_claude_session_id(s["id"], "c-lad3")
+    job = runner.Job("j-lad3", CHAT, s["id"])
+    job.status = "error"
+    job.result = "API Error: 529 overloaded"
+
+    calls, restore_ladder = _ladder_stub()
+    saved_defer, saved_notify = limits.defer_server, runner._notify
+    saved_auto = config.AUTO_RESUME
+    limits.defer_server = lambda *a, **kw: (time.time(), 1)
+    runner._notify = lambda chat, text: None
+    config.AUTO_RESUME = True
+    try:
+        runner._maybe_auto_resume(job, "/tmp/lad3", None, None)
+        assert calls == []
+    finally:
+        restore_ladder()
         limits.defer_server, runner._notify = saved_defer, saved_notify
         config.AUTO_RESUME = saved_auto
 

@@ -27,7 +27,7 @@ import sys
 import threading
 import time
 
-from bridge import config, usage
+from bridge import accounts, config, usage
 
 RESET_BUFFER = 90.0     # fire a bit after the advertised reset
 RETRY_UNKNOWN = 1800.0  # reset time unknown (stale/absent usage data): probe again
@@ -88,11 +88,14 @@ def wait_str(epoch: float) -> str:
     return "now" if s < 30 else f"in {round(s / 60)} min"
 
 
-def _reset_epoch(now: float) -> "float | None":
+def _reset_epoch(now: float, slot: "int | None" = None) -> "float | None":
     """Latest reset among exhausted usage windows (a weekly at 100% makes the
     5-hour reset pointless). None when nothing reads as exhausted — e.g. the
-    60s usage cache hasn't caught up yet — and the caller probes instead."""
-    data = usage.get_usage()
+    60s usage cache hasn't caught up yet — and the caller probes instead.
+
+    Read for the account the dying turn ran on: waiting out slot 1's window is
+    the wrong answer for a session that was running on slot 2."""
+    data = usage.get_usage(accounts.credentials_path(slot))
     out = None
     for b in (data.get("five_hour"), data.get("seven_day")):
         if not b or (b.get("percent") or 0) < 99:
@@ -153,16 +156,18 @@ def _tries_locked(session_id: str) -> int:
 
 
 def _park_locked(session_id: str, chat_id: int, cwd, model, effort,
-                 tries: int, at: float, kind: str) -> None:
+                 tries: int, at: float, kind: str,
+                 slot: "int | None" = None) -> None:
     _pending[session_id] = {"chat_id": chat_id, "cwd": cwd, "model": model,
                             "effort": effort, "tries": tries, "since": time.time(),
-                            "at": at, "kind": kind}
+                            "at": at, "kind": kind, "slot": slot}
     _save_locked()
     _arm_locked(at)
 
 
 def defer(session_id: str, chat_id: int, cwd: "str | None",
-          model: "str | None" = None, effort: "str | None" = None):
+          model: "str | None" = None, effort: "str | None" = None,
+          slot: "int | None" = None):
     """Park a limit-killed session for resume at reset. Returns (fire_at, first)
     — first is True on the episode's first defer (callers notify only then) —
     or None when the session exhausted MAX_TRIES (caller reports a plain error)."""
@@ -171,14 +176,16 @@ def defer(session_id: str, chat_id: int, cwd: "str | None",
         tries = _tries_locked(session_id)
         if tries > MAX_TRIES:
             return None
-        reset = _reset_epoch(now)
+        reset = _reset_epoch(now, slot)
         target = (reset + RESET_BUFFER) if reset else (now + RETRY_UNKNOWN)
-        _park_locked(session_id, chat_id, cwd, model, effort, tries, target, "limit")
+        _park_locked(session_id, chat_id, cwd, model, effort, tries, target,
+                     "limit", slot)
     return target, tries == 1
 
 
 def defer_server(session_id: str, chat_id: int, cwd: "str | None",
-                 model: "str | None" = None, effort: "str | None" = None):
+                 model: "str | None" = None, effort: "str | None" = None,
+                 slot: "int | None" = None):
     """Park a session killed by a transient API error for its next backoff step.
     Returns (fire_at, attempt) — attempt 1 fires immediately — or None once the
     ladder is exhausted (caller reports a plain error)."""
@@ -188,7 +195,8 @@ def defer_server(session_id: str, chat_id: int, cwd: "str | None",
         if tries > len(SERVER_BACKOFF):
             return None
         target = now + SERVER_BACKOFF[tries - 1]
-        _park_locked(session_id, chat_id, cwd, model, effort, tries, target, "server")
+        _park_locked(session_id, chat_id, cwd, model, effort, tries, target,
+                     "server", slot)
     return target, tries
 
 
@@ -243,7 +251,8 @@ def _fire(run=None, notify=None) -> None:
         try:
             job = run(e["chat_id"], SERVER_NUDGE if server else NUDGE, [],
                       project=e.get("cwd"), session_id=sid,
-                      model=e.get("model"), effort=e.get("effort"))
+                      model=e.get("model"), effort=e.get("effort"),
+                      account_slot=e.get("slot"))
         except Exception as ex:  # noqa: BLE001
             print(f"[limits] resume failed for {sid}: {ex}", file=sys.stderr)
             continue
