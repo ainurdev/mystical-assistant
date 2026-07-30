@@ -182,7 +182,7 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
 
 def _policy_text() -> str:
     return ("Usage-limit fallback: what happens when a chat hits the limit.\n\n"
-            f"Current default: {config.FALLBACK_POLICY}\n\n"
+            f"Current default: {ladder.default_policy()}\n\n"
             "/policy ask — offer the choices, stay parked until you pick\n"
             "/policy auto — switch to the best account (or free agent) at once\n"
             "/policy wait — only wait for the reset\n\n"

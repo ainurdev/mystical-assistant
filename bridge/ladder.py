@@ -14,6 +14,8 @@ limits.py deliberately: that module's job is waiting (two wait kinds, one timer,
 one parking lot) and it must not import the modules this one composes.
 """
 
+import json
+import os
 import sys
 
 from bridge import accounts, config
@@ -22,15 +24,52 @@ POLICIES = ("ask", "auto", "wait")
 DEFAULT_POLICY = "ask"
 
 
+# The default for sessions that have no policy of their own. Settable from the
+# dashboard's Accounts tab and persisted next to the DB, so it survives a
+# restart; absent, config.FALLBACK_POLICY (the env setting) still decides.
+_cache: "str | None" = None
+
+
+def _default_path() -> str:
+    return os.path.join(os.path.dirname(config.BRIDGE_DB), "fallback_policy.json")
+
+
+def default_policy() -> str:
+    """The policy a session with no setting of its own gets."""
+    global _cache
+    if _cache is None:
+        try:
+            with open(_default_path()) as f:
+                _cache = (json.load(f) or {}).get("policy")
+        except (OSError, ValueError):
+            _cache = ""
+    if _cache in POLICIES:
+        return _cache
+    env = getattr(config, "FALLBACK_POLICY", DEFAULT_POLICY)
+    return env if env in POLICIES else DEFAULT_POLICY
+
+
+def set_default_policy(policy: "str | None") -> str:
+    """Persist the global default; None clears it back to the env setting."""
+    global _cache
+    if policy is not None and policy not in POLICIES:
+        raise ValueError(f"policy must be one of {POLICIES}")
+    _cache = policy or ""
+    try:
+        os.makedirs(os.path.dirname(_default_path()), exist_ok=True)
+        with open(_default_path(), "w") as f:
+            json.dump({"policy": policy}, f)
+    except OSError as e:
+        print(f"[ladder] persist failed: {e}", file=sys.stderr)
+    return default_policy()
+
+
 def policy_for(session: "dict | None") -> str:
     """This session's policy, falling back to the configured default. An
     unrecognized stored value reads as the default rather than disabling the
     ladder silently."""
     p = (session or {}).get("fallback_policy")
-    if p in POLICIES:
-        return p
-    d = getattr(config, "FALLBACK_POLICY", DEFAULT_POLICY)
-    return d if d in POLICIES else DEFAULT_POLICY
+    return p if p in POLICIES else default_policy()
 
 
 def _free_providers() -> list:

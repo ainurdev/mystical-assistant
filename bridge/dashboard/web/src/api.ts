@@ -608,7 +608,20 @@ export const api = {
       method: "POST",
       body: { policy },
     }),
-  accounts: () => req<{ accounts: AccountInfo[] }>("/local/accounts"),
+  accounts: () =>
+    req<{ accounts: AccountInfo[]; default_policy: string; free_agents: string[] }>(
+      "/local/accounts",
+    ),
+  accountAction: (action: "add" | "remove" | "disable" | "enable", slot?: number) =>
+    req<{ ok: boolean; slot?: number }>("/local/accounts", {
+      method: "POST",
+      body: { action, ...(slot === undefined ? {} : { slot }) },
+    }),
+  setDefaultPolicy: (policy: string) =>
+    req<{ ok: boolean; policy: string }>("/local/policy/default", {
+      method: "POST",
+      body: { policy },
+    }),
   run: (body: RunBody) =>
     req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
   respond: (

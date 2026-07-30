@@ -62,6 +62,20 @@ def test_dashboard_accounts_endpoint_lists_slots_with_headroom():
         restore()
 
 
+def test_accounts_payload_carries_the_current_default_policy():
+    """The settings tab renders both from one call."""
+    from bridge import ladder
+    restore = _stub_accounts(ROWS)
+    h, box = _dash_handler()
+    try:
+        ladder.set_default_policy("auto")
+        h._get_api("/local/accounts", {})
+        assert box["obj"]["default_policy"] == "auto"
+    finally:
+        ladder.set_default_policy(None)
+        restore()
+
+
 def test_miniapp_accounts_endpoint_matches():
     restore = _stub_accounts(ROWS, left=12)
     h, box = _mini_handler()
@@ -110,6 +124,128 @@ def test_miniapp_sets_and_clears_a_sessions_policy():
     h._api_session_policy(CHAT, s["id"], {"policy": None})
     assert box["code"] == 200
     assert store.get_session(s["id"])["fallback_policy"] is None
+
+
+# --- global default policy (settings tab) ------------------------------------
+
+def test_default_policy_falls_back_to_the_env_setting():
+    from bridge import config, ladder
+    ladder.set_default_policy(None)          # nothing persisted
+    assert ladder.default_policy() == config.FALLBACK_POLICY
+
+
+def test_default_policy_persists_across_a_reload():
+    from bridge import ladder
+    try:
+        ladder.set_default_policy("auto")
+        assert ladder.default_policy() == "auto"
+        ladder._cache = None                 # simulate a bridge restart
+        assert ladder.default_policy() == "auto"
+    finally:
+        ladder.set_default_policy(None)
+
+
+def test_a_session_without_its_own_policy_uses_the_stored_default():
+    from bridge import ladder
+    s = store.create_session(CHAT, "/pol6")
+    try:
+        ladder.set_default_policy("wait")
+        assert ladder.policy_for(store.get_session(s["id"])) == "wait"
+    finally:
+        ladder.set_default_policy(None)
+
+
+def test_a_sessions_own_policy_still_beats_the_stored_default():
+    from bridge import ladder
+    s = store.create_session(CHAT, "/pol7")
+    store.set_fallback_policy(s["id"], "ask")
+    try:
+        ladder.set_default_policy("auto")
+        assert ladder.policy_for(store.get_session(s["id"])) == "ask"
+    finally:
+        ladder.set_default_policy(None)
+
+
+def test_dashboard_sets_the_default_policy():
+    from bridge import ladder
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/policy/default", {"policy": "auto"})
+        assert box["code"] == 200
+        assert ladder.default_policy() == "auto"
+    finally:
+        ladder.set_default_policy(None)
+
+
+def test_dashboard_rejects_an_unknown_default_policy():
+    h, box = _dash_handler()
+    h._post_api("/local/policy/default", {"policy": "yolo"})
+    assert box["code"] == 400
+
+
+# --- account actions (settings tab) ------------------------------------------
+
+def _stub_action(name, ret=None):
+    saved = getattr(accounts, name)
+    calls = []
+
+    def fn(*a, **kw):
+        calls.append((a, kw))
+        return ret
+
+    setattr(accounts, name, fn)
+    return calls, (lambda: setattr(accounts, name, saved))
+
+
+def test_dashboard_adds_an_account():
+    calls, restore = _stub_action("add", ret=2)
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "add"})
+        assert box["code"] == 200 and box["obj"]["slot"] == 2
+        assert len(calls) == 1
+    finally:
+        restore()
+
+
+def test_dashboard_reports_a_missing_login_as_a_clean_error():
+    saved = accounts.add
+
+    def boom(*a, **kw):
+        raise accounts.NoLogin("no login")
+
+    accounts.add = boom
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "add"})
+        assert box["code"] == 400
+        assert "login" in box["obj"]["error"].lower()
+    finally:
+        accounts.add = saved
+
+
+def test_dashboard_disables_and_removes_by_slot():
+    for action in ("disable", "enable", "remove"):
+        calls, restore = _stub_action(action)
+        h, box = _dash_handler()
+        try:
+            h._post_api("/local/accounts", {"action": action, "slot": 2})
+            assert box["code"] == 200, f"{action} failed"
+            assert calls[0][0] == (2,)
+        finally:
+            restore()
+
+
+def test_dashboard_rejects_an_unknown_account_action():
+    h, box = _dash_handler()
+    h._post_api("/local/accounts", {"action": "nuke", "slot": 2})
+    assert box["code"] == 400
+
+
+def test_removing_the_ambient_login_is_refused_not_crashed():
+    h, box = _dash_handler()
+    h._post_api("/local/accounts", {"action": "remove", "slot": 1})
+    assert box["code"] == 400
 
 
 def test_session_brief_carries_the_policy():

@@ -118,6 +118,17 @@ def _worktree_for_branch(abs_p: str, branch: str) -> "str | None":
     return None
 
 
+def _free_agents() -> list:
+    """Free-agent providers currently configured, for the Accounts tab. Empty
+    when opencode isn't installed — the settings UI then says so plainly rather
+    than offering a rung that would fail at handover."""
+    try:
+        from bridge import freeagent
+        return freeagent.available()
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _worktree_cwd(project, branch) -> "str | None":
     """The working-tree dir to operate on for a project+branch: the branch's linked
     worktree when one exists on disk, else the project checkout. None if the project
@@ -275,10 +286,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/accounts":
-            from bridge import accounts
-            return self._json({"accounts": [
-                {**a, "left": accounts.headroom(a["slot"])}
-                for a in accounts.list_accounts()]})
+            from bridge import accounts, ladder
+            return self._json({
+                "accounts": [{**a, "left": accounts.headroom(a["slot"])}
+                             for a in accounts.list_accounts()],
+                "default_policy": ladder.default_policy(),
+                "free_agents": [p["label"] for p in _free_agents()]})
         if path == "/local/sessions":
             native.refresh(chat)           # surface VSCode sessions started since last poll
             project = qs.get("project", [None])[0]
@@ -547,6 +560,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "not found"}, 404)
             store.archive(sid)
             return self._json({"ok": True})
+        if path == "/local/policy/default":
+            from bridge import ladder
+            try:
+                return self._json({"ok": True,
+                                   "policy": ladder.set_default_policy(
+                                       body.get("policy") or None)})
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+        if path == "/local/accounts":
+            from bridge import accounts
+            action = (body.get("action") or "").strip()
+            try:
+                if action == "add":
+                    return self._json({"ok": True, "slot": accounts.add()})
+                if action in ("remove", "disable", "enable"):
+                    slot = body.get("slot")
+                    if not isinstance(slot, int):
+                        return self._json({"error": "slot must be a number"}, 400)
+                    getattr(accounts, action)(slot)
+                    return self._json({"ok": True})
+            except accounts.NoLogin:
+                return self._json({"error": "No login in ~/.claude to copy. Run "
+                                            "`claude /login` in a terminal first."}, 400)
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"error": f"unknown action {action!r}"}, 400)
         if path.startswith("/local/sessions/") and path.endswith("/policy"):
             from bridge import ladder
             sid = path[len("/local/sessions/"):-len("/policy")]

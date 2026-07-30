@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { api, type UpdateInfo, type Weather } from "../../api";
+import { api, type AccountInfo, type UpdateInfo, type Weather } from "../../api";
 import {
   autoTextScale,
   AURORA_KEYS,
@@ -44,13 +44,14 @@ export interface SettingsModalProps {
 // The first three tabs are pure taste — how the HUD looks, what plays while it
 // works, what surrounds it. The last two are what a run and the bridge do.
 
-type Tab = "appearance" | "indicator" | "ambient" | "session" | "system";
+type Tab = "appearance" | "indicator" | "ambient" | "session" | "accounts" | "system";
 
 const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot" },
   { key: "indicator", label: "INDICATOR", hint: "what plays while working" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM" },
   { key: "session", label: "SESSION", hint: "model · mode · effort" },
+  { key: "accounts", label: "ACCOUNTS", hint: "logins · usage-limit fallback" },
   { key: "system", label: "SYSTEM", hint: "bridge · updates" },
 ];
 
@@ -768,6 +769,195 @@ function UpdatePanel({ onFeed }: { onFeed: (texts: string[]) => void }) {
   );
 }
 
+// ---- ACCOUNTS ---------------------------------------------------------------
+// Multiple Claude logins + what happens when one hits its usage limit. Each
+// account is a CLAUDE_CONFIG_DIR profile, so adding one means logging in with
+// `claude /login` in a terminal first — we only snapshot what's on disk.
+
+const POLICY_OPTS: { label: string; value: string }[] = [
+  { label: "ASK", value: "ask" },
+  { label: "AUTO", value: "auto" },
+  { label: "WAIT", value: "wait" },
+];
+
+const POLICY_BLURB: Record<string, string> = {
+  ask: "Offer the choices (other account · free agent · wait) and stay parked until you pick.",
+  auto: "Take the best fallback immediately and report which one it landed on.",
+  wait: "Only wait for the window to reset — the behaviour before the ladder existed.",
+};
+
+function AccountsPanel() {
+  const [rows, setRows] = useState<AccountInfo[] | null>(null);
+  const [policy, setPolicy] = useState("ask");
+  const [free, setFree] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = () =>
+    api
+      .accounts()
+      .then((r) => {
+        setRows(r.accounts);
+        setPolicy(r.default_policy);
+        setFree(r.free_agents);
+      })
+      .catch(() => setRows([]));
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function act(action: "add" | "remove" | "disable" | "enable", slot?: number) {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.accountAction(action, slot);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Label top>ON USAGE LIMIT</Label>
+      <div style={CARD}>
+        <Segmented
+          options={POLICY_OPTS}
+          value={policy}
+          onPick={(v) => {
+            setPolicy(v);
+            void api.setDefaultPolicy(v).catch(() => void load());
+          }}
+        />
+        <div style={{ ...NOTE, marginTop: 9 }}>{POLICY_BLURB[policy]}</div>
+      </div>
+      <div style={NOTE}>
+        The default for new chats. Any one chat can override it — right-click it in the
+        sessions list.
+      </div>
+
+      <Label>CLAUDE LOGINS</Label>
+      <div style={CARD}>
+        {rows === null && <div style={{ ...KEY_TX }}>LOADING…</div>}
+        {rows?.length === 0 && (
+          <div style={{ fontSize: 10.5, color: "var(--txl)" }}>
+            No login found. Run <span style={{ color: "var(--tx)" }}>claude /login</span> in a
+            terminal.
+          </div>
+        )}
+        {rows?.map((a) => (
+          <div key={a.slot} style={{ ...KV, marginTop: a.slot === rows[0].slot ? 0 : 10 }}>
+            <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ ...KEY_TX, color: "var(--acc)", flex: "none" }}>A{a.slot}</span>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: a.disabled ? "var(--txd)" : "var(--tx)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {a.email ?? "unknown"}
+              </span>
+              {a.default && <span style={{ ...CAPTION, width: "auto" }}>DEFAULT</span>}
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  color: a.left === null ? "var(--txd)" : a.left <= 1 ? "var(--warn)" : "var(--ok)",
+                }}
+              >
+                {a.left === null ? "—" : `${a.left}% LEFT`}
+              </span>
+              {!a.default && (
+                <>
+                  <MiniBtn disabled={busy} onClick={() => void act(a.disabled ? "enable" : "disable", a.slot)}>
+                    {a.disabled ? "ENABLE" : "DISABLE"}
+                  </MiniBtn>
+                  <MiniBtn disabled={busy} danger onClick={() => void act("remove", a.slot)}>
+                    REMOVE
+                  </MiniBtn>
+                </>
+              )}
+            </span>
+          </div>
+        ))}
+        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          <MiniBtn disabled={busy} onClick={() => void act("add")}>
+            + ADD THE CURRENT LOGIN
+          </MiniBtn>
+          {err && <span style={{ fontSize: 10, color: "var(--warn)" }}>{err}</span>}
+        </div>
+      </div>
+      <div style={NOTE}>
+        To add a second account: log out and <span style={{ color: "var(--txd)" }}>claude /login</span>{" "}
+        as the other one in a terminal, then press ADD — the login is copied into its own profile,
+        so you can log back in as your usual account afterwards. Accounts share transcripts and
+        skills; only the credentials differ.
+      </div>
+
+      <Label>FREE AGENTS</Label>
+      <div style={CARD}>
+        {free.length === 0 ? (
+          <div style={{ fontSize: 10.5, color: "var(--txl)" }}>
+            None configured. Install <span style={{ color: "var(--tx)" }}>opencode</span> and set a
+            provider key (GEMINI_API_KEY, OPENCODE_API_KEY, DASHSCOPE_API_KEY) or OLLAMA_MODEL to
+            offer a non-Claude fallback when every account is spent.
+          </div>
+        ) : (
+          free.map((f, i) => (
+            <div key={f} style={{ ...KV, marginTop: i === 0 ? 0 : 10 }}>
+              <span style={{ fontSize: 11, color: "var(--tx)" }}>{f}</span>
+              <span style={{ fontSize: 10.5, color: "var(--ok)" }}>READY</span>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+function MiniBtn({
+  children,
+  onClick,
+  disabled,
+  danger,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        appearance: "none",
+        cursor: disabled ? "default" : "pointer",
+        border: `1px solid color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} 24%, transparent)`,
+        background: hov && !disabled ? `color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} 10%, transparent)` : "transparent",
+        color: disabled ? "var(--txd)" : danger ? "var(--warn)" : "var(--tx)",
+        fontFamily: "inherit",
+        fontSize: 9.5,
+        letterSpacing: 1,
+        padding: "4px 9px",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
     host,
@@ -1050,6 +1240,8 @@ export function SettingsModal(props: SettingsModalProps) {
                 </div>
               </>
             )}
+
+            {tab === "accounts" && <AccountsPanel />}
 
             {tab === "system" && (
               <>
