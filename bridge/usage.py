@@ -18,6 +18,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 CREDENTIALS_FILE = os.path.expanduser("~/.claude/.credentials.json")
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
@@ -26,12 +27,19 @@ RETRY_TTL = 15.0    # fetch failed and there's nothing to show: probe again soon
 STALE_MAX = 900.0   # how long a last-good payload may stand in for a live one
 
 _lock = threading.Lock()
-_cache: dict = {"ts": 0.0, "data": None, "next_try": 0.0}   # last *successful* fetch
+# creds path -> last *successful* fetch for that account. Keyed by path because
+# the fallback ladder reads several accounts' meters and one must never stand in
+# for another (picking the next account depends on these numbers being its own).
+_cache: dict = {}
 
 
-def _token() -> str | None:
+def _entry(path: str) -> dict:
+    return _cache.setdefault(path, {"ts": 0.0, "data": None, "next_try": 0.0})
+
+
+def _token(path: str) -> str | None:
     try:
-        with open(CREDENTIALS_FILE) as f:
+        with open(path) as f:
             oauth = json.load(f).get("claudeAiOauth") or {}
     except (OSError, ValueError):
         return None
@@ -52,6 +60,19 @@ def _fetch(token: str) -> dict | None:
             return json.loads(r.read())
     except (urllib.error.URLError, OSError, ValueError):
         return None
+
+
+def resets_epoch(v) -> float | None:
+    """A window's resets_at -> epoch seconds. Accepts epoch (s or ms) or
+    ISO-8601; None when it parses as neither."""
+    if isinstance(v, (int, float)):
+        return float(v) / (1000.0 if v > 1e12 else 1.0)
+    if isinstance(v, str):
+        try:
+            return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
 
 
 def _sev(limits: list[dict], *kinds: str) -> str:
@@ -88,23 +109,27 @@ def _last_good(data: "dict | None", age: float) -> dict:
     return data if data is not None and age < STALE_MAX else {"available": False}
 
 
-def get_usage() -> dict:
+def get_usage(creds_path: str | None = None) -> dict:
+    """Usage for one account. creds_path=None is the ambient ~/.claude login."""
+    path = creds_path or CREDENTIALS_FILE
     now = time.time()
     with _lock:
-        data, ts, next_try = _cache["data"], _cache["ts"], _cache["next_try"]
+        e = _entry(path)
+        data, ts, next_try = e["data"], e["ts"], e["next_try"]
     if data is not None and now - ts < CACHE_TTL:
         return data
     if now < next_try:                      # fetched recently and it failed
         return _last_good(data, now - ts)
-    token = _token()
+    token = _token(path)
     payload = _fetch(token) if token else None
     if isinstance(payload, dict):
         fresh = _normalize(payload)
         with _lock:
-            _cache.update(ts=now, data=fresh, next_try=0.0)
+            _entry(path).update(ts=now, data=fresh, next_try=0.0)
         return fresh
     with _lock:
         # A value still on screen buys a full cycle before we try again; an
         # empty meter is worth retrying sooner.
-        _cache["next_try"] = now + (CACHE_TTL if data is not None else RETRY_TTL)
+        _entry(path)["next_try"] = now + (CACHE_TTL if data is not None
+                                         else RETRY_TTL)
     return _last_good(data, now - ts)

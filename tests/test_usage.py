@@ -28,12 +28,17 @@ def _stub(*fetches):
         calls[0] += 1
         return seq.pop(0) if seq else None
 
-    usage._token = lambda: "sk-ant-oat01-test"
+    usage._token = lambda _path: "sk-ant-oat01-test"
     usage._fetch = fetch
-    usage._cache.update(ts=0.0, data=None, next_try=0.0)
+    usage._cache.clear()
     return (lambda: (setattr(usage, "_token", saved_token),
                      setattr(usage, "_fetch", saved_fetch),
-                     usage._cache.update(ts=0.0, data=None, next_try=0.0))), calls
+                     usage._cache.clear())), calls
+
+
+def _default_entry() -> dict:
+    """The cache slot the no-argument get_usage() uses."""
+    return usage._entry(usage.CREDENTIALS_FILE)
 
 
 def test_success_normalizes_and_caches():
@@ -53,7 +58,7 @@ def test_failure_serves_last_good():
     restore, calls = _stub(PAYLOAD, None)
     try:
         good = usage.get_usage()
-        usage._cache["ts"] = time.time() - usage.CACHE_TTL - 1   # cache expired
+        _default_entry()["ts"] = time.time() - usage.CACHE_TTL - 1   # cache expired
         assert usage.get_usage() == good       # 429 doesn't blank the meter
         assert calls[0] == 2
     finally:
@@ -72,7 +77,7 @@ def test_failed_fetch_is_not_retried_on_every_call():
     restore, calls = _stub(PAYLOAD, None)
     try:
         usage.get_usage()
-        usage._cache["ts"] = time.time() - usage.CACHE_TTL - 1
+        _default_entry()["ts"] = time.time() - usage.CACHE_TTL - 1
         for _ in range(4):
             usage.get_usage()
         assert calls[0] == 2                   # one failure, then backed off
@@ -85,7 +90,7 @@ def test_empty_meter_retries_sooner_than_a_stale_one():
     try:
         now = time.time()
         usage.get_usage()                      # nothing cached → RETRY_TTL
-        assert usage._cache["next_try"] - now < usage.CACHE_TTL
+        assert _default_entry()["next_try"] - now < usage.CACHE_TTL
     finally:
         restore()
 
@@ -94,7 +99,7 @@ def test_last_good_expires():
     restore, _ = _stub(PAYLOAD, None)
     try:
         usage.get_usage()
-        usage._cache["ts"] = time.time() - usage.STALE_MAX - 1
+        _default_entry()["ts"] = time.time() - usage.STALE_MAX - 1
         assert usage.get_usage() == {"available": False}
     finally:
         restore()
@@ -103,9 +108,64 @@ def test_last_good_expires():
 def test_no_token_is_unavailable():
     restore, calls = _stub(PAYLOAD)
     try:
-        usage._token = lambda: None
+        usage._token = lambda _path: None
         assert usage.get_usage() == {"available": False}
         assert calls[0] == 0
+    finally:
+        restore()
+
+
+# --- per-account usage (multi-account fallback ladder) -----------------------
+
+def _stub_paths(by_token: dict):
+    """Patch _token to derive a token from the credentials path, and _fetch to
+    answer per token — so one stub can serve several accounts."""
+    saved_token, saved_fetch = usage._token, usage._fetch
+    calls = []
+
+    def token(path):
+        return f"tok:{path}"
+
+    def fetch(tok):
+        calls.append(tok)
+        return by_token.get(tok)
+
+    usage._token = token
+    usage._fetch = fetch
+    usage._cache.clear()
+    return (lambda: (setattr(usage, "_token", saved_token),
+                     setattr(usage, "_fetch", saved_fetch),
+                     usage._cache.clear())), calls
+
+
+def test_two_accounts_do_not_share_a_cache():
+    """Slot 2's meter must never show slot 1's numbers — the ladder picks on it."""
+    a, b = "/tmp/acct-a.json", "/tmp/acct-b.json"
+    restore, calls = _stub_paths({
+        f"tok:{a}": {"five_hour": {"utilization": 5, "resets_at": None},
+                     "seven_day": None, "limits": []},
+        f"tok:{b}": {"five_hour": {"utilization": 96, "resets_at": None},
+                     "seven_day": None, "limits": []},
+    })
+    try:
+        assert usage.get_usage(a)["five_hour"]["percent"] == 5
+        assert usage.get_usage(b)["five_hour"]["percent"] == 96
+        assert usage.get_usage(a)["five_hour"]["percent"] == 5   # still A's
+        assert len(calls) == 2                                  # one fetch each
+    finally:
+        restore()
+
+
+def test_one_accounts_failure_does_not_blank_another():
+    a, b = "/tmp/acct-c.json", "/tmp/acct-d.json"
+    restore, _ = _stub_paths({
+        f"tok:{a}": {"five_hour": {"utilization": 11, "resets_at": None},
+                     "seven_day": None, "limits": []},
+    })                                     # b has no payload → fetch returns None
+    try:
+        assert usage.get_usage(a)["available"] is True
+        assert usage.get_usage(b) == {"available": False}
+        assert usage.get_usage(a)["five_hour"]["percent"] == 11
     finally:
         restore()
 

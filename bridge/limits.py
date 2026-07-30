@@ -26,7 +26,6 @@ import re
 import sys
 import threading
 import time
-from datetime import datetime
 
 from bridge import config, usage
 
@@ -89,18 +88,6 @@ def wait_str(epoch: float) -> str:
     return "now" if s < 30 else f"in {round(s / 60)} min"
 
 
-def _ts(v) -> "float | None":
-    """resets_at → epoch seconds. Accepts epoch (s or ms) or ISO-8601."""
-    if isinstance(v, (int, float)):
-        return float(v) / (1000.0 if v > 1e12 else 1.0)
-    if isinstance(v, str):
-        try:
-            return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
-        except ValueError:
-            return None
-    return None
-
-
 def _reset_epoch(now: float) -> "float | None":
     """Latest reset among exhausted usage windows (a weekly at 100% makes the
     5-hour reset pointless). None when nothing reads as exhausted — e.g. the
@@ -110,7 +97,7 @@ def _reset_epoch(now: float) -> "float | None":
     for b in (data.get("five_hour"), data.get("seven_day")):
         if not b or (b.get("percent") or 0) < 99:
             continue
-        ts = _ts(b.get("resets_at"))
+        ts = usage.resets_epoch(b.get("resets_at"))
         if ts and ts > now and (out is None or ts > out):
             out = ts
     return out
