@@ -17,6 +17,7 @@ import {
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
 import { FolderNavigator } from "../components/FolderNavigator";
+import { ActiveSessions } from "../components/ActiveSessions";
 
 // Prompt sources, not tabs: each one feeds the composer and returns to "/".
 const pickers = [
@@ -149,6 +150,9 @@ function Layout() {
             <FolderNavigator onSelected={() => setPickerOpen(false)} />
           </div>
         )}
+        {/* Header-anchored, outside the scrolling transcript: an active-session
+            switcher you can't reach is no switcher. */}
+        <ActiveSessions />
         <main className="flex-1 overflow-y-auto px-4 py-4">
           <Outlet />
         </main>

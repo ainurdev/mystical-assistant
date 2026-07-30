@@ -5,8 +5,10 @@ Source of truth is Claude Code's own session registry: one
 clients (VS Code, terminal `claude`). Liveness is exact — the PID is alive or it
 isn't — so this never guesses from mtime.
 
-This covers only interactive sessions; the bridge's own `claude -p` runs do NOT
-register here. Those are tracked in the store (see store.running_session_ids).
+This covers only interactive sessions. The bridge's own `claude -p` children DO
+register here (entrypoint "sdk-cli") but are dropped: they are already tracked in
+the store (see store.running_session_ids), so listing them again would show every
+running chat twice — once with its real title, once as a nameless folder row.
 Stdlib only.
 """
 
@@ -116,7 +118,7 @@ def list_running() -> list[dict]:
         if not _alive(raw.get("pid")):
             continue
         row = _row(raw)
-        if row:
+        if row and row["source"] != "sdk":  # skip our own children — see docstring
             # "last activity" = newest of the transcript mtime (real per-turn
             # signal) and the registry mtime (CLI updates it; VS Code freezes it
             # at start). Drives the dashboard's idle / 30-min-window logic.

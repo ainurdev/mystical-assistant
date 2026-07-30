@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, ChevronDown, ChevronUp, Code2, TerminalSquare } from "lucide-react";
-import { api, type RunningSource, type SessionState } from "../lib/api";
+import { Bot, ChevronDown, ChevronUp } from "lucide-react";
+import { api, type SessionState } from "../lib/api";
 import { useChat } from "../lib/chat";
 
 function ago(sec: number | null): string {
@@ -15,14 +15,7 @@ function ago(sec: number | null): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function SourceIcon({ source }: { source: RunningSource | null }) {
-  const cls = "shrink-0 text-[var(--tg-hint)]";
-  if (source === "vscode") return <Code2 size={13} className={cls} aria-hidden />;
-  return <TerminalSquare size={13} className={cls} aria-hidden />;
-}
-
-// Awaiting you sorts first — it's the only state you can act on — then working,
-// then merely-live native sessions.
+// Awaiting you sorts first — it's the only state you can act on — then working.
 const ORDER: Record<SessionState, number> = { awaiting: 0, working: 1, live: 2, idle: 3 };
 
 interface Row {
@@ -30,22 +23,20 @@ interface Row {
   title: string;
   label: string;
   state: SessionState;
-  source: "bridge" | "native";
   project: string | null;
   started: number | null;
-  extSource: RunningSource | null;
 }
 
 const rowClass =
   "flex w-full items-center gap-2 rounded-lg bg-[var(--tg-bg)] px-2 py-1.5 text-left text-xs";
 
-/** Every session on this machine that isn't idle, from the backend's unified
- *  status map: your bridge chats that are working or awaiting you (any project,
- *  not just the open one) plus VS Code/terminal sessions that are working or
- *  live. Bridge rows tap through to that chat; native ones are read-only.
+/** Your live chats, from the backend's unified status map: every bridge session
+ *  that is working or awaiting you, in any project — not just the open one. Tap
+ *  one to switch to it. VS Code/terminal sessions are deliberately left out;
+ *  you can't switch to those, so they'd be noise in a switcher.
  *
- *  Sticky and collapsed by default: the transcript auto-scrolls to the bottom,
- *  so a plain block at the top of the page is unreachable in an active chat. */
+ *  Lives under the header (see routes/root.tsx), not in the transcript, so it
+ *  stays put while the chat scrolls. Collapsed by default. */
 export function ActiveSessions() {
   const [expanded, setExpanded] = useState(false);
   const { sessions, sessionId, selectSession, openSessionInProject } = useChat();
@@ -63,30 +54,26 @@ export function ActiveSessions() {
   });
   const project = state?.project?.rel ?? null;
 
-  // The status map has the state; jobs/external carry the detail (title, project,
-  // start time) that makes a row readable.
+  // The status map has the state; jobs carry the detail (title, project, start
+  // time) that makes a row readable.
   const jobBy = new Map(
     (data?.jobs ?? []).flatMap((j) => (j.session_id ? [[j.session_id, j] as const] : [])),
   );
-  const extBy = new Map((data?.external ?? []).map((e) => [e.session_id, e] as const));
   const titleBy = new Map(sessions.map((s) => [s.id, s.title] as const));
 
   const rows: Row[] = Object.entries(data?.status ?? {})
-    .filter(([, st]) => st.state !== "idle")
+    .filter(([, st]) => st.source === "bridge" && st.state !== "idle")
     .map(([id, st]) => {
       // A bridge session with no live job exists briefly after a restart, before
       // recovery resumes it — fall back to the open project's session list.
       const job = jobBy.get(id);
-      const ext = extBy.get(id);
       return {
         sessionId: id,
-        title: job?.title || titleBy.get(id) || ext?.project || "New chat",
+        title: job?.title || titleBy.get(id) || "New chat",
         label: st.label || st.state,
         state: st.state,
-        source: st.source,
-        project: job?.project ?? ext?.project ?? null,
-        started: job?.started ?? ext?.started ?? null,
-        extSource: ext?.source ?? null,
+        project: job?.project ?? null,
+        started: job?.started ?? null,
       };
     })
     .sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.started ?? 0) - (a.started ?? 0));
@@ -95,6 +82,7 @@ export function ActiveSessions() {
   const waiting = rows.filter((r) => r.state === "awaiting").length;
 
   function openRow(row: Row) {
+    setExpanded(false);                     // you picked — get out of the way
     if (row.sessionId === sessionId) return;
     if (row.project && row.project !== project)
       void openSessionInProject(row.project, row.sessionId);
@@ -102,7 +90,7 @@ export function ActiveSessions() {
   }
 
   return (
-    <div className="sticky top-0 z-[5] -mx-4 -mt-4 bg-[var(--tg-bg)] px-4 pb-2 pt-4">
+    <div className="shrink-0 border-b border-[var(--border)] bg-[var(--tg-bg)] px-3 py-2">
       <div className="rounded-xl border border-[var(--border)] bg-[var(--tg-secondary-bg)] p-2">
         <button
           onClick={() => setExpanded((v) => !v)}
@@ -126,49 +114,29 @@ export function ActiveSessions() {
         </button>
 
         {expanded && (
-          <div className="mt-1.5 space-y-1">
-            {rows.map((r) => {
-              const right =
-                r.state === "awaiting" ? (
+          <div className="mt-1.5 max-h-[45vh] space-y-1 overflow-y-auto">
+            {rows.map((r) => (
+              <button
+                key={r.sessionId}
+                onClick={() => openRow(r)}
+                className={`${rowClass} active:opacity-70 ${
+                  r.sessionId === sessionId ? "ring-1 ring-[var(--brand-soft)]" : ""
+                }`}
+              >
+                <Bot size={13} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate">{r.title}</div>
+                  <div className="truncate text-[10px] text-[var(--tg-hint)]">{r.label}</div>
+                </div>
+                {r.state === "awaiting" ? (
                   <span className="shrink-0 text-[10px] text-amber-400">waiting</span>
                 ) : (
                   <span className="shrink-0 text-[10px] text-[var(--tg-hint)]">
                     {ago(r.started)}
                   </span>
-                );
-              if (r.source === "native")
-                return (
-                  <div key={r.sessionId} className={rowClass} title={r.project ?? undefined}>
-                    <SourceIcon source={r.extSource} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate">{r.title}</div>
-                      <div className="truncate text-[10px] text-[var(--tg-hint)]">{r.label}</div>
-                    </div>
-                    {r.extSource && (
-                      <span className="shrink-0 rounded bg-[var(--tg-secondary-bg)] px-1.5 py-0.5 text-[10px] text-[var(--tg-hint)]">
-                        {r.extSource}
-                      </span>
-                    )}
-                    {right}
-                  </div>
-                );
-              return (
-                <button
-                  key={r.sessionId}
-                  onClick={() => openRow(r)}
-                  className={`${rowClass} active:opacity-70 ${
-                    r.sessionId === sessionId ? "ring-1 ring-[var(--brand-soft)]" : ""
-                  }`}
-                >
-                  <Bot size={13} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate">{r.title}</div>
-                    <div className="truncate text-[10px] text-[var(--tg-hint)]">{r.label}</div>
-                  </div>
-                  {right}
-                </button>
-              );
-            })}
+                )}
+              </button>
+            ))}
           </div>
         )}
       </div>

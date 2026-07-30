@@ -639,6 +639,23 @@ def test_machine_last_active_prefers_transcript_over_frozen_registry():
             machine.SESSIONS_DIR, machine.PROJECTS_DIR = old_s, old_p
 
 
+def test_machine_skips_sdk_children():
+    # The bug: newer CLIs register the bridge's own `claude -p` children, so every
+    # running chat showed twice — once as a bridge job, once as an external row.
+    with tempfile.TemporaryDirectory() as sd:
+        old = machine.SESSIONS_DIR
+        machine.SESSIONS_DIR = sd
+        try:
+            for name, entry in (("1.json", "sdk-cli"), ("2.json", "claude-vscode")):
+                with open(os.path.join(sd, name), "w") as f:
+                    json.dump({"pid": os.getpid(), "sessionId": name[0],
+                               "cwd": "/home/u/proj/app", "entrypoint": entry}, f)
+            rows = machine.list_running()
+            assert [r["source"] for r in rows] == ["vscode"]
+        finally:
+            machine.SESSIONS_DIR = old
+
+
 # --- usage normalization ----------------------------------------------------
 
 _USAGE_SAMPLE = {
