@@ -15,6 +15,9 @@ ok()   { printf '%s✓%s %s\n' "$c_g" "$c_0" "$*"; }
 bad()  { printf '%s✗%s %s\n' "$c_r" "$c_0" "$*"; }
 warn() { printf '%s!%s %s\n' "$c_y" "$c_0" "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# opencode's own installer drops it in ~/.opencode/bin, which is off PATH until
+# a new shell — probe both, the way freeagent.py resolves the binary.
+have_opencode() { have opencode || [ -x "$HOME/.opencode/bin/opencode" ]; }
 
 PATH_ORIG="$PATH"                      # remember what the user's shell really has
 export PATH="$HOME/.local/bin:$PATH"   # so a tunnel client/mystical we install is visible now
@@ -29,6 +32,8 @@ doctor() {
   else bad "python3 is $(python3 -c 'import platform;print(platform.python_version())') — need 3.10+"; hard=1; fi
   if have cloudflared; then ok "tunnel client found"
   else warn "tunnel client not found — only needed for the Mini App panel and /preview"; fi
+  if have_opencode; then ok "opencode found (free-agent fallback available)"
+  else warn "opencode not found — no free-agent rung when the Claude accounts run out"; fi
   if have npm; then ok "npm found (only needed to rebuild the web UI)"
   else warn "npm not found — fine unless you rebuild the web clients"; fi
   if have graphify; then ok "graphify found (projects map themselves after the first turn)"
@@ -52,6 +57,17 @@ install_tunnel_client() {
     chmod +x "$HOME/.local/bin/cloudflared"
   fi
   have cloudflared
+}
+
+# Same for the free-agent rung. opencode's installer already covers the
+# os/arch/musl/CPU-baseline matrix, so call it instead of guessing a release
+# asset — but keep it out of the user's shell rc and link it into ~/.local/bin,
+# which setup already puts on PATH and freeagent.py already looks in.
+install_opencode() {
+  curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path >/dev/null || return 1
+  [ -x "$HOME/.opencode/bin/opencode" ] || return 1
+  mkdir -p "$HOME/.local/bin"
+  ln -sf "$HOME/.opencode/bin/opencode" "$HOME/.local/bin/opencode"
 }
 
 get_env() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$ENV_FILE" | head -n1 || true; }
@@ -144,6 +160,26 @@ if [ -z "$(get_env MINIAPP_ENABLE)" ]; then
     esac
   fi
   "${ONBOARD[@]}" set-env "$ENV_FILE" MINIAPP_ENABLE "$mini"
+fi
+
+# -- free-agent fallback -----------------------------------------------------
+# The ladder's last rung hands a limited turn to a non-Anthropic model through
+# opencode. Offering the install here is why the dashboard never has to ask
+# anyone to paste a curl command. Asked only while it's missing, so a re-run
+# skips it once installed.
+if ! have_opencode; then
+  echo
+  echo "When your Claude accounts run out of quota, sessions can hand off to a free"
+  echo "provider (opencode zen, Gemini, Qwen, local Ollama). That runs through the"
+  echo "'opencode' CLI — a ~60MB download. Provider keys are added later, in the dashboard."
+  printf "Install it now? [Y/n]: "
+  read -r ans || ans=n                 # EOF (piped/CI) = don't download
+  case "${ans:-y}" in
+    [Nn]*) warn "skipped — re-run ./setup.sh any time to install it" ;;
+    *) echo "Downloading opencode…"
+       if install_opencode; then ok "opencode installed → ~/.local/bin/opencode"
+       else warn "install failed — free-agent rungs stay off (bot, dashboard and Claude are unaffected)."; fi ;;
+  esac
 fi
 
 # -- link `mystical` onto PATH -----------------------------------------------
