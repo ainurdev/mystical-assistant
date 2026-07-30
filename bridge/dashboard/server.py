@@ -274,6 +274,11 @@ class Handler(BaseHTTPRequestHandler):
                               {"session_id": "", "seq": 0, "paused": False, "items": []})
         if path == "/local/usage":
             return self._json(usage.get_usage())
+        if path == "/local/accounts":
+            from bridge import accounts
+            return self._json({"accounts": [
+                {**a, "left": accounts.headroom(a["slot"])}
+                for a in accounts.list_accounts()]})
         if path == "/local/sessions":
             native.refresh(chat)           # surface VSCode sessions started since last poll
             project = qs.get("project", [None])[0]
@@ -542,6 +547,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "not found"}, 404)
             store.archive(sid)
             return self._json({"ok": True})
+        if path.startswith("/local/sessions/") and path.endswith("/policy"):
+            from bridge import ladder
+            sid = path[len("/local/sessions/"):-len("/policy")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            policy = body.get("policy") or None
+            if policy is not None and policy not in ladder.POLICIES:
+                return self._json(
+                    {"error": f"policy must be one of {ladder.POLICIES}"}, 400)
+            store.set_fallback_policy(sid, policy)
+            return self._json({"ok": True, "fallback_policy": policy})
         if path == "/local/git/commit":
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
             if cwd is None:

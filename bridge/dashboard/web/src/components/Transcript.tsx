@@ -46,6 +46,30 @@ function Attachments({ items }: { items: string[] }) {
   );
 }
 
+/** Which runtime ran this turn — shown only when it wasn't the default Claude
+ *  account, so fallback-ladder work (another login, a free agent) stays visible. */
+function RuntimeBadge({ runtime }: { runtime: string }) {
+  const [kind, arg] = runtime.split(":", 2);
+  const free = kind === "opencode";
+  const label = free ? `FREE AGENT · ${(arg || "?").toUpperCase()}` : `ACCOUNT ${arg}`;
+  return (
+    <div className="ml-[27px] flex">
+      <span
+        className="border px-1.5 py-px text-[9.5px] tracking-[1px]"
+        style={{
+          color: free ? "var(--warn)" : "var(--acc)",
+          borderColor: "color-mix(in srgb, currentColor 40%, transparent)",
+        }}
+        title={free
+          ? "Ran on a free agent (opencode) after a usage limit — weaker model, review its work"
+          : "Ran on another Claude account after a usage limit"}
+      >
+        {free ? "⚡ " : "⇄ "}{label}
+      </span>
+    </div>
+  );
+}
+
 type Respond = (
   requestId: string,
   opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
@@ -92,6 +116,7 @@ export function Transcript({
                 </span>
               </div>
             )}
+            {turn.runtime && <RuntimeBadge runtime={turn.runtime} />}
             {turn.attachments && turn.attachments.length > 0 && (
               <Attachments items={turn.attachments} />
             )}

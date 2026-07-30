@@ -35,6 +35,8 @@ export interface Turn {
   events: RunEvent[];
   status: "running" | "done" | "error";
   pending: PendingRequest[];
+  // null/undefined = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
+  runtime?: string | null;
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -100,8 +102,9 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
       const attachments =
         ex.attachments.length || !st.attachments.length ? ex.attachments : fromStore();
       const prompt = ex.prompt || st.prompt;
-      if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments) {
-        map.set(st.id, { ...ex, status: st.status, prompt, attachments });
+      if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
+          || ex.runtime !== st.runtime) {
+        map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime });
       }
     } else {
       map.set(st.id, {
@@ -112,6 +115,7 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         events: [],
         status: st.status,
         pending: [],
+        runtime: st.runtime,
       });
     }
   }

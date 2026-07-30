@@ -12,6 +12,7 @@ import {
   type SessionBrief,
   type SessionStatus,
   type UsageInfo,
+  type AccountInfo,
 } from "./api";
 import { modelOptions, latestPerFamily } from "./models";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
@@ -172,6 +173,7 @@ export function App() {
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [usage, setUsage] = useState<UsageInfo | null>(null);
+  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
   // Prompts the relevance guardrail held back — still client-side, nothing ran.
   // Keyed by the session each one was written in: the check takes ~10s, and a
@@ -511,6 +513,8 @@ export function App() {
     let live = true;
     const tick = async () => {
       try { const u = await api.usage(); if (live) setUsage(u); } catch { /* ignore */ }
+      // Same 60s tick: the per-account meters (only rendered when >1 login).
+      try { const a = await api.accounts(); if (live) setAccounts(a.accounts); } catch { /* ignore */ }
     };
     void tick();
     const id = setInterval(tick, 60000);
@@ -915,6 +919,18 @@ export function App() {
       const s = sessions.find((x) => x.id === ctxMenu.id);
       items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
       items.push({ icon: "⧉", label: "Copy session name", onClick: () => s && copy(s.title || "session") });
+      // Usage-limit fallback policy for this session; the 5s session poll picks
+      // up the new value, so the ● marker is fresh next open.
+      const pol = s?.fallback_policy ?? null;
+      const setPol = (v: string) => { void api.setPolicy(ctxMenu.id, v).then(() => void loadSessions()); };
+      items.push({ divider: true });
+      items.push({ icon: pol === null || pol === "ask" ? "●" : "○", label: "On limit: ask",
+        hint: "offer account/free-agent choices", onClick: () => setPol("ask") });
+      items.push({ icon: pol === "auto" ? "●" : "○", label: "On limit: auto-switch",
+        hint: "take the best fallback silently", onClick: () => setPol("auto") });
+      items.push({ icon: pol === "wait" ? "●" : "○", label: "On limit: wait",
+        hint: "only wait for the reset", onClick: () => setPol("wait") });
+      items.push({ divider: true });
       items.push({ icon: "⌫", label: "Archive session", danger: true, onClick: () => void archiveSession(ctxMenu.id) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
@@ -1076,7 +1092,8 @@ export function App() {
             </div>
 
             <StatusBar
-              mount={wsRoot} usedPct={usedPct} resetLabel={resetLabel} repo={activeProject ?? "—"}
+              mount={wsRoot} usedPct={usedPct} resetLabel={resetLabel} accounts={accounts}
+              repo={activeProject ?? "—"}
               changes={activeBadge?.dirty ?? 0} onPalette={() => setPaletteOpen(true)}
             />
 

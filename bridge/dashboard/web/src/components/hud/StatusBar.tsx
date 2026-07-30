@@ -1,16 +1,18 @@
 import { useState } from "react";
+import type { AccountInfo } from "../../api";
 
 export interface StatusBarProps {
   mount: string;
   usedPct: number | null;      // null → usage unknown, shown as "—"
   resetLabel?: string | null;
+  accounts?: AccountInfo[];    // >1 → per-account chips (multi-login fallback)
   repo: string;
   changes: number;
   onPalette: () => void;
 }
 
 export function StatusBar(props: StatusBarProps) {
-  const { mount, usedPct, resetLabel, repo, changes, onPalette } = props;
+  const { mount, usedPct, resetLabel, accounts = [], repo, changes, onPalette } = props;
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -61,6 +63,25 @@ export function StatusBar(props: StatusBarProps) {
           </span>
         )}
       </span>
+      {accounts.length > 1 && (
+        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {accounts.map((a) => (
+            <span
+              key={a.slot}
+              title={`${a.email ?? "unknown"}${a.default ? " (default)" : ""}${a.disabled ? " (disabled)" : ""}`}
+              style={{
+                border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)",
+                padding: "2px 7px",
+                color: a.disabled ? "var(--txd)"
+                  : a.left !== null && a.left <= 1 ? "var(--warn)" : "var(--tx)",
+                opacity: a.disabled ? 0.55 : 1,
+              }}
+            >
+              A{a.slot} {a.left === null ? "—" : `${a.left}%`}
+            </span>
+          ))}
+        </span>
+      )}
       <span style={{ flex: 1 }} />
       <span>
         REPO <span style={{ color: "var(--tx)" }}>{repo}</span>

@@ -63,6 +63,7 @@ export interface SessionBrief {
   updated: number;
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
+  fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
 }
 
 export interface StoreTurn {
@@ -74,6 +75,7 @@ export interface StoreTurn {
   cost: number | null;
   elapsed: number | null;
   started: number;
+  runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
 }
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };
@@ -432,6 +434,11 @@ export const api = {
     request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/archive`, {
       method: "POST",
       body: {},
+    }),
+  setPolicy: (id: string, policy: string | null) =>
+    request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/policy`, {
+      method: "POST",
+      body: { policy },
     }),
 
   runStatus: (jobId: string, cursor: number) =>

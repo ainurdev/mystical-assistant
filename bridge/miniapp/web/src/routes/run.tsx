@@ -80,6 +80,13 @@ function RunPage() {
             </div>
 
             {/* assistant turn */}
+            {turn.runtime && (
+              <div className="text-[11px] text-[var(--tg-hint)]">
+                {turn.runtime.startsWith("opencode:")
+                  ? `⚡ free agent · ${turn.runtime.split(":")[1]}`
+                  : `⇄ account ${turn.runtime.split(":")[1]}`}
+              </div>
+            )}
             {(turn.events.length > 0 || turn.status === "running") && (
               <div className="space-y-2">
                 <RunStream

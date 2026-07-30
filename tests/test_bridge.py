@@ -378,7 +378,7 @@ def test_session_brief_shape():
     s = store.create_session(555, "p6")
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "updated", "archived",
-                      "origin", "cwd", "branch"}
+                      "origin", "cwd", "branch", "fallback_policy"}
     assert b["id"] == s["id"] and b["project"] == "p6"
     assert isinstance(b["branch"], str)   # "" when cwd has no repo
 

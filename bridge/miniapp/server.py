@@ -91,6 +91,7 @@ def _session_brief(s: dict) -> dict:
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
+            "fallback_policy": s.get("fallback_policy"),
             "branch": git.current_branch_cached(cwd) if cwd else ""}
 
 
@@ -208,6 +209,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_agent_activity(chat_id, qs)
                 if path == "/api/usage":
                     return self._json(usage.get_usage())
+                if path == "/api/accounts":
+                    return self._api_accounts(chat_id)
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
                 if path == "/api/project/settings":
@@ -262,6 +265,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/sessions/") and path.endswith("/archive"):
                 return self._api_session_archive(
                     chat_id, path[len("/api/sessions/"):-len("/archive")], body)
+            if path.startswith("/api/sessions/") and path.endswith("/policy"):
+                return self._api_session_policy(
+                    chat_id, path[len("/api/sessions/"):-len("/policy")], body)
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
                     chat_id, path[len("/api/run/"):-len("/respond")], body)
@@ -530,6 +536,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         store.archive(sid)
         self._json({"ok": True})
+
+    def _api_session_policy(self, chat_id: int, sid: str, body: dict):
+        """Set what a usage-limit death does to this session (ask/auto/wait);
+        null clears back to the configured default."""
+        from bridge import ladder
+        s = store.get_session(sid)
+        if not s or s["chat_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        policy = body.get("policy") or None
+        if policy is not None and policy not in ladder.POLICIES:
+            return self._json({"error": f"policy must be one of {ladder.POLICIES}"}, 400)
+        store.set_fallback_policy(sid, policy)
+        self._json({"ok": True, "fallback_policy": policy})
+
+    def _api_accounts(self, chat_id: int):
+        """Claude logins + how much of each is left, for the meters."""
+        from bridge import accounts
+        rows = []
+        for a in accounts.list_accounts():
+            rows.append({**a, "left": accounts.headroom(a["slot"])})
+        self._json({"accounts": rows})
 
     def _api_run_respond(self, chat_id: int, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""

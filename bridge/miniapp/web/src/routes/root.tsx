@@ -113,25 +113,56 @@ function HeaderBar({
 
       {/* Second row exists only to give chat titles the full width to read in. */}
       {pathname === "/" && sessions.length > 0 && (
-        <select
-          value={sessionId ?? ""}
-          onChange={(e) => selectSession(e.target.value)}
-          disabled={isRunning}
-          className="mt-2 w-full truncate rounded-lg bg-[var(--tg-secondary-bg)] px-2 py-1.5 text-xs outline-none disabled:opacity-40"
-          aria-label="Chat session"
-        >
-          {sessions.map((s) => {
-            const st = status[s.id]?.state;
-            return (
-              <option key={s.id} value={s.id}>
-                {(st === "awaiting" ? "❓ " : st === "working" ? "● " : st === "live" ? "○ " : "") +
-                  (s.title || "New chat")}
-              </option>
-            );
-          })}
-        </select>
+        <div className="mt-2 flex items-center gap-2">
+          <select
+            value={sessionId ?? ""}
+            onChange={(e) => selectSession(e.target.value)}
+            disabled={isRunning}
+            className="min-w-0 flex-1 truncate rounded-lg bg-[var(--tg-secondary-bg)] px-2 py-1.5 text-xs outline-none disabled:opacity-40"
+            aria-label="Chat session"
+          >
+            {sessions.map((s) => {
+              const st = status[s.id]?.state;
+              return (
+                <option key={s.id} value={s.id}>
+                  {(st === "awaiting" ? "❓ " : st === "working" ? "● " : st === "live" ? "○ " : "") +
+                    (s.title || "New chat")}
+                </option>
+              );
+            })}
+          </select>
+          <PolicyChip
+            sessionId={sessionId}
+            stored={sessions.find((s) => s.id === sessionId)?.fallback_policy ?? null}
+          />
+        </div>
       )}
     </header>
+  );
+}
+
+const POLICIES = ["ask", "auto", "wait"] as const;
+const POLICY_ICON: Record<string, string> = { ask: "⛔", auto: "↪", wait: "⏳" };
+
+/** What a usage-limit death does to this chat — tap to cycle ask → auto → wait.
+ *  Optimistic: the tapped value shows at once; the session poll confirms it. */
+function PolicyChip({ sessionId, stored }: { sessionId: string | null; stored: string | null }) {
+  const [local, setLocal] = useState<{ id: string; v: string } | null>(null);
+  if (!sessionId) return null;
+  const value = (local?.id === sessionId ? local.v : stored) ?? "ask";
+  const next = POLICIES[(POLICIES.indexOf(value as (typeof POLICIES)[number]) + 1) % POLICIES.length];
+  return (
+    <button
+      onClick={() => {
+        setLocal({ id: sessionId, v: next });
+        void api.setPolicy(sessionId, next).catch(() => setLocal(null));
+      }}
+      title={`On usage limit: ${value}. Tap for ${next}.`}
+      aria-label={`On usage limit: ${value}`}
+      className="shrink-0 rounded-lg bg-[var(--tg-secondary-bg)] px-2.5 py-1.5 text-xs text-[var(--tg-hint)]"
+    >
+      {POLICY_ICON[value]} {value}
+    </button>
   );
 }
 

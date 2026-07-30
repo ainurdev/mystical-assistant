@@ -18,6 +18,9 @@ export interface Turn {
   // inline); turns rehydrated from the store carry server paths (shown as a chip,
   // since the upload files are cleaned up after the run).
   attachments?: string[];
+  // Which runtime produced the turn: null/undefined = the default Claude account,
+  // 'claude:<slot>' = another login, 'opencode:<provider>' = a free agent.
+  runtime?: string | null;
 }
 
 export function derivePending(events: RunEvent[]): PendingRequest[] {
@@ -57,8 +60,9 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
       const attachments =
         ex.attachments?.length || !st.attachments.length ? ex.attachments : st.attachments;
       const prompt = ex.prompt || st.prompt;
-      if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments)
-        map.set(st.id, { ...ex, status: st.status, prompt, attachments });
+      if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
+          || ex.runtime !== st.runtime)
+        map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime });
     } else
       map.set(st.id, {
         id: st.id,
@@ -67,6 +71,7 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         status: st.status,
         pending: [],
         attachments: st.attachments,
+        runtime: st.runtime,
       });
   }
   const touched = new Set<string>();

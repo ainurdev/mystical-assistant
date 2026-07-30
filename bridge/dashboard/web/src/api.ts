@@ -23,6 +23,7 @@ export interface SessionBrief {
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
   branch?: string; // the session's git branch (worktree branch, or the project's)
+  fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
 }
 export interface StoreTurn {
   id: string;
@@ -33,6 +34,7 @@ export interface StoreTurn {
   cost: number | null;
   elapsed: number | null;
   started: number;
+  runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
 }
 
 export interface QuestionOption {
@@ -416,6 +418,14 @@ export interface UsageBucket {
   resets_at: string | null;
   severity: string;
 }
+export interface AccountInfo {
+  slot: number;
+  email: string | null;
+  alias: string | null;
+  disabled: boolean;
+  default: boolean;
+  left: number | null; // % of the tighter usage window unspent; null = meter unreadable
+}
 export interface UsageInfo {
   available: boolean;
   five_hour?: UsageBucket | null;
@@ -593,6 +603,12 @@ export const api = {
       method: "POST",
       body: {},
     }),
+  setPolicy: (id: string, policy: string | null) =>
+    req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(id)}/policy`, {
+      method: "POST",
+      body: { policy },
+    }),
+  accounts: () => req<{ accounts: AccountInfo[] }>("/local/accounts"),
   run: (body: RunBody) =>
     req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
   respond: (
