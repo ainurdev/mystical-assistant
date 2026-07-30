@@ -177,6 +177,54 @@ def test_update_exclude_not_duplicated(tmp_path, monkeypatch):
         assert f.read().count("graphify-out/") == 1
 
 
+def _fake_update_calls(d, writes_html):
+    """Stub graphify: records subcommands; `update` writes graph.json (and
+    graph.html only when `writes_html`), `export html` writes graph.html."""
+    calls = []
+
+    def run(cmd, cwd=None, **k):
+        if cmd and "graphify" in str(cmd[0]):
+            sub = list(cmd[1:])
+            calls.append(sub)
+            html = os.path.join(cwd, graphmap.OUT_DIR, "graph.html")
+            if sub[:1] == ["update"]:
+                _write_graph(cwd, _head8(cwd))
+                if writes_html:
+                    open(html, "w").close()
+            elif sub[:2] == ["export", "html"]:
+                open(html, "w").close()
+
+            class P:
+                returncode = 0
+                stdout = stderr = ""
+            return P()
+        return _real_subprocess_run(cmd, cwd=cwd, **k)
+
+    return calls, run
+
+
+def test_update_renders_viz_when_graphify_skipped_it(tmp_path, monkeypatch):
+    """Above graphify's 5000-node viz cap `update` writes no graph.html, so the
+    MAP tab iframes a 404. update() must fall back to `export html`."""
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    calls, run = _fake_update_calls(d, writes_html=False)
+    monkeypatch.setattr(graphmap.subprocess, "run", run)
+    ok, _msg = graphmap.update(d)
+    assert ok is True
+    assert calls == [["update", "."], ["export", "html"]]
+    assert os.path.isfile(os.path.join(d, graphmap.OUT_DIR, "graph.html"))
+
+
+def test_update_leaves_existing_viz_alone(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    calls, run = _fake_update_calls(d, writes_html=True)
+    monkeypatch.setattr(graphmap.subprocess, "run", run)
+    graphmap.update(d)
+    assert calls == [["update", "."]]
+
+
 def test_update_no_binary(tmp_path, monkeypatch):
     monkeypatch.setattr(graphmap, "graphify_bin", lambda: None)
     ok, msg = graphmap.update(str(tmp_path))

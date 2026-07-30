@@ -434,7 +434,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             fp = os.path.join(abs_p, graphmap.OUT_DIR, "graph.html")
             if not os.path.isfile(fp):
-                return self._json({"error": "no graph"}, 404)
+                # the MAP tab iframes this, so a JSON body renders as a raw blob
+                return self._send(b"<!doctype html><body style='background:#0a0a0a;"
+                                  b"color:#888;font:12px monospace;padding:14px'>"
+                                  b"no map on disk - build one from the MAP tab.",
+                                  404, "text/html; charset=utf-8")
             with open(fp, "rb") as f:
                 return self._send(f.read(), 200, "text/html; charset=utf-8")
         if path == "/local/graph/explain":

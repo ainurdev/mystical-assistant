@@ -21,6 +21,7 @@ BUILD_TIMEOUT = 300     # explicit build/refresh (first build = full AST pass)
 REFRESH_TIMEOUT = 120   # post-turn refresh (warm cache)
 EXPLAIN_TIMEOUT = 30
 EXPLAIN_MAX_CHARS = 3500
+VIZ_TIMEOUT = 60        # `export html` fallback when update skips the viz
 GIT_TIMEOUT = 10        # short git operations (rev-parse, status)
 
 _GRAPHIFY_FALLBACKS = ("~/.local/bin/graphify",)   # pipx/uv tool bin dir
@@ -153,6 +154,21 @@ def _exclude_artifacts(cwd: str) -> None:
         log.debug("graphmap exclude_artifacts failed", exc_info=True)
 
 
+def _ensure_viz(cwd: str, bin_: str) -> None:
+    """Above graphify's viz node cap (5000) `graphify update` skips graph.html
+    and deletes any stale one, so the MAP tab would iframe a 404 next to a
+    "BUILT" header. `graphify export html` renders the aggregated
+    community view instead, which works at any size. Best-effort: graph.json
+    (explain, graph pack) is already written either way."""
+    if os.path.isfile(os.path.join(cwd, OUT_DIR, "graph.html")):
+        return
+    try:
+        subprocess.run([bin_, "export", "html"], cwd=cwd, capture_output=True,
+                       text=True, timeout=VIZ_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        log.debug("graphify export html failed", exc_info=True)
+
+
 def update(cwd: str, timeout: int = BUILD_TIMEOUT) -> "tuple[bool, str]":
     """Build or refresh a project's graph (`graphify update .`). Serialized per
     project; a concurrent caller returns immediately instead of stacking."""
@@ -173,6 +189,7 @@ def update(cwd: str, timeout: int = BUILD_TIMEOUT) -> "tuple[bool, str]":
             return False, f"graphify update failed: {tail or proc.returncode}"
         if first:
             _exclude_artifacts(cwd)
+        _ensure_viz(cwd, bin_)
         return True, "graph updated"
     except subprocess.TimeoutExpired:
         log.debug("graphmap update timed out", exc_info=True)
