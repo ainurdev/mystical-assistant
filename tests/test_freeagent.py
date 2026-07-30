@@ -151,6 +151,192 @@ def test_briefing_survives_having_no_history_to_summarize():
     assert "Fix the bug" in text
 
 
+# --- the turn actually runs on the free agent --------------------------------
+# The bug this guards: recording runtime='opencode:x' while still spawning
+# `claude` would send the turn straight back to the account that just died.
+
+from bridge import runner, store  # noqa: E402
+
+store.init()
+CHAT = 555
+
+
+class _Proc:
+    def __init__(self, out="", code=0, err=""):
+        self.stdout, self.stderr, self.returncode = out, err, code
+
+    def communicate(self, timeout=None):
+        return self.stdout, self.stderr
+
+
+def _job(runtime="opencode:gemini"):
+    s = store.create_session(CHAT, "/fa", cwd="/fa")
+    j = runner.Job("j-fa", CHAT, s["id"])
+    j.runtime = runtime
+    return j
+
+
+def _spawn(proc):
+    """Patch the subprocess call the free-agent path uses; records the argv."""
+    seen = {}
+    saved = runner.subprocess.run
+
+    def run(cmd, **kw):
+        seen["cmd"] = cmd
+        seen["kw"] = kw
+        return proc
+
+    runner.subprocess.run = run
+    return seen, (lambda: setattr(runner.subprocess, "run", saved))
+
+
+def test_a_free_agent_turn_spawns_opencode_not_claude():
+    freeagent._bin = _fake_bin()
+    _env(GEMINI_API_KEY="k")
+    seen, restore = _spawn(_Proc(out="done"))
+    try:
+        runner._consume_free_agent(_job(), "keep going", "/fa")
+        assert seen["cmd"][0] == freeagent._bin
+        assert "run" in seen["cmd"]
+    finally:
+        restore()
+        freeagent._bin = None
+
+
+def test_a_free_agent_turn_reports_its_output_and_finishes():
+    freeagent._bin = _fake_bin()
+    _env(GEMINI_API_KEY="k")
+    _seen, restore = _spawn(_Proc(out="I refactored the parser."))
+    job = _job()
+    try:
+        runner._consume_free_agent(job, "go", "/fa")
+        assert job.status == "done"
+        assert "refactored the parser" in (job.result or "")
+        # The bridge's event vocabulary, so the dashboard/Mini App render it
+        # like any other turn: a `text` event, closed by a `result` event.
+        types = [e["type"] for e in job.events]
+        assert "text" in types and types[-1] == "result"
+        assert job.elapsed is not None
+    finally:
+        restore()
+        freeagent._bin = None
+
+
+def test_a_nonzero_exit_is_an_error_turn():
+    freeagent._bin = _fake_bin()
+    _env(GEMINI_API_KEY="k")
+    _seen, restore = _spawn(_Proc(out="", code=2, err="model not found"))
+    job = _job()
+    try:
+        runner._consume_free_agent(job, "go", "/fa")
+        assert job.status == "error"
+        assert "model not found" in (job.error_msg or "")
+    finally:
+        restore()
+        freeagent._bin = None
+
+
+def test_the_runtime_reaches_the_job_so_the_branch_is_taken():
+    """Recording runtime on the turn but not the job would run Claude anyway."""
+    seen = {}
+    saved = runner._run_streaming
+    runner._run_streaming = lambda job, *a, **kw: seen.setdefault("job", job)
+    try:
+        job = runner.start_streaming_job(CHAT, "go", [], project="/fa",
+                                         runtime="opencode:gemini")
+        assert job is not None
+        assert job.runtime == "opencode:gemini"
+    finally:
+        runner._run_streaming = saved
+        if job is not None:
+            runner.state.release_run(job.store_session_id)
+
+
+def test_an_account_switch_is_not_mistaken_for_a_free_agent():
+    saved = runner._run_streaming
+    runner._run_streaming = lambda job, *a, **kw: None
+    job = None
+    try:
+        job = runner.start_streaming_job(CHAT, "go", [], project="/fa2",
+                                         account_slot=2)
+        assert job.runtime == "claude:2"
+        assert not (job.runtime or "").startswith("opencode:")
+    finally:
+        runner._run_streaming = saved
+        if job is not None:
+            runner.state.release_run(job.store_session_id)
+
+
+def test_a_claude_session_id_is_never_passed_to_opencode():
+    """Different runtimes, different id spaces — --session <claude uuid> is wrong."""
+    freeagent._bin = _fake_bin()
+    _env(GEMINI_API_KEY="k")
+    seen, restore = _spawn(_Proc(out="ok"))
+    job = _job()
+    job.resume_id = "1a2b3c4d-claude-uuid"
+    try:
+        runner._consume_free_agent(job, "go", "/fa")
+        assert "--session" not in seen["cmd"]
+        assert job.resume_id not in seen["cmd"]
+    finally:
+        restore()
+        freeagent._bin = None
+
+
+def test_the_handoff_prompt_carries_the_task_not_just_a_nudge():
+    """A free agent cannot read Claude's transcript — the task must be in the
+    prompt, and building it must not call Claude (the quota is gone)."""
+    from bridge import ladder
+    s = store.create_session(CHAT, "/fa3", cwd="/fa3")
+    store.start_turn(s["id"], "t-old", "Refactor the CSV parser", [])
+    sent = {}
+
+    def run(chat_id, prompt, atts, **kw):
+        sent["prompt"] = prompt
+        return "JOB"
+
+    ladder.take(store.get_session(s["id"]), CHAT,
+                {"kind": "free", "provider": "gemini", "label": "Gemini"},
+                run=run, notify=lambda *a, **kw: None)
+    assert "Refactor the CSV parser" in sent["prompt"]
+
+
+def test_the_handoff_task_is_the_newest_prompt_not_the_oldest():
+    """recent_prompts returns newest FIRST — mixing that up briefs the free
+    agent to do the session's first task all over again."""
+    from bridge import ladder
+    s = store.create_session(CHAT, "/fa4", cwd="/fa4")
+    store.start_turn(s["id"], "t-1", "Set up the project skeleton", [])
+    store.start_turn(s["id"], "t-2", "Now add OAuth login", [])
+    sent = {}
+
+    def run(chat_id, prompt, atts, **kw):
+        sent["prompt"] = prompt
+        return "JOB"
+
+    ladder.take(store.get_session(s["id"]), CHAT,
+                {"kind": "free", "provider": "gemini", "label": "Gemini"},
+                run=run, notify=lambda *a, **kw: None)
+    task_pos = sent["prompt"].find("TASK")
+    assert sent["prompt"].find("Now add OAuth login") > task_pos > -1
+    assert sent["prompt"].find("Now add OAuth login") \
+        < sent["prompt"].find("ALREADY DONE"), "newest prompt must be the TASK"
+    assert "Set up the project skeleton" in sent["prompt"]
+
+
+def test_a_provider_that_is_no_longer_configured_fails_loudly():
+    """The key was removed between offering the rung and taking it."""
+    freeagent._bin = _fake_bin()
+    _env()                                  # no provider keys at all
+    job = _job()
+    try:
+        runner._consume_free_agent(job, "go", "/fa")
+        assert job.status == "error"
+        assert "gemini" in (job.error_msg or "").lower()
+    finally:
+        freeagent._bin = None
+
+
 if __name__ == "__main__":
     import traceback
     fails = 0

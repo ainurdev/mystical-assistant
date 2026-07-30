@@ -488,6 +488,31 @@ def test_the_account_survives_a_bridge_restart():
 
 # --- the runner consults the ladder after parking -----------------------------
 
+def test_the_telegram_bot_path_also_consults_the_ladder():
+    """handle_task (plain-text Telegram prompts) must not be a ladder blind spot
+    — it's the surface where the approval card is answered."""
+    s = store.create_session(CHAT, "bot1", cwd="/tmp/bot1")
+    store.set_claude_session_id(s["id"], "c-bot1")
+    state_mod = runner.state
+    assert state_mod.acquire_run(s["id"], CHAT)
+
+    calls = []
+    saved = (runner.run_blocking, limits.defer, runner.ladder.escalate,
+             runner.send, runner.typing, config.AUTO_RESUME)
+    runner.run_blocking = lambda *a, **kw: (
+        "You've hit your usage limit · resets 3pm", "c-bot1", None, True)
+    limits.defer = lambda *a, **kw: (time.time() + 60, True)
+    runner.ladder.escalate = lambda sess, chat, **kw: calls.append(sess) or None
+    runner.send = lambda *a, **kw: None
+    runner.typing = lambda *a, **kw: None
+    config.AUTO_RESUME = True
+    try:
+        runner.handle_task(CHAT, "keep going", store.get_session(s["id"]))
+        assert len(calls) == 1 and calls[0]["id"] == s["id"]
+    finally:
+        (runner.run_blocking, limits.defer, runner.ladder.escalate,
+         runner.send, runner.typing, config.AUTO_RESUME) = saved
+
 def _ladder_stub(taken=None):
     """Patch runner's ladder hook; records the escalate calls it receives."""
     calls = []

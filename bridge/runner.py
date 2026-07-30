@@ -317,6 +317,11 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                 and (sid or session["claude_session_id"])):
             d = limits.defer(session["id"], chat_id, None)
             if d is not None:
+                # Parked. Same order as the streaming path: escalate second, and
+                # stay quiet when a ladder rung takes the work (it announces itself).
+                if ladder.escalate(store.get_session(session["id"]) or session,
+                                   chat_id):
+                    return
                 send(chat_id, "⏳ Claude usage limit hit — this session will auto-"
                               f"resume when the limit resets (~{limits.when_str(d[0])}).")
                 return
@@ -372,6 +377,7 @@ class Job:
         self.timed_out = False           # watchdog killed the run
         self.error_msg: str | None = None  # stderr/exit error when no result event came
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
+        self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
         self.texts: list[str] = []       # assistant text this turn (memory capture)
         self.edited: list[str] = []      # files edited this turn (Edit/Write/MultiEdit)
         self._interrupt_timer: threading.Timer | None = None
@@ -952,11 +958,64 @@ def _watchdog(job: Job, proc) -> None:
         proc.kill()
 
 
+def _consume_free_agent(job: Job, prompt: str, cwd: str) -> None:
+    """Run one turn on a fallback-ladder free agent instead of Claude.
+
+    Blocking, not streamed: opencode is a different runtime with its own event
+    schema, so its stdout is captured and reported as the turn's single
+    assistant message. Everything after this (journaling, finish_turn, the
+    notification) is _run_streaming's shared finally block."""
+    from bridge import freeagent
+    want = (job.runtime or "").split(":", 1)[-1]
+    provider = next((p for p in freeagent.available()
+                     if p["provider"] == want), None)
+    if provider is None:
+        job.error_msg = (f"free agent {want!r} is not configured any more "
+                         f"(its API key or model went away)")
+        job.add({"type": "error", "message": job.error_msg})
+        job.status = "error"
+        return
+    # No --session: job.resume_id is a *Claude* session id and means nothing to
+    # opencode. Continuity travels in the briefing prompt instead.
+    cmd = freeagent.build_cmd(prompt, provider, None, cwd)
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                              timeout=config.RUN_TIMEOUT)
+    except FileNotFoundError:
+        job.error_msg = "`opencode` not found on PATH."
+        job.add({"type": "error", "message": job.error_msg})
+        job.status = "error"
+        return
+    except subprocess.TimeoutExpired:
+        job.timed_out = True
+        job.error_msg = "free agent timed out"
+        job.add({"type": "error", "message": job.error_msg})
+        job.status = "error"
+        return
+    text = (proc.stdout or "").strip()
+    if proc.returncode != 0:
+        job.error_msg = (proc.stderr or "").strip() or f"opencode exited {proc.returncode}"
+        job.add({"type": "error", "message": job.error_msg})
+        job.status = "error"
+        return
+    if text:
+        job.texts.append(text)
+        job.add({"type": "text", "text": text})
+    job.result = text
+    job.status = "done"
+    job.elapsed = int(time.time() - job.started)
+    job.add({"type": "result", "result": job.result,
+             "cost": job.cost, "elapsed": job.elapsed})
+
+
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
                    permission_mode: str | None = None, ponytail: str | None = None):
     proc = None
     try:
+        if (job.runtime or "").startswith("opencode:"):
+            _consume_free_agent(job, prompt, cwd)
+            return
         full_prompt = prompt
         if image_paths:
             full_prompt = ("The user attached screenshot(s); view them before "
@@ -1194,9 +1253,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.resume_id = session["claude_session_id"]
         job.account_slot = account_slot
-        _register(job)
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"
+        job.runtime = runtime
+        _register(job)
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime)

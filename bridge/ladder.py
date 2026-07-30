@@ -93,11 +93,17 @@ ACCOUNT_NUDGE = (
     "your recent transcript and continue exactly where you left off; finish the "
     "task you were doing. Don't start over.")
 
-HANDOFF_NUDGE = (
-    "⏮ The Claude account working on this hit its usage limit — the user did "
-    "not stop you. You are taking over the task in progress. Review the "
-    "briefing above and the repository state, then continue exactly where the "
-    "previous agent left off. Don't start over.")
+def _handoff_prompt(session: dict) -> str:
+    """The briefing a free agent takes over with. Built from the session's own
+    stored prompts -- deliberately NOT an LLM summary, because the account that
+    would write it is the one that just ran out of quota."""
+    from bridge import freeagent, store
+    try:
+        recent = store.recent_prompts(session["id"], 4)   # newest first
+    except Exception:  # noqa: BLE001
+        recent = []
+    task = recent[0] if recent else "(continue the work already in progress)"
+    return freeagent.briefing(task, list(reversed(recent[1:])))
 
 
 def _offer(session: dict, chat_id: int, available: list, notify,
@@ -135,7 +141,7 @@ def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
     if rung["kind"] == "account":
         prompt, kw["account_slot"] = ACCOUNT_NUDGE, rung["slot"]
     else:
-        prompt = HANDOFF_NUDGE
+        prompt = _handoff_prompt(session)
         kw["runtime"] = f"opencode:{rung['provider']}"
     try:
         job = run(chat_id, prompt, [], **kw)
