@@ -288,7 +288,14 @@ must not consume a second account — `is_server_error` deaths never reach `ladd
 Tests follow `tests/conftest.py` env isolation; `python3 -m pytest tests/` must stay
 clean apart from the three pre-existing `tests/test_learning.py` failures.
 
-## Open question to settle first
+## Open question to settle first — ANSWERED 2026-07-30
+
+**Verified by probe** (empty dir + `CLAUDE_CONFIG_DIR claude -p`): the CLI creates
+`.claude.json`, `projects/`, `sessions/` *inside* the profile dir and reports "Not
+logged in" — so identity AND credentials are profile-scoped, and **accounts run
+concurrently**. A second probe confirmed the overlay works end-to-end: symlinked
+`projects/` + copied `.credentials.json` ran a real turn whose transcript landed in
+the shared `~/.claude/projects` tree. The concurrent branch below is the one built.
 
 `~/.claude.json` — which holds `oauthAccount` and `userID` — lives **outside**
 `~/.claude/`. Whether `CLAUDE_CONFIG_DIR` relocates it along with `.credentials.json` is
@@ -306,3 +313,20 @@ observe which files appear where.
 
 This is step 1 of implementation. It changes the concurrency contract, so it is settled
 before code, not discovered during it.
+
+## Implementation deltas (2026-07-30)
+
+Built as specced, with these deliberate simplifications:
+
+- **No background usage poller.** Meters are fetched on demand (per-path 60s TTL in
+  `usage.py`) by `/accounts`, `pick()` and the parking lot — the adaptive
+  active/idle/exhausted cadence is unnecessary when nothing polls unprompted.
+- **`list_accounts()` has no `quarantined` state field.** The behaviour exists —
+  a dead-token slot has no readable meter, so `pick()` never lands on it and
+  `/accounts` shows "usage unknown" — but no separate state machine tracks it.
+- **Free-agent turns are blocking, not streamed** (`runner._consume_free_agent`):
+  opencode's stdout becomes one `text` event + a `result` event. Switching to
+  `--format json` streaming is a contained change once a real event recording exists.
+- **Dashboard/Mini App policy picker and runtime badges are not built** — the
+  `/policy` command and the Telegram card are the interface; `turns.runtime` is in
+  the DB and flows through `transcript()` for a later UI pass.
