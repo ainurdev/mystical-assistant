@@ -20,23 +20,27 @@ upload. That's the hostname in `index.html`'s canonical, OG and JSON-LD tags, so
 those are now true. A fresh project 522s for the first few minutes while the edge
 warms; it settles without intervention.
 
-Redeploying is `npm run deploy`. It needs `CLOUDFLARE_API_TOKEN` (scoped to
-*Account → Cloudflare Pages: Edit*) and `CLOUDFLARE_ACCOUNT_ID` in the repo's
-`.env` — already there, and `.env` is git-ignored. Nothing rebuilds on push yet;
-connecting the project to git in the dashboard is the upgrade.
+Every push to `master` that touches `site/**` redeploys, via
+`.github/workflows/deploy-site.yml` — it runs the same `npm run deploy` below.
+The workflow needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub
+*repository secrets*; without them the run fails at the wrangler step.
+
+Deploying by hand is `npm run deploy`. It reads the same two variables from the
+repo's `.env` — already there, and `.env` is git-ignored.
 
 `vite.config.ts` sets `base: "./"`, so `dist/` works unchanged on Cloudflare
 Pages, GitHub Pages (project sites included), Netlify, or opened off disk.
 
-- **Cloudflare Pages, direct upload** — in use. `npm run deploy` from this
-  directory; `wrangler.jsonc` carries the project name and output dir, so the
-  command needs no flags and can't target the wrong project.
-- **Cloudflare Pages, connected to GitHub** — the upgrade, because `dist/` is
-  git-ignored and something has to build it. In the Cloudflare dashboard: the
-  `mystical-assistant` project → Settings → Build → Connect to Git, with root
-  directory `site`, build command `npm ci && npm run build`, output directory
-  `dist`. Every push to `master` would then deploy itself. Needs the Cloudflare
-  GitHub App to have access to the repo — a one-time authorisation.
+- **Cloudflare Pages, direct upload** — in use, from CI and by hand. `npm run
+  deploy` from this directory; `wrangler.jsonc` carries the project name and
+  output dir, so the command needs no flags and can't target the wrong project.
+- **Cloudflare Pages, connected to GitHub** — the alternative to the workflow,
+  and the way to get a preview deployment per branch and PR. In the Cloudflare
+  dashboard: the `mystical-assistant` project → Settings → Build → Connect to
+  Git, with root directory `site`, build command `npm ci && npm run build`,
+  output directory `dist`. Needs the Cloudflare GitHub App to have access to the
+  repo — a one-time authorisation. Drop the workflow if you switch, or the two
+  will race.
 - **GitHub Pages** — publish `site/dist` via an action, or copy it to `docs/`.
 
 ## Editing
