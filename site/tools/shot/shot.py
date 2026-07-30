@@ -137,7 +137,8 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def capture(url: str, out: str, width: int, height: int, wait_ms: int, full: bool) -> None:
+def capture(url: str, out: str, width: int, height: int, wait_ms: int, full: bool,
+            js: str = "") -> None:
     port = free_port()
     env = dict(os.environ)
     if CHROME_LD:
@@ -152,6 +153,11 @@ def capture(url: str, out: str, width: int, height: int, wait_ms: int, full: boo
         try:
             ws = WS(page_target(port))
             time.sleep(wait_ms / 1000)
+            if js:
+                # After the settle, so it runs against the filled-in UI: this is
+                # where a shot opens a modal or swaps real repo names for demo ones.
+                ws.wait(ws.send("Runtime.evaluate", expression=js, awaitPromise=True))
+                time.sleep(0.6)
             result = ws.wait(ws.send(
                 "Page.captureScreenshot", format="png", captureBeyondViewport=full,
             ))
@@ -173,10 +179,12 @@ def main() -> None:
     ap.add_argument("--height", type=int, default=950)
     ap.add_argument("--wait", type=int, default=4000, help="ms to settle before capturing")
     ap.add_argument("--full", action="store_true", help="capture the whole scroll height")
+    ap.add_argument("--eval", default="", metavar="JS",
+                    help="JavaScript to run once the page has settled, e.g. --eval \"$(cat demo.js)\"")
     args = ap.parse_args()
     if not os.path.exists(CHROME):
         raise SystemExit(f"no headless chrome at {CHROME} (set CHROME_HEADLESS_SHELL)")
-    capture(args.url, args.out, args.width, args.height, args.wait, args.full)
+    capture(args.url, args.out, args.width, args.height, args.wait, args.full, args.eval)
     print(f"{args.out} ({os.path.getsize(args.out) / 1024:.0f} KB)")
 
 

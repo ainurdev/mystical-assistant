@@ -1,7 +1,6 @@
 import { Star } from "lucide-react";
 import { CopyCommand } from "@/components/CopyCommand";
 import { GithubMark } from "@/components/GithubMark";
-import { HeroMock } from "@/components/HeroMock";
 import { Reveal } from "@/components/Reveal";
 import { INSTALL_COMMAND, REPO_URL } from "@/site";
 
@@ -31,8 +30,8 @@ export function Hero() {
         <Reveal delay={120}>
           <p className="lede mx-auto mt-6 max-w-2xl">
             A local dashboard for every Claude Code session on your machine, grouped by repo and
-            marked alive or not. When a usage limit or a server error kills a turn, it parks the
-            session and resumes it at the reset instead of leaving the work dead.
+            marked alive or not. When a usage limit kills a turn it parks the session and finds a way
+            on — another account of yours, a free agent, or the reset — instead of leaving the work dead.
           </p>
         </Reveal>
 
@@ -64,8 +63,25 @@ export function Hero() {
         </Reveal>
       </div>
 
+      {/* A real capture rather than HeroMock, on the theory that the strongest
+          thing this page can do above the fold is show the actual product.
+          HeroMock is still in the repo, unmounted — see tools/shot/ to re-take
+          this when the UI moves. */}
       <Reveal delay={300} className="mt-16 sm:mt-20">
-        <HeroMock />
+        <div className="relative mx-auto w-full max-w-[62rem]">
+          <div className="panel panel-lit overflow-hidden p-1.5 shadow-[0_30px_90px_-20px_rgb(0_0_0/0.9)]">
+            <img
+              src="./shots/dashboard.png"
+              alt="The dashboard: every session on the machine down the left side, a live turn streaming in the middle with model, effort and permission pickers beneath it, and repos grouped by folder on the right."
+              width={1512}
+              height={950}
+              fetchPriority="high"
+              decoding="async"
+              className="block w-full rounded-[3px]"
+              style={{ aspectRatio: "1512 / 950" }}
+            />
+          </div>
+        </div>
       </Reveal>
     </section>
   );

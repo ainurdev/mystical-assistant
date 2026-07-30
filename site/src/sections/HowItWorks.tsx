@@ -11,8 +11,8 @@ const STEPS = [
   },
   {
     n: "02",
-    title: "Answer five questions",
-    body: "The folder your repos live in, and how much autonomy Claude gets — it asks rather than defaulting you into running commands unprompted. It also wants a Telegram bot token, left over from what this used to be: the dashboard doesn't use it, but setup won't finish without one, so make a throwaway and move on.",
+    title: "Answer six questions",
+    body: "The folder your repos live in, how much autonomy Claude gets — it asks rather than defaulting you into running commands unprompted — and whether to install the free-provider CLI the fallback ladder hands off to. It also wants a Telegram bot token, left over from what this used to be: the dashboard doesn't use it, but setup won't finish without one, so make a throwaway and move on.",
   },
   {
     n: "03",

@@ -23,9 +23,9 @@ const POINTS: {
 }[] = [
   {
     icon: TimerReset,
-    lead: "It resumes when your limit resets",
-    body: "Hit a 5-hour or weekly cap and the work waits for you. It reads the real reset time off the usage endpoint, sits on it, then picks the turn back up with its context intact. Server errors climb their own ladder from one minute out to thirty, so a 529 costs you a pause instead of the thread. Both survive a restart.",
-    elsewhere: "Claude Code has an open request for this. Today's answers are shell wrappers that watch the terminal from outside.",
+    lead: "A limit parks the turn, then looks for another way",
+    body: "Hit a 5-hour or weekly cap and the work is parked, not lost — and parking is only the floor. It walks a ladder: another Claude account you own, if one still has quota; a free agent on a different provider, if none do; otherwise it reads the real reset time off the usage endpoint, waits for it, and picks the turn back up with its context intact. Each session decides whether it asks you first or just switches. Server errors take their own path — the first retry is immediate, then a minute, out to thirty. All of it survives a restart.",
+    elsewhere: "Claude Code has an open request for the resume, and today's answers are shell wrappers watching the terminal from outside. The account-switchers swap one global credential file, which changes the account under every session already running.",
   },
   {
     icon: GraduationCap,

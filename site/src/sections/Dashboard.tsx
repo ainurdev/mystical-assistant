@@ -19,24 +19,31 @@ const PILLARS: { icon: LucideIcon; title: string; body: string; color: string }[
   {
     icon: SquareTerminal,
     title: "The repo, right there",
-    body: "Jump between the diff, the editor, git, worktrees, a real terminal and the dev-server logs without leaving the session you're reading. The context you'd go looking for is already open.",
+    body: "Jump between the diff, the editor, git, worktrees, open issues, a real terminal and a map of the codebase without leaving the session you're reading. The context you'd go looking for is already open.",
     color: "var(--purple)",
   },
 ];
 
-/** `soon` = the pane exists in the codebase but nothing in the dashboard opens it. */
+/**
+ * Everything the dashboard actually opens: the three main views, the four
+ * sidebar panels, the seven tabs in a project's analyze modal, and the preview
+ * window. `soon` = the pane exists in the codebase but nothing opens it.
+ */
 const TABS: { name: string; soon?: boolean }[] = [
   { name: "CHAT" },
+  { name: "HISTORY" },
+  { name: "MEMORY" },
+  { name: "PROJECTS" },
+  { name: "FILES" },
+  { name: "QUEUE" },
   { name: "EDITOR" },
   { name: "GIT" },
   { name: "WORKTREES" },
   { name: "TERMINAL" },
-  { name: "LOGS" },
-  { name: "PREVIEW" },
-  { name: "MAP" },
-  { name: "SKILLS" },
   { name: "ISSUES" },
-  { name: "MEMORY" },
+  { name: "SKILLS" },
+  { name: "MAP" },
+  { name: "PREVIEW" },
   { name: "TEACHER", soon: true },
 ];
 

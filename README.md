@@ -54,7 +54,7 @@ edit the web UI) are optional — setup offers to install the first two.
 **Install**
 
 ```bash
-git clone https://github.com/mhzrerfani/mystical-assistant
+git clone https://github.com/ainurdev/mystical-assistant
 cd mystical-assistant
 ./setup.sh
 ```
@@ -81,8 +81,9 @@ re-run it any time and it only asks for what's still missing.
 Everything else is automatic: it captures your Telegram chat id (it asks you to
 message the bot, then reads the id off that message), generates the dashboard
 token, links `mystical` onto your `PATH`, and offers to add `~/.local/bin` to
-your shell rc if it isn't there. The web clients ship prebuilt, so there is **no
-build step**.
+your shell rc if it isn't there. The Mini App ships prebuilt; the dashboard's
+bundle is not committed, so the first `mystical` start builds it — that one needs
+`npm` on the machine and takes a minute longer.
 
 Then message your bot, or open the dashboard URL setup prints at the end.
 
@@ -162,9 +163,15 @@ mystical run        run in the foreground (Ctrl-C to quit)
   view; set `MEMORY_ENABLE=0` to disable.
 - **Teacher mode + review log.** After a turn that edits code, a cheap Haiku pass
   proposes 1–2 concepts to review as **Keep/Skip** cards on any surface. Kept items
-  live in a Teacher view (dashboard **TEACHER** tab in the project analyze modal)
-  with on-demand Explain, Explain-back (graded), Quiz, and Exercise. Set
-  `LEARNING_ENABLE=0` to disable.
+  get a review — Explain, Explain-back (graded), Quiz, Exercise — written and served
+  by the bridge, but nothing in the dashboard opens it yet (`hud/TeacherTab.tsx` is
+  built and unmounted). Set `LEARNING_ENABLE=0` to disable.
+- **Fallback ladder.** When a turn dies on a usage limit the session is parked, then
+  walked up a ladder: another Claude account of yours with quota left (each in its own
+  profile directory — your existing login is untouched), then a free agent on a
+  different provider, then the reset itself. Per-session policy: ask, auto-switch, or
+  only ever wait. Accounts and providers are managed in the dashboard's **ACCOUNTS**
+  tab; see [docs/superpowers/specs/2026-07-30-fallback-ladder-design.md](docs/superpowers/specs/2026-07-30-fallback-ladder-design.md).
 - **One shared design system.** The dashboard and Mini App share the "Mystic"
   violet theme, tokens, and components.
 

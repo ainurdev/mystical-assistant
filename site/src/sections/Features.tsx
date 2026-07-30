@@ -1,9 +1,13 @@
 import {
+  Activity,
   Brain,
+  Command,
   Gauge,
   Globe,
   GraduationCap,
   ListPlus,
+  Palette,
+  Puzzle,
   Radio,
   SlidersHorizontal,
   Workflow,
@@ -40,14 +44,34 @@ const FEATURES: { icon: LucideIcon; title: string; body: string; soon?: boolean 
     body: "After a turn, a cheap Haiku pass proposes durable facts — conventions, decisions, what you're actually working towards — as Keep or Skip cards. Kept ones ride along in every future turn, scoped to that project and branch.",
   },
   {
+    icon: Puzzle,
+    title: "Skills, per repo",
+    body: "Which skills this project has, in the sidebar next to the chat that's using them — and a catalog to add more from, without leaving for a terminal or hand-writing a SKILL.md.",
+  },
+  {
     icon: Globe,
     title: "The dev server, in the same window",
-    body: "Start or stop the project's dev server from the session that's working on it, and tail its logs in the pane next door. No second terminal, no hunting for which port it grabbed.",
+    body: "Start or stop the project's dev server from the session that's working on it, and watch its log tail beside the page it's serving. No second terminal, no hunting for which port it grabbed.",
   },
   {
     icon: Gauge,
     title: "Usage in plain sight",
-    body: "Live 5-hour and 7-day utilisation on screen, so the first sign you're near a limit isn't Claude stopping mid-task.",
+    body: "Live 5-hour and 7-day utilisation on screen, so the first sign you're near a limit isn't Claude stopping mid-task. Add a second Claude account and each one carries its own meter.",
+  },
+  {
+    icon: Activity,
+    title: "Watch the context fill",
+    body: "A meter on the composer for how full the window is, in per cent and tokens, with /compact one tap away — so a run ends because it's done, not because it ran out of room.",
+  },
+  {
+    icon: Command,
+    title: "⌘K for the rest",
+    body: "New chat, compact, jump between chat, history and memory, analyze the project, switch model, open settings — from the keyboard, without learning where any of it lives.",
+  },
+  {
+    icon: Palette,
+    title: "It doesn't have to look like a dashboard",
+    body: "Ten display profiles, light and dark, from plain daylight to newsprint to a drafting table. CRT scanlines, a roaming sweep and phosphor glow if you want them. And while a turn runs: an equalizer, or nyan cat, or a piano you can play.",
   },
   {
     icon: GraduationCap,

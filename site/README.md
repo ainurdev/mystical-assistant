@@ -14,20 +14,37 @@ npm run preview  # serve the built dist/
 
 ## Deploying
 
-`vite.config.ts` sets `base: "./"`, so `dist/` works unchanged on GitHub Pages
-(project sites included), Cloudflare Pages, Netlify, or opened off disk.
+**Live** at <https://mystical-assistant.pages.dev> since 2026-07-30 — Cloudflare
+Pages project `mystical-assistant`, production branch `master`, deployed by direct
+upload. That's the hostname in `index.html`'s canonical, OG and JSON-LD tags, so
+those are now true. A fresh project 522s for the first few minutes while the edge
+warms; it settles without intervention.
 
-- **Cloudflare Pages** — the live target, project `mystical-assistant`
-  (`https://mystical-assistant.pages.dev`). Build `npm ci && npm run build`, then
-  `npx wrangler pages deploy dist --project-name=mystical-assistant`.
+Redeploying is `npm run deploy`. It needs `CLOUDFLARE_API_TOKEN` (scoped to
+*Account → Cloudflare Pages: Edit*) and `CLOUDFLARE_ACCOUNT_ID` in the repo's
+`.env` — already there, and `.env` is git-ignored. Nothing rebuilds on push yet;
+connecting the project to git in the dashboard is the upgrade.
+
+`vite.config.ts` sets `base: "./"`, so `dist/` works unchanged on Cloudflare
+Pages, GitHub Pages (project sites included), Netlify, or opened off disk.
+
+- **Cloudflare Pages, direct upload** — in use. `npm run deploy` from this
+  directory; `wrangler.jsonc` carries the project name and output dir, so the
+  command needs no flags and can't target the wrong project.
+- **Cloudflare Pages, connected to GitHub** — the upgrade, because `dist/` is
+  git-ignored and something has to build it. In the Cloudflare dashboard: the
+  `mystical-assistant` project → Settings → Build → Connect to Git, with root
+  directory `site`, build command `npm ci && npm run build`, output directory
+  `dist`. Every push to `master` would then deploy itself. Needs the Cloudflare
+  GitHub App to have access to the repo — a one-time authorisation.
 - **GitHub Pages** — publish `site/dist` via an action, or copy it to `docs/`.
 
 ## Editing
 
 Copy lives inline in each section under `src/sections/` — one file per section,
-in page order (`Hero`, `Problem`, `Different`, `Dashboard`, `Features`,
-`HowItWorks`, `Security`, `Faq`, `FinalCta`, `Footer`). Shared URLs and the
-install command are in `src/site.ts`.
+in page order (`Hero`, `Problem`, `Different`, `Dashboard`, `Screens`,
+`Underneath`, `Features`, `HowItWorks`, `Security`, `Faq`, `FinalCta`, `Footer`).
+Shared URLs and the install command are in `src/site.ts`.
 
 ## Positioning
 
@@ -52,8 +69,33 @@ explorer, git pane, worktrees, live subagent feeds, multi-session management.
 If one of the five stops being true, delete the row rather than softening it —
 a differentiator nobody believes is worse than one fewer.
 
-Two things to keep in sync by hand:
+## The audit (2026-07-30)
 
+Every claim on the page was checked against the implementation. What it turned up,
+so the next audit starts from a known state rather than from scratch:
+
+| Claim | Verdict |
+| --- | --- |
+| A `LOGS` pane in the workspace | **Wrong, removed.** There is no logs tab. The dev server's log tail lives in the preview window, and `components/Logs.tsx` is orphaned. |
+| "Server errors climb their own ladder from one minute out to thirty" | **Off by a rung, fixed.** `limits.py SERVER_BACKOFF` is `(0, 60, 300, 600, 900, 1800)` — the first retry is immediate. The FAQ already said so; `Different.tsx` didn't. |
+| "It resumes when your limit resets" | **True but understated, rewritten.** Parking is now the *last* rung of `bridge/ladder.py`: another Claude account first, then a free agent, then the reset. |
+| "Answer five questions" (`HowItWorks`) | **Wrong by one, fixed to six.** `setup.sh` prompts for token, projects root, autonomy, Mini App, the opencode install, and start-now — the free-provider prompt landed in `e04afe6`, after this page was written. |
+| "the dashboard builds on first start, so you need npm" | **True**, and `.gitignore` confirms it: `bridge/dashboard/web/dist/` is not committed. (The root `README.md` claims "no build step" — also stale.) |
+| `TEACHER` marked *soon* | **Correct.** `hud/TeacherTab.tsx` exists and nothing mounts it. |
+| Python stdlib only · no API key · MIT · 127.0.0.1 + Host allow-list + token | **All true.** |
+| Tab list vs. reality | **Was short.** The dashboard opens three views, four sidebar panels, seven analyze tabs and the preview window; `LOGS` was the only entry that didn't exist. |
+
+Features that shipped but weren't on the page, now added: the fallback ladder and
+per-account meters, the skills catalog, the context meter, the ⌘K palette, and the
+theme/CRT/indicator layer. Deliberately still absent: the PONYTAIL dial and its
+`REVIEW`/`AUDIT` chips, because they set `PONYTAIL_DEFAULT_MODE` for a *third-party
+plugin's* hook — with the plugin uninstalled they do nothing, so they aren't ours
+to claim.
+
+Four things to keep in sync by hand:
+
+- **The screenshots** in `public/shots/` are real captures and go stale silently
+  when the UI moves. `tools/shot/` re-takes them; its README has the commands.
 - **The FAQ** is duplicated in `src/sections/Faq.tsx` and as `FAQPage` JSON-LD in
   `index.html`. Change one, change the other, or the structured data drifts from
   the page.
@@ -67,8 +109,11 @@ Two things to keep in sync by hand:
 ## Notes
 
 - `src/components/HeroMock.tsx` is a hand-built illustration of the dashboard and
-  Mini App, not a screenshot. It stays sharp at any width, but it also can't
-  update itself — if the real UI changes shape, this won't notice.
+  Mini App. It's **unmounted** — the hero shows `public/shots/dashboard.png`
+  instead, on the theory that the strongest thing above the fold is the real
+  product. The mock stays in the repo because it's the only version that can't go
+  stale; swap it back by re-importing it into `Hero.tsx` if a capture ever can't
+  be taken. The `Screens` section carries the two shots the hero doesn't.
 - Custom classes in `index.css` live in `@layer components` on purpose. Unlayered,
   they outrank every Tailwind utility (`.panel`'s `position: relative` quietly beat
   an `absolute` on the same element and broke the hero's overlap).

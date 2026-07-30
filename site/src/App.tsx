@@ -3,6 +3,8 @@ import { Hero } from "@/sections/Hero";
 import { Problem } from "@/sections/Problem";
 import { Different } from "@/sections/Different";
 import { Dashboard } from "@/sections/Dashboard";
+import { Screens } from "@/sections/Screens";
+import { Underneath } from "@/sections/Underneath";
 import { HowItWorks } from "@/sections/HowItWorks";
 import { Features } from "@/sections/Features";
 import { Security } from "@/sections/Security";
@@ -32,6 +34,8 @@ export default function App() {
         <Problem />
         <Different />
         <Dashboard />
+        <Screens />
+        <Underneath />
         <Features />
         <HowItWorks />
         <Security />

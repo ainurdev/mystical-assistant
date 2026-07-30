@@ -5,6 +5,8 @@ import { REPO_URL } from "@/site";
 const LINKS = [
   { href: "#different", label: "Why this one" },
   { href: "#dashboard", label: "Dashboard" },
+  { href: "#screens", label: "Screens" },
+  { href: "#underneath", label: "Underneath" },
   { href: "#features", label: "Features" },
   { href: "#faq", label: "FAQ" },
 ];

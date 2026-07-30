@@ -20,6 +20,12 @@ export function Problem() {
                 list — which repo, which branch, how long, and whether it's working or waiting on
                 you.
               </p>
+              <p className="text-[var(--txh)]">
+                And it doesn't matter where a session started. An editor extension gives you one
+                window per project and a terminal gives you one tab per repo; this is one page for
+                all of them. A turn you opened in VS Code this morning can be read, answered and
+                carried on here — or from your phone — without reopening the project it came from.
+              </p>
             </div>
           </div>
         </Reveal>
@@ -32,6 +38,7 @@ export function Problem() {
                 bad
                 label="Before"
                 items={[
+                  "A client per project — an editor window here, a terminal tab there",
                   "Alt-tab through every window to find the live one",
                   "No idea which repo a session belongs to",
                   "Find out it stopped for an answer 20 minutes ago",
@@ -41,6 +48,7 @@ export function Problem() {
               <Row
                 label="After"
                 items={[
+                  "One page for every project, wherever the session started",
                   "One list of everything alive, per repo and branch",
                   "Sessions grouped by project, with turns and cost",
                   "A marker on anything sitting there waiting on you",

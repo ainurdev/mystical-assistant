@@ -1,0 +1,14 @@
+{
+  // Cloudflare Pages, direct upload: `npx wrangler pages deploy` from this
+  // directory needs no flags, and can't be pointed at the wrong project by
+  // accident. Needs CLOUDFLARE_API_TOKEN (Account → Cloudflare Pages: Edit) or
+  // a prior `wrangler login`.
+  //
+  // If the project is instead connected to GitHub in the Cloudflare dashboard,
+  // this file is unused — the build settings there are: root directory `site`,
+  // build command `npm ci && npm run build`, output directory `dist`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mystical-assistant",
+  "compatibility_date": "2026-07-30",
+  "pages_build_output_dir": "dist"
+}

@@ -19,7 +19,11 @@ const FAQ: { q: string; a: string; soon?: boolean }[] = [
   },
   {
     q: "What actually happens when I hit a usage limit?",
-    a: "The session gets parked rather than dropped. It reads the reset time from the usage endpoint, waits for it, then resumes the turn with its context intact. Server errors (500, 529, and the 429 that isn't a usage limit) take a separate path — the first retry is immediate and each repeat waits longer, out to thirty minutes. Both are persisted, so restarting the bridge mid-wait doesn't lose them.",
+    a: "The session gets parked rather than dropped, and then it looks for a way to keep going: another Claude account of yours with quota left, or a free agent on a different provider, or — failing both — the reset itself. It reads the reset time from the usage endpoint, waits for it, and resumes the turn with its context intact. You set whether it asks first, switches on its own, or only ever waits, per session or as the default. Server errors (500, 529, and the 429 that isn't a usage limit) take a separate path — the first retry is immediate and each repeat waits longer, out to thirty minutes. All of it is persisted, so restarting the bridge mid-wait doesn't lose it.",
+  },
+  {
+    q: "Can it use a second Claude account?",
+    a: "Yes, if you have one. Add it from the dashboard's Accounts tab: a sign-in link opens, you log in as that account, you paste the code back. Each account lives in its own profile directory — the login you already had is never touched — and every turn is still the real claude binary, spawned per run with that profile. Nothing proxies or pools tokens. When a limit hits, the account with the most quota left goes first, and its meter sits next to the others in that tab.",
   },
   {
     q: "How is the memory different from the memory plugins?",
