@@ -192,6 +192,22 @@ def defer_server(session_id: str, chat_id: int, cwd: "str | None",
     return target, tries
 
 
+def cancel(session_id: str) -> bool:
+    """Unpark a session because something else took the work (a fallback-ladder
+    rung). Returns whether it was parked. Taking a rung counts as the episode
+    ending, so the try-count is cleared too."""
+    with _lock:
+        had = _pending.pop(session_id, None) is not None
+        if had:
+            _save_locked()
+            if _pending:
+                _arm_locked(min(e.get("at", time.time())
+                                for e in _pending.values()))
+    if had:
+        note_ok(session_id)
+    return had
+
+
 def _fire(run=None, notify=None) -> None:
     """Resume the deferred sessions this tick is for, re-arming for any left.
 

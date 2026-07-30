@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   origin            TEXT,
   cwd               TEXT,
   permission_mode   TEXT,
-  title_source      TEXT DEFAULT 'auto'
+  title_source      TEXT DEFAULT 'auto',
+  fallback_policy   TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS turns (
   cost        REAL,
   elapsed     INTEGER,
   started     REAL NOT NULL,
-  model       TEXT
+  model       TEXT,
+  runtime     TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
@@ -139,6 +141,14 @@ def init() -> None:
         # Title provenance: 'auto' (first-prompt), 'subject' (LLM), 'manual'.
         if "title_source" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN title_source TEXT DEFAULT 'auto'")
+        # Fallback ladder: what to do when a turn dies on a usage limit
+        # ('ask' | 'auto' | 'wait'; NULL = the configured default).
+        if "fallback_policy" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN fallback_policy TEXT")
+        # Which runtime produced a turn (NULL = the default Claude account,
+        # else 'claude:<slot>' or 'opencode:<provider>').
+        if "runtime" not in cols:
+            c.execute("ALTER TABLE turns ADD COLUMN runtime TEXT")
         # (Old DBs may carry a dead last_auto_resume column from the retired
         # auto-resume cooldown — harmless, never read.)
         # Turns left 'running' at startup are orphaned (the bridge restarted). They
@@ -290,6 +300,14 @@ def set_permission_mode(session_id: str, mode: str | None) -> None:
         c.execute("UPDATE sessions SET permission_mode=? WHERE id=?", (mode, session_id))
 
 
+def set_fallback_policy(session_id: str, policy: str | None) -> None:
+    """What to do when this session's turn dies on a usage limit; None = the
+    configured default. Validated by ladder.policy_for, not here."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET fallback_policy=? WHERE id=?",
+                  (policy, session_id))
+
+
 def set_cwd(session_id: str, cwd: str | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET cwd=? WHERE id=?", (cwd, session_id))
@@ -390,7 +408,8 @@ def recent_prompts(session_id: str, limit: int) -> list[str]:
 
 
 def start_turn(session_id: str, turn_id: str, prompt: str,
-               attachments: list[str] | None, model: str | None = None) -> None:
+               attachments: list[str] | None, model: str | None = None,
+               runtime: str | None = None) -> None:
     now = time.time()
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
@@ -398,9 +417,9 @@ def start_turn(session_id: str, turn_id: str, prompt: str,
                         (session_id,)).fetchone()["n"]
         c.execute(
             "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-            "elapsed,started,model) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "elapsed,started,model,runtime) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (turn_id, session_id, seq, prompt, json.dumps(attachments or []),
-             "running", None, None, now, model))
+             "running", None, None, now, model, runtime))
         c.execute("UPDATE sessions SET updated=? WHERE id=?", (now, session_id))
         cur = c.execute("SELECT title FROM sessions WHERE id=?", (session_id,)).fetchone()
         if cur is not None and not cur["title"]:

@@ -220,6 +220,13 @@ def usage_for(slot: int) -> dict:
     return usage.get_usage(credentials_path(slot))
 
 
+def headroom(slot: int) -> "int | None":
+    """Percent of this account's tighter window still unspent; None when the
+    meter is unreadable."""
+    used = _used(usage_for(slot))
+    return None if used is None else max(0, 100 - used)
+
+
 def pick(exclude=(), strategy: str = "best") -> "int | None":
     """The slot that should take over, or None when nothing has headroom.
 

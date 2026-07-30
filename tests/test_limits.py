@@ -3,6 +3,7 @@ Run directly: `python tests/test_limits.py` (or with pytest). Env is set before
 importing the package so config picks it up.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -420,6 +421,68 @@ def test_runner_gives_up_after_backoff_ladder():
     finally:
         limits.defer_server, runner._notify = saved_defer, saved_notify
         config.AUTO_RESUME = saved_auto
+
+
+# --- cancel(): a rung of the fallback ladder took the work instead ----------
+
+def test_cancel_drops_a_parked_session():
+    _reset_limits()
+    restore = _usage(100, time.time() + 3600)
+    try:
+        limits.defer("s-cancel", CHAT, "/tmp/c")
+        assert "s-cancel" in limits._pending
+
+        assert limits.cancel("s-cancel") is True
+
+        assert "s-cancel" not in limits._pending
+    finally:
+        restore()
+
+
+def test_cancel_is_a_noop_for_a_session_that_was_never_parked():
+    _reset_limits()
+    assert limits.cancel("never-parked") is False
+
+
+def test_cancel_persists_so_a_restart_does_not_resurrect_the_entry():
+    _reset_limits()
+    restore = _usage(100, time.time() + 3600)
+    try:
+        limits.defer("s-a", CHAT, "/tmp/a")
+        limits.defer("s-b", CHAT, "/tmp/b")
+        limits.cancel("s-a")
+
+        with open(limits._path()) as f:
+            saved = json.load(f)
+        assert set(saved) == {"s-b"}
+    finally:
+        restore()
+
+
+def test_cancel_keeps_the_timer_alive_for_whoever_is_left():
+    _reset_limits()
+    restore = _usage(100, time.time() + 3600)
+    try:
+        limits.defer("s-x", CHAT, "/tmp/x")
+        limits.defer("s-y", CHAT, "/tmp/y")
+        limits.cancel("s-x")
+        assert limits._timer is not None, "remaining session lost its resume"
+    finally:
+        _reset_limits()
+        restore()
+
+
+def test_cancel_ends_the_failure_episode():
+    """Taking a rung is a success, so the next limit death starts a fresh count."""
+    _reset_limits()
+    restore = _usage(100, time.time() + 3600)
+    try:
+        limits.defer("s-ep", CHAT, "/tmp/ep")
+        limits.cancel("s-ep")
+        assert limits.defer("s-ep", CHAT, "/tmp/ep")[1] is True   # first again
+    finally:
+        _reset_limits()
+        restore()
 
 
 if __name__ == "__main__":
