@@ -1,11 +1,14 @@
-/* Design fonts (HUD mono voice + ADVENTURE's serif). */
-@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=IM+Fell+English&display=swap");
+/* Design fonts (the HUD mono voice), plus the three type voices the vvd-ported
+   themes ask for — EB Garamond (DUSK, THE LIBRARY), Work Sans (APEX), Spectral
+   (GLOAM). One request for all of them; each ThemeDef.font still names a local
+   fallback (Georgia / system-ui) so an offline dashboard stays readable. */
+@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&display=swap");
 @import "tailwindcss";
 
 :root {
   color-scheme: dark;
   /* === Design palette tokens = the source of truth (aqua base). ===
-     The 5 palette themes (adventure/normal/newsprint/candy/blueprint) OVERRIDE
+     The 4 palette themes (normal/newsprint/candy/blueprint) OVERRIDE
      these per-theme via inline vars from theme.ts `pal{}` with filter:none; the 4
      filter themes (aqua/green/amber/magenta) keep these aqua and recolour the whole
      UI via the container CSS filter. [data-theme] still drives panel/edge SHAPE. */
@@ -88,11 +91,91 @@
   --tg-link: var(--acc);
   --surface-2: var(--panel-surface);
 
+  /* Code/log/diff surface — a sunken well inside a panel. Dark themes sink it
+     with a black wash; light themes swap the whole token (see below) because a
+     black wash on paper is a smudge, not a well. */
+  --code-bg: rgba(0, 0, 0, 0.25);
+
+  /* Elevation ink. Two tiers: --shadow-pop for anything that DROPS off its
+     trigger (menus, dropdowns, toasts, sheets), --shadow-modal for a centred
+     dialog's ring of dark. Callers keep their own offset/blur and pass only the
+     colour, so geometry stays per-component and only the ink themes. */
+  --shadow-pop: rgba(0, 0, 0, 0.62);
+  --shadow-modal: rgba(0, 0, 0, 0.78);
+
   /* Preview Console: the UI/label voice + house easing (from the design system). */
   --font-display: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
   --ease-hud: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --radius: 0;
+}
+
+/* === LIGHT GROUNDS ==========================================================
+   Set by App when isLight(theme). Every token above that tints with an alpha
+   wash over `transparent` is re-derived here, because alpha does not carry over
+   from a dark ground to a light one: an 8% accent veil over near-black is a
+   1.6x luminance step (obvious), the same veil over white is 1.02x (invisible).
+   That single fact is why a dark HUD recoloured light reads as one flat white
+   sheet. So on light we (a) make the surface tokens OPAQUE, so the canvas ->
+   panel3 -> panel2 -> panel ladder in the palette is what you actually see,
+   (b) mix washes into `--panel` instead of transparent, at 1.5-2.5x strength,
+   and (c) give borders real presence — on a light ground structure comes from
+   edges and a hairline shadow, where a dark ground gets it from glow. */
+:root[data-light] {
+  /* Surfaces: opaque, so depth = the palette's own ladder. */
+  --panel-surface: var(--panel);
+  --card: var(--panel2);
+  --popover: var(--panel); /* a popover is RAISED — panel, not the sunken tone */
+  --code-bg: var(--panel3);
+
+  /* Elevation ink, tinted with the theme's own darkest tone rather than pure
+     black: a 60-80% black bloom on paper is grime, not lift. Daylight systems
+     land at 8-20% for the same geometry. */
+  --shadow-pop: color-mix(in srgb, var(--txb) 14%, transparent);
+  --shadow-modal: color-mix(in srgb, var(--txb) 20%, transparent);
+
+  /* Accent washes: over the card, not over the page, and much stronger. */
+  --secondary: color-mix(in srgb, var(--acc) 12%, var(--panel));
+  --muted: color-mix(in srgb, var(--acc) 7%, var(--panel));
+  --accent: color-mix(in srgb, var(--acc) 12%, var(--panel));
+  --ac-03: color-mix(in srgb, var(--acc) 5%, var(--panel));
+  --ac-06: color-mix(in srgb, var(--acc) 9%, var(--panel));
+  --ac-08: color-mix(in srgb, var(--acc) 12%, var(--panel));
+  --ac-12: color-mix(in srgb, var(--acc) 17%, var(--panel));
+  --ac-16: color-mix(in srgb, var(--acc) 22%, var(--panel));
+  --ac-22: color-mix(in srgb, var(--acc) 30%, var(--panel));
+  --brand-glow: color-mix(in srgb, var(--acc) 18%, transparent);
+
+  /* Edges. --ring stays the full accent: the focus indicator is the one border
+     that has to clear 3:1, and the accent already clears 4.7:1 on every light
+     canvas here. */
+  --border: color-mix(in srgb, var(--acc) 30%, var(--panel3));
+  --border-bright: color-mix(in srgb, var(--acc) 60%, var(--panel3));
+  --input: color-mix(in srgb, var(--acc) 40%, var(--panel3));
+
+  --surface-vs-bg: color-mix(in srgb, var(--acc) 13%, var(--panel));
+  --surface-tg-bg: color-mix(in srgb, var(--info) 13%, var(--panel));
+  --surface-ma-bg: color-mix(in srgb, var(--purple) 13%, var(--panel));
+  --surface-web-bg: color-mix(in srgb, var(--ok) 13%, var(--panel));
+}
+
+/* Overscroll gap / pre-dashboard frame: paper, not the aqua void. */
+:root[data-light] body {
+  background: var(--panel3);
+}
+/* A 22%-accent thumb vanishes on paper; and selected text keeps dark ink. */
+:root[data-light] ::-webkit-scrollbar-thumb {
+  background: rgb(var(--accent-rgb) / 0.38);
+}
+:root[data-light] ::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--accent-rgb) / 0.6);
+}
+:root[data-light] * {
+  scrollbar-color: rgb(var(--accent-rgb) / 0.38) transparent;
+}
+:root[data-light] ::selection {
+  background: rgb(var(--accent-rgb) / 0.24);
+  color: var(--txb);
 }
 
 @theme inline {
@@ -222,11 +305,6 @@ body {
 
 /* [data-theme] = SHAPE only (colour comes from the themed container's filter).
    aqua / green / amber / magenta / (unlisted) keep the default hard corners. */
-[data-theme="adventure"] .panel { border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(217, 169, 78, 0.16), 0 4px 16px rgba(0, 0, 0, 0.35); }
-[data-theme="adventure"] .panel::before,
-[data-theme="adventure"] .panel::after { width: 8px; height: 8px; border: 1px solid rgba(236, 203, 128, 0.9); transform: rotate(45deg); }
-[data-theme="adventure"] .panel::before { top: -4px; left: -4px; }
-[data-theme="adventure"] .panel::after { right: -4px; bottom: -4px; }
 [data-theme="normal"] .panel::before,
 [data-theme="normal"] .panel::after,
 [data-theme="candy"] .panel::before,
@@ -234,12 +312,22 @@ body {
 [data-theme="newsprint"] .panel::before,
 [data-theme="newsprint"] .panel::after,
 [data-theme="blueprint"] .panel::before,
-[data-theme="blueprint"] .panel::after { display: none; }
-[data-theme="normal"] .panel { border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+[data-theme="blueprint"] .panel::after,
+[data-theme="dusk"] .panel::before,
+[data-theme="dusk"] .panel::after,
+[data-theme="library"] .panel::before,
+[data-theme="library"] .panel::after,
+[data-theme="apex"] .panel::before,
+[data-theme="apex"] .panel::after,
+[data-theme="gloam"] .panel::before,
+[data-theme="gloam"] .panel::after { display: none; }
+/* Card elevation, daylight rules: two hairline layers at low alpha tinted with
+   the ground's own hue — a 30%-black drop shadow reads as grime on paper. */
+[data-theme="normal"] .panel { border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 30, 50, 0.07), 0 2px 6px rgba(15, 30, 50, 0.06); }
 [data-theme="normal"] button,
 [data-theme="normal"] input,
 [data-theme="normal"] textarea { border-radius: 7px; }
-[data-theme="candy"] .panel { border-radius: 18px; }
+[data-theme="candy"] .panel { border-radius: 18px; box-shadow: 0 1px 2px rgba(90, 20, 60, 0.07), 0 2px 8px rgba(90, 20, 60, 0.06); }
 [data-theme="candy"] button { border-radius: 999px; }
 [data-theme="candy"] input,
 [data-theme="candy"] textarea { border-radius: 12px; }
@@ -247,6 +335,29 @@ body {
 [data-theme="newsprint"] .glow { text-shadow: none; }
 [data-theme="blueprint"] .panel { border-style: dashed !important; border-radius: 0; }
 [data-theme="blueprint"] .glow { text-shadow: none; }
+/* The vvd-ported themes: soft cards, no corner ticks, no phosphor bloom — these
+   are reading surfaces, so the only depth cue is the hairline + a low shadow
+   tinted with the ground's own hue. */
+[data-theme="dusk"] .panel { border-radius: 6px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22); }
+[data-theme="library"] .panel { border-radius: 3px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.26); }
+[data-theme="apex"] .panel { border-radius: 10px; box-shadow: 0 1px 2px rgba(20, 35, 50, 0.07), 0 2px 6px rgba(20, 35, 50, 0.06); }
+[data-theme="gloam"] .panel { border-radius: 4px; box-shadow: 0 1px 2px rgba(30, 38, 24, 0.07), 0 2px 6px rgba(30, 38, 24, 0.05); }
+[data-theme="dusk"] button,
+[data-theme="dusk"] input,
+[data-theme="dusk"] textarea { border-radius: 6px; }
+[data-theme="library"] button,
+[data-theme="library"] input,
+[data-theme="library"] textarea { border-radius: 3px; }
+[data-theme="apex"] button,
+[data-theme="apex"] input,
+[data-theme="apex"] textarea { border-radius: 8px; }
+[data-theme="gloam"] button,
+[data-theme="gloam"] input,
+[data-theme="gloam"] textarea { border-radius: 4px; }
+[data-theme="dusk"] .glow,
+[data-theme="library"] .glow,
+[data-theme="apex"] .glow,
+[data-theme="gloam"] .glow { text-shadow: none; }
 /* claude = the app's own surfaces: soft cards, no corner ticks, no bloom. */
 [data-theme^="claude"] .panel::before,
 [data-theme^="claude"] .panel::after { display: none; }
@@ -510,3 +621,23 @@ input {
 .md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
 .md th { background: var(--muted); font-weight: 600; }
 .md img { max-width: 100%; border-radius: 8px; }
+
+/* Composer control row — three fenced clusters: AI · PONYTAIL · GRAPH. The row
+   keys off its own wrapper's width, not the viewport's: the composer narrows
+   when the sidebars and floating windows open, so a media query would collapse
+   at the wrong moments. */
+.ctrl-cq { container-type: inline-size; }
+/* ponytail: wrap is the only floor — one line for as long as the content fits,
+   no measured width collapsing the row early. Groups wrap inside themselves
+   too, so a cluster wider than the container breaks instead of overflowing. */
+.ctrl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 11px; }
+.ctrl-group { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 11px; min-width: 0; }
+.ctrl-group + .ctrl-group { padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); }
+.ctrl-tag { flex: none; font-size: 8px; letter-spacing: 1.5px; color: var(--acc); }
+
+/* 1000px: the per-field eyebrows go — worth ~115px. The cluster tag names the
+   group, and every control keeps a "FIELD — value" tooltip for the name it just
+   dropped. Fires early on purpose: it buys the row its one line. */
+@container (max-width: 1000px) {
+  .ctrl-label { display: none; }
+}

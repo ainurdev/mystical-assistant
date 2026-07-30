@@ -44,9 +44,14 @@ export function usePreviewQueue(sessionId: string | null) {
 
   const run = useCallback((p: Promise<QueueSnapshot>) => { p.then(apply).catch(() => {}); }, [apply]);
 
-  const enqueue = useCallback((input: EnqueueInput) => {
-    if (!sessionId) return;
-    run(api.queueEnqueue({ session_id: sessionId, surface: "dashboard", ...input }));
+  // `session` targets a session other than the open one — a prompt always
+  // belongs to the session it was written in, even if you switched away while
+  // it was in flight. `apply` drops snapshots for other sessions, so a foreign
+  // enqueue can't clobber the open session's view.
+  const enqueue = useCallback((input: EnqueueInput, session?: string) => {
+    const target = session ?? sessionId;
+    if (!target) return;
+    run(api.queueEnqueue({ session_id: target, surface: "dashboard", ...input }));
   }, [sessionId, run]);
 
   const sid = sessionId ?? "";

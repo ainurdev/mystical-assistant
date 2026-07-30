@@ -2,14 +2,15 @@ import { useState } from "react";
 
 export interface StatusBarProps {
   mount: string;
-  usedPct: number;
+  usedPct: number | null;      // null → usage unknown, shown as "—"
+  resetLabel?: string | null;
   repo: string;
   changes: number;
   onPalette: () => void;
 }
 
 export function StatusBar(props: StatusBarProps) {
-  const { mount, usedPct, repo, changes, onPalette } = props;
+  const { mount, usedPct, resetLabel, repo, changes, onPalette } = props;
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -31,7 +32,7 @@ export function StatusBar(props: StatusBarProps) {
         MOUNT <span style={{ color: "var(--acc)" }}>{mount}</span>
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-        USED {usedPct}%
+        USED {usedPct === null ? "—" : `${usedPct}%`}
         <span
           style={{
             width: "120px",
@@ -48,12 +49,17 @@ export function StatusBar(props: StatusBarProps) {
               left: 0,
               top: 0,
               bottom: 0,
-              width: `${usedPct}%`,
+              width: `${usedPct ?? 0}%`,
               background: "var(--acc)",
               animation: "grow 1.2s ease both .4s",
             }}
           />
         </span>
+        {resetLabel && (
+          <span style={{ color: "var(--txd)" }}>
+            RESET <span style={{ color: "var(--tx)" }}>{resetLabel}</span>
+          </span>
+        )}
       </span>
       <span style={{ flex: 1 }} />
       <span>

@@ -19,6 +19,7 @@ import { useTelemetry } from "./lib/telemetry";
 import { ago, useProjectTints } from "./lib/surfaces";
 import {
   autoTextScale,
+  isLight,
   loadSettings,
   sameFamily,
   saveSettings,
@@ -44,7 +45,7 @@ import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
-import { SessionsPanel } from "./components/hud/SessionsPanel";
+import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import { notify } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
@@ -55,6 +56,7 @@ import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
 import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { usePreviewQueue } from "./components/design/usePreviewQueue";
+import { Spinner } from "./components/ui";
 
 
 function fmtReset(iso: string | null | undefined): string {
@@ -66,9 +68,10 @@ function fmtReset(iso: string | null | undefined): string {
   return `${h}H${String(m).padStart(2, "0")}M`;
 }
 
-// Manage-projects choices survive a reload / bridge restart.
-// ponytail: localStorage = per-browser, like every other HUD pref (see
-// lib/surfaces.ts); move to a bridge endpoint if cross-device sync matters.
+// Manage-projects choices survive a reload / bridge restart. HIDE is owned by
+// the bridge (project_config.json, GET/POST /local/project*), so it syncs across
+// browsers; the localStorage copy is only a cache for the pre-first-poll paint.
+// ponytail: remove/import stay per-browser — no bridge endpoint for them yet.
 const MANAGE_KEY = "hud-project-manage";
 type ManagePrefs = { hidden: Record<string, boolean>; removed: Record<string, boolean>; imported: string[] };
 
@@ -89,6 +92,74 @@ function loadDone(): Set<string> {
   catch { return new Set(); }
 }
 
+// Composer text you typed but never sent, per session. Persisted so a reload
+// doesn't silently drop it — the DRAFT flags in the session list promise it's
+// still there. Image attachments stay in the composer and aren't part of this.
+const DRAFTS_KEY = "hud-session-drafts";
+
+function loadDrafts(): Record<string, string> {
+  try {
+    const r = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "{}") as unknown;
+    if (!r || typeof r !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(r as Record<string, unknown>)
+        .filter(([, v]) => typeof v === "string" && v.trim()),
+    ) as Record<string, string>;
+  } catch { return {}; }
+}
+
+/** The relevance check holds the run for ~10s before anything starts. Loud on
+ *  purpose: the quiet one-liner this replaced read as the UI being stuck, and
+ *  the prompt line shows exactly what's waiting (and in which session). */
+function CheckingBanner({ prompt }: { prompt: string }) {
+  return (
+    <div
+      style={{
+        position: "relative", overflow: "hidden", margin: "0 16px 9px", padding: "10px 12px",
+        border: "1px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 13%, transparent)",
+        boxShadow: "0 0 18px color-mix(in srgb, var(--purple) 22%, transparent)",
+        animation: "mpop .18s ease both",
+      }}
+    >
+      <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,transparent,var(--purple),transparent)", backgroundSize: "200% 100%", animation: "awaitsweep 1.4s linear infinite" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+        <span style={{ color: "var(--purple-b)", display: "flex", flex: "none" }}>
+          <Spinner className="h-[11px] w-[11px] border" />
+        </span>
+        <span style={{ fontSize: 12, letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s ease-in-out infinite" }}>
+          CHECKING CONTEXT…
+        </span>
+        <span style={{ fontSize: 10, letterSpacing: 0.5, color: "var(--txd)" }}>
+          deciding if this belongs in this session — nothing has run yet
+        </span>
+      </div>
+      <div style={{ marginTop: 7, fontSize: 11, color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <span style={{ color: "var(--purple)" }}>❯ </span>{prompt}
+      </div>
+    </div>
+  );
+}
+
+/** Drop one session's entry from a per-session map (same object if absent). */
+function omit<T>(map: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in map)) return map;
+  const next = { ...map };
+  delete next[key];
+  return next;
+}
+
+// A prompt the relevance guardrail parked, with everything needed to route it
+// later — the session and project it was written in, not whichever is open when
+// the user finally answers the card.
+interface HeldPrompt {
+  sid: string;
+  project?: string;
+  text: string;
+  images: string[];
+  reason: string;
+  title: string | null;
+}
+
 export function App() {
   useProjectTints(); // re-render on saved project tag/colour edits
   const [state, setState] = useState<DashState | null>(null);
@@ -102,14 +173,17 @@ export function App() {
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
-  // A prompt the relevance guardrail held back — still client-side, nothing ran.
-  const [held, setHeld] = useState<
-    { text: string; images: string[]; reason: string; title: string | null } | null
-  >(null);
+  // Prompts the relevance guardrail held back — still client-side, nothing ran.
+  // Keyed by the session each one was written in: the check takes ~10s, and a
+  // card about session A must not appear (or start work) in session B.
+  const [heldMap, setHeldMap] = useState<Record<string, HeldPrompt>>({});
   const [heldBusy, setHeldBusy] = useState(false);
-  // /local/run is in flight. Normally ~instant, but a relevance check makes it
-  // block for ~10s — without this the composer looks dead after SEND.
-  const [checking, setChecking] = useState(false);
+  // /local/run is in flight, per session. Normally ~instant, but a relevance
+  // check makes it block for ~10s — without this the composer looks dead.
+  const [checkingMap, setCheckingMap] = useState<Record<string, string>>({});
+  // Typed but not sent, per session. Lives here (not in the composer) so it
+  // survives a session switch and the session list can flag it as a DRAFT.
+  const [drafts, setDrafts] = useState<Record<string, string>>(loadDrafts);
   const [paletteOpen, setPaletteOpen] = useState(false);
   // ?skipboot bypasses the intro (handy on revisits + for screenshots).
   const skipBoot = new URLSearchParams(location.search).has("skipboot");
@@ -118,7 +192,7 @@ export function App() {
   const [manageOpen, setManageOpen] = useState(false);
   const [previewProject, setPreviewProject] = useState<string | null>(null);
   // Manage-projects bookkeeping. TODO(phase2-data): the bridge has no
-  // hide/remove/import endpoints, so the choices persist client-side.
+  // remove/import endpoints, so those two persist client-side.
   const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>(() => loadManage().hidden);
   const [removedProjects, setRemovedProjects] = useState<Record<string, boolean>>(() => loadManage().removed);
   const [importedProjects, setImportedProjects] = useState<string[]>(() => loadManage().imported);
@@ -151,10 +225,23 @@ export function App() {
   const ctxTimer = useRef<number | null>(null);
 
   const seqRef = useRef(0);
+  // The open session, readable from async work that outlives a session switch:
+  // a send() awaiting its relevance check must know whether you're still here.
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
   const liveTurns = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  // Mirror of stickRef for rendering — the ref drives the auto-scroll (no
+  // re-render), the state drives the "jump to latest" button.
+  const [atBottom, setAtBottom] = useState(true);
+  const jumpToBottom = useCallback(() => {
+    stickRef.current = true;
+    setAtBottom(true);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
 
   // AUTO text size follows the window; a fixed textScale ignores this.
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
@@ -179,6 +266,11 @@ export function App() {
   const pendingCount = active?.pending.length ?? 0;
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
   const activeProject = state?.project?.rel ?? null;
+  // Everything the composer shows is scoped to the open session — a check or a
+  // held card belonging to another one stays with that one.
+  const checking = sessionId ? checkingMap[sessionId] : undefined;
+  const held = sessionId ? heldMap[sessionId] : undefined;
+  const draft = (sessionId ? drafts[sessionId] : "") ?? "";
   const openWorking =
     (sessionId ? statusMap.get(sessionId)?.state : undefined) === "working";
 
@@ -192,6 +284,14 @@ export function App() {
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--glow", settings.glow ? "8px" : "0px");
+    // The UA chrome we don't paint — <select> option popups, native scrollbars,
+    // autofill — follows color-scheme, so a light theme has to say so or those
+    // render light-text-on-dark inside an otherwise white dashboard.
+    root.style.colorScheme = isLight(settings.theme) ? "light" : "dark";
+    // `data-light` drives the light-ground token overrides in index.css — the
+    // alpha washes and borders authored for a dark ground are invisible on paper.
+    if (isLight(settings.theme)) root.dataset.light = "";
+    else delete root.dataset.light;
     // Palette themes override the design tokens on :root (not just the themed
     // wrapper) so the DERIVED tokens (--primary/--card/--border/--ac-*, defined
     // via var() in :root) re-resolve to the palette too. Filter themes clear
@@ -206,7 +306,7 @@ export function App() {
   }, [settings]);
 
   // Picking a theme also applies its default CRT toggles (design onPick) —
-  // except within a family (AURORA's colours, CLAUDE's light/dark), which is one
+  // except within a family (AURORA's colours, CLAUDE's accents), which is one
   // profile, so your toggles survive the switch.
   function setTheme(t: ThemeKey) {
     const d = themeDef(t);
@@ -240,6 +340,7 @@ export function App() {
   function openSession(id: string) {
     seqRef.current = 0;
     stickRef.current = true;
+    setAtBottom(true);
     setTurns([]);
     setLoadingSession(true);
     setSessionId(id);
@@ -272,8 +373,13 @@ export function App() {
   // Disk discovery polls like the session list, so a repo cloned or created
   // after load appears on its own — no rescan button, no reload.
   const refreshProjects = useCallback(async () => {
-    try { const p = await api.projects(); setDiscovered(p.projects ?? []); }
-    catch { /* old backend without discovery — panel stays session-derived */ }
+    try {
+      const p = await api.projects();
+      setDiscovered(p.projects ?? []);
+      // The bridge is the source of truth for HIDE; an older backend omits the
+      // field, in which case the cached localStorage set stands.
+      if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
+    } catch { /* old backend without discovery — panel stays session-derived */ }
   }, []);
   useEffect(() => {
     void refreshProjects();
@@ -326,14 +432,18 @@ export function App() {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
-    const onScroll = () => {
-      stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const sync = () => {
+      const stick = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      stickRef.current = stick;
+      setAtBottom(stick);           // no-op re-render-wise unless it flipped
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    const ro = new ResizeObserver(() => { if (stickRef.current) el.scrollTop = el.scrollHeight; });
+    el.addEventListener("scroll", sync, { passive: true });
+    // Content grew/shrank: pull to the bottom if we were parked there, otherwise
+    // re-check (a shrink can land us back at the bottom on its own).
+    const ro = new ResizeObserver(() => { if (stickRef.current) el.scrollTop = el.scrollHeight; else sync(); });
     ro.observe(content);
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-    return () => { el.removeEventListener("scroll", onScroll); ro.disconnect(); };
+    return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
   }, [view, showDashboard]);
 
   useEffect(() => {
@@ -369,6 +479,10 @@ export function App() {
   useEffect(() => {
     try { localStorage.setItem(DONE_KEY, JSON.stringify([...doneIds])); } catch { /* ignore */ }
   }, [doneIds]);
+
+  useEffect(() => {
+    try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } catch { /* ignore */ }
+  }, [drafts]);
 
   useEffect(() => {
     let live = true;
@@ -435,21 +549,31 @@ export function App() {
     return () => window.removeEventListener("contextmenu", onCtx);
   }, []);
 
+  // Sends are bound to the session the prompt was written in. The relevance
+  // check blocks for ~10s, and you're free to open another session meanwhile —
+  // so `sid` (not the open session) decides where the run, the queue fallback,
+  // the held card and the optimistic turn all land.
   async function send(
     text: string, images: string[],
-    opts?: { force?: boolean; sessionId?: string },
+    opts?: { force?: boolean; sessionId?: string; project?: string },
   ) {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return;
-    const project = selected?.project ?? state?.project?.rel ?? undefined;
+    // The prompt's own session decides the project too — `opts.project` covers a
+    // session just created, which this render's `sessions` doesn't know about.
+    const project = opts?.project
+      ?? sessions.find((s) => s.id === sid)?.project
+      ?? state?.project?.rel ?? undefined;
+    const sessionName = () =>
+      sessions.find((s) => s.id === sid)?.title || "another session";
     const enqueue = () => queue.enqueue({
       text, prompt: text, images, project,
       model, effort: effort || undefined, permission_mode: permMode || undefined,
-    });
+    }, sid);
     // A turn is already in flight for this session — queue the prompt to run
     // after it (and any earlier queued prompts) instead of blocking on STOP.
     if (running && !opts?.sessionId) { enqueue(); return; }
-    setChecking(true);
+    setCheckingFor(sid, text);
     try {
       const res = await api.run({
         prompt: text, images, project,
@@ -460,12 +584,25 @@ export function App() {
       // Held: this looks like different work from the session it would resume.
       // Nothing ran — park the prompt on the card and let the user route it.
       if ("suggest_new" in res) {
-        setHeld({ text, images, reason: res.reason, title: res.suggested_title });
+        setHeldMap((m) => ({
+          ...m,
+          [sid]: { sid, project, text, images, reason: res.reason, title: res.suggested_title },
+        }));
+        if (sessionIdRef.current !== sid)
+          notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
         return;
       }
-      setHeld(null);
+      setHeldMap((m) => omit(m, sid));
       liveTurns.current.add(res.job_id);
-      stickRef.current = true;
+      // Only paint the turn if that session is still the one on screen; if you
+      // moved on it belongs to the session you left, and its transcript poll
+      // picks it up when you go back.
+      if (sessionIdRef.current !== sid) {
+        notify("info", `Started in “${sessionName()}” — the session you sent it from.`);
+        return;
+      }
+      stickRef.current = true;      // your own prompt always pulls you back down
+      setAtBottom(true);
       setTurns((prev) => [
         ...prev,
         { id: res.job_id, prompt: text, events: [], status: "running", pending: [], attachments: images },
@@ -476,17 +613,20 @@ export function App() {
       if ((e as Error).message === "busy") enqueue();
       else notify("error", (e as Error).message);
     } finally {
-      setChecking(false);
+      setCheckingFor(sid, null);
     }
+  }
+
+  function setCheckingFor(sid: string, prompt: string | null) {
+    setCheckingMap((m) => (prompt === null ? omit(m, sid) : { ...m, [sid]: prompt }));
   }
 
   // "Start new session" on the held-prompt card: route it to a fresh session
   // pre-named with the suggested title, forced so the check isn't paid twice.
-  async function heldStartNew() {
-    const h = held;
-    const project = selected?.project ?? state?.project?.rel;
-    if (!h || !project) return;
-    setHeld(null);
+  async function heldStartNew(h: HeldPrompt) {
+    const project = h.project ?? state?.project?.rel;
+    if (!project) return;
+    setHeldMap((m) => omit(m, h.sid));
     setHeldBusy(true);
     try {
       await startIn(project, h.text,
@@ -494,6 +634,14 @@ export function App() {
     } finally {
       setHeldBusy(false);
     }
+  }
+
+  // Composer text, stored against the session it's being written for (via the
+  // ref, so it lands on the session on screen right now and not on a stale one).
+  function setDraft(text: string) {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    setDrafts((d) => (text ? { ...d, [sid]: text } : omit(d, sid)));
   }
 
   async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) {
@@ -507,9 +655,11 @@ export function App() {
 
   // The continuous poll picks up the resulting `review_resolved` event on its own,
   // so no manual state update / invalidation is needed here.
-  const onReviewResolve = (itemId: string, action: "keep" | "skip") => {
+  // Stable identity: every turn's RunStream takes this prop, so a fresh closure
+  // each render would defeat their memoization.
+  const onReviewResolve = useCallback((itemId: string, action: "keep" | "skip") => {
     void api.learningItem(itemId, action);
-  };
+  }, []);
 
   // A queued task or a GitHub issue carries the project it belongs to. Feeding it
   // into whatever session happens to be open would run it against the wrong repo,
@@ -538,7 +688,8 @@ export function App() {
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       setView("chat");
-      await send(prompt, opts?.images ?? [], { sessionId: session.id, force: opts?.force });
+      await send(prompt, opts?.images ?? [],
+                 { sessionId: session.id, project, force: opts?.force });
     } catch (e) {
       notify("error", (e as Error).message);
     }
@@ -600,13 +751,26 @@ export function App() {
     ctxTimer.current = window.setTimeout(() => { setCtxMenu(null); setCtxClosing(false); }, 165);
   }
 
+  // Optimistic locally, then persisted through the bridge (project_config.json)
+  // so the choice outlives this browser — the poll would undo a local-only flip.
+  function setHidden(rels: string[], hide: boolean) {
+    setHiddenProjects((p) => {
+      const next = { ...p };
+      for (const rel of rels) next[rel] = hide;
+      return next;
+    });
+    void Promise.all(rels.map((rel) =>
+      api.setProjectSettings({ project: rel }, { hidden: hide }).catch(() => null),
+    )).then(() => refreshProjects());
+  }
+
   // TODO(phase2-data): local-only import — no bridge endpoint to attach a repo yet.
   function importProject(path: string) {
     const rel = path.trim().replace(/\/+$/, "");
     if (!rel) return;
     setImportedProjects((prev) => (prev.includes(rel) ? prev : [...prev, rel]));
     setRemovedProjects((p) => ({ ...p, [rel]: false }));
-    setHiddenProjects((p) => ({ ...p, [rel]: false }));
+    setHidden([rel], false);
   }
 
   // --- derived ---
@@ -642,6 +806,19 @@ export function App() {
 
   // HIDE keeps a project out of the sidebar; REMOVE detaches it (design manage modal).
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && !removedProjects[g.rel]);
+  // …and out of the left session list, whose RECENT tab reads the flat list.
+  const visibleSessions = sessions.filter(
+    (s) => !hiddenProjects[s.project] && !removedProjects[s.project]);
+
+  // Prompt state the session list flags, so work you left mid-flight is visible
+  // from anywhere: a check still running, a card waiting on you, unsent text.
+  const promptFlags = useMemo(() => {
+    const m = new Map<string, PromptFlag>();
+    for (const sid of Object.keys(drafts)) if (drafts[sid].trim()) m.set(sid, "draft");
+    for (const sid of Object.keys(heldMap)) m.set(sid, "held");
+    for (const sid of Object.keys(checkingMap)) m.set(sid, "checking");
+    return m;
+  }, [drafts, heldMap, checkingMap]);
 
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
@@ -678,8 +855,11 @@ export function App() {
   ];
 
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
-  const usedPct = Math.round(usage?.five_hour?.percent ?? 0);
-  const resetLabel = fmtReset(usage?.five_hour?.resets_at);
+  // No usage payload (no token / upstream down long enough that the bridge's
+  // last-good copy went stale) reads as unknown — not as a real 0%.
+  const fiveHour = usage?.available ? usage.five_hour : null;
+  const usedPct = fiveHour ? Math.round(fiveHour.percent) : null;
+  const resetLabel = fiveHour ? fmtReset(fiveHour.resets_at) : null;
   const projectNames = useMemo(() => projectGroups.map((g) => g.rel), [projectGroups]);
   // Model picker options — the live list served from /local/state (Models API).
   const modelOpts = useMemo(() => modelOptions(state?.models), [state?.models]);
@@ -818,7 +998,8 @@ export function App() {
               {/* LEFT */}
               <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
                 <SessionsPanel
-                  sessions={sessions} groups={projectGroups} status={statusMap} done={doneIds}
+                  sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
+                  flags={promptFlags}
                   selectedSessionId={sessionId} loadingSessionId={loadingSession ? sessionId : null}
                   activeProject={activeProject}
                   onSelectSession={(s) => void selectSession(s)}
@@ -834,36 +1015,33 @@ export function App() {
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
                 activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} onReviewResolve={onReviewResolve}
                 scrollRef={scrollRef} contentRef={contentRef}
+                atBottom={atBottom} onJumpBottom={jumpToBottom}
                 onSuggestPick={(t) => feed([t])}
                 onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession} hud={settings}
                 composer={
                   <>
-                    {checking && !running && (
-                      <div style={{ margin: "0 16px 7px", fontSize: 10, letterSpacing: 1, color: "var(--purple)" }}>
-                        CHECKING THIS FITS THE SESSION…
-                      </div>
-                    )}
+                    {checking !== undefined && <CheckingBanner prompt={checking} />}
                     {held && (
                       <SuggestNewSessionCard
                         currentTitle={selected?.title ?? ""}
                         reason={held.reason}
                         suggestedTitle={held.title}
                         busy={heldBusy}
-                        onStartNew={() => void heldStartNew()}
+                        onStartNew={() => void heldStartNew(held)}
                         onContinue={() => {
-                          const h = held;
-                          setHeld(null);
-                          void send(h.text, h.images, { force: true });
+                          setHeldMap((m) => omit(m, held.sid));
+                          void send(held.text, held.images, { force: true, sessionId: held.sid });
                         }}
-                        onDismiss={() => { feed([held.text]); setHeld(null); }}
+                        onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} effort={effort}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
-                      contextTokens={contextTokens} resetLabel={resetLabel} onModel={setModel} onEffort={setEffort}
+                      draft={draft} onDraft={setDraft}
+                      contextTokens={contextTokens} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onSteer={(t) => void queue.steer(t).then((ok) => { if (!ok) void send(t, []); })}
@@ -886,7 +1064,7 @@ export function App() {
             </div>
 
             <StatusBar
-              mount={wsRoot} usedPct={usedPct} repo={activeProject ?? "—"}
+              mount={wsRoot} usedPct={usedPct} resetLabel={resetLabel} repo={activeProject ?? "—"}
               changes={activeBadge?.dirty ?? 0} onPalette={() => setPaletteOpen(true)}
             />
 
@@ -917,11 +1095,7 @@ export function App() {
                 groups={projectGroups.filter((g) => !removedProjects[g.rel])}
                 imported={importedProjects.filter((rel) => !removedProjects[rel])}
                 hidden={hiddenProjects}
-                onSetHidden={(rels, hide) => setHiddenProjects((p) => {
-                  const next = { ...p };
-                  for (const rel of rels) next[rel] = hide;
-                  return next;
-                })}
+                onSetHidden={setHidden}
                 onRemove={(rel) => {
                   setRemovedProjects((p) => ({ ...p, [rel]: true }));
                   setPreviewProject((cur) => (cur === rel ? null : cur));

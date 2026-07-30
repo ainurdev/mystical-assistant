@@ -66,7 +66,7 @@ export function FloatingWindow({
   };
 
   return (
-    <div style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 60, display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 94%, transparent)", boxShadow: "0 18px 60px rgba(0,0,0,.55)" }}>
+    <div style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 60, display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 94%, transparent)", boxShadow: "0 18px 60px var(--shadow-pop)" }}>
       <div onPointerDown={startMove}
         style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", cursor: "move", flex: "none", borderBottom: "1px solid color-mix(in srgb, var(--acc) 15%, transparent)", userSelect: "none" }}>
         {header}

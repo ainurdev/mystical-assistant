@@ -305,7 +305,7 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
           maxHeight: full ? "94vh" : "88vh",
           transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1),max-width .38s cubic-bezier(.25,.9,.25,1),max-height .38s cubic-bezier(.25,.9,.25,1)",
           display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
-          background: "#0a1113", boxShadow: "0 0 70px rgba(0,0,0,.85)", animation: "mslide .2s ease both", overflow: "hidden" }}>
+          background: "var(--panel2)", boxShadow: "0 0 70px var(--shadow-modal)", animation: "mslide .2s ease both", overflow: "hidden" }}>
 
         {/* chrome bar */}
         <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 11, padding: "9px 13px",
@@ -445,7 +445,7 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
                   </div>
                   {infoHover && (
                     <div style={{ position: "absolute", top: 36, right: 12, zIndex: 6, width: 214, background: "var(--panel2)",
-                      border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", boxShadow: "0 10px 34px rgba(0,0,0,.65)",
+                      border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", boxShadow: "0 10px 34px var(--shadow-pop)",
                       padding: "10px 11px", display: "flex", flexDirection: "column", gap: 6, animation: "mpop .16s ease both" }}>
                       <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--purple-h)" }}>◇ LEARN — CLAUDE</span>
                       <span style={{ fontSize: 10, lineHeight: 1.6, color: "var(--txm)" }}>Scans the repo — package.json scripts, lockfile, README, Dockerfile — and writes the command needed to boot this project. Edit it before running if needed.</span>

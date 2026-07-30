@@ -2,6 +2,7 @@
 Run: `python tests/test_running_status.py`
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -14,7 +15,7 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
-from bridge import runner  # noqa: E402
+from bridge import runner, transcript_jsonl  # noqa: E402
 
 
 def test_bridge_running_session_is_working():
@@ -90,6 +91,58 @@ def test_stale_native_session_is_idle():
                                   external=external, native_snap={})
     assert "n6" not in status
     assert external[0]["state"] == "idle"
+
+
+def _agents_fixture(sid: str, *, finished: bool) -> str:
+    """~/.claude/projects-style tree: main transcript spawning one Task, plus that
+    subagent's files. finished=True writes the Task's tool_result (agent done)."""
+    root = tempfile.mkdtemp()
+    proj = os.path.join(root, "-tmp-proj")
+    sub = os.path.join(proj, sid, "subagents")
+    os.makedirs(sub, exist_ok=True)
+    with open(os.path.join(proj, sid + ".jsonl"), "w") as f:
+        f.write(json.dumps({"type": "assistant", "message": {"role": "assistant",
+                "content": [{"type": "tool_use", "id": "T1", "name": "Task",
+                             "input": {"description": "d"}}]}}) + "\n")
+        if finished:
+            f.write(json.dumps({"type": "user", "message": {"role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "T1",
+                                 "content": "ok"}]}}) + "\n")
+    with open(os.path.join(sub, "agent-a1.meta.json"), "w") as f:
+        json.dump({"agentType": "Explore", "description": "d", "toolUseId": "T1"}, f)
+    open(os.path.join(sub, "agent-a1.jsonl"), "w").close()
+    return root
+
+
+def _status_for(sid: str, root: str) -> dict:
+    """_build_status for one long-quiet native session, agents read from `root`."""
+    external = [{"session_id": sid, "source": "vscode",
+                 "last_active": time.time() - runner._LIVE_WINDOW - 30}]
+    orig = transcript_jsonl.PROJECTS_DIR
+    transcript_jsonl.PROJECTS_DIR = root
+    try:
+        status = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                     external=external, native_snap={})
+    finally:
+        transcript_jsonl.PROJECTS_DIR = orig
+    return {"status": status, "row": external[0]}
+
+
+def test_quiet_native_session_with_running_agents_is_working():
+    # The parent writes nothing while a subagent runs — without the agent check
+    # this session would age out of LIVE into IDLE mid-fan-out.
+    sid = "aaaaaaaa-1111-2222-3333-444444444444"
+    out = _status_for(sid, _agents_fixture(sid, finished=False))
+    assert out["status"][sid]["state"] == "working"
+    assert out["status"][sid]["label"] == "1 agent working"
+    assert out["row"]["state"] == "working"
+
+
+def test_quiet_native_session_with_finished_agents_is_idle():
+    sid = "bbbbbbbb-1111-2222-3333-444444444444"
+    out = _status_for(sid, _agents_fixture(sid, finished=True))
+    assert sid not in out["status"]
+    assert out["row"]["state"] == "idle"
 
 
 if __name__ == "__main__":

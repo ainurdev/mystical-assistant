@@ -62,6 +62,19 @@ def test_memory_mode_roundtrip_and_validation(tmp_path, monkeypatch):
     assert project_config.memory_mode("/repo") == "ask"
 
 
+def test_hidden_roundtrip_is_project_wide(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
+    assert project_config.hidden_projects() == []
+    project_config.set_hidden("/repo", True)
+    project_config.set_hidden("/other", True)
+    assert project_config.hidden_projects() == ["/other", "/repo"]
+    # a branch-scoped run_cmd never carries the flag
+    project_config.set_run_cmd("/third", "npm run dev", branch="feat/x")
+    assert project_config.hidden_projects() == ["/other", "/repo"]
+    project_config.set_hidden("/repo", False)
+    assert project_config.hidden_projects() == ["/other"]
+
+
 def test_memory_mode_is_project_wide_not_branch(tmp_path, monkeypatch):
     monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
     project_config.set_memory_mode("/repo", "off")

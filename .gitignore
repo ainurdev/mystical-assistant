@@ -25,6 +25,11 @@ bridge/dashboard/web/dist/
 tools/selector-plugin/node_modules/
 tools/selector-plugin/.vite/
 
+# Marketing landing page (dist/ is NOT committed — the host builds it)
+site/node_modules/
+site/.vite/
+site/dist/
+
 # Vite cache (when vite is run from the repo root)
 /.vite/
 

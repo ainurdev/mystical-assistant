@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -94,12 +95,14 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
     const fromStore = (): Attachment[] =>
       st.attachments.map((n, i) => ({ id: `${st.id}-a${i}`, name: n }));
     if (ex) {
-      map.set(st.id, {
-        ...ex,
-        status: st.status,
-        prompt: ex.prompt || st.prompt,
-        attachments: ex.attachments.length ? ex.attachments : fromStore(),
-      });
+      // Keep the same object when nothing changed: identity is what lets the
+      // memoized RunStream skip every past turn on a long session's 1.5s poll.
+      const attachments =
+        ex.attachments.length || !st.attachments.length ? ex.attachments : fromStore();
+      const prompt = ex.prompt || st.prompt;
+      if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments) {
+        map.set(st.id, { ...ex, status: st.status, prompt, attachments });
+      }
     } else {
       map.set(st.id, {
         id: st.id,
@@ -113,22 +116,28 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
     }
   }
 
+  const touched = new Set<string>();
   for (const ev of t.events) {
     const turn = map.get(ev.turn_id);
     if (!turn) continue;
     if (turn.events.some((e) => seqOf(e) === ev.seq)) continue;
     map.set(ev.turn_id, { ...turn, events: [...turn.events, ev] });
+    touched.add(ev.turn_id);
   }
 
-  const out = [...map.values()].map((turn) => ({
-    ...turn,
-    pending: derivePending(turn.events),
-  }));
+  for (const id of touched) {
+    const turn = map.get(id)!;
+    map.set(id, { ...turn, pending: derivePending(turn.events) });
+  }
+
+  const out = [...map.values()];
   out.sort(
     (a, b) =>
       (storeSeq.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
       (storeSeq.get(b.id) ?? Number.MAX_SAFE_INTEGER),
   );
+  // Nothing changed (an idle poll) — keep the old array so nothing re-renders.
+  if (out.length === prev.length && out.every((x, i) => x === prev[i])) return prev;
   return out;
 }
 
@@ -440,11 +449,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refresh();
   }
 
-  function reviewResolve(itemId: string, action: "keep" | "skip") {
+  // Stable identity: every turn's RunStream takes this prop, so a fresh closure
+  // each render would defeat their memoization.
+  const reviewResolve = useCallback((itemId: string, action: "keep" | "skip") => {
     void api.learningItem(itemId, action).then(() => {
       if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
     });
-  }
+  }, [sessionId, qc]);
 
   useEffect(() => {
     if (isRunning || sessionId === null) return;

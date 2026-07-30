@@ -58,7 +58,7 @@ export function PreviewControls(props: {
 
   return (
     <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 70, width: props.collapsed ? "auto" : 340,
-      border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 96%, transparent)", boxShadow: "0 18px 60px rgba(0,0,0,.55)",
+      border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 96%, transparent)", boxShadow: "0 18px 60px var(--shadow-pop)",
       display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 48px)" }}>
       {/* drag handle / header */}
       <div onPointerDown={onPointerDown}

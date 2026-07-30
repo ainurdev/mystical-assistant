@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --acc: #7fe9d8;
+        --txb: #dff8f2;
+        --txd: #6f938d;
+        --txl: #3c544f;
+        --canvas: #060a0a;
+        --accent-rgb: 127 233 216;
+        --violet-rgb: 185 166 255;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+        --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1200px; height: 630px; }
+      body {
+        background: var(--canvas);
+        font-family: var(--sans);
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* Same two ground layers as the page: faint aqua grid + aurora blooms. */
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgb(var(--accent-rgb) / 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgb(var(--accent-rgb) / 0.045) 1px, transparent 1px);
+        background-size: 64px 64px;
+        -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 20%, transparent 80%);
+        mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 20%, transparent 80%);
+      }
+      .bloom { position: absolute; border-radius: 9999px; filter: blur(120px); opacity: 0.5; }
+      .bloom-aqua {
+        width: 700px; height: 520px; top: -220px; left: 50%; transform: translateX(-50%);
+        background: radial-gradient(circle, rgb(var(--accent-rgb) / 0.3), transparent 66%);
+      }
+      .bloom-violet {
+        width: 560px; height: 440px; top: 90px; right: -170px;
+        background: radial-gradient(circle, rgb(var(--violet-rgb) / 0.24), transparent 68%);
+      }
+
+      .wrap {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 0 90px;
+      }
+
+      .mark { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; }
+      .mark img { width: 34px; height: 34px; }
+      .mark span {
+        font-family: var(--mono);
+        font-size: 21px;
+        letter-spacing: 0.14em;
+        color: var(--txb);
+      }
+      .mark i { color: var(--txl); font-style: normal; }
+
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 15px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--txd);
+        margin-bottom: 26px;
+      }
+
+      h1 {
+        font-size: 76px;
+        line-height: 1.06;
+        letter-spacing: -0.03em;
+        font-weight: 600;
+        color: #ffffff;
+      }
+      h1 .acc {
+        display: block;
+        color: var(--acc);
+        text-shadow: 0 0 34px rgb(var(--accent-rgb) / 0.45);
+        margin-top: 6px;
+      }
+
+      .meta {
+        margin-top: 44px;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        font-family: var(--mono);
+        font-size: 16px;
+        color: var(--txd);
+      }
+      .meta .dot {
+        display: block;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--acc);
+      }
+      .meta .sep { color: var(--txl); }
+    </style>
+  </head>
+  <body>
+    <div class="grid"></div>
+    <div class="bloom bloom-aqua"></div>
+    <div class="bloom bloom-violet"></div>
+
+    <div class="wrap">
+      <div class="mark">
+        <img src="mystical.svg" alt="" />
+        <span>mystical<i>//</i>assistant</span>
+      </div>
+
+      <p class="eyebrow">Open source · a dashboard for Claude Code</p>
+
+      <h1>
+        Claude stops at your limit.
+        <span class="acc">This picks the work back up.</span>
+      </h1>
+
+      <div class="meta">
+        <span class="dot"></span>
+        <span>MIT licensed</span>
+        <span class="sep">·</span>
+        <span>Python stdlib only</span>
+        <span class="sep">·</span>
+        <span>no API key</span>
+      </div>
+    </div>
+  </body>
+</html>

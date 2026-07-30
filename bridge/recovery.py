@@ -38,7 +38,7 @@ def recover(*, run=None, notify=None) -> int:
             continue                                  # one in-flight turn per session
         if not t["claude_session_id"]:
             continue                                  # died before init — nothing to resume
-        if t["chat_id"] not in config.ALLOWED_CHAT_IDS:
+        if not config.is_owner(t["chat_id"]):
             continue
         resumed_sessions.add(sid)
         try:

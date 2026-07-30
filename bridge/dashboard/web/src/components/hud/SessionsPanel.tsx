@@ -6,11 +6,23 @@ import { ago, projectTint } from "../../lib/surfaces";
 import { Spinner } from "../ui";
 import type { ProjectGroup } from "./ProjectsPanel";
 
+/** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
+ *  unsent text in the composer, a relevance check in flight, or a held card
+ *  waiting on your answer. */
+export type PromptFlag = "draft" | "checking" | "held";
+
+const FLAG_VIEW: Record<PromptFlag, { c: string; l: string; t: string }> = {
+  draft: { c: "var(--warn)", l: "DRAFT", t: "unsent prompt waiting in this session" },
+  checking: { c: "var(--purple)", l: "CHECKING…", t: "checking this prompt fits this session" },
+  held: { c: "var(--purple-b)", l: "HELD", t: "a prompt here needs your decision" },
+};
+
 interface Props {
   sessions: SessionBrief[]; // full list — the RECENT view + drill-down need more than the capped group slices
   groups: ProjectGroup[];
   status: Map<string, SessionStatus>;
   done: Set<string>; // finished a turn, not opened since
+  flags: Map<string, PromptFlag>; // prompts of yours that haven't run yet
   selectedSessionId: string | null;
   loadingSessionId: string | null;
   activeProject: string | null;
@@ -61,13 +73,14 @@ function statusView(s: SessionStatus | undefined, done = false) {
 }
 
 function SessionRow({
-  s, i, on, loading, sv, branch, onAttach, onAnalyzeProj, animate = true,
+  s, i, on, loading, sv, flag, branch, onAttach, onAnalyzeProj, animate = true,
 }: {
   s: SessionBrief;
   i: number;
   on: boolean;
   loading: boolean;
   sv: { c: string; l: string };
+  flag?: PromptFlag;
   branch: string;
   onAttach: () => void;
   onAnalyzeProj: () => void;
@@ -77,6 +90,7 @@ function SessionRow({
   const [tagHov, setTagHov] = useState(false);
   const tint = projectTint(s.project);
   const idle = sv.l === "IDLE";
+  const fv = flag ? FLAG_VIEW[flag] : null;
   return (
     <div
       onClick={onAttach}
@@ -112,6 +126,17 @@ function SessionRow({
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
           <span style={{ flex: 1 }} />
+          {fv && (
+            <span
+              title={fv.t}
+              style={{
+                fontSize: 8, letterSpacing: 0.8, color: fv.c, flex: "none", padding: "1px 5px",
+                border: `1px solid color-mix(in srgb, ${fv.c} 45%, transparent)`,
+                background: `color-mix(in srgb, ${fv.c} 10%, transparent)`,
+                animation: flag === "checking" ? "twinkle 1.1s ease-in-out infinite" : undefined,
+              }}
+            >{fv.l}</span>
+          )}
           <span style={{ fontSize: 8.5, letterSpacing: 1, color: sv.c, flex: "none" }}>{loading ? "LOADING…" : sv.l}</span>
           <span style={{ fontSize: 9, color: "var(--txl)", flex: "none" }}>{ago(s.updated)}</span>
         </div>
@@ -158,7 +183,7 @@ function PlusBtn({ on, onClick }: { on: boolean; onClick: () => void }) {
 
 export function SessionsPanel(props: Props) {
   const {
-    sessions, groups, status, done, selectedSessionId, loadingSessionId, activeProject,
+    sessions, groups, status, done, flags, selectedSessionId, loadingSessionId, activeProject,
     onSelectSession, onAnalyze, onNewSession, onWorktreeSession,
   } = props;
 
@@ -229,6 +254,16 @@ export function SessionsPanel(props: Props) {
         : byLastUsed;
   // RECENT tab: newest-first, matching the design mock's "newest first".
   const recentSorted = [...sessions].sort((a, b) => b.updated - a.updated);
+  // BY PROJECT rows: every session that's actually doing something (WORK/WAIT/
+  // LIVE/DONE) or holding a prompt of yours, never nothing — a quiet project
+  // still shows its newest one.
+  // ponytail: ignores g.sessions' cap on purpose; the rest hide behind SHOW MORE.
+  const rowsFor = (rel: string) => {
+    const all = sorted.filter((s) => s.project === rel);
+    const busy = all.filter((s) =>
+      statusView(status.get(s.id), done.has(s.id)).l !== "IDLE" || flags.has(s.id));
+    return busy.length ? busy : all.slice(0, 1);
+  };
 
   // Virtualize the uncapped RECENT list against the shared .mscroll scroller.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -301,7 +336,7 @@ export function SessionsPanel(props: Props) {
     <SessionRow
       key={s.id} s={s} i={i} animate={animate}
       on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
-      sv={statusView(status.get(s.id), done.has(s.id))}
+      sv={statusView(status.get(s.id), done.has(s.id))} flag={flags.get(s.id)}
       branch={s.branch || branchOf.get(s.project) || "main"}
       onAttach={() => onSelectSession(s)}
       onAnalyzeProj={() => onAnalyze(s.project)}
@@ -553,7 +588,7 @@ export function SessionsPanel(props: Props) {
                   {orderMenu && (
                     <>
                       <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
-                      <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 97, minWidth: 132, border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)", boxShadow: "0 8px 22px rgba(0,0,0,.45)", padding: 3, animation: "mslide .16s ease both" }}>
+                      <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 97, minWidth: 132, border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)", boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
                         {(["recent", "alpha", "custom"] as OrderMode[]).map((m) => (
                           <button
                             key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
@@ -571,7 +606,8 @@ export function SessionsPanel(props: Props) {
                 )}
                 {ordered.map((g) => {
                   const tint = projectTint(g.rel);
-                  const more = g.sessionCount - g.sessions.length;
+                  const shown = rowsFor(g.rel);
+                  const more = g.sessionCount - shown.length;
                   const dragging = dragRel === g.rel;
                   const dropHere = !!dragRel && overRel === g.rel && !dragging;
                   return (
@@ -601,7 +637,7 @@ export function SessionsPanel(props: Props) {
                         <PlusBtn on={nsOpen && nsScoped && nsProject === g.rel} onClick={() => openFor(g.rel)} />
                       </div>
                       {nsOpen && nsScoped && nsProject === g.rel && nsForm}
-                      {g.sessions.map((s, i) => rowFor(s, i))}
+                      {shown.map((s, i) => rowFor(s, i))}
                       {more > 0 && <DashedRow label={`SHOW MORE · ${more} →`} onClick={() => setDrill(g.rel)} />}
                       {g.sessionCount === 0 && (
                         <DashedRow label="+ START SESSION" title="start a session in this project"

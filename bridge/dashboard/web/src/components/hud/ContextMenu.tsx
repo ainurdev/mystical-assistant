@@ -43,7 +43,7 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
       <div data-ctxmenu="1"
-        style={{ position: "fixed", left: x, top: y, zIndex: 97, width: W, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 12px 44px rgba(0,0,0,.7),0 0 26px color-mix(in srgb, var(--acc) 8%, transparent)", transformOrigin: "top", animation: closing ? "ctxOut .165s ease both" : "ctxIn .28s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ position: "fixed", left: x, top: y, zIndex: 97, width: W, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 12px 44px var(--shadow-pop),0 0 26px color-mix(in srgb, var(--acc) 8%, transparent)", transformOrigin: "top", animation: closing ? "ctxOut .165s ease both" : "ctxIn .28s cubic-bezier(.16,.84,.3,1) both" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
           <span style={{ width: 6, height: 6, background: "var(--acc)", transform: "rotate(45deg)", flex: "none" }} />
           <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>{TYPE_LABEL[ctx.type] || "DASHBOARD"}</span>

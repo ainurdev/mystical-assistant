@@ -110,6 +110,27 @@ if [ -z "$(get_env ALLOWED_CHAT_IDS)" ]; then
   fi
 fi
 
+# -- permission posture (an explicit choice, never a silent default) ----------
+# Sessions started from the dashboard or Mini App carry this mode, so it decides
+# whether Claude runs commands on your machine without asking. Shipping a default
+# would mean strangers cloning this get full autonomy they never opted into.
+if [ -z "$(get_env NEW_SESSION_PERMISSION_MODE)" ]; then
+  echo
+  echo "How should Claude behave in sessions you start from the dashboard or phone?"
+  echo "  1) Ask before running commands  — edits files freely, asks for the rest"
+  echo "  2) Full autonomy               — runs commands without asking (fastest,"
+  echo "                                    and a prompt injection runs as you)"
+  printf "Choose [1/2, default 1]: "
+  read -r ans || ans=1
+  case "${ans:-1}" in
+    2) mode="bypassPermissions"; extra="--dangerously-skip-permissions" ;;
+    *) mode="acceptEdits";       extra="--permission-mode acceptEdits" ;;
+  esac
+  "${ONBOARD[@]}" set-env "$ENV_FILE" NEW_SESSION_PERMISSION_MODE "$mode"
+  "${ONBOARD[@]}" set-env "$ENV_FILE" EXTRA_CLAUDE_ARGS "$extra"
+  ok "permission posture → $mode (change it in .env any time)"
+fi
+
 # -- Mini App toggle ---------------------------------------------------------
 if [ -z "$(get_env MINIAPP_ENABLE)" ]; then
   printf "Enable the Telegram Mini App control panel (phone UI)? [Y/n]: "

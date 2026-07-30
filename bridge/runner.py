@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 
-from bridge import (config, devserver, git, limits, machine, memory,
+from bridge import (agents, config, devserver, git, limits, machine, memory,
                     native_activity, project_config, pubsub, state, store,
                     transcript_jsonl)
 from bridge.browser import rel
@@ -314,6 +314,13 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                 send(chat_id, "⏳ Claude usage limit hit — this session will auto-"
                               f"resume when the limit resets (~{limits.when_str(d[0])}).")
                 return
+        if (is_error and config.AUTO_RESUME and limits.is_server_error(result)
+                and (sid or session["claude_session_id"])):
+            d = limits.defer_server(session["id"], chat_id, None)
+            if d is not None:
+                send(chat_id, f"⚠️ Claude API error — retrying {limits.wait_str(d[0])} "
+                              f"(attempt {d[1]}/{len(limits.SERVER_BACKOFF)}).")
+                return
         if not is_error:
             _capture_async(chat_id, session["id"], job_id, None, result, [])
             _graph_refresh_after_turn(chat_id, None)
@@ -579,6 +586,13 @@ def running_jobs(chat_id: int) -> list[dict]:
 _LIVE_WINDOW = 90.0
 
 
+def _running_agents(claude_sid: str) -> int:
+    """Subagents still in flight for a native session id (0 if it spawned none).
+    Cheap: no subagents dir → two stats; the transcript read behind it is
+    memoized on (mtime, size), and a session busy with agents is quiet."""
+    return agents.session_agents({"claude_session_id": claude_sid})["running"]
+
+
 def _build_status(bridge_running: list, awaiting: list, jobs: list,
                   external: list, native_snap: dict) -> dict:
     """Merge bridge + native liveness into one {session_id: {state, kind, source,
@@ -608,6 +622,14 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
             if sid and sid not in status:
                 status[sid] = {"state": "working", "kind": None, "source": "native",
                                "label": st.get("label") or "working…"}
+        # A parent blocked on subagents appends nothing to its own transcript, so
+        # agents in flight are the only liveness signal it has left — without this
+        # a long fan-out reads LIVE, then IDLE/DONE, while it is still working.
+        elif sid and (n := _running_agents(sid)):
+            row["state"] = "working"
+            if sid not in status:
+                status[sid] = {"state": "working", "kind": None, "source": "native",
+                               "label": f"{n} agent{'s' if n > 1 else ''} working"}
         elif sid and (now - (row.get("last_active") or 0)) < _LIVE_WINDOW:
             row["state"] = "live"
             if sid not in status:
@@ -667,25 +689,33 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
 # ---------------------------------------------------------------------------
 # Auto-resume: only the user may stop a turn
 # ---------------------------------------------------------------------------
-# Three non-user ways a turn dies, three answers:
+# Four non-user ways a turn dies, four answers:
 #   - The bridge is restarting (group SIGINT/SIGKILL takes the Claude child down):
 #     leave the turn 'running' so startup recovery (bridge/recovery.py) claims and
 #     resumes it on the next boot.
 #   - The account hit a usage limit: an immediate resume can only fail again, so
 #     the session is parked in bridge/limits.py, which resumes it when the limit
 #     resets.
-#   - Claude crashed while the bridge stays up (API drop, OOM, CLI failure):
-#     resume the session right here with a nudge. Consecutive failures are capped
-#     per session — a completed turn resets the cap — so a session whose resume
-#     itself keeps dying can't burn tokens in a loop.
-# User Stop (job.interrupted) and the RUN_TIMEOUT watchdog (job.timed_out — the
-# deliberate runaway-cost brake) are never auto-resumed.
+#   - The API failed transiently (5xx, or a server-side 429): retry, but on
+#     limits.SERVER_BACKOFF — once immediately, then 1m/5m/10m/15m/30m apart.
+#     Hammering an API that's down neither helps nor keeps the transcript readable.
+#   - Claude crashed while the bridge stays up (API drop, OOM, CLI failure), or
+#     the RUN_TIMEOUT watchdog killed a run still doing real work: resume the
+#     session right here with a nudge. Consecutive failures are capped per
+#     session — a completed turn resets the cap — so a session whose resume
+#     itself keeps dying (or keeps timing out) can't burn tokens in a loop. That
+#     cap, not the watchdog, is the runaway-cost brake.
+# Only a user Stop (job.interrupted) is never auto-resumed.
 
 RESUME_NUDGE = (
     "⏮ Your previous turn was cut off by an error — not by the user. "
     "Review your recent transcript and continue exactly where you left off; "
     "finish the task you were doing. Don't start over.")
-AUTO_RESUME_MAX = 2                 # consecutive crashed turns before giving up
+TIMEOUT_NUDGE = (
+    "⏮ Your previous turn was cut off by the bridge's per-turn time cap — not by "
+    "the user. Review your recent transcript and continue exactly where you left "
+    "off; finish the task you were doing. Don't start over.")
+AUTO_RESUME_MAX = 5                 # consecutive dead turns before giving up
 _resume_fails: dict[str, int] = {}  # session id -> consecutive error-ended turns
 
 
@@ -707,7 +737,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         _resume_fails.pop(sid, None)             # healthy turn resets the cap
         limits.note_ok(sid)                      # ...and closes any limit episode
         return False
-    if job.status != "error" or job.interrupted or job.timed_out:
+    if job.status != "error" or job.interrupted:
         return False
     if not config.AUTO_RESUME or state.shutting_down:
         return False                              # shutdown → boot recovery's job
@@ -726,23 +756,42 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                     f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
                     f"will auto-resume when the limit resets (~{limits.when_str(when)}).")
         return True
+    if limits.is_server_error(job.result or job.error_msg):
+        # Anthropic's side blew up: retry, but spaced out along the ladder.
+        sess = store.get_session(sid)
+        if not sess or not sess.get("claude_session_id"):
+            return False                          # died before init — nothing to resume
+        d = limits.defer_server(sid, job.chat_id, cwd, model, effort)
+        if d is None:
+            return False                          # ladder exhausted — stay stopped
+        when, attempt = d
+        _notify(job.chat_id,
+                f"⚠️ Claude API error — retrying {_session_label(sid)} "
+                f"{limits.wait_str(when)} "
+                f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).")
+        return True
     fails = _resume_fails.get(sid, 0) + 1
     _resume_fails[sid] = fails
     if fails > AUTO_RESUME_MAX:
-        return False                              # crash-looping — stay stopped
+        return False                              # crash/timeout-looping — stay stopped
     sess = store.get_session(sid)
     if not sess or not sess.get("claude_session_id"):
         return False                              # died before init — nothing to resume
     try:
-        job2 = start_streaming_job(job.chat_id, RESUME_NUDGE, [], project=cwd,
-                                   session_id=sid, model=model, effort=effort)
+        job2 = start_streaming_job(
+            job.chat_id, TIMEOUT_NUDGE if job.timed_out else RESUME_NUDGE, [],
+            project=cwd, session_id=sid, model=model, effort=effort)
     except Exception as e:  # noqa: BLE001
         print(f"[auto-resume] failed for {sid}: {e}", file=sys.stderr)
         return False
     if job2 is None:
         return False                              # slot taken (e.g. the queue advanced)
-    _notify(job.chat_id,
-            f"🔄 The turn was interrupted by an error — resuming {_session_label(sid)}.")
+    if job.timed_out:
+        _notify(job.chat_id, f"⏱️ The turn hit the {config.RUN_TIMEOUT // 60}-min cap "
+                             f"— resuming {_session_label(sid)}.")
+    else:
+        _notify(job.chat_id, f"🔄 The turn was interrupted by an error "
+                             f"— resuming {_session_label(sid)}.")
     return True
 
 
@@ -858,6 +907,20 @@ def _handle_event(job: Job, d: dict):
 def _cleanup_uploads(job_id: str):
     d = os.path.join(config.UPLOAD_DIR, job_id)
     shutil.rmtree(d, ignore_errors=True)
+
+
+def _prune_uploads():
+    """A finished run leaves its screenshots on disk — the turn is in the
+    transcript and the dashboard serves them back (/local/attachment) — so
+    bound the dir by age instead of deleting each run's images on the spot."""
+    cutoff = time.time() - config.UPLOAD_KEEP_DAYS * 86400
+    try:
+        with os.scandir(config.UPLOAD_DIR) as it:
+            for e in it:
+                if e.is_dir() and e.stat().st_mtime < cutoff:
+                    shutil.rmtree(e.path, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def _watchdog(job: Job, proc) -> None:
@@ -984,7 +1047,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 store.finish_turn(job.id, job.status, job.cost, job.elapsed)
         job.clear_pending()
         job.close_stdin()
-        _cleanup_uploads(job.id)
+        _prune_uploads()
         if job.store_session_id:
             state.release_run(job.store_session_id)
             # The session's run slot is now free: let the preview queue mark this

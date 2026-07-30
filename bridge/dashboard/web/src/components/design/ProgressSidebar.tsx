@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { QueueItem } from "../../api";
+import { SteerIcon } from "../Composer";
 import type { RunProgress } from "./usePreviewQueue";
 
 const MONO = "'JetBrains Mono', ui-monospace, monospace";
@@ -34,7 +35,7 @@ export function ProgressSidebar(p: ProgressSidebarProps) {
   return (
     <div style={{ ...dockStyle, position: "fixed", zIndex: 64, display: "flex", flexDirection: "column",
       border: "1px solid var(--border-bright)", borderRight: "none", background: "rgba(6,11,11,.97)",
-      boxShadow: "-18px 0 50px rgba(0,0,0,.5)", backdropFilter: "blur(2px)",
+      boxShadow: "-18px 0 50px var(--shadow-pop)", backdropFilter: "blur(2px)",
       transform: open ? "translateX(0)" : "translateX(18px)", opacity: open ? 1 : 0,
       pointerEvents: open ? "auto" : "none",
       transition: "transform .32s var(--ease-hud), opacity .28s var(--ease-hud)", overflow: "hidden" }}>
@@ -64,7 +65,7 @@ export function ProgressSidebar(p: ProgressSidebarProps) {
             )}
             {progress.steers.map((s, i) => (
               <div key={i} style={{ display: "flex", gap: 7, fontSize: 11.5, lineHeight: 1.45, color: "var(--violet)", borderLeft: "2px solid var(--violet)", paddingLeft: 8 }}>
-                <span style={{ flex: "none" }}>⚡</span><span>{s}</span>
+                <span style={{ flex: "none", marginTop: 2 }}><SteerIcon size={12} /></span><span>{s}</span>
               </div>
             ))}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 9, letterSpacing: 1.5, color: "var(--muted-2)", marginTop: 2 }}>

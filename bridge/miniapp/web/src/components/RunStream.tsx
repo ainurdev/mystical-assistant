@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   Pencil,
   BookOpen,
@@ -67,7 +68,9 @@ type RespondFn = (
   opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
 ) => void;
 
-export function RunStream({
+// Memoized: a long session's past turns keep the same `events`/`pending` arrays
+// across polls (see mergeDelta), so only the live turn re-renders.
+export const RunStream = memo(function RunStream({
   events,
   pending = [],
   onRespond,
@@ -203,4 +206,4 @@ export function RunStream({
       })}
     </div>
   );
-}
+});

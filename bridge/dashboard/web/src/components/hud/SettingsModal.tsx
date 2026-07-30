@@ -4,6 +4,7 @@ import {
   autoTextScale,
   AURORA_KEYS,
   CLAUDE_KEYS,
+  isLight,
   THEME_DEFS,
   themeCompensator,
   themeDef,
@@ -92,6 +93,8 @@ const field = {
 };
 
 const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 10, marginTop: 11 };
+// Several controls abreast, wrapping onto a second line when the panel narrows.
+const LINE: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 12, marginTop: 11 };
 const CAPTION: CSSProperties = { fontSize: 9.5, letterSpacing: 1, color: "var(--txd)", flex: "none", width: 62 };
 const CARD: CSSProperties = { border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "12px 13px" };
 const KV: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between" };
@@ -196,8 +199,20 @@ function Segmented<T extends string>({
   );
 }
 
-/** A labelled <select> row over one of the composer's option lists. */
-function PickRow({
+/** A labelled control that shares its line with the others beside it — the
+ *  caption sits above so the cells stay narrow, and they wrap when the panel
+ *  can't hold them all. */
+function Cell({ label, grow = "1 1 148px", children }: { label: string; grow?: string; children: ReactNode }) {
+  return (
+    <div style={{ flex: grow, minWidth: 0 }}>
+      <div style={{ ...CAPTION, width: "auto", marginBottom: 5 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+/** A labelled <select> cell over one of the composer's option lists. */
+function PickCell({
   label,
   value,
   options,
@@ -209,33 +224,42 @@ function PickRow({
   onPick: (v: string) => void;
 }) {
   return (
-    <div style={ROW}>
-      <span style={CAPTION}>{label}</span>
-      <select value={value} onChange={(e) => onPick(e.target.value)} style={{ ...field, flex: 1, minWidth: 0 }}>
+    <Cell label={label}>
+      <select value={value} onChange={(e) => onPick(e.target.value)} style={{ ...field, width: "100%" }}>
         {options.map((o) => (
           <option key={o.id} value={o.id}>
             {o.label}
           </option>
         ))}
       </select>
-    </div>
+    </Cell>
   );
 }
 
 // The "DISPLAY PROFILE" grid. Because the whole app is run through the active
 // theme's CSS filter, every swatch/preview colour is pre-corrected by the
 // INVERSE of that filter's color matrix so the cards render TRUE colours.
-// AURORA's four hues and CLAUDE's two grounds each collapse into one card with
-// a variant row; every other theme is its own card.
-const CARDS: { key: ThemeKey; variants?: ThemeKey[]; ground?: boolean }[] = [
+// AURORA's four hues and CLAUDE's four accents each collapse into one card with
+// a variant row; every other theme is its own card. The cards split by ground —
+// three dark profiles, three light — and each set gets its own labelled row.
+type ThemeCard = { key: ThemeKey; variants?: ThemeKey[] };
+
+const CARDS: ThemeCard[] = [
   { key: "aqua", variants: AURORA_KEYS },
+  { key: "claude", variants: CLAUDE_KEYS },
   ...THEME_DEFS
     .filter((t) => !AURORA_KEYS.includes(t.key) && !CLAUDE_KEYS.includes(t.key))
     .map((t) => ({ key: t.key })),
-  { key: "claude", variants: CLAUDE_KEYS, ground: true },
 ];
 
-function ThemeCardGrid({ settings, onTheme }: { settings: HudSettings; onTheme: (t: ThemeKey) => void }) {
+const DARK_CARDS = CARDS.filter((c) => !isLight(c.key));
+const LIGHT_CARDS = CARDS.filter((c) => isLight(c.key));
+
+function ThemeCardGrid({
+  cards,
+  settings,
+  onTheme,
+}: { cards: ThemeCard[]; settings: HudSettings; onTheme: (t: ThemeKey) => void }) {
   const [hover, setHover] = useState<ThemeKey | null>(null);
   const comp = themeCompensator(settings.theme);
   // A family card wears whichever of its variants is live (the first otherwise).
@@ -243,7 +267,7 @@ function ThemeCardGrid({ settings, onTheme }: { settings: HudSettings; onTheme: 
     variants.includes(settings.theme) ? settings.theme : variants[0];
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 9 }}>
-      {CARDS.map((card) => {
+      {cards.map((card) => {
         const t = themeDef(card.variants ? liveOf(card.variants) : card.key);
         const on = card.variants ? card.variants.includes(settings.theme) : settings.theme === card.key;
         const name = card.variants ? themeDef(card.variants[0]).name : t.name;
@@ -377,7 +401,7 @@ function ThemeCardGrid({ settings, onTheme }: { settings: HudSettings; onTheme: 
                         flex: 1,
                         height: 12,
                         padding: 0,
-                        background: comp(card.ground ? c.canvas : c.sw),
+                        background: comp(c.sw),
                         border: `1px solid ${live ? comp("#f2fbf9") : "rgba(0,0,0,.45)"}`,
                         borderRadius: t.prad || "0",
                       }}
@@ -650,55 +674,58 @@ function WeatherCard({
 
   return (
     <div style={CARD}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <input
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void save()}
-          placeholder="city — e.g. Tehran"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            background: "var(--panel3)",
-            border: `1px solid ${err ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`,
-            outline: "none",
-            color: "var(--txb)",
-            fontFamily: "inherit",
-            fontSize: 11.5,
-            padding: "7px 9px",
-          }}
-        />
-        <button
-          onClick={() => void save()}
-          disabled={saving}
-          style={{
-            appearance: "none",
-            cursor: saving ? "wait" : "pointer",
-            border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
-            background: "color-mix(in srgb, var(--acc) 8%, transparent)",
-            color: "var(--tx)",
-            fontFamily: "inherit",
-            fontSize: 10,
-            letterSpacing: 1.5,
-            padding: "7px 13px",
-            flex: "none",
-          }}
-        >
-          {saving ? "…" : "SAVE"}
-        </button>
+      <div style={{ ...LINE, marginTop: 0 }}>
+        <Cell label="CITY" grow="1 1 200px">
+          <div style={{ display: "flex", gap: 9 }}>
+            <input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void save()}
+              placeholder="city — e.g. Tehran"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                background: "var(--panel3)",
+                border: `1px solid ${err ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`,
+                outline: "none",
+                color: "var(--txb)",
+                fontFamily: "inherit",
+                fontSize: 11.5,
+                padding: "7px 9px",
+              }}
+            />
+            <button
+              onClick={() => void save()}
+              disabled={saving}
+              style={{
+                appearance: "none",
+                cursor: saving ? "wait" : "pointer",
+                border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+                background: "color-mix(in srgb, var(--acc) 8%, transparent)",
+                color: "var(--tx)",
+                fontFamily: "inherit",
+                fontSize: 10,
+                letterSpacing: 1.5,
+                padding: "7px 13px",
+                flex: "none",
+              }}
+            >
+              {saving ? "…" : "SAVE"}
+            </button>
+          </div>
+        </Cell>
+        <Cell label="UNIT" grow="none">
+          <Segmented
+            options={[
+              { label: "°C", value: "celsius" },
+              { label: "°F", value: "fahrenheit" },
+            ]}
+            value={weather.unit === "F" ? "fahrenheit" : "celsius"}
+            onPick={(u) => void onSetUnit(u)}
+          />
+        </Cell>
       </div>
       {err && <div style={{ fontSize: 9, color: "var(--err)", marginTop: 5 }}>{err}</div>}
-      <div style={{ ...ROW, marginTop: 12 }}>
-        <span style={CAPTION}>UNIT</span>
-        <Segmented
-          options={[
-            { label: "°C", value: "celsius" },
-            { label: "°F", value: "fahrenheit" },
-          ]}
-          value={weather.unit === "F" ? "fahrenheit" : "celsius"}
-          onPick={(u) => void onSetUnit(u)}
-        />
-      </div>
     </div>
   );
 }
@@ -793,7 +820,7 @@ export function SettingsModal(props: SettingsModalProps) {
           flexDirection: "column",
           border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
           background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
-          boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)",
+          boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)",
           animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both",
         }}
       >
@@ -895,8 +922,10 @@ export function SettingsModal(props: SettingsModalProps) {
           <div className="mscroll" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
             {tab === "appearance" && (
               <>
-                <Label>THEME · DISPLAY PROFILE</Label>
-                <ThemeCardGrid settings={settings} onTheme={onTheme} />
+                <Label>THEME · DARK</Label>
+                <ThemeCardGrid cards={DARK_CARDS} settings={settings} onTheme={onTheme} />
+                <Label top>THEME · LIGHT</Label>
+                <ThemeCardGrid cards={LIGHT_CARDS} settings={settings} onTheme={onTheme} />
 
                 {themeHasCrt(settings.theme) && (
                   <>
@@ -963,23 +992,25 @@ export function SettingsModal(props: SettingsModalProps) {
 
                 <Label top>CLAUDE·FM</Label>
                 <div style={CARD}>
-                  <div style={{ ...ROW, marginTop: 0 }}>
-                    <span style={CAPTION}>STATION</span>
-                    <select
-                      value={station}
-                      onChange={(e) => onStation(Number(e.target.value))}
-                      style={{ ...field, flex: 1, minWidth: 0 }}
-                    >
-                      {RADIO_STATIONS.map((s, i) => (
-                        <option key={s.title} value={i}>
-                          {s.title} — {s.artist}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={ROW}>
-                    <span style={CAPTION}>VOLUME</span>
-                    <Volume value={settings.radioVolume} onChange={(radioVolume) => onPatch({ radioVolume })} />
+                  <div style={{ ...LINE, marginTop: 0 }}>
+                    <Cell label="STATION" grow="1 1 220px">
+                      <select
+                        value={station}
+                        onChange={(e) => onStation(Number(e.target.value))}
+                        style={{ ...field, width: "100%" }}
+                      >
+                        {RADIO_STATIONS.map((s, i) => (
+                          <option key={s.title} value={i}>
+                            {s.title} — {s.artist}
+                          </option>
+                        ))}
+                      </select>
+                    </Cell>
+                    <Cell label="VOLUME" grow="none">
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 26 }}>
+                        <Volume value={settings.radioVolume} onChange={(radioVolume) => onPatch({ radioVolume })} />
+                      </div>
+                    </Cell>
                   </div>
                 </div>
                 <div style={NOTE}>
@@ -1005,9 +1036,11 @@ export function SettingsModal(props: SettingsModalProps) {
                     value={settings.model}
                     onPick={(model) => onPatch({ model })}
                   />
-                  <PickRow label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
-                  <PickRow label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
-                  <PickRow label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
+                  <div style={LINE}>
+                    <PickCell label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
+                    <PickCell label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
+                    <PickCell label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
+                  </div>
                 </div>
                 <div style={NOTE}>
                   The composer&apos;s four dropdowns are these same knobs — set them here and they

@@ -1,26 +1,19 @@
 import { createRouter, createHashHistory } from "@tanstack/react-router";
 import { rootRoute } from "./routes/root";
 import { runRoute } from "./routes/run";
-import { serverRoute } from "./routes/server";
-import { shellRoute } from "./routes/shell";
-import { previewRoute } from "./routes/preview";
 import { historyRoute } from "./routes/history";
 import { issuesRoute } from "./routes/issues";
-import { designRoute } from "./routes/design";
-import { memoryRoute } from "./routes/memory";
-import { teacherRoute } from "./routes/teacher";
 
-const routeTree = rootRoute.addChildren([
-  runRoute,
-  issuesRoute,
-  serverRoute,
-  shellRoute,
-  previewRoute,
-  designRoute,
-  historyRoute,
-  memoryRoute,
-  teacherRoute,
-]);
+const routeTree = rootRoute.addChildren([runRoute, historyRoute, issuesRoute]);
+
+// Telegram launches the webview at "#tgWebAppData=…" and telegram-web-app.js only
+// ever reads that hash — it never clears it. That script is blocking and in <head>,
+// so by the time this module runs it has already published window.Telegram.WebApp,
+// and the hash is spent. Drop it, or hash history reads it as a route and every
+// cold open from Telegram renders Not Found. Must happen before createHashHistory().
+if (location.hash && !location.hash.startsWith("#/")) {
+  history.replaceState(null, "", `${location.pathname}${location.search}#/`);
+}
 
 // Hash history is the safest choice inside the Telegram webview.
 export const router = createRouter({

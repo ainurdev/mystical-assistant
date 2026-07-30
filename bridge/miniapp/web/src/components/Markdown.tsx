@@ -1,9 +1,12 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
 // `.md` block in index.css. Links open in a new tab.
-export function Markdown({ children, className = "" }: { children: string; className?: string }) {
+// Memoized: re-parsing every past text block on each poll of a long, streaming
+// turn is the single most expensive thing the transcript does.
+export const Markdown = memo(function Markdown({ children, className = "" }: { children: string; className?: string }) {
   return (
     <div className={`md ${className}`}>
       <ReactMarkdown
@@ -16,4 +19,4 @@ export function Markdown({ children, className = "" }: { children: string; class
       </ReactMarkdown>
     </div>
   );
-}
+});

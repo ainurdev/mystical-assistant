@@ -68,7 +68,7 @@ export function ShellTab() {
 
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto rounded-[9px] border border-border bg-[rgba(0,0,0,.25)] p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
+        className="min-h-0 flex-1 overflow-y-auto rounded-[9px] border border-border bg-[var(--code-bg)] p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
       >
         {lines.current.length === 0 ? (
           <div className="text-muted-2">run a command to see its output</div>

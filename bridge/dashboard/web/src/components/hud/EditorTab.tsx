@@ -11,6 +11,7 @@ import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
 import { markdown } from "@codemirror/lang-markdown";
 import { api, type FileContent, type GrepHit } from "../../api";
+import { Markdown } from "../Markdown";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
@@ -199,6 +200,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const [cmd, setCmd] = useState("");
   const [note, setNote] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  // Markdown preview: the rendered text, or null while editing. Holding the text
+  // (not a bool) lets the CodeMirror view stay mounted underneath, so toggling
+  // back never loses unsaved edits.
+  const [preview, setPreview] = useState<string | null>(null);
 
   // quick-open palette: null = closed; "" files, "@…" symbols, "#…" grep
   const [palQ, setPalQ] = useState<string | null>(null);
@@ -254,7 +259,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   useEffect(() => {
     if (!open) { setMeta(null); return; }
     let live = true;
-    setMeta(null); setDirty(false);
+    setMeta(null); setDirty(false); setPreview(null);
     void api.fileRead(project, open, branch || undefined)
       .then((r) => { if (live) { setMeta(r); baseRef.current = r.content ?? ""; } })
       .catch((e) => { if (live) setMeta({ ok: false, error: (e as Error).message }); });
@@ -262,6 +267,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   }, [open, project, branch]);
 
   const editable = !!meta && meta.ok && !meta.binary && !meta.too_large;
+  const isMd = !!open && /\.(md|markdown)$/i.test(open);
 
   // (Re)build the CodeMirror view when an editable file's contents arrive.
   useEffect(() => {
@@ -553,7 +559,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 <span style={{ color: "var(--purple-g)", flex: "none" }}>▾</span>
               </button>
               {menuOpen && (
-                <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 0, zIndex: 30, minWidth: 210, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
+                <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 0, zIndex: 30, minWidth: 210, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
                   <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
                   {branchOpts.map((b) => (
                     <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
@@ -623,7 +629,15 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "color-mix(in srgb, var(--panel3) 50%, transparent)" }}>
           <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
             {editable ? (
-              <div ref={hostRef} className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto" }} />
+              <>
+                {/* hidden, not unmounted, while previewing — CodeMirror keeps the buffer (and its unsaved edits) */}
+                <div ref={hostRef} className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", visibility: preview === null ? "visible" : "hidden" }} />
+                {preview !== null && (
+                  <div className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", padding: "14px 18px", fontSize: 12.5, lineHeight: 1.65, color: "var(--tx)" }}>
+                    <Markdown>{preview}</Markdown>
+                  </div>
+                )}
+              </>
             ) : (
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: "var(--txd)" }}>
                 {!open ? "Select a file to edit."
@@ -636,7 +650,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             )}
           </div>
           <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5 }}>
-            <span style={{ background: dirty ? "var(--warn)" : "var(--acc)", color: "var(--acc-on)", fontWeight: 700, letterSpacing: 1.5, padding: "5px 12px", flex: "none" }}>{saving ? "SAVING" : dirty ? "UNSAVED" : "EDIT"}</span>
+            <span style={{ background: dirty ? "var(--warn)" : "var(--acc)", color: "var(--acc-on)", fontWeight: 700, letterSpacing: 1.5, padding: "5px 12px", flex: "none" }}>{saving ? "SAVING" : dirty ? "UNSAVED" : preview !== null ? "VIEW" : "EDIT"}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 12px", color: "var(--txm)", flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--acc) 5%, transparent)" }}>
               <span style={{ color: "var(--purple)", flex: "none" }}>⎇ {branch || "—"}</span>
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{open || "no file"}</span>
@@ -648,6 +662,12 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", padding: "6px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
             <button onClick={() => void save()} disabled={!editable || saving || !dirty} title="save (Ctrl-S / :w)" {...hp("save")}
               style={{ appearance: "none", cursor: editable && dirty && !saving ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: hov === "save" && editable && dirty ? "color-mix(in srgb, var(--ok) 14%, transparent)" : "transparent", color: "var(--ok)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px", opacity: editable && dirty && !saving ? 1 : 0.45 }}>▸ SAVE</button>
+            {editable && isMd && (
+              <button onClick={() => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null))}
+                title={preview === null ? "preview rendered markdown" : "back to the editor"} {...hp("mdv")}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: hov === "mdv" || preview !== null ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px" }}>
+                {preview === null ? "◧ VIEW" : "✎ EDIT"}</button>
+            )}
             <span style={{ color: "var(--acc)", flex: "none" }}>:</span>
             <input value={cmd} onChange={(e) => setCmd(e.target.value)} onKeyDown={onCmdKey}
               placeholder="w · wq"
@@ -659,7 +679,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         {palQ !== null && (
           <>
             <div onClick={() => setPalQ(null)} style={{ position: "absolute", inset: 0, zIndex: 40, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }} />
-            <div style={{ position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px rgba(0,0,0,.7)", animation: "mslide .16s ease both" }}>
+            <div style={{ position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
                 <span style={{ color: "var(--acc)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, flex: "none" }}>
                   {palMode === "@" ? "@" : palMode === "#" ? "#" : "⌕"}

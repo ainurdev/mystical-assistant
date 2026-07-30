@@ -107,6 +107,20 @@ def set_memory_mode(project: str, mode: str) -> str:
     return mode
 
 
+def set_hidden(project: str, on: bool) -> bool:
+    """Keep a project out of the sidebar (projects + session list). Project-wide,
+    like the memory posture; returns the effective value."""
+    _set_field(project, None, "hidden", "1" if on else "")
+    return on
+
+
+def hidden_projects() -> list[str]:
+    """Every project rel currently hidden. Only ever written project-wide, so
+    branch-scoped keys never carry the flag."""
+    with _lock:
+        return sorted(k for k, v in _load().items() if isinstance(v, dict) and v.get("hidden"))
+
+
 def package_scripts(cwd: str) -> dict:
     """The `scripts` map (name -> command) from the project's package.json, or
     {} when there is no package.json / no scripts."""

@@ -15,13 +15,18 @@ export type ThemeKey =
   | "green"
   | "amber"
   | "magenta"
-  | "adventure"
   | "normal"
   | "newsprint"
   | "candy"
   | "blueprint"
   | "claude"
-  | "claude-dark";
+  | "claude-ocean"
+  | "claude-fern"
+  | "claude-iris"
+  | "dusk"
+  | "library"
+  | "apex"
+  | "gloam";
 
 /**
  * AURORA is one theme in four colours — same glass, same CRT, only the
@@ -30,8 +35,31 @@ export type ThemeKey =
  */
 export const AURORA_KEYS: ThemeKey[] = ["aqua", "green", "amber", "magenta"];
 
-/** CLAUDE ships light and dark; same card, two grounds. */
-export const CLAUDE_KEYS: ThemeKey[] = ["claude", "claude-dark"];
+/** CLAUDE is dark-only, in four accents; same card, one colour row. */
+export const CLAUDE_KEYS: ThemeKey[] = ["claude", "claude-ocean", "claude-fern", "claude-iris"];
+
+/**
+ * The themes that sit on a LIGHT ground. Everything else is dark. The picker
+ * shows the two sets as separate groups; their palettes are tuned so every text
+ * tier clears WCAG AA (4.5:1) against their own canvas — `txg`, the decorative
+ * ghost tier (line numbers, empty states), clears 3.3:1.
+ *
+ * A light ground is NOT a dark one inverted. Two rules from the daylight design
+ * systems (Primer, Radix, Atlassian) that this palette set follows:
+ *   1. The biggest surface is never the brightest. `canvas` is a tinted ground
+ *      a few percent DOWN from white and `panel` is the bright card on top of
+ *      it, so panels read as raised paper instead of dissolving into the page.
+ *   2. Depth comes from an ordered surface ladder + real borders + a hairline
+ *      shadow — never from a glow, and never from a faint alpha wash: an 8%
+ *      accent veil over near-black is a 1.6x luminance step, the same veil over
+ *      white is 1.02x, i.e. invisible. `:root[data-light]` in index.css
+ *      re-derives every alpha-tinted token at light-appropriate strength.
+ */
+export const LIGHT_KEYS: ThemeKey[] = ["normal", "newsprint", "candy", "apex", "gloam"];
+
+export function isLight(t: ThemeKey): boolean {
+  return LIGHT_KEYS.includes(t);
+}
 
 const FAMILIES: ThemeKey[][] = [AURORA_KEYS, CLAUDE_KEYS];
 
@@ -72,21 +100,84 @@ export interface ThemeDef {
   pal?: Record<string, string>;
 }
 
+/** "#7fb0ff" → "127 176 255", for the `rgb(var(--accent-rgb)/x)` chrome. */
+const rgbTriplet = (hex: string): string =>
+  [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(" ");
+
+// Claude's own surfaces: dark ground, system type, no effects. One palette in
+// four accents — only `acc` (and the picker swatch) differs between them.
+const CLAUDE_PAL: Record<string, string> = { "acc-on": "#1f1f1e", ok: "#6bbf8a", warn: "#d8a657", err: "#e0796a", "err-hi": "#f2b5aa", "err-b": "#f8d3cc", "err-g": "#9c7068", info: "#7fb0e0", "info-hi": "#a8cbee", "info-b": "#cfe3f7", purple: "#a99cdb", "purple-d": "#9a8cd0", "purple-h": "#bfb4e8", "purple-b": "#dcd6f4", "purple-g": "#6e6890", txb: "#f5f4ef", txh: "#eceae5", tx: "#d7d5cd", txm: "#bfbdb4", txd: "#aba9a0", txf: "#a09d97", txl: "#999690", txg: "#4a4844", panel: "#30302e", panel2: "#262624", panel3: "#1f1f1e", canvas: "#262624", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" };
+
+const CLAUDE_ACCENTS: [ThemeKey, string, string, string][] = [
+  ["claude", "CLAUDE", "the app itself · warm clay", "#d97757"],
+  ["claude-ocean", "CLAUDE OCEAN", "the app itself · cold water", "#7fb0e0"],
+  ["claude-fern", "CLAUDE FERN", "the app itself · quiet green", "#6bbf8a"],
+  ["claude-iris", "CLAUDE IRIS", "the app itself · dusk violet", "#a99cdb"],
+];
+
+const CLAUDE_DEFS: ThemeDef[] = CLAUDE_ACCENTS.map(([key, name, feel, acc]) => ({
+  key, name, feel, filter: "none", ops: [], sw: acc, bg: "rgba(30,30,29,.55)", pbg: "#262624",
+  crt: false, swp: false, glw: false, canvas: "#262624",
+  font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px",
+  pal: { ...CLAUDE_PAL, acc, "accent-rgb": rgbTriplet(acc) },
+}));
+
 export const THEME_DEFS: ThemeDef[] = [
   { key: "aqua", name: "AURORA", feel: "orbital glass · clean signal", filter: "none", ops: [], sw: "#7fe9d8", bg: "rgba(10,26,32,.55)", pbg: "#04090b", crt: true, swp: true, glw: true, canvas: "#060a0a", font: "", prad: "0" },
   { key: "green", name: "VIRIDIAN", feel: "buried relay · net-runner", filter: "hue-rotate(-58deg) saturate(1.5)", ops: [["hue", -58], ["sat", 1.5]], sw: "#5fdd8f", bg: "rgba(8,28,16,.5)", pbg: "#040a07", crt: true, swp: true, glw: true, canvas: "#060a0a", font: "", prad: "0" },
   { key: "amber", name: "EMBER", feel: "salvage rig · warm static", filter: "hue-rotate(-146deg) saturate(1.7)", ops: [["hue", -146], ["sat", 1.7]], sw: "#e8b04a", bg: "rgba(34,20,4,.5)", pbg: "#0a0703", crt: true, swp: true, glw: true, canvas: "#060a0a", font: "", prad: "0" },
   { key: "magenta", name: "NOVA", feel: "neon district · synthwave", filter: "hue-rotate(132deg) saturate(1.6)", ops: [["hue", 132], ["sat", 1.6]], sw: "#ff7ad9", bg: "rgba(28,8,34,.55)", pbg: "#090410", crt: true, swp: true, glw: true, canvas: "#060a0a", font: "", prad: "0" },
-  // The 5 palette themes: filter:"none" + an explicit `pal{}` (true colours), per
+  // The 4 palette themes: filter:"none" + an explicit `pal{}` (true colours), per
   // the design mock. `canvas` is the real (often light) ground; `sw` the picker swatch.
-  { key: "adventure", name: "ADVENTURE", feel: "quest log · tavern & gold", filter: "none", ops: [], sw: "#d9a94e", bg: "rgba(30,22,8,.5)", pbg: "#0c0805", crt: false, swp: false, glw: true, canvas: "radial-gradient(120% 90% at 50% 0%, #1a1208 0%, #0b0704 70%)", font: "'IM Fell English',Georgia,serif", prad: "2px", pal: { acc: "#d9a94e", "acc-on": "#241706", ok: "#9ec06a", warn: "#e0b45e", err: "#d0745a", "err-hi": "#f0c8b4", "err-b": "#f6d8c8", "err-g": "#a4735c", info: "#8fb6d9", "info-hi": "#aecfe8", "info-b": "#cfe4f4", purple: "#b591c9", "purple-d": "#a680ba", "purple-h": "#c8a8d8", "purple-b": "#e2ccec", "purple-g": "#7e6690", txb: "#f4e8ce", txh: "#e4d4b2", tx: "#d4c29a", txm: "#b6a17a", txd: "#9e8a63", txf: "#957f58", txl: "#907945", txg: "#463a22", panel: "#171006", panel2: "#110b04", panel3: "#0a0702", mono: "'JetBrains Mono',monospace" } },
-  { key: "normal", name: "NORMAL", feel: "plain dashboard · daylight", filter: "none", ops: [], sw: "#2f7cc4", bg: "rgba(16,20,22,.4)", pbg: "#eef1f3", crt: false, swp: false, glw: false, canvas: "#eef1f4", font: "system-ui,-apple-system,'Segoe UI',sans-serif", prad: "6px", pal: { acc: "#2f7cc4", "acc-on": "#ffffff", ok: "#1e9e5a", warn: "#b0821c", err: "#d05252", "err-hi": "#8c3030", "err-b": "#7c2828", "err-g": "#c08a8a", info: "#2f6fc4", "info-hi": "#255ba6", "info-b": "#1c4680", purple: "#7b5bd6", "purple-d": "#8a6ee0", "purple-h": "#6a4ec2", "purple-b": "#523aa6", "purple-g": "#a89ac8", txb: "#111e28", txh: "#22343f", tx: "#31454f", txm: "#485c64", txd: "#5a6a72", txf: "#61747d", txl: "#657a84", txg: "#cdd8dc", panel: "#ffffff", panel2: "#f4f7f9", panel3: "#e8edf1", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
-  { key: "newsprint", name: "NEWSPRINT", feel: "morning paper · ink & pulp", filter: "none", ops: [], sw: "#1f1f1f", bg: "rgba(17,17,17,.4)", pbg: "#f2f0ea", crt: false, swp: false, glw: false, canvas: "#f0ede4", font: "Georgia,'Times New Roman',serif", prad: "0", pal: { acc: "#1f1f1f", "acc-on": "#f6f4ee", ok: "#2c5e3f", warn: "#87681d", err: "#9e3535", "err-hi": "#5e2020", "err-b": "#4e1a1a", "err-g": "#9a6a6a", info: "#2b4a68", "info-hi": "#223c56", "info-b": "#1a2e42", purple: "#50505e", "purple-d": "#606070", "purple-h": "#40404c", "purple-b": "#30303a", "purple-g": "#90909c", txb: "#141414", txh: "#242424", tx: "#333333", txm: "#4d4d4d", txd: "#646464", txf: "#6d6d6d", txl: "#727272", txg: "#c6c4bc", panel: "#faf8f2", panel2: "#f0eee6", panel3: "#e5e2d8", mono: "'Courier New',monospace" } },
-  { key: "candy", name: "CANDY", feel: "bubblegum · playful pop", filter: "none", ops: [], sw: "#e0559a", bg: "rgba(18,16,14,.4)", pbg: "#fdedf4", crt: false, swp: false, glw: false, canvas: "linear-gradient(180deg,#fdeef6,#f8e4ef)", font: "'Trebuchet MS','Comic Sans MS',sans-serif", prad: "99px", pal: { acc: "#e0559a", "acc-on": "#ffffff", ok: "#18a06c", warn: "#d0821e", err: "#e0556b", "err-hi": "#8c2c3c", "err-b": "#7a2434", "err-g": "#c88a96", info: "#4e7de0", "info-hi": "#3c67c2", "info-b": "#2c50a2", purple: "#a262e0", "purple-d": "#b47ae8", "purple-h": "#8e4cd0", "purple-b": "#7038b0", "purple-g": "#c8a2e0", txb: "#3a1226", txh: "#4e2036", tx: "#603046", txm: "#78475d", txd: "#83586e", txf: "#905f79", txl: "#9a6380", txg: "#e4c8d4", panel: "#fff8fc", panel2: "#fceaf3", panel3: "#f6dcea", mono: "Menlo,Consolas,monospace" } },
-  // Claude's own surfaces: cream ground, clay accent, system type, no effects.
-  { key: "claude", name: "CLAUDE", feel: "the app itself · nothing to look at", filter: "none", ops: [], sw: "#c96442", bg: "rgba(240,238,230,.45)", pbg: "#f5f4ee", crt: false, swp: false, glw: false, canvas: "#faf9f5", font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", pal: { acc: "#c96442", "acc-on": "#ffffff", ok: "#3d8a5f", warn: "#a8761f", err: "#bc4b3c", "err-hi": "#8a3328", "err-b": "#742a21", "err-g": "#c49a92", info: "#3c6ea8", "info-hi": "#2f5a8a", "info-b": "#24466c", purple: "#7a63c4", "purple-d": "#8a75ce", "purple-h": "#6a52b4", "purple-b": "#54409a", "purple-g": "#a99ccc", txb: "#141413", txh: "#23231f", tx: "#3d3d3a", txm: "#57564f", txd: "#696860", txf: "#737167", txl: "#79776a", txg: "#d8d5c9", panel: "#ffffff", panel2: "#faf9f5", panel3: "#f0eee6", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
-  { key: "claude-dark", name: "CLAUDE", feel: "the app itself · lights out", filter: "none", ops: [], sw: "#d97757", bg: "rgba(30,30,29,.55)", pbg: "#262624", crt: false, swp: false, glw: false, canvas: "#262624", font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", pal: { acc: "#d97757", "acc-on": "#1f1f1e", ok: "#6bbf8a", warn: "#d8a657", err: "#e0796a", "err-hi": "#f2b5aa", "err-b": "#f8d3cc", "err-g": "#9c7068", info: "#7fb0e0", "info-hi": "#a8cbee", "info-b": "#cfe3f7", purple: "#a99cdb", "purple-d": "#9a8cd0", "purple-h": "#bfb4e8", "purple-b": "#dcd6f4", "purple-g": "#6e6890", txb: "#f5f4ef", txh: "#eceae5", tx: "#d7d5cd", txm: "#bfbdb4", txd: "#aba9a0", txf: "#a09d97", txl: "#999690", txg: "#4a4844", panel: "#30302e", panel2: "#262624", panel3: "#1f1f1e", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
-  { key: "blueprint", name: "BLUEPRINT", feel: "drafting table · dashed ink", filter: "none", ops: [], sw: "#7fb0ff", bg: "rgba(5,10,22,.55)", pbg: "#061024", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(0deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),repeating-linear-gradient(90deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),#06101f", font: "", prad: "0", pal: { acc: "#7fb0ff", "acc-on": "#04101f", ok: "#74d0a6", warn: "#e0c279", err: "#e08a8a", "err-hi": "#f0cccc", "err-b": "#f6dada", "err-g": "#a06a6a", info: "#9cc2ff", "info-hi": "#c2daff", "info-b": "#e0edff", purple: "#a6b9ff", "purple-d": "#94a8f0", "purple-h": "#bccbff", "purple-b": "#dde5ff", "purple-g": "#68729e", txb: "#e8f0fc", txh: "#cdd9ee", tx: "#b4c4de", txm: "#93a6c4", txd: "#7b8ead", txf: "#6f84a4", txl: "#677da6", txg: "#32405c", panel: "#081226", panel2: "#060e1c", panel3: "#040912", mono: "'JetBrains Mono',monospace" } },
+  // The three LIGHT_KEYS palettes in this block are contrast-tuned against their own
+  // canvas — the ink tiers hit fixed ratios (txb 14.6 · txh 11.4 · tx 9.3 ·
+  // txm 7.3 · txd 6 · txf 5.4 · txl 4.9 · txg 3.45) and every semantic colour
+  // used as text clears 4.7:1. Keep hue, move lightness, if you retint one of
+  // these, then re-run tests/test_light_theme_contrast.py.
+  //
+  // NORMAL is the daylight neutral: a cool blue-grey ground with white cards,
+  // and semantics lifted off the Tailwind/Radix 600-700 steps then darkened to
+  // clear the floor on this ground (a 500-step hue is AA on white but not on a
+  // tinted ground).
+  { key: "normal", name: "NORMAL", feel: "plain dashboard · daylight", filter: "none", ops: [], sw: "#235ddc", bg: "rgba(200,211,224,.55)", pbg: "#e3e9ef", crt: false, swp: false, glw: false, canvas: "#e3e9ef", font: "system-ui,-apple-system,'Segoe UI',sans-serif", prad: "6px", pal: { acc: "#235ddc", "acc-on": "#ffffff", "accent-rgb": "35 93 220", ok: "#107635", warn: "#a54c08", err: "#c62222", "err-hi": "#b91c1c", "err-b": "#991b1b", "err-g": "#a66b6b", info: "#026ca2", "info-hi": "#0369a1", "info-b": "#075985", purple: "#7b3aec", "purple-d": "#6d28d9", "purple-h": "#5b21b6", "purple-b": "#4c1d95", "purple-g": "#80759d", txb: "#0d1822", txh: "#222e37", tx: "#313c45", txm: "#404b54", txd: "#4d5760", txf: "#545e67", txl: "#5b646d", txg: "#737d85", panel: "#ffffff", panel2: "#f5f8fa", panel3: "#eaeff4", canvas: "#e3e9ef", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
+  // NEWSPRINT is warm pulp, not grey: the ground is cream and the ink is a warm
+  // near-black. Its accent stays press-black (that IS the identity), so colour
+  // arrives the way a printed page gets it — spot inks: a printer's green, an
+  // ochre highlight, correction red, an ink blue, a plum.
+  { key: "newsprint", name: "NEWSPRINT", feel: "morning paper · ink & spot colour", filter: "none", ops: [], sw: "#1a1a18", bg: "rgba(210,201,181,.55)", pbg: "#e8e2d3", crt: false, swp: false, glw: false, canvas: "#e8e2d3", font: "Georgia,'Times New Roman',serif", prad: "0", pal: { acc: "#1a1a18", "acc-on": "#f6f4ee", "accent-rgb": "26 26 24", ok: "#2f6b45", warn: "#7b5f10", err: "#b02a2a", "err-hi": "#8f2222", "err-b": "#711b1b", "err-g": "#916d6d", info: "#1f5586", "info-hi": "#18446b", "info-b": "#123350", purple: "#6b4a72", "purple-d": "#5c3f63", "purple-h": "#4d3453", "purple-b": "#3e2a43", "purple-g": "#827187", txb: "#14110c", txh: "#2b2821", tx: "#3a362f", txm: "#49453e", txd: "#56524a", txf: "#5d5950", txl: "#646057", txg: "#7c776d", panel: "#fbf9f3", panel2: "#f2eee2", panel3: "#e9e4d5", canvas: "#e8e2d3", mono: "'Courier New',monospace" } },
+  // CANDY is a saturated bubblegum ground (it used to be near-white with a pink
+  // hint) with rose-white cards on top, and warm/cool candy semantics.
+  { key: "candy", name: "CANDY", feel: "bubblegum · playful pop", filter: "none", ops: [], sw: "#b41b78", bg: "rgba(240,196,220,.5)", pbg: "#f6d7e8", crt: false, swp: false, glw: false, canvas: "linear-gradient(180deg,#fce6f2,#f6d7e8)", font: "'Trebuchet MS','Comic Sans MS',sans-serif", prad: "99px", pal: { acc: "#b41b78", "acc-on": "#ffffff", "accent-rgb": "180 27 120", ok: "#0e6c65", warn: "#8a5406", err: "#bd1d1d", "err-hi": "#ad1a1a", "err-b": "#8f1616", "err-g": "#9b6671", info: "#1d4ed8", "info-hi": "#1e40af", "info-b": "#1e3a8a", purple: "#882ed1", "purple-d": "#7e22ce", "purple-h": "#6b21a8", "purple-b": "#581c87", "purple-g": "#9362a3", txb: "#1a0612", txh: "#34202b", tx: "#442e3b", txm: "#543e4a", txd: "#614b57", txf: "#68515e", txl: "#6f5764", txg: "#886e7d", panel: "#fffafd", panel2: "#fdeef6", panel3: "#f9e2ee", canvas: "#f6d7e8", mono: "Menlo,Consolas,monospace" } },
+  ...CLAUDE_DEFS,
+  // BLUEPRINT used to be blue-on-blue: acc/info/purple all landed within ~10° of
+  // hue, so a warning and a link were the same colour. The blue drafting ink
+  // stays the accent; the semantics are the annotations that actually go on a
+  // blueprint — red pencil, highlighter amber, approval-stamp green — plus a
+  // cyan and a violet far enough off the ink to be told apart at a glance.
+  { key: "blueprint", name: "BLUEPRINT", feel: "drafting table · pencil annotations", filter: "none", ops: [], sw: "#7fb0ff", bg: "rgba(5,10,22,.55)", pbg: "#061024", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(0deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),repeating-linear-gradient(90deg,rgba(127,176,255,.06) 0 1px,transparent 1px 26px),#06101f", font: "", prad: "0", pal: { acc: "#7fb0ff", "acc-on": "#04101f", "accent-rgb": "127 176 255", ok: "#5fe0a8", warn: "#ffc861", err: "#ff8a7a", "err-hi": "#ffbdb2", "err-b": "#ffd8d0", "err-g": "#a4675c", info: "#63d7f0", "info-hi": "#9ee7f7", "info-b": "#cdf2fb", purple: "#c4a6ff", "purple-d": "#b18eff", "purple-h": "#d7c2ff", "purple-b": "#e8dcff", "purple-g": "#7a68ab", txb: "#e8f0fc", txh: "#cdd9ee", tx: "#b4c4de", txm: "#93a6c4", txd: "#7b8ead", txf: "#6f84a4", txl: "#677da6", txg: "#32405c", panel: "#081226", panel2: "#060e1c", panel3: "#040912", canvas: "#06101f", mono: "'JetBrains Mono',monospace" } },
+  // ---- ported from vvd.world -----------------------------------------------
+  // Four themes from vvd's public theme gallery, picked for long reading: the
+  // two most-applied on the platform (Dusk, 11 applies; Apex, 4 — its most-used
+  // light one) plus its dark-academia and sage-paper looks. Chosen for LOW
+  // chroma and no motion; the platform's loud themes (neon pink, 80% grain)
+  // were skipped on purpose.
+  //
+  // A vvd theme is only (mode, primaryColor, grain, headingFont, bodyFont,
+  // wallpaper) — an accent over a photo, not a token set. So `acc` keeps vvd's
+  // primaryColor HUE and the rest of the palette is derived here: each ink tier
+  // and semantic is placed at a fixed hue and its lightness solved until it hits
+  // this file's documented ratio on that theme's own canvas. Two consequences:
+  //   - The light pair darkens vvd's primary to clear the 4.45:1 floor — a
+  //     mid-tone steel or sage is AA on a photo, not on a paper ground.
+  //   - LIBRARY's #604020 is a GROUND at its own lightness, so its accent is
+  //     that same brown lifted to a gold; the brown became the canvas instead.
+  // vvd's `grain` survives only on the two paper themes, as a ~2% cross-hatch in
+  // `canvas` (the BLUEPRINT grid trick) — at vvd's own strength it would fight
+  // 9px caption text.
+  { key: "dusk", name: "DUSK", feel: "muted slate · vvd's most-applied", filter: "none", ops: [], sw: "#8fb3b0", bg: "rgba(18,24,24,.55)", pbg: "#0e1414", crt: false, swp: false, glw: false, canvas: "#121818", font: "'EB Garamond',Georgia,serif", prad: "6px", pal: { acc: "#8fb3b0", "acc-on": "#0d1414", "accent-rgb": "143 179 176", ok: "#3d965b", warn: "#a18226", err: "#d6614f", "err-hi": "#dd7e6f", "err-b": "#e4988c", "err-g": "#9a6057", info: "#3e8bc2", "info-hi": "#5f9fcd", "info-b": "#7db1d6", purple: "#a470c9", "purple-d": "#9f68c6", "purple-h": "#b287d1", "purple-b": "#c19eda", "purple-g": "#85619e", txb: "#eceff0", txh: "#d6dddd", tx: "#bec9ca", txm: "#a1b1b2", txd: "#8da0a1", txf: "#819698", txl: "#768d8f", txg: "#5d7072", panel: "#1a2323", panel2: "#151d1d", panel3: "#101616", canvas: "#121818", mono: "'JetBrains Mono',monospace" } },
+  { key: "library", name: "THE LIBRARY", feel: "lamplit vellum · vvd dark academia", filter: "none", ops: [], sw: "#cda76a", bg: "rgba(23,18,12,.55)", pbg: "#120e08", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(27deg,rgba(205,167,106,.022) 0 1px,transparent 1px 4px),repeating-linear-gradient(-63deg,rgba(205,167,106,.018) 0 1px,transparent 1px 5px),#17120c", font: "'EB Garamond',Georgia,serif", prad: "3px", pal: { acc: "#cda76a", "acc-on": "#150f08", "accent-rgb": "205 167 106", ok: "#3f9262", warn: "#848727", err: "#d65c50", "err-hi": "#dd796f", "err-b": "#e4938b", "err-g": "#9d5a54", info: "#3e8bb1", "info-hi": "#539ec3", "info-b": "#73b0ce", purple: "#a56bc2", "purple-d": "#a163bf", "purple-h": "#b483cc", "purple-b": "#c29ad6", "purple-g": "#855e99", txb: "#eceae7", txh: "#dcd7d1", tx: "#c9c2b8", txm: "#b2a99c", txd: "#a39787", txf: "#9a8d7c", txl: "#928471", txg: "#736859", panel: "#221a11", panel2: "#1c150e", panel3: "#13100a", canvas: "#17120c", mono: "'JetBrains Mono',monospace" } },
+  { key: "apex", name: "APEX", feel: "steel daylight · vvd sci-fi calm", filter: "none", ops: [], sw: "#39688c", bg: "rgba(198,209,220,.55)", pbg: "#e4e9ee", crt: false, swp: false, glw: false, canvas: "#e4e9ee", font: "'Work Sans',system-ui,-apple-system,sans-serif", prad: "8px", pal: { acc: "#39688c", "acc-on": "#ffffff", "accent-rgb": "57 104 140", ok: "#217149", warn: "#895916", err: "#ba3023", "err-hi": "#9d291e", "err-b": "#822119", "err-g": "#9e6c67", info: "#1a6e71", "info-hi": "#165d5f", "info-b": "#124c4e", purple: "#8d35cd", "purple-d": "#822fbe", "purple-h": "#782cae", "purple-b": "#642491", "purple-g": "#8b6e9f", txb: "#11181f", txh: "#212d3a", tx: "#2b3b4c", txm: "#364b60", txd: "#3f5770", txf: "#445e79", txl: "#496582", txg: "#5b7ea2", panel: "#ffffff", panel2: "#f4f7fa", panel3: "#eaeff4", canvas: "#e4e9ee", mono: "'JetBrains Mono',monospace" } },
+  { key: "gloam", name: "GLOAM", feel: "sage paper · vvd quiet serif", filter: "none", ops: [], sw: "#4e6b3a", bg: "rgba(206,211,196,.55)", pbg: "#e6e8e0", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(27deg,rgba(78,107,58,.02) 0 1px,transparent 1px 4px),repeating-linear-gradient(-63deg,rgba(78,107,58,.016) 0 1px,transparent 1px 5px),#e6e8e0", font: "'Spectral',Georgia,serif", prad: "4px", pal: { acc: "#4e6b3a", "acc-on": "#ffffff", "accent-rgb": "78 107 58", ok: "#25704b", warn: "#805d17", err: "#b73225", "err-hi": "#992a1f", "err-b": "#80231a", "err-g": "#9e6b67", info: "#286795", "info-hi": "#21577e", "info-b": "#1c4868", purple: "#9137be", "purple-d": "#8532ae", "purple-h": "#7a2ea0", "purple-b": "#652684", "purple-g": "#8d6c9d", txb: "#131711", txh: "#262d21", tx: "#323c2b", txm: "#404c37", txd: "#4b5941", txf: "#516046", txl: "#56664a", txg: "#6b805d", panel: "#fbfbf7", panel2: "#f2f3ec", panel3: "#ebece4", canvas: "#e6e8e0", mono: "'JetBrains Mono',monospace" } },
 ];
 
 export const THEMES: ThemeKey[] = THEME_DEFS.map((t) => t.key);
@@ -227,8 +318,12 @@ export function loadSettings(): HudSettings {
     if (raw) {
       const p = JSON.parse(raw) as Partial<HudSettings>;
       return {
-        // Unknown / legacy keys migrate to aqua.
-        theme: THEMES.includes(p.theme as ThemeKey) ? (p.theme as ThemeKey) : "aqua",
+        // Unknown / legacy keys migrate to aqua; CLAUDE's old dark key is now
+        // the only CLAUDE ground, so it lands on the clay default.
+        theme:
+          (p.theme as string) === "claude-dark" ? "claude"
+          : THEMES.includes(p.theme as ThemeKey) ? (p.theme as ThemeKey)
+          : "aqua",
         scanlines: p.scanlines ?? true,
         sweep: p.sweep ?? true,
         glow: p.glow ?? true,

@@ -156,7 +156,7 @@ export function AnalyzeModal(props: Props) {
           a definite height is what lets each tab scroll inside itself instead of
           stretching the modal. */}
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: full ? "96vw" : "min(94vw, max(560px, 50vw))", height: full ? "94vh" : "min(90vh, max(440px, 50vh))", transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px rgba(0,0,0,.75),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ width: full ? "96vw" : "min(94vw, max(560px, 50vw))", height: full ? "94vh" : "min(90vh, max(440px, 50vh))", transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
@@ -168,7 +168,7 @@ export function AnalyzeModal(props: Props) {
               {tag}<span style={{ fontSize: 8, color: "var(--txd)" }}>✎</span>
             </button>
             {tagEditOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 224, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px rgba(0,0,0,.7)", padding: 12, animation: "mslide .16s ease both" }}>
+              <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 224, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", padding: 12, animation: "mslide .16s ease both" }}>
                 <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 7 }}>SHORT TAG</div>
                 <input value={tagDraft} onChange={(e) => setTagDraft(e.target.value)} placeholder="MYST" maxLength={5}
                   style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, letterSpacing: 2, textAlign: "center", padding: 7, textTransform: "uppercase" }} />
@@ -387,7 +387,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
             <span style={{ color: "var(--purple-g)", flex: "none" }}>▾</span>
           </button>
           {menuOpen && (
-            <div style={{ position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
+            <div style={{ position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
               <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
               {branchOpts.map((b) => (
                 <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}

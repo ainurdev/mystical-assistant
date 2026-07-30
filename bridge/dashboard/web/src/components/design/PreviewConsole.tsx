@@ -86,7 +86,7 @@ export function PreviewConsole(p: PreviewConsoleProps) {
 
       <div style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.w, height: collapsed ? "auto" : rect.h,
         zIndex: 66, display: "flex", flexDirection: "column", border: "1px solid var(--border-bright)",
-        background: "color-mix(in srgb, var(--panel2) 96%, transparent)", boxShadow: "0 22px 64px rgba(0,0,0,.55)", animation: "mpop .3s var(--ease-hud) both" }}>
+        background: "color-mix(in srgb, var(--panel2) 96%, transparent)", boxShadow: "0 22px 64px var(--shadow-pop)", animation: "mpop .3s var(--ease-hud) both" }}>
 
         {/* header / drag handle */}
         <div onPointerDown={startMove} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",

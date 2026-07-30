@@ -11,30 +11,17 @@ import {
   ChevronUp,
   ChevronDown,
   SquarePen,
-  MessagesSquare,
-  TerminalSquare,
-  SquareChevronRight,
-  MonitorPlay,
-  MousePointerClick,
   History,
   CircleDot,
-  Brain,
-  GraduationCap,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
 import { FolderNavigator } from "../components/FolderNavigator";
 
-const tabs = [
-  { to: "/", label: "Run", icon: MessagesSquare },
-  { to: "/issues", label: "Issues", icon: CircleDot },
+// Prompt sources, not tabs: each one feeds the composer and returns to "/".
+const pickers = [
   { to: "/history", label: "History", icon: History },
-  { to: "/memory", label: "Memory", icon: Brain },
-  { to: "/server", label: "Server", icon: TerminalSquare },
-  { to: "/shell", label: "Shell", icon: SquareChevronRight },
-  { to: "/preview", label: "Preview", icon: MonitorPlay },
-  { to: "/design", label: "Design", icon: MousePointerClick },
-  { to: "/teacher", label: "Teacher", icon: GraduationCap },
+  { to: "/issues", label: "Issues", icon: CircleDot },
 ] as const;
 
 function HeaderBar({
@@ -89,27 +76,28 @@ function HeaderBar({
             />
           )}
         </button>
-        {pathname === "/" && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            {sessions.length > 0 && (
-              <select
-                value={sessionId ?? ""}
-                onChange={(e) => selectSession(e.target.value)}
-                disabled={isRunning}
-                className="max-w-[38vw] truncate rounded-lg bg-[var(--tg-secondary-bg)] px-2 py-1.5 text-xs outline-none disabled:opacity-40"
-                aria-label="Chat session"
+        <div className="flex shrink-0 items-center gap-1">
+          {pickers.map((picker) => {
+            const active = pathname === picker.to;
+            const Icon = picker.icon;
+            return (
+              <Link
+                key={picker.to}
+                // Tapping the open picker closes it — back to the prompt.
+                to={active ? "/" : picker.to}
+                aria-label={picker.label}
+                aria-current={active ? "page" : undefined}
+                className={`rounded-lg p-2 active:opacity-70 ${
+                  active
+                    ? "bg-[var(--tg-button)] text-[var(--tg-button-text)] shadow-[0_0_16px_var(--brand-glow)]"
+                    : "text-[var(--tg-hint)]"
+                }`}
               >
-                {sessions.map((s) => {
-                  const st = status[s.id]?.state;
-                  return (
-                    <option key={s.id} value={s.id}>
-                      {(st === "awaiting" ? "❓ " : st === "working" ? "● " : st === "live" ? "○ " : "") +
-                        (s.title || "New chat")}
-                    </option>
-                  );
-                })}
-              </select>
-            )}
+                <Icon size={16} aria-hidden />
+              </Link>
+            );
+          })}
+          {pathname === "/" && (
             <button
               onClick={() => void newChat()}
               disabled={isRunning}
@@ -118,30 +106,30 @@ function HeaderBar({
               <SquarePen size={14} aria-hidden />
               New
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      <nav className="mt-2 flex gap-1 rounded-xl bg-[var(--tg-secondary-bg)] p-1">
-        {tabs.map((tab) => {
-          const active = pathname === tab.to;
-          const Icon = tab.icon;
-          return (
-            <Link
-              key={tab.to}
-              to={tab.to}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-center text-sm font-medium active:opacity-70 ${
-                active
-                  ? "bg-[var(--tg-button)] text-[var(--tg-button-text)] shadow-[0_0_16px_var(--brand-glow)]"
-                  : "text-[var(--tg-hint)]"
-              }`}
-            >
-              <Icon size={14} aria-hidden />
-              {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {/* Second row exists only to give chat titles the full width to read in. */}
+      {pathname === "/" && sessions.length > 0 && (
+        <select
+          value={sessionId ?? ""}
+          onChange={(e) => selectSession(e.target.value)}
+          disabled={isRunning}
+          className="mt-2 w-full truncate rounded-lg bg-[var(--tg-secondary-bg)] px-2 py-1.5 text-xs outline-none disabled:opacity-40"
+          aria-label="Chat session"
+        >
+          {sessions.map((s) => {
+            const st = status[s.id]?.state;
+            return (
+              <option key={s.id} value={s.id}>
+                {(st === "awaiting" ? "❓ " : st === "working" ? "● " : st === "live" ? "○ " : "") +
+                  (s.title || "New chat")}
+              </option>
+            );
+          })}
+        </select>
+      )}
     </header>
   );
 }

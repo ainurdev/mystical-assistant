@@ -168,7 +168,7 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
         <div onClick={() => !busy && setOpen(false)}
           style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 78%, transparent)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", animation: "backdropIn .2s ease both" }}>
           <div onClick={(e) => e.stopPropagation()} className="panel"
-            style={{ width: 470, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "rgba(9,13,13,.99)", boxShadow: "0 0 60px rgba(0,0,0,.8)", animation: "mslide .2s ease both" }}>
+            style={{ width: 470, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "rgba(9,13,13,.99)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
               <span style={{ fontSize: 13, color: "var(--txb)", letterSpacing: ".5px" }}>
                 {incoming && local ? "Sync platform" : incoming ? "Update platform" : "Ship your changes"}

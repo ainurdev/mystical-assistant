@@ -66,7 +66,7 @@ export function ManageProjectsModal(props: Props) {
     <div onClick={onClose}
       style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 94, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "9vh", animation: "backdropIn .2s ease both" }}>
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: 580, maxWidth: "94vw", maxHeight: "80vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px rgba(0,0,0,.8)", animation: "mslide .2s ease both" }}>
+        style={{ width: 580, maxWidth: "94vw", maxHeight: "80vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none" }}>
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>MANAGE</span>
           <span style={{ fontSize: 15, color: "var(--txb)", letterSpacing: ".5px" }}>Projects</span>

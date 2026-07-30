@@ -84,6 +84,99 @@ def test_is_limit_error_matches_real_shapes():
         assert not limits.is_limit_error(t), f"should NOT match: {t!r}"
 
 
+def test_is_server_error_matches_real_shapes():
+    yes = [
+        "API Error: 500 {\"type\":\"error\",\"error\":{\"type\":\"api_error\"}}",
+        "API Error: 502 Bad Gateway",
+        "API Error: 529 Overloaded. This is a server-side issue, usually temporary",
+        "API Error: Server error mid-response. The response above may be incomplete.",
+        "Internal server error",
+        "API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited",
+    ]
+    no = [
+        "API Error: 429 usage limit reached — try again later",
+        "You've hit your weekly limit · resets Thu 09:00",
+        "API Error: 401 Invalid authentication credentials",
+        "API Error: 400 Prompt is too long",
+        "claude exited 1",
+        "",
+        None,
+    ]
+    for t in yes:
+        assert limits.is_server_error(t), f"should match: {t!r}"
+    for t in no:
+        assert not limits.is_server_error(t), f"should NOT match: {t!r}"
+
+
+def test_defer_server_walks_the_backoff_ladder():
+    """First retry is instant, then 1/5/10/15/30 min; a 7th gives up, and a
+    completed turn (note_ok) starts the next episode back at instant."""
+    _reset_limits()
+    run = _Rec()
+    saved = config.ALLOWED_CHAT_IDS
+    config.ALLOWED_CHAT_IDS = {CHAT}
+    try:
+        for i, wait in enumerate(limits.SERVER_BACKOFF, start=1):
+            d = limits.defer_server("s-b", CHAT, "/tmp/b", model="opus")
+            assert d is not None, f"attempt {i} should be allowed"
+            when, attempt = d
+            assert attempt == i
+            assert abs(when - (time.time() + wait)) < 5, f"attempt {i} wait"
+            assert limits._pending["s-b"]["kind"] == "server"
+            limits._pending["s-b"]["at"] = time.time()   # skip the real wait
+            limits._fire(run=run, notify=_Rec())         # resume → 500 again → re-defer
+        assert len(run.calls) == len(limits.SERVER_BACKOFF)
+        assert limits.defer_server("s-b", CHAT, "/tmp/b") is None   # ladder exhausted
+        limits.note_ok("s-b")                            # a completed turn ends the episode
+        assert limits.defer_server("s-b", CHAT, "/tmp/b")[1] == 1
+    finally:
+        config.ALLOWED_CHAT_IDS = saved
+        _reset_limits()
+
+
+def test_fire_resumes_only_due_entries_and_rearms():
+    """A session still inside its backoff wait is left parked, and the timer is
+    re-armed for it — one late 500 can't drag another session's retry forward."""
+    _reset_limits()
+    restore = _usage(percent=100, resets_at=time.time() - 10)   # limit already reset
+    saved = config.ALLOWED_CHAT_IDS
+    config.ALLOWED_CHAT_IDS = {CHAT}
+    try:
+        limits.defer_server("s-now", CHAT, None)                # attempt 1 → instant
+        limits._last_tries["s-late"] = 1
+        limits.defer_server("s-late", CHAT, None)               # attempt 2 → +60s
+        run, notify = _Rec(), _Rec()
+        limits._fire(run=run, notify=notify)
+        assert [kw["session_id"] for _a, kw in run.calls] == ["s-now"]
+        assert run.calls[0][0][1] == limits.SERVER_NUDGE        # server nudge, not limit
+        assert notify.calls == []                               # announced at defer time
+        assert list(limits._pending) == ["s-late"]
+        assert limits._timer is not None
+        assert abs(limits._fire_at - limits._pending["s-late"]["at"]) < 1
+    finally:
+        config.ALLOWED_CHAT_IDS = saved
+        restore()
+        _reset_limits()
+
+
+def test_boot_keeps_backoff_due_time():
+    _reset_limits()
+    import json
+    due = time.time() + 900
+    with open(limits._path(), "w") as f:
+        json.dump({"s-b6": {"chat_id": CHAT, "cwd": None, "model": None,
+                            "effort": None, "tries": 4, "since": time.time(),
+                            "at": due, "kind": "server"}}, f)
+    restore = _usage(percent=42, resets_at=None)
+    try:
+        limits.boot()
+        assert abs(limits._pending["s-b6"]["at"] - due) < 1     # not pulled forward
+        assert abs(limits._fire_at - due) < 1
+    finally:
+        restore()
+        _reset_limits()
+
+
 def test_defer_uses_reset_time_and_persists():
     _reset_limits()
     restore = _usage(percent=100, resets_at=time.time() + 3600)
@@ -157,6 +250,46 @@ def test_redefer_counts_tries_and_gives_up():
         assert limits.defer("s-4", CHAT, None)[1] is True
     finally:
         config.ALLOWED_CHAT_IDS = saved
+        restore()
+        _reset_limits()
+
+
+def test_fire_resumes_dashboard_session_without_telegram():
+    """A dashboard-only install has no ALLOWED_CHAT_IDS, so its sessions are owned
+    by DASH_CHAT_ID (0 by default). _fire pops entries before the owner check, so
+    gating on ALLOWED_CHAT_IDS alone didn't skip them — it silently DISCARDED
+    them, and the headline resume-at-reset feature never fired at all."""
+    _reset_limits()
+    restore = _usage(percent=100, resets_at=time.time() + 3600)
+    saved_allowed, saved_dash = config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID
+    config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID = set(), 0
+    try:
+        limits.defer("s-dash", config.DASH_CHAT_ID, "/tmp/rez", model="opus")
+        run, notify = _Rec(), _Rec()
+        limits._fire(run=run, notify=notify)
+        assert len(run.calls) == 1, "dashboard session was dropped, not resumed"
+        assert run.calls[0][0][0] == config.DASH_CHAT_ID
+        assert limits._pending == {}
+    finally:
+        config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID = saved_allowed, saved_dash
+        restore()
+        _reset_limits()
+
+
+def test_fire_still_skips_unauthorized_owner():
+    """The gate has to keep doing its job: a chat id that is neither an allowed
+    Telegram user nor the dashboard owner must not have turns resumed for it."""
+    _reset_limits()
+    restore = _usage(percent=100, resets_at=time.time() + 3600)
+    saved_allowed, saved_dash = config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID
+    config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID = {CHAT}, CHAT
+    try:
+        limits.defer("s-evil", 999999, None)
+        run = _Rec()
+        limits._fire(run=run, notify=_Rec())
+        assert run.calls == []
+    finally:
+        config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID = saved_allowed, saved_dash
         restore()
         _reset_limits()
 
@@ -241,6 +374,51 @@ def test_runner_stderr_limit_death_also_defers():
         assert len(deferred) == 1
     finally:
         limits.defer, runner._notify = saved_defer, saved_notify
+        config.AUTO_RESUME = saved_auto
+
+
+def test_runner_backs_off_server_error_turn():
+    """A 500-killed turn goes on the backoff ladder, not the instant crash-resume."""
+    s = store.create_session(CHAT, "srv", cwd="/tmp/srv")
+    store.set_claude_session_id(s["id"], "c-srv")
+    job = runner.Job("j-srv", CHAT, s["id"])
+    job.status = "error"
+    job.result = "API Error: 500 {\"type\":\"error\",\"error\":{\"type\":\"api_error\"}}"
+
+    deferred, notes = [], []
+    saved_defer, saved_notify = limits.defer_server, runner._notify
+    saved_auto = config.AUTO_RESUME
+    limits.defer_server = lambda *a, **kw: (deferred.append((a, kw))
+                                            or (time.time() + 300, 3))
+    runner._notify = lambda chat, text: notes.append(text)
+    config.AUTO_RESUME = True
+    try:
+        assert runner._maybe_auto_resume(job, "/tmp/srv", "opus", None) is True
+        assert deferred == [((s["id"], CHAT, "/tmp/srv", "opus", None), {})]
+        assert len(notes) == 1 and "in 5 min" in notes[0] and "attempt 3/6" in notes[0]
+        assert runner._resume_fails.get(s["id"]) is None   # crash cap untouched
+    finally:
+        limits.defer_server, runner._notify = saved_defer, saved_notify
+        config.AUTO_RESUME = saved_auto
+
+
+def test_runner_gives_up_after_backoff_ladder():
+    """Ladder exhausted → no resume, so the caller reports the error normally."""
+    s = store.create_session(CHAT, "srv2", cwd="/tmp/srv2")
+    store.set_claude_session_id(s["id"], "c-srv2")
+    job = runner.Job("j-srv2", CHAT, s["id"])
+    job.status = "error"
+    job.error_msg = "API Error: 529 Overloaded"
+
+    saved_defer, saved_notify = limits.defer_server, runner._notify
+    saved_auto = config.AUTO_RESUME
+    limits.defer_server = lambda *a, **kw: None
+    runner._notify = lambda chat, text: None
+    config.AUTO_RESUME = True
+    try:
+        assert runner._maybe_auto_resume(job, "/tmp/srv2", None, None) is False
+    finally:
+        limits.defer_server, runner._notify = saved_defer, saved_notify
         config.AUTO_RESUME = saved_auto
 
 

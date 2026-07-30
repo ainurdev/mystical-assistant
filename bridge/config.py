@@ -59,9 +59,10 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
 
 # Auto-resume: only the user may stop a turn. A restart leaves the in-flight turn
-# 'running' and the next boot resumes it (bridge/recovery.py); a Claude crash while
-# the bridge stays up is resumed immediately (runner._maybe_auto_resume, capped per
-# session so a crash-looping resume can't burn tokens forever).
+# 'running' and the next boot resumes it (bridge/recovery.py); a Claude crash — or a
+# RUN_TIMEOUT kill — while the bridge stays up is resumed immediately
+# (runner._maybe_auto_resume, capped per session so a session that keeps dying or
+# keeps timing out can't burn tokens forever).
 AUTO_RESUME = os.environ.get("AUTO_RESUME", "1").lower() not in ("0", "false", "no", "")
 
 # --- Project memory ----------------------------------------------------------
@@ -128,6 +129,9 @@ RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")
+# A finished run's screenshots stay on disk so the transcript can still show them
+# (dashboard GET /local/attachment); each run's end prunes dirs older than this.
+UPLOAD_KEEP_DAYS = int(os.environ.get("UPLOAD_KEEP_DAYS", "7"))
 
 # --- Session store -----------------------------------------------------------
 # SQLite source of truth for conversations (sessions/turns/events). Lives in
@@ -149,3 +153,16 @@ _dash_token = os.environ.get("DASH_TOKEN")
 DASH_TOKEN = secrets.token_urlsafe(24) if _dash_token is None else _dash_token
 DASH_CHAT_ID = int(os.environ.get("DASH_CHAT_ID", "0")) or (
     min(ALLOWED_CHAT_IDS) if ALLOWED_CHAT_IDS else 0)
+
+
+def is_owner(chat_id) -> bool:
+    """May turns be auto-resumed on this chat id's behalf?
+
+    ALLOWED_CHAT_IDS is the Telegram trust boundary, but the dashboard's sessions
+    are owned by DASH_CHAT_ID — which is 0 on a Telegram-free install and so fails
+    that set check. Resume paths must use this instead of the raw set, or a
+    dashboard-only install silently never resumes anything (see limits._fire,
+    which pops entries before checking, i.e. drops rather than defers them).
+    """
+    return chat_id in ALLOWED_CHAT_IDS or (
+        DASH_ENABLE and chat_id is not None and chat_id == DASH_CHAT_ID)

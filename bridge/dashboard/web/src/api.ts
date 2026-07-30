@@ -140,6 +140,7 @@ export interface ProjectsListing {
   can_up: boolean;
   dirs: string[];
   projects?: string[]; // git repos under BASE_PATH, org-folder nesting included
+  hidden?: string[]; // rels the bridge remembers as HIDDEN (project_config.json)
 }
 
 export interface GitFile {
@@ -578,6 +579,10 @@ export const api = {
     ),
   transcript: (id: string, cursor: number) =>
     req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+  // A rehydrated turn's attachments are server paths, not blobs — load them back
+  // through the upload dir so the transcript can render (and zoom) them.
+  attachmentUrl: (path: string) =>
+    `/local/attachment?path=${encodeURIComponent(path)}`,
   createSession: (project: string, cwd?: string, title?: string) =>
     req<{ session: SessionBrief }>("/local/sessions", {
       method: "POST",
@@ -718,8 +723,8 @@ export const api = {
     }),
   projectSettings: (ctx: PreviewCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
-  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string; memory_mode?: string }) =>
-    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; memory_mode?: string }>("/local/project/settings", {
+  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string; memory_mode?: string; hidden?: boolean }) =>
+    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; memory_mode?: string; hidden?: boolean }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
     }),

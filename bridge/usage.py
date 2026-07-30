@@ -4,8 +4,12 @@ Reads the local OAuth access token from ~/.claude/.credentials.json, calls the
 account usage endpoint, and returns only computed percentages / reset times /
 severities. The token never leaves this process and is never returned to a
 client. Results are cached for CACHE_TTL seconds so polling clients can't hammer
-the upstream. On a missing/expired token or any upstream failure the result is
-just {"available": False}. Stdlib only.
+the upstream.
+
+The endpoint rate-limits (429) readily — the Claude CLI polls it too — so a
+failed fetch serves the last good payload for up to STALE_MAX rather than
+blanking the clients' meters. {"available": False} means we have nothing at all:
+no token, or no successful call recent enough to still be true. Stdlib only.
 """
 
 import json
@@ -18,9 +22,11 @@ import urllib.request
 CREDENTIALS_FILE = os.path.expanduser("~/.claude/.credentials.json")
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 CACHE_TTL = 60.0
+RETRY_TTL = 15.0    # fetch failed and there's nothing to show: probe again sooner
+STALE_MAX = 900.0   # how long a last-good payload may stand in for a live one
 
 _lock = threading.Lock()
-_cache: dict = {"ts": 0.0, "data": None}
+_cache: dict = {"ts": 0.0, "data": None, "next_try": 0.0}   # last *successful* fetch
 
 
 def _token() -> str | None:
@@ -77,18 +83,28 @@ def _normalize(payload: dict) -> dict:
     }
 
 
+def _last_good(data: "dict | None", age: float) -> dict:
+    """The previous payload, while it's recent enough to still be true."""
+    return data if data is not None and age < STALE_MAX else {"available": False}
+
+
 def get_usage() -> dict:
     now = time.time()
     with _lock:
-        if _cache["data"] is not None and now - _cache["ts"] < CACHE_TTL:
-            return _cache["data"]
+        data, ts, next_try = _cache["data"], _cache["ts"], _cache["next_try"]
+    if data is not None and now - ts < CACHE_TTL:
+        return data
+    if now < next_try:                      # fetched recently and it failed
+        return _last_good(data, now - ts)
     token = _token()
-    data: dict = {"available": False}
-    if token:
-        payload = _fetch(token)
-        if isinstance(payload, dict):
-            data = _normalize(payload)
+    payload = _fetch(token) if token else None
+    if isinstance(payload, dict):
+        fresh = _normalize(payload)
+        with _lock:
+            _cache.update(ts=now, data=fresh, next_try=0.0)
+        return fresh
     with _lock:
-        _cache["ts"] = now
-        _cache["data"] = data
-    return data
+        # A value still on screen buys a full cycle before we try again; an
+        # empty meter is worth retrying sooner.
+        _cache["next_try"] = now + (CACHE_TTL if data is not None else RETRY_TTL)
+    return _last_good(data, now - ts)

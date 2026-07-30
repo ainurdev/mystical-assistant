@@ -7,6 +7,7 @@ import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { MemoryView } from "../MemoryView";
 import { ViewTabs, type View } from "./ViewTabs";
+import { Checkpoints } from "./Checkpoints";
 import { SuggestionChips } from "./SuggestionChips";
 
 const FRESH_QUOTES = [
@@ -136,7 +137,7 @@ function ChannelTuning() {
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   onReviewResolve,
-  scrollRef, contentRef, composer, onOpenFromHistory, liveTurns, trailingWorking,
+  scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, liveTurns, trailingWorking,
   loading, sessionId, onSuggestPick, hud,
 }: {
   view: View;
@@ -152,6 +153,8 @@ export function Terminal({
   onReviewResolve?: (itemId: string, action: "keep" | "skip") => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
+  atBottom: boolean;
+  onJumpBottom: () => void;
   composer: ReactNode;
   onOpenFromHistory: (s: EnrichedSession) => void;
   liveTurns?: Set<string>;
@@ -243,6 +246,7 @@ export function Terminal({
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
+          {view === "chat" && <Checkpoints turns={turns} />}
           <span style={{ fontSize: 9, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
           </span>
@@ -261,26 +265,47 @@ export function Terminal({
         </div>
       ) : (
         <>
-          <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
-            {lastPrompt && !empty && peek && (
-              <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -18px 13px", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
-                <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
-                <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: 12 }}>~ ❯</span>
-                <span style={{ color: "var(--txh)", fontSize: 12, lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
-              </div>
-            )}
-            <div ref={contentRef} style={{ padding: "16px 0" }}>
-              {empty && loading ? (
-                <ChannelTuning />
-              ) : empty ? (
-                <>
-                  <FreshState project={sessionProject} />
-                  <SuggestionChips project={sessionProject} onPick={onSuggestPick} />
-                </>
-              ) : (
-                <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} />
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
+              {lastPrompt && !empty && peek && (
+                <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -18px 13px", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
+                  <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
+                  <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: 12 }}>~ ❯</span>
+                  <span style={{ color: "var(--txh)", fontSize: 12, lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
+                </div>
               )}
+              <div ref={contentRef} style={{ padding: "16px 0" }}>
+                {empty && loading ? (
+                  <ChannelTuning />
+                ) : empty ? (
+                  <>
+                    <FreshState project={sessionProject} />
+                    <SuggestionChips project={sessionProject} onPick={onSuggestPick} />
+                  </>
+                ) : (
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} />
+                )}
+              </div>
             </div>
+            {/* Scrolled off the tail — the way back down. Hidden while parked at
+                the bottom, where new output already follows on its own. */}
+            {!atBottom && !empty && (
+              <button
+                type="button" onClick={onJumpBottom} title="jump to latest"
+                style={{
+                  position: "absolute", right: 20, bottom: 14, zIndex: 6,
+                  display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+                  padding: "5px 10px", fontFamily: "'JetBrains Mono',monospace",
+                  fontSize: 9, letterSpacing: 1.5, color: "var(--acc)",
+                  background: "color-mix(in srgb, var(--panel2) 92%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--acc) 34%, transparent)",
+                  boxShadow: "0 6px 20px rgba(0,0,0,.45), 0 0 14px color-mix(in srgb, var(--acc) 14%, transparent)",
+                  backdropFilter: "blur(6px)", animation: "mfadeup .25s ease both",
+                }}
+              >
+                <span style={{ fontSize: 11, lineHeight: 1 }}>↓</span>LATEST
+              </button>
+            )}
           </div>
           {composer}
         </>

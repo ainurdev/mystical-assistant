@@ -59,6 +59,22 @@ def _recover(run, *, notify=None):
         config.ALLOWED_CHAT_IDS = saved
 
 
+def test_recover_resumes_dashboard_session_without_telegram():
+    """Telegram-free install: ALLOWED_CHAT_IDS is empty and the dashboard's sessions
+    are owned by DASH_CHAT_ID, so gating on the set alone skipped every one of them
+    and a restart lost the in-flight turn for good."""
+    saved_allowed, saved_dash = config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID
+    config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID = set(), 0
+    try:
+        sid = _orphan("dash-only", claude_sid="c-dash", chat=0)
+        run = _Rec()
+        recovery.recover(run=run, notify=_Rec())
+        mine = [c for c in run.calls if c["session_id"] == sid]
+        assert len(mine) == 1 and mine[0]["chat_id"] == 0
+    finally:
+        config.ALLOWED_CHAT_IDS, config.DASH_CHAT_ID = saved_allowed, saved_dash
+
+
 def test_claim_orphaned_turns_flips_and_returns():
     sid = _orphan("clp", claude_sid="c-1", model="opus")
     rows = store.claim_orphaned_turns()

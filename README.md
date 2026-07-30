@@ -31,7 +31,7 @@ browser is just a remote control; the work happens on your machine, in your repo
 | Surface | How you reach it | What it's for |
 |---|---|---|
 | **Telegram bot** | DM your bot | Quick plain-text prompts, `/projects`, `/server`, `/preview`, `/logs` |
-| **Telegram Mini App** | bot menu → 🛠 Open Panel | Full chat: prompts + screenshots, model/effort/permission pickers, live stream, dev-server controls, preview link, per-repo history |
+| **Telegram Mini App** | bot menu → 🛠 Open Panel | Prompting from your phone: prompts + screenshots, model/effort/permission pickers, live stream, answer cards, plus session history and GitHub issues as prompt sources |
 | **Desktop dashboard** | `http://127.0.0.1:8790/?token=…` (localhost only, never exposed) | A full-parity Claude client: project-grouped session sidebar, chat + cards, dual live logs, usage |
 | **Native Claude Code** (VS Code / terminal) | the `claude` you already run | Discovered automatically and made resumable from the surfaces above |
 
@@ -155,9 +155,9 @@ mystical run        run in the foreground (Ctrl-C to quit)
   view; set `MEMORY_ENABLE=0` to disable.
 - **Teacher mode + review log.** After a turn that edits code, a cheap Haiku pass
   proposes 1–2 concepts to review as **Keep/Skip** cards on any surface. Kept items
-  live in a Teacher view (Mini App `/teacher` tab, dashboard **TEACHER** tab in the
-  project analyze modal) with on-demand Explain, Explain-back (graded), Quiz, and
-  Exercise. Set `LEARNING_ENABLE=0` to disable.
+  live in a Teacher view (dashboard **TEACHER** tab in the project analyze modal)
+  with on-demand Explain, Explain-back (graded), Quiz, and Exercise. Set
+  `LEARNING_ENABLE=0` to disable.
 - **One shared design system.** The dashboard and Mini App share the "Mystic"
   violet theme, tokens, and components.
 
@@ -199,7 +199,8 @@ machine. With `--dangerously-skip-permissions` that is arbitrary command executi
   tunnel; unauthenticated requests get 401 (signed `initData` required).
 - The dashboard binds `127.0.0.1` and is **never exposed publicly**; it is gated by
   a Host allow-list (anti DNS-rebinding) and `DASH_TOKEN` (anti-CSRF).
-- `RUN_TIMEOUT` caps runaway Claude runs.
+- `RUN_TIMEOUT` caps a single Claude run; the session auto-resumes afterwards, so
+  the brake on a runaway is the resume cap (5 consecutive dead turns), not the clock.
 
 See the SECURITY section at the bottom of `claude_telegram_bridge.py` before
 exposing this.

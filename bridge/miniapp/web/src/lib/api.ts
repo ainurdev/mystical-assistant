@@ -125,18 +125,6 @@ export type RunEvent =
   | { type: "review_candidate"; item_id: string; title: string; why_it_matters: string; snippet: string }
   | { type: "review_resolved"; item_id: string; action: "kept" | "skipped" };
 
-export type LearningItem = {
-  id: string;
-  project_path: string;
-  title: string;
-  code_snippet: string;
-  why_it_matters: string;
-  status: string;
-  mastery: number;
-  times_reviewed: number;
-  notes: string;
-};
-
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 export type PermissionMode =
@@ -170,19 +158,6 @@ export interface RespondBody {
   behavior?: "allow" | "deny";
   answers?: AnswerSelection[];
   cursor?: number;
-}
-
-export interface ServerActionResponse {
-  server: ServerInfo;
-}
-
-export interface LogsResponse {
-  lines: string[];
-}
-
-export interface PreviewActionResponse {
-  preview: PreviewInfo;
-  message: string;
 }
 
 // Machine-wide running sessions (external clients) + this chat's live bridge runs.
@@ -296,14 +271,6 @@ export interface IssuesInfo {
   open_count: number;
   closed_count: number;
   issues: Issue[];
-}
-
-// Per-project run settings: package.json scripts + the persisted run command.
-export interface ProjectSettings {
-  scripts: Record<string, string>;
-  run_cmd: string | null;
-  default_cmd: string;
-  log_path: string;
 }
 
 // Claude usage — only computed percentages / reset times (no token, ever).
@@ -442,14 +409,6 @@ export const api = {
 
   getIssues: () => request<IssuesInfo>("/api/github/issues"),
 
-  getProjectSettings: () => request<ProjectSettings>("/api/project/settings"),
-
-  setProjectSettings: (run_cmd: string) =>
-    request<{ ok: boolean; run_cmd: string | null }>("/api/project/settings", {
-      method: "POST",
-      body: { run_cmd },
-    }),
-
   getHistory: (archived = false) =>
     request<{ sessions: EnrichedSession[] }>(
       `/api/history${archived ? "?archived=1" : ""}`,
@@ -492,35 +451,6 @@ export const api = {
       body,
     }),
 
-  server: (action: "start" | "stop", cmd?: string) =>
-    request<ServerActionResponse>("/api/server", {
-      method: "POST",
-      body: { action, cmd },
-    }),
-
-  logs: (n: number) => request<LogsResponse>(`/api/logs?n=${n}`),
-
-  getShell: (cursor: number) => request<ShellSnapshot>(`/api/shell?cursor=${cursor}`),
-  runShell: (command: string) =>
-    request<{ ok: boolean; error?: string }>("/api/shell", {
-      method: "POST",
-      body: { command },
-    }),
-  killShell: () =>
-    request<{ ok: boolean; error?: string }>("/api/shell/kill", {
-      method: "POST",
-      body: {},
-    }),
-
-  preview: (action: "start" | "stop", port?: number) =>
-    request<PreviewActionResponse>("/api/preview", {
-      method: "POST",
-      body: { action, port },
-    }),
-
-  screenshot: (width: number) =>
-    request<{ data_url: string }>("/api/preview/screenshot", { method: "POST", body: { width } }),
-
   agents: (sessionId: string) =>
     request<AgentsInfo>(`/api/agents?session=${encodeURIComponent(sessionId)}`),
   agentActivity: (sessionId: string, agentId: string, cursor: number) =>
@@ -529,11 +459,6 @@ export const api = {
         `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
     ),
 
-  memoryItems: (project?: string, status = "active") =>
-    request<{ items: Memory[] }>(
-      `/api/memory/items?status=${encodeURIComponent(status)}` +
-        (project ? `&project=${encodeURIComponent(project)}` : ""),
-    ),
   memoryCandidate: (itemId: string, action: "keep" | "skip") =>
     request<{ item: Memory | null }>("/api/memory/candidate", {
       method: "POST",
@@ -544,40 +469,9 @@ export const api = {
       method: "POST",
       body: { item_id: itemId, title, body },
     }),
-  memoryStatus: (itemId: string, status: "active" | "archived") =>
-    request<{ item: Memory }>("/api/memory/status", {
-      method: "POST",
-      body: { item_id: itemId, status },
-    }),
-  memoryPin: (itemId: string, pinned: boolean) =>
-    request<{ item: Memory }>("/api/memory/pin", {
-      method: "POST",
-      body: { item_id: itemId, pinned },
-    }),
-  learningItems: (project?: string) =>
-    request<{ items: LearningItem[] }>(
-      `/api/learning/items${project ? `?project=${encodeURIComponent(project)}` : ""}`,
-    ),
-
   learningItem: (itemId: string, action: "keep" | "skip" | "archive" | "reviewed") =>
     request<{ ok: true }>("/api/learning/item", {
       method: "POST",
       body: { item_id: itemId, action },
     }),
-
-  learningTeach: (body: {
-    item_id: string;
-    mode: "explain" | "quiz" | "exercise" | "grade";
-    user_answer?: string;
-  }) => request<{ text: string }>("/api/learning/teach", { method: "POST", body }),
 };
-
-export interface ShellSnapshot {
-  status: "idle" | "running" | "done" | "error" | "killed";
-  cmd: string | null;
-  running: boolean;
-  dir: string | null;
-  code: number | null;
-  lines: { seq: number; line: string }[];
-  cursor: number;
-}

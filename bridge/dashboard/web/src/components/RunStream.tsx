@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { TriangleAlert, CircleStop } from "lucide-react";
 import type { AnswerSelection, RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
+import { SteerIcon } from "./Composer";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { MemoryCandidateCard } from "./MemoryCandidateCard";
 import { ReviewCandidateCard } from "./ReviewCandidateCard";
+import { ckId } from "./hud/Checkpoints";
 
 // Result blocks already "printed" this session — guards against re-typing when a
 // session is reopened or the transcript re-renders.
@@ -101,7 +103,9 @@ type RespondFn = (
   opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
 ) => void;
 
-export function RunStream({
+// Memoized: a long session's past turns keep the same `events`/`pending` arrays
+// across polls (see mergeDelta), so only the live turn re-renders.
+export const RunStream = memo(function RunStream({
   events,
   pending = [],
   onRespond,
@@ -164,8 +168,9 @@ export function RunStream({
             // Sent into this turn while it was already running — shown so the
             // transcript explains why the agent changed course mid-task.
             return (
-              <div key={i} className="my-1.5 ml-[18px] border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[12px] leading-relaxed text-[var(--violet)]">
-                ⚡ {event.text}
+              <div key={i} className="my-1.5 ml-[18px] flex items-start gap-2 border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[12px] leading-relaxed text-[var(--violet)]">
+                <span className="mt-0.5"><SteerIcon size={12} /></span>
+                <span>{event.text}</span>
               </div>
             );
           case "result":
@@ -218,13 +223,14 @@ export function RunStream({
             return null;
           case "question":
             return (
-              <QuestionCard
-                key={i}
-                questions={event.questions}
-                active={!!onRespond && pendingIds.has(event.request_id)}
-                answered={qAnswered.get(event.request_id)}
-                onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
-              />
+              <div key={i} id={ckId(turnId, event.request_id)} className="scroll-mt-2">
+                <QuestionCard
+                  questions={event.questions}
+                  active={!!onRespond && pendingIds.has(event.request_id)}
+                  answered={qAnswered.get(event.request_id)}
+                  onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
+                />
+              </div>
             );
           case "stopped":
             return (
@@ -258,4 +264,4 @@ export function RunStream({
       })}
     </div>
   );
-}
+});

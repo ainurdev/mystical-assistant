@@ -1129,9 +1129,9 @@ def test_midrun_crash_auto_resumes_capped(monkeypatch):
         job.status = "error"
         return runner._maybe_auto_resume(job, "/tmp", None, None)
 
-    assert crashed_turn() and crashed_turn()      # consecutive crashes resume…
+    assert all(crashed_turn() for _ in range(runner.AUTO_RESUME_MAX))  # crashes resume…
     assert not crashed_turn()                     # …until AUTO_RESUME_MAX gives up
-    assert len(started) == 2
+    assert len(started) == runner.AUTO_RESUME_MAX
     assert started[0][0][1] == runner.RESUME_NUDGE
     ok = runner.Job("jok", 555, s["id"])          # a healthy turn resets the cap
     ok.status = "done"
@@ -1139,7 +1139,33 @@ def test_midrun_crash_auto_resumes_capped(monkeypatch):
     assert crashed_turn()
 
 
-def test_midrun_no_resume_for_user_stop_timeout_or_shutdown(monkeypatch):
+def test_timeout_auto_resumes_capped(monkeypatch):
+    s = store.create_session(555, "p-timeout")
+    store.set_claude_session_id(s["id"], "csid-timeout")
+    started, notes = [], []
+    monkeypatch.setattr(runner, "start_streaming_job",
+                        lambda *a, **kw: (started.append((a, kw)), object())[1])
+    monkeypatch.setattr(runner, "_notify", lambda cid, m: notes.append(m))
+
+    def timed_out_turn():
+        job = runner.Job(f"jt{len(started)}", 555, s["id"])
+        job.status, job.timed_out = "error", True
+        job.error_msg = f"⏱️ Timed out after {config.RUN_TIMEOUT // 60} min."
+        return runner._maybe_auto_resume(job, "/tmp", None, None)
+
+    # the watchdog no longer ends the task…
+    assert all(timed_out_turn() for _ in range(runner.AUTO_RESUME_MAX))
+    assert not timed_out_turn()   # …but a turn that only ever times out eventually stops
+    assert len(started) == runner.AUTO_RESUME_MAX
+    assert started[0][0][1] == runner.TIMEOUT_NUDGE  # distinct from the crash nudge
+    assert "cap" in notes[0]
+    ok = runner.Job("jtok", 555, s["id"])          # a turn that finishes resets the cap
+    ok.status = "done"
+    runner._maybe_auto_resume(ok, "/tmp", None, None)
+    assert timed_out_turn()
+
+
+def test_midrun_no_resume_for_user_stop_or_shutdown(monkeypatch):
     from bridge import state
     s = store.create_session(555, "p-noresume")
     store.set_claude_session_id(s["id"], "csid-noresume")
@@ -1152,9 +1178,9 @@ def test_midrun_no_resume_for_user_stop_timeout_or_shutdown(monkeypatch):
     job.status, job.interrupted = "error", True
     assert not runner._maybe_auto_resume(job, "/tmp", None, None)   # user Stop
     job.interrupted, job.timed_out = False, True
-    assert not runner._maybe_auto_resume(job, "/tmp", None, None)   # watchdog
-    job.timed_out = False
     monkeypatch.setattr(state, "shutting_down", True)
+    assert not runner._maybe_auto_resume(job, "/tmp", None, None)   # timed out mid-restart
+    job.timed_out = False
     assert not runner._maybe_auto_resume(job, "/tmp", None, None)   # restarting
     monkeypatch.setattr(state, "shutting_down", False)
     fresh = store.create_session(555, "p-noinit")                   # never got an init event

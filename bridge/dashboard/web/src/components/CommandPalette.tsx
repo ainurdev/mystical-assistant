@@ -74,7 +74,7 @@ export function CommandPalette({
       <div
         onClick={(e) => e.stopPropagation()}
         className="panel"
-        style={{ width: 560, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 97%, transparent)", boxShadow: "0 0 60px rgba(0,0,0,.7),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
+        style={{ width: 560, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 97%, transparent)", boxShadow: "0 0 60px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
           <span style={{ color: "var(--acc)" }}>~ ❯</span>

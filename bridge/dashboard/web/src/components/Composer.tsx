@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { ChevronRight, ChevronsRight, Merge, Paperclip, Square } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId } from "../api";
 import { ago } from "../lib/surfaces";
+import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -33,7 +35,7 @@ const COMPACT_SUGGEST_TOKENS = 100_000;
 const CONTEXT_MAX_TOKENS = 200_000;
 
 function Drop<T extends string>({
-  label, value, options, open, onToggle, onPick, minWidth = 78,
+  label, value, options, open, onToggle, onPick, minWidth = 78, showLabel = true,
 }: {
   label: string;
   value: T;
@@ -42,6 +44,7 @@ function Drop<T extends string>({
   onToggle: () => void;
   onPick: (id: T) => void;
   minWidth?: number;
+  showLabel?: boolean; // off when the cluster tag already names the field
 }) {
   const cur = options.find((o) => o.id === value) ?? options[0];
   const btn: CSSProperties = {
@@ -52,8 +55,10 @@ function Drop<T extends string>({
   };
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{label}</span>
-      <button onClick={onToggle} style={btn}>
+      {showLabel && (
+        <span className="ctrl-label" style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{label}</span>
+      )}
+      <button onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
         {cur.label}
         <span style={{ color: "var(--txd)", fontSize: 8 }}>▾</span>
       </button>
@@ -62,7 +67,7 @@ function Drop<T extends string>({
           style={{
             position: "absolute", bottom: "calc(100% + 5px)", left: 0, minWidth: 132,
             zIndex: 30, border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
-            boxShadow: "0 -8px 26px rgba(0,0,0,.65)", animation: "mpop .12s ease",
+            boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
           }}
         >
           {options.map((o) => {
@@ -96,13 +101,36 @@ function fmtTokens(n: number): string {
   return `${n}`;
 }
 
+// Shared look for the small action chips (REVIEW / AUDIT / MAP, and COMPACT on the context line).
+const chip: CSSProperties = {
+  appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
+  background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9,
+  letterSpacing: 1, padding: "3px 8px",
+};
+
+// Shared look for the command-line action buttons (STOP / STEER / QUEUE / SEND).
+const actBtn: CSSProperties = {
+  appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 11, letterSpacing: 2,
+  padding: "6px 14px", flex: "none", display: "inline-flex", alignItems: "center", gap: 6,
+};
+
+// Steering folds text into the turn already in flight. Merge rotated a quarter
+// turn: two strands come in from the left and leave as one, pointing forward.
+export function SteerIcon({ size = 13 }: { size?: number }) {
+  return <Merge size={size} strokeWidth={1.8} style={{ transform: "rotate(90deg)", flex: "none" }} aria-hidden />;
+}
+
 export function Composer({
   disabled, running, model, models, effort, perm, onPerm, ponytail, onPonytail, injectedText, injectNonce, sessionId,
-  contextTokens, resetLabel, onModel, onEffort, onSend, onSteer, onStop, onCompact,
+  draft, onDraft, contextTokens, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, project, onOpenMap,
 }: {
   disabled: boolean;
   running: boolean;
+  // What you've typed, owned by the session it's for — switching sessions swaps
+  // the text rather than carrying it into the next one.
+  draft: string;
+  onDraft: (text: string) => void;
   project?: string | null;
   onOpenMap?: () => void;
   model: ModelId;
@@ -116,7 +144,6 @@ export function Composer({
   injectNonce?: number;
   sessionId?: string | null;
   contextTokens?: number;
-  resetLabel?: string;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
   onSend: (text: string, images: string[]) => void;
@@ -126,8 +153,10 @@ export function Composer({
   queued?: { id: string; text: string }[];
   onCancelQueued?: (id: string) => void;
 }) {
-  const [text, setText] = useState("");
+  const text = draft;
+  const setText = onDraft;
   const [images, setImages] = useState<string[]>([]);
+  const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "model" | "effort" | "mode" | "pony">("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -228,42 +257,31 @@ export function Composer({
           ))}
         </div>
       )}
-      {/* context + reset row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 11, fontSize: 10, letterSpacing: 1, color: "var(--txl)", marginBottom: 9 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 7, flex: 1 }}>
-          CONTEXT
-          <span style={{ flex: 1, maxWidth: 180, height: 4, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
-            <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${ctxPct}%`, background: "linear-gradient(90deg,var(--acc),var(--purple))", transition: "width .4s ease" }} />
-          </span>
-          <span style={{ color: suggest ? "var(--warn)" : "var(--acc)" }}>{ctxPct}%</span>
-          {ctx > 0 && (
-            <span style={{ color: "var(--txl)" }}>~{fmtTokens(ctx)}</span>
-          )}
+      {/* context meter — full-width status line above the controls */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, letterSpacing: 1, color: "var(--txl)", marginBottom: 10 }}>
+        CONTEXT
+        <span style={{ flex: 1, height: 4, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
+          <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${ctxPct}%`, background: "linear-gradient(90deg,var(--acc),var(--purple))", transition: "width .4s ease" }} />
         </span>
+        <span style={{ color: suggest ? "var(--warn)" : "var(--acc)", flex: "none" }}>{ctxPct}%</span>
+        {ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
         {onCompact && (
-          <button
-            onClick={() => onCompact()}
-            disabled={disabled || running}
-            title="Compact context (/compact)"
-            style={{
-              appearance: "none", cursor: "pointer", background: "transparent",
-              border: `1px solid ${suggest ? "var(--warn)" : "color-mix(in srgb, var(--acc) 20%, transparent)"}`,
-              color: suggest ? "var(--warn)" : "var(--txd)", fontFamily: "inherit", fontSize: 9,
-              letterSpacing: 1, padding: "3px 8px", opacity: disabled || running ? 0.4 : 1,
-            }}
-          >
+          <button onClick={() => onCompact()} disabled={disabled || running} title="Compact context (/compact)"
+            style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer", opacity: disabled || running ? 0.4 : 1, ...(suggest ? { border: "1px solid var(--warn)", color: "var(--warn)" } : null) }}>
             COMPACT
           </button>
         )}
-        {resetLabel && <span>RESET <span style={{ color: "var(--tx)" }}>{resetLabel}</span></span>}
       </div>
 
       {/* image attachments */}
+      {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
       {images.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 9 }}>
           {images.map((src, i) => (
             <div key={i} style={{ position: "relative", width: 48, height: 48 }}>
-              <img src={src} alt="" style={{ width: 48, height: 48, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", objectFit: "cover" }} />
+              <ZoomButton onOpen={() => setZoom(src)}>
+                <img src={src} alt="" style={{ width: 48, height: 48, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", objectFit: "cover" }} />
+              </ZoomButton>
               <button
                 type="button"
                 onClick={() => setImages((p) => p.filter((_, j) => j !== i))}
@@ -277,43 +295,60 @@ export function Composer({
         </div>
       )}
 
-      {/* model / effort / mode dropdowns */}
+      {/* session controls — three fenced clusters: what runs the turn (AI), how
+          much code it writes (PONYTAIL, with its two review commands), and the
+          project map (GRAPH). Layout ladder lives in index.css. */}
       {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 9, position: "relative", zIndex: 26 }}>
-        <Drop label="MODEL" value={model} options={models} open={openDrop === "model"}
-          onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
-          onPick={(id) => { onModel(id); setOpenDrop(""); }} />
-        <Drop label="EFFORT" value={effort} options={EFFORTS} open={openDrop === "effort"}
-          onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
-          onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
-        <Drop label="MODE" value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
-          onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
-          onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
-        <Drop label="PONYTAIL" value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
-          onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
-          onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
-        <button onClick={() => onSend("/ponytail-review", [])} disabled={disabled} title="ponytail review of the working tree"
-          style={{ appearance: "none", cursor: disabled ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", opacity: disabled ? 0.4 : 1 }}>
-          PT REVIEW
-        </button>
-        <button onClick={() => onSend("/ponytail-audit", [])} disabled={disabled} title="ponytail repo audit"
-          style={{ appearance: "none", cursor: disabled ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", opacity: disabled ? 0.4 : 1 }}>
-          PT AUDIT
-        </button>
-        {onOpenMap && graph?.available && (
-          <button onClick={onOpenMap}
-            title={graph.building
-              ? "Learning your project for better and faster responses. Opens the MAP tab."
-              : graph.exists
-              ? `Project map — built ${ago(graph.built_at)} ago${graph.stale ? ", stale" : ""}. Opens the MAP tab.`
-              : "No project map yet — it builds itself after the first turn. Opens the MAP tab."}
-            style={{ appearance: "none", cursor: "pointer", border: `1px solid ${graph.building ? "var(--acc)" : "color-mix(in srgb, var(--acc) 20%, transparent)"}`, background: "transparent", color: graph.building ? "var(--acc)" : "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", display: "flex", alignItems: "center", gap: 6 }}>
-            MAP
-            <span style={{ color: graph.stale && !graph.building ? "var(--warn)" : "inherit" }}>
-              {graph.building ? "LEARNING…" : graph.exists ? ago(graph.built_at) : "—"}
-            </span>
-          </button>
-        )}
+      <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
+        <div className="ctrl-row">
+          <div className="ctrl-group">
+            <span className="ctrl-tag">AI</span>
+            <Drop label="MODEL" value={model} options={models} open={openDrop === "model"}
+              onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
+              onPick={(id) => { onModel(id); setOpenDrop(""); }} />
+            <Drop label="EFFORT" value={effort} options={EFFORTS} open={openDrop === "effort"}
+              onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
+              onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
+            <Drop label="MODE" value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
+              onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
+              onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
+          </div>
+          <div className="ctrl-group">
+            <span className="ctrl-tag">PONYTAIL</span>
+            <Drop label="PONYTAIL" showLabel={false} value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
+              onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
+              onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
+            {/* ponytail: native title tooltip, no popover component */}
+            <button type="button" aria-label="About ponytail"
+              title={"PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with."}
+              style={{ ...chip, flex: "none", cursor: "help", padding: "3px 6px", marginLeft: -5 }}>ⓘ</button>
+            <button onClick={() => onSend("/ponytail-review", [])} disabled={disabled} title="ponytail review of the working tree"
+              style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
+              REVIEW
+            </button>
+            <button onClick={() => onSend("/ponytail-audit", [])} disabled={disabled} title="ponytail repo audit"
+              style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
+              AUDIT
+            </button>
+          </div>
+          {onOpenMap && graph?.available && (
+            <div className="ctrl-group">
+              <span className="ctrl-tag">GRAPH</span>
+              <button onClick={onOpenMap}
+                title={graph.building
+                  ? "Learning your project for better and faster responses. Opens the MAP tab."
+                  : graph.exists
+                  ? `Project map — built ${ago(graph.built_at)} ago${graph.stale ? ", stale" : ""}. Opens the MAP tab.`
+                  : "No project map yet — it builds itself after the first turn. Opens the MAP tab."}
+                style={{ ...chip, flex: "none", display: "flex", alignItems: "center", gap: 6, ...(graph.building ? { border: "1px solid var(--acc)", color: "var(--acc)" } : null) }}>
+                MAP
+                <span style={{ color: graph.stale && !graph.building ? "var(--warn)" : "inherit" }}>
+                  {graph.building ? "LEARNING…" : graph.exists ? ago(graph.built_at) : "—"}
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* command line */}
@@ -342,22 +377,26 @@ export function Composer({
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
           onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
         <button onClick={() => fileRef.current?.click()} title="Attach image"
-          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontSize: 13, flex: "none", marginTop: 2 }}>📎</button>
-        <span style={{ fontSize: 10, letterSpacing: 1, color: "var(--txd)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 8px", flex: "none", marginTop: 1 }}>{(models.find((m) => m.id === model)?.label ?? model).toUpperCase()}</span>
+          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
+          <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
         {running ? (
           <>
             <button onClick={onStop}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--err)", background: "color-mix(in srgb, var(--err) 12%, transparent)", color: "var(--err)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none" }}>STOP ■</button>
+              style={{ ...actBtn, border: "1px solid var(--err)", background: "color-mix(in srgb, var(--err) 12%, transparent)", color: "var(--err)" }}>
+              STOP <Square size={10} strokeWidth={0} fill="currentColor" aria-hidden /></button>
             {onSteer && (
               <button onClick={steer} disabled={!text.trim()} title="Fold this into the turn that's running now (text only — falls back to queueing if the run just ended)"
-                style={{ appearance: "none", cursor: !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--warn)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none", opacity: !text.trim() ? 0.4 : 1 }}>STEER ⚡</button>
+                style={{ ...actBtn, cursor: !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--warn)", opacity: !text.trim() ? 0.4 : 1 }}>
+                STEER <SteerIcon /></button>
             )}
             <button onClick={submit} disabled={disabled || !text.trim()} title="Queue this prompt to run after the current turn"
-              style={{ appearance: "none", cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none", opacity: disabled || !text.trim() ? 0.4 : 1 }}>QUEUE ▸</button>
+              style={{ ...actBtn, cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--purple-b)", opacity: disabled || !text.trim() ? 0.4 : 1 }}>
+              QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
           </>
         ) : (
           <button onClick={submit} disabled={disabled || !text.trim()}
-            style={{ appearance: "none", cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--acc)", background: "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "6px 16px", flex: "none", opacity: disabled || !text.trim() ? 0.4 : 1 }}>SEND ▸</button>
+            style={{ ...actBtn, cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--acc)", background: "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", opacity: disabled || !text.trim() ? 0.4 : 1 }}>
+            SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
         )}
       </div>
     </div>

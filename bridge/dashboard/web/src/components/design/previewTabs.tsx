@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 
 import type { TrayItem } from "@selector/controller";
 import type { QueueItem } from "../../api";
 import { modelOptions } from "../../models";
+import { SteerIcon } from "../Composer";
 import { ProjectRunBar } from "./ProjectRunBar";
 import { SelectionTray } from "./SelectionTray";
 
@@ -51,7 +52,7 @@ function Drop({ label, value, options, minWidth = 86, onPick }: {
           <div style={{
             position: "absolute", bottom: "calc(100% + 5px)", left: 0, minWidth: 132, zIndex: 26,
             border: "1px solid var(--border-bright)", background: "var(--popover)",
-            boxShadow: "0 -8px 26px rgba(0,0,0,.65)", animation: "mpop .12s ease",
+            boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
           }}>
             {options.map((o) => (
               <button key={o.id} onClick={() => { onPick(o.id); setOpen(false); }} style={{
@@ -163,8 +164,8 @@ export function PreviewTab(p: PreviewTabProps) {
           {p.canSteer && (
             <button data-no-drag onClick={p.onSteer} disabled={!p.instruction.trim()}
               title="Send into the task already running — it lands at its next step"
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--violet)", background: "transparent", color: "var(--violet)", fontFamily: UI, fontSize: 11, letterSpacing: 1.5, padding: "8px 12px", opacity: p.instruction.trim() ? 1 : 0.4 }}>
-              ⚡ STEER
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--violet)", background: "transparent", color: "var(--violet)", fontFamily: UI, fontSize: 11, letterSpacing: 1.5, padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: 6, opacity: p.instruction.trim() ? 1 : 0.4 }}>
+              STEER <SteerIcon />
             </button>
           )}
           <button data-no-drag onClick={p.onSend} disabled={!p.instruction.trim()}

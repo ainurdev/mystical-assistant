@@ -161,7 +161,7 @@ export function Strip(props: StripProps) {
               width: "240px",
               border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
               background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
-              boxShadow: "0 16px 44px rgba(0,0,0,.7)",
+              boxShadow: "0 16px 44px var(--shadow-pop)",
               padding: "13px",
               animation: "mslide .16s ease both",
             }}

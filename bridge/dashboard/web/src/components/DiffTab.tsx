@@ -51,7 +51,7 @@ export function DiffTab({ file }: { file: { project: string; path: string } | nu
           {file.path}
         </span>
       </div>
-      <div className="overflow-hidden rounded-[9px] border border-border bg-[rgba(0,0,0,.25)] font-mono text-[11.5px] leading-[1.75]">
+      <div className="overflow-hidden rounded-[9px] border border-border bg-[var(--code-bg)] font-mono text-[11.5px] leading-[1.75]">
         {loading ? (
           <div className="space-y-1.5 px-3 py-2.5">
             {[80, 64, 72, 56, 68].map((w, i) => (

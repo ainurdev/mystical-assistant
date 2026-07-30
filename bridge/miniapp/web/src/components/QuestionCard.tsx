@@ -80,6 +80,16 @@ export function QuestionCard({
   );
   const multi = questions.some((q) => q.multiSelect);
 
+  function submit() {
+    onSubmit(
+      questions.map((q) => ({
+        header: q.header,
+        labels: sel[q.header] ?? [],
+        notes: (notes[q.header] ?? "").trim() || undefined,
+      })),
+    );
+  }
+
   return (
     <Card className="space-y-3 border border-[var(--tg-button)]/30">
       {questions.map((q) => (
@@ -118,25 +128,15 @@ export function QuestionCard({
               rows={2}
               value={notes[q.header] ?? ""}
               onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
+              // Enter sends (same as the composer); shift+Enter for a newline.
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready) { e.preventDefault(); submit(); } }}
               placeholder="Your own answer, or extra context for this question"
               className="mt-1.5 w-full resize-y rounded-lg bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none"
             />
           </details>
         </div>
       ))}
-      <Button
-        className="w-full"
-        disabled={!ready}
-        onClick={() =>
-          onSubmit(
-            questions.map((q) => ({
-              header: q.header,
-              labels: sel[q.header] ?? [],
-              notes: (notes[q.header] ?? "").trim() || undefined,
-            })),
-          )
-        }
-      >
+      <Button className="w-full" disabled={!ready} onClick={submit}>
         {multi ? "Submit" : "Send answer"}
       </Button>
     </Card>

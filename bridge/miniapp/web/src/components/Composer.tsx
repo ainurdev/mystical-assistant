@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
 import { useChat } from "../lib/chat";
 import type { EffortLevel, ModelId } from "../lib/api";
 import { Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
+import { ImageLightbox } from "./ImageLightbox";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -59,6 +60,7 @@ export function Composer() {
   } = useChat();
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
 
   // Grow the textarea with its content, up to ~6 rows.
   useEffect(() => {
@@ -149,15 +151,23 @@ export function Composer() {
         </button>
       </div>
 
+      {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
       {draftAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {draftAttachments.map((a) => (
             <div key={a.id} className="relative">
-              <img
-                src={a.dataUrl}
-                alt={a.name}
-                className="h-12 w-12 rounded-lg object-cover"
-              />
+              <button
+                type="button"
+                onClick={() => a.dataUrl && setZoom({ src: a.dataUrl, alt: a.name })}
+                aria-label={`Open ${a.name}`}
+                className="block"
+              >
+                <img
+                  src={a.dataUrl}
+                  alt={a.name}
+                  className="h-12 w-12 rounded-lg object-cover"
+                />
+              </button>
               <button
                 onClick={() => removeAttachment(a.id)}
                 className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white"

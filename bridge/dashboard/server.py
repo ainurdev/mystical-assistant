@@ -242,7 +242,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"rel": browser.rel(cur), "at_base": real == config.BASE_PATH,
                                "can_up": real != config.BASE_PATH,
                                "dirs": browser.list_dirs(cur),
-                               "projects": browser.list_projects()})
+                               "projects": browser.list_projects(),
+                               "hidden": project_config.hidden_projects()})
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
@@ -274,6 +275,8 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 cursor = 0
             return self._json(transcript_for(s, cursor))
+        if path == "/local/attachment":
+            return self._attachment(qs.get("path", [""])[0])
         if path.startswith("/local/run/"):
             job = runner.get_job(path[len("/local/run/"):])
             if not job:
@@ -606,6 +609,8 @@ class Handler(BaseHTTPRequestHandler):
                 out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000], branch)
             if "memory_mode" in body:
                 out["memory_mode"] = project_config.set_memory_mode(rel, body.get("memory_mode") or "")
+            if "hidden" in body:
+                out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
             return self._json(out)
         if path == "/local/git/checkout":
             abs_p = _abs_project(body.get("project"))
@@ -1216,6 +1221,21 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     # --- static (SPA) ---
+    def _attachment(self, p: str):
+        """Serve one uploaded screenshot back to the transcript, so a rehydrated
+        turn shows the image instead of a chip. Confined to UPLOAD_DIR (the paths
+        _save_images wrote) — nothing else on disk is readable through this. A run
+        cleans its uploads up when it ends, so a miss is normal: the transcript
+        falls back to the chip when the image 404s."""
+        up = os.path.realpath(config.UPLOAD_DIR)
+        fp = os.path.realpath(p or "")
+        ctype = mimetypes.guess_type(fp)[0] or ""
+        if (not fp.startswith(up + os.sep) or not os.path.isfile(fp)
+                or not ctype.startswith("image/")):
+            return self._json({"error": "not found"}, 404)
+        with open(fp, "rb") as f:
+            self._send(f.read(), 200, ctype, cache="private, max-age=300")
+
     def _static(self, path):
         if path in ("", "/"):
             path = "/index.html"

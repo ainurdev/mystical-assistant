@@ -141,7 +141,7 @@ export function NotificationCenter() {
             width: "330px",
             border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
             background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
-            boxShadow: "0 16px 44px rgba(0,0,0,.7)",
+            boxShadow: "0 16px 44px var(--shadow-pop)",
             animation: "mslide .16s ease both",
           }}
         >
@@ -179,7 +179,7 @@ export function NotificationCenter() {
                 style={{
                   border: `1px solid color-mix(in srgb, ${k.color} 45%, transparent)`,
                   background: "color-mix(in srgb, var(--panel2) 97%, transparent)",
-                  boxShadow: "0 12px 34px rgba(0,0,0,.6)",
+                  boxShadow: "0 12px 34px var(--shadow-pop)",
                   padding: "9px 11px",
                   animation: "mslide .16s ease both",
                 }}

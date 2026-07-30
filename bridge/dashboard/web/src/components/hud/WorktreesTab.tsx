@@ -242,7 +242,7 @@ export function WorktreesTab({
                     <span style={{ color: "var(--txd)", flex: "none" }}>▾</span>
                   </button>
                   {mergeMenu === name && (
-                    <div className="mscroll" style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 12px 34px rgba(0,0,0,.6)", padding: 5, animation: "mslide .16s ease both" }}>
+                    <div className="mscroll" style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 12px 34px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
                       <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>MERGE {name} INTO</div>
                       {targets.map((m) => {
                         const sel = m === mtSel;
@@ -412,7 +412,7 @@ export function WorktreesTab({
         <div onClick={() => setConfirmDel(null)}
           style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 78%, transparent)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", animation: "backdropIn .2s ease both" }}>
           <div onClick={(e) => e.stopPropagation()} className="panel"
-            style={{ width: 450, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--err) 50%, transparent)", background: "rgba(9,13,13,.99)", boxShadow: "0 0 60px rgba(0,0,0,.8),0 0 26px color-mix(in srgb, var(--err) 12%, transparent)", animation: "mslide .2s ease both" }}>
+            style={{ width: 450, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--err) 50%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 0 60px var(--shadow-modal),0 0 26px color-mix(in srgb, var(--err) 12%, transparent)", animation: "mslide .2s ease both" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 18px", borderBottom: "1px solid color-mix(in srgb, var(--err) 20%, transparent)" }}>
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--err)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none" }}><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
               <span style={{ fontSize: 14, color: "var(--err-hi)", letterSpacing: ".5px" }}>Delete worktree</span>
