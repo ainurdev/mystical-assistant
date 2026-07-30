@@ -980,6 +980,7 @@ def _consume_free_agent(job: Job, prompt: str, cwd: str) -> None:
     cmd = freeagent.build_cmd(prompt, provider, None, cwd)
     try:
         proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                              env=freeagent.run_env(),
                               timeout=config.RUN_TIMEOUT)
     except FileNotFoundError:
         job.error_msg = "`opencode` not found on PATH."

@@ -1,5 +1,12 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { api, type AccountInfo, type UpdateInfo, type Weather } from "../../api";
+import {
+  api,
+  type AccountInfo,
+  type FreeAgentInfo,
+  type FreeAgents,
+  type UpdateInfo,
+  type Weather,
+} from "../../api";
 import {
   autoTextScale,
   AURORA_KEYS,
@@ -789,9 +796,12 @@ const POLICY_BLURB: Record<string, string> = {
 function AccountsPanel() {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
   const [policy, setPolicy] = useState("ask");
-  const [free, setFree] = useState<string[]>([]);
+  const [free, setFree] = useState<FreeAgents>({ installed: false, providers: [] });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // A sign-in in flight: the CLI is parked on its "paste the code" prompt in a
+  // fresh profile, waiting for what the browser hands back.
+  const [login, setLogin] = useState<{ slot: number; url: string } | null>(null);
 
   const load = () =>
     api
@@ -799,7 +809,13 @@ function AccountsPanel() {
       .then((r) => {
         setRows(r.accounts);
         setPolicy(r.default_policy);
-        setFree(r.free_agents);
+        // A bridge still running the pre-setup build answers with a bare list of
+        // labels; show no rungs rather than throwing until it restarts.
+        setFree(
+          Array.isArray(r.free_agents?.providers) ? r.free_agents : { installed: false, providers: [] },
+        );
+        if (r.pending_login?.url)
+          setLogin({ slot: r.pending_login.slot, url: r.pending_login.url });
       })
       .catch(() => setRows([]));
 
@@ -815,6 +831,20 @@ function AccountsPanel() {
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startLogin() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.loginBegin();
+      setLogin({ slot: r.slot, url: r.url });
+      window.open(r.url, "_blank", "noopener");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not start the sign-in");
     } finally {
       setBusy(false);
     }
@@ -887,38 +917,215 @@ function AccountsPanel() {
             </span>
           </div>
         ))}
-        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
-          <MiniBtn disabled={busy} onClick={() => void act("add")}>
-            + ADD THE CURRENT LOGIN
-          </MiniBtn>
-          {err && <span style={{ fontSize: 10, color: "var(--warn)" }}>{err}</span>}
-        </div>
+        {login ? (
+          <LoginFlow
+            url={login.url}
+            onDone={async () => {
+              setLogin(null);
+              await load();
+            }}
+            onSubmit={(code) => api.loginSubmit(login.slot, code)}
+            onCancel={async () => {
+              await api.loginCancel(login.slot).catch(() => {});
+              setLogin(null);
+              await load();
+            }}
+          />
+        ) : (
+          <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <MiniBtn disabled={busy} onClick={() => void startLogin()}>
+              + ADD ANOTHER ACCOUNT
+            </MiniBtn>
+            <MiniBtn disabled={busy} onClick={() => void act("add")}>
+              COPY CURRENT LOGIN
+            </MiniBtn>
+            {err && <span style={{ fontSize: 10, color: "var(--warn)" }}>{err}</span>}
+          </div>
+        )}
       </div>
       <div style={NOTE}>
-        To add a second account: log out and <span style={{ color: "var(--txd)" }}>claude /login</span>{" "}
-        as the other one in a terminal, then press ADD — the login is copied into its own profile,
-        so you can log back in as your usual account afterwards. Accounts share transcripts and
-        skills; only the credentials differ.
+        ADD ANOTHER ACCOUNT signs in right here: a link opens, you log in as the other account, and
+        you paste the code back. Your current login is never touched — the new one gets its own
+        profile. COPY CURRENT LOGIN is the old way in: it snapshots whoever is logged in at{" "}
+        <span style={{ color: "var(--txd)" }}>~/.claude</span> right now, which only helps if you
+        already switched accounts in a terminal. Accounts share transcripts and skills; only the
+        credentials differ.
       </div>
 
       <Label>FREE AGENTS</Label>
       <div style={CARD}>
-        {free.length === 0 ? (
-          <div style={{ fontSize: 10.5, color: "var(--txl)" }}>
-            None configured. Install <span style={{ color: "var(--tx)" }}>opencode</span> and set a
-            provider key (GEMINI_API_KEY, OPENCODE_API_KEY, DASHSCOPE_API_KEY) or OLLAMA_MODEL to
-            offer a non-Claude fallback when every account is spent.
+        {!free.installed && (
+          <div style={{ fontSize: 10.5, color: "var(--txl)", marginBottom: 13 }}>
+            <span style={{ color: "var(--warn)" }}>opencode is not installed</span> — the rungs below
+            stay unusable until it is. Install it with{" "}
+            <code style={CODE}>curl -fsSL https://opencode.ai/install | bash</code>
           </div>
-        ) : (
-          free.map((f, i) => (
-            <div key={f} style={{ ...KV, marginTop: i === 0 ? 0 : 10 }}>
-              <span style={{ fontSize: 11, color: "var(--tx)" }}>{f}</span>
-              <span style={{ fontSize: 10.5, color: "var(--ok)" }}>READY</span>
-            </div>
-          ))
         )}
+        {free.providers.map((p, i) => (
+          <FreeAgentRow
+            key={p.provider}
+            p={p}
+            first={i === 0}
+            installed={free.installed}
+            onSave={(v) => api.setFreeAgent(p.env, v).then((r) => setFree(r.free_agents))}
+          />
+        ))}
+      </div>
+      <div style={NOTE}>
+        A free agent takes the turn when every Claude account is spent — a different provider on a
+        fresh session, briefed with the task so far. Keys are saved to{" "}
+        <span style={{ color: "var(--txd)" }}>~/.mystical/freeagents.json</span> and take effect on
+        the next handover; no restart. A key already in the bridge's environment wins and shows as
+        FROM ENV.
       </div>
     </>
+  );
+}
+
+const CODE: CSSProperties = {
+  fontFamily: "'JetBrains Mono',monospace",
+  fontSize: 9.5,
+  color: "var(--tx)",
+  background: "var(--panel3)",
+  padding: "1px 5px",
+};
+
+const FIELD: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  background: "var(--panel3)",
+  border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)",
+  outline: "none",
+  color: "var(--txb)",
+  fontFamily: "inherit",
+  fontSize: 11,
+  padding: "6px 8px",
+};
+
+/** The paste-the-code half of a sign-in: the link is already open in a tab. */
+function LoginFlow({
+  url,
+  onSubmit,
+  onDone,
+  onCancel,
+}: {
+  url: string;
+  onSubmit: (code: string) => Promise<unknown>;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    if (!code.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await onSubmit(code.trim());
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "sign-in failed");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 13, borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", paddingTop: 12 }}>
+      <div style={{ fontSize: 10.5, color: "var(--txl)", lineHeight: 1.7 }}>
+        1 · Sign in as the account you want to add —{" "}
+        <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--acc)" }}>
+          open the sign-in page
+        </a>
+        <br />2 · Paste the code it gives you back:
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <input
+          value={code}
+          autoFocus
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void submit()}
+          placeholder="paste the code here"
+          style={err ? { ...FIELD, border: "1px solid var(--err)" } : FIELD}
+        />
+        <MiniBtn disabled={busy} onClick={() => void submit()}>
+          {busy ? "…" : "CONNECT"}
+        </MiniBtn>
+        <MiniBtn disabled={busy} danger onClick={onCancel}>
+          CANCEL
+        </MiniBtn>
+      </div>
+      {err && <div style={{ fontSize: 10, color: "var(--warn)", marginTop: 8 }}>{err}</div>}
+    </div>
+  );
+}
+
+/** One free-agent rung with the box that configures it. */
+function FreeAgentRow({
+  p,
+  first,
+  installed,
+  onSave,
+}: {
+  p: FreeAgentInfo;
+  first: boolean;
+  installed: boolean;
+  onSave: (value: string) => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(p.needs === "model" ? p.model : "");
+  const [busy, setBusy] = useState(false);
+
+  async function save(v: string) {
+    setBusy(true);
+    await onSave(v).catch(() => {});
+    setBusy(false);
+    setOpen(false);
+    setValue("");
+  }
+
+  const state = p.ready ? "READY" : p.configured ? "NEEDS OPENCODE" : "NOT SET";
+  return (
+    <div style={{ marginTop: first ? 0 : 13 }}>
+      <div style={KV}>
+        <span style={{ fontSize: 11, color: p.ready ? "var(--tx)" : "var(--txl)" }}>{p.label}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
+          <span style={{ fontSize: 10, color: p.ready ? "var(--ok)" : "var(--txd)" }}>
+            {p.source === "env" ? "FROM ENV" : state}
+          </span>
+          {p.source !== "env" && (
+            <MiniBtn disabled={busy} onClick={() => setOpen(!open)}>
+              {p.configured ? "CHANGE" : "SET UP"}
+            </MiniBtn>
+          )}
+          {p.source === "saved" && (
+            <MiniBtn disabled={busy} danger onClick={() => void save("")}>
+              CLEAR
+            </MiniBtn>
+          )}
+        </span>
+      </div>
+      {open && (
+        <div style={{ display: "flex", gap: 8, marginTop: 9 }}>
+          <input
+            value={value}
+            autoFocus
+            type={p.needs === "key" ? "password" : "text"}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && value.trim() && void save(value.trim())}
+            placeholder={p.needs === "key" ? `${p.env} — paste the API key` : "model name, e.g. qwen2.5-coder"}
+            style={FIELD}
+          />
+          <MiniBtn disabled={busy || !value.trim()} onClick={() => void save(value.trim())}>
+            {busy ? "…" : "SAVE"}
+          </MiniBtn>
+        </div>
+      )}
+      {!open && p.ready && (
+        <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 4 }}>{p.model}</div>
+      )}
+    </div>
   );
 }
 

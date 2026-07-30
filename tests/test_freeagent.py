@@ -95,6 +95,94 @@ def test_ollama_is_opt_in_by_model_not_by_key():
         freeagent._bin = None
 
 
+# --- saved settings: configuring a rung without touching the environment -----
+
+def _fresh_settings():
+    """Point the settings file at an empty path so each test starts blank."""
+    freeagent.SETTINGS = os.path.join(tempfile.mkdtemp(), "freeagents.json")
+    return freeagent.SETTINGS
+
+
+def test_a_saved_key_configures_a_provider_with_no_env_var_at_all():
+    """The whole point: a key typed into the dashboard, no bridge restart."""
+    _fresh_settings()
+    freeagent._bin = _fake_bin()
+    try:
+        _env()
+        freeagent.set_setting("GEMINI_API_KEY", "saved-key")
+        assert [p["provider"] for p in freeagent.available()] == ["gemini"]
+    finally:
+        freeagent._bin = None
+
+
+def test_the_environment_still_wins_over_a_saved_key():
+    """Existing deployments configure this by env; that must keep its meaning."""
+    _fresh_settings()
+    freeagent._bin = _fake_bin()
+    try:
+        _env(GEMINI_API_KEY="from-env")
+        freeagent.set_setting("GEMINI_API_KEY", "saved-key")
+        assert freeagent.run_env()["GEMINI_API_KEY"] == "from-env"
+        assert freeagent.status()["providers"][1]["source"] == "env"
+    finally:
+        _env()
+        freeagent._bin = None
+
+
+def test_clearing_a_saved_key_takes_the_rung_away_again():
+    _fresh_settings()
+    freeagent._bin = _fake_bin()
+    try:
+        _env()
+        freeagent.set_setting("GEMINI_API_KEY", "saved-key")
+        freeagent.set_setting("GEMINI_API_KEY", "")
+        assert freeagent.available() == []
+    finally:
+        freeagent._bin = None
+
+
+def test_saved_keys_are_not_world_readable():
+    """They are API keys, so the same bar as the account credentials."""
+    path = _fresh_settings()
+    freeagent.set_setting("GEMINI_API_KEY", "saved-key")
+    mode = os.stat(path).st_mode & 0o777
+    assert mode == 0o600, f"provider keys at mode {oct(mode)}"
+
+
+def test_run_env_carries_saved_keys_to_the_subprocess():
+    """available() reading them is not enough — opencode only sees variables."""
+    _fresh_settings()
+    _env()
+    freeagent.set_setting("DASHSCOPE_API_KEY", "qwen-key")
+    assert freeagent.run_env()["DASHSCOPE_API_KEY"] == "qwen-key"
+
+
+def test_settings_reject_a_name_that_is_not_a_provider_setting():
+    _fresh_settings()
+    try:
+        freeagent.set_setting("ANTHROPIC_API_KEY", "nope")
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError")
+
+
+def test_status_lists_every_rung_including_the_unconfigured_ones():
+    """The settings tab is where a rung gets set up, so it has to show them all."""
+    _fresh_settings()
+    freeagent._bin = _fake_bin()
+    try:
+        _env()
+        st = freeagent.status()
+        assert st["installed"] is True
+        assert [p["provider"] for p in st["providers"]] == \
+            [s["provider"] for s in freeagent.PROVIDERS]
+        assert all(p["ready"] is False for p in st["providers"])
+        # Ollama authenticates with nothing; naming a local model is the opt-in.
+        assert [p["needs"] for p in st["providers"]][-1] == "model"
+    finally:
+        freeagent._bin = None
+
+
 # --- build_cmd(): the argv we hand to opencode -------------------------------
 
 def test_cmd_runs_headless_with_auto_approval_and_a_model():

@@ -426,6 +426,27 @@ export interface AccountInfo {
   default: boolean;
   left: number | null; // % of the tighter usage window unspent; null = meter unreadable
 }
+/** One free-agent rung — listed even unconfigured, since this is where you set it up. */
+export interface FreeAgentInfo {
+  provider: string;
+  label: string;
+  env: string; // the variable that configures it — an API key, or a model name for Ollama
+  model: string;
+  needs: "key" | "model";
+  configured: boolean;
+  source: "env" | "saved" | null;
+  ready: boolean; // configured *and* opencode is installed
+}
+export interface FreeAgents {
+  installed: boolean; // is the opencode binary there at all
+  providers: FreeAgentInfo[];
+}
+export interface AccountsInfo {
+  accounts: AccountInfo[];
+  default_policy: string;
+  free_agents: FreeAgents;
+  pending_login: { slot: number; url: string | null } | null;
+}
 export interface UsageInfo {
   available: boolean;
   five_hour?: UsageBucket | null;
@@ -609,13 +630,32 @@ export const api = {
       body: { policy },
     }),
   accounts: () =>
-    req<{ accounts: AccountInfo[]; default_policy: string; free_agents: string[] }>(
-      "/local/accounts",
-    ),
+    req<AccountsInfo>("/local/accounts"),
   accountAction: (action: "add" | "remove" | "disable" | "enable", slot?: number) =>
     req<{ ok: boolean; slot?: number }>("/local/accounts", {
       method: "POST",
       body: { action, ...(slot === undefined ? {} : { slot }) },
+    }),
+  /** Start a sign-in in a fresh profile — the ambient ~/.claude login is untouched. */
+  loginBegin: () =>
+    req<{ ok: boolean; slot: number; url: string }>("/local/accounts", {
+      method: "POST",
+      body: { action: "login_begin" },
+    }),
+  loginSubmit: (slot: number, code: string) =>
+    req<{ ok: boolean; slot: number; email: string | null }>("/local/accounts", {
+      method: "POST",
+      body: { action: "login_submit", slot, code },
+    }),
+  loginCancel: (slot: number) =>
+    req<{ ok: boolean }>("/local/accounts", {
+      method: "POST",
+      body: { action: "login_cancel", slot },
+    }),
+  setFreeAgent: (name: string, value: string) =>
+    req<{ ok: boolean; free_agents: FreeAgents }>("/local/freeagents", {
+      method: "POST",
+      body: { name, value },
     }),
   setDefaultPolicy: (policy: string) =>
     req<{ ok: boolean; policy: string }>("/local/policy/default", {

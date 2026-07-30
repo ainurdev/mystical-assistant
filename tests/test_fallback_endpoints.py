@@ -256,6 +256,85 @@ def test_session_brief_carries_the_policy():
     assert brief["fallback_policy"] == "auto"
 
 
+# --- adding an account from the dashboard ------------------------------------
+
+def _stub_login(begin=None, submit=None):
+    saved = (accounts.begin_login, accounts.submit_login_code)
+    accounts.begin_login = begin or (lambda: {"slot": 2, "url": "https://x/oauth"})
+    accounts.submit_login_code = submit or (
+        lambda slot, code: {"slot": slot, "email": "new@x.com"})
+    return lambda: (setattr(accounts, "begin_login", saved[0]),
+                    setattr(accounts, "submit_login_code", saved[1]))
+
+
+def test_dashboard_starts_a_sign_in_and_returns_its_url():
+    restore = _stub_login()
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "login_begin"})
+        assert box["code"] == 200
+        assert box["obj"]["url"] == "https://x/oauth" and box["obj"]["slot"] == 2
+    finally:
+        restore()
+
+
+def test_dashboard_finishes_a_sign_in_with_the_pasted_code():
+    seen = {}
+    restore = _stub_login(submit=lambda slot, code: seen.update(slot=slot, code=code)
+                          or {"slot": slot, "email": "new@x.com"})
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "login_submit", "slot": 2,
+                                        "code": "abc#state"})
+        assert box["code"] == 200 and box["obj"]["email"] == "new@x.com"
+        assert seen == {"slot": 2, "code": "abc#state"}
+    finally:
+        restore()
+
+
+def test_a_failed_sign_in_answers_with_the_reason_not_a_500():
+    def boom():
+        raise accounts.LoginFailed("sign-in timed out")
+    restore = _stub_login(begin=boom)
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "login_begin"})
+        assert box["code"] == 400 and "timed out" in box["obj"]["error"]
+    finally:
+        restore()
+
+
+# --- setting a free agent up -------------------------------------------------
+
+def test_dashboard_saves_a_provider_key_and_reports_the_new_state():
+    from bridge import freeagent
+    saved = freeagent.SETTINGS
+    freeagent.SETTINGS = os.path.join(tempfile.mkdtemp(), "freeagents.json")
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/freeagents", {"name": "GEMINI_API_KEY", "value": "k"})
+        assert box["code"] == 200
+        assert freeagent.settings()["GEMINI_API_KEY"] == "k"
+        rows = box["obj"]["free_agents"]["providers"]
+        assert [p["configured"] for p in rows if p["provider"] == "gemini"] == [True]
+    finally:
+        freeagent.SETTINGS = saved
+
+
+def test_dashboard_refuses_a_name_that_is_not_a_provider_setting():
+    """The endpoint writes a file of secrets — it takes only known names."""
+    from bridge import freeagent
+    saved = freeagent.SETTINGS
+    freeagent.SETTINGS = os.path.join(tempfile.mkdtemp(), "freeagents.json")
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/freeagents", {"name": "PATH", "value": "/evil"})
+        assert box["code"] == 400
+        assert freeagent.settings() == {}
+    finally:
+        freeagent.SETTINGS = saved
+
+
 if __name__ == "__main__":
     import traceback
     fails = 0

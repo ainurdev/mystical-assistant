@@ -26,3 +26,9 @@ os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "bridge-test.db")
 # is deterministic suite-wide (config.BASE_PATH is read once, at first import).
 # Tests that assert on containment should build fixtures under config.BASE_PATH.
 os.environ["BASE_PATH"] = tempfile.mkdtemp()
+# Same freeze-at-import rule for the two files that hold real credentials: a
+# test module importing bridge.accounts / bridge.freeagent before its own
+# preamble runs would otherwise write account profiles and provider API keys
+# into the developer's actual ~/.mystical.
+os.environ["ACCOUNTS_DIR"] = os.path.join(tempfile.mkdtemp(), "accounts")
+os.environ["FREEAGENTS_FILE"] = os.path.join(tempfile.mkdtemp(), "freeagents.json")

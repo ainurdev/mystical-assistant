@@ -17,8 +17,10 @@ to `--format json` for per-tool-call events is a drop-in change to _parse_output
 once there is a recorded event stream to test against.
 """
 
+import json
 import os
 import shutil
+import sys
 
 # provider   -- opencode provider id, also the runtime tag stored on the turn
 # env        -- the setting that has to be present for this rung to be offered
@@ -62,20 +64,97 @@ def opencode_bin() -> "str | None":
     return _bin
 
 
+# --- settings ----------------------------------------------------------------
+# A provider used to be configurable only through the bridge's own environment,
+# which meant editing a service file and restarting to try one out. Keys entered
+# in the dashboard land here instead, 0600 beside the account profiles. The
+# environment still wins where both are set, so an existing deployment's
+# variables keep their meaning.
+
+SETTINGS = os.path.expanduser(
+    os.environ.get("FREEAGENTS_FILE", "~/.mystical/freeagents.json"))
+SETTABLE = tuple({n for s in PROVIDERS for n in (s["env"], s["model_env"]) if n})
+
+
+def settings() -> dict:
+    try:
+        with open(SETTINGS) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in data.items()
+            if k in SETTABLE and isinstance(v, str) and v} if isinstance(data, dict) else {}
+
+
+def set_setting(name: str, value: "str | None") -> None:
+    """Save (or, with an empty value, forget) one provider setting."""
+    if name not in SETTABLE:
+        raise ValueError(f"{name} is not a free-agent setting")
+    data = settings()
+    value = (value or "").strip()
+    if value:
+        data[name] = value
+    else:
+        data.pop(name, None)
+    os.makedirs(os.path.dirname(SETTINGS), mode=0o700, exist_ok=True)
+    try:
+        with open(SETTINGS, "w") as f:
+            json.dump(data, f, indent=2)
+        os.chmod(SETTINGS, 0o600)              # it holds API keys
+    except OSError as e:
+        print(f"[freeagent] persist failed: {e}", file=sys.stderr)
+
+
+def _value(name: str) -> str:
+    return os.environ.get(name) or settings().get(name) or ""
+
+
+def run_env() -> dict:
+    """Environment for the opencode subprocess: the bridge's own, plus the keys
+    saved from the dashboard, which it can only read as variables. Saved keys
+    fill gaps only -- the same precedence _value() reports, so the rung that was
+    offered is the one that runs."""
+    saved = {k: v for k, v in settings().items() if not os.environ.get(k)}
+    return {**os.environ, **saved}
+
+
 def available() -> list:
     """Configured free providers, free-est first. Empty when opencode is absent."""
     if not opencode_bin():
         return []
     out = []
     for spec in PROVIDERS:
-        if not os.environ.get(spec["env"]):
+        if not _value(spec["env"]):
             continue
-        model = os.environ.get(spec["model_env"] or "") or spec["model"]
+        model = _value(spec["model_env"] or "") or spec["model"]
         if not model:
             continue
         out.append({"provider": spec["provider"], "model": model,
                     "label": spec["label"]})
     return out
+
+
+def status() -> dict:
+    """Every rung and what it still needs, for the settings UI. A provider whose
+    only missing piece is a key is worth showing greyed-out with the box to type
+    it into -- that is the whole difference between 'set an env var somewhere'
+    and 'set it up here'."""
+    ready = {p["provider"] for p in available()}
+    rows = []
+    for spec in PROVIDERS:
+        saved = spec["env"] in settings()
+        rows.append({
+            "provider": spec["provider"], "label": spec["label"],
+            "env": spec["env"], "model_env": spec["model_env"],
+            "model": _value(spec["model_env"] or "") or spec["model"],
+            # Ollama names a local model instead of authenticating, so the box
+            # asks for a model there and a key everywhere else.
+            "needs": "model" if spec["env"] == spec["model_env"] else "key",
+            "configured": bool(_value(spec["env"])),
+            "source": "env" if os.environ.get(spec["env"]) else ("saved" if saved else None),
+            "ready": spec["provider"] in ready,
+        })
+    return {"installed": bool(opencode_bin()), "providers": rows}
 
 
 def build_cmd(prompt: str, provider: dict, session: "str | None",

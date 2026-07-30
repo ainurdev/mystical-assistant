@@ -124,6 +124,9 @@ that spawns `claude` already routes through it.
 account in a terminal, then snapshots the resulting credentials into the next free slot
 and builds the overlay. No credential entry through Telegram; no password handling.
 
+*Superseded 2026-07-30 — see "Signing in without a terminal" below.* Snapshotting is
+still there, but it is the fallback, not the way in.
+
 **Strategies.** `best` (most quota remaining) is the default. `next-available` skips
 exhausted slots without preference. `consume-first` prefers the account whose *weekly*
 window resets soonest, so perishable quota is spent before it expires.
@@ -330,3 +333,45 @@ Built as specced, with these deliberate simplifications:
 - **Dashboard/Mini App policy picker and runtime badges are not built** — the
   `/policy` command and the Telegram card are the interface; `turns.runtime` is in
   the DB and flows through `transcript()` for a later UI pass.
+
+## Signing in without a terminal (2026-07-30)
+
+The onboarding above was the feature's dead end: `add()` can only copy the login that is
+already in `~/.claude`, so a *second* account meant logging out, logging in as the other
+one, pressing ADD, and logging back — from a terminal, on the host. Pressing ADD from the
+dashboard duplicated the account you were already on: a second slot, the same email, the
+same spent quota. The ladder had nowhere to fall to.
+
+`claude auth login` reads `CLAUDE_CONFIG_DIR` like everything else does. Pointed at an
+empty slot it prints an OAuth URL on stdout, waits for the pasted code on **stdin**, and
+writes the credentials into that slot. The ambient login is never touched, so the flow is:
+
+```
+begin_login()      -> spawn `claude auth login` with CLAUDE_CONFIG_DIR=<free slot>,
+                      scrape the URL off stdout        -> {slot, url}
+   user opens the URL, signs in as the other account, copies the code back
+submit_login_code() -> write it to the child's stdin, wait for .credentials.json
+                      to appear in the slot, then register it
+cancel_login()      -> kill the child, delete the half-made profile
+```
+
+Three details are load-bearing:
+
+- **The URL arrives doubled.** The CLI hyperlinks it (OSC-8), so the escape sequence
+  carries the target *and* the same string as link text. `_Login.url()` reads the OSC-8
+  target, and falls back to cutting the plain form at its second `https://`.
+- **The code prompt has no trailing newline**, so the child's output is drained on a
+  thread — a line-oriented read would block on the prompt and deadlock the pipe.
+- **A slot dir left by an abandoned attempt is wiped before a new sign-in.** A stale
+  `.credentials.json` would otherwise read as this sign-in having succeeded.
+
+Success is the credentials file appearing, not the exit code: a rejected code makes the
+CLI print its own error and exit, which surfaces to the user verbatim (minus the prompt
+it is glued to).
+
+**Free-agent setup.** Same shape of problem: a provider could only be configured by the
+bridge's own environment, so trying one meant editing a service file and restarting.
+`freeagent.settings()` adds `~/.mystical/freeagents.json` (0600 — it holds API keys),
+`status()` lists every rung including the ones not set up yet, and `run_env()` hands the
+saved keys to the opencode subprocess, which can only read them as variables. The
+environment still wins where both are set, so existing deployments keep their meaning.

@@ -118,15 +118,15 @@ def _worktree_for_branch(abs_p: str, branch: str) -> "str | None":
     return None
 
 
-def _free_agents() -> list:
-    """Free-agent providers currently configured, for the Accounts tab. Empty
-    when opencode isn't installed — the settings UI then says so plainly rather
-    than offering a rung that would fail at handover."""
+def _free_agents() -> dict:
+    """Every free-agent rung and what it still needs, for the Accounts tab. The
+    unconfigured ones are listed too: the tab is where you set them up, so it
+    has to show the rungs you don't have yet."""
     try:
         from bridge import freeagent
-        return freeagent.available()
+        return freeagent.status()
     except Exception:  # noqa: BLE001
-        return []
+        return {"installed": False, "providers": []}
 
 
 def _worktree_cwd(project, branch) -> "str | None":
@@ -291,7 +291,8 @@ class Handler(BaseHTTPRequestHandler):
                 "accounts": [{**a, "left": accounts.headroom(a["slot"])}
                              for a in accounts.list_accounts()],
                 "default_policy": ladder.default_policy(),
-                "free_agents": [p["label"] for p in _free_agents()]})
+                "pending_login": accounts.pending_login(),
+                "free_agents": _free_agents()})
         if path == "/local/sessions":
             native.refresh(chat)           # surface VSCode sessions started since last poll
             project = qs.get("project", [None])[0]
@@ -574,6 +575,22 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if action == "add":
                     return self._json({"ok": True, "slot": accounts.add()})
+                # login_begin returns the URL to sign in at; the code the user
+                # gets back comes to login_submit. Both are slow-ish (a child
+                # process and an OAuth round-trip) but bounded by their timeouts.
+                if action == "login_begin":
+                    return self._json({"ok": True, **accounts.begin_login()})
+                if action == "login_submit":
+                    slot = body.get("slot")
+                    if not isinstance(slot, int):
+                        return self._json({"error": "slot must be a number"}, 400)
+                    return self._json({"ok": True, **accounts.submit_login_code(
+                        slot, str(body.get("code") or ""))})
+                if action == "login_cancel":
+                    slot = body.get("slot")
+                    if isinstance(slot, int):
+                        accounts.cancel_login(slot)
+                    return self._json({"ok": True})
                 if action in ("remove", "disable", "enable"):
                     slot = body.get("slot")
                     if not isinstance(slot, int):
@@ -583,9 +600,19 @@ class Handler(BaseHTTPRequestHandler):
             except accounts.NoLogin:
                 return self._json({"error": "No login in ~/.claude to copy. Run "
                                             "`claude /login` in a terminal first."}, 400)
+            except accounts.LoginFailed as e:
+                return self._json({"error": str(e)}, 400)
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"error": f"unknown action {action!r}"}, 400)
+        if path == "/local/freeagents":
+            from bridge import freeagent
+            try:
+                freeagent.set_setting(str(body.get("name") or ""),
+                                      body.get("value"))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"ok": True, "free_agents": _free_agents()})
         if path.startswith("/local/sessions/") and path.endswith("/policy"):
             from bridge import ladder
             sid = path[len("/local/sessions/"):-len("/policy")]

@@ -202,7 +202,8 @@ def _accounts_text() -> str:
         tags += " (disabled)" if a["disabled"] else ""
         lines.append(f"{a['slot']}. {a['email'] or 'unknown'} — {meter}{tags}")
     return ("Claude accounts:\n" + "\n".join(lines) +
-            "\n\n/accounts add — snapshot the login currently in ~/.claude\n"
+            "\n\n/accounts login — sign in as another account (link + code, no terminal)\n"
+            "/accounts add — snapshot the login currently in ~/.claude\n"
             "/accounts remove <n> · /accounts disable <n> · /accounts enable <n>")
 
 
@@ -232,6 +233,21 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
         if verb == "add":
             send(chat_id, f"✅ Added the current login as account {accounts.add()}. "
                           "It stays available while you log back in as your usual one.")
+        elif verb == "login":
+            # The sign-in parks on its code prompt in a fresh profile; /accounts
+            # code <code> finishes it. Nothing here touches the ambient login.
+            began = accounts.begin_login()
+            send(chat_id, f"Open this and sign in as the account you want to add:\n\n"
+                          f"{began['url']}\n\nThen send: /accounts code <the code it gives you>")
+        elif verb == "code" and rest:
+            waiting = accounts.pending_login()
+            if not waiting:
+                send(chat_id, "No sign-in is waiting for a code. Start one with "
+                              "/accounts login.")
+            else:
+                done = accounts.submit_login_code(waiting["slot"], rest)
+                send(chat_id, f"✅ Added {done['email'] or 'the account'} as account "
+                              f"{done['slot']}.")
         elif verb in ("remove", "disable", "enable") and rest.isdigit():
             getattr(accounts, verb)(int(rest))
             send(chat_id, f"✅ Account {rest} {verb}d.")
@@ -240,6 +256,8 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
     except accounts.NoLogin:
         send(chat_id, "No login in ~/.claude to copy. Run `claude /login` in a "
                       "terminal first, then /accounts add.")
+    except accounts.LoginFailed as e:
+        send(chat_id, f"⚠️ {e}")
     except ValueError as e:
         send(chat_id, f"⚠️ {e}")
     return True

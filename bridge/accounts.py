@@ -13,9 +13,12 @@ per-profile rotation, not a token-pooling proxy.
 
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 import threading
+import time
 
 from bridge import usage
 
@@ -40,6 +43,10 @@ _lock = threading.Lock()
 
 class NoLogin(Exception):
     """No ambient ~/.claude login to snapshot into a slot."""
+
+
+class LoginFailed(Exception):
+    """A browser sign-in into a slot did not produce credentials."""
 
 
 def profile_dir(slot: int) -> str:
@@ -160,10 +167,184 @@ def add(slot: "int | None" = None, alias: "str | None" = None) -> int:
     return slot
 
 
+# --- browser sign-in: add a *different* account without a terminal -----------
+# add() can only copy the login that is already in ~/.claude, so a second
+# account meant logging out, logging in as the other one, pressing ADD, then
+# logging back. `claude auth login` reads CLAUDE_CONFIG_DIR like everything else
+# does: aimed at an empty slot it prints an OAuth URL on stdout and waits for
+# the code on stdin, and the credentials it writes land in the slot. The ambient
+# login is never touched, so the two halves of this (begin_login → the user
+# signs in in a browser → submit_login_code) are a complete add-an-account flow.
+
+_LOGIN_ARGS = ("auth", "login", "--claudeai")
+_OSC8 = re.compile(rb"\x1b]8;;(https://[^\x1b\x07]+)")   # terminal hyperlink target
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b][^\x1b\x07]*(?:\x1b\\|\x07)?")
+_PROMPT = re.compile(r".*Paste code here[^>]*>\s*")      # the one prompt this flow hits
+_pending: dict = {}                                      # slot -> _Login
+
+
+class _Login:
+    """One in-flight `claude auth login`, with its output drained off-thread so
+    the half-line 'Paste code here >' prompt can't deadlock the pipe."""
+
+    def __init__(self, slot: int, proc, alias: "str | None"):
+        self.slot, self.proc, self.alias = slot, proc, alias
+        self.buf = bytearray()
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self) -> None:
+        fd = self.proc.stdout.fileno()
+        while True:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            self.buf += chunk
+
+    def url(self) -> "str | None":
+        """The sign-in link, once the CLI has printed it."""
+        m = _OSC8.search(bytes(self.buf))
+        if m:
+            return m.group(1).decode()
+        # No hyperlink escapes: the CLI prints the URL as its own link text, so
+        # the plain form arrives doubled and has to be cut back to one.
+        text = _ANSI.sub("", bytes(self.buf).decode("utf-8", "replace"))
+        m2 = re.search(r"https://\S+", text)
+        if not m2:
+            return None
+        url = m2.group(0)
+        half = url.find("https://", len("https://"))
+        return url[:half] if half > 0 else url
+
+    def wait_url(self, timeout: float) -> "str | None":
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            url = self.url()
+            if url:
+                return url
+            if self.proc.poll() is not None:
+                return self.url()
+            time.sleep(0.1)
+        return self.url()
+
+    def tail(self) -> str:
+        """Last thing the CLI said, for an error message. Its code prompt ends
+        without a newline, so a failure arrives glued to it: drop the prompt and
+        keep the part worth showing."""
+        text = _ANSI.sub("", bytes(self.buf).decode("utf-8", "replace"))
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        return _PROMPT.sub("", lines[-1]).strip() if lines else ""
+
+    def close(self) -> None:
+        for stream in (self.proc.stdin, self.proc.stdout):
+            try:
+                stream.close()
+            except OSError:
+                pass
+        if self.proc.poll() is None:
+            self.proc.kill()
+
+
+def _free_slot(reg: dict) -> int:
+    return next(n for n in range(DEFAULT_SLOT + 1, 100)
+                if str(n) not in reg and n not in _pending)
+
+
+def begin_login(alias: "str | None" = None, timeout: float = 30) -> dict:
+    """Start a sign-in in the next free slot; returns {slot, url} for the user
+    to open. Only one sign-in is ever in flight, so an abandoned one can't pile
+    up child processes."""
+    from bridge import runner                   # lazy: runner imports the world
+    for slot in list(_pending):
+        cancel_login(slot)
+    with _lock:
+        slot = _free_slot(_load())
+    # An unregistered slot dir is spoil from an earlier attempt: wipe it, or a
+    # stale .credentials.json would read as this sign-in succeeding.
+    shutil.rmtree(profile_dir(slot), ignore_errors=True)
+    ensure_profile(slot)
+    proc = subprocess.Popen(
+        [runner.claude_bin(), *_LOGIN_ARGS],
+        env={**os.environ, "CLAUDE_CONFIG_DIR": profile_dir(slot),
+             "BROWSER": "true"},                # the browser is the user's, not ours
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, bufsize=0)
+    login = _Login(slot, proc, alias)
+    _pending[slot] = login
+    url = login.wait_url(timeout)
+    if not url:
+        detail = login.tail()
+        cancel_login(slot)
+        raise LoginFailed(detail or "`claude auth login` printed no sign-in link")
+    return {"slot": slot, "url": url}
+
+
+def submit_login_code(slot: int, code: str, timeout: float = 90) -> dict:
+    """Hand the pasted code to the waiting sign-in and register the slot once
+    its credentials land."""
+    slot = int(slot)
+    login = _pending.get(slot)
+    if login is None:
+        raise LoginFailed("that sign-in is no longer running — start it again")
+    code = (code or "").strip()
+    if not code:
+        raise ValueError("paste the code from the sign-in page")
+    try:
+        login.proc.stdin.write(code.encode() + b"\n")
+        login.proc.stdin.flush()
+    except OSError:
+        cancel_login(slot)
+        raise LoginFailed("the sign-in exited before the code arrived")
+    dst = credentials_path(slot)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if os.path.exists(dst) and os.path.getsize(dst) > 0:
+            break
+        if login.proc.poll() is not None:
+            detail = login.tail()
+            cancel_login(slot)
+            raise LoginFailed(detail or "sign-in failed — check the code and retry")
+        time.sleep(0.25)
+    else:
+        cancel_login(slot)
+        raise LoginFailed("sign-in timed out — the code may have expired")
+    _pending.pop(slot, None)
+    login.close()
+    email = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
+    with _lock:
+        reg = _load()
+        reg[str(slot)] = {"email": email, "alias": login.alias, "disabled": False}
+        _save(reg)
+    return {"slot": slot, "email": email}
+
+
+def cancel_login(slot: int) -> None:
+    """Abandon a sign-in and leave no half-made profile behind."""
+    slot = int(slot)
+    login = _pending.pop(slot, None)
+    if login:
+        login.close()
+    with _lock:
+        registered = str(slot) in _load()
+    if not registered:
+        shutil.rmtree(profile_dir(slot), ignore_errors=True)
+
+
+def pending_login() -> "dict | None":
+    """The sign-in waiting for a code, if any — so a reloaded dashboard can pick
+    the flow back up instead of stranding the process."""
+    for slot, login in _pending.items():
+        return {"slot": slot, "url": login.url()}
+    return None
+
+
 def remove(slot: int) -> None:
     slot = int(slot)
     if slot == DEFAULT_SLOT:
         raise ValueError("slot 1 is the ambient ~/.claude login")
+    cancel_login(slot)
     with _lock:
         reg = _load()
         reg.pop(str(slot), None)
