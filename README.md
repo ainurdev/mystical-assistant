@@ -47,8 +47,9 @@ browser is just a remote control; the work happens on your machine, in your repo
 | Python 3.10+ | runs the bridge | stdlib only — nothing to `pip install` |
 | A Telegram account | it's your remote control | you create the bot in step 1 |
 
-A small tunnel client (only for the phone Mini App — setup offers to install it)
-and Node (only if you edit the web UI) are optional.
+A small tunnel client (only for the phone Mini App), `opencode` (only for the
+free-provider fallback when your Claude quota runs out) and Node (only if you
+edit the web UI) are optional — setup offers to install the first two.
 
 **Install**
 
@@ -58,18 +59,24 @@ cd mystical-assistant
 ./setup.sh
 ```
 
-`setup.sh` asks four questions and handles everything else. It's idempotent —
+`setup.sh` asks six questions and handles everything else. It's idempotent —
 re-run it any time and it only asks for what's still missing.
 
 1. **Bot token.** It walks you through [@BotFather](https://t.me/BotFather) →
    `/newbot` → paste the token. Setup checks the token against Telegram and
    prints your bot's `t.me` link, so a typo fails here instead of at first run.
 2. **Projects root** — the folder your repos live in (default `~/projects`).
-3. **Mini App?** — the phone control panel; it needs a small tunnel client, and
+3. **Permission posture** — whether sessions you start from the dashboard or
+   phone ask before running commands (default) or run with full autonomy. There
+   is no silent default: it decides what Claude may do on your machine unwatched.
+4. **Mini App?** — the phone control panel; it needs a small tunnel client, and
    if that's missing setup offers to install it (Homebrew on macOS, a release
    binary into `~/.local/bin` on Linux). Say no and you still get the bot +
    dashboard.
-4. **Start it now?** — launches the bridge.
+5. **Free-provider fallback?** — offers to install `opencode` (~60MB), which
+   lets a session hand off to a non-Anthropic model when your Claude accounts
+   run out of quota. Add the provider key later in the dashboard.
+6. **Start it now?** — launches the bridge.
 
 Everything else is automatic: it captures your Telegram chat id (it asks you to
 message the bot, then reads the id off that message), generates the dashboard

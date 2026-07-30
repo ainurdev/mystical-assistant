@@ -45,11 +45,15 @@ def test_no_opencode_binary_means_no_free_agent():
     """The rung must simply not appear rather than failing at handover time."""
     freeagent._bin = None
     saved, freeagent.OPENCODE_BIN = freeagent.OPENCODE_BIN, "definitely-not-here"
+    # setup.sh installs opencode into ~/.opencode/bin, so an off-PATH name only
+    # means "absent" once the install-dir probe misses too.
+    saved_fallbacks, freeagent._FALLBACKS = freeagent._FALLBACKS, ()
     try:
         _env(GEMINI_API_KEY="k")
         assert freeagent.available() == []
     finally:
         freeagent.OPENCODE_BIN = saved
+        freeagent._FALLBACKS = saved_fallbacks
         freeagent._bin = None
 
 
