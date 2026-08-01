@@ -4,25 +4,91 @@
 
 # mystical-assistant
 
-**Claude Code runs on your machine. You drive it from your phone.**
+**Claude stops at your limit. This picks the work back up.**
 
+[![MIT License](https://img.shields.io/badge/license-MIT-b9a6ff?style=flat-square&labelColor=060a0a)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-7fe9d8?style=flat-square&labelColor=060a0a)](https://www.python.org/)
 [![Dependencies 0](https://img.shields.io/badge/dependencies-0-b9a6ff?style=flat-square&labelColor=060a0a)](#)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-required-7fe9d8?style=flat-square&labelColor=060a0a)](https://claude.com/claude-code)
-[![Telegram](https://img.shields.io/badge/Telegram-bot%20%2B%20mini%20app-6fb5ff?style=flat-square&labelColor=060a0a)](https://t.me/BotFather)
+
+[mystical-assistant.pages.dev](https://mystical-assistant.pages.dev)
 
 </div>
 
 <!-- DEMO_GIF: 45–60s screen recording (marketing track) goes here -->
 
-A remote dev workflow backed by **Claude Code on your own machine**, driven from
-anywhere — a **Telegram bot**, a **Telegram Mini App** control panel, and a
-**localhost desktop dashboard** — all sharing one conversation store. Start a
-session on any surface (including Claude Code running natively in VS Code) and
-continue it from any other, without caring where it started.
+A local dashboard for every Claude Code session on your machine — the one in VS
+Code, the one in a terminal tab behind three others, the one you started here —
+grouped by repo and marked alive or not. When a usage limit kills a turn it parks
+the session and finds a way on: another Claude account of yours, a free agent on a
+different provider, or the reset itself. Off your desk, the same sessions are
+drivable from your phone through a Telegram bot and Mini App.
 
 The bridge runs `claude` locally and reuses its login (no API key). Your phone or
 browser is just a remote control; the work happens on your machine, in your repos.
+
+**MIT licensed** · **reads the sessions you already have** · **no API key** ·
+**Python standard library only** · **macOS, Linux, WSL**
+
+<br />
+
+## ✦ The gap this closes
+
+Claude Code is happy to run a session per window. It just won't tell you they
+exist. So the dashboard asks your machine directly: it reads Claude Code's own
+session registry, checks whether each process is actually alive, and puts the
+answer in one list — which repo, which branch, how long, working or waiting on you.
+
+| Before | After |
+|---|---|
+| A client per project — an editor window here, a terminal tab there | One page for every project, wherever the session started |
+| Alt-tab through every window to find the live one | One list of everything alive, per repo and branch |
+| No idea which repo a session belongs to | Sessions grouped by project, with turns and cost |
+| Find out it stopped for an answer 20 minutes ago | A marker on anything sitting there waiting on you |
+
+A turn you opened in VS Code this morning can be read, answered and carried on
+here — or from your phone — without reopening the project it came from.
+
+<br />
+
+## ✦ Why this one
+
+Session lists, file explorers, git panes, worktrees and live subagent feeds exist
+in plenty of good tools, so they're not the pitch. These five are.
+
+**1. A limit parks the turn, then looks for another way.** Hit a 5-hour or weekly
+cap and the work is parked, not lost — and parking is only the floor. It walks a
+ladder: another Claude account you own, if one still has quota; a free agent on a
+different provider, if none do; otherwise it reads the real reset time off the
+usage endpoint, waits, and picks the turn back up with its context intact. Each
+session decides whether it asks first or just switches. Server errors take their
+own path — the first retry is immediate, then a minute, out to thirty. All of it
+survives a restart.
+*Elsewhere: shell wrappers watching the terminal from outside, and account-switchers that swap one global credential file — changing the account under every session already running.*
+
+**2. It teaches you what it just wrote.** After a turn that changed code, a cheap
+pass picks at most two things you probably accepted without fully reading and
+offers them as Keep/Skip cards. The review itself — explanation, graded
+explain-back, quiz, exercise — is written and served by the bridge, but the
+dashboard doesn't open it yet (`hud/TeacherTab.tsx` is built and unmounted).
+*Elsewhere: other dashboards show you the diff and leave it there.*
+
+**3. Memory you approve, scoped to the branch.** Facts are proposed as Keep/Skip
+cards and typed as a convention, decision, preference, goal or gotcha. Only what
+you keep is injected, and it's scoped to that project and that branch, so a spike
+doesn't leak its assumptions into `main`.
+*Elsewhere: memory plugins ingest your sessions automatically into one bank per project.*
+
+**4. Liveness from the process, not a timestamp.** It reads Claude Code's session
+registry and asks the OS whether that PID is alive. A VS Code session shows as
+running because the process is running.
+*Elsewhere: detection leans on file modification times, which go stale and lie about long, quiet turns.*
+
+**5. The standard library, and nothing else.** No `pip install`, no Node on the
+server — Python 3.10+ and the files Claude Code already writes. Nothing sits
+between your machine and the CLI at runtime, and you can read the whole server in
+an afternoon. (The browser UI is a normal Vite app, built once on first start.)
+*Elsewhere: comparable web UIs ship a Node server and its dependency tree.*
 
 <br />
 
@@ -30,10 +96,119 @@ browser is just a remote control; the work happens on your machine, in your repo
 
 | Surface | How you reach it | What it's for |
 |---|---|---|
+| **Desktop dashboard** | `http://127.0.0.1:8790/?token=…` (localhost only, never exposed) | The main event: project-grouped session sidebar, chat + cards, the repo's editor/git/terminal/issues, dual live logs, usage |
+| **Telegram Mini App** | bot menu → 🛠 Open Panel | The dashboard's reach off your machine: prompts + screenshots, model/effort/permission pickers, live stream, answer cards, session history, GitHub issues as prompt sources |
 | **Telegram bot** | DM your bot | Quick plain-text prompts, `/projects`, `/server`, `/preview`, `/logs` |
-| **Telegram Mini App** | bot menu → 🛠 Open Panel | Prompting from your phone: prompts + screenshots, model/effort/permission pickers, live stream, answer cards, plus session history and GitHub issues as prompt sources |
-| **Desktop dashboard** | `http://127.0.0.1:8790/?token=…` (localhost only, never exposed) | A full-parity Claude client: project-grouped session sidebar, chat + cards, dual live logs, usage |
 | **Native Claude Code** (VS Code / terminal) | the `claude` you already run | Discovered automatically and made resumable from the surfaces above |
+
+All four share one SQLite store, so a session started on any of them continues on
+any other.
+
+<br />
+
+## ✦ The workspace
+
+It runs on localhost and is never published. Point it at the folder your repos
+live in and it picks up the sessions already there — nothing to migrate, nothing
+to re-create.
+
+- **Sessions, grouped by repo.** Every session keyed to its project, so a repo's
+  whole history sits in one place — turn counts, cost, which models ran, when it
+  was last touched.
+- **One list of what's alive.** From Claude Code's own registry, checked against
+  the real process. VS Code, terminal, or started here — they all show up the same.
+- **The repo, right there.** Jump between the diff, the editor, git, worktrees,
+  open issues, a real terminal and a map of the codebase without leaving the
+  session you're reading.
+
+Everything the workspace opens:
+
+`CHAT` · `HISTORY` · `MEMORY` · `PROJECTS` · `FILES` · `QUEUE` · `EDITOR` ·
+`GIT` · `WORKTREES` · `TERMINAL` · `ISSUES` · `SKILLS` · `MAP` · `PREVIEW` ·
+`TEACHER` *(built, not yet opened)*
+
+<br />
+
+## ✦ What's underneath
+
+No pane here is a homemade version of a tool you already use. Where a good one
+exists, that's the one running — and where the work belongs on your machine, it's
+your `git`, your `gh`, your `claude` login doing it.
+
+| Pane | What's actually running |
+|---|---|
+| **EDITOR** | **CodeMirror 6** — selection, folding and keymaps behave as they do everywhere else CodeMirror runs; JS, TS, Python, HTML, CSS, JSON and Markdown ship with it |
+| **TERMINAL** | **xterm.js** in front of a real PTY. Curses apps and colour work because it's a terminal, not a command box |
+| **GIT · WORKTREES** | **your git**, invoked the way you'd invoke it. Nothing is modelled twice, so nothing drifts |
+| **ISSUES** | **the `gh` CLI**, under the auth you already granted it. No second token to mint |
+| **MAP** | **graphify** — repo structure from tree-sitter ASTs; no LLM pass, no embedding bill |
+| **PREVIEW** | **cloudflared** — your dev server reaches your phone without opening a port on your router |
+| **SKILLS** | **community `SKILL.md`** — installing one downloads the maintained original from GitHub, verbatim |
+| **THE ENGINE** | **`claude`** — the CLI you already logged into, reading the transcripts it already writes. No API key, no wrapper between you and the model |
+| **FALLBACK** | **opencode** — the open-source CLI itself, run headlessly on a free provider. Not a second route into your subscription |
+
+This is the same claim as *dependencies: 0*, seen from the other side: the server
+needs nothing installed **because** the work goes to tools already on your
+machine, and the browser panes are the real projects rather than lookalikes.
+
+<br />
+
+## ✦ Features
+
+- **Cross-surface session continuity.** Every session — bot, Mini App, dashboard,
+  or one you started natively in VS Code — appears in one unified list and is
+  resumable from any surface, in its own working directory with its own permission
+  posture. Native sessions are discovered from `~/.claude/projects/**.jsonl`,
+  rendered on demand, and adopted into the store on first continuation.
+- **Live stream, answerable inline.** Text, tool calls, results and errors land as
+  they happen. Permission prompts (Allow/Deny) and `AskUserQuestion` answers render
+  as cards you act on in place, from phone or desktop.
+- **You can see the subagents.** When a run fans out (the `Task` tool), a pill
+  shows "⚡ N agents working"; open it for what each one is doing and a live feed
+  per agent — read-only, straight from Claude Code's own subagent transcripts.
+- **Queue it up, or steer mid-run.** Stack the next few prompts while a turn is
+  still going and they run in order, or fold a correction into the turn that's
+  already running instead of stopping it and starting over.
+- **Per-message controls.** Pick `opus`/`sonnet`/`haiku`, the reasoning effort and
+  the permission posture — for this message, not forever. Whatever you choose
+  sticks to the session. Sessions started from the dashboard or Mini App default to
+  full autonomy (`bypassPermissions`), persisted per session.
+- **Per-project sessions & history.** Sessions are keyed by repo; a per-repo
+  history view rolls up turn counts, cost, models and last activity, with running /
+  "awaiting your answer" indicators.
+- **It remembers the repo.** After a turn, a cheap Haiku pass proposes durable
+  facts — conventions, decisions, your preferences, the active goal — as Keep/Skip
+  cards. Kept facts are injected (project- and branch-scoped) into every future
+  turn's system prompt. Curate them in the Memory view; `MEMORY_ENABLE=0` disables.
+- **Skills, per repo.** Which skills this project has, in the sidebar next to the
+  chat that's using them — and a catalog to add more from, without leaving for a
+  terminal or hand-writing a `SKILL.md`.
+- **Dev server + preview.** Start or stop the project's dev server from the session
+  working on it and watch its log tail beside the page it's serving; expose it on a
+  stable public URL via a named tunnel.
+- **Usage in plain sight.** Live 5-hour and 7-day utilisation on screen in both
+  clients, so the first sign you're near a limit isn't Claude stopping mid-task.
+  Each Claude account you add carries its own meter.
+- **Watch the context fill.** A meter on the composer for how full the window is,
+  in per cent and tokens, with `/compact` one tap away.
+- **⌘K for the rest.** New chat, compact, jump between chat/history/memory, analyze
+  the project, switch model, open settings — from the keyboard.
+- **Fallback ladder.** A turn killed by a usage limit is parked, then walked up the
+  ladder: another Claude account of yours with quota left (each in its own profile
+  directory — your existing login is untouched), then a free agent on a different
+  provider, then the reset itself. Per-session policy: ask, auto-switch, or only
+  ever wait. Managed in the dashboard's **ACCOUNTS** tab; see
+  [docs/superpowers/specs/2026-07-30-fallback-ladder-design.md](docs/superpowers/specs/2026-07-30-fallback-ladder-design.md).
+- **Teacher mode + review log.** After a turn that edits code, a cheap Haiku pass
+  proposes 1–2 concepts to review as Keep/Skip cards on any surface. Kept items get
+  a review — Explain, Explain-back (graded), Quiz, Exercise — written and served by
+  the bridge, but nothing in the dashboard opens it yet. `LEARNING_ENABLE=0` disables.
+- **It doesn't have to look like a dashboard.** Sixteen display profiles, light and
+  dark, from plain daylight to newsprint to a drafting table. CRT scanlines, a
+  roaming sweep and phosphor glow if you want them. And while a turn runs: an
+  equalizer, or nyan cat, or a piano you can play.
+- **One shared design system.** The dashboard and Mini App share the "Mystic"
+  violet theme, tokens and components.
 
 <br />
 
@@ -45,11 +220,16 @@ browser is just a remote control; the work happens on your machine, in your repo
 |---|---|---|
 | [`claude` CLI](https://claude.com/claude-code), installed and logged in | the bridge shells out to it | reuses your existing login — no API key |
 | Python 3.10+ | runs the bridge | stdlib only — nothing to `pip install` |
-| A Telegram account | it's your remote control | you create the bot in step 1 |
+| `npm` | builds the dashboard UI on first start | only the build; nothing Node runs at runtime |
+| A Telegram account | phone control, and setup asks for a bot token | see the note below |
 
-A small tunnel client (only for the phone Mini App), `opencode` (only for the
-free-provider fallback when your Claude quota runs out) and Node (only if you
-edit the web UI) are optional — setup offers to install the first two.
+A small tunnel client (only for the phone Mini App) and `opencode` (only for the
+free-provider fallback) are optional — setup offers to install both.
+
+> **On the bot token:** the project began as a Telegram bridge and `setup.sh` still
+> requires a token even though the dashboard doesn't use one. Making it optional for
+> a dashboard-only install is on the list; until then, a throwaway bot takes about a
+> minute and nothing will message it.
 
 **Install**
 
@@ -83,9 +263,10 @@ message the bot, then reads the id off that message), generates the dashboard
 token, links `mystical` onto your `PATH`, and offers to add `~/.local/bin` to
 your shell rc if it isn't there. The Mini App ships prebuilt; the dashboard's
 bundle is not committed, so the first `mystical` start builds it — that one needs
-`npm` on the machine and takes a minute longer.
+`npm` and takes a minute longer.
 
-Then message your bot, or open the dashboard URL setup prints at the end.
+Then open the dashboard URL setup prints at the end. It finds the sessions
+already on your machine straight away.
 
 **Day-to-day**
 
@@ -128,51 +309,23 @@ mystical run        run in the foreground (Ctrl-C to quit)
 
 <br />
 
-## ✦ Features
+## ✦ Cost, privacy, and what it sends
 
-- **Cross-surface session continuity.** Every session — bot, Mini App, dashboard,
-  or one you started natively in VS Code — appears in one unified list and is
-  resumable from any surface. Resume runs in the session's own working directory
-  with its own permission posture. Native VS Code sessions are discovered from
-  `~/.claude/projects/**.jsonl`, rendered on demand, and adopted into the store on
-  first continuation.
-- **Live streaming.** Assistant text, tool calls, results, and errors stream in
-  real time; all surfaces poll the same SQLite store, so a turn sent on one device
-  shows up live on another.
-- **Interactive cards.** Permission prompts (Allow/Deny) and `AskUserQuestion`
-  prepared answers render as cards you can act on from phone or desktop.
-- **Live agent activity.** When a run spawns subagents (the `Task` tool), a pill
-  at the end of the chat shows "⚡ N agents working"; open it for a modal listing
-  each subagent (what it's doing, its type, running/done) with a live per-agent
-  activity feed. Read-only, derived from Claude Code's on-disk subagent
-  transcripts — on both the Mini App and dashboard.
-- **Per-project sessions & history.** Sessions are keyed by repo; a per-repo
-  history view rolls up turn counts, cost, models, and last activity, with
-  running / "awaiting your answer" indicators.
-- **Model / effort / permission per message.** Pick `opus`/`sonnet`/`haiku`,
-  reasoning effort, and the operating mode. Sessions started from the dashboard or
-  Mini App default to full autonomy (`bypassPermissions`), persisted per session.
-- **Dev server + preview.** Start/stop the project's dev server and watch its logs;
-  expose it on a stable public URL via a named tunnel.
-- **Claude usage.** Live 5-hour / 7-day utilization shown in both clients.
-- **Project memory.** After a turn, a cheap Haiku pass proposes durable facts —
-  conventions, decisions, your preferences, the active goal — as **Keep/Skip** cards.
-  Kept facts are injected (project- and branch-scoped) into every future turn's system
-  prompt, so a session knows its repo without re-deriving it. Curate them in the Memory
-  view; set `MEMORY_ENABLE=0` to disable.
-- **Teacher mode + review log.** After a turn that edits code, a cheap Haiku pass
-  proposes 1–2 concepts to review as **Keep/Skip** cards on any surface. Kept items
-  get a review — Explain, Explain-back (graded), Quiz, Exercise — written and served
-  by the bridge, but nothing in the dashboard opens it yet (`hud/TeacherTab.tsx` is
-  built and unmounted). Set `LEARNING_ENABLE=0` to disable.
-- **Fallback ladder.** When a turn dies on a usage limit the session is parked, then
-  walked up a ladder: another Claude account of yours with quota left (each in its own
-  profile directory — your existing login is untouched), then a free agent on a
-  different provider, then the reset itself. Per-session policy: ask, auto-switch, or
-  only ever wait. Accounts and providers are managed in the dashboard's **ACCOUNTS**
-  tab; see [docs/superpowers/specs/2026-07-30-fallback-ladder-design.md](docs/superpowers/specs/2026-07-30-fallback-ladder-design.md).
-- **One shared design system.** The dashboard and Mini App share the "Mystic"
-  violet theme, tokens, and components.
+Nothing to buy — MIT licensed, and it drives the Claude Code you already pay for.
+There's no telemetry and no account; your code stays on your machine and the
+dashboard talks only to localhost.
+
+The one caveat worth stating plainly: the memory, teacher, auto-title and
+new-session-relevance checks each run their own cheap Haiku pass through your CLI
+after a turn, so they do send that turn's output to Anthropic in a second call.
+Small, but not free on your quota. Each is one env var away from off:
+
+```
+MEMORY_ENABLE=0      # no memory-candidate pass
+LEARNING_ENABLE=0    # no teacher pass
+TITLE_ENABLE=0       # no auto-titling
+RELEVANCE_CHECK=0    # no "should this be a new session?" check
+```
 
 <br />
 
@@ -192,8 +345,13 @@ mystical run        run in the foreground (Ctrl-C to quit)
   - `transcript_jsonl.py` — translates Claude's native `.jsonl` transcripts into the
     bridge's `{turns, events}` shape so native sessions render with full fidelity.
   - `machine.py` — machine-wide view of live external Claude Code sessions.
+  - `limits.py`, `ladder.py`, `accounts.py`, `freeagent.py` — the parking and
+    fallback path: usage-limit detection, the ask/auto/wait policy, per-account
+    profile directories, and the opencode hand-off.
   - `dashboard/`, `miniapp/` — the two HTTP servers + their React clients (`web/`).
   - `tunnel.py`, `devserver.py`, `usage.py`, `browser.py`, `state.py`, `pubsub.py`.
+- **`site/`** — the public landing page (standalone Vite app, no runtime tie to
+  the bridge).
 
 Design specs live in [docs/superpowers/specs/](docs/superpowers/specs/).
 
@@ -203,6 +361,9 @@ Design specs live in [docs/superpowers/specs/](docs/superpowers/specs/).
 
 Whoever is in `ALLOWED_CHAT_IDS` can run Claude Code and start dev servers on this
 machine. With `--dangerously-skip-permissions` that is arbitrary command execution.
+That's the point of the tool and also the risk: Claude Code runs with your user's
+permissions in your own repos, so anything that can slip a prompt past you runs as
+you too.
 
 - Keep `ALLOWED_CHAT_IDS` locked to your own chat id(s); never leave it empty in
   production (discovery mode is for setup only).
@@ -212,6 +373,8 @@ machine. With `--dangerously-skip-permissions` that is arbitrary command executi
   tunnel; unauthenticated requests get 401 (signed `initData` required).
 - The dashboard binds `127.0.0.1` and is **never exposed publicly**; it is gated by
   a Host allow-list (anti DNS-rebinding) and `DASH_TOKEN` (anti-CSRF).
+- The parts that watch your existing sessions only read. Subagent views derive
+  entirely from files Claude Code already wrote, and never touch a live run.
 - `RUN_TIMEOUT` caps a single Claude run; the session auto-resumes afterwards, so
   the brake on a runaway is the resume cap (5 consecutive dead turns), not the clock.
 

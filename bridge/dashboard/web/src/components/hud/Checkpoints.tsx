@@ -1,35 +1,45 @@
 import { useEffect, useRef, useState } from "react";
 import type { Turn } from "../../chat";
+import { SteerIcon } from "../Composer";
 
-/** Anchor id for a checkpoint: a turn's prompt, or a question card inside it. */
-export function ckId(turnId: string, requestId?: string): string {
-  return `ck-${turnId}${requestId ? `-${requestId}` : ""}`;
+/** Anchor id for a checkpoint: a turn's prompt, or a question/steer inside it. */
+export function ckId(turnId: string, key?: string): string {
+  return `ck-${turnId}${key ? `-${key}` : ""}`;
+}
+
+/** Anchor key for a steer, which carries no request id of its own. */
+export function steerKey(index: number): string {
+  return `steer${index}`;
 }
 
 interface Mark {
   id: string;
   label: string;
-  question: boolean;
+  kind: "prompt" | "question" | "steer";
 }
 
 function marksOf(turns: Turn[]): Mark[] {
   const out: Mark[] = [];
   for (const t of turns) {
     const prompt = (t.prompt || "").trim();
-    if (prompt) out.push({ id: ckId(t.id), label: prompt, question: false });
-    for (const e of t.events)
+    if (prompt) out.push({ id: ckId(t.id), label: prompt, kind: "prompt" });
+    t.events.forEach((e, i) => {
       if (e.type === "question")
         out.push({
           id: ckId(t.id, e.request_id),
           label: e.questions[0]?.header || e.questions[0]?.question || "question",
-          question: true,
+          kind: "question",
         });
+      else if (e.type === "steer")
+        out.push({ id: ckId(t.id, steerKey(i)), label: e.text, kind: "steer" });
+    });
   }
   return out;
 }
 
-/** Header button + dropdown listing this session's checkpoints (each prompt and
- *  each question asked), so a long session can be navigated without scrolling. */
+/** Header button + dropdown listing this session's checkpoints (each prompt, each
+ *  question asked and each steer sent mid-turn), so a long session can be
+ *  navigated without scrolling. */
 export function Checkpoints({ turns }: { turns: Turn[] }) {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState(false);
@@ -98,7 +108,8 @@ export function Checkpoints({ turns }: { turns: Turn[] }) {
             CHECKPOINTS
           </div>
           {items.map((m) => {
-            if (!m.question) n++;
+            const sub = m.kind !== "prompt";
+            if (!sub) n++;
             return (
               <button
                 key={m.id}
@@ -115,11 +126,11 @@ export function Checkpoints({ turns }: { turns: Turn[] }) {
                   textAlign: "left",
                   display: "flex",
                   gap: 8,
-                  padding: m.question ? "7px 11px 7px 26px" : "7px 11px",
+                  padding: sub ? "7px 11px 7px 26px" : "7px 11px",
                 }}
               >
-                <span style={{ flex: "none", fontSize: 9, letterSpacing: 1, color: m.question ? "var(--purple)" : "var(--acc)", marginTop: 2 }}>
-                  {m.question ? "?" : n}
+                <span style={{ flex: "none", fontSize: 9, letterSpacing: 1, color: m.kind === "question" ? "var(--purple)" : m.kind === "steer" ? "var(--violet)" : "var(--acc)", marginTop: 2 }}>
+                  {m.kind === "question" ? "?" : m.kind === "steer" ? <SteerIcon size={10} /> : n}
                 </span>
                 <span style={{ minWidth: 0, fontSize: 11.5, lineHeight: 1.45, color: "var(--tx)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>
                   {m.label}

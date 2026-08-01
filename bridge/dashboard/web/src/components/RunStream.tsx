@@ -8,7 +8,7 @@ import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { MemoryCandidateCard } from "./MemoryCandidateCard";
 import { ReviewCandidateCard } from "./ReviewCandidateCard";
-import { ckId } from "./hud/Checkpoints";
+import { ckId, steerKey } from "./hud/Checkpoints";
 
 // Result blocks already "printed" this session — guards against re-typing when a
 // session is reopened or the transcript re-renders.
@@ -168,7 +168,7 @@ export const RunStream = memo(function RunStream({
             // Sent into this turn while it was already running — shown so the
             // transcript explains why the agent changed course mid-task.
             return (
-              <div key={i} className="my-1.5 ml-[18px] flex items-start gap-2 border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[12px] leading-relaxed text-[var(--violet)]">
+              <div key={i} id={ckId(turnId, steerKey(i))} className="my-1.5 ml-[18px] flex scroll-mt-2 items-start gap-2 border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[12px] leading-relaxed text-[var(--violet)]">
                 <span className="mt-0.5"><SteerIcon size={12} /></span>
                 <span>{event.text}</span>
               </div>
