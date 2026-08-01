@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  api, queueStream, sessionStream,
-  type QueueSnapshot, type StoreEvent,
+  api, queueStream,
+  type QueueSnapshot,
 } from "../../api";
 
 const EMPTY: QueueSnapshot = { session_id: "", seq: 0, paused: false, items: [] };
@@ -75,37 +75,4 @@ export function usePreviewQueue(sessionId: string | null) {
       api.queueOp("steer", { session_id: sid, text })
         .then((s) => { apply(s); return true; }).catch(() => false),
   };
-}
-
-export interface ToolEntry { name: string; summary: string; state: "running" | "done"; }
-export interface RunProgress {
-  tools: ToolEntry[]; result: string | null; error: string | null; steers: string[];
-}
-
-const EMPTY_PROGRESS: RunProgress = { tools: [], result: null, error: null, steers: [] };
-
-/** Accumulate the running prompt's live tool-call stream from the session SSE.
- * A turn's events carry turn_id === its job_id, so we keep only the running job's
- * events and resubscribe whenever the running job changes. */
-export function useRunProgress(sessionId: string | null, jobId: string | null): RunProgress {
-  const [prog, setProg] = useState<RunProgress>(EMPTY_PROGRESS);
-  useEffect(() => {
-    setProg(EMPTY_PROGRESS);
-    if (!sessionId || !jobId) return;
-    return sessionStream(sessionId, 0, (ev: StoreEvent) => {
-      if (ev.turn_id !== jobId) return;
-      setProg((p) => {
-        const settle = () => p.tools.map((t) => ({ ...t, state: "done" as const }));
-        if (ev.type === "tool") {
-          return { ...p, tools: [...settle(), { name: ev.name, summary: ev.summary, state: "running" }] };
-        }
-        if (ev.type === "tool_done") return { ...p, tools: settle() };
-        if (ev.type === "steer") return { ...p, steers: [...p.steers, ev.text] };
-        if (ev.type === "result") return { ...p, tools: settle(), result: ev.result };
-        if (ev.type === "error") return { ...p, tools: settle(), error: ev.message };
-        return p;
-      });
-    });
-  }, [sessionId, jobId]);
-  return prog;
 }

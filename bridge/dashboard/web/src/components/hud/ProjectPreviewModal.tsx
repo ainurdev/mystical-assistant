@@ -1,25 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { composePrompt } from "@selector/composePrompt";
-import type { Capture } from "@selector/protocol";
 import { api, type DevServerInfo, type PreviewCtx } from "../../api";
 import { projectTint } from "../../lib/surfaces";
-import { SelectionTray } from "../design/SelectionTray";
-import { useSelector } from "../design/useSelector";
-
-/* PROJECT PREVIEW modal — matches the HUD design mock (hud.dc.html, the
-   "PROJECT PREVIEW (viewport + docked run panel)" section, lines 1333-1505):
-   a browser-chrome viewport on the left and a docked run panel on the right
-   (SOURCE · RUN COMMAND · VIEWPORT · LOG·TAIL · status footer), with a
-   maximize toggle + reload in the chrome.
-
-   It reuses the same bridge dev-server registry RunningWindow drives:
-   api.servers (poll), api.server start/stop (RUN / STOP / reload),
-   api.detectPreview (the "LEARN" repo-scan), and api.projectSettings /
-   setProjectSettings (the run command + deployed URL, persisted per project).
-   The ⊕ chrome button toggles live element select (useSelector ↔ the
-   mysticalSelector vite plugin's in-page agent): picks land in a tray in the
-   docked panel and SEND composes them with an instruction and enqueues to the
-   active session — the same queue path the composer uses to feed Claude. */
 
 function basename(rel: string): string {
   const clean = rel.replace(/\/+$/, "");
@@ -28,15 +9,6 @@ function basename(rel: string): string {
 
 function safeHost(u: string): string {
   try { return new URL(u).host; } catch { return u.replace(/^https?:\/\//, ""); }
-}
-
-/** Short {tag,label} anchor for a selector capture, shown on the queue card. */
-function anchorOf(c: Capture): { tag: string; label: string } {
-  if (c.kind === "element") {
-    const label = (c.text || "").trim().slice(0, 40) || c.selector || c.tag;
-    return { tag: c.tag, label };
-  }
-  return { tag: "pin", label: `PIN (${Math.round(c.point.x)},${Math.round(c.point.y)})` };
 }
 
 /** Coerce a user-typed localhost value into a full URL. Accepts "localhost:5173",
@@ -50,7 +22,7 @@ function normalizeLocal(v: string): string | null {
   return `http://${s}`;
 }
 
-/** Colour a dev-server log line by its content (mirrors RunningWindow's tail). */
+/** Colour a dev-server log line by its content. */
 function logColor(line: string): string {
   const l = line.toLowerCase();
   if (/\b(error|err!|fail|failed|cannot|exception)\b/.test(l)) return "var(--err)";
@@ -82,9 +54,8 @@ function optBtn(active: boolean): React.CSSProperties {
   };
 }
 
-export function ProjectPreviewModal({ project, sessionId, onClose }: {
+export function ProjectPreviewModal({ project, onClose }: {
   project: string;
-  sessionId: string | null;
   onClose: () => void;
 }) {
   const [servers, setServers] = useState<DevServerInfo[]>([]);
@@ -97,12 +68,6 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
   const [full, setFull] = useState(true); // open maximized (near-fullscreen) by default
   const [vw, setVw] = useState<Vw>("full");
   const [infoHover, setInfoHover] = useState(false);
-  // element select → send: instruction + send lifecycle for the SELECT panel
-  const [instruction, setInstruction] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [sendErr, setSendErr] = useState<string | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   // Editable localhost target: `localInput` is the field text, `localApplied` the
   // committed URL used for the preview — persisted per-project so a server you
   // started yourself (outside the bridge) sticks across reopens.
@@ -125,15 +90,6 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
   const localhostUrl = normalizeLocal(localApplied) ?? detectedUrl;
   const activeUrl = source === "localhost" ? localhostUrl : (prodUrl.trim() || null);
 
-  // Live element selector — the in-page agent is injected by the mysticalSelector
-  // vite plugin (dev-only), so it works against localhost, not deployed builds.
-  const selectorOrigin = useMemo(() => {
-    if (source !== "localhost" || !activeUrl) return null;
-    try { return new URL(activeUrl).origin; } catch { return null; }
-  }, [source, activeUrl]);
-  const sel = useSelector(iframeRef, selectorOrigin);
-  const selecting = sel.state.mode === "select";
-
   // Waking = we asked to start (or it's up) but no localhost URL yet.
   const booting = source === "localhost" && (busyRun || (running && !localhostUrl)) && !activeUrl;
   const showApp = !!activeUrl;
@@ -141,7 +97,6 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
   const showBoot = !showApp && booting;
   const showSleep = !showApp && !showBoot && source === "localhost";
 
-  // --- API wiring (mirrors RunningWindow's sequences) ---
   const save = useCallback(async (over?: { cmd?: string; prodUrl?: string }) => {
     await api.setProjectSettings(apiCtx, {
       run_cmd: over?.cmd ?? cmd, prod_url: over?.prodUrl ?? prodUrl,
@@ -253,41 +208,6 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
   const tail = (server?.tail ?? []).slice(-6);
   const frameW = VIEWPORTS.find((v) => v.key === vw)?.w ?? "100%";
   const framed = vw !== "full";
-  const captureWidth = typeof frameW === "number" ? frameW : 1280;
-
-  // Compose the selected elements + instruction into a prompt and enqueue it to
-  // the active session, with a screenshot for visual context when available.
-  const canSend = !!sessionId && !sending && sel.state.items.length > 0;
-  const send = async () => {
-    if (!canSend) return;
-    setSending(true);
-    setSendErr(null);
-    try {
-      const items = sel.state.items;
-      const instr = instruction.trim() || "Please address the notes on the selected elements.";
-      const prompt = composePrompt({ project, width: captureWidth, items, instruction: instr });
-      let images: string[] = [];
-      try {
-        if (activeUrl) {
-          const shot = await api.screenshot(captureWidth, activeUrl, apiCtx);
-          if (shot.data_url) images = [shot.data_url];
-        }
-      } catch { /* text-only fallback */ }
-      await api.queueEnqueue({
-        session_id: sessionId!, surface: "dashboard",
-        text: instruction.trim(), prompt, images,
-        sel: items.map((it) => anchorOf(it.capture)), width: captureWidth, project,
-      });
-      sel.clear();
-      setInstruction("");
-      setSent(true);
-      setTimeout(() => setSent(false), 1200);
-    } catch {
-      setSendErr("failed to send — the session queue rejected it");
-    } finally {
-      setSending(false);
-    }
-  };
 
   const iconBtn: React.CSSProperties = {
     appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
@@ -327,17 +247,6 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
           <button onClick={() => setFull((v) => !v)} title={full ? "restore size" : "maximize"} style={iconBtn}
             onMouseEnter={(e) => (e.currentTarget.style.background = "color-mix(in srgb, var(--acc) 8%, transparent)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{full ? "⤡" : "⤢"}</button>
-          {showApp && (
-            <button onClick={() => sel.setMode(selecting ? "idle" : "select")} disabled={!selectorOrigin}
-              title={!selectorOrigin ? "element select needs the localhost dev server"
-                : selecting ? "exit element select" : "select elements in the live preview & send to Claude"}
-              style={{ ...iconBtn, fontSize: 9.5, letterSpacing: 1.5, padding: "6px 11px", opacity: selectorOrigin ? 1 : 0.4,
-                color: selecting ? "var(--acc)" : "var(--txm)",
-                borderColor: selecting ? "color-mix(in srgb, var(--acc) 55%, transparent)" : "color-mix(in srgb, var(--acc) 25%, transparent)",
-                background: selecting ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent" }}
-              onMouseEnter={(e) => { if (!selecting) e.currentTarget.style.background = "color-mix(in srgb, var(--acc) 8%, transparent)"; }}
-              onMouseLeave={(e) => { if (!selecting) e.currentTarget.style.background = "transparent"; }}>{selecting ? "◉ SELECTING" : "⊕ SELECT"}</button>
-          )}
           <button onClick={() => void reload()} title="restart the dev server" style={iconBtn} disabled={busyRun}
             onMouseEnter={(e) => (e.currentTarget.style.background = "color-mix(in srgb, var(--acc) 8%, transparent)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>↻</button>
@@ -358,7 +267,7 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
                 <div style={{ width: frameW, maxWidth: "100%", height: "100%", transition: "width .35s ease",
                   borderLeft: framed ? "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" : "none",
                   borderRight: framed ? "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" : "none" }}>
-                  <iframe ref={iframeRef} src={activeUrl!} title="project preview"
+                  <iframe src={activeUrl!} title="project preview"
                     style={{ width: "100%", height: "100%", border: 0, background: "#fff", display: "block" }} />
                 </div>
               </div>
@@ -478,43 +387,6 @@ export function ProjectPreviewModal({ project, sessionId, onClose }: {
                   ))}
                 </div>
               </div>
-
-              {/* SELECT · SEND (live element picks → session prompt queue) */}
-              {showApp && (selecting || sel.state.items.length > 0) && (
-                <div style={{ flex: "none", padding: SECTION_PAD, borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", display: "flex", flexDirection: "column", gap: 9 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <span style={labelStyle}>SELECT · SEND</span>
-                    <span style={{ flex: 1 }} />
-                    {sel.state.items.length > 0 && (
-                      <button onClick={sel.clear} title="drop all picks"
-                        style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", border: "none", background: "transparent", color: "var(--txd)", fontSize: 9, letterSpacing: 1.5, padding: 0 }}>CLEAR</button>
-                    )}
-                  </div>
-                  {selecting && !sel.state.ready && (
-                    <span style={{ fontSize: 9, color: "var(--warn)", lineHeight: 1.5 }}>selector agent not detected — press RUN so the bridge starts the dev server with the selector plugin injected, or add mysticalSelector() to the app's vite config.</span>
-                  )}
-                  {selecting && sel.state.ready && (
-                    <span style={{ fontSize: 9, color: "var(--txf)", fontFamily: "var(--mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {sel.state.hoverLabel ?? "click an element in the preview to capture it"}
-                    </span>
-                  )}
-                  <SelectionTray items={sel.state.items} onNote={sel.setNote} onRemove={sel.remove} />
-                  <input value={instruction} onChange={(e) => setInstruction(e.target.value)} disabled={sending}
-                    onKeyDown={(e) => { if (e.key === "Enter") void send(); }}
-                    placeholder={sessionId ? "describe the change — ↵ to send…" : "open a session to send"} spellCheck
-                    style={{ appearance: "none", width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 70%, transparent)",
-                      border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", color: "var(--txh)", fontFamily: "inherit", fontSize: 11, padding: "7px 9px", outline: "none" }} />
-                  {sendErr && <span style={{ fontSize: 9, color: "var(--err)" }}>{sendErr}</span>}
-                  <button onClick={() => void send()} disabled={!canSend}
-                    title={!sessionId ? "no active session to send to" : sel.state.items.length === 0 ? "select at least one element first" : "send the selected elements to Claude"}
-                    style={{ appearance: "none", cursor: canSend ? "pointer" : "default", fontFamily: "inherit", width: "100%", padding: "8px 0", fontSize: 10, letterSpacing: 2.5,
-                      border: `1px solid ${sent ? "color-mix(in srgb, var(--ok) 55%, transparent)" : "color-mix(in srgb, var(--acc) 45%, transparent)"}`,
-                      background: sent ? "color-mix(in srgb, var(--ok) 12%, transparent)" : "color-mix(in srgb, var(--acc) 10%, transparent)",
-                      color: sent ? "var(--ok)" : "var(--acc)", opacity: canSend || sent ? 1 : 0.45 }}>
-                    {sent ? "SENT ✓" : sending ? "SENDING…" : "SEND ▸"}
-                  </button>
-                </div>
-              )}
 
               <div style={{ flex: 1 }} />
 

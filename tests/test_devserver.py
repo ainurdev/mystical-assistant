@@ -90,54 +90,6 @@ def test_immediate_exit_reports_failure():
     assert devserver.state_for(d)["status"] == "not started"
 
 
-def test_selector_cmd_injects_for_vite_projects():
-    base = os.environ["BASE_PATH"]
-    p = os.path.join(base, "vite-proj"); os.makedirs(p, exist_ok=True)
-    with open(os.path.join(p, "vite.config.ts"), "w") as f:
-        f.write("export default { plugins: [] }\n")
-    orig, fake = devserver._PLUGIN_DIST, os.path.join(base, "vite-plugin.mjs")
-    with open(fake, "w") as f:
-        f.write("export const mysticalSelector = () => ({});\n")
-    devserver._PLUGIN_DIST = fake
-    try:
-        cfg_rel = devserver.SELECTOR_CFG_REL
-        # npm forwards args only after `--`; pnpm/yarn/vite take the flag directly.
-        assert devserver._selector_cmd(p, "npm run dev") == f"npm run dev -- --config {cfg_rel}"
-        assert devserver._selector_cmd(p, "pnpm dev") == f"pnpm dev --config {cfg_rel}"
-        assert devserver._selector_cmd(p, "vite --port 4000") == f"vite --port 4000 --config {cfg_rel}"
-        # a cmd already forwarding with `--` must not get a second separator
-        assert devserver._selector_cmd(p, "npm run dev -- --host") == \
-            f"npm run dev -- --host --config {cfg_rel}"
-        # the wrapper imports the project's own config + the bundled plugin
-        with open(os.path.join(p, cfg_rel), encoding="utf-8") as f:
-            cfg = f.read()
-        assert os.path.join(p, "vite.config.ts") in cfg and fake in cfg
-        assert "mysticalSelector" in cfg and '"http://localhost:' in cfg
-    finally:
-        devserver._PLUGIN_DIST = orig
-
-
-def test_selector_cmd_skips_when_not_applicable():
-    base = os.environ["BASE_PATH"]
-    p = os.path.join(base, "plain-proj"); os.makedirs(p, exist_ok=True)
-    assert devserver._selector_cmd(p, "npm run dev") == "npm run dev"  # not vite
-    v = os.path.join(base, "vite-skip"); os.makedirs(v, exist_ok=True)
-    orig = devserver._PLUGIN_DIST
-    devserver._PLUGIN_DIST = __file__  # any existing file
-    try:
-        with open(os.path.join(v, "vite.config.ts"), "w") as f:
-            f.write("import { mysticalSelector } from 'plugin'\nexport default {}\n")
-        # project already runs the plugin itself → untouched
-        assert devserver._selector_cmd(v, "npm run dev") == "npm run dev"
-        with open(os.path.join(v, "vite.config.ts"), "w") as f:
-            f.write("export default {}\n")
-        # explicit --config or an unknown runner → untouched
-        assert devserver._selector_cmd(v, "vite --config custom.ts") == "vite --config custom.ts"
-        assert devserver._selector_cmd(v, "make dev") == "make dev"
-    finally:
-        devserver._PLUGIN_DIST = orig
-
-
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

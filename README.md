@@ -121,8 +121,7 @@ mystical run        run in the foreground (Ctrl-C to quit)
   `PREVIEW_HOSTNAME` / `TUNNEL_NAME` / `TUNNEL_ID` / `TUNNEL_CREDENTIALS_FILE`.
 - **Rebuild the web UI** (only if you change the frontend):
   `npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build`
-  (same for `bridge/dashboard/web`). The dashboard build also needs the selector
-  plugin's deps: `npm --prefix tools/selector-plugin install`.
+  (same for `bridge/dashboard/web`).
 - **Chat-id discovery mode:** start `mystical` with `ALLOWED_CHAT_IDS` empty,
   message the bot, and copy the id it prints. Setup only; never leave it empty
   otherwise.

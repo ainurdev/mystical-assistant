@@ -1115,7 +1115,6 @@ export function App() {
             {previewProject && (
               <ProjectPreviewModal
                 project={previewProject}
-                sessionId={sessionId}
                 onClose={() => setPreviewProject(null)}
               />
             )}

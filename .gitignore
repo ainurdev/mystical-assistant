@@ -21,10 +21,6 @@ bridge/dashboard/web/node_modules/
 bridge/dashboard/web/.vite/
 bridge/dashboard/web/dist/
 
-# Selector plugin package (dist/agent.global.js is committed intentionally)
-tools/selector-plugin/node_modules/
-tools/selector-plugin/.vite/
-
 # Marketing landing page (dist/ is NOT committed — the host builds it)
 site/node_modules/
 site/.vite/
