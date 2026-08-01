@@ -1,22 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card } from "./ui";
 import type { AnswerSelection, Question } from "../api";
+import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 
 // Mirrors bridge/miniapp/web/src/components/QuestionCard.tsx (shared design):
 // full-width option rows with descriptions, not cramped wrapping chips.
 export function QuestionCard({
   questions,
+  requestId,
   active,
   answered,
   onSubmit,
 }: {
   questions: Question[];
+  requestId: string;
   active: boolean;
   answered?: AnswerSelection[];
   onSubmit: (answers: AnswerSelection[]) => void;
 }) {
-  const [sel, setSel] = useState<Record<string, string[]>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [restored] = useState(() => readDraft(requestId));
+  const [sel, setSel] = useState<Record<string, string[]>>(restored.sel);
+  const [notes, setNotes] = useState<Record<string, string>>(restored.notes);
+
+  // Hold the draft while the question is still open, so leaving the session (or
+  // closing the tab) doesn't cost the answers already picked. Cleared on
+  // `answered` rather than on `!active`, because a read-only render of the same
+  // question — history, another surface — is inactive while the draft is live.
+  useEffect(() => {
+    if (answered) clearDraft(requestId);
+    else if (active) saveDraft(requestId, { sel, notes });
+  }, [requestId, active, answered, sel, notes]);
 
   if (!active) {
     // Resolved / historical: still show the prepared answers as buttons, with the
@@ -122,7 +135,9 @@ export function QuestionCard({
               );
             })}
           </div>
-          <details>
+          {/* A restored note sits inside this fold; open it or the draft reads as lost.
+              `restored` never changes, so it's a default — your own toggling sticks. */}
+          <details open={(restored.notes[q.header] ?? "") !== ""}>
             <summary className="cursor-pointer text-xs text-[var(--tg-hint)]">
               None of these? Answer in your own words
             </summary>

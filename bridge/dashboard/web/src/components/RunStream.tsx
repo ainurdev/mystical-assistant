@@ -226,6 +226,7 @@ export const RunStream = memo(function RunStream({
               <div key={i} id={ckId(turnId, event.request_id)} className="scroll-mt-2">
                 <QuestionCard
                   questions={event.questions}
+                  requestId={event.request_id}
                   active={!!onRespond && pendingIds.has(event.request_id)}
                   answered={qAnswered.get(event.request_id)}
                   onSubmit={(answers) => onRespond?.(event.request_id, { answers })}

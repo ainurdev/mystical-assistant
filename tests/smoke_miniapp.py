@@ -86,9 +86,6 @@ try:
     r = requests.post(base + "/api/select", headers=H, json={"dir": "/../etc"}, timeout=5)
     check("POST /api/select escapes base -> 400", r.status_code == 400, r.status_code)
 
-    r = requests.get(base + "/api/logs?n=10", headers=H, timeout=5)
-    check("GET /api/logs", r.status_code == 200 and "lines" in r.json(), r.status_code)
-
     r = requests.get(base + "/api/run/does-not-exist", headers=H, timeout=5)
     check("GET /api/run/<unknown> -> 404", r.status_code == 404, r.status_code)
 finally:

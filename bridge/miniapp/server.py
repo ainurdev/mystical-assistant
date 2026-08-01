@@ -18,10 +18,9 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (agents, browser, config, devserver, git, github, graphmap,
-                    learning, memory, models, native, project_config, relevance,
-                    runner, screenshot, shell, state, store, transcript_jsonl,
-                    tunnel, usage)
+from bridge import (agents, browser, config, devserver, git, github, memory,
+                    models, native, project_config, relevance, runner, state,
+                    store, transcript_jsonl, tunnel, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -197,8 +196,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_state(chat_id)
                 if path == "/api/projects":
                     return self._api_projects(qs)
-                if path == "/api/logs":
-                    return self._api_logs(chat_id, qs)
                 if path == "/api/history":
                     return self._api_history(chat_id, qs)
                 if path == "/api/running":
@@ -209,35 +206,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_agent_activity(chat_id, qs)
                 if path == "/api/usage":
                     return self._json(usage.get_usage())
-                if path == "/api/accounts":
-                    return self._api_accounts(chat_id)
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
-                if path == "/api/project/settings":
-                    return self._api_project_settings(chat_id)
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
-                if path == "/api/learning/items":
-                    return self._api_learning_items(chat_id, qs)
                 if path.startswith("/api/sessions/"):
                     return self._api_session_get(
                         chat_id, path[len("/api/sessions/"):], qs)
                 if path.startswith("/api/run/"):
                     return self._api_run_poll(chat_id, path[len("/api/run/"):], qs)
-                if path == "/api/shell":
-                    try:
-                        cursor = int(qs.get("cursor", ["0"])[0])
-                    except ValueError:
-                        cursor = 0
-                    return self._json(shell.snapshot(cursor))
-                if path == "/api/memory/items":
-                    return self._api_memory_items(chat_id, qs)
-                if path == "/api/graph/state":
-                    return self._api_graph(chat_id, "state", qs, None)
-                if path == "/api/graph/html":
-                    return self._api_graph(chat_id, "html", qs, None)
-                if path == "/api/graph/explain":
-                    return self._api_graph(chat_id, "explain", qs, None)
                 return self._json({"error": "not found"}, 404)
             self._serve_static(path)
         except Exception as e:  # noqa: BLE001
@@ -260,8 +237,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_sessions_create(chat_id, body)
             if path == "/api/learning/item":
                 return self._api_learning_item(chat_id, body)
-            if path == "/api/learning/teach":
-                return self._api_learning_teach(chat_id, body)
             if path.startswith("/api/sessions/") and path.endswith("/archive"):
                 return self._api_session_archive(
                     chat_id, path[len("/api/sessions/"):-len("/archive")], body)
@@ -278,26 +253,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_run(chat_id, body)
             if path == "/api/server":
                 return self._api_server(chat_id, body)
-            if path == "/api/graph/update":
-                return self._api_graph(chat_id, "update", {}, body)
-            if path == "/api/shell":
-                return self._json(shell.run(state.project_dir(chat_id), body.get("command", "")))
-            if path == "/api/shell/kill":
-                return self._json(shell.kill())
-            if path == "/api/project/settings":
-                return self._api_project_settings_set(chat_id, body)
             if path == "/api/preview":
                 return self._api_preview(chat_id, body)
-            if path == "/api/preview/screenshot":
-                return self._api_preview_screenshot(body)
             if path == "/api/memory/candidate":
                 return self._api_memory_candidate(chat_id, body)
             if path == "/api/memory/update":
                 return self._api_memory_update(chat_id, body)
-            if path == "/api/memory/status":
-                return self._api_memory_status(chat_id, body)
-            if path == "/api/memory/pin":
-                return self._api_memory_pin(chat_id, body)
             return self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             self._safe_500(e)
@@ -346,11 +307,6 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
 
     # --- project memory ------------------------------------------------------
-    def _api_memory_items(self, chat_id, qs):
-        return self._json({"items": memory.items(
-            chat_id, project=(qs.get("project", [None])[0] or None),
-            status=(qs.get("status", ["active"])[0] or "active"))})
-
     def _api_memory_candidate(self, chat_id, body):
         if body.get("action") not in ("keep", "skip"):
             return self._json({"error": "bad action"}, 400)
@@ -359,16 +315,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_memory_update(self, chat_id, body):
         m = memory.edit(chat_id, str(body.get("item_id", "")), body.get("title"), body.get("body"))
-        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
-
-    def _api_memory_status(self, chat_id, body):
-        if body.get("status") not in ("active", "archived"):
-            return self._json({"error": "bad status"}, 400)
-        m = memory.set_status(chat_id, str(body.get("item_id", "")), body["status"])
-        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
-
-    def _api_memory_pin(self, chat_id, body):
-        m = memory.set_pin(chat_id, str(body.get("item_id", "")), bool(body.get("pinned")))
         return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
 
     def _api_run(self, chat_id: int, body: dict):
@@ -436,11 +382,6 @@ class Handler(BaseHTTPRequestHandler):
         archived = qs.get("archived", ["0"])[0] == "1"
         self._json({"sessions": store.history(chat_id, include_archived=archived)})
 
-    def _api_learning_items(self, chat_id: int, qs):
-        project = qs.get("project", [""])[0]
-        self._json({"items": store.list_learning_items(
-            chat_id, project or None, status="kept")})
-
     def _api_learning_item(self, chat_id: int, body: dict):
         item = store.get_learning_item((body.get("item_id") or "").strip())
         if not item or item["owner_id"] != chat_id:
@@ -460,18 +401,6 @@ class Handler(BaseHTTPRequestHandler):
         else:
             return self._json({"error": "bad action"}, 400)
         self._json({"ok": True})
-
-    def _api_learning_teach(self, chat_id: int, body: dict):
-        item = store.get_learning_item((body.get("item_id") or "").strip())
-        if not item or item["owner_id"] != chat_id:
-            return self._json({"error": "not found"}, 404)
-        mode = body.get("mode")
-        if mode not in ("explain", "quiz", "exercise", "grade"):
-            return self._json({"error": "bad mode"}, 400)
-        text = learning.teach(item, mode, user_answer=body.get("user_answer"))
-        if mode == "grade":
-            store.append_learning_note(item["id"], text)
-        self._json({"text": text})
 
     def _api_running(self, chat_id: int):
         self._json(runner.running_snapshot(chat_id))
@@ -550,14 +479,6 @@ class Handler(BaseHTTPRequestHandler):
         store.set_fallback_policy(sid, policy)
         self._json({"ok": True, "fallback_policy": policy})
 
-    def _api_accounts(self, chat_id: int):
-        """Claude logins + how much of each is left, for the meters."""
-        from bridge import accounts
-        rows = []
-        for a in accounts.list_accounts():
-            rows.append({**a, "left": accounts.headroom(a["slot"])})
-        self._json({"accounts": rows})
-
     def _api_run_respond(self, chat_id: int, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""
         job = self._owned_job(chat_id, job_id)
@@ -602,56 +523,6 @@ class Handler(BaseHTTPRequestHandler):
             msg = devserver.start_server(cmd, pd)
         self._json({"server": devserver.server_state(pd), "message": msg})
 
-    def _api_graph(self, chat_id: int, action: str, qs: dict, body: "dict | None"):
-        """Graph endpoints share one resolver: explicit ?project= (validated
-        under BASE_PATH) else the chat's active project."""
-        src = (body or {}).get("project") if body is not None else \
-            (qs.get("project", [None])[0])
-        cwd = None
-        if src:
-            cand = os.path.realpath(os.path.join(config.BASE_PATH, str(src).lstrip("/")))
-            if browser.within_base(cand) and os.path.isdir(cand):
-                cwd = cand
-            else:
-                return self._json({"error": "invalid project"}, 400)
-        cwd = cwd or state.project_dir(chat_id)
-        if action == "state":
-            return self._json(graphmap.graph_state(cwd))
-        if action == "html":
-            fp = os.path.join(cwd, graphmap.OUT_DIR, "graph.html")
-            if not os.path.isfile(fp):
-                return self._json({"error": "no graph"}, 404)
-            with open(fp, "rb") as f:
-                return self._send_bytes(f.read(), 200, "text/html; charset=utf-8")
-        if action == "explain":
-            q = (qs.get("q", [""])[0] or "").strip()
-            if not q:
-                return self._json({"error": "empty query"}, 400)
-            return self._json({"text": graphmap.explain(cwd, q)})
-        if action == "update":
-            return self._json(graphmap.update_async(cwd))
-        return self._json({"error": "not found"}, 404)
-
-    def _api_project_settings(self, chat_id: int):
-        self._json({
-            "scripts": project_config.package_scripts(state.project_dir(chat_id)),
-            "run_cmd": project_config.run_cmd(state.project_key(chat_id)),
-            "default_cmd": config.START_CMD,
-            "log_path": devserver.DEV_LOG_REL,
-        })
-
-    def _api_project_settings_set(self, chat_id: int, body: dict):
-        cmd = project_config.set_run_cmd(state.project_key(chat_id),
-                                         (body.get("run_cmd") or "")[:1000])
-        self._json({"ok": True, "run_cmd": cmd})
-
-    def _api_logs(self, chat_id: int, qs):
-        try:
-            n = int(qs.get("n", ["200"])[0])
-        except ValueError:
-            n = 200
-        self._json({"lines": devserver.log_tail(n, state.project_dir(chat_id))})
-
     def _api_preview(self, chat_id: int, body: dict):
         action = body.get("action", "start")
         if action == "stop":
@@ -663,21 +534,6 @@ class Handler(BaseHTTPRequestHandler):
                 port = config.PREVIEW_PORT
             _, msg = tunnel.start_tunnel(port)
         self._json({"preview": tunnel.tunnel_state(), "message": msg})
-
-    def _api_preview_screenshot(self, body: dict):
-        url = tunnel.tunnel_state().get("url")
-        if not url:
-            return self._json({"error": "preview not running"}, 409)
-        try:
-            width = int(body.get("width") or 375)
-        except (TypeError, ValueError):
-            width = 375
-        try:
-            png = screenshot.capture(url, width)
-        except Exception as e:  # noqa: BLE001
-            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
-        data_url = "data:image/png;base64," + base64.b64encode(png).decode()
-        return self._json({"data_url": data_url})
 
     # --- static (SPA) --------------------------------------------------------
     def _serve_static(self, path: str):

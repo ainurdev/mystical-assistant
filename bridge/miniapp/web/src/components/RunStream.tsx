@@ -154,6 +154,7 @@ export const RunStream = memo(function RunStream({
               <QuestionCard
                 key={i}
                 questions={event.questions}
+                requestId={event.request_id}
                 active={!!onRespond && pendingIds.has(event.request_id)}
                 answered={qAnswered.get(event.request_id)}
                 onSubmit={(answers) => onRespond?.(event.request_id, { answers })}

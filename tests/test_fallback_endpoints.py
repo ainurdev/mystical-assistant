@@ -76,17 +76,6 @@ def test_accounts_payload_carries_the_current_default_policy():
         restore()
 
 
-def test_miniapp_accounts_endpoint_matches():
-    restore = _stub_accounts(ROWS, left=12)
-    h, box = _mini_handler()
-    try:
-        h._api_accounts(CHAT)
-        assert box["code"] == 200
-        assert [a["left"] for a in box["obj"]["accounts"]] == [12, 12]
-    finally:
-        restore()
-
-
 # --- per-session policy ------------------------------------------------------
 
 def test_dashboard_sets_a_sessions_policy():

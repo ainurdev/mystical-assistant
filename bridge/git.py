@@ -442,12 +442,6 @@ def checkout(cwd: str, ref: str) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
-def create_branch(cwd: str, name: str, start: str = "") -> tuple[bool, str]:
-    args = ["branch", "--end-of-options", name] + ([start] if start else [])
-    rc, out, err = _run(cwd, *args)
-    return rc == 0, (out + err).strip()
-
-
 def delete_branch(cwd: str, name: str, force: bool = False) -> tuple[bool, str]:
     if name in ("main", "master", current_branch(cwd)):
         return False, "refusing to delete the current/default branch"
