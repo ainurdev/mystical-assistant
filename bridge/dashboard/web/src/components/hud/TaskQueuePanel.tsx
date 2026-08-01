@@ -100,7 +100,6 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
       style={{
         border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
         background: "color-mix(in srgb, var(--panel) 50%, transparent)",
-        animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both",
         flex: "none",
       }}
     >

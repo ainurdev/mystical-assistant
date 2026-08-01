@@ -178,6 +178,21 @@ def first_user_text(path: str) -> str | None:
 def recover_cwd(path: str) -> str | None:
     """The session's true working dir, read from the first record carrying `cwd`
     (avoids decoding Claude's lossy projects-dir name)."""
+    return recover_meta(path)[0]
+
+
+def recover_meta(path: str) -> tuple[str | None, str]:
+    """(cwd, origin) from the first record carrying a `cwd` — Claude Code stamps
+    the surface's `entrypoint` on that same record: "claude-vscode" for the
+    extension, "cli" for an interactive terminal, "sdk-cli" for the bridge's own
+    runs. origin comes back in the store's vocabulary so it maps to a surface
+    chip, defaulting to "vscode" when `entrypoint` is absent (older transcripts).
+
+    ponytail: two-way split. A bridge run ("sdk-cli") lands on the terminal chip,
+    but it only reaches here as a stray — a real bridge session dedups onto its
+    existing store row, which keeps its own origin.
+    """
+    cwd, entrypoint = None, ""
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
@@ -189,10 +204,12 @@ def recover_cwd(path: str) -> str | None:
                 except json.JSONDecodeError:
                     continue
                 if isinstance(rec, dict) and rec.get("cwd"):
-                    return rec["cwd"]
+                    cwd = rec["cwd"]
+                    entrypoint = str(rec.get("entrypoint") or "").lower()
+                    break
     except OSError:
-        return None
-    return None
+        pass
+    return cwd, ("terminal" if entrypoint and "vscode" not in entrypoint else "vscode")
 
 
 def parse_jsonl(path: str, cursor: int = 0) -> dict:

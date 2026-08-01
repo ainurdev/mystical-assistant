@@ -204,19 +204,24 @@ def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str,
     """Index a native (VSCode/terminal) Claude session by its UUID so it appears in
     the unified list and is resumable. The row id IS the native UUID. Dedups on
     claude_session_id: on re-scan it refreshes `updated` (monotonically) and
-    backfills `cwd`, but preserves an existing title and origin — so a bridge-run
-    session whose JSONL the scanner re-encounters is not reclassified."""
+    backfills `cwd`, but preserves an existing title — and only ever rewrites an
+    origin that is itself native, so a bridge-run session whose JSONL the scanner
+    re-encounters is not reclassified."""
     now = updated if updated is not None else time.time()
     existing = get_by_claude_session_id(claude_sid)
     with closing(_connect()) as c:
         if existing:
             # Refresh mtime/cwd; keep an existing human title but heal auto-titles
             # that captured a leading system tag (e.g. <ide_opened_file>…).
+            # Origin heals within the native pair only, so rows indexed before the
+            # scanner could tell VS Code from terminal pick up their real surface.
             c.execute(
                 "UPDATE sessions SET updated=MAX(updated, ?), cwd=COALESCE(cwd, ?), "
                 "title=CASE WHEN title IS NULL OR title='' OR title LIKE '<%' "
-                "THEN ? ELSE title END WHERE id=?",
-                (now, cwd, title, existing["id"]))
+                "THEN ? ELSE title END, "
+                "origin=CASE WHEN origin IN ('vscode','terminal') THEN ? ELSE origin END "
+                "WHERE id=?",
+                (now, cwd, title, origin, existing["id"]))
             return get_session(existing["id"])
         c.execute(
             "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"

@@ -98,7 +98,7 @@ def scan(chat_id: int | None = None) -> int:
                 if cached[1]:
                     count += 1
                 continue
-            cwd = transcript_jsonl.recover_cwd(path)
+            cwd, origin = transcript_jsonl.recover_meta(path)
             indexed = bool(cwd and within_base(cwd))
             if indexed:
                 title = transcript_jsonl.first_user_text(path)
@@ -107,7 +107,7 @@ def scan(chat_id: int | None = None) -> int:
                 else:
                     store.upsert_native_session(uid, owner, rel(cwd), cwd,
                                                 title=title.strip()[:60] if title else None,
-                                                updated=mtime, origin="vscode")
+                                                updated=mtime, origin=origin)
                     count += 1
             # Classification is a pure function of file content, so cache it: an
             # unchanged file always yields the same indexed/skip outcome.

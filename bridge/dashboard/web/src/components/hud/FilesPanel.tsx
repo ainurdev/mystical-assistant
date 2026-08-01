@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { buildRows, dirsOf, iconColor } from "./EditorTab";
 
@@ -11,7 +11,12 @@ import { buildRows, dirsOf, iconColor } from "./EditorTab";
 interface Props {
   project: string | null;
   branch?: string;
-  onOpenFile: (path: string) => void;
+  // CHANGES mode: skip the tree entirely and list only git-changed files, flat
+  // and full-path. Same panel, same polling — just the other half of the data.
+  changedOnly?: boolean;
+  // `changed` lets the caller land a dirty file on the GIT tab (diff) instead
+  // of the editor, so its changed lines are visible.
+  onOpenFile: (path: string, changed: boolean) => void;
 }
 
 const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
@@ -29,16 +34,24 @@ function ancestorsOf(paths: Iterable<string>): Set<string> {
   return out;
 }
 
-export function FilesPanel({ project, branch, onOpenFile }: Props) {
+export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
   const [changed, setChanged] = useState<Map<string, string>>(new Map());
   // Folders start closed — a repo tree is thousands of rows in a 358px column.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hov, setHov] = useState("");
   const [loading, setLoading] = useState(false);
+  // CHANGES mode also owns commit/push (the git panel is graph-only).
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  // The commit box rides at the top of the list, so a long list scrolls it out
+  // of reach — hence the back-to-top button.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
 
   const loadTree = useCallback(async () => {
-    if (!project) { setPaths([]); return; }
+    if (!project || changedOnly) { setPaths([]); return; }
     setLoading(true);
     try {
       const r = await api.filesTree(project, branch || undefined);
@@ -46,24 +59,35 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
       setCollapsed(new Set(dirsOf(r.files)));
     } catch { setPaths([]); }
     finally { setLoading(false); }
-  }, [project, branch]);
+  }, [project, branch, changedOnly]);
 
   useEffect(() => { void loadTree(); }, [loadTree]);
 
-  // Working-tree status, refreshed on the same cadence as the git badges.
-  useEffect(() => {
+  const loadGit = useCallback(async () => {
     if (!project) { setChanged(new Map()); return; }
-    let live = true;
-    const tick = () =>
-      void api.git(project, branch || undefined)
-        .then((g) => { if (live) setChanged(new Map(g.files.map((f) => [f.path, f.status]))); })
-        .catch(() => { if (live) setChanged(new Map()); });
-    tick();
-    const id = setInterval(tick, 10000);
-    return () => { live = false; clearInterval(id); };
+    try {
+      const g = await api.git(project, branch || undefined);
+      setChanged(new Map(g.files.map((f) => [f.path, f.status])));
+    } catch { setChanged(new Map()); }
   }, [project, branch]);
 
-  const rows = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
+  // Working-tree status, refreshed on the same cadence as the git badges.
+  useEffect(() => {
+    void loadGit();
+    const id = setInterval(() => void loadGit(), 10000);
+    return () => clearInterval(id);
+  }, [loadGit]);
+
+  // CHANGES mode lists the git files flat, showing the full path (a basename
+  // alone is useless once the tree around it is gone).
+  const rows = useMemo(
+    () =>
+      changedOnly
+        ? [...changed.keys()].sort((a, b) => a.localeCompare(b))
+            .map((p) => ({ key: `f:${p}`, dir: false, depth: 0, name: p, path: p }))
+        : buildRows(paths, collapsed),
+    [changedOnly, changed, paths, collapsed],
+  );
   const changedDirs = useMemo(() => ancestorsOf(changed.keys()), [changed]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);
   const allCollapsed = dirs.length > 0 && collapsed.size >= dirs.length;
@@ -75,17 +99,40 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
   const revealChanges = () =>
     setCollapsed((c) => { const n = new Set(c); for (const d of changedDirs) n.delete(d); return n; });
 
-  const tools: { k: string; g: string; t: string; on: () => void }[] = [
-    { k: "chg", g: "◈", t: "reveal changed files", on: revealChanges },
-    { k: "col", g: allCollapsed ? "⊞" : "⊟", t: allCollapsed ? "expand all" : "collapse all",
-      on: () => setCollapsed(allCollapsed ? new Set() : new Set(dirs)) },
-    { k: "ref", g: "⟳", t: "refresh", on: () => void loadTree() },
-  ];
+  async function commit() {
+    if (!project || !msg.trim()) return;
+    setBusy(true);
+    try {
+      const r = await api.gitCommit(project, msg.trim(), undefined, branch || undefined);
+      setNote(r.ok ? "Committed." : r.output || "Commit failed.");
+      if (r.ok) { setMsg(""); void loadGit(); }
+    } catch (e) { setNote((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function push() {
+    if (!project) return;
+    setBusy(true);
+    try {
+      const r = await api.gitPush(project, branch || undefined);
+      setNote(r.ok ? "Pushed." : r.output || "Push failed.");
+    } catch (e) { setNote((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  const tools: { k: string; g: string; t: string; on: () => void }[] = changedOnly
+    ? [{ k: "ref", g: "⟳", t: "refresh", on: () => void loadGit() }]
+    : [
+      { k: "chg", g: "◈", t: "reveal changed files", on: revealChanges },
+      { k: "col", g: allCollapsed ? "⊞" : "⊟", t: allCollapsed ? "expand all" : "collapse all",
+        on: () => setCollapsed(allCollapsed ? new Set() : new Set(dirs)) },
+      { k: "ref", g: "⟳", t: "refresh", on: () => void loadTree() },
+    ];
 
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both", flex: "none" }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>FILES</span>
+        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>{changedOnly ? "CHANGES" : "FILES"}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {changed.size > 0 && (
             <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--warn)" }}>{changed.size} CHANGED</span>
@@ -106,11 +153,33 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
         </div>
       )}
 
-      <div className="mscroll" style={{ padding: "6px 4px 9px", maxHeight: "min(72vh, 760px)", overflowY: "auto" }}>
+      {/* The panel fills the rail; only this list scrolls — the tab is marked
+          ownScroll so the rail wrapper doesn't add a second scrollbar. */}
+      <div ref={listRef} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 40)}
+        className="mscroll" style={{ padding: "6px 4px 9px", flex: 1, minHeight: 0 }}>
+        {changedOnly && project && (
+          <div style={{ borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "3px 8px 9px", marginBottom: 6 }}>
+            <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={2} placeholder="Commit message…"
+              style={{ width: "100%", resize: "none", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "transparent", color: "var(--txf)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, lineHeight: 1.5, padding: "6px 7px", outline: "none" }} />
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              {[
+                { k: "cm", l: "COMMIT ALL", on: () => void commit(), off: busy || !msg.trim() || !changed.size, grow: 1 },
+                { k: "ps", l: "PUSH", on: () => void push(), off: busy, grow: 0 },
+              ].map((b) => (
+                <button key={b.k} onClick={b.on} disabled={b.off}
+                  onMouseEnter={() => setHov(b.k)} onMouseLeave={() => setHov("")}
+                  style={{ flex: b.grow ? 1 : "none", appearance: "none", cursor: b.off ? "not-allowed" : "pointer", opacity: b.off ? 0.4 : 1, border: "1px solid color-mix(in srgb, var(--acc) 24%, transparent)", background: hov === b.k && !b.off ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.2, padding: "5px 10px" }}>{b.l}</button>
+              ))}
+            </div>
+            {note && (
+              <div style={{ marginTop: 6, fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "var(--txl)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{note}</div>
+            )}
+          </div>
+        )}
         {!project && <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "8px 9px" }}>No session selected.</div>}
         {project && !rows.length && (
           <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "8px 9px" }}>
-            {loading ? "Reading tree…" : "No files — not a git repo?"}
+            {changedOnly ? "Working tree clean." : loading ? "Reading tree…" : "No files — not a git repo?"}
           </div>
         )}
         {rows.map((r) => {
@@ -118,7 +187,7 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
           const marked = r.dir ? changedDirs.has(r.path) : !!st;
           const on = hov === r.key;
           return (
-            <button key={r.key} onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path))}
+            <button key={r.key} onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path, !!st))}
               onMouseEnter={() => setHov(r.key)} onMouseLeave={() => setHov("")}
               title={r.path}
               style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textAlign: "left", background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "3px 7px", paddingLeft: 7 + r.depth * 11 }}>
@@ -132,7 +201,8 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
                 <>
                   <span style={{ width: 9, flex: "none" }} />
                   <span style={{ width: 5, height: 5, flex: "none", background: iconColor(r.name), transform: "rotate(45deg)" }} />
-                  <span style={{ color: st ? ST_COLOR(st) : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
+                  {/* Full paths truncate from the left, so the filename survives. */}
+                  <span style={{ color: st ? ST_COLOR(st) : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: changedOnly ? "rtl" : "ltr", textAlign: "left" }}>{r.name}</span>
                   {st && <span style={{ fontSize: 9.5, fontWeight: 700, color: ST_COLOR(st), flex: "none" }}>{st}</span>}
                 </>
               )}
@@ -140,6 +210,12 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
           );
         })}
       </div>
+
+      {scrolled && (
+        <button onClick={() => listRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+          title={changedOnly ? "back to top — commit box" : "back to top"} aria-label="back to top"
+          style={{ position: "absolute", right: 14, bottom: 12, zIndex: 4, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 94%, transparent)", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.2, padding: "4px 9px" }}>↑ TOP</button>
+      )}
     </div>
   );
 }

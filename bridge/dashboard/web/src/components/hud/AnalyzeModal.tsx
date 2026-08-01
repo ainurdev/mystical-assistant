@@ -212,7 +212,7 @@ export function AnalyzeModal(props: Props) {
         <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 18 }}>
           {tab === "changes" && (
             <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
-              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} />
+              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile} />
           )}
           {tab === "worktrees" && (
             <WorktreesTab project={project} sessions={props.sessions} worktrees={worktrees}
@@ -277,14 +277,15 @@ function parseDiffRows(diff: string): DiffLine[] {
   return out;
 }
 
-function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }: {
-  project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void; onRefreshGit: () => void;
+function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile }: {
+  project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void;
+  onRefreshGit: () => void; initialFile?: string;
 }) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const [st, setSt] = useState<GitStatus | null>(null);
-  const [sel, setSel] = useState<string | null>(null);
+  const [sel, setSel] = useState<string | null>(initialFile ?? null);
   const [diff, setDiff] = useState("");
   const [nonce, setNonce] = useState(0);
   const [msg, setMsg] = useState("");
@@ -309,8 +310,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit }:
       .then((g) => { setSt(g); setChecked(new Set(g.files.map((f) => f.path))); })
       .catch(() => setSt(null));
   };
-  useEffect(() => { setSel(null); setMsg(""); load(); // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, branch]);
+  // Focus the deep-linked file (sidebar → GIT), else the first changed one.
+  useEffect(() => { setSel(initialFile ?? null); setMsg(""); load(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, branch, initialFile]);
 
   // A branch with no worktree makes the backend fall back to the project
   // checkout — whose status would masquerade as this branch's. Detect the

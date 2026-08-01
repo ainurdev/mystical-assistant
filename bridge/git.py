@@ -2,6 +2,8 @@
 every call shells out to `git -C <cwd> …` with a timeout. Callers pass an absolute
 cwd already confined to BASE_PATH by the dashboard's _abs_project."""
 
+import base64
+import mimetypes
 import os
 import re
 import shutil
@@ -193,7 +195,9 @@ def list_tree(cwd: str) -> list[str]:
 def read_file(cwd: str, path: str) -> dict:
     """Load a working-tree file for the editor. Returns {ok, path, content,
     binary, too_large, size}; content is "" when binary or too_large. Binary is
-    detected by a NUL byte, so genuine source (UTF-8) always loads."""
+    detected by a NUL byte, so genuine source (UTF-8) always loads. Raster
+    images also carry `image`, a data URL the editor renders instead of the
+    binary placeholder."""
     safe = _safe_path(cwd, path)
     if safe is None:
         return {"ok": False, "error": "path escapes workspace"}
@@ -209,6 +213,12 @@ def read_file(cwd: str, path: str) -> dict:
             raw = f.read()
     except OSError as e:
         return {"ok": False, "error": str(e)}
+    # ponytail: data URL rather than a raw-bytes route — fine under the 1 MB cap
+    ctype = mimetypes.guess_type(full)[0] or ""
+    if ctype.startswith("image/") and ctype != "image/svg+xml":  # svg stays editable text
+        return {"ok": True, "path": safe, "content": "", "binary": True,
+                "too_large": False, "size": size,
+                "image": f"data:{ctype};base64,{base64.b64encode(raw).decode()}"}
     if b"\x00" in raw:
         return {"ok": True, "path": safe, "content": "", "binary": True,
                 "too_large": False, "size": size}
@@ -377,6 +387,41 @@ def incoming(cwd: str, limit: int = 20) -> list[dict]:
         sha, _, subject = line.partition("\t")
         if sha:
             commits.append({"sha": sha, "subject": subject})
+    return commits
+
+
+_LOG_FMT = "%H\x1f%P\x1f%an\x1f%at\x1f%D\x1f%s"
+
+
+def log_graph(cwd: str, limit: int = 200) -> list[dict]:
+    """Commits across every ref, newest first, each with its parent shas — the raw
+    material the dashboard lays out into lanes. --date-order, not --topo-order:
+    topo reshuffles unrelated branches to keep each one contiguous, which makes
+    lanes jump around between polls."""
+    if not is_repo(cwd):
+        return []
+    rc, out, _ = _run(cwd, "log", "--all", "--date-order",
+                      f"--max-count={max(1, min(limit, 1000))}",
+                      f"--format={_LOG_FMT}", timeout=15)
+    if rc != 0:
+        return []
+    commits = []
+    for line in out.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) != 6:
+            continue
+        sha, parents, author, ts, refs, subject = parts
+        commits.append({
+            "sha": sha,
+            "parents": parents.split(),
+            "author": author,
+            "ts": int(ts) if ts.isdigit() else 0,
+            # origin/HEAD is a symref alias for the default branch — it always
+            # duplicates a ref right next to it, so it's pure noise in a chip.
+            "refs": [r.strip() for r in refs.split(",")
+                     if r.strip() and not r.strip().endswith("/HEAD")],
+            "subject": subject,
+        })
     return commits
 
 

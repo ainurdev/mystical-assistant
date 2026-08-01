@@ -113,13 +113,18 @@ export function ProjectsPanel(props: Props) {
   const [newHov, setNewHov] = useState(false);
   const [createHov, setCreateHov] = useState(false);
   const [cancelHov, setCancelHov] = useState(false);
+  const [q, setQ] = useState("");
+
+  // match on the full path so "ainurhq" finds every repo in that org
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? groups.filter((g) => g.rel.toLowerCase().includes(needle)) : groups;
 
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both", flex: "none" }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", flex: "none" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
         <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>PROJECTS</span>
         <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} REPOS</span>
+          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{needle ? `${shown.length}/${groups.length}` : shown.length} REPOS</span>
           <button
             onClick={onManage}
             title="manage projects — hide, remove, import"
@@ -135,6 +140,10 @@ export function ProjectsPanel(props: Props) {
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both" }} />
       <div style={{ padding: "9px 10px 11px", display: "flex", flexDirection: "column", gap: 7 }}>
+        <input
+          type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="search projects…"
+          onKeyDown={(e) => { if (e.key === "Escape") setQ(""); }}
+          style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 45%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "6px 9px", marginBottom: 2 }} />
         {newOpen && (
           <div style={{ border: "1px solid color-mix(in srgb, var(--info) 32%, transparent)", background: "color-mix(in srgb, var(--info) 5%, transparent)", padding: "11px 12px", marginBottom: 10, animation: "mslide .2s ease both" }}>
             <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>NEW PROJECT</div>
@@ -155,7 +164,7 @@ export function ProjectsPanel(props: Props) {
             </div>
           </div>
         )}
-        {clusterByParent(groups).map(({ parent, items }) => {
+        {clusterByParent(shown).map(({ parent, items }) => {
           if (!parent) {
             return items.map((g) => (
               <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
@@ -186,8 +195,10 @@ export function ProjectsPanel(props: Props) {
             </div>
           );
         })}
-        {groups.length === 0 && (
-          <div style={{ fontSize: 11, color: "var(--txl)", padding: "10px 4px" }}>No projects with sessions yet.</div>
+        {shown.length === 0 && (
+          <div style={{ fontSize: 11, color: "var(--txl)", padding: "10px 4px" }}>
+            {needle ? `No projects match "${q.trim()}".` : "No projects with sessions yet."}
+          </div>
         )}
       </div>
     </div>

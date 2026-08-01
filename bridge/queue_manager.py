@@ -54,6 +54,7 @@ class QueueItem:
     elapsed: "int | None" = None
     created: float = 0.0
     started: "float | None" = None
+    agent: "str | None" = None      # who runs it (ladder.resolve_agent vocabulary)
 
     def public(self) -> dict:
         """The shape the frontend renders — omits the run payload (prompt/images/
@@ -138,7 +139,7 @@ class PreviewQueue:
 
     def enqueue(self, sid: str, *, text, prompt, images, model, effort,
                 permission_mode, width, sel, surface, chat_id, project,
-                run_job_id=None) -> str:
+                run_job_id=None, agent=None) -> str:
         with self._lock:
             b = self._bucket(sid)
             item = QueueItem(
@@ -146,7 +147,7 @@ class PreviewQueue:
                 text=text, prompt=prompt, images=list(images or []), model=model,
                 effort=effort, permission_mode=permission_mode, width=width,
                 sel=list(sel or []), surface=surface, run_job_id=run_job_id,
-                created=time.time())
+                agent=agent, created=time.time())
             b["items"].append(item)
             self._advance(sid, b)
             self._touch(sid, b)
@@ -222,6 +223,25 @@ class PreviewQueue:
             if it is None or it.status == "running":
                 return
             b["items"].remove(it)
+            self._touch(sid, b)
+
+    def move(self, sid: str, item_id: str, dst: str) -> None:
+        """Eject a queued item into another session's queue, where it runs instead.
+        The destination queue advances immediately (a fresh session is idle), so a
+        prompt stuck behind a long turn here starts right away over there."""
+        with self._lock:
+            if not dst or dst == sid:
+                return
+            b = self._bucket(sid)
+            it = next((x for x in b["items"] if x.id == item_id), None)
+            if it is None or it.status != "queued":
+                return
+            b["items"].remove(it)
+            d = self._bucket(dst)
+            it.session_id = dst
+            d["items"].append(it)
+            self._advance(dst, d)
+            self._touch(dst, d)
             self._touch(sid, b)
 
     def edit(self, sid: str, item_id: str, text: str, prompt: str) -> None:
@@ -339,12 +359,17 @@ _instance_lock = threading.Lock()
 
 
 def _default_run_fn(item: QueueItem):
-    from bridge import runner
+    from bridge import ladder, runner
+    try:
+        slot, runtime = ladder.resolve_agent(item.agent or "")
+    except ValueError:
+        slot, runtime = None, None     # the pick went away while queued
     job = runner.start_streaming_job(
         chat_id=item.chat_id, prompt=item.prompt, image_paths=list(item.images or []),
         project=item.project, job_id=item.run_job_id, model=item.model,
         effort=item.effort, permission_mode=item.permission_mode,
-        session_id=item.session_id, origin="preview-queue")
+        session_id=item.session_id, origin="preview-queue",
+        account_slot=slot, runtime=runtime)
     return job.id if job else None
 
 
@@ -405,6 +430,10 @@ def reorder(sid, from_id, to_id):
 
 def remove(sid, item_id):
     return get().remove(sid, item_id)
+
+
+def move(sid, item_id, dst):
+    return get().move(sid, item_id, dst)
 
 
 def edit(sid, item_id, text, prompt):

@@ -5,24 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="./mystical.svg" />
 
-    <title>mystical//assistant — the Claude Code dashboard that resumes at your limit</title>
+    <title>mystical//assistant — one dashboard for every Claude Code session</title>
     <meta
       name="description"
-      content="A local dashboard for every Claude Code session on your machine, grouped by repo. When a usage limit kills a turn it parks the session and keeps going — on another account of yours, on a free agent, or at the reset. Teaches you the code it wrote, and remembers facts you approve per branch. MIT licensed, Python stdlib only, no API key."
+      content="You're running six Claude Code sessions and you can see one. This is the local dashboard that shows all of them, grouped by repo and marked alive or not, including the ones you started in VS Code or a terminal, which you can answer and carry on from here or your phone. When a usage limit kills a turn it parks the session and keeps going: another account of yours, a free agent, or the reset. MIT licensed, Python stdlib only, no API key."
     />
     <link rel="canonical" href="https://mystical-assistant.pages.dev/" />
-    <meta name="theme-color" content="#060a0a" />
+    <meta name="theme-color" content="#0b0b0c" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="mystical//assistant" />
     <meta property="og:url" content="https://mystical-assistant.pages.dev/" />
     <meta
       property="og:title"
-      content="mystical//assistant — the Claude Code dashboard that resumes at your limit"
+      content="mystical//assistant — one dashboard for every Claude Code session"
     />
     <meta
       property="og:description"
-      content="Claude stops at your limit. This picks the work back up. A local dashboard for every Claude Code session on your machine — open source, stdlib only, no account."
+      content="Every Claude Code session on your machine, including the ones you started in VS Code or a terminal. Read, answer and carry any of them on from one page or your phone. Open source, stdlib only, no account."
     />
     <meta property="og:image" content="https://mystical-assistant.pages.dev/og.png" />
     <meta property="og:image:width" content="1200" />
@@ -32,10 +32,10 @@
       content="mystical//assistant — a local dashboard for every Claude Code session on your machine."
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="mystical//assistant — the Claude Code dashboard that resumes at your limit" />
+    <meta name="twitter:title" content="mystical//assistant — one dashboard for every Claude Code session" />
     <meta
       name="twitter:description"
-      content="Claude stops at your limit. This picks the work back up. A local dashboard for every Claude Code session on your machine — open source, stdlib only, no account."
+      content="Every Claude Code session on your machine, including the ones you started in VS Code or a terminal. Read, answer and carry any of them on from one page or your phone. Open source, stdlib only, no account."
     />
     <meta name="twitter:image" content="https://mystical-assistant.pages.dev/og.png" />
 
@@ -49,7 +49,7 @@
         "url": "https://mystical-assistant.pages.dev/",
         "downloadUrl": "https://github.com/ainurdev/mystical-assistant",
         "license": "https://github.com/ainurdev/mystical-assistant/blob/master/LICENSE",
-        "description": "A local dashboard for every Claude Code session on your machine, grouped by repo. Parks sessions killed by a usage limit or server error, then continues them on another Claude account, on a free agent, or at the reset. MIT licensed, Python standard library only, no API key.",
+        "description": "A local dashboard for every Claude Code session on your machine, grouped by repo and marked alive or not, including sessions started in VS Code or a terminal, which can be read, answered and continued from the dashboard or a phone. Parks sessions killed by a usage limit or server error, then continues them on another Claude account, on a free agent, or at the reset. MIT licensed, Python standard library only, no API key.",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@type": "Person", "name": "Mahziyar Erfani", "url": "https://mhzrerfani.dev" }
       }
@@ -73,7 +73,7 @@
             "name": "What does it install?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Nothing to pip install — the server is Python 3.10+ standard library only. The dashboard UI is a Vite app that the bridge builds for you on first start, so you do need npm on the machine; after that it only rebuilds when the sources change."
+              "text": "Nothing to pip install: the server is Python 3.10+ standard library only. The dashboard UI is a Vite app the bridge builds on first start, so you do need npm on the machine; after that it rebuilds only when the sources change."
             }
           },
           {
@@ -81,7 +81,7 @@
             "name": "Does it work with the Claude Code I already run in VS Code?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "That's the main point of it. Sessions under your projects folder are read from Claude Code's own transcripts, and liveness comes from its session registry checked against the real process — so a VS Code or terminal session shows as running because it is, not because a file looked recent. Continue one and it's picked up from there on."
+              "text": "That's the main point of it. Sessions under your projects folder are read from Claude Code's own transcripts, and liveness comes from its session registry checked against the real process. A VS Code or terminal session shows as running because it is, not because a file looked recent. Continue one and it carries on from there."
             }
           },
           {
@@ -89,7 +89,7 @@
             "name": "What actually happens when I hit a usage limit?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "The session gets parked rather than dropped, and then it looks for a way to keep going: another Claude account of yours with quota left, or a free agent on a different provider, or — failing both — the reset itself. It reads the reset time from the usage endpoint, waits for it, and resumes the turn with its context intact. You set whether it asks first, switches on its own, or only ever waits, per session or as the default. Server errors (500, 529, and the 429 that isn't a usage limit) take a separate path — the first retry is immediate and each repeat waits longer, out to thirty minutes. All of it is persisted, so restarting the bridge mid-wait doesn't lose it."
+              "text": "The session gets parked rather than dropped, then it looks for a way to keep going: another Claude account of yours with quota left, a free agent on a different provider, or failing both, the reset itself. It reads the reset time from the usage endpoint, waits, and resumes the turn with its context intact. You set whether it asks first, switches on its own, or only ever waits, per session or as the default. Server errors (500, 529, and the 429 that isn't a usage limit) take a separate path: the first retry is immediate and each repeat waits longer, out to thirty minutes. All of it is persisted, so restarting the bridge mid-wait doesn't lose it."
             }
           },
           {
@@ -97,7 +97,7 @@
             "name": "Can it use a second Claude account?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes, if you have one. Add it from the dashboard's Accounts tab: a sign-in link opens, you log in as that account, you paste the code back. Each account lives in its own profile directory — the login you already had is never touched — and every turn is still the real claude binary, spawned per run with that profile. Nothing proxies or pools tokens. When a limit hits, the account with the most quota left goes first, and its meter sits next to the others in that tab."
+              "text": "Yes, if you have one. Add it from the dashboard's Accounts tab: a sign-in link opens, you log in as that account, you paste the code back. Each account lives in its own profile directory, so the login you already had is never touched, and every turn is still the real claude binary spawned per run with that profile. Nothing proxies or pools tokens. When a limit hits, the account with the most quota left goes first, and its meter sits next to the others in that tab."
             }
           },
           {
@@ -105,7 +105,7 @@
             "name": "How is the memory different from the memory plugins?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Two ways. Nothing is stored until you tap Keep on it, so the bank stays small and true instead of accumulating whatever a summariser thought was interesting. And facts are scoped to a project and a branch, so assumptions from a spike don't follow you back to main."
+              "text": "Two ways. Nothing is stored until you tap Keep on it, so the bank stays small and true instead of accumulating whatever a summariser thought was interesting. And facts are scoped to a project and a branch, so assumptions from a spike don't follow you back to main. It runs as a cheap Haiku pass after a turn, next to a teacher pass that proposes concepts worth reviewing; MEMORY_ENABLE=0 and LEARNING_ENABLE=0 in your .env turn them off."
             }
           },
           {
@@ -113,15 +113,7 @@
             "name": "Where does my code actually go?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "It stays on your machine, and there's no telemetry — the dashboard talks only to localhost, and nothing is sent anywhere the claude CLI wasn't already sending it. One caveat worth stating: the memory, teacher, auto-title and new-session checks each run their own cheap Haiku pass through your CLI after a turn, so they do send that turn's output to Anthropic in a second call. MEMORY_ENABLE=0, LEARNING_ENABLE=0, TITLE_ENABLE=0 and RELEVANCE_CHECK=0 turn them off individually."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Is the dashboard exposed to the internet?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. It binds 127.0.0.1 and is never published. A Host allow-list guards against DNS rebinding and a token guards against CSRF."
+              "text": "It stays on your machine, and there's no telemetry: the dashboard talks only to localhost, and nothing is sent anywhere the claude CLI wasn't already sending it. The caveat is the one above. The memory, teacher, auto-title and new-session checks each run a cheap Haiku pass through your CLI after a turn, so they do send that turn's output to Anthropic in a second call. MEMORY_ENABLE=0, LEARNING_ENABLE=0, TITLE_ENABLE=0 and RELEVANCE_CHECK=0 turn them off individually."
             }
           },
           {
@@ -129,7 +121,7 @@
             "name": "Can I drive it from my phone without Telegram?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Not yet. Remote control today goes through Telegram — the bot for quick prompts, the Mini App for the full panel — because the dashboard deliberately never leaves localhost. A signed-in web surface you can reach from anywhere is the plan; until it lands, off-machine access means Telegram, and on-machine means the dashboard."
+              "text": "Not yet. Remote control today goes through Telegram: the bot for quick prompts, the Mini App for the full panel. The dashboard never leaves localhost by design. A signed-in web surface you can reach from anywhere is the plan; until it lands, off-machine access means Telegram."
             }
           },
           {
@@ -137,7 +129,7 @@
             "name": "What does it cost?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Nothing to buy — it's free and MIT licensed, and it drives the Claude Code you already pay for. Fair warning on your quota rather than your wallet: the memory, teacher, auto-title and relevance passes are extra Haiku calls on your plan, small but not free. Each is one env var away from off, and your live 5-hour and 7-day usage sits on screen so you can watch it."
+              "text": "Nothing to buy. It's MIT licensed and it drives the Claude Code you already pay for. What it costs lands on your quota rather than your wallet, and your live 5-hour and 7-day usage sits on screen so you can watch it."
             }
           },
           {
@@ -146,14 +138,6 @@
             "acceptedAnswer": {
               "@type": "Answer",
               "text": "macOS and Linux, including WSL."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Can I turn off the memory and teacher features?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes — MEMORY_ENABLE=0 and LEARNING_ENABLE=0 in your .env. Both run as a cheap Haiku pass after a turn, and both propose rather than decide: nothing is kept until you tap Keep."
             }
           },
           {

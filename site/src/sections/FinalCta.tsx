@@ -6,46 +6,61 @@ import { INSTALL_COMMAND, ISSUES_URL, REPO_URL } from "@/site";
 
 export function FinalCta() {
   return (
-    <section className="relative px-5 py-20 sm:py-28">
-      <Reveal>
-        <div className="panel panel-lit brackets mx-auto max-w-3xl px-6 py-12 text-center sm:px-10 sm:py-16">
-          <img
-            src="./mystical.svg"
-            alt=""
-            width={56}
-            height={56}
-            aria-hidden
-            className="mx-auto mb-7 opacity-90"
-          />
-          <h2 className="h2">
-            Stop losing turns to <span className="glow-violet">a limit you can't see.</span>
-          </h2>
-          <p className="lede mx-auto mt-4 max-w-lg">
-            One clone and one script. It reads the sessions you've already got, so it has something
-            to show you a minute after it starts. If you don't like it, it's a folder you can
-            delete.
-          </p>
-
-          <div className="mx-auto mt-8 max-w-lg">
-            <CopyCommand command={INSTALL_COMMAND} />
+    <section className="relative border-t border-[var(--line)] bg-[var(--bg-sunk)]">
+      <div className="shell py-24 sm:py-32">
+        <div className="g12">
+          <div className="col-span-12 lg:col-span-7">
+            <Reveal>
+              <p className="chapter">
+                <span className="chapter-n" aria-hidden>
+                  ◆
+                </span>{" "}
+                Get started
+              </p>
+              <h2 className="display mt-7 text-[clamp(2.4rem,6vw,4.6rem)]">
+                Stop hunting for
+                <br />
+                <span className="accent">the window it's in.</span>
+              </h2>
+            </Reveal>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">
-              <GithubMark />
-              Browse the source
-            </a>
-            <a href={ISSUES_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">
-              <MessageSquare size={15} aria-hidden />
-              Ask a question
-            </a>
+          <div className="col-span-12 mt-8 lg:col-span-4 lg:col-start-9 lg:mt-2">
+            <Reveal delay={80}>
+              <p className="deck max-w-[44ch]">
+                One clone and one script. It reads the sessions you've already got, so there's
+                something to see a minute after it starts.
+              </p>
+              <p className="body mt-4 max-w-[44ch]">
+                If you don't like it, it's a folder you can delete. Nothing was migrated and nothing
+                was signed up for.
+              </p>
+            </Reveal>
           </div>
-
-          <p className="mt-7 text-[0.72rem] text-[var(--txd)]">
-            Needs the claude CLI, Python 3.10+ and npm. Everything else, setup handles.
-          </p>
         </div>
-      </Reveal>
+
+        <Reveal delay={140}>
+          <div className="g12 mt-12">
+            <div className="col-span-12 lg:col-span-7">
+              <CopyCommand command={INSTALL_COMMAND} />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                  <GithubMark />
+                  BROWSE THE SOURCE
+                </a>
+                <a href={ISSUES_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                  <MessageSquare size={14} aria-hidden />
+                  ASK A QUESTION
+                </a>
+              </div>
+            </div>
+            <p className="caption col-span-12 mt-6 max-w-[40ch] self-end lg:col-span-4 lg:col-start-9 lg:mt-0">
+              Needs the claude CLI, Python 3.10+ and npm. Everything else, setup handles. macOS,
+              Linux and WSL.
+            </p>
+          </div>
+        </Reveal>
+      </div>
     </section>
   );
 }

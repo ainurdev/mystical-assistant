@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ChevronRight, ChevronsRight, Merge, Paperclip, Square } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId } from "../api";
+import type { AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 
@@ -34,12 +35,13 @@ export const PONYTAILS: { id: string; label: string }[] = [
 const COMPACT_SUGGEST_TOKENS = 100_000;
 const CONTEXT_MAX_TOKENS = 200_000;
 
-function Drop<T extends string>({
+// Exported for the status bar, which offers the same AGENT pick from the footer.
+export function Drop<T extends string>({
   label, value, options, open, onToggle, onPick, minWidth = 78, showLabel = true,
 }: {
   label: string;
   value: T;
-  options: { id: T; label: string }[];
+  options: { id: T; label: string; short?: string }[]; // short → what the chip shows
   open: boolean;
   onToggle: () => void;
   onPick: (id: T) => void;
@@ -47,6 +49,7 @@ function Drop<T extends string>({
   showLabel?: boolean; // off when the cluster tag already names the field
 }) {
   const cur = options.find((o) => o.id === value) ?? options[0];
+  if (!cur) return null;                 // nothing to pick from yet (still loading)
   const btn: CSSProperties = {
     appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
     background: "color-mix(in srgb, var(--panel2) 60%, transparent)", color: "var(--txh)", fontFamily: "inherit",
@@ -59,7 +62,7 @@ function Drop<T extends string>({
         <span className="ctrl-label" style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{label}</span>
       )}
       <button onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
-        {cur.label}
+        {cur.short ?? cur.label}
         <span style={{ color: "var(--txd)", fontSize: 8 }}>▾</span>
       </button>
       {open && (
@@ -121,9 +124,9 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
 }
 
 export function Composer({
-  disabled, running, model, models, effort, perm, onPerm, ponytail, onPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, onModel, onEffort, onSend, onSteer, onStop, onCompact,
-  queued, onCancelQueued, project, onOpenMap,
+  queued, onCancelQueued, onEjectQueued, project, onOpenMap,
 }: {
   disabled: boolean;
   running: boolean;
@@ -135,6 +138,10 @@ export function Composer({
   onOpenMap?: () => void;
   model: ModelId;
   models: { id: ModelId; label: string }[];
+  // Which platform runs the turn — a Claude login or a free-agent provider.
+  agent: string;
+  agents: AgentOption[];
+  onAgent: (id: string) => void;
   effort: EffortLevel | "";
   perm: string;
   onPerm: (p: string) => void;
@@ -152,13 +159,17 @@ export function Composer({
   onCompact?: () => void;
   queued?: { id: string; text: string }[];
   onCancelQueued?: (id: string) => void;
+  onEjectQueued?: (id: string) => void; // pull it out and run it in a fresh session
 }) {
   const text = draft;
   const setText = onDraft;
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "model" | "effort" | "mode" | "pony">("");
+  const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony">("");
+  // A free agent brings its own model and has no effort knob, so those two
+  // dropdowns would be lying about what runs — swap them for what actually will.
+  const activeAgent = agents.find((a) => a.id === agent);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -249,6 +260,10 @@ export function Composer({
             <span key={q.id} title={q.text}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 240, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontSize: 10, letterSpacing: 0.5, padding: "2px 6px" }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
+              {onEjectQueued && (
+                <button onClick={() => onEjectQueued(q.id)} title="Run in a new session"
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: 11, lineHeight: 1, padding: 0, flex: "none" }}>↗</button>
+              )}
               {onCancelQueued && (
                 <button onClick={() => onCancelQueued(q.id)} title="Remove from queue"
                   style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: 11, lineHeight: 1, padding: 0, flex: "none" }}>✕</button>
@@ -303,12 +318,27 @@ export function Composer({
         <div className="ctrl-row">
           <div className="ctrl-group">
             <span className="ctrl-tag">AI</span>
-            <Drop label="MODEL" value={model} options={models} open={openDrop === "model"}
-              onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
-              onPick={(id) => { onModel(id); setOpenDrop(""); }} />
-            <Drop label="EFFORT" value={effort} options={EFFORTS} open={openDrop === "effort"}
-              onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
-              onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
+            <Drop label="AGENT" value={agent} options={agents} minWidth={104} open={openDrop === "agent"}
+              onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
+              onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
+            {activeAgent?.free ? (
+              <span
+                title="This turn runs on opencode, not your Claude subscription — the provider's own model, no effort setting, and its work is worth reviewing."
+                style={{ ...chip, flex: "none", cursor: "help", color: "var(--warn)",
+                         borderColor: "color-mix(in srgb, var(--warn) 40%, transparent)" }}
+              >
+                {activeAgent.label.replace("⚡ ", "")}
+              </span>
+            ) : (
+              <>
+                <Drop label="MODEL" value={model} options={models} open={openDrop === "model"}
+                  onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
+                  onPick={(id) => { onModel(id); setOpenDrop(""); }} />
+                <Drop label="EFFORT" value={effort} options={EFFORTS} open={openDrop === "effort"}
+                  onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
+                  onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
+              </>
+            )}
             <Drop label="MODE" value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />

@@ -194,6 +194,31 @@ def test_bump_ignores_running_and_done():
     assert [it["text"] for it in _items(q)] == ["a", "b"]
 
 
+# --- move to another session -----------------------------------------------
+
+def test_move_queued_item_starts_in_destination():
+    q, fake = _q()
+    _enq(q, text="a")                  # running in s1, so "b" is stuck behind it
+    b = _enq(q, text="b")
+    q.move("s1", b, "s2")
+    assert [it["text"] for it in _items(q)] == ["a"]
+    moved = _items(q, "s2")
+    assert [it["text"] for it in moved] == ["b"]
+    assert moved[0]["status"] == "running"     # the new session is idle
+    assert fake.calls[-1].session_id == "s2"   # and it runs AS s2
+
+
+def test_move_ignores_running_and_same_session():
+    q, _ = _q()
+    a = _enq(q, text="a")              # running
+    b = _enq(q, text="b")
+    q.move("s1", a, "s2")             # running items stay put
+    q.move("s1", b, "s1")             # no-op: same session
+    q.move("s1", b, "")               # no-op: no destination
+    assert [it["text"] for it in _items(q)] == ["a", "b"]
+    assert _items(q, "s2") == []
+
+
 # --- remove / edit ---------------------------------------------------------
 
 def test_remove_queued_item():

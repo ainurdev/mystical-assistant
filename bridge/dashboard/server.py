@@ -335,6 +335,16 @@ class Handler(BaseHTTPRequestHandler):
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(git.status(cwd))
+        if path == "/local/git/log":
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            try:
+                limit = int(qs.get("limit", ["200"])[0])
+            except ValueError:
+                limit = 200
+            return self._json({"commits": git.log_graph(cwd, limit)})
         if path == "/local/git/all":
             repos = {}
             seen = set()
@@ -951,6 +961,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid model"}, 400)
         permission_mode = normalize_permission_mode(body.get("permission_mode"))
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
+        try:
+            from bridge import ladder
+            account_slot, runtime = ladder.resolve_agent(body.get("agent") or "")
+        except ValueError as e:
+            return self._json({"error": str(e)}, 400)
         session_id = (body.get("session_id") or "").strip() or None
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
@@ -969,7 +984,8 @@ class Handler(BaseHTTPRequestHandler):
                                          model=model, effort=effort,
                                          permission_mode=permission_mode,
                                          session_id=session_id, origin="dashboard",
-                                         ponytail=ponytail)
+                                         ponytail=ponytail, account_slot=account_slot,
+                                         runtime=runtime)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
@@ -1014,6 +1030,12 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 return self._json({"error": "invalid model"}, 400)
             permission_mode = normalize_permission_mode(body.get("permission_mode"))
+            agent = (body.get("agent") or "").strip()
+            try:
+                from bridge import ladder
+                ladder.resolve_agent(agent)      # reject a dead pick at enqueue time
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
             run_job_id = uuid.uuid4().hex
             try:
                 paths = _save_images(run_job_id, images) if images else []
@@ -1029,7 +1051,8 @@ class Handler(BaseHTTPRequestHandler):
                 sid, text=(text or prompt), prompt=prompt, images=paths, model=model,
                 effort=effort, permission_mode=permission_mode, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
-                project=_abs_project(body.get("project")), run_job_id=run_job_id)
+                project=_abs_project(body.get("project")), run_job_id=run_job_id,
+                agent=agent or None)
             return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
         if not sid:
             return self._json({"error": "session required"}, 400)
@@ -1052,6 +1075,8 @@ class Handler(BaseHTTPRequestHandler):
                                   (body.get("to") or "").strip())
         elif op == "bump":
             queue_manager.bump(sid, item_id)
+        elif op == "move":
+            queue_manager.move(sid, item_id, (body.get("to") or "").strip())
         elif op == "pause":
             queue_manager.pause(sid)
         elif op == "resume":

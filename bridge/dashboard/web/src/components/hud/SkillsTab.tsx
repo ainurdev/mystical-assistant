@@ -277,7 +277,7 @@ export function SkillsTab({ project, name }: { project: string; name: string }) 
 /** Right-sidebar panel — project AND system, installs to either. */
 export function SkillsPanel({ project }: { project: string | null }) {
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 50%, transparent)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both", flex: "none" }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 50%, transparent)", flex: "none" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
         <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>SKILLS</span>
         <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>

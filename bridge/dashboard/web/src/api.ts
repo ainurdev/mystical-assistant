@@ -159,6 +159,15 @@ export interface GitStatus {
   dirty: number;
   files: GitFile[];
 }
+// One node of the commit graph — `parents` is what the lane layout walks.
+export interface GitCommit {
+  sha: string;
+  parents: string[];
+  author: string;
+  ts: number;
+  refs: string[]; // decorations: "HEAD -> main", "origin/main", "tag: v1.2"
+  subject: string;
+}
 export interface GitBadge {
   branch: string;
   ahead: number;
@@ -177,6 +186,7 @@ export interface FileContent {
   binary?: boolean;
   too_large?: boolean;
   size?: number;
+  image?: string; // data URL for raster images — rendered in place of the buffer
   error?: string;
 }
 
@@ -251,7 +261,7 @@ export interface QueueSnapshot {
   items: QueueItem[];
 }
 export type QueueOp =
-  | "remove" | "edit" | "reorder" | "bump"
+  | "remove" | "edit" | "reorder" | "bump" | "move"
   | "pause" | "resume" | "cancel" | "retry" | "clear-done"
   | "steer";   // not a queue mutation — folds text into the running turn
 
@@ -521,6 +531,7 @@ export interface RunBody {
   effort?: string;
   permission_mode?: string; // per-message operating mode; omit to use the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
+  agent?: string; // who runs it: 'claude:<slot>' | 'opencode:<provider>'; omit for the ambient login
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
 }
 
@@ -743,6 +754,10 @@ export const api = {
       `/local/git?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
     ),
   gitAll: () => req<{ repos: Record<string, GitBadge> }>("/local/git/all"),
+  gitLog: (project: string, limit = 200, branch?: string) =>
+    req<{ commits: GitCommit[] }>(
+      `/local/git/log?project=${encodeURIComponent(project)}&limit=${limit}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
   logs: (n = 200) => req<{ lines: string[] }>(`/local/logs?n=${n}`),
   gitDiff: (project: string, path: string, base?: string, head?: string, branch?: string) =>
     req<{ path: string; diff: string }>(
@@ -876,6 +891,7 @@ export const api = {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
     model?: string; effort?: string; permission_mode?: string; surface?: string;
+    agent?: string; // same picker as /local/run — a queued prompt keeps your agent
   }) => req<QueueSnapshot & { item_id: string }>(
     "/local/queue/enqueue", { method: "POST", body }),
   queueOp: (op: QueueOp, body: Record<string, unknown>) =>

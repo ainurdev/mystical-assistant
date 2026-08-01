@@ -5,6 +5,8 @@ export interface PanelTab {
   label: string;
   icon: string;
   badge?: string | null;
+  // Panel owns its scroller — the wrapper must not add a second one.
+  ownScroll?: boolean;
   render: () => ReactNode;
 }
 
@@ -26,7 +28,13 @@ export function RightPanel({
   return (
     <div className="flex min-h-0 min-w-0 gap-[13px]">
       {open && (
-        <div className="mscroll flex min-h-0 min-w-0 flex-1 flex-col gap-[13px] pr-0.5">
+        // ponytail: the key remounts on tab change, which is what replays the
+        // animation — one entry transition for every tab, present and future.
+        <div
+          key={current?.id}
+          className={`flex min-h-0 min-w-0 flex-1 flex-col gap-[13px] pr-0.5 ${current?.ownScroll ? "" : "mscroll"}`}
+          style={{ animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both" }}
+        >
           {current?.render()}
         </div>
       )}

@@ -88,7 +88,9 @@
       // Absolute paths carry the account name; the tilde form reads better anyway.
       // The Accounts tab prints the signed-in Claude login, so addresses go too.
       v = v.split("/home/mhzrerfani").join("~").split("Mahziyar Erfani").join("Alex Rivers")
-        .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "you@example.com");
+        .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "you@example.com")
+        // The account chip prints the bare login name, which the paths above miss.
+        .split("mhzrerfani").join("alex");
       if (v !== n.nodeValue) n.nodeValue = v;
     });
   };

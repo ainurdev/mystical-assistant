@@ -30,6 +30,16 @@ python3 tools/shot/shot.py --url "$BASE" --out public/shots/accounts.png --wait 
       .find(b => /ACCOUNTS/.test(b.textContent)).click(), 500);"
 ```
 
+```bash
+# the WORKTREES tab, showing a fleet (see worktrees.js — it brings its own data)
+python3 tools/shot/shot.py --url "$BASE" --out public/shots/worktrees.png \
+  --width 880 --height 640 --scale 2 --wait 5000 --eval "$(cat tools/shot/worktrees.js)"
+```
+
+`--scale` is the device pixel ratio: 2 for a retina-sized shot, which is what
+makes 10px UI type legible on the site. The window size is in CSS pixels either
+way, so the file comes out at twice it.
+
 `--wait` is the settle before the shutter, in milliseconds. The panels fill from
 the bridge, so too short a wait catches `LOADING…` — the Accounts tab needs
 about ten seconds for its per-account usage meters.
@@ -57,3 +67,19 @@ Two things it does deliberately:
 
 If the machine that takes the next shots has different repos, update the `NAMES`
 map — anything left unmapped ships as-is.
+
+## worktrees.js
+
+Same idea one level down. The WORKTREES tab is only worth a picture when several
+branches are checked out at once with sessions running in them, which is a state
+no machine is reliably in when the shutter opens. `worktrees.js` shims
+`window.fetch` so the bridge's answers *for one project* — its worktrees, its
+branches, each branch's ahead/behind/dirty, the sessions attached to them —
+describe that fleet, then opens the tab and expands a row. The panel doing the
+rendering is the real one, so the shot goes stale with the UI like every other:
+re-run it. Nothing is written back to the bridge, and a refresh undoes it.
+
+It ends by stretching the modal over the whole window (and dropping the
+backdrop's padding, which is what actually sizes it), so the capture needs no
+crop and no `demo.js` — the frame is the panel, and nothing of the real machine
+is left around the edges.

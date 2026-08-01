@@ -7,8 +7,8 @@ import { SectionHead } from "@/components/SectionHead";
  * Each row is a claim someone can check by reading the source, so keep them
  * that way — no "powered by" logos for things that aren't actually running.
  * The closing note is load-bearing: without it this section reads as a
- * contradiction of the dependencies-0 claim in Different.tsx, when in fact
- * it's the same point (nothing reimplemented, nothing bundled).
+ * contradiction of the hero's "0 deps" figure, when in fact it's the same point
+ * (nothing reimplemented, nothing bundled).
  */
 const STACK: { pane: string; tool: string; body: string }[] = [
   {
@@ -34,7 +34,7 @@ const STACK: { pane: string; tool: string; body: string }[] = [
   {
     pane: "MAP",
     tool: "graphify",
-    body: "Repo structure read from tree-sitter ASTs — no LLM pass and no embedding bill to see how a codebase fits together.",
+    body: "Repo structure read from tree-sitter ASTs. No LLM pass and no embedding bill to see how a codebase fits together.",
   },
   {
     pane: "PREVIEW",
@@ -54,58 +54,57 @@ const STACK: { pane: string; tool: string; body: string }[] = [
   {
     pane: "FALLBACK",
     tool: "opencode",
-    body: "When every Claude account you own is out of quota, a parked turn can go to opencode on a free provider — the open-source CLI itself, run headlessly. Not a second route into your subscription.",
+    body: "When every Claude account you own is out of quota, a parked turn can go to opencode on a free provider: the open-source CLI itself, run headless. Not a second route into your subscription.",
   },
 ];
 
 export function Underneath() {
   return (
-    <section id="underneath" className="relative scroll-mt-20 px-5 py-20 sm:py-28">
-      <div className="mx-auto max-w-4xl">
-        <SectionHead
-          eyebrow="What's underneath"
-          title={
-            <>
-              The editor is <span className="glow-acc">CodeMirror</span>. The terminal is{" "}
-              <span className="glow-acc">xterm.js</span>.
-            </>
-          }
-          lede="No pane here is a homemade version of a tool you already use. Where a good one exists, that's the one running — and where the work belongs on your machine, it's your git, your gh, your claude login doing it. You inherit what each of them is already good at: the keybindings you know still work, curses apps still draw, and no pane is the one you put up with."
-        />
+    <section id="underneath" className="shell relative scroll-mt-20 py-24 sm:py-32">
+      <SectionHead
+        n="03"
+        chapter="What's underneath"
+        title={
+          <>
+            The editor is <span className="accent">CodeMirror</span>. The terminal is{" "}
+            <span className="accent">xterm.js</span>.
+          </>
+        }
+        deck={
+          <>
+            No pane here is a homemade version of a tool you already use. Where a good one exists,
+            that's the one running. Where the work belongs on your machine, it's your git, your gh
+            and your claude login doing it, so the keybindings you know still work and curses apps
+            still draw.
+          </>
+        }
+      />
 
-        <Reveal delay={80}>
-          <div className="panel brackets mt-12 p-5 sm:p-7">
-            <dl className="divide-y divide-[var(--border-soft)]">
-              {STACK.map((s) => (
-                <div key={s.pane} className="grid gap-1.5 py-4 first:pt-0 last:pb-0 sm:grid-cols-[9.5rem_1fr] sm:gap-5">
-                  <dt className="font-mono text-[0.62rem] tracking-[0.14em] text-[var(--txd)] sm:pt-0.5">
-                    {s.pane}
-                  </dt>
-                  <dd className="min-w-0">
-                    <span className="text-[0.9rem] font-medium text-[var(--txb)]">{s.tool}</span>
-                    <p className="mt-1.5 text-[0.8rem] leading-relaxed text-[var(--txm)]">
-                      {s.body}
-                    </p>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        </Reveal>
+      <dl className="mt-14 sm:mt-20">
+        {STACK.map((s, i) => (
+          <Reveal key={s.pane} delay={Math.min(i, 5) * 45}>
+            <div className={`row g12 gap-y-2 py-6 ${i === STACK.length - 1 ? "row-last" : ""}`}>
+              <dt className="label col-span-12 pt-1 lg:col-span-3">{s.pane}</dt>
+              <dd className="col-span-12 lg:col-span-8 lg:col-start-5">
+                <span className="text-[1rem] font-medium text-[var(--ink)]">{s.tool}</span>
+                <p className="body mt-2 max-w-[64ch]">{s.body}</p>
+              </dd>
+            </div>
+          </Reveal>
+        ))}
+      </dl>
 
-        <Reveal delay={160}>
-          <p className="mx-auto mt-6 max-w-2xl text-center text-[0.8rem] leading-relaxed text-[var(--txd)]">
-            This is the same claim as{" "}
-            <a href="#different" className="text-[var(--txm)] underline underline-offset-4 decoration-[var(--border-soft)] transition-colors hover:text-[var(--txb)]">
-              zero dependencies
-            </a>
-            , seen from the other side: the server needs nothing installed{" "}
-            <em className="text-[var(--txm)] not-italic">because</em> the work goes to tools that
-            are already on your machine, and the browser panes are the real projects rather than
-            lookalikes. Nothing reimplemented, nothing bundled.
-          </p>
-        </Reveal>
-      </div>
+      <Reveal delay={120}>
+        <p className="deck mt-10 max-w-[64ch]">
+          This is the other side of{" "}
+          <a href="#top" className="link">
+            0 deps
+          </a>{" "}
+          up in the masthead: the server needs nothing installed{" "}
+          <em className="text-[var(--ink)] not-italic">because</em> the work goes to tools already
+          on your machine. Nothing reimplemented, nothing bundled.
+        </p>
+      </Reveal>
     </section>
   );
 }

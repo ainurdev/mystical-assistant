@@ -79,6 +79,33 @@ def _free_providers() -> list:
     return freeagent.available()
 
 
+def resolve_agent(spec: str) -> tuple:
+    """A hand-picked rung -> (account_slot, runtime) for start_streaming_job.
+
+    Same vocabulary the ladder already stores on a turn ('claude:<slot>' /
+    'opencode:<provider>'), so a turn you routed yourself and one the ladder
+    handed off read identically in the transcript. "" = the ambient login.
+
+    Raises ValueError when the pick is not live any more (account removed or
+    disabled, provider key cleared) -- better a 400 than silently running the
+    turn on somebody else's account.
+    """
+    kind, _, arg = (spec or "").strip().partition(":")
+    if not kind:
+        return None, None
+    if kind == "claude":
+        slot = int(arg) if arg.isdigit() else -1
+        if not any(a["slot"] == slot and not a["disabled"]
+                   for a in accounts.list_accounts()):
+            raise ValueError(f"no usable account in slot {arg!r}")
+        return slot, None
+    if kind == "opencode":
+        if not any(p["provider"] == arg for p in _free_providers()):
+            raise ValueError(f"free agent {arg!r} is not configured")
+        return None, f"opencode:{arg}"
+    raise ValueError(f"unknown agent {spec!r}")
+
+
 def rungs(session: "dict | None", dead_slot: "int | None" = None,
           strategy: str = "best") -> list:
     """Alternatives to waiting, best first. Waiting itself is always available

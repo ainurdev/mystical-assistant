@@ -138,7 +138,7 @@ def free_port() -> int:
 
 
 def capture(url: str, out: str, width: int, height: int, wait_ms: int, full: bool,
-            js: str = "") -> None:
+            js: str = "", scale: int = 1) -> None:
     port = free_port()
     env = dict(os.environ)
     if CHROME_LD:
@@ -146,7 +146,7 @@ def capture(url: str, out: str, width: int, height: int, wait_ms: int, full: boo
     with tempfile.TemporaryDirectory() as profile:
         proc = subprocess.Popen(
             [CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-             "--force-device-scale-factor=1", f"--window-size={width},{height}",
+             f"--force-device-scale-factor={scale}", f"--window-size={width},{height}",
              f"--remote-debugging-port={port}", f"--user-data-dir={profile}", url],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
@@ -179,12 +179,13 @@ def main() -> None:
     ap.add_argument("--height", type=int, default=950)
     ap.add_argument("--wait", type=int, default=4000, help="ms to settle before capturing")
     ap.add_argument("--full", action="store_true", help="capture the whole scroll height")
+    ap.add_argument("--scale", type=int, default=1, help="device pixel ratio — 2 for a retina-sized shot")
     ap.add_argument("--eval", default="", metavar="JS",
                     help="JavaScript to run once the page has settled, e.g. --eval \"$(cat demo.js)\"")
     args = ap.parse_args()
     if not os.path.exists(CHROME):
         raise SystemExit(f"no headless chrome at {CHROME} (set CHROME_HEADLESS_SHELL)")
-    capture(args.url, args.out, args.width, args.height, args.wait, args.full, args.eval)
+    capture(args.url, args.out, args.width, args.height, args.wait, args.full, args.eval, args.scale)
     print(f"{args.out} ({os.path.getsize(args.out) / 1024:.0f} KB)")
 
 

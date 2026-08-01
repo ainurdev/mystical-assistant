@@ -13,8 +13,9 @@ import {
   type SessionStatus,
   type UsageInfo,
   type AccountInfo,
+  type FreeAgentInfo,
 } from "./api";
-import { modelOptions, latestPerFamily } from "./models";
+import { modelOptions, latestPerFamily, type AgentOption } from "./models";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { ago, useProjectTints } from "./lib/surfaces";
@@ -46,6 +47,7 @@ import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
+import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import { notify } from "./components/hud/Notifications";
@@ -174,6 +176,9 @@ export function App() {
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  // Free-agent rungs that are ready to run right now (configured + opencode
+  // installed) — the non-Claude half of the AGENT picker.
+  const [freeAgents, setFreeAgents] = useState<FreeAgentInfo[]>([]);
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
   // Prompts the relevance guardrail held back — still client-side, nothing ran.
   // Keyed by the session each one was written in: the check takes ~10s, and a
@@ -337,6 +342,12 @@ export function App() {
     setAnalyzeFile(file ?? null);
     setAnalyzeTab(tab);
     setAnalyzeProject(rel);
+  }
+
+  // A changed file opens on the GIT tab (diff view) — an editor buffer hides
+  // which lines actually changed. Clean files still open in the editor.
+  function openFileFromPanel(path: string, changed: boolean) {
+    if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch }, changed ? "changes" : undefined);
   }
 
   function openSession(id: string) {
@@ -513,8 +524,13 @@ export function App() {
     let live = true;
     const tick = async () => {
       try { const u = await api.usage(); if (live) setUsage(u); } catch { /* ignore */ }
-      // Same 60s tick: the per-account meters (only rendered when >1 login).
-      try { const a = await api.accounts(); if (live) setAccounts(a.accounts); } catch { /* ignore */ }
+      // Same 60s tick: the per-account meters + which agents you can pick from.
+      try {
+        const a = await api.accounts();
+        if (!live) return;
+        setAccounts(a.accounts);
+        setFreeAgents((a.free_agents?.providers ?? []).filter((p) => p.ready));
+      } catch { /* ignore */ }
     };
     void tick();
     const id = setInterval(tick, 60000);
@@ -585,6 +601,7 @@ export function App() {
     const enqueue = () => queue.enqueue({
       text, prompt: text, images, project,
       model, effort: effort || undefined, permission_mode: permMode || undefined,
+      agent: settings.agent || undefined,
     }, sid);
     // A turn is already in flight for this session — queue the prompt to run
     // after it (and any earlier queued prompts) instead of blocking on STOP.
@@ -595,6 +612,7 @@ export function App() {
         prompt: text, images, project,
         session_id: sid, model, effort: effort || undefined,
         permission_mode: permMode || undefined, ponytail: ponytail || undefined,
+        agent: settings.agent || undefined,
         force: opts?.force || undefined,
       });
       // Held: this looks like different work from the session it would resume.
@@ -706,6 +724,20 @@ export function App() {
       setView("chat");
       await send(prompt, opts?.images ?? [],
                  { sessionId: session.id, project, force: opts?.force });
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
+  // Pull a queued prompt out of a busy session into a fresh one, where it starts
+  // immediately instead of waiting behind the current turn. Same project and
+  // worktree; the view stays put and the new session shows up in the list.
+  async function ejectQueued(itemId: string) {
+    if (!sessionProject) return;
+    try {
+      const { session } = await api.createSession(sessionProject, selected?.cwd ?? undefined);
+      setSessions((prev) => [session, ...prev]);
+      await queue.move(itemId, session.id);
     } catch (e) {
       notify("error", (e as Error).message);
     }
@@ -855,13 +887,28 @@ export function App() {
       ),
     },
     {
-      id: "files", label: "Files", icon: "▤",
+      id: "files", label: "Files", icon: "▤", ownScroll: true,
       render: () => (
         <FilesPanel
           project={sessionProject} branch={sessionBranch}
-          onOpenFile={(path) => sessionProject && openAnalyze(sessionProject, { path, branch: sessionBranch })}
+          onOpenFile={openFileFromPanel}
         />
       ),
+    },
+    {
+      id: "changes", label: "Changed files", icon: "◈", ownScroll: true,
+      badge: gitBadges.get(sessionProject ?? "")?.dirty ? "●" : null,
+      render: () => (
+        <FilesPanel
+          project={sessionProject} branch={sessionBranch} changedOnly
+          onOpenFile={openFileFromPanel}
+        />
+      ),
+    },
+    {
+      id: "git", label: "Source Control", icon: "⎇",
+      badge: gitBadges.get(sessionProject ?? "")?.dirty ? "●" : null,
+      render: () => <GitTab project={sessionProject} />,
     },
     {
       id: "skills", label: "Skills", icon: "✦",
@@ -891,6 +938,36 @@ export function App() {
     if (!modelOpts.length || modelOpts.some((m) => m.id === model)) return;
     setModel((modelOpts.find((m) => m.id.includes("opus")) ?? modelOpts[0]).id);
   }, [modelOpts, model]);
+
+  // AGENT picker — which platform runs the turn. Claude logins first (the
+  // ambient one leads), then every ready free-agent rung. Option ids are the
+  // strings the bridge stores as a turn's runtime, so the picker, the status
+  // bar and the transcript badge all name the same thing.
+  const agentOpts = useMemo<AgentOption[]>(() => [
+    ...accounts.filter((a) => !a.disabled).map((a) => ({
+      id: `claude:${a.slot}`,
+      short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}`,
+      label: `A${a.slot} · ${a.email ?? "unknown"}${a.left === null ? "" : ` · ${a.left}% LEFT`}`,
+      free: false, def: a.default, left: a.left,
+    })),
+    ...freeAgents.map((p) => ({
+      id: `opencode:${p.provider}`,
+      short: `⚡ ${p.provider.toUpperCase()}`,
+      label: `⚡ ${p.provider.toUpperCase()} · ${p.model}`,
+      free: true, def: false, left: null,
+    })),
+  ], [accounts, freeAgents]);
+  // "" is the ambient login — resolve it to that account's own id so the picker
+  // and the status bar always name someone.
+  const agentId = settings.agent || agentOpts.find((o) => o.def)?.id || agentOpts[0]?.id || "";
+  const activeAgent = agentOpts.find((o) => o.id === agentId) ?? null;
+  const setAgent = (id: string) => patchSettings({ agent: id });
+  // A pick that went away (account removed, key cleared) falls back to the
+  // default login instead of 400ing on the next send.
+  useEffect(() => {
+    if (!agentOpts.length || agentOpts.some((o) => o.id === agentId)) return;
+    setAgent("");
+  }, [agentOpts, agentId]);
 
   const commands: Command[] = [
     { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => activeProject && void newSession(activeProject) },
@@ -1067,6 +1144,7 @@ export function App() {
                     <AgentsPill sessionId={sessionId} running={running} />
                     <Composer
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} effort={effort}
+                      agent={agentId} agents={agentOpts} onAgent={setAgent}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       draft={draft} onDraft={setDraft}
                       contextTokens={contextTokens} onModel={setModel} onEffort={setEffort}
@@ -1076,6 +1154,7 @@ export function App() {
                       onCompact={() => void send("/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       onCancelQueued={(id) => queue.remove(id)}
+                      onEjectQueued={(id) => void ejectQueued(id)}
                       project={sessionProject}
                       onOpenMap={sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                     />
@@ -1093,8 +1172,10 @@ export function App() {
 
             <StatusBar
               mount={wsRoot} usedPct={usedPct} resetLabel={resetLabel} accounts={accounts}
+              agent={activeAgent}
               repo={activeProject ?? "—"}
               changes={activeBadge?.dirty ?? 0} onPalette={() => setPaletteOpen(true)}
+              agents={agentOpts} onPickAgent={setAgent}
             />
 
             {analyzeProject && (

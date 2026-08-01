@@ -249,7 +249,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => (t.pal ? Object.keys(t.pal) : []))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["projects", "files", "queue"] as const;
+export const RIGHT_TABS = ["projects", "files", "changes", "git", "queue"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 /** What the transcript shows while the agent works. */
@@ -281,6 +281,9 @@ export interface HudSettings {
   effort: string; // "" = auto
   perm: string; // "" = the session's own mode
   ponytail: string; // "" = default
+  // Who runs the turn: 'claude:<slot>' (a login) or 'opencode:<provider>' (a
+  // free agent). "" = the ambient login, same as claude:1.
+  agent: string;
 }
 
 const KEY = "hud-settings";
@@ -289,7 +292,7 @@ const DEFAULTS: HudSettings = {
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0,
-  model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
+  model: "opus", allModels: false, effort: "", perm: "", ponytail: "", agent: "",
 };
 
 /**
@@ -362,6 +365,9 @@ export function loadSettings(): HudSettings {
         effort: str(p.effort, ""),
         perm: str(p.perm, ""),
         ponytail: str(p.ponytail, ""),
+        // Like model: an agent that has gone away (account removed, key
+        // cleared) is snapped back to the default login by App's agentOpts effect.
+        agent: str(p.agent, ""),
       };
     }
   } catch {

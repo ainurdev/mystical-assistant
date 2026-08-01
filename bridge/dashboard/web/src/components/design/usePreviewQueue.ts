@@ -16,6 +16,7 @@ export interface EnqueueInput {
   model?: string;
   effort?: string;
   permission_mode?: string;
+  agent?: string;
 }
 
 /** Live view of a session's server-side prompt queue, plus the ops to mutate it.
@@ -65,6 +66,11 @@ export function usePreviewQueue(sessionId: string | null) {
     edit: (id: string, text: string) => run(api.queueOp("edit", { session_id: sid, item_id: id, text })),
     reorder: (from: string, to: string) => run(api.queueOp("reorder", { session_id: sid, from, to })),
     bump: (id: string) => run(api.queueOp("bump", { session_id: sid, item_id: id })),
+    /** Hand a queued prompt to another session, where it runs instead. Returns the
+     * promise (run() swallows errors) so the caller can report a failed move
+     * instead of leaving the prompt silently stuck in this session's queue. */
+    move: (id: string, to: string) =>
+      api.queueOp("move", { session_id: sid, item_id: id, to }).then(apply),
     cancel: (id: string) => run(api.queueOp("cancel", { session_id: sid, item_id: id })),
     retry: (id: string) => run(api.queueOp("retry", { session_id: sid, item_id: id })),
     togglePause: () => run(api.queueOp(snap.paused ? "resume" : "pause", { session_id: sid })),

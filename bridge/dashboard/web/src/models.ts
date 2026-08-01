@@ -3,6 +3,16 @@ export interface ModelOption {
   label: string;
 }
 
+/** One entry in the AGENT picker: a Claude login, or a free-agent provider. */
+export interface AgentOption {
+  id: string; // 'claude:<slot>' | 'opencode:<provider>' — a turn's runtime tag
+  short: string; // for the composer chip
+  label: string; // for the dropdown row and the status bar
+  free: boolean; // true = not Claude, so no subscription quota applies
+  def: boolean; // the ambient ~/.claude login
+  left: number | null; // % of this account's tighter usage window unspent
+}
+
 // Shown only until /local/state delivers the live list (Anthropic Models API,
 // via bridge/models.py) — or if that API/token is unavailable and the backend
 // serves its own fallback. This is a pre-load safety net, not the source.

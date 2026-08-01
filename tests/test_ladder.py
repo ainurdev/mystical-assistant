@@ -138,6 +138,57 @@ def test_a_free_agent_alone_is_still_a_rung():
         restore()
 
 
+# --- resolve_agent(): the same rungs, picked by hand -------------------------
+
+def _stub_agents(rows=(), free=()):
+    saved = (ladder.accounts.list_accounts, ladder._free_providers)
+    ladder.accounts.list_accounts = lambda: list(rows)
+    ladder._free_providers = lambda: list(free)
+
+    def restore():
+        (ladder.accounts.list_accounts, ladder._free_providers) = saved
+    return restore
+
+
+A1 = {"slot": 1, "email": "a@b.c", "alias": None, "disabled": False, "default": True}
+A2_OFF = {"slot": 2, "email": "d@e.f", "alias": None, "disabled": True, "default": False}
+
+
+def test_no_pick_means_the_ambient_login():
+    assert ladder.resolve_agent("") == (None, None)
+
+
+def test_a_claude_slot_resolves_to_that_account():
+    restore = _stub_agents(rows=[A1, {**A2_OFF, "disabled": False}])
+    try:
+        assert ladder.resolve_agent("claude:2") == (2, None)
+    finally:
+        restore()
+
+
+def test_a_free_provider_resolves_to_its_runtime():
+    restore = _stub_agents(rows=[A1], free=[FREE_GEMINI])
+    try:
+        assert ladder.resolve_agent("opencode:gemini") == (None, "opencode:gemini")
+    finally:
+        restore()
+
+
+def test_picks_that_are_not_live_are_refused():
+    """A disabled/absent account or an unconfigured provider must not silently
+    fall back to whoever is ambient — the turn would run as the wrong identity."""
+    restore = _stub_agents(rows=[A1, A2_OFF])
+    try:
+        for spec in ("claude:2", "claude:9", "claude:x", "opencode:gemini", "wat:1"):
+            try:
+                ladder.resolve_agent(spec)
+            except ValueError:
+                continue
+            raise AssertionError(f"{spec} should not have resolved")
+    finally:
+        restore()
+
+
 # --- escalate(): acting on the policy ----------------------------------------
 
 class _Rec:

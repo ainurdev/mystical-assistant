@@ -1,18 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting, indentOnInput, bracketMatching } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
-import { javascript } from "@codemirror/lang-javascript";
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { json } from "@codemirror/lang-json";
-import { python } from "@codemirror/lang-python";
-import { markdown } from "@codemirror/lang-markdown";
 import { api, type FileContent, type GrepHit } from "../../api";
 import { Markdown } from "../Markdown";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
+import { cmpTreePath } from "../../lib/pathsort";
+import { langFor } from "../../lib/langfor";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
    the whole working tree of the selected branch/worktree, opens any file into an
@@ -58,6 +54,10 @@ const EXT_COLOR: Record<string, string> = {
   ts: "var(--info)", tsx: "var(--info)", js: "var(--warn)", jsx: "var(--warn)", mjs: "var(--warn)", cjs: "var(--warn)",
   css: "var(--purple)", scss: "var(--purple)", md: "var(--txm)", json: "var(--warn)", py: "var(--ok)",
   html: "var(--err)", htm: "var(--err)", toml: "var(--txm)", yml: "var(--txm)", yaml: "var(--txm)",
+  rs: "var(--err)", go: "var(--info)", rb: "var(--err)", php: "var(--purple)", java: "var(--err)",
+  c: "var(--info)", h: "var(--info)", cpp: "var(--info)", cs: "var(--purple)", swift: "var(--err)",
+  kt: "var(--purple)", sh: "var(--ok)", bash: "var(--ok)", zsh: "var(--ok)", sql: "var(--warn)",
+  xml: "var(--err)", svg: "var(--purple)", vue: "var(--ok)", svelte: "var(--err)", lua: "var(--info)",
 };
 export function iconColor(name: string): string {
   return EXT_COLOR[name.split(".").pop()?.toLowerCase() ?? ""] ?? "#7fa8a0";
@@ -66,7 +66,7 @@ export function iconColor(name: string): string {
 /* Flatten a sorted path list into a collapsible directory tree (dirs before
    their files, honoring the collapsed set). */
 export function buildRows(paths: string[], collapsed: Set<string>): TreeRow[] {
-  const sorted = [...paths].sort((a, b) => a.localeCompare(b));
+  const sorted = [...paths].sort(cmpTreePath);
   const rows: TreeRow[] = [];
   const seen = new Set<string>();
   for (const path of sorted) {
@@ -118,9 +118,12 @@ function fuzzyScore(q: string, path: string): number {
   return score + (last < path.lastIndexOf("/") + 1 ? 40 : 0);
 }
 
-// Definitions worth jumping to, across the languages the editor highlights.
-const SYMBOL_RE = /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:(function|class|def|interface|type|enum|struct|fn)\s+([A-Za-z_$][\w$]*)|(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>|([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{)/;
-const NOT_SYMBOL = new Set(["if", "for", "while", "switch", "catch", "return", "function", "with"]);
+/* Definitions worth jumping to, across the languages the editor highlights: a
+   declaration keyword, an arrow-function const, or a bare `name(args) {`. The
+   leading modifiers cover Java/C#/PHP/Rust/Kotlin (`public static`, `pub`), and
+   the optional parens after the keyword cover Go methods (`func (s *S) Do()`). */
+const SYMBOL_RE = /^\s*(?:(?:export|default|async|public|private|protected|internal|static|final|abstract|open|override|pub)\s+)*(?:(function|func|fn|def|class|interface|type|enum|struct|trait|impl|module|record|sub|proc)\s+(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)|(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>|([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{)/;
+const NOT_SYMBOL = new Set(["if", "for", "foreach", "while", "switch", "catch", "return", "function", "with", "elseif", "unless", "until"]);
 
 function symbolsIn(doc: string): { name: string; kind: string; line: number }[] {
   const out: { name: string; kind: string; line: number }[] = [];
@@ -135,17 +138,8 @@ function symbolsIn(doc: string): { name: string; kind: string; line: number }[] 
   return out;
 }
 
-function langFor(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  if (["ts", "tsx", "js", "jsx", "mjs", "cjs"].includes(ext))
-    return [javascript({ typescript: ext.startsWith("ts"), jsx: ext.endsWith("x") })];
-  if (ext === "json") return [json()];
-  if (ext === "css" || ext === "scss") return [css()];
-  if (ext === "html" || ext === "htm") return [html()];
-  if (ext === "py") return [python()];
-  if (ext === "md" || ext === "markdown") return [markdown()];
-  return [];
-}
+// Swapped in once the open file's language chunk has loaded (see langFor).
+const langComp = new Compartment();
 
 /* Put line `n` in the middle of the viewport with the cursor on it. */
 function gotoLine(view: EditorView, n: number) {
@@ -287,7 +281,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         bracketMatching(),
         syntaxHighlighting(crtHighlight),
         crtTheme,
-        langFor(open),
+        langComp.of([]),   // filled in below, once the language chunk lands
         // Mod-s first so it wins over any default binding; then editing keymaps.
         keymap.of([
           { key: "Mod-s", preventDefault: true, run: () => { saveRef.current(); return true; } },
@@ -303,6 +297,11 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
     view.focus();
+    // Highlighting arrives a tick later: the language is a lazy chunk, so the
+    // buffer renders plain and repaints when it loads (guard = view still live).
+    void langFor(open)?.load().then((sup) => {
+      if (viewRef.current === view) view.dispatch({ effects: langComp.reconfigure(sup) });
+    }).catch(() => {});
     if (jumpRef.current) { gotoLine(view, jumpRef.current); jumpRef.current = 0; }
     return () => { view.destroy(); viewRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -538,7 +537,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const lineCount = editable ? (meta?.content ?? "").split("\n").length : 0;
   const statusRight = note
     || (meta && !meta.ok ? (meta.error || "can't open") : "")
-    || (meta?.binary ? "binary file" : meta?.too_large ? "too large to edit" : editable ? `utf-8 · ${lineCount}L` : "");
+    || (meta?.image ? `image · ${Math.round((meta.size ?? 0) / 1024)} KB`
+      : meta?.binary ? "binary file" : meta?.too_large ? "too large to edit" : editable ? `utf-8 · ${lineCount}L` : "");
 
   return (
     <div style={{ animation: "mslide .3s ease both", height: "100%" }}>
@@ -638,6 +638,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                   </div>
                 )}
               </>
+            ) : meta?.image ? (
+              <div className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+                <img src={meta.image} alt={open ?? ""} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              </div>
             ) : (
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: "var(--txd)" }}>
                 {!open ? "Select a file to edit."

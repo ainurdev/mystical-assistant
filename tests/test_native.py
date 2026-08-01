@@ -27,7 +27,8 @@ transcript_jsonl.PROJECTS_DIR = tempfile.mkdtemp()    # fake ~/.claude/projects
 OWNER = 555
 
 
-def _write_native(uuid, cwd, first_user="hello scan", with_cwd=True, dirname=None):
+def _write_native(uuid, cwd, first_user="hello scan", with_cwd=True, dirname=None,
+                  entrypoint=None):
     root = transcript_jsonl.PROJECTS_DIR
     pdir = os.path.join(root, dirname or ("p-" + uuid))
     os.makedirs(pdir, exist_ok=True)
@@ -36,6 +37,8 @@ def _write_native(uuid, cwd, first_user="hello scan", with_cwd=True, dirname=Non
             "message": {"role": "user", "content": first_user}}
     if with_cwd:
         user["cwd"] = cwd
+    if entrypoint:
+        user["entrypoint"] = entrypoint
     recs.append(user)
     recs.append({"type": "assistant", "sessionId": uuid, "uuid": uuid + "-a",
                  "message": {"role": "assistant", "content": [
@@ -58,6 +61,32 @@ def test_scan_indexes_session_under_base():
     assert row["claude_session_id"] == "uuid-in-base" and row["id"] == "uuid-in-base"
     assert row["project"] == "/repo" and row["cwd"] == cwd
     assert row["title"] == "build the thing"
+
+
+def test_scan_labels_origin_from_entrypoint():
+    # Claude Code stamps the surface on every record; a terminal `claude` session
+    # must not land on the VS Code chip. Missing entrypoint keeps the old default.
+    for uid, entry, want in (("uuid-term", "cli", "terminal"),
+                             ("uuid-code", "claude-vscode", "vscode"),
+                             ("uuid-none", None, "vscode")):
+        _write_native(uid, os.path.join(_BASE, "surf"), entrypoint=entry)
+    native.scan(chat_id=OWNER)
+    for uid, _, want in (("uuid-term", "cli", "terminal"),
+                         ("uuid-code", "claude-vscode", "vscode"),
+                         ("uuid-none", None, "vscode")):
+        assert store.get_by_claude_session_id(uid)["origin"] == want, uid
+
+
+def test_rescan_heals_native_origin_but_not_bridge():
+    cwd = os.path.join(_BASE, "heal")
+    _write_native("uuid-heal", cwd, entrypoint="cli")
+    store.upsert_native_session("uuid-heal", OWNER, "/heal", cwd, origin="vscode")
+    store.upsert_native_session("uuid-bridge", OWNER, "/heal", cwd, origin="dashboard")
+    native.scan(chat_id=OWNER)
+    assert store.get_by_claude_session_id("uuid-heal")["origin"] == "terminal"
+    # A bridge-run row keeps its surface even though its JSONL says otherwise.
+    store.upsert_native_session("uuid-bridge", OWNER, "/heal", cwd, origin="terminal")
+    assert store.get_by_claude_session_id("uuid-bridge")["origin"] == "dashboard"
 
 
 def test_scan_skips_session_outside_base():
