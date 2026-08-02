@@ -293,6 +293,12 @@ class Handler(BaseHTTPRequestHandler):
                 "default_policy": ladder.default_policy(),
                 "pending_login": accounts.pending_login(),
                 "free_agents": _free_agents()})
+        if path == "/local/aifeatures":
+            from bridge import aifeatures
+            return self._json({"features": aifeatures.state()})
+        if path == "/local/next":
+            from bridge import nextup
+            return self._json(nextup.board(chat))
         if path == "/local/sessions":
             native.refresh(chat)           # surface VSCode sessions started since last poll
             project = qs.get("project", [None])[0]
@@ -615,6 +621,19 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"error": f"unknown action {action!r}"}, 400)
+        if path == "/local/aifeatures":
+            from bridge import aifeatures
+            try:
+                aifeatures.set_enabled(str(body.get("key") or ""), body.get("enabled"))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/next":
+            # Scouts take a minute; answer now with the cached board and let the
+            # client's poll pick up the new one. Concurrent refreshes collapse.
+            from bridge import nextup
+            Thread(target=nextup.refresh, args=(chat,), daemon=True).start()
+            return self._json({"ok": True, **nextup.board(chat)})
         if path == "/local/freeagents":
             from bridge import freeagent
             try:

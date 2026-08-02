@@ -1,6 +1,8 @@
 """Unit tests for capture extraction parsing, gating, and teaching prompts."""
 import os
 import sys
+
+import pytest
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,6 +15,13 @@ os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 from bridge import config, learning, runner, store  # noqa: E402
 
 store.init()
+
+
+@pytest.fixture(autouse=True)
+def _feature_on(monkeypatch):
+    """Teacher mode ships OFF (bridge/aifeatures.py) — these tests are about what it
+    does once switched on, so turn it on for the module."""
+    monkeypatch.setattr(config, "LEARNING_ENABLE", True)
 
 
 def _fake_run(result):

@@ -457,6 +457,34 @@ export interface AccountsInfo {
   free_agents: FreeAgents;
   pending_login: { slot: number; url: string | null } | null;
 }
+/** One AI-powered extra. Everything here spends a model call nobody asked for,
+ *  so each ships off and is switched on from the settings modal's AI tab. */
+export interface AiFeature {
+  key: string;
+  label: string;
+  hint: string;
+  cost: string;
+  enabled: boolean;
+}
+export interface NextItem {
+  id: string;
+  title: string;
+  why: string;
+  effort: "small" | "medium" | "large";
+  evidence: string;
+  repo: string;
+  branch: string;
+  cwd: string; // where the session runs — a worktree differs from the project dir
+  project: string; // BASE_PATH-relative project key the session groups under
+  prompt: string; // composed server-side — never written by a model
+}
+export interface NextBoard {
+  items: NextItem[];
+  generated: number | null;
+  repos: string[];
+  refreshing: boolean;
+  enabled: boolean; // false → the list is the plain heuristic order
+}
 export interface UsageInfo {
   available: boolean;
   five_hour?: UsageBucket | null;
@@ -668,6 +696,18 @@ export const api = {
       method: "POST",
       body: { name, value },
     }),
+  /** The AI-powered extras and whether each is switched on. All ship off. */
+  aiFeatures: () => req<{ features: AiFeature[] }>("/local/aifeatures"),
+  setAiFeature: (key: string, enabled: boolean) =>
+    req<{ ok: boolean; features: AiFeature[] }>("/local/aifeatures", {
+      method: "POST",
+      body: { key, enabled },
+    }),
+  /** Cached board — never spawns anything. */
+  nextBoard: () => req<NextBoard>("/local/next"),
+  /** Recompute in the background; poll nextBoard() until `refreshing` clears. */
+  refreshNext: () =>
+    req<NextBoard & { ok: boolean }>("/local/next", { method: "POST", body: {} }),
   setDefaultPolicy: (policy: string) =>
     req<{ ok: boolean; policy: string }>("/local/policy/default", {
       method: "POST",

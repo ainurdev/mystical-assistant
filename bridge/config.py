@@ -76,7 +76,9 @@ FALLBACK_POLICY = os.environ.get("FALLBACK_POLICY", "ask").strip().lower()
 # --- Project memory ----------------------------------------------------------
 # Curated, project+branch-scoped memory injected into every turn's system prompt
 # and captured (with a Keep/Skip gate) after edits. See the project-memory design.
-MEMORY_ENABLE = os.environ.get("MEMORY_ENABLE", "1").lower() not in ("0", "false", "no", "")
+# Off unless asked for, like every model-spending extra — see bridge/aifeatures.py,
+# which layers the dashboard's AI tab over these settings.
+MEMORY_ENABLE = os.environ.get("MEMORY_ENABLE", "0").lower() not in ("0", "false", "no", "")
 MEMORY_TOKEN_BUDGET = int(os.environ.get("MEMORY_TOKEN_BUDGET", "800"))  # resident pack cap
 
 # Push a Telegram message when a streaming (Mini App / dashboard) run needs your
@@ -115,17 +117,21 @@ SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv",
 MINIAPP_ENABLE = os.environ.get("MINIAPP_ENABLE", "1").lower() not in ("0", "false", "no", "")
 MINIAPP_PORT = int(os.environ.get("MINIAPP_PORT", "8787"))   # local HTTP bind port
 
-# Teacher mode: auto-suggest review candidates after code turns. Default on.
-LEARNING_ENABLE = os.environ.get("LEARNING_ENABLE", "1").lower() \
+# The four settings below and MEMORY_ENABLE above all buy a model call nobody
+# asked for, so they default OFF and are switched on per install from the
+# dashboard's AI tab (bridge/aifeatures.py owns that precedence — a persisted
+# switch beats the setting here).
+# Teacher mode: auto-suggest review candidates after code turns.
+LEARNING_ENABLE = os.environ.get("LEARNING_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 # Auto-title new sessions with an LLM-generated subject after the first turn
-# (Claude-app style), replacing the first-prompt placeholder. Default on.
-TITLE_ENABLE = os.environ.get("TITLE_ENABLE", "1").lower() \
+# (Claude-app style), replacing the first-prompt placeholder.
+TITLE_ENABLE = os.environ.get("TITLE_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 # Context-aware "start a new session?" guardrail: before a substantial prompt
 # resumes a session that already has history, a cheap one-shot decides whether it
-# belongs there. Unrelated → the prompt is held and the user picks. Default on.
-RELEVANCE_CHECK = os.environ.get("RELEVANCE_CHECK", "1").lower() \
+# belongs there. Unrelated → the prompt is held and the user picks.
+RELEVANCE_CHECK = os.environ.get("RELEVANCE_CHECK", "0").lower() \
     not in ("0", "false", "no", "")
 RELEVANCE_MODEL = os.environ.get("RELEVANCE_MODEL", "haiku")
 RELEVANCE_MIN_CHARS = int(os.environ.get("RELEVANCE_MIN_CHARS", "280"))
@@ -134,6 +140,16 @@ RELEVANCE_CONTEXT_TURNS = int(os.environ.get("RELEVANCE_CONTEXT_TURNS", "3"))
 # doc guessed. At a tighter timeout every check fails open and the guardrail is a
 # silent no-op, so this is deliberately generous; it only runs on long prompts.
 RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
+
+# --- Next-up board -----------------------------------------------------------
+# Ranked next steps across the repos with recent session activity. One read-only
+# scout per changed repo, free-agent rung first. See the next-up-board design.
+NEXTUP_ENABLE = os.environ.get("NEXTUP_ENABLE", "0").lower() \
+    not in ("0", "false", "no", "")
+NEXTUP_DAYS = int(os.environ.get("NEXTUP_DAYS", "7"))        # activity window
+NEXTUP_MAX_REPOS = int(os.environ.get("NEXTUP_MAX_REPOS", "6"))  # hard cost ceiling
+NEXTUP_SCOUT_TIMEOUT = int(os.environ.get("NEXTUP_SCOUT_TIMEOUT", "120"))
+NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback path
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")

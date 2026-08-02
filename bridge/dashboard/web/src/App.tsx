@@ -170,7 +170,7 @@ export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false); // true from select until its transcript first resolves
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [view, setView] = useState<"chat" | "history" | "memory">("chat");
+  const [view, setView] = useState<"chat" | "history" | "memory" | "next">("chat");
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
@@ -715,10 +715,10 @@ export function App() {
   // which React has not updated yet for the session we just created.
   async function startIn(
     project: string, prompt: string,
-    opts?: { images?: string[]; title?: string; force?: boolean },
+    opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string },
   ) {
     try {
-      const { session } = await api.createSession(project, undefined, opts?.title);
+      const { session } = await api.createSession(project, opts?.cwd, opts?.title);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       setView("chat");
@@ -975,6 +975,7 @@ export function App() {
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
     { id: "view-memory", label: "Go to Memory", group: "View", icon: "◆", run: () => setView("memory") },
+    { id: "view-next", label: "Go to Next up", group: "View", icon: "◈", run: () => setView("next") },
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
     { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
@@ -1122,7 +1123,10 @@ export function App() {
                 scrollRef={scrollRef} contentRef={contentRef}
                 atBottom={atBottom} onJumpBottom={jumpToBottom}
                 onSuggestPick={(t) => feed([t])}
-                onOpenFromHistory={(s) => void openFromHistory(s)} liveTurns={liveTurns.current}
+                onOpenFromHistory={(s) => void openFromHistory(s)}
+                onStartNext={(it) => void startIn(it.project, it.prompt,
+                  { title: it.title, cwd: it.cwd, force: true })}
+                liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession} hud={settings}
                 composer={
                   <>

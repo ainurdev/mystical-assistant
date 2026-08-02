@@ -432,6 +432,14 @@ def current_branch(cwd: str) -> str:
     return out.strip() if rc == 0 else ""
 
 
+def head_sha(cwd: str) -> str:
+    """The commit HEAD points at, "" outside a repo or on an unborn branch.
+    Moves on every commit, which a branch name does not — the next-up cache keys
+    on it to decide whether a repo is worth looking at again."""
+    rc, out, _ = _run(cwd, "rev-parse", "HEAD")
+    return out.strip() if rc == 0 else ""
+
+
 _branch_cache: dict[str, tuple[str, float]] = {}
 _BRANCH_TTL = 3.0
 

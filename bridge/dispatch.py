@@ -24,6 +24,7 @@ HELP = (
     "/logs [n] — recent server output\n"
     f"/preview [port] — public link (default {config.PREVIEW_PORT}) · /preview stop\n"
     "/map [query] — project map: summary · /map build · /map <thing>\n"
+    "/next — ranked next steps across your recent repos · /next refresh\n"
     "/accounts — Claude logins and their usage · /accounts add\n"
     "/policy — what to do when a chat hits the usage limit\n"
     "/status — everything at a glance\n"
@@ -65,6 +66,68 @@ def _handle_map(chat_id: int, arg: str):
     send(chat_id, f"🗺 Map built @{st['built_commit']}{stale}\n\n"
                   f"{graphmap.graph_pack(cwd)}\n\n"
                   "/map <thing> to explain it · /map build to refresh")
+
+
+_EFFORT_MARK = {"small": "·", "medium": "··", "large": "···"}
+
+
+def _next_text(board: dict) -> tuple[str, dict | None]:
+    items = board["items"][:5]
+    if not items:
+        return ("Nothing to suggest — no repo with session activity in the last "
+                f"{config.NEXTUP_DAYS} days.", None)
+    lines = ["🔭 Next up", ""]
+    for n, it in enumerate(items, 1):
+        lines.append(f"{n}. {it['title']}")
+        lines.append(f"   {it['repo']} {_EFFORT_MARK.get(it['effort'], '··')} {it['why']}")
+    if not board.get("enabled"):
+        lines.append("\nRanking is off — this is the plain heuristic order. "
+                     "Switch NEXT-UP BOARD on in the dashboard's AI tab.")
+    kb = {"inline_keyboard": [
+        [{"text": f"▸ {n}", "callback_data": f"nx:{it['id']}"}
+         for n, it in enumerate(items, 1)],
+        [{"text": "↻ refresh", "callback_data": "nx:*"}]]}
+    return ("\n".join(lines), kb)
+
+
+def _handle_next(chat_id: int, arg: str):
+    """Runs in a thread — a cold board is one read-only agent per changed repo."""
+    from bridge import nextup
+    board = nextup.board(chat_id)
+    if arg == "refresh" or not board["items"]:
+        send(chat_id, "🔭 Looking over your recent repos…")
+        board = nextup.refresh(chat_id)
+    text, kb = _next_text(board)
+    send(chat_id, text, kb)
+
+
+def _next_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
+    """▸ N starts the item in its own repo; ↻ recomputes the board."""
+    from bridge import nextup
+    ref = data.split(":", 1)[1]
+    if ref == "*":
+        answer_cb(cb["id"], "Refreshing…")
+        edit(chat_id, msg_id, "🔭 Looking over your recent repos…")
+        text, kb = _next_text(nextup.refresh(chat_id))
+        edit(chat_id, msg_id, text, kb)
+        return
+    item = nextup.item(chat_id, ref)
+    if not item:
+        answer_cb(cb["id"], "That board is gone — /next again.")
+        return
+    # The bot runs in the chat's active project, so starting an item moves the
+    # chat to its repo — the same switch the project browser's "use" makes.
+    state.active[chat_id] = item["cwd"]
+    session = store.create_session(chat_id, rel(item["cwd"]), origin="bot",
+                                   cwd=item["cwd"])
+    store.set_subject_title(session["id"], item["title"])
+    if not state.acquire_run(session["id"], chat_id):
+        answer_cb(cb["id"], "That session is busy.")
+        return
+    answer_cb(cb["id"], "Starting…")
+    edit(chat_id, msg_id, f"▸ {item['title']}\n{rel(item['cwd'])}")
+    threading.Thread(target=handle_task,
+                     args=(chat_id, item["prompt"], session), daemon=True).start()
 
 
 def on_message(msg: dict):
@@ -118,6 +181,12 @@ def on_message(msg: dict):
     if cmd0 == "/map":
         threading.Thread(target=_handle_map,
                          args=(chat_id, text[len("/map"):].strip()),
+                         daemon=True).start()
+        return
+    if cmd0 == "/next":
+        # Scouting spawns a read-only agent per changed repo — always off-thread.
+        threading.Thread(target=_handle_next,
+                         args=(chat_id, text[len("/next"):].strip()),
                          daemon=True).start()
         return
     if cmd0 in ("/accounts", "/policy"):
@@ -305,6 +374,10 @@ def handle_callback(cb: dict):
 
     elif data.startswith("fb:"):
         _fallback_callback(cb, chat_id, msg_id, data)
+
+    elif data.startswith("nx:"):
+        threading.Thread(target=_next_callback,
+                         args=(cb, chat_id, msg_id, data), daemon=True).start()
 
     elif data.startswith("rvw:"):
         parts = data.split(":", 2)

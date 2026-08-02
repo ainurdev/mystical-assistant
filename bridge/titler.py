@@ -7,7 +7,7 @@ runner.run_blocking (one-shot, cheap model, no memory pack)."""
 
 import sys
 
-from bridge import config, native, runner, store
+from bridge import aifeatures, config, native, runner, store
 
 _SYS = (
     "You name a chat for a sidebar. Given the user's first message and the "
@@ -39,7 +39,7 @@ def generate_after_turn(chat_id: int, session: dict, turn_id: str) -> None:
     with a generated subject. No-op unless the title is still 'auto' and this is
     the only turn (so we never retro-title existing chats or clobber a rename)."""
     try:
-        if not getattr(config, "TITLE_ENABLE", True):
+        if not aifeatures.enabled("title"):
             return
         sid = session["id"]
         fresh = store.get_session(sid)

@@ -7,7 +7,7 @@ import json
 import logging
 import re
 
-from bridge import config, store
+from bridge import aifeatures, config, store
 
 log = logging.getLogger("bridge.memory")
 
@@ -115,7 +115,7 @@ def suggest(owner_id: int, project: str, branch: "str | None", *, run=None) -> l
     """Up to 3 memory-grounded next-step prompts for a new session. Best-effort:
     [] when memory is disabled, the project has no memory, or the model output is
     malformed. Cached by namespace_version so repeat calls don't re-spend."""
-    if not config.MEMORY_ENABLE:
+    if not aifeatures.enabled("memory"):
         return []
     pack = render_pack(owner_id, project, branch)
     if not pack.strip():
@@ -216,7 +216,7 @@ def propose(owner_id: int, session_id: str, turn_id: str, project: str,
     """Reconcile durable facts from a finished turn into Keep/Skip candidates.
     Best-effort and swallowed on any failure — never blocks or errors the turn.
     Returns the ids of the candidates it created."""
-    if not config.MEMORY_ENABLE or not (assistant_text or "").strip():
+    if not aifeatures.enabled("memory") or not (assistant_text or "").strip():
         return []
     run = run or (lambda p: _default_run(owner_id, p))
     existing = _existing(owner_id, project, branch)

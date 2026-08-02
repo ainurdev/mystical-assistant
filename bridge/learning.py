@@ -4,7 +4,7 @@ Capture is best-effort — nothing here may raise into the turn lifecycle."""
 import json
 import sys
 
-from bridge import config, native, runner, store
+from bridge import aifeatures, config, native, runner, store
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit"}
 
@@ -49,7 +49,7 @@ def _parse_candidates(raw: str) -> list[dict]:
 
 def propose_review_items(owner_id: int, project_path: str | None, assistant_text: str,
                          edits_summary: str, *, edited: bool | None) -> list[dict]:
-    if not getattr(config, "LEARNING_ENABLE", True):
+    if not aifeatures.enabled("learning"):
         return []
     if not (assistant_text or edits_summary):
         return []
@@ -79,7 +79,7 @@ def capture_after_turn(chat_id: int, session: dict, turn_id: str, *,
     surfaces set tool_visibility=True (we can trust the absence of Edit/Write to
     mean 'no code change'); the bot sets False (unknown — the extractor decides)."""
     try:
-        if not getattr(config, "LEARNING_ENABLE", True):
+        if not aifeatures.enabled("learning"):
             return
         evs = [e for e in store.transcript(session["id"])["events"]
                if e.get("turn_id") == turn_id]

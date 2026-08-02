@@ -6,6 +6,8 @@ Run: python -m pytest tests/test_relevance.py -v"""
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bridge import config, relevance, runner, store  # noqa: E402
@@ -14,6 +16,13 @@ from bridge.dashboard import server as dash  # noqa: E402
 store.init()
 
 LONG = "x" * (config.RELEVANCE_MIN_CHARS + 1)
+
+
+@pytest.fixture(autouse=True)
+def _guard_on(monkeypatch):
+    """The guardrail ships OFF (bridge/aifeatures.py); switch it on for the module
+    so these tests exercise it. Tests that need it off set the flag themselves."""
+    monkeypatch.setattr(config, "RELEVANCE_CHECK", True)
 
 
 def _session(chat=901, project="/relproj", turns=1, title="Fix The Login Form"):

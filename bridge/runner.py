@@ -20,9 +20,9 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, agents, config, devserver, git, ladder, limits,
-                    machine, memory, native_activity, project_config, pubsub,
-                    state, store, transcript_jsonl)
+from bridge import (accounts, agents, aifeatures, config, devserver, git, ladder,
+                    limits, machine, memory, native_activity, project_config,
+                    pubsub, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -86,7 +86,7 @@ def _branch_for(chat_id: int, cwd: "str | None") -> "str | None":
 def _memory_pack_for(chat_id: int, cwd: "str | None") -> str:
     """Project+branch memory Context Pack for injection. Best-effort: disabled, an
     'off' project posture, or any failure yields an empty pack (never blocks a turn)."""
-    if not config.MEMORY_ENABLE:
+    if not aifeatures.enabled("memory"):
         return ""
     try:
         project = _project_key(chat_id, cwd)
@@ -130,7 +130,7 @@ def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
                    cwd: "str | None", assistant_text: str, edited_files: list) -> None:
     """Run the post-turn memory extractor off the hot path (fire-and-forget). The
     project's posture gates it: 'off' skips capture, 'auto' keeps without the gate."""
-    if not config.MEMORY_ENABLE or not session_id or not (assistant_text or "").strip():
+    if not aifeatures.enabled("memory") or not session_id or not (assistant_text or "").strip():
         return
     project = _project_key(chat_id, cwd)
     mode = project_config.memory_mode(project)
@@ -249,12 +249,17 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     pack = "" if skip_pack else _memory_pack_for(chat_id, cwd)
     graph = "" if skip_pack else _graph_pack_for(chat_id, cwd)
     cmd += ["--append-system-prompt", _compose_system_prompt(pack, graph)]
-    if skip_pack:
+    if skip_pack and not (permission_mode and not interactive):
         # Internal one-shots (titler/memory/commit-msg) are pure text transforms
         # whose prompts embed untrusted conversation text. No tools and no
         # EXTRA_CLAUDE_ARGS (acceptEdits!) — an agentic run here is an injection
         # vector: a first message like "scan the project" gets executed, not named.
         cmd += ["--tools", ""]
+    elif not interactive and permission_mode:
+        # An internal one-shot that must *read* the repo (the next-up scout).
+        # Its own permission mode instead of EXTRA_CLAUDE_ARGS: 'plan' leaves the
+        # read tools available and takes editing and shell off the table.
+        cmd += ["--permission-mode", permission_mode]
     elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd
@@ -267,9 +272,11 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  cwd: str | None = None, timeout: int | None = None, *,
                  model: str | None = None, skip_pack: bool = False,
+                 permission_mode: str | None = None,
                  ponytail: str | None = None):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
-                    cwd=cwd, model=model, skip_pack=skip_pack)
+                    cwd=cwd, model=model, skip_pack=skip_pack,
+                    permission_mode=permission_mode)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,

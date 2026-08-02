@@ -4,6 +4,8 @@ Run: `python tests/test_memory_suggest.py`
 
 import os
 import sys
+
+import pytest
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,6 +18,13 @@ os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 from bridge import config, memory, store  # noqa: E402
 
 store.init()
+
+
+@pytest.fixture(autouse=True)
+def _feature_on(monkeypatch):
+    """Project memory ships OFF (bridge/aifeatures.py) — these tests are about what it
+    does once switched on, so turn it on for the module."""
+    monkeypatch.setattr(config, "MEMORY_ENABLE", True)
 
 
 def _seed(owner, project):

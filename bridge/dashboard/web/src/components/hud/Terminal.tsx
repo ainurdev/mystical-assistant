@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AnswerSelection, EnrichedSession, SessionBrief } from "../../api";
+import type { AnswerSelection, EnrichedSession, NextItem, SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { MemoryView } from "../MemoryView";
+import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints } from "./Checkpoints";
 import { SuggestionChips } from "./SuggestionChips";
@@ -137,7 +138,8 @@ function ChannelTuning() {
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   onReviewResolve,
-  scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, liveTurns, trailingWorking,
+  scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
+  liveTurns, trailingWorking,
   loading, sessionId, onSuggestPick, hud,
 }: {
   view: View;
@@ -157,6 +159,7 @@ export function Terminal({
   onJumpBottom: () => void;
   composer: ReactNode;
   onOpenFromHistory: (s: EnrichedSession) => void;
+  onStartNext: (item: NextItem) => void;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
   loading?: boolean;
@@ -262,6 +265,10 @@ export function Terminal({
       ) : view === "memory" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
           <MemoryView />
+        </div>
+      ) : view === "next" ? (
+        <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
+          <NextView onStart={onStartNext} />
         </div>
       ) : (
         <>

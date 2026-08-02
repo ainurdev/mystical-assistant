@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   api,
   type AccountInfo,
+  type AiFeature,
   type FreeAgentInfo,
   type FreeAgents,
   type UpdateInfo,
@@ -51,13 +52,14 @@ export interface SettingsModalProps {
 // The first three tabs are pure taste — how the HUD looks, what plays while it
 // works, what surrounds it. The last two are what a run and the bridge do.
 
-type Tab = "appearance" | "indicator" | "ambient" | "session" | "accounts" | "system";
+type Tab = "appearance" | "indicator" | "ambient" | "session" | "ai" | "accounts" | "system";
 
 const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot" },
   { key: "indicator", label: "INDICATOR", hint: "what plays while working" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM" },
   { key: "session", label: "SESSION", hint: "model · mode · effort" },
+  { key: "ai", label: "AI", hint: "extras that spend model calls" },
   { key: "accounts", label: "ACCOUNTS", hint: "logins · usage-limit fallback" },
   { key: "system", label: "SYSTEM", hint: "bridge · updates" },
 ];
@@ -793,6 +795,66 @@ const POLICY_BLURB: Record<string, string> = {
   wait: "Only wait for the window to reset — the behaviour before the ladder existed.",
 };
 
+/** Every extra that spends a model call nobody asked for, and its switch. They
+ *  all ship off: an install should cost exactly the turns you typed until you
+ *  decide otherwise. Takes effect on the next turn — no restart. */
+function AiPanel() {
+  const [rows, setRows] = useState<AiFeature[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .aiFeatures()
+      .then((r) => setRows(r.features))
+      .catch(() => setRows([]));
+  }, []);
+
+  async function toggle(f: AiFeature) {
+    setBusy(f.key);
+    setErr(null);
+    try {
+      setRows((await api.setAiFeature(f.key, !f.enabled)).features);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not save");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (rows === null) return <div style={NOTE}>Reading…</div>;
+  if (!rows.length)
+    return <div style={NOTE}>This bridge is running a build without the AI tab. Restart it.</div>;
+
+  return (
+    <>
+      <Label>MODEL-SPENDING EXTRAS</Label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((f) => (
+          <div key={f.key} style={CARD}>
+            <div style={KV}>
+              <span style={{ fontSize: 11, letterSpacing: 1, color: "var(--txb)" }}>{f.label}</span>
+              <Switch on={f.enabled} onClick={() => void (busy ? null : toggle(f))} />
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 7, lineHeight: 1.7 }}>
+              {f.hint}
+            </div>
+            <div style={{ fontSize: 9, color: "var(--txd)", marginTop: 3, letterSpacing: 0.5 }}>
+              costs {f.cost}
+            </div>
+          </div>
+        ))}
+      </div>
+      {err && <div style={{ ...NOTE, color: "var(--bad, #f66)" }}>{err}</div>}
+      <div style={NOTE}>
+        Off by default, every one of them. A switch here beats the matching environment
+        setting and applies to the next turn — nothing to restart. The next-up board also
+        prefers a free provider (ACCOUNTS tab) over spending Claude quota.
+      </div>
+    </>
+  );
+}
+
 function AccountsPanel() {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
   const [policy, setPolicy] = useState("ask");
@@ -1447,6 +1509,8 @@ export function SettingsModal(props: SettingsModalProps) {
                 </div>
               </>
             )}
+
+            {tab === "ai" && <AiPanel />}
 
             {tab === "accounts" && <AccountsPanel />}
 

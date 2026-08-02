@@ -23,6 +23,13 @@ store.init()
 
 
 @pytest.fixture(autouse=True)
+def _titles_on(monkeypatch):
+    """Auto-titling ships OFF (bridge/aifeatures.py) — these tests are about what
+    it does once switched on, so turn it on for the module."""
+    monkeypatch.setattr(config, "TITLE_ENABLE", True)
+
+
+@pytest.fixture(autouse=True)
 def _restore_run_blocking():
     """Every test here swaps runner.run_blocking for a stub; restore the real one
     afterward so the stub can't leak into later test modules (test_native,
