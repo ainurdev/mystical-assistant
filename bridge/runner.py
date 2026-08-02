@@ -118,12 +118,26 @@ def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
 
 
 def _compose_system_prompt(pack: str = "", graph: str = "") -> str:
-    """Stable content first (ASK prompt + dev-log note), then the memory pack,
-    then the graph pack — each byte-stable within a session, so the prefix
-    stays cache-eligible."""
+    """ASK prompt + dev-log note, then the memory pack, then the graph pack.
+
+    Ordering does NOT protect the cache: the whole string lands in
+    --append-system-prompt, which sits after the last cache breakpoint, so any
+    change re-writes all of it. What protects the cache is only sending the
+    volatile packs once per session — see _base_cmd."""
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE,
                          pack.strip(), graph.strip()) if p]
     return "\n\n".join(parts)
+
+
+# Claude session ids we've already injected the memory/graph packs into. The packs
+# are rebuilt from live state, so re-sending them each turn silently changes
+# --append-system-prompt and invalidates the cached prefix (measured: one added
+# pack line moved ~11k tokens from cache_read to cache_create, a ~12x price step
+# on that segment, and on a resumed session the invalidated span is the whole
+# transcript). Once per session is also all that's useful: turn 1's pack is still
+# in context, and memories captured mid-session came out of that session's own
+# output. Bounded by sessions-since-boot.
+_packed_sessions: set[str] = set()
 
 
 def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
@@ -251,8 +265,13 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     if claude_session_id:
         cmd += (["--session-id", claude_session_id] if new_session
                 else ["--resume", claude_session_id])
-    pack = "" if skip_pack else _memory_pack_for(chat_id, cwd)
-    graph = "" if skip_pack else _graph_pack_for(chat_id, cwd)
+    if skip_pack or (claude_session_id and claude_session_id in _packed_sessions):
+        pack = graph = ""
+    else:
+        pack = _memory_pack_for(chat_id, cwd)
+        graph = _graph_pack_for(chat_id, cwd)
+        if claude_session_id:
+            _packed_sessions.add(claude_session_id)
     cmd += ["--append-system-prompt", _compose_system_prompt(pack, graph)]
     if skip_pack:
         # Internal one-shots (titler/memory/commit-msg) are pure text transforms
