@@ -458,7 +458,7 @@ def test_handle_task_journals_bot_turn():
     orig = (runner.send, runner.typing, runner.run_blocking)
     runner.send = lambda *a, **k: None
     runner.typing = lambda *a, **k: None
-    runner.run_blocking = lambda chat_id, prompt, resume_id=None: ("answer", "claude-sid", 0.01, False)
+    runner.run_blocking = lambda chat_id, prompt, resume_id=None, **kw: ("answer", "claude-sid", 0.01, False)
     session = store.ensure_session(777, state.project_key(777))
     state.acquire_run(session["id"], 777)            # handle_task assumes caller holds the slot
     try:

@@ -217,7 +217,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
               claude_session_id: str | None = None, cwd: str | None = None,
-              skip_pack: bool = False) -> list[str]:
+              skip_pack: bool = False, new_session: bool = False) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -228,6 +228,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 
     model/effort (interactive only) map to `--model`/`--effort`; the server
     validates them before they reach here.
+
+    new_session means claude_session_id is an id *we* minted for a session that
+    doesn't exist yet — it goes in as --session-id (claude adopts it) rather than
+    --resume (which requires an existing transcript).
     """
     fmt = "stream-json" if stream else "json"
     cmd = [claude_bin(), "-p"]
@@ -245,7 +249,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     if effort:
         cmd += ["--effort", effort]
     if claude_session_id:
-        cmd += ["--resume", claude_session_id]
+        cmd += (["--session-id", claude_session_id] if new_session
+                else ["--resume", claude_session_id])
     pack = "" if skip_pack else _memory_pack_for(chat_id, cwd)
     graph = "" if skip_pack else _graph_pack_for(chat_id, cwd)
     cmd += ["--append-system-prompt", _compose_system_prompt(pack, graph)]
@@ -264,12 +269,25 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 # Blocking run (Telegram plain-text prompt)
 # ---------------------------------------------------------------------------
 
+def _claim_session_id(store_session_id: str,
+                      existing: "str | None") -> "tuple[str, bool]":
+    """(claude session id, is_new). A session with no claude id yet gets one minted
+    and persisted BEFORE the child spawns, so it goes in as --session-id and the
+    store row is linked from the first moment — see _handle_event."""
+    if existing:
+        return existing, False
+    sid = str(uuid.uuid4())
+    store.set_claude_session_id(store_session_id, sid)
+    return sid, True
+
+
 def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  cwd: str | None = None, timeout: int | None = None, *,
                  model: str | None = None, skip_pack: bool = False,
-                 ponytail: str | None = None):
+                 ponytail: str | None = None, new_session: bool = False):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
-                    cwd=cwd, model=model, skip_pack=skip_pack)
+                    cwd=cwd, model=model, skip_pack=skip_pack,
+                    new_session=new_session)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
@@ -301,8 +319,10 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         started = time.time()
         job_id = uuid.uuid4().hex
         store.start_turn(session["id"], job_id, prompt, [])
+        claude_sid, is_new = _claim_session_id(session["id"],
+                                               session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
-            chat_id, prompt, resume_id=session["claude_session_id"])
+            chat_id, prompt, resume_id=claude_sid, new_session=is_new)
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,
@@ -363,7 +383,8 @@ class Job:
         self.id = job_id
         self.chat_id = chat_id
         self.store_session_id = store_session_id  # store session row (journaling target)
-        self.resume_id: str | None = None         # claude session id to --resume from
+        self.resume_id: str | None = None         # claude session id for this run
+        self.new_session = False                  # True -> --session-id, else --resume
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
         self.result: str | None = None
@@ -732,6 +753,16 @@ AUTO_RESUME_MAX = 5                 # consecutive dead turns before giving up
 _resume_fails: dict[str, int] = {}  # session id -> consecutive error-ended turns
 
 
+def _resumable(job: "Job", sess: "dict | None") -> bool:
+    """True when a dead session can actually be --resume'd. claude_session_id is
+    minted before the spawn now (see _claim_session_id), so its presence alone no
+    longer proves a transcript exists: either this run reached init (job.session_id
+    came back on an event), or the id predates this run (not job.new_session)."""
+    if not (sess or {}).get("claude_session_id"):
+        return False
+    return bool(job.session_id) or not job.new_session
+
+
 def _restart_killed(job: "Job") -> bool:
     """An error end while the bridge is shutting down is the restart killing the
     child, not a real failure — the turn must stay 'running' for boot recovery."""
@@ -758,7 +789,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         # Usage window exhausted: an immediate resume would just fail again.
         # Park the session; limits fires it back up when the limit resets.
         sess = store.get_session(sid)
-        if not sess or not sess.get("claude_session_id"):
+        if not _resumable(job, sess):
             return False                          # died before init — nothing to resume
         d = limits.defer(sid, job.chat_id, cwd, model, effort,
                          slot=job.account_slot)
@@ -779,7 +810,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     if limits.is_server_error(job.result or job.error_msg):
         # Anthropic's side blew up: retry, but spaced out along the ladder.
         sess = store.get_session(sid)
-        if not sess or not sess.get("claude_session_id"):
+        if not _resumable(job, sess):
             return False                          # died before init — nothing to resume
         d = limits.defer_server(sid, job.chat_id, cwd, model, effort,
                                 slot=job.account_slot)
@@ -887,10 +918,10 @@ def _handle_event(job: Job, d: dict):
     sid = d.get("session_id")
     if sid and sid != job.session_id:
         job.session_id = sid
-        # Persist the native session id the moment it's known (the init event),
-        # not only at turn end — so a long-running or question-awaiting run is
-        # linked to its store row before the native scanner encounters its JSONL.
-        # Otherwise the scanner can't dedup and spawns a phantom 'vscode' copy.
+        # Normally a no-op: we mint the id and persist it before the spawn, so the
+        # store row is already linked when the scanner first sees the JSONL. Kept
+        # for the case where claude reports an id other than the one we asked for
+        # (e.g. --session-id rejected on an older CLI) — the row must follow it.
         if job.store_session_id:
             store.set_claude_session_id(job.store_session_id, sid)
     if t == "assistant":
@@ -1023,7 +1054,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                            "responding: " + ", ".join(image_paths) + "\n\n" + prompt)
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
-                        claude_session_id=job.resume_id, cwd=cwd)
+                        claude_session_id=job.resume_id, cwd=cwd,
+                        new_session=job.new_session)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1252,7 +1284,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         session, cwd, perm = _finalize_run_context(
             session, project_dir, permission_mode=permission_mode, origin=origin)
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
-        job.resume_id = session["claude_session_id"]
+        job.resume_id, job.new_session = _claim_session_id(
+            session["id"], session["claude_session_id"])
         job.account_slot = account_slot
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"
