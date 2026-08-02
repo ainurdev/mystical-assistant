@@ -66,3 +66,16 @@ def test_resumable_requires_a_confirmed_session():
 
     assert runner._resumable(continuing, {}) is False
     assert runner._resumable(continuing, None) is False
+
+
+def test_internal_oneshots_load_no_mcp_servers():
+    """skip_pack runs are pure text transforms: no tools, and --strict-mcp-config
+    with no --mcp-config means no MCP servers spawn for them either."""
+    cmd = runner._base_cmd("hi", 555, stream=False, skip_pack=True)
+    assert "--strict-mcp-config" in cmd
+    assert cmd[cmd.index("--tools") + 1] == ""
+
+
+def test_real_turns_keep_their_mcp_servers():
+    cmd = runner._base_cmd("hi", 555, stream=False, skip_pack=False)
+    assert "--strict-mcp-config" not in cmd and "--tools" not in cmd

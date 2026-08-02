@@ -278,7 +278,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # whose prompts embed untrusted conversation text. No tools and no
         # EXTRA_CLAUDE_ARGS (acceptEdits!) — an agentic run here is an injection
         # vector: a first message like "scan the project" gets executed, not named.
-        cmd += ["--tools", ""]
+        # --strict-mcp-config with no --mcp-config means no MCP servers at all:
+        # free, since --tools "" already denies their tools, and it takes ~0.9s
+        # off each one-shot (5.33s -> 4.45s, mean of 3). Several run per turn.
+        cmd += ["--tools", "", "--strict-mcp-config"]
     elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     return cmd
