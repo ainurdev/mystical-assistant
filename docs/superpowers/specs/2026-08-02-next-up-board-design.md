@@ -109,13 +109,13 @@ no key moved, the whole board is served from cache and nothing is spawned at all
 
 ## Freshness
 
-On demand only. `GET /api/next` serves the cache instantly. `POST /api/next/refresh`
-recomputes in a worker thread and returns immediately; clients poll the state endpoint
-they already poll. Nothing computes while you are not looking.
+On demand only. `GET /local/next` serves the cache instantly. `POST /local/next`
+recomputes in a worker thread and returns immediately; clients poll until `refreshing`
+clears. Nothing computes while you are not looking.
 
 ## Surfaces
 
-The backend is the feature. Both frontends read the same JSON.
+The backend is the feature. Every surface reads the same JSON.
 
 **Ship order:**
 
@@ -178,3 +178,37 @@ network:
 | `NEXTUP_MAX_REPOS` | `6` | Hard ceiling on repos scouted per refresh |
 | `NEXTUP_SCOUT_TIMEOUT` | `120` | Seconds per scout |
 | `NEXTUP_MODEL` | `haiku` | Model for the Claude fallback path |
+
+## Implementation deltas
+
+Recorded after the build (2026-08-03); the design above is otherwise as shipped.
+
+**The board is gated like every other model-spending extra.** A follow-up ask
+turned the single `NEXTUP_ENABLE` setting into `bridge/aifeatures.py`: a registry
+of the five extras that spend a model call nobody asked for — project memory,
+auto titles, the new-session guard, teacher mode, this board — each defaulting to
+off, each switchable from a new AI tab in the dashboard's settings modal.
+Precedence is `ladder.default_policy`'s: persisted switch, then the env setting,
+then off. The four pre-existing `*_ENABLE` config defaults flipped from `1` to
+`0` to match.
+
+**The scout needed a new runner posture.** `run_blocking(skip_pack=True)` passes
+`--tools ""`, which is right for the pure text transforms it was built for and
+useless for an agent that must read a repo. `_base_cmd` grew one branch: a
+non-interactive run given an explicit `permission_mode` gets that mode and skips
+`EXTRA_CLAUDE_ARGS` (which carries `acceptEdits`). The scout runs
+`--permission-mode plan` — read tools available, editing and shell off the table.
+
+**The free rung cannot be held to read-only.** `opencode run --auto` approves its
+own tool calls, so on that path the leash is the prompt alone. The scout snapshots
+the dirty-file set before and after and reports a scout that wrote anyway; it never
+repairs, since undoing on a guess destroys work. Marked `ponytail:` in the source
+with the upgrade path (a real read-only flag on `opencode run`).
+
+**"Stalled" needed the live set.** A turn's status is `running` both while it runs
+and after it dies, so `facts()` subtracts `store.running_session_ids` — otherwise
+a session working right now is listed as unfinished work.
+
+**Surfaces.** Telegram `/next` and a dashboard NEXT view (alongside CHAT / HIST /
+MEM), both reading `GET /local/next`. The Mini App is prompt-only since the
+2026-07-30 design and gets nothing.
