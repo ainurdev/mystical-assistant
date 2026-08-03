@@ -39,13 +39,30 @@ def test_claim_mints_and_persists_once(monkeypatch):
     monkeypatch.setattr(runner.store, "set_claude_session_id",
                         lambda s, c: saved.append((s, c)))
 
-    minted, is_new = runner._claim_session_id("store-1", None)
+    minted, is_new, fork = runner._claim_session_id("store-1", None)
     assert is_new and uuid.UUID(minted)          # valid uuid, flagged new
+    assert fork is False
     assert saved == [("store-1", minted)]        # persisted before the spawn
 
-    existing, is_new2 = runner._claim_session_id("store-1", minted)
-    assert existing == minted and is_new2 is False
+    existing, is_new2, fork2 = runner._claim_session_id("store-1", minted)
+    assert existing == minted and is_new2 is False and fork2 is False
     assert len(saved) == 1                       # no redundant write
+
+
+def test_claim_forks_a_duplicated_session(monkeypatch):
+    """A copy has no id of its own but carries its source's in fork_from: it
+    resumes that transcript with --fork-session rather than minting an unrelated
+    id (which would lose the history) or adopting it (which would write to the
+    original)."""
+    saved = []
+    monkeypatch.setattr(runner.store, "set_claude_session_id",
+                        lambda s, c: saved.append((s, c)))
+    monkeypatch.setattr(runner.store, "get_session",
+                        lambda s: {"fork_from": "source-csid"})
+
+    sid, is_new, fork = runner._claim_session_id("copy-1", None)
+    assert sid == "source-csid" and fork is True and is_new is False
+    assert saved == []                           # nothing minted or written yet
 
 
 def test_resumable_requires_a_confirmed_session():

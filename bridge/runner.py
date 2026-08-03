@@ -200,7 +200,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
               claude_session_id: str | None = None, cwd: str | None = None,
-              skip_pack: bool = False, new_session: bool = False) -> list[str]:
+              skip_pack: bool = False, new_session: bool = False,
+              fork: bool = False) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -239,6 +240,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     if claude_session_id:
         cmd += (["--session-id", claude_session_id] if new_session
                 else ["--resume", claude_session_id])
+        if fork:
+            # Duplicated session: resume the source transcript but let claude
+            # mint a new id, so the original is never appended to.
+            cmd.append("--fork-session")
     if skip_pack or (claude_session_id and claude_session_id in _packed_sessions):
         graph = ""
     else:
@@ -271,25 +276,35 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 # ---------------------------------------------------------------------------
 
 def _claim_session_id(store_session_id: str,
-                      existing: "str | None") -> "tuple[str, bool]":
-    """(claude session id, is_new). A session with no claude id yet gets one minted
-    and persisted BEFORE the child spawns, so it goes in as --session-id and the
-    store row is linked from the first moment — see _handle_event."""
+                      existing: "str | None") -> "tuple[str, bool, bool]":
+    """(claude session id, is_new, fork). A session with no claude id yet gets one
+    minted and persisted BEFORE the child spawns, so it goes in as --session-id and
+    the store row is linked from the first moment — see _handle_event.
+
+    A duplicated session has no id of its own but carries its source's in
+    fork_from: it resumes that transcript with --fork-session, claude mints the new
+    id, and _handle_event stores it (clearing fork_from). Nothing is written to the
+    original."""
     if existing:
-        return existing, False
+        return existing, False, False
+    row = store.get_session(store_session_id) or {}
+    if row.get("fork_from"):
+        return row["fork_from"], False, True
     sid = str(uuid.uuid4())
     store.set_claude_session_id(store_session_id, sid)
-    return sid, True
+    return sid, True, False
 
 
 def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  cwd: str | None = None, timeout: int | None = None, *,
                  model: str | None = None, skip_pack: bool = False,
                  permission_mode: str | None = None,
-                 ponytail: str | None = None, new_session: bool = False):
+                 ponytail: str | None = None, new_session: bool = False,
+                 fork: bool = False):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
                     cwd=cwd, model=model, skip_pack=skip_pack,
-                    permission_mode=permission_mode, new_session=new_session)
+                    permission_mode=permission_mode, new_session=new_session,
+                    fork=fork)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
@@ -321,10 +336,10 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         started = time.time()
         job_id = uuid.uuid4().hex
         store.start_turn(session["id"], job_id, prompt, [])
-        claude_sid, is_new = _claim_session_id(session["id"],
-                                               session["claude_session_id"])
+        claude_sid, is_new, fork = _claim_session_id(
+            session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
-            chat_id, prompt, resume_id=claude_sid, new_session=is_new)
+            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork)
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,
@@ -382,6 +397,7 @@ class Job:
         self.store_session_id = store_session_id  # store session row (journaling target)
         self.resume_id: str | None = None         # claude session id for this run
         self.new_session = False                  # True -> --session-id, else --resume
+        self.fork = False                # duplicated session: --resume + --fork-session
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
         self.result: str | None = None
@@ -1276,7 +1292,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         session, cwd, perm = _finalize_run_context(
             session, project_dir, permission_mode=permission_mode, origin=origin)
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
-        job.resume_id, job.new_session = _claim_session_id(
+        job.resume_id, job.new_session, job.fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         job.account_slot = account_slot
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:

@@ -1011,6 +1011,21 @@ export function App() {
   ];
 
   // Context-menu items per target type.
+  // Worktrees of the session the context menu is open on — the relocate targets.
+  // Must be declared above ctxItems: that useMemo's callback runs during this
+  // render pass and reads relocTargets, so a later `const` would be in its TDZ.
+  const [relocTargets, setRelocTargets] = useState<{ branch: string }[]>([]);
+  useEffect(() => {
+    const proj = ctxMenu?.type === "session"
+      ? sessions.find((s) => s.id === ctxMenu.id)?.project : null;
+    if (!proj) { setRelocTargets([]); return; }
+    let live = true;
+    void api.worktrees(proj)
+      .then((r) => { if (live) setRelocTargets(r.worktrees.map((w) => ({ branch: w.branch }))); })
+      .catch(() => { if (live) setRelocTargets([]); });
+    return () => { live = false; };
+  }, [ctxMenu, sessions]);
+
   const ctxItems: CtxItem[] = useMemo(() => {
     if (!ctxMenu) return [];
     const cproj = analyzeProject || activeProject || "";
@@ -1035,6 +1050,16 @@ export function App() {
         hint: "take the best fallback silently", onClick: () => setPol("auto") });
       items.push({ icon: pol === "wait" ? "●" : "○", label: "On limit: wait",
         hint: "only wait for the reset", onClick: () => setPol("wait") });
+      items.push({ divider: true });
+      items.push({ icon: "⧉", label: "Duplicate session",
+        hint: "copy the transcript into a new one",
+        onClick: () => void duplicateSession(ctxMenu.id) });
+      // One item per worktree of this session's project. A submenu would need a
+      // picker; the branches are a short list, so they go straight in.
+      for (const wt of relocTargets)
+        items.push({ icon: "⇉", label: `Relocate to ${wt.branch}`,
+          hint: "rewrites paths so the model never sees the move",
+          onClick: () => void relocateSession(ctxMenu.id, s?.project ?? "", wt.branch) });
       items.push({ divider: true });
       // Lifecycle: all three take the session out of the active list, but which
       // one you picked is the difference between "shipped" and "come back to it".
@@ -1076,7 +1101,28 @@ export function App() {
     items.push({ divider: true }, ...nativeCtx.page);
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, pins, analyzeProject, activeProject, selected, radio, weather, setUnit]);
+  }, [ctxMenu, nativeCtx, sessions, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets]);
+
+  async function duplicateSession(id: string) {
+    try {
+      const { session } = await api.duplicateSession(id);
+      await loadSessions();
+      setSessionId(session.id);          // land in the copy, not the original
+      notify("info", `Duplicated — “${session.title ?? "session"}”`);
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
+  async function relocateSession(id: string, project: string, branch: string) {
+    try {
+      const r = await api.relocateSession(id, project, branch);
+      await loadSessions();
+      notify("info", `Moved to ${branch} — ${r.rewritten} rows rewritten.`);
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
 
   async function setLifecycle(id: string, state: Lifecycle | null) {
     try {

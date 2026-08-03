@@ -641,6 +641,22 @@ export const api = {
       method: "POST",
       body: { project, ...(cwd ? { cwd } : {}), ...(title ? { title } : {}) },
     }),
+  // Copy a session's whole transcript into a new one. The copy forks its claude
+  // session on first run, so continuing it never appends to the original.
+  duplicateSession: (id: string) =>
+    req<{ ok: boolean; session: SessionBrief }>(
+      `/local/sessions/${encodeURIComponent(id)}/duplicate`, {
+        method: "POST",
+        body: {},
+      }),
+  // Move a session to another project/worktree, rewriting the old path through
+  // its transcript so the model never sees the move.
+  relocateSession: (id: string, project: string, branch?: string) =>
+    req<{ ok: boolean; cwd: string; rewritten: number; session: SessionBrief }>(
+      `/local/sessions/${encodeURIComponent(id)}/relocate`, {
+        method: "POST",
+        body: { project, branch },
+      }),
   // Replaces the session's tags; the bridge normalizes and caps, and returns
   // what it actually kept.
   setTags: (id: string, tags: string[]) =>

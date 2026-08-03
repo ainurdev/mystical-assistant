@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   fallback_policy   TEXT,
   goal              TEXT,
   lifecycle         TEXT,
-  tags              TEXT
+  tags              TEXT,
+  fork_from         TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -120,6 +121,12 @@ def init() -> None:
         # existing one-shot, so tagging costs no extra model call.
         if "tags" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN tags TEXT")
+        # A duplicated session carries its source's claude session id here instead
+        # of in claude_session_id: its first run resumes that transcript with
+        # --fork-session, so claude mints a fresh id and the original is never
+        # written to. Cleared the moment a real id lands.
+        if "fork_from" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN fork_from TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -270,8 +277,12 @@ def ensure_session(chat_id: int, project: str, session_id: str | None = None, *,
 
 
 def set_claude_session_id(session_id: str, claude_sid: str | None) -> None:
+    """Link a store row to its claude session. Clears fork_from: once a forked
+    copy has its own id, the pending fork is spent, and leaving it set would make
+    every later run re-fork off the original."""
     with closing(_connect()) as c:
-        c.execute("UPDATE sessions SET claude_session_id=?, updated=? WHERE id=?",
+        c.execute("UPDATE sessions SET claude_session_id=?, updated=?, "
+                  "fork_from=NULL WHERE id=?",
                   (claude_sid, time.time(), session_id))
 
 
@@ -485,6 +496,80 @@ def import_transcript(session_id: str, turns: list[dict], events: list[dict]) ->
                        json.dumps(payload), e.get("ts") or time.time()))
         c.execute("COMMIT")
     return True
+
+
+def duplicate(session_id: str) -> dict | None:
+    """Copy a session — row, turns and events — into a new one. Returns the copy.
+
+    The copy takes the source's claude session id as `fork_from` rather than as
+    its own: its first run resumes that transcript with --fork-session, so claude
+    mints a fresh id and the original is never appended to. Goal and lifecycle are
+    deliberately NOT copied — a copy is a fresh line of work, not a second session
+    racing the same objective."""
+    src = get_session(session_id)
+    if not src:
+        return None
+    title = (src.get("title") or "session")[:52] + " (copy)"
+    copy = create_session(
+        src["chat_id"], src["project"], origin=src.get("origin"),
+        cwd=src.get("cwd"), permission_mode=src.get("permission_mode"))
+    now = time.time()
+    with closing(_connect()) as c:
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("UPDATE sessions SET title=?, title_source=?, fork_from=?, "
+                  "tags=?, fallback_policy=?, updated=? WHERE id=?",
+                  (title, "manual", src.get("claude_session_id"), src.get("tags"),
+                   src.get("fallback_policy"), now, copy["id"]))
+        # New turn ids so the two sessions' turns never collide; events follow
+        # their turn through the same map.
+        idmap = {}
+        for t in c.execute("SELECT * FROM turns WHERE session_id=? ORDER BY seq",
+                           (session_id,)).fetchall():
+            idmap[t["id"]] = uuid.uuid4().hex
+            c.execute(
+                "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
+                "elapsed,started,model,runtime) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (idmap[t["id"]], copy["id"], t["seq"], t["prompt"], t["attachments"],
+                 t["status"], t["cost"], t["elapsed"], t["started"], t["model"],
+                 t["runtime"]))
+        for e in c.execute("SELECT * FROM events WHERE session_id=? ORDER BY seq",
+                           (session_id,)).fetchall():
+            c.execute("INSERT INTO events(session_id,turn_id,seq,type,payload,ts) "
+                      "VALUES(?,?,?,?,?,?)",
+                      (copy["id"], idmap.get(e["turn_id"], e["turn_id"]), e["seq"],
+                       e["type"], e["payload"], e["ts"]))
+        c.execute("COMMIT")
+    return get_session(copy["id"])
+
+
+def relocate(session_id: str, new_cwd: str) -> int:
+    """Point a session at a different directory and rewrite the old path wherever
+    it appears in prompts and event payloads, so the model never sees the move.
+
+    Returns the number of rows rewritten. Plain string substitution on the old cwd
+    — the paths in a transcript are literal, and anything cleverer would have to
+    understand every tool's payload shape."""
+    src = get_session(session_id)
+    if not src:
+        return 0
+    old = (src.get("cwd") or "").rstrip("/")
+    new = new_cwd.rstrip("/")
+    with closing(_connect()) as c:
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("UPDATE sessions SET cwd=?, updated=? WHERE id=?",
+                  (new, time.time(), session_id))
+        n = 0
+        # No old cwd, or a no-op move: retarget the session and stop. Substituting
+        # an empty string would splice `new` between every character.
+        if old and old != new:
+            for tbl, col in (("turns", "prompt"), ("events", "payload")):
+                cur = c.execute(
+                    f"UPDATE {tbl} SET {col}=REPLACE({col}, ?, ?) "
+                    f"WHERE session_id=? AND instr({col}, ?) > 0",
+                    (old, new, session_id, old))
+                n += cur.rowcount
+        c.execute("COMMIT")
+    return n
 
 
 def history(chat_id: int, include_archived: bool = False,

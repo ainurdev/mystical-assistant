@@ -684,6 +684,26 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "tags must be a list"}, 400)
             # store.set_tags normalizes and caps; it returns what it kept.
             return self._json({"ok": True, "tags": store.set_tags(sid, tags)})
+        if path.startswith("/local/sessions/") and path.endswith("/duplicate"):
+            sid = path[len("/local/sessions/"):-len("/duplicate")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            copy = store.duplicate(sid)
+            return self._json({"ok": True, "session": _session_brief(copy)})
+        if path.startswith("/local/sessions/") and path.endswith("/relocate"):
+            sid = path[len("/local/sessions/"):-len("/relocate")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            # Same containment rule as every other path the dashboard accepts —
+            # relocating is not a way to point a session outside BASE_PATH.
+            dest = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if dest is None:
+                return self._json({"error": "invalid project"}, 400)
+            rewritten = store.relocate(sid, dest)
+            return self._json({"ok": True, "cwd": dest, "rewritten": rewritten,
+                               "session": _session_brief(store.get_session(sid))})
         if path == "/local/git/commit":
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
             if cwd is None:
