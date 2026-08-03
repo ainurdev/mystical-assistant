@@ -61,6 +61,7 @@ import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeMo
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
 import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
+import { GoalPill } from "./components/GoalPill";
 import { usePreviewQueue } from "./components/design/usePreviewQueue";
 import { Spinner } from "./components/ui";
 
@@ -598,6 +599,20 @@ export function App() {
   ) {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return;
+    // `/goal <objective>` sets the session's objective instead of prompting; a
+    // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
+    // this only records what the session is for.
+    const goalCmd = /^\/goal\b\s*([\s\S]*)$/.exec(text.trim());
+    if (goalCmd) {
+      try {
+        const { goal } = await api.setGoal(sid, goalCmd[1].trim());
+        setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, goal } : s)));
+        notify("info", goal ? `Goal set — ${goal.objective}` : "Goal cleared.");
+      } catch (e) {
+        notify("error", (e as Error).message);
+      }
+      return;
+    }
     // The prompt's own session decides the project too — `opts.project` covers a
     // session just created, which this render's `sessions` doesn't know about.
     const project = opts?.project
@@ -1157,6 +1172,10 @@ export function App() {
                       />
                     )}
                     <AgentsPill sessionId={sessionId} running={running} />
+                    <GoalPill
+                      goal={sessions.find((s) => s.id === sessionId)?.goal}
+                      onClear={() => void send("/goal", [])}
+                    />
                     <Composer
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} effort={effort}
                       agent={agentId} agents={agentOpts} onAgent={setAgent}

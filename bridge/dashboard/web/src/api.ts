@@ -14,6 +14,14 @@ export interface Project {
   rel: string;
   name: string;
 }
+// An objective the session keeps working on. The model owns the verdict (it calls
+// UpdateGoal); the bridge re-prompts after each turn while state is "active".
+export interface Goal {
+  objective: string;
+  state: "active" | "complete" | "blocked";
+  iter: number;
+  note?: string;
+}
 export interface SessionBrief {
   id: string;
   title: string | null;
@@ -24,6 +32,7 @@ export interface SessionBrief {
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
   branch?: string; // the session's git branch (worktree branch, or the project's)
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
+  goal?: Goal | null;
 }
 export interface StoreTurn {
   id: string;
@@ -637,6 +646,13 @@ export const api = {
       method: "POST",
       body: { policy },
     }),
+  // An empty objective clears the goal; the bridge owns the loop either way.
+  setGoal: (id: string, objective: string) =>
+    req<{ ok: boolean; goal: Goal | null }>(
+      `/local/sessions/${encodeURIComponent(id)}/goal`, {
+        method: "POST",
+        body: { objective },
+      }),
   accounts: () =>
     req<AccountsInfo>("/local/accounts"),
   accountAction: (action: "add" | "remove" | "disable" | "enable", slot?: number) =>

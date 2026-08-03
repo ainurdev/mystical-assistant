@@ -130,6 +130,16 @@ function SessionRow({
             <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
+          {s.goal && (
+            // Active goals pulse; a blocked one is the row that wants you.
+            <span
+              title={`goal (${s.goal.state}): ${s.goal.objective}`}
+              style={{ flex: "none", fontSize: 9,
+                       color: s.goal.state === "blocked" ? "var(--warn, #e8b339)"
+                            : s.goal.state === "active" ? "var(--acc)" : "var(--txf)",
+                       animation: s.goal.state === "active" ? "mpulse 2.4s infinite" : "none" }}
+            >◎</span>
+          )}
           <span style={{ flex: 1 }} />
           <button
             onClick={(e) => { e.stopPropagation(); onPin(); }}

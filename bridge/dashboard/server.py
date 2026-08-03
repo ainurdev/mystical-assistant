@@ -652,6 +652,17 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": f"policy must be one of {ladder.POLICIES}"}, 400)
             store.set_fallback_policy(sid, policy)
             return self._json({"ok": True, "fallback_policy": policy})
+        if path.startswith("/local/sessions/") and path.endswith("/goal"):
+            from bridge import goals
+            sid = path[len("/local/sessions/"):-len("/goal")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            objective = (body.get("objective") or "").strip()[:2000]
+            if not objective:
+                goals.clear(sid)          # empty objective = abandon the goal
+                return self._json({"ok": True, "goal": None})
+            return self._json({"ok": True, "goal": goals.create(sid, objective)})
         if path == "/local/git/commit":
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
             if cwd is None:

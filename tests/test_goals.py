@@ -133,6 +133,57 @@ def test_unbound_server_refuses_rather_than_guessing():
     assert "No session bound" in text
 
 
+# --- the HTTP endpoint -------------------------------------------------------
+
+def _dash_handler():
+    """Drive the dashboard handler without sockets (mirrors test_fallback_endpoints)."""
+    from bridge.dashboard import server as dash
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)   # noqa: SLF001
+    return h, box
+
+
+def test_endpoint_sets_then_clears_a_goal():
+    sid = _session()
+    h, box = _dash_handler()
+    h._post_api(f"/local/sessions/{sid}/goal", {"objective": "make it green"})  # noqa: SLF001
+    assert box["code"] == 200
+    assert box["obj"]["goal"]["objective"] == "make it green"
+    assert goals.get(sid)["state"] == goals.ACTIVE
+
+    h._post_api(f"/local/sessions/{sid}/goal", {"objective": "  "})   # noqa: SLF001
+    assert box["obj"]["goal"] is None                 # blank objective abandons it
+    assert goals.get(sid) is None
+
+
+def test_endpoint_refuses_another_chats_session():
+    """The ownership check is the trust boundary — a foreign sid must 404, not
+    silently set a goal on someone else's session."""
+    other = store.create_session(999, "/notyours")
+    sid = other["id"] if isinstance(other, dict) else other
+    h, box = _dash_handler()
+    h._post_api(f"/local/sessions/{sid}/goal", {"objective": "x"})    # noqa: SLF001
+    assert box["code"] == 404
+    assert goals.get(sid) is None
+
+
+def test_endpoint_caps_a_runaway_objective():
+    sid = _session()
+    h, box = _dash_handler()
+    h._post_api(f"/local/sessions/{sid}/goal", {"objective": "z" * 5000})  # noqa: SLF001
+    assert len(box["obj"]["goal"]["objective"]) == 2000
+
+
+def test_brief_exposes_the_parsed_goal():
+    from bridge.miniapp.server import _session_brief   # noqa: SLF001
+    sid = _session()
+    goals.create(sid, "carry the objective to the client")
+    b = _session_brief(store.get_session(sid))
+    assert b["goal"]["objective"] == "carry the objective to the client"
+    assert b["goal"]["state"] == goals.ACTIVE          # a dict, not raw JSON
+
+
 def test_mcp_config_carries_the_session_and_repo_root():
     from bridge import runner
     cfg = json.loads(runner._goal_mcp_config("abc-123"))   # noqa: SLF001

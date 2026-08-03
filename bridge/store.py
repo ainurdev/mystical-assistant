@@ -277,18 +277,24 @@ def set_fallback_policy(session_id: str, policy: str | None) -> None:
                   (policy, session_id))
 
 
+def parse_goal(raw: "str | None") -> dict | None:
+    """The stored goal JSON as {objective, state, iter}, or None. Shared with the
+    session-brief serializer, which already holds the row and shouldn't re-query."""
+    if not raw:
+        return None
+    try:
+        g = json.loads(raw)
+    except ValueError:
+        return None                # hand-edited or truncated JSON — no goal
+    return g if isinstance(g, dict) else None
+
+
 def get_goal(session_id: str) -> dict | None:
     """This session's goal as {objective, state, iter}, or None if it has none."""
     with closing(_connect()) as c:
         row = c.execute("SELECT goal FROM sessions WHERE id=?",
                         (session_id,)).fetchone()
-    if not row or not row["goal"]:
-        return None
-    try:
-        g = json.loads(row["goal"])
-    except ValueError:
-        return None                # hand-edited or truncated JSON — no goal
-    return g if isinstance(g, dict) else None
+    return parse_goal(row["goal"]) if row else None
 
 
 def set_goal(session_id: str, goal: dict | None) -> None:
