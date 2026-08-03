@@ -3,8 +3,9 @@ import { rootRoute } from "./routes/root";
 import { runRoute } from "./routes/run";
 import { historyRoute } from "./routes/history";
 import { issuesRoute } from "./routes/issues";
+import { filesRoute } from "./routes/files";
 
-const routeTree = rootRoute.addChildren([runRoute, historyRoute, issuesRoute]);
+const routeTree = rootRoute.addChildren([runRoute, historyRoute, issuesRoute, filesRoute]);
 
 // Telegram launches the webview at "#tgWebAppData=…" and telegram-web-app.js only
 // ever reads that hash — it never clears it. That script is blocking and in <head>,

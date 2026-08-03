@@ -211,6 +211,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(usage.get_usage())
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
+                if path == "/api/files":
+                    return self._json(
+                        {"files": git.list_tree(state.project_dir(chat_id))})
+                if path == "/api/files/read":
+                    return self._json(git.read_file(state.project_dir(chat_id),
+                                                    qs.get("path", [""])[0]))
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
                 if path.startswith("/api/sessions/"):
@@ -256,6 +262,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_server(chat_id, body)
             if path == "/api/preview":
                 return self._api_preview(chat_id, body)
+            if path == "/api/files/write":
+                return self._api_file_write(chat_id, body)
             return self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             self._safe_500(e)
@@ -500,6 +508,16 @@ class Handler(BaseHTTPRequestHandler):
                 port = config.PREVIEW_PORT
             _, msg = tunnel.start_tunnel(port)
         self._json({"preview": tunnel.tunnel_state(), "message": msg})
+
+    def _api_file_write(self, chat_id: int, body: dict):
+        """Save an edit from the Mini App's file view. git.write_file rejects
+        anything outside the project, so a crafted path can't escape it."""
+        content = body.get("content")
+        if not isinstance(content, str):
+            return self._json({"error": "content must be a string"}, 400)
+        ok, res = git.write_file(state.project_dir(chat_id),
+                                 str(body.get("path") or ""), content)
+        self._json({"ok": ok, "path": res} if ok else {"error": res}, 200 if ok else 400)
 
     # --- static (SPA) --------------------------------------------------------
     def _serve_static(self, path: str):

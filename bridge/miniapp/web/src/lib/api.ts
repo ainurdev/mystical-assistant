@@ -255,6 +255,19 @@ export interface Issue {
   body: string;
   labels: GitHubLabel[];
 }
+// One file loaded into the editor. `content` is "" for binary/too_large; raster
+// images come back as a data URL in `image`. Mirrors bridge/git.py read_file.
+export interface FileContent {
+  ok: boolean;
+  error?: string;
+  path?: string;
+  content?: string;
+  binary?: boolean;
+  too_large?: boolean;
+  size?: number;
+  image?: string;
+}
+
 export interface IssuesInfo {
   has_remote: boolean;
   slug: string | null;
@@ -384,6 +397,17 @@ export const api = {
   getUsage: () => request<UsageInfo>("/api/usage"),
 
   getIssues: () => request<IssuesInfo>("/api/github/issues"),
+
+  getFiles: () => request<{ files: string[] }>("/api/files"),
+
+  readFile: (path: string) =>
+    request<FileContent>(`/api/files/read?path=${encodeURIComponent(path)}`),
+
+  writeFile: (path: string, content: string) =>
+    request<{ ok: boolean; path: string }>("/api/files/write", {
+      method: "POST",
+      body: { path, content },
+    }),
 
   getHistory: (archived = false) =>
     request<{ sessions: EnrichedSession[] }>(

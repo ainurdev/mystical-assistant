@@ -13,14 +13,17 @@ import {
   SquarePen,
   History,
   CircleDot,
+  FileCode,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { ChatProvider, useChat } from "../lib/chat";
 import { FolderNavigator } from "../components/FolderNavigator";
 import { ActiveSessions } from "../components/ActiveSessions";
 
-// Prompt sources, not tabs: each one feeds the composer and returns to "/".
+// Side trips from the composer — History and Issues feed it a prompt and come
+// back; Files is a place you go to read or edit. Tapping an open one returns.
 const pickers = [
+  { to: "/files", label: "Files", icon: FileCode },
   { to: "/history", label: "History", icon: History },
   { to: "/issues", label: "Issues", icon: CircleDot },
 ] as const;
