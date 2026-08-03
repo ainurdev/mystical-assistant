@@ -61,8 +61,6 @@ against the field before they were written:
 | Claim | Why it survived |
 | --- | --- |
 | Resumes at your usage-limit reset | Claude Code has an open request for it; the alternatives are external shell wrappers |
-| Teaches you the code it wrote | No comparable dashboard has a learning layer |
-| Curated, branch-scoped memory | The popular memory plugins auto-ingest into one bank per project |
 | Liveness from the PID | Others detect sessions from file mtimes |
 | Python stdlib only | The comparable web UIs ship a Node server |
 
@@ -85,7 +83,6 @@ so the next audit starts from a known state rather than from scratch:
 | "It resumes when your limit resets" | **True but understated, rewritten.** Parking is now the *last* rung of `bridge/ladder.py`: another Claude account first, then a free agent, then the reset. |
 | "Answer five questions" (`HowItWorks`) | **Wrong by one, fixed to six.** `setup.sh` prompts for token, projects root, autonomy, Mini App, the opencode install, and start-now — the free-provider prompt landed in `e04afe6`, after this page was written. |
 | "the dashboard builds on first start, so you need npm" | **True**, and `.gitignore` confirms it: `bridge/dashboard/web/dist/` is not committed. (The root `README.md` claims "no build step" — also stale.) |
-| `TEACHER` marked *soon* | **Correct.** `hud/TeacherTab.tsx` exists and nothing mounts it. |
 | Python stdlib only · no API key · MIT · 127.0.0.1 + Host allow-list + token | **All true.** |
 | Tab list vs. reality | **Was short.** The dashboard opens three views, four sidebar panels, seven analyze tabs and the preview window; `LOGS` was the only entry that didn't exist. |
 

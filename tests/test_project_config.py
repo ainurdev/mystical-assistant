@@ -46,22 +46,6 @@ def test_run_cmd_per_branch(tmp_path, monkeypatch):
     assert project_config.prod_url("/repo", branch="other") is None
 
 
-def test_memory_mode_default_is_ask(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
-    assert project_config.memory_mode("/repo") == "ask"
-
-
-def test_memory_mode_roundtrip_and_validation(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
-    assert project_config.set_memory_mode("/repo", "auto") == "auto"
-    assert project_config.memory_mode("/repo") == "auto"
-    assert project_config.set_memory_mode("/repo", "off") == "off"
-    assert project_config.memory_mode("/repo") == "off"
-    # invalid coerces to ask (and clears back to default)
-    assert project_config.set_memory_mode("/repo", "bogus") == "ask"
-    assert project_config.memory_mode("/repo") == "ask"
-
-
 def test_hidden_roundtrip_is_project_wide(tmp_path, monkeypatch):
     monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
     assert project_config.hidden_projects() == []
@@ -73,11 +57,3 @@ def test_hidden_roundtrip_is_project_wide(tmp_path, monkeypatch):
     assert project_config.hidden_projects() == ["/other", "/repo"]
     project_config.set_hidden("/repo", False)
     assert project_config.hidden_projects() == ["/other"]
-
-
-def test_memory_mode_is_project_wide_not_branch(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
-    project_config.set_memory_mode("/repo", "off")
-    # A per-branch run_cmd does not shadow the project-wide posture.
-    project_config.set_run_cmd("/repo", "npm run dev", branch="feat/x")
-    assert project_config.memory_mode("/repo") == "off"

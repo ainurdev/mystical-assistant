@@ -15,7 +15,7 @@ import os
 import threading
 import time
 
-from bridge import config, store, transcript_jsonl
+from bridge import config, machine, store, transcript_jsonl
 from bridge.browser import rel, within_base
 
 _last_scan = 0.0
@@ -63,17 +63,48 @@ def refresh(chat_id: int | None = None, *, force: bool = False) -> int:
     return scan(chat_id)
 
 
+def _index_running(owner: int) -> int:
+    """Index the sessions Claude Code's own registry says are alive right now,
+    from that registry instead of from disk. The transcript scan below is blind
+    to two live ones: a session started seconds ago has written no JSONL yet, and
+    one started outside BASE_PATH is skipped on purpose. Both are sessions of
+    yours, so both belong in the list and stay resumable (continuation runs in the
+    row's stored cwd, which needn't be under BASE_PATH).
+
+    An out-of-base row carries its ~-collapsed path as the project label —
+    browser.project_exists accepts that form. Only *live* out-of-base sessions are
+    indexed; the disk scan stays base-scoped, so old transcripts from everywhere
+    else don't flood the list.
+
+    ponytail: an out-of-base row has no matching project group, so it shows in
+    RECENT but not under BY PROJECT. Give it a group only if you actually want the
+    session list to browse outside your projects root."""
+    count = 0
+    for r in machine.list_running():
+        sid, short = r.get("session_id"), r.get("cwd") or ""
+        cwd = os.path.expanduser(short)
+        if not sid or not os.path.isdir(cwd):
+            continue
+        store.upsert_native_session(
+            sid, owner, rel(cwd) if within_base(cwd) else short, cwd,
+            updated=r.get("last_active") or r.get("started"),
+            origin="vscode" if r.get("source") == "vscode" else "terminal")
+        count += 1
+    return count
+
+
 def scan(chat_id: int | None = None) -> int:
-    """Index every native session under BASE_PATH. Returns the count indexed.
-    Owner defaults to the single dashboard/Telegram chat id."""
+    """Index every native session under BASE_PATH, plus whatever is running right
+    now (see _index_running). Returns the count indexed. Owner defaults to the
+    single dashboard/Telegram chat id."""
     owner = chat_id if chat_id is not None else (config.DASH_CHAT_ID or 0)
+    count = _index_running(owner)
     root = transcript_jsonl.PROJECTS_DIR
     try:
         names = os.listdir(root)
     except OSError:
-        return 0
+        return count
 
-    count = 0
     for name in names:
         pdir = os.path.join(root, name)
         if not os.path.isdir(pdir):

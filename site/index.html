@@ -102,18 +102,10 @@
           },
           {
             "@type": "Question",
-            "name": "How is the memory different from the memory plugins?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Two ways. Nothing is stored until you tap Keep on it, so the bank stays small and true instead of accumulating whatever a summariser thought was interesting. And facts are scoped to a project and a branch, so assumptions from a spike don't follow you back to main. It runs as a cheap Haiku pass after a turn, next to a teacher pass that proposes concepts worth reviewing; MEMORY_ENABLE=0 and LEARNING_ENABLE=0 in your .env turn them off."
-            }
-          },
-          {
-            "@type": "Question",
             "name": "Where does my code actually go?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "It stays on your machine, and there's no telemetry: the dashboard talks only to localhost, and nothing is sent anywhere the claude CLI wasn't already sending it. The caveat is the one above. The memory, teacher, auto-title and new-session checks each run a cheap Haiku pass through your CLI after a turn, so they do send that turn's output to Anthropic in a second call. MEMORY_ENABLE=0, LEARNING_ENABLE=0, TITLE_ENABLE=0 and RELEVANCE_CHECK=0 turn them off individually."
+              "text": "It stays on your machine, and there's no telemetry: the dashboard talks only to localhost, and nothing is sent anywhere the claude CLI wasn't already sending it. One caveat: the auto-title and new-session checks each run a cheap Haiku pass through your CLI after a turn, so they do send that turn's output to Anthropic in a second call. TITLE_ENABLE=0 and RELEVANCE_CHECK=0 turn them off individually."
             }
           },
           {

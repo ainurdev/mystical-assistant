@@ -18,7 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (agents, browser, config, devserver, git, github, memory,
+from bridge import (agents, browser, config, devserver, git, github,
                     models, native, project_config, relevance, runner, state,
                     store, transcript_jsonl, tunnel, usage)
 
@@ -235,8 +235,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_select(chat_id, body)
             if path == "/api/sessions":
                 return self._api_sessions_create(chat_id, body)
-            if path == "/api/learning/item":
-                return self._api_learning_item(chat_id, body)
             if path.startswith("/api/sessions/") and path.endswith("/archive"):
                 return self._api_session_archive(
                     chat_id, path[len("/api/sessions/"):-len("/archive")], body)
@@ -255,10 +253,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_server(chat_id, body)
             if path == "/api/preview":
                 return self._api_preview(chat_id, body)
-            if path == "/api/memory/candidate":
-                return self._api_memory_candidate(chat_id, body)
-            if path == "/api/memory/update":
-                return self._api_memory_update(chat_id, body)
             return self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             self._safe_500(e)
@@ -305,17 +299,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid dir"}, 400)
         state.active[chat_id] = cand
         self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
-
-    # --- project memory ------------------------------------------------------
-    def _api_memory_candidate(self, chat_id, body):
-        if body.get("action") not in ("keep", "skip"):
-            return self._json({"error": "bad action"}, 400)
-        m = memory.keep_or_skip(chat_id, str(body.get("item_id", "")), body["action"])
-        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
-
-    def _api_memory_update(self, chat_id, body):
-        m = memory.edit(chat_id, str(body.get("item_id", "")), body.get("title"), body.get("body"))
-        return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
 
     def _api_run(self, chat_id: int, body: dict):
         prompt = (body.get("prompt") or "").strip()
@@ -381,26 +364,6 @@ class Handler(BaseHTTPRequestHandler):
         native.refresh(chat_id)            # surface VSCode sessions in the history view
         archived = qs.get("archived", ["0"])[0] == "1"
         self._json({"sessions": store.history(chat_id, include_archived=archived)})
-
-    def _api_learning_item(self, chat_id: int, body: dict):
-        item = store.get_learning_item((body.get("item_id") or "").strip())
-        if not item or item["owner_id"] != chat_id:
-            return self._json({"error": "not found"}, 404)
-        action = body.get("action")
-        if action in ("keep", "skip"):
-            status = "kept" if action == "keep" else "skipped"
-            store.set_learning_status(item["id"], status)
-            if item["session_id"] and item["source_turn_id"]:
-                store.append_event(item["session_id"], item["source_turn_id"],
-                                   {"type": "review_resolved",
-                                    "item_id": item["id"], "action": status})
-        elif action == "archive":
-            store.set_learning_status(item["id"], "archived")
-        elif action == "reviewed":
-            store.bump_mastery(item["id"])
-        else:
-            return self._json({"error": "bad action"}, 400)
-        self._json({"ok": True})
 
     def _api_running(self, chat_id: int):
         self._json(runner.running_snapshot(chat_id))

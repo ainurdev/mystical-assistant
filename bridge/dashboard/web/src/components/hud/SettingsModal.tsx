@@ -26,6 +26,7 @@ import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
+import { setAiFeatures } from "../../lib/ai";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
@@ -806,7 +807,10 @@ function AiPanel() {
   useEffect(() => {
     void api
       .aiFeatures()
-      .then((r) => setRows(r.features))
+      .then((r) => {
+        setRows(r.features);
+        setAiFeatures(r.features);
+      })
       .catch(() => setRows([]));
   }, []);
 
@@ -814,7 +818,11 @@ function AiPanel() {
     setBusy(f.key);
     setErr(null);
     try {
-      setRows((await api.setAiFeature(f.key, !f.enabled)).features);
+      const fresh = (await api.setAiFeature(f.key, !f.enabled)).features;
+      setRows(fresh);
+      // The switch owns visible UI elsewhere (tabs, boards, cards) — hand the
+      // fresh answer to the shared store so it appears/disappears right now.
+      setAiFeatures(fresh);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     } finally {
@@ -839,7 +847,12 @@ function AiPanel() {
             <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 7, lineHeight: 1.7 }}>
               {f.hint}
             </div>
-            <div style={{ fontSize: 9, color: "var(--txd)", marginTop: 3, letterSpacing: 0.5 }}>
+            {f.about && (
+              <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 6, lineHeight: 1.8 }}>
+                {f.about}
+              </div>
+            )}
+            <div style={{ fontSize: 9, color: "var(--txd)", marginTop: 6, letterSpacing: 0.5 }}>
               costs {f.cost}
             </div>
           </div>
@@ -848,8 +861,9 @@ function AiPanel() {
       {err && <div style={{ ...NOTE, color: "var(--bad, #f66)" }}>{err}</div>}
       <div style={NOTE}>
         Off by default, every one of them. A switch here beats the matching environment
-        setting and applies to the next turn — nothing to restart. The next-up board also
-        prefers a free provider (ACCOUNTS tab) over spending Claude quota.
+        setting and applies to the next turn — nothing to restart. Everything a feature
+        adds to the dashboard is hidden again the moment you switch it off. The next-up
+        board also prefers a free provider (ACCOUNTS tab) over spending Claude quota.
       </div>
     </>
   );

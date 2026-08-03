@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, urlparse
 import re
 
 from bridge import (agents, browser, config, devserver, fmt, git, github, graphmap,
-                    learning, memory, models, native, preview_detect, project_config,
+                    models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, runner, screenshot, selfupdate,
                     shell, skills, state, store, sysinfo, terminals, tunnel, usage,
                     weather, wsutil)
@@ -424,7 +424,6 @@ class Handler(BaseHTTPRequestHandler):
                 "scripts": project_config.package_scripts(abs_p),
                 "run_cmd": project_config.run_cmd(rel, branch),
                 "prod_url": project_config.prod_url(rel, branch),
-                "memory_mode": project_config.memory_mode(rel),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
@@ -482,10 +481,6 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = 0
             return self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor,
                                                     qs.get("workflow", [""])[0] or None))
-        if path == "/local/memory/items":
-            return self._json({"items": memory.items(
-                chat, project=(qs.get("project", [None])[0] or None),
-                status=(qs.get("status", ["active"])[0] or "active"))})
         if path == "/local/graph/state":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -510,10 +505,6 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None or not q:
                 return self._json({"error": "invalid project or query"}, 400)
             return self._json({"text": graphmap.explain(abs_p, q)})
-        if path == "/local/learning/items":
-            project = qs.get("project", [""])[0]
-            return self._json({"items": store.list_learning_items(
-                chat, project or None, status="kept")})
         if path == "/local/skills":
             # A blank/unknown project is fine — the system list still applies.
             return self._json({**skills.installed(_abs_project(qs.get("project", [None])[0])),
@@ -758,8 +749,6 @@ class Handler(BaseHTTPRequestHandler):
                 out["run_cmd"] = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000], branch)
             if "prod_url" in body:
                 out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000], branch)
-            if "memory_mode" in body:
-                out["memory_mode"] = project_config.set_memory_mode(rel, body.get("memory_mode") or "")
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
             return self._json(out)
@@ -831,61 +820,6 @@ class Handler(BaseHTTPRequestHandler):
             ok, err = act(str(body.get("id", ""))[:100], scope, abs_p)
             return self._json({"ok": ok, "error": err or None,
                                **skills.installed(abs_p)}, 200 if ok else 400)
-        if path == "/local/memory/suggest":
-            abs_p = (_abs_within((body.get("cwd") or "").strip())
-                     or _abs_project(body.get("cwd_rel") or body.get("project"))
-                     or state.project_dir(chat))
-            rel = browser.rel(abs_p)
-            if project_config.memory_mode(rel) == "off":
-                return self._json({"suggestions": []})
-            branch = git.current_branch_cached(abs_p) or None
-            return self._json({"suggestions": memory.suggest(chat, rel, branch)})
-        if path == "/local/memory/candidate":
-            if body.get("action") not in ("keep", "skip"):
-                return self._json({"error": "bad action"}, 400)
-            m = memory.keep_or_skip(chat, str(body.get("item_id", "")), body["action"])
-            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
-        if path == "/local/memory/update":
-            m = memory.edit(chat, str(body.get("item_id", "")), body.get("title"), body.get("body"))
-            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
-        if path == "/local/memory/status":
-            if body.get("status") not in ("active", "archived"):
-                return self._json({"error": "bad status"}, 400)
-            m = memory.set_status(chat, str(body.get("item_id", "")), body["status"])
-            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
-        if path == "/local/memory/pin":
-            m = memory.set_pin(chat, str(body.get("item_id", "")), bool(body.get("pinned")))
-            return self._json({"item": m}) if m else self._json({"error": "not found"}, 404)
-        if path == "/local/learning/item":
-            item = store.get_learning_item((body.get("item_id") or "").strip())
-            if not item or item["owner_id"] != chat:
-                return self._json({"error": "not found"}, 404)
-            action = body.get("action")
-            if action in ("keep", "skip"):
-                status = "kept" if action == "keep" else "skipped"
-                store.set_learning_status(item["id"], status)
-                if item["session_id"] and item["source_turn_id"]:
-                    store.append_event(item["session_id"], item["source_turn_id"],
-                                       {"type": "review_resolved",
-                                        "item_id": item["id"], "action": status})
-            elif action == "archive":
-                store.set_learning_status(item["id"], "archived")
-            elif action == "reviewed":
-                store.bump_mastery(item["id"])
-            else:
-                return self._json({"error": "bad action"}, 400)
-            return self._json({"ok": True})
-        if path == "/local/learning/teach":
-            item = store.get_learning_item((body.get("item_id") or "").strip())
-            if not item or item["owner_id"] != chat:
-                return self._json({"error": "not found"}, 404)
-            mode = body.get("mode")
-            if mode not in ("explain", "quiz", "exercise", "grade"):
-                return self._json({"error": "bad mode"}, 400)
-            text = learning.teach(item, mode, user_answer=body.get("user_answer"))
-            if mode == "grade":
-                store.append_learning_note(item["id"], text)
-            return self._json({"text": text})
         return self._json({"error": "not found"}, 404)
 
     def _worktree(self, body):

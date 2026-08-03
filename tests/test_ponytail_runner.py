@@ -62,7 +62,6 @@ def test_run_blocking_passes_env(monkeypatch):
         captured.update(kw)
         return P()
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
-    monkeypatch.setattr(runner, "_memory_pack_for", lambda *a, **k: "")
     monkeypatch.setattr(runner, "_graph_pack_for", lambda *a, **k: "", raising=False)
     monkeypatch.setattr(runner.state, "project_dir", lambda _c: os.getcwd())
     runner.run_blocking(555, "hi", ponytail="ultra")

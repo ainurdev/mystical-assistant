@@ -32,21 +32,21 @@ def test_everything_is_off_for_a_fresh_install(monkeypatch):
 
 
 def test_env_setting_decides_when_nothing_is_persisted(monkeypatch):
-    monkeypatch.setattr(config, "MEMORY_ENABLE", True)
-    assert aifeatures.enabled("memory") is True
+    monkeypatch.setattr(config, "TITLE_ENABLE", True)
+    assert aifeatures.enabled("title") is True
 
 
 def test_persisted_switch_beats_the_env_setting(monkeypatch):
-    monkeypatch.setattr(config, "MEMORY_ENABLE", True)
-    aifeatures.set_enabled("memory", False)
-    assert aifeatures.enabled("memory") is False
+    monkeypatch.setattr(config, "TITLE_ENABLE", True)
+    aifeatures.set_enabled("title", False)
+    assert aifeatures.enabled("title") is False
 
 
 def test_clearing_the_switch_falls_back_to_the_env_setting(monkeypatch):
-    monkeypatch.setattr(config, "MEMORY_ENABLE", True)
-    aifeatures.set_enabled("memory", False)
-    aifeatures.set_enabled("memory", None)
-    assert aifeatures.enabled("memory") is True
+    monkeypatch.setattr(config, "TITLE_ENABLE", True)
+    aifeatures.set_enabled("title", False)
+    aifeatures.set_enabled("title", None)
+    assert aifeatures.enabled("title") is True
 
 
 def test_switch_survives_a_reload(monkeypatch):

@@ -6,9 +6,9 @@ import { Soon } from "@/components/Soon";
 /**
  * Keep these in sync with the FAQPage JSON-LD in index.html, verbatim.
  *
- * Nothing here restates a section above it. "Is the dashboard exposed?" and
- * "can I turn memory off?" were answered word for word in Security and in the
- * memory answer, so they're gone rather than duplicated for the accordion.
+ * Nothing here restates a section above it. "Is the dashboard exposed?" was
+ * answered word for word in Security, so it's gone rather than duplicated for
+ * the accordion.
  */
 const FAQ: { q: string; a: string; soon?: boolean }[] = [
   {
@@ -32,12 +32,8 @@ const FAQ: { q: string; a: string; soon?: boolean }[] = [
     a: "Yes, if you have one. Add it from the dashboard's Accounts tab: a sign-in link opens, you log in as that account, you paste the code back. Each account lives in its own profile directory, so the login you already had is never touched, and every turn is still the real claude binary spawned per run with that profile. Nothing proxies or pools tokens. When a limit hits, the account with the most quota left goes first, and its meter sits next to the others in that tab.",
   },
   {
-    q: "How is the memory different from the memory plugins?",
-    a: "Two ways. Nothing is stored until you tap Keep on it, so the bank stays small and true instead of accumulating whatever a summariser thought was interesting. And facts are scoped to a project and a branch, so assumptions from a spike don't follow you back to main. It runs as a cheap Haiku pass after a turn, next to a teacher pass that proposes concepts worth reviewing; MEMORY_ENABLE=0 and LEARNING_ENABLE=0 in your .env turn them off.",
-  },
-  {
     q: "Where does my code actually go?",
-    a: "It stays on your machine, and there's no telemetry: the dashboard talks only to localhost, and nothing is sent anywhere the claude CLI wasn't already sending it. The caveat is the one above. The memory, teacher, auto-title and new-session checks each run a cheap Haiku pass through your CLI after a turn, so they do send that turn's output to Anthropic in a second call. MEMORY_ENABLE=0, LEARNING_ENABLE=0, TITLE_ENABLE=0 and RELEVANCE_CHECK=0 turn them off individually.",
+    a: "It stays on your machine, and there's no telemetry: the dashboard talks only to localhost, and nothing is sent anywhere the claude CLI wasn't already sending it. One caveat: the auto-title and new-session checks each run a cheap Haiku pass through your CLI after a turn, so they do send that turn's output to Anthropic in a second call. TITLE_ENABLE=0 and RELEVANCE_CHECK=0 turn them off individually.",
   },
   {
     q: "Can I drive it from my phone without Telegram?",

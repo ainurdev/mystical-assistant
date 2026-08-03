@@ -5,11 +5,9 @@ import { surfaceFor, projectTint } from "../../lib/surfaces";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
-import { MemoryView } from "../MemoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints } from "./Checkpoints";
-import { SuggestionChips } from "./SuggestionChips";
 
 const FRESH_QUOTES = [
   "the prompt is blank, the potential is not.",
@@ -137,10 +135,9 @@ function ChannelTuning() {
 
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
-  onReviewResolve,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
-  loading, sessionId, onSuggestPick, hud,
+  loading, sessionId, hud,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -152,7 +149,6 @@ export function Terminal({
   turns: Turn[];
   activeId: string | null;
   onRespond: (requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) => void;
-  onReviewResolve?: (itemId: string, action: "keep" | "skip") => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   atBottom: boolean;
@@ -164,7 +160,6 @@ export function Terminal({
   trailingWorking?: boolean;
   loading?: boolean;
   sessionId?: string | null;
-  onSuggestPick?: (text: string) => void;
   hud?: HudSettings;
 }) {
   const surf = surfaceFor(selected?.origin);
@@ -262,10 +257,6 @@ export function Terminal({
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
           <HistoryView onOpen={onOpenFromHistory} />
         </div>
-      ) : view === "memory" ? (
-        <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
-          <MemoryView />
-        </div>
       ) : view === "next" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
           <NextView onStart={onStartNext} />
@@ -285,12 +276,9 @@ export function Terminal({
                 {empty && loading ? (
                   <ChannelTuning />
                 ) : empty ? (
-                  <>
-                    <FreshState project={sessionProject} />
-                    <SuggestionChips project={sessionProject} onPick={onSuggestPick} />
-                  </>
+                  <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} onReviewResolve={onReviewResolve} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} />
                 )}
               </div>
             </div>

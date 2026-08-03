@@ -40,9 +40,15 @@ def list_projects(max_depth: int = 3) -> list[str]:
 
 def project_exists(rel_path: str) -> bool:
     """True if a project rel still resolves to a real directory under BASE_PATH
-    (a session may point at a since-deleted worktree checkout)."""
+    (a session may point at a since-deleted worktree checkout). A live Claude Code
+    session started outside BASE_PATH is labelled with its own (~-collapsed) path
+    instead — see native._index_running — so that form is checked literally when
+    the base-relative reading finds nothing."""
     p = os.path.realpath(os.path.join(config.BASE_PATH, (rel_path or "").lstrip("/")))
-    return within_base(p) and os.path.isdir(p)
+    if within_base(p) and os.path.isdir(p):
+        return True
+    out = os.path.expanduser(rel_path or "")
+    return os.path.isabs(out) and not within_base(out) and os.path.isdir(out)
 
 
 def within_base(path: str) -> bool:

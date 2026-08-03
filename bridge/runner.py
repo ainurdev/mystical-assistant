@@ -20,8 +20,8 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, agents, aifeatures, config, devserver, git, ladder,
-                    limits, machine, memory, native_activity, project_config,
+from bridge import (accounts, agents, config, devserver, git, ladder,
+                    limits, machine, native_activity,
                     pubsub, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
@@ -72,34 +72,11 @@ _LOG_NOTE = (
     "If a dev server was started for this project from the bridge, its output "
     f"is logged to {devserver.DEV_LOG_REL} in the project root — read that file "
     "(e.g. tail it) to inspect dev-server logs.")
-_EDIT_TOOLS = {"Edit", "Write", "MultiEdit"}
-
-
-def _project_key(chat_id: int, cwd: "str | None") -> str:
-    return rel(cwd or state.project_dir(chat_id))
-
-
-def _branch_for(chat_id: int, cwd: "str | None") -> "str | None":
-    return git.current_branch_cached(cwd or state.project_dir(chat_id)) or None
-
-
-def _memory_pack_for(chat_id: int, cwd: "str | None") -> str:
-    """Project+branch memory Context Pack for injection. Best-effort: disabled, an
-    'off' project posture, or any failure yields an empty pack (never blocks a turn)."""
-    if not aifeatures.enabled("memory"):
-        return ""
-    try:
-        project = _project_key(chat_id, cwd)
-        if project_config.memory_mode(project) == "off":
-            return ""
-        return memory.render_pack(chat_id, project, _branch_for(chat_id, cwd))
-    except Exception:  # noqa: BLE001
-        return ""
 
 
 def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
-    """Graphify structure pack for injection. Best-effort like the memory pack:
-    no graph, no module, any failure — empty string, never blocks a turn."""
+    """Graphify structure pack for injection. Best-effort: no graph, no module,
+    any failure — empty string, never blocks a turn."""
     try:
         from bridge import graphmap
         return graphmap.graph_pack(cwd or state.project_dir(chat_id))
@@ -117,48 +94,26 @@ def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
         pass
 
 
-def _compose_system_prompt(pack: str = "", graph: str = "") -> str:
-    """ASK prompt + dev-log note, then the memory pack, then the graph pack.
+def _compose_system_prompt(graph: str = "") -> str:
+    """ASK prompt + dev-log note, then the graph pack.
 
     Ordering does NOT protect the cache: the whole string lands in
     --append-system-prompt, which sits after the last cache breakpoint, so any
     change re-writes all of it. What protects the cache is only sending the
     volatile packs once per session — see _base_cmd."""
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE,
-                         pack.strip(), graph.strip()) if p]
+                         graph.strip()) if p]
     return "\n\n".join(parts)
 
 
-# Claude session ids we've already injected the memory/graph packs into. The packs
+# Claude session ids we've already injected the graph pack into. The pack
 # are rebuilt from live state, so re-sending them each turn silently changes
 # --append-system-prompt and invalidates the cached prefix (measured: one added
 # pack line moved ~11k tokens from cache_read to cache_create, a ~12x price step
 # on that segment, and on a resumed session the invalidated span is the whole
 # transcript). Once per session is also all that's useful: turn 1's pack is still
-# in context, and memories captured mid-session came out of that session's own
-# output. Bounded by sessions-since-boot.
+# in context. Bounded by sessions-since-boot.
 _packed_sessions: set[str] = set()
-
-
-def _capture_async(chat_id: int, session_id: "str | None", turn_id: str,
-                   cwd: "str | None", assistant_text: str, edited_files: list) -> None:
-    """Run the post-turn memory extractor off the hot path (fire-and-forget). The
-    project's posture gates it: 'off' skips capture, 'auto' keeps without the gate."""
-    if not aifeatures.enabled("memory") or not session_id or not (assistant_text or "").strip():
-        return
-    project = _project_key(chat_id, cwd)
-    mode = project_config.memory_mode(project)
-    if mode == "off":
-        return
-
-    def work():
-        try:
-            memory.propose(chat_id, session_id, turn_id, project,
-                           _branch_for(chat_id, cwd), assistant_text, edited_files,
-                           auto=(mode == "auto"))
-        except Exception:  # noqa: BLE001
-            pass
-    threading.Thread(target=work, daemon=True).start()
 
 
 # --- ponytail (per-run code-minimalism intensity) ----------------------------
@@ -266,15 +221,14 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += (["--session-id", claude_session_id] if new_session
                 else ["--resume", claude_session_id])
     if skip_pack or (claude_session_id and claude_session_id in _packed_sessions):
-        pack = graph = ""
+        graph = ""
     else:
-        pack = _memory_pack_for(chat_id, cwd)
         graph = _graph_pack_for(chat_id, cwd)
         if claude_session_id:
             _packed_sessions.add(claude_session_id)
-    cmd += ["--append-system-prompt", _compose_system_prompt(pack, graph)]
+    cmd += ["--append-system-prompt", _compose_system_prompt(graph)]
     if skip_pack and not (permission_mode and not interactive):
-        # Internal one-shots (titler/memory/commit-msg) are pure text transforms
+        # Internal one-shots (titler/commit-msg) are pure text transforms
         # whose prompts embed untrusted conversation text. No tools and no
         # EXTRA_CLAUDE_ARGS (acceptEdits!) — an agentic run here is an injection
         # vector: a first message like "scan the project" gets executed, not named.
@@ -382,16 +336,11 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                               f"(attempt {d[1]}/{len(limits.SERVER_BACKOFF)}).")
                 return
         if not is_error:
-            _capture_async(chat_id, session["id"], job_id, None, result, [])
             _graph_refresh_after_turn(chat_id, None)
         footer = f"\n\n— {int(time.time() - started)}s"
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
         if not is_error:
-            from bridge import learning, titler  # local import: runner<->* cycle
-            threading.Thread(target=learning.capture_after_turn,
-                             args=(chat_id, session, job_id),
-                             kwargs={"tool_visibility": False},
-                             daemon=True).start()
+            from bridge import titler  # local import: runner<->* cycle
             threading.Thread(target=titler.generate_after_turn,
                              args=(chat_id, session, job_id),
                              daemon=True).start()
@@ -428,8 +377,7 @@ class Job:
         self.error_msg: str | None = None  # stderr/exit error when no result event came
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
-        self.texts: list[str] = []       # assistant text this turn (memory capture)
-        self.edited: list[str] = []      # files edited this turn (Edit/Write/MultiEdit)
+        self.texts: list[str] = []       # assistant text this turn
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -965,8 +913,6 @@ def _handle_event(job: Job, d: dict):
             elif b.get("type") == "tool_use":
                 name = b.get("name", "tool")
                 inp = b.get("input", {})
-                if name in _EDIT_TOOLS and isinstance(inp, dict) and inp.get("file_path"):
-                    job.edited.append(str(inp["file_path"]))
                 job.add({"type": "tool", "name": name,
                          "summary": _summarize_tool(name, inp)})
     elif t == "user":
@@ -1198,21 +1144,13 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 pass
         resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
         if not job.interrupted and job.status == "done" and job.store_session_id:
-            _capture_async(job.chat_id, job.store_session_id, job.id, cwd,
-                           "\n\n".join(job.texts), list(job.edited))
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
             notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
-        # Teacher-mode capture (best-effort, background thread). Streaming has
-        # tool visibility, so we trust Edit/Write detection.
         if job.store_session_id and job.status == "done":
             _sess = store.get_session(job.store_session_id)
             if _sess:
-                from bridge import learning, titler  # local import: runner<->* cycle
-                threading.Thread(target=learning.capture_after_turn,
-                                 args=(job.chat_id, _sess, job.id),
-                                 kwargs={"tool_visibility": True},
-                                 daemon=True).start()
+                from bridge import titler  # local import: runner<->* cycle
                 threading.Thread(target=titler.generate_after_turn,
                                  args=(job.chat_id, _sess, job.id),
                                  daemon=True).start()

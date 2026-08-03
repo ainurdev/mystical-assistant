@@ -81,7 +81,7 @@ const SHOWN: Shown[] = [
   },
   {
     title: "⌘K and you're there",
-    line: "New chat, compact, switch model, jump between chat, history and memory. It all runs on localhost, so nothing waits on a server.",
+    line: "New chat, compact, switch model, jump between chat and history. It all runs on localhost, so nothing waits on a server.",
     src: "./shots/palette.png",
     w: 1176,
     h: 1032,

@@ -379,20 +379,5 @@ def handle_callback(cb: dict):
         threading.Thread(target=_next_callback,
                          args=(cb, chat_id, msg_id, data), daemon=True).start()
 
-    elif data.startswith("rvw:"):
-        parts = data.split(":", 2)
-        if len(parts) == 3:
-            _, action, item_id = parts
-            item = store.get_learning_item(item_id)
-            if item and item["owner_id"] == chat_id:   # owner-scope, like the HTTP endpoints
-                store.set_learning_status(item_id, "kept" if action == "k" else "skipped")
-                answer_cb(cb["id"], "Kept ✅" if action == "k" else "Skipped")
-                label = "✅ Kept for review" if action == "k" else "✖ Skipped"
-                edit(chat_id, msg_id, f"{label}: {item['title']}")
-            else:
-                answer_cb(cb["id"])
-        else:
-            answer_cb(cb["id"])
-
     else:
         answer_cb(cb["id"])

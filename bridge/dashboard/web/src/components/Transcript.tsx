@@ -79,7 +79,6 @@ export function Transcript({
   turns,
   activeId,
   onRespond,
-  onReviewResolve,
   liveTurns,
   trailingWorking,
   lastPromptRef,
@@ -88,7 +87,6 @@ export function Transcript({
   turns: Turn[];
   activeId: string | null;
   onRespond: Respond;
-  onReviewResolve?: (itemId: string, action: "keep" | "skip") => void;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
   lastPromptRef?: RefObject<HTMLDivElement | null>;
@@ -125,7 +123,6 @@ export function Transcript({
                 events={turn.events}
                 pending={turn.pending as PendingRequest[]}
                 onRespond={isActive ? onRespond : undefined}
-                onReviewResolve={onReviewResolve}
                 animate={liveTurns?.has(turn.id) ?? false}
                 turnId={turn.id}
               />

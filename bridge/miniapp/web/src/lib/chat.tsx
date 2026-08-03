@@ -1,6 +1,5 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -185,7 +184,6 @@ export interface ChatContextValue {
     requestId: string,
     opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
   ) => Promise<void>;
-  reviewResolve: (itemId: string, action: "keep" | "skip") => void;
   newChat: () => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
@@ -453,14 +451,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refresh();
   }
 
-  // Stable identity: every turn's RunStream takes this prop, so a fresh closure
-  // each render would defeat their memoization.
-  const reviewResolve = useCallback((itemId: string, action: "keep" | "skip") => {
-    void api.learningItem(itemId, action).then(() => {
-      if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
-    });
-  }, [sessionId, qc]);
-
   useEffect(() => {
     if (isRunning || sessionId === null) return;
     const t1 = setTimeout(() => qc.invalidateQueries({ queryKey: ["transcript", sessionId] }), 2500);
@@ -523,7 +513,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     compact,
     stop,
     respond,
-    reviewResolve,
     newChat,
     held,
     heldBusy,

@@ -241,7 +241,7 @@ _pack_cache: "dict[str, tuple[float, str]]" = {}
 
 
 def _estimate_tokens(text: str) -> int:
-    """Same deterministic ~4-chars/token estimate as bridge.memory."""
+    """Deterministic ~4-chars/token estimate (no network on the hot path)."""
     return (len(text) + 3) // 4
 
 

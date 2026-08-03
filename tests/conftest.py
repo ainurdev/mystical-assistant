@@ -32,3 +32,10 @@ os.environ["BASE_PATH"] = tempfile.mkdtemp()
 # into the developer's actual ~/.mystical.
 os.environ["ACCOUNTS_DIR"] = os.path.join(tempfile.mkdtemp(), "accounts")
 os.environ["FREEAGENTS_FILE"] = os.path.join(tempfile.mkdtemp(), "freeagents.json")
+
+# Claude Code's live-session registry is a path frozen at import in bridge.machine,
+# with no env knob. native.scan() now indexes what that registry lists, so leave it
+# pointed at the developer's real ~/.claude/sessions and the suite would index the
+# very sessions running it. Empty temp dir; a test that wants rows writes them there.
+from bridge import machine  # noqa: E402
+machine.SESSIONS_DIR = tempfile.mkdtemp()

@@ -1,8 +1,8 @@
-export type View = "chat" | "history" | "memory" | "next";
+export type View = "chat" | "history" | "next";
 
-const LABELS: Record<View, string> = { chat: "CHAT", history: "HIST", memory: "MEM", next: "NEXT" };
+const LABELS: Record<View, string> = { chat: "CHAT", history: "HIST", next: "NEXT" };
 
-/* Shared CHAT / HIST / MEM switcher in the Terminal header. */
+/* Shared CHAT / HIST switcher in the Terminal header. */
 export function ViewTabs({ view, onView }: { view: View; onView: (v: View) => void }) {
   return (
     <div style={{ display: "flex" }}>

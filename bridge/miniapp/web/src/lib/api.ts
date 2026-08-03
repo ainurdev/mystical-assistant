@@ -115,17 +115,7 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
-  | {
-      type: "memory_candidate";
-      item_id: string;
-      mem_type: string;
-      scope: string;
-      title: string;
-      body: string;
-    }
-  | { type: "review_candidate"; item_id: string; title: string; why_it_matters: string; snippet: string }
-  | { type: "review_resolved"; item_id: string; action: "kept" | "skipped" };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -300,22 +290,6 @@ export interface UsageInfo {
 // Error type so the UI can distinguish auth / busy / generic failures.
 // ---------------------------------------------------------------------------
 
-// Project memory: a curated fact injected into turns for its project/branch.
-export interface Memory {
-  id: string;
-  owner_id: number;
-  scope: "user" | "project";
-  project_path: string | null;
-  branch: string | null;
-  type: string;
-  title: string;
-  body: string;
-  status: string;
-  pinned: number;
-  created_at: number;
-  updated_at: number;
-}
-
 export class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -466,19 +440,4 @@ export const api = {
         `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
     ),
 
-  memoryCandidate: (itemId: string, action: "keep" | "skip") =>
-    request<{ item: Memory | null }>("/api/memory/candidate", {
-      method: "POST",
-      body: { item_id: itemId, action },
-    }),
-  memoryUpdate: (itemId: string, title?: string, body?: string) =>
-    request<{ item: Memory }>("/api/memory/update", {
-      method: "POST",
-      body: { item_id: itemId, title, body },
-    }),
-  learningItem: (itemId: string, action: "keep" | "skip" | "archive" | "reviewed") =>
-    request<{ ok: true }>("/api/learning/item", {
-      method: "POST",
-      body: { item_id: itemId, action },
-    }),
 };

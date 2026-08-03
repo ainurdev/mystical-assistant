@@ -55,11 +55,11 @@ export function Security() {
 
       <Reveal delay={120}>
         <p className="caption mt-12 max-w-[68ch]">
-          One caveat: the memory, teacher, auto-title and relevance checks each run a cheap Haiku
+          One caveat: the auto-title and relevance checks each run a cheap Haiku
           pass through your CLI after a turn, so they send that turn's output to Anthropic in a
           second call. Small, but not free on your quota. Each is one env var away from off:{" "}
           <span className="font-mono text-[0.92em]">
-            MEMORY_ENABLE, LEARNING_ENABLE, TITLE_ENABLE, RELEVANCE_CHECK
+            TITLE_ENABLE, RELEVANCE_CHECK
           </span>
           .
         </p>

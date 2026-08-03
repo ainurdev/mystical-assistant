@@ -87,29 +87,9 @@ def set_prod_url(project: str, url: str, branch: "str | None" = None) -> "str | 
     return _set_field(project, branch, "prod_url", url)
 
 
-_MEMORY_MODES = ("ask", "auto", "off")
-
-
-def memory_mode(project: str) -> str:
-    """Per-project memory posture: 'ask' (default) | 'auto' | 'off'. Project-wide
-    (never branch-scoped), so it reads the bare-project key only."""
-    return _get_field(project, None, "memory_mode") or "ask"
-
-
-def set_memory_mode(project: str, mode: str) -> str:
-    """Persist the posture; invalid/blank coerces to 'ask'. 'ask' is the default, so
-    it is stored blank (clearing the field) to keep the JSON minimal. Returns the
-    effective mode."""
-    mode = (mode or "").strip().lower()
-    if mode not in _MEMORY_MODES:
-        mode = "ask"
-    _set_field(project, None, "memory_mode", "" if mode == "ask" else mode)
-    return mode
-
-
 def set_hidden(project: str, on: bool) -> bool:
-    """Keep a project out of the sidebar (projects + session list). Project-wide,
-    like the memory posture; returns the effective value."""
+    """Keep a project out of the sidebar (projects + session list). Project-wide;
+    returns the effective value."""
     _set_field(project, None, "hidden", "1" if on else "")
     return on
 

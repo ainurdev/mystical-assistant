@@ -1,7 +1,7 @@
 """Which AI-powered extras are on, and where that answer lives.
 
 Everything registered here spends a model call the user did not ask for: a title,
-a memory capture, a relevance verdict, a repo scout. That makes them power-user
+a relevance verdict, a repo scout. That makes them power-user
 features rather than defaults, so every one is OFF until switched on, and the
 switch is in the dashboard's AI tab instead of an env var only whoever deployed
 the bridge can reach.
@@ -21,22 +21,34 @@ from bridge import config
 # key   -- stable id used by the API, the UI and enabled()
 # env   -- the config setting that decides when nothing is persisted
 # cost  -- what one unit of this costs, for the UI to show next to the switch
+# about -- the paragraph under the switch: what it does, and what appears in the
+#          dashboard once it is on (each feature's UI is hidden while it is off)
 FEATURES = (
-    {"key": "memory", "env": "MEMORY_ENABLE", "label": "PROJECT MEMORY",
-     "hint": "curated project facts in every turn, captured after edits",
-     "cost": "2 haiku calls per edit turn"},
     {"key": "title", "env": "TITLE_ENABLE", "label": "AUTO TITLES",
      "hint": "names a session from its first exchange",
-     "cost": "1 haiku call per new session"},
+     "cost": "1 haiku call per new session",
+     "about": "Replaces the first-prompt placeholder in the sessions list with a "
+              "3-6 word subject, the way the Claude app names a chat. Runs once, "
+              "after the very first turn, and never touches a session you renamed "
+              "yourself or one that already has more history."},
     {"key": "relevance", "env": "RELEVANCE_CHECK", "label": "NEW-SESSION GUARD",
      "hint": "offers a fresh session when a prompt changes the subject",
-     "cost": "1 haiku call per long prompt"},
-    {"key": "learning", "env": "LEARNING_ENABLE", "label": "TEACHER MODE",
-     "hint": "logs what a run taught, for review later",
-     "cost": "1 haiku call per reviewed turn"},
+     "cost": "1 haiku call per long prompt",
+     "about": "Before a long prompt resumes a session that already has history, a "
+              "quick check decides whether it continues that work. If it does not, "
+              "nothing runs: the prompt is held on a card offering a fresh, "
+              "pre-titled session instead, and you can still send it where it was. "
+              "Short follow-ups and new sessions never pay for a check, and any "
+              "failure lets the prompt through."},
     {"key": "nextup", "env": "NEXTUP_ENABLE", "label": "NEXT-UP BOARD",
      "hint": "ranked next steps across the repos you touched recently",
-     "cost": "1 scout per changed repo, free rung first"},
+     "cost": "1 scout per changed repo, free rung first",
+     "about": "Looks at the repos with recent session activity — dirty worktrees, "
+              "unpushed commits, open issues, sessions that stopped mid-task — and "
+              "ranks what is worth doing next, one item per click to start a "
+              "session on it. Only a repo whose git state moved is re-scouted, and "
+              "a free provider is tried before Claude quota. Off, the board is "
+              "hidden entirely."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}

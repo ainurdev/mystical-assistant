@@ -108,7 +108,7 @@ changing them. Read the hunks, write the commit, push.
 
 ### 6. ⌘K and you're there
 
-New chat, compact, switch model, jump between chat, history and memory. It all
+New chat, compact, switch model, jump between chat and history. It all
 runs on localhost, so nothing waits on a server.
 
 ![The command palette open over the dashboard, listing session, view and model commands.](site/public/shots/palette.png)
@@ -201,7 +201,7 @@ same way.
 
 Everything the workspace opens:
 
-`CHAT` · `HISTORY` · `MEMORY` · `PROJECTS` · `FILES` · `QUEUE` · `EDITOR` ·
+`CHAT` · `HISTORY` · `PROJECTS` · `FILES` · `QUEUE` · `EDITOR` ·
 `GIT` · `WORKTREES` · `TERMINAL` · `ISSUES` · `SKILLS` · `MAP` · `PREVIEW`
 
 **Four surfaces, one session store.** A session started on any of them continues
@@ -371,14 +371,12 @@ past you runs as you too.
   so the brake on a runaway is the resume cap (5 consecutive dead turns), not the
   clock.
 
-Your code stays on your machine and there's no telemetry. One caveat: the memory,
-teacher, auto-title and new-session-relevance checks each run a cheap Haiku pass
+Your code stays on your machine and there's no telemetry. One caveat: the
+auto-title and new-session-relevance checks each run a cheap Haiku pass
 through your CLI after a turn, so they send that turn's output to Anthropic in a
 second call. Small, but not free on your quota. Each is one env var away from off:
 
 ```
-MEMORY_ENABLE=0      # no memory-candidate pass
-LEARNING_ENABLE=0    # no teacher pass (proposes concepts worth reviewing)
 TITLE_ENABLE=0       # no auto-titling
 RELEVANCE_CHECK=0    # no "should this be a new session?" check
 ```
@@ -445,18 +443,6 @@ its own profile directory, so the login you already had is never touched, and ev
 turn is still the real `claude` binary spawned per run with that profile. Nothing
 proxies or pools tokens. When a limit hits, the account with the most quota left
 goes first, and its meter sits next to the others in that tab.
-
-</details>
-
-<details>
-<summary><b>How is the memory different from the memory plugins?</b></summary>
-
-Two ways. Nothing is stored until you tap Keep on it, so the bank stays small and
-true instead of accumulating whatever a summariser thought was interesting. And
-facts are scoped to a project and a branch, so assumptions from a spike don't follow
-you back to main. It runs as a cheap Haiku pass after a turn, next to a teacher pass
-that proposes concepts worth reviewing; `MEMORY_ENABLE=0` and `LEARNING_ENABLE=0` in
-your `.env` turn them off.
 
 </details>
 

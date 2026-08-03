@@ -15,7 +15,9 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
-from bridge import config, store, native, transcript_jsonl   # noqa: E402
+from bridge import browser, config, machine, store, native, transcript_jsonl  # noqa: E402
+
+machine.SESSIONS_DIR = tempfile.mkdtemp()   # fake ~/.claude/sessions (see conftest)
 
 # Build fixtures under the base config actually froze (conftest pins it suite-wide;
 # standalone it's the setdefault above), so within_base() checks are order-proof.
@@ -48,6 +50,48 @@ def _write_native(uuid, cwd, first_user="hello scan", with_cwd=True, dirname=Non
         for r in recs:
             f.write(json.dumps(r) + "\n")
     return path
+
+
+def _write_registry(uuid, cwd, entrypoint="cli"):
+    """One live-session record, as Claude Code writes them (our own pid = alive)."""
+    os.makedirs(machine.SESSIONS_DIR, exist_ok=True)
+    with open(os.path.join(machine.SESSIONS_DIR, f"{uuid}.json"), "w") as f:
+        json.dump({"sessionId": uuid, "pid": os.getpid(), "cwd": cwd,
+                   "entrypoint": entrypoint, "startedAt": 1700000000.0}, f)
+
+
+def test_scan_indexes_running_session_outside_base():
+    # A `claude` started in your home dir writes no transcript under BASE_PATH, so
+    # the disk scan can never see it — but it is live and yours, so it must list.
+    outside = tempfile.mkdtemp()
+    _write_registry("uuid-live-outside", outside)
+    native.scan(chat_id=OWNER)
+    row = store.get_by_claude_session_id("uuid-live-outside")
+    assert row is not None and row["origin"] == "terminal"
+    assert row["cwd"] == outside and row["project"] == outside   # no ~ to collapse
+    assert browser.project_exists(row["project"])                # survives the list filter
+
+
+def test_scan_indexes_running_session_before_first_turn():
+    # A VS Code session seconds old has an empty transcript dir; the registry is
+    # the only place it exists yet.
+    cwd = os.path.join(_BASE, "fresh")
+    os.makedirs(cwd, exist_ok=True)
+    _write_registry("uuid-live-fresh", cwd, entrypoint="claude-vscode")
+    native.scan(chat_id=OWNER)
+    row = store.get_by_claude_session_id("uuid-live-fresh")
+    assert row is not None and row["origin"] == "vscode" and row["project"] == "/fresh"
+
+
+def test_scan_skips_dead_and_bridge_registry_rows():
+    _write_registry("uuid-dead", _BASE)
+    with open(os.path.join(machine.SESSIONS_DIR, "uuid-dead.json"), "w") as f:
+        json.dump({"sessionId": "uuid-dead", "pid": 2 ** 30, "cwd": _BASE,
+                   "entrypoint": "cli"}, f)          # pid nobody owns
+    _write_registry("uuid-sdk", _BASE, entrypoint="sdk-cli")   # the bridge's own child
+    native.scan(chat_id=OWNER)
+    assert store.get_by_claude_session_id("uuid-dead") is None
+    assert store.get_by_claude_session_id("uuid-sdk") is None
 
 
 def test_scan_indexes_session_under_base():

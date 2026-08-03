@@ -64,17 +64,7 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
-  | {
-      type: "memory_candidate";
-      item_id: string;
-      mem_type: string;
-      scope: string;
-      title: string;
-      body: string;
-    }
-  | { type: "review_candidate"; item_id: string; title: string; why_it_matters: string; snippet: string }
-  | { type: "review_resolved"; item_id: string; action: "kept" | "skipped" };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };
 
@@ -84,18 +74,6 @@ export interface Transcript {
   events: StoreEvent[];
   next_cursor: number;
 }
-
-export type LearningItem = {
-  id: string;
-  project_path: string;
-  title: string;
-  code_snippet: string;
-  why_it_matters: string;
-  status: string;
-  mastery: number;
-  times_reviewed: number;
-  notes: string;
-};
 
 export interface ServerInfo {
   status: "running" | "exited" | "not started";
@@ -188,6 +166,13 @@ export interface FileContent {
   size?: number;
   image?: string; // data URL for raster images — rendered in place of the buffer
   error?: string;
+  // Indent rules for this path, resolved from .editorconfig with a per-language
+  // fallback (bridge/fmt.py), plus whether a formatter is installed for it.
+  indent?: string;
+  tab_size?: number;
+  trim_trailing_whitespace?: boolean;
+  insert_final_newline?: boolean;
+  formatter?: boolean;
 }
 
 // One search-in-files match from `git grep` (EDITOR palette `#` mode).
@@ -224,7 +209,6 @@ export interface ProjectSettings {
   scripts: Record<string, string>;
   run_cmd: string | null;
   prod_url: string | null;
-  memory_mode: string;
   default_cmd: string;
   log_path: string;
 }
@@ -464,6 +448,7 @@ export interface AiFeature {
   label: string;
   hint: string;
   cost: string;
+  about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
 }
 export interface NextItem {
@@ -591,22 +576,6 @@ export interface TermInfo {
   rows: number;
   created: number;
   alive: boolean;
-}
-
-// Project memory: a curated fact injected into turns for its project/branch.
-export interface Memory {
-  id: string;
-  owner_id: number;
-  scope: "user" | "project";
-  project_path: string | null;
-  branch: string | null;
-  type: string;
-  title: string;
-  body: string;
-  status: string;
-  pinned: number;
-  created_at: number;
-  updated_at: number;
 }
 
 // graphify knowledge-graph state for a project (Task 8's /local/graph/* endpoints).
@@ -754,36 +723,6 @@ export const api = {
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
   running: () => req<RunningInfo>("/local/running"),
   usage: () => req<UsageInfo>("/local/usage"),
-  memoryItems: (project?: string, status = "active") =>
-    req<{ items: Memory[] }>(
-      `/local/memory/items?status=${encodeURIComponent(status)}` +
-        (project ? `&project=${encodeURIComponent(project)}` : ""),
-    ),
-  memoryCandidate: (itemId: string, action: "keep" | "skip") =>
-    req<{ item: Memory | null }>("/local/memory/candidate", {
-      method: "POST",
-      body: { item_id: itemId, action },
-    }),
-  memoryUpdate: (itemId: string, title?: string, body?: string) =>
-    req<{ item: Memory }>("/local/memory/update", {
-      method: "POST",
-      body: { item_id: itemId, title, body },
-    }),
-  memoryStatus: (itemId: string, status: "active" | "archived") =>
-    req<{ item: Memory }>("/local/memory/status", {
-      method: "POST",
-      body: { item_id: itemId, status },
-    }),
-  memoryPin: (itemId: string, pinned: boolean) =>
-    req<{ item: Memory }>("/local/memory/pin", {
-      method: "POST",
-      body: { item_id: itemId, pinned },
-    }),
-  memorySuggest: (project: string) =>
-    req<{ suggestions: string[] }>("/local/memory/suggest", {
-      method: "POST",
-      body: { project },
-    }),
   history: (archived = false) =>
     req<{ sessions: EnrichedSession[] }>(
       `/local/history${archived ? "?archived=1" : ""}`,
@@ -836,6 +775,11 @@ export const api = {
       method: "POST",
       body: { project, path, content, ...(branch ? { branch } : {}) },
     }),
+  fileFormat: (project: string, path: string, content: string, branch?: string) =>
+    req<{ ok: boolean; content?: string; tool?: string; error?: string }>("/local/files/format", {
+      method: "POST",
+      body: { project, path, content, ...(branch ? { branch } : {}) },
+    }),
   filesGrep: (project: string, q: string, branch?: string) =>
     req<{ hits: GrepHit[] }>(
       `/local/files/grep?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
@@ -847,8 +791,8 @@ export const api = {
     }),
   projectSettings: (ctx: PreviewCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
-  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string; memory_mode?: string; hidden?: boolean }) =>
-    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; memory_mode?: string; hidden?: boolean }>("/local/project/settings", {
+  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string; hidden?: boolean }) =>
+    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; hidden?: boolean }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
@@ -944,21 +888,6 @@ export const api = {
         `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
         (workflowId ? `&workflow=${encodeURIComponent(workflowId)}` : ""),
     ),
-  // --- learning items (teacher mode review log) ---
-  learningItems: (project?: string) =>
-    req<{ items: LearningItem[] }>(
-      `/local/learning/items${project ? `?project=${encodeURIComponent(project)}` : ""}`,
-    ),
-  learningItem: (itemId: string, action: "keep" | "skip" | "archive" | "reviewed") =>
-    req<{ ok: true }>("/local/learning/item", {
-      method: "POST",
-      body: { item_id: itemId, action },
-    }),
-  learningTeach: (body: {
-    item_id: string;
-    mode: "explain" | "quiz" | "exercise" | "grade";
-    user_answer?: string;
-  }) => req<{ text: string }>("/local/learning/teach", { method: "POST", body }),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
   skills: (project?: string | null) =>
     req<SkillsInfo>(`/local/skills${project ? `?project=${encodeURIComponent(project)}` : ""}`),

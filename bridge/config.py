@@ -73,14 +73,6 @@ AUTO_RESUME = os.environ.get("AUTO_RESUME", "1").lower() not in ("0", "false", "
 # Per-session overrides live in sessions.fallback_policy; see bridge/ladder.py.
 FALLBACK_POLICY = os.environ.get("FALLBACK_POLICY", "ask").strip().lower()
 
-# --- Project memory ----------------------------------------------------------
-# Curated, project+branch-scoped memory injected into every turn's system prompt
-# and captured (with a Keep/Skip gate) after edits. See the project-memory design.
-# Off unless asked for, like every model-spending extra — see bridge/aifeatures.py,
-# which layers the dashboard's AI tab over these settings.
-MEMORY_ENABLE = os.environ.get("MEMORY_ENABLE", "0").lower() not in ("0", "false", "no", "")
-MEMORY_TOKEN_BUDGET = int(os.environ.get("MEMORY_TOKEN_BUDGET", "800"))  # resident pack cap
-
 # Push a Telegram message when a streaming (Mini App / dashboard) run needs your
 # input or finishes, so you can walk away from the panel and still get pinged.
 # The bot's own plain-text turns aren't notified (they already reply in-chat).
@@ -117,13 +109,10 @@ SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv",
 MINIAPP_ENABLE = os.environ.get("MINIAPP_ENABLE", "1").lower() not in ("0", "false", "no", "")
 MINIAPP_PORT = int(os.environ.get("MINIAPP_PORT", "8787"))   # local HTTP bind port
 
-# The four settings below and MEMORY_ENABLE above all buy a model call nobody
-# asked for, so they default OFF and are switched on per install from the
-# dashboard's AI tab (bridge/aifeatures.py owns that precedence — a persisted
-# switch beats the setting here).
-# Teacher mode: auto-suggest review candidates after code turns.
-LEARNING_ENABLE = os.environ.get("LEARNING_ENABLE", "0").lower() \
-    not in ("0", "false", "no", "")
+# The settings below all buy a model call nobody asked for, so they default OFF
+# and are switched on per install from the dashboard's AI tab
+# (bridge/aifeatures.py owns that precedence — a persisted switch beats the
+# setting here).
 # Auto-title new sessions with an LLM-generated subject after the first turn
 # (Claude-app style), replacing the first-prompt placeholder.
 TITLE_ENABLE = os.environ.get("TITLE_ENABLE", "0").lower() \

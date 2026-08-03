@@ -23,9 +23,11 @@ interface Props {
   status: Map<string, SessionStatus>;
   done: Set<string>; // finished a turn, not opened since
   flags: Map<string, PromptFlag>; // prompts of yours that haven't run yet
+  pins: Set<string>; // sessions you pinned — ranked first here and in the context menu
   selectedSessionId: string | null;
   loadingSessionId: string | null;
   activeProject: string | null;
+  onTogglePin: (id: string) => void;
   onSelectSession: (s: SessionBrief) => void;
   onAnalyze: (rel: string) => void;
   onNewSession: (rel: string) => void;
@@ -41,6 +43,7 @@ const ORDER_LABEL: Record<OrderMode, string> = {
 };
 
 // Which tab you were on, how BY PROJECT is ordered, and your hand-dragged order.
+// (Pins live in lib/prefs' useSessionPins — the context menu toggles them too.)
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
 const PREFS_KEY = "hud-sessions-prefs";
 type Prefs = { tab: "recent" | "grouped"; order: OrderMode; custom: string[] };
@@ -73,7 +76,7 @@ function statusView(s: SessionStatus | undefined, done = false) {
 }
 
 function SessionRow({
-  s, i, on, loading, sv, flag, branch, onAttach, onAnalyzeProj, animate = true,
+  s, i, on, loading, sv, flag, branch, pinned, onPin, onAttach, onAnalyzeProj, animate = true,
 }: {
   s: SessionBrief;
   i: number;
@@ -82,6 +85,8 @@ function SessionRow({
   sv: { c: string; l: string };
   flag?: PromptFlag;
   branch: string;
+  pinned: boolean;
+  onPin: () => void;
   onAttach: () => void;
   onAnalyzeProj: () => void;
   animate?: boolean;
@@ -126,6 +131,17 @@ function SessionRow({
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
           <span style={{ flex: 1 }} />
+          <button
+            onClick={(e) => { e.stopPropagation(); onPin(); }}
+            title={pinned ? "unpin — stops holding the top of the list" : "pin to the top of the list"}
+            style={{
+              appearance: "none", cursor: "pointer", flex: "none", border: 0, background: "transparent",
+              color: pinned ? "var(--acc)" : "var(--txf)", fontFamily: "inherit", fontSize: 10,
+              lineHeight: 1, padding: "1px 3px", transition: "opacity .15s ease",
+              // Hidden until hovered, so a quiet row stays quiet — but a pin always shows.
+              opacity: pinned || hov ? 1 : 0, pointerEvents: pinned || hov ? "auto" : "none",
+            }}
+          >{pinned ? "★" : "☆"}</button>
           {fv && (
             <span
               title={fv.t}
@@ -183,8 +199,8 @@ function PlusBtn({ on, onClick }: { on: boolean; onClick: () => void }) {
 
 export function SessionsPanel(props: Props) {
   const {
-    sessions, groups, status, done, flags, selectedSessionId, loadingSessionId, activeProject,
-    onSelectSession, onAnalyze, onNewSession, onWorktreeSession,
+    sessions, groups, status, done, flags, pins, selectedSessionId, loadingSessionId, activeProject,
+    onTogglePin, onSelectSession, onAnalyze, onNewSession, onWorktreeSession,
   } = props;
 
   // New-session form.
@@ -241,7 +257,10 @@ export function SessionsPanel(props: Props) {
 
   const sessionTotal = groups.reduce((n, g) => n + g.sessionCount, 0);
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
-  const sorted = [...sessions].sort((a, b) => b.updated - a.updated);
+  // Pinned first, then newest-first. Every list below slices this one, so a pin
+  // holds the top of the RECENT list and of its own project's rows alike.
+  const sorted = [...sessions].sort((a, b) =>
+    Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
   // BY PROJECT: most-recently-used project first. g.sessions is already
   // newest-first, so [0] is the project's last activity; no sessions → last.
   const byLastUsed = [...groups].sort((a, b) => (b.sessions[0]?.updated ?? 0) - (a.sessions[0]?.updated ?? 0));
@@ -252,17 +271,15 @@ export function SessionsPanel(props: Props) {
     order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
       : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
         : byLastUsed;
-  // RECENT tab: newest-first, matching the design mock's "newest first".
-  const recentSorted = [...sessions].sort((a, b) => b.updated - a.updated);
   // BY PROJECT rows: every session that's actually doing something (WORK/WAIT/
-  // LIVE/DONE), holding a prompt of yours, or currently open — never nothing, so
-  // a quiet project still shows its newest one. The open session stays listed
-  // even when idle and draft-free: hiding the chat you're looking at reads as
-  // "it's gone".
+  // LIVE/DONE), holding a prompt of yours, pinned, or currently open — never
+  // nothing, so a quiet project still shows its newest one. The open session
+  // stays listed even when idle and draft-free: hiding the chat you're looking
+  // at reads as "it's gone"; a pinned one likewise, or the pin did nothing.
   // ponytail: ignores g.sessions' cap on purpose; the rest hide behind SHOW MORE.
   const rowsFor = (rel: string) => {
     const all = sorted.filter((s) => s.project === rel);
-    const busy = all.filter((s) => s.id === selectedSessionId
+    const busy = all.filter((s) => s.id === selectedSessionId || pins.has(s.id)
       || statusView(status.get(s.id), done.has(s.id)).l !== "IDLE" || flags.has(s.id));
     return busy.length ? busy : all.slice(0, 1);
   };
@@ -273,7 +290,7 @@ export function SessionsPanel(props: Props) {
   const [scrollMargin, setScrollMargin] = useState(0);
   const recentActive = !drill && tab === "recent";
   const rowV = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: recentActive ? recentSorted.length : 0,
+    count: recentActive ? sorted.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 66,
     overscan: 8,
@@ -340,6 +357,7 @@ export function SessionsPanel(props: Props) {
       on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
       sv={statusView(status.get(s.id), done.has(s.id))} flag={flags.get(s.id)}
       branch={s.branch || branchOf.get(s.project) || "main"}
+      pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
       onAttach={() => onSelectSession(s)}
       onAnalyzeProj={() => onAnalyze(s.project)}
     />
@@ -563,7 +581,7 @@ export function SessionsPanel(props: Props) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px" }}>
                   <span style={{ fontSize: 9.5, letterSpacing: 2, color: "var(--txl)", flex: "none" }}>RECENT SESSIONS</span>
                   <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
-                  <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: "var(--txf)", flex: "none" }}>newest first</span>
+                  <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: "var(--txf)", flex: "none" }}>{pins.size ? "pinned · newest first" : "newest first"}</span>
                 </div>
                 <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>
                   {rowV.getVirtualItems().map((vi) => (
@@ -573,7 +591,7 @@ export function SessionsPanel(props: Props) {
                       ref={rowV.measureElement}
                       style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vi.start - scrollMargin}px)` }}
                     >
-                      {rowFor(recentSorted[vi.index], vi.index, false)}
+                      {rowFor(sorted[vi.index], vi.index, false)}
                     </div>
                   ))}
                 </div>

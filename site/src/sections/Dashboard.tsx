@@ -23,7 +23,6 @@ const PILLARS = [
 const PANES = [
   "CHAT",
   "HISTORY",
-  "MEMORY",
   "PROJECTS",
   "FILES",
   "QUEUE",

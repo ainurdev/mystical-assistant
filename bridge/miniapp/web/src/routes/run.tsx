@@ -15,7 +15,7 @@ const NO_PENDING: PendingRequest[] = [];
 
 function RunPage() {
   const {
-    turns, activeTurn, sessionWorking, respond, reviewResolve, sendError, sessionId, isRunning,
+    turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
   } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -93,7 +93,6 @@ function RunPage() {
                   events={turn.events}
                   pending={isActive ? activeTurn.pending : NO_PENDING}
                   onRespond={isActive ? respond : undefined}
-                  onReviewResolve={reviewResolve}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
               </div>

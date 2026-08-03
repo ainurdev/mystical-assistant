@@ -37,6 +37,8 @@ import {
 } from "./lib/theme";
 import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
+import { useAiFeatures } from "./lib/ai";
+import { useSessionPins } from "./lib/prefs";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -50,6 +52,7 @@ import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
+import type { View } from "./components/hud/ViewTabs";
 import { notify } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
 import { SettingsModal } from "./components/hud/SettingsModal";
@@ -170,9 +173,13 @@ export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false); // true from select until its transcript first resolves
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [view, setView] = useState<"chat" | "history" | "memory" | "next">("chat");
+  const [view, setView] = useState<View>("chat");
+  // Which model-spending extras are on: each one owns a tab and a palette entry
+  // that don't exist while it's off.
+  const ai = useAiFeatures();
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
+  const [pins, togglePin] = useSessionPins();
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
@@ -687,14 +694,6 @@ export function App() {
     try { await api.interrupt(active.id); } catch { /* poll reconciles */ }
   }
 
-  // The continuous poll picks up the resulting `review_resolved` event on its own,
-  // so no manual state update / invalidation is needed here.
-  // Stable identity: every turn's RunStream takes this prop, so a fresh closure
-  // each render would defeat their memoization.
-  const onReviewResolve = useCallback((itemId: string, action: "keep" | "skip") => {
-    void api.learningItem(itemId, action);
-  }, []);
-
   // A queued task or a GitHub issue carries the project it belongs to. Feeding it
   // into whatever session happens to be open would run it against the wrong repo,
   // so a project that isn't the open session's gets a session of its own and the
@@ -969,13 +968,22 @@ export function App() {
     setAgent("");
   }, [agentOpts, agentId]);
 
+  // Switched an extra off while looking at the view it owns: the tab is gone, so
+  // sitting there would strand you on a screen with no way back to it. (The MEM
+  // and TEACH panel tabs need no guard — RightPanel falls back to its first tab.)
+  useEffect(() => {
+    if (view === "next" && !ai.nextup) setView("chat");
+  }, [view, ai]);
+
   const commands: Command[] = [
     { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => activeProject && void newSession(activeProject) },
     { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) },
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
-    { id: "view-memory", label: "Go to Memory", group: "View", icon: "◆", run: () => setView("memory") },
-    { id: "view-next", label: "Go to Next up", group: "View", icon: "◈", run: () => setView("next") },
+    // Gated exactly like the tabs: an extra that's off has no way in at all.
+    ...(ai.nextup
+      ? [{ id: "view-next", label: "Go to Next up", group: "View", icon: "◈", run: () => setView("next") }]
+      : []),
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
     { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
@@ -997,6 +1005,9 @@ export function App() {
       const s = sessions.find((x) => x.id === ctxMenu.id);
       items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
       items.push({ icon: "⧉", label: "Copy session name", onClick: () => s && copy(s.title || "session") });
+      const pinned = pins.has(ctxMenu.id);
+      items.push({ icon: pinned ? "★" : "☆", label: pinned ? "Unpin session" : "Pin session",
+        hint: "TOP", onClick: () => togglePin(ctxMenu.id) });
       // Usage-limit fallback policy for this session; the 5s session poll picks
       // up the new value, so the ● marker is fresh next open.
       const pol = s?.fallback_policy ?? null;
@@ -1038,7 +1049,7 @@ export function App() {
     items.push({ divider: true }, ...nativeCtx.page);
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, analyzeProject, activeProject, selected, radio, weather, setUnit]);
+  }, [ctxMenu, nativeCtx, sessions, pins, analyzeProject, activeProject, selected, radio, weather, setUnit]);
 
   async function archiveSession(id: string) {
     try {
@@ -1105,9 +1116,10 @@ export function App() {
               <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
                 <SessionsPanel
                   sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
-                  flags={promptFlags}
+                  flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} loadingSessionId={loadingSession ? sessionId : null}
                   activeProject={activeProject}
+                  onTogglePin={togglePin}
                   onSelectSession={(s) => void selectSession(s)}
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
@@ -1119,10 +1131,9 @@ export function App() {
               <Terminal
                 view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
-                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)} onReviewResolve={onReviewResolve}
+                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)}
                 scrollRef={scrollRef} contentRef={contentRef}
                 atBottom={atBottom} onJumpBottom={jumpToBottom}
-                onSuggestPick={(t) => feed([t])}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}
