@@ -131,6 +131,20 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                     {originLabel(s.origin)}
                   </span>
                 )}
+                {/* Why it left the active list — without this, "not now" and
+                    "finished" look identical once a session is hidden. */}
+                {s.lifecycle && (
+                  <span
+                    title={`marked ${s.lifecycle}`}
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${
+                      s.lifecycle === "backlog"
+                        ? "bg-amber-400/15 text-amber-300"
+                        : "bg-muted-foreground/15 text-muted-foreground"
+                    }`}
+                  >
+                    {s.lifecycle}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 {/* which project this session belongs to (replaces repo grouping) */}

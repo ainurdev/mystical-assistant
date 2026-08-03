@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   permission_mode   TEXT,
   title_source      TEXT DEFAULT 'auto',
   fallback_policy   TEXT,
-  goal              TEXT
+  goal              TEXT,
+  lifecycle         TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -109,6 +110,11 @@ def init() -> None:
         # because the three fields are only ever read and written together.
         if "goal" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN goal TEXT")
+        # Why a session is hidden: done | abandoned | backlog (NULL = active).
+        # Old rows carry archived=1 with no reason — backfill them as 'done'.
+        if "lifecycle" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN lifecycle TEXT")
+            c.execute("UPDATE sessions SET lifecycle='done' WHERE archived=1")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -329,10 +335,28 @@ def rename(session_id: str, title: str) -> None:
                   (title, session_id))
 
 
+LIFECYCLES = ("done", "abandoned", "backlog")   # NULL = still active
+
+
 def archive(session_id: str, archived: bool = True) -> None:
+    """Hide/unhide a session. Keeps `lifecycle` in step so the two can't drift:
+    archiving with no stated reason reads as 'done', un-archiving clears it."""
     with closing(_connect()) as c:
-        c.execute("UPDATE sessions SET archived=?, updated=? WHERE id=?",
-                  (1 if archived else 0, time.time(), session_id))
+        c.execute(
+            "UPDATE sessions SET archived=?, updated=?, "
+            "lifecycle=CASE WHEN ?=1 THEN COALESCE(lifecycle,'done') ELSE NULL END "
+            "WHERE id=?",
+            (1 if archived else 0, time.time(), 1 if archived else 0, session_id))
+
+
+def set_lifecycle(session_id: str, state: str | None) -> None:
+    """Move a session to done/abandoned/backlog, or None to make it active again.
+    `archived` is the derived 'hidden' flag — every existing query and the
+    sessions index already filter on it, so nothing downstream learns a column.
+    Validated by the callers against LIFECYCLES."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET lifecycle=?, archived=?, updated=? WHERE id=?",
+                  (state, 0 if state is None else 1, time.time(), session_id))
 
 
 # --- turns + events ---------------------------------------------------------
@@ -422,6 +446,7 @@ def history(chat_id: int, include_archived: bool = False,
     its turns — turn_count, total_cost, last_activity, and distinct models used.
     Newest activity first."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
+         "s.lifecycle, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.cost), 0) AS total_cost, "
          "COALESCE(MAX(t.started), s.updated) AS last_activity, "

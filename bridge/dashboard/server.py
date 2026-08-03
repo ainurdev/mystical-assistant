@@ -663,6 +663,17 @@ class Handler(BaseHTTPRequestHandler):
                 goals.clear(sid)          # empty objective = abandon the goal
                 return self._json({"ok": True, "goal": None})
             return self._json({"ok": True, "goal": goals.create(sid, objective)})
+        if path.startswith("/local/sessions/") and path.endswith("/lifecycle"):
+            sid = path[len("/local/sessions/"):-len("/lifecycle")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            state = body.get("lifecycle") or None
+            if state is not None and state not in store.LIFECYCLES:
+                return self._json(
+                    {"error": f"lifecycle must be one of {store.LIFECYCLES}"}, 400)
+            store.set_lifecycle(sid, state)
+            return self._json({"ok": True, "lifecycle": state})
         if path == "/local/git/commit":
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
             if cwd is None:

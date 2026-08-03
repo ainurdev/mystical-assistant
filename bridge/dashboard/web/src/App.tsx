@@ -8,6 +8,7 @@ import {
   type EffortLevel,
   type EnrichedSession,
   type GitBadge,
+  type Lifecycle,
   type ModelId,
   type SessionBrief,
   type SessionStatus,
@@ -1035,7 +1036,18 @@ export function App() {
       items.push({ icon: pol === "wait" ? "●" : "○", label: "On limit: wait",
         hint: "only wait for the reset", onClick: () => setPol("wait") });
       items.push({ divider: true });
-      items.push({ icon: "⌫", label: "Archive session", danger: true, onClick: () => void archiveSession(ctxMenu.id) });
+      // Lifecycle: all three take the session out of the active list, but which
+      // one you picked is the difference between "shipped" and "come back to it".
+      const lc = s?.lifecycle ?? null;
+      items.push({ icon: lc === "done" ? "●" : "○", label: "Mark done",
+        hint: "finished — out of the sidebar", onClick: () => void setLifecycle(ctxMenu.id, "done") });
+      items.push({ icon: lc === "backlog" ? "●" : "○", label: "Move to backlog",
+        hint: "not now, not dead", onClick: () => void setLifecycle(ctxMenu.id, "backlog") });
+      items.push({ icon: lc === "abandoned" ? "●" : "○", label: "Abandon", danger: true,
+        hint: "gave up on it", onClick: () => void setLifecycle(ctxMenu.id, "abandoned") });
+      if (lc !== null)
+        items.push({ icon: "↺", label: "Reopen", hint: "back to the active list",
+          onClick: () => void setLifecycle(ctxMenu.id, null) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
@@ -1066,10 +1078,11 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxMenu, nativeCtx, sessions, pins, analyzeProject, activeProject, selected, radio, weather, setUnit]);
 
-  async function archiveSession(id: string) {
+  async function setLifecycle(id: string, state: Lifecycle | null) {
     try {
-      await api.archiveSession(id);
-      if (sessionId === id) setSessionId(null);
+      await api.setLifecycle(id, state);
+      // Only let go of the session if it just left the active list.
+      if (state !== null && sessionId === id) setSessionId(null);
       await loadSessions();
     } catch { /* ignore */ }
   }

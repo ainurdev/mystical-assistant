@@ -14,6 +14,8 @@ export interface Project {
   rel: string;
   name: string;
 }
+// Why a session is out of the active list. null = still active.
+export type Lifecycle = "done" | "abandoned" | "backlog";
 // An objective the session keeps working on. The model owns the verdict (it calls
 // UpdateGoal); the bridge re-prompts after each turn while state is "active".
 export interface Goal {
@@ -33,6 +35,7 @@ export interface SessionBrief {
   branch?: string; // the session's git branch (worktree branch, or the project's)
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
   goal?: Goal | null;
+  lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
 }
 export interface StoreTurn {
   id: string;
@@ -411,6 +414,7 @@ export interface EnrichedSession {
   created: number;
   updated: number;
   archived: number;
+  lifecycle?: Lifecycle | null; // why it left the active list; null = still in it
   turn_count: number;
   total_cost: number;
   last_activity: number;
@@ -636,6 +640,13 @@ export const api = {
       method: "POST",
       body: { project, ...(cwd ? { cwd } : {}), ...(title ? { title } : {}) },
     }),
+  // done | abandoned | backlog, or null to make it active again.
+  setLifecycle: (id: string, lifecycle: Lifecycle | null) =>
+    req<{ ok: boolean; lifecycle: Lifecycle | null }>(
+      `/local/sessions/${encodeURIComponent(id)}/lifecycle`, {
+        method: "POST",
+        body: { lifecycle },
+      }),
   archiveSession: (id: string) =>
     req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(id)}/archive`, {
       method: "POST",

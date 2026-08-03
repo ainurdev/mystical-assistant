@@ -378,10 +378,12 @@ def test_session_brief_shape():
     s = store.create_session(555, "p6")
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "updated", "archived",
-                      "origin", "cwd", "branch", "fallback_policy", "goal"}
+                      "origin", "cwd", "branch", "fallback_policy", "goal",
+                      "lifecycle"}
     assert b["id"] == s["id"] and b["project"] == "p6"
     assert isinstance(b["branch"], str)   # "" when cwd has no repo
     assert b["goal"] is None              # parsed from the column, not the raw JSON
+    assert b["lifecycle"] is None         # a fresh session is active
 
 
 def test_store_list_sessions_all():
