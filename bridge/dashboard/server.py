@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 import re
 
-from bridge import (agents, browser, config, devserver, git, github, graphmap,
+from bridge import (agents, browser, config, devserver, fmt, git, github, graphmap,
                     learning, memory, models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, runner, screenshot, selfupdate,
                     shell, skills, state, store, sysinfo, terminals, tunnel, usage,
@@ -260,6 +260,7 @@ class Handler(BaseHTTPRequestHandler):
                 "servers": devserver.list_servers(),
                 "dev_port": config.PREVIEW_PORT,
                 "permission_mode": config.MINIAPP_PERMISSION_MODE,
+                "relevance_check": relevance.enabled(),
                 "models": models.get_models()})
         if path == "/local/projects":
             relp = (qs.get("dir", [""])[0] or "").strip()
@@ -388,7 +389,14 @@ class Handler(BaseHTTPRequestHandler):
                                 (qs.get("branch", [""])[0] or "").strip())
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
-            return self._json(git.read_file(cwd, qs.get("path", [""])[0]))
+            rel = qs.get("path", [""])[0]
+            out = git.read_file(cwd, rel)
+            if out.get("ok"):
+                # Indent rules ride along with the content so the editor can
+                # configure the buffer without a second round trip.
+                out.update(fmt.indent_for(cwd, out.get("path") or rel))
+                out["formatter"] = fmt.formatters_for(cwd, rel)[0] is not None
+            return self._json(out)
         if path == "/local/files/grep":
             # EDITOR search-in-files (the palette's `#` mode)
             cwd = _worktree_cwd(qs.get("project", [None])[0],
@@ -571,6 +579,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "not found"}, 404)
             store.archive(sid)
             return self._json({"ok": True})
+        if path == "/local/relevance":
+            return self._json({"ok": True,
+                               "enabled": relevance.set_enabled(body.get("enabled"))})
         if path == "/local/policy/default":
             from bridge import ladder
             try:
@@ -678,6 +689,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "file too large"}, 413)
             ok, output = git.write_file(cwd, rel, content)
             return self._json({"ok": ok} if ok else {"ok": False, "error": output})
+        if path == "/local/files/format":
+            # EDITOR Shift-Alt-F — run the project's own formatter over the
+            # buffer. Nothing is written; the editor swaps the text and the
+            # user still saves explicitly.
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            rel = (body.get("path") or "").strip()
+            content = body.get("content")
+            if not rel or not isinstance(content, str):
+                return self._json({"error": "path and content required"}, 400)
+            if len(content) > 5_000_000:
+                return self._json({"ok": False, "error": "file too large to format"}, 413)
+            return self._json(fmt.format_source(cwd, rel, content))
         if path == "/local/files/op":
             # EDITOR explorer file management — new file/folder, rename, delete
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())

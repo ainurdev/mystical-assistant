@@ -55,6 +55,20 @@ def test_should_check_skips_when_disabled(monkeypatch):
     assert relevance.should_check(_session(), LONG) is False
 
 
+def test_settings_toggle_overrides_the_env_default(monkeypatch):
+    """The dashboard's PROMPT CHECK switch wins over RELEVANCE_CHECK, both ways."""
+    monkeypatch.setattr(config, "RELEVANCE_CHECK", True)
+    try:
+        assert relevance.set_enabled(False) is False
+        assert relevance.should_check(_session(), LONG) is False
+        monkeypatch.setattr(config, "RELEVANCE_CHECK", False)
+        assert relevance.set_enabled(True) is True
+        assert relevance.should_check(_session(), LONG) is True
+    finally:
+        os.remove(relevance._flag_path())     # back to "env decides"
+    assert relevance.enabled() is False       # the patched env, again
+
+
 # --- parsing + fail-open -----------------------------------------------------
 
 def test_parses_plain_json():

@@ -134,6 +134,7 @@ export interface DashState {
   servers?: DevServerInfo[]; // all concurrent dev servers
   dev_port?: number; // legacy default dev-server port (config.PREVIEW_PORT)
   permission_mode?: string | null;
+  relevance_check?: boolean; // the "start a new session?" guardrail, bridge-wide
   models?: { id: string; label: string }[]; // live list from GET /v1/models (bridge/models.py)
 }
 export interface ProjectsListing {
@@ -188,6 +189,13 @@ export interface FileContent {
   size?: number;
   image?: string; // data URL for raster images — rendered in place of the buffer
   error?: string;
+  // Indent rules for this path, resolved from .editorconfig with a per-language
+  // fallback (bridge/fmt.py), plus whether a formatter is installed for it.
+  indent?: string;
+  tab_size?: number;
+  trim_trailing_whitespace?: boolean;
+  insert_final_newline?: boolean;
+  formatter?: boolean;
 }
 
 // One search-in-files match from `git grep` (EDITOR palette `#` mode).
@@ -668,6 +676,11 @@ export const api = {
       method: "POST",
       body: { name, value },
     }),
+  setRelevanceCheck: (enabled: boolean) =>
+    req<{ ok: boolean; enabled: boolean }>("/local/relevance", {
+      method: "POST",
+      body: { enabled },
+    }),
   setDefaultPolicy: (policy: string) =>
     req<{ ok: boolean; policy: string }>("/local/policy/default", {
       method: "POST",
@@ -793,6 +806,11 @@ export const api = {
     ),
   fileWrite: (project: string, path: string, content: string, branch?: string) =>
     req<{ ok: boolean; error?: string }>("/local/files/write", {
+      method: "POST",
+      body: { project, path, content, ...(branch ? { branch } : {}) },
+    }),
+  fileFormat: (project: string, path: string, content: string, branch?: string) =>
+    req<{ ok: boolean; content?: string; tool?: string; error?: string }>("/local/files/format", {
       method: "POST",
       body: { project, path, content, ...(branch ? { branch } : {}) },
     }),

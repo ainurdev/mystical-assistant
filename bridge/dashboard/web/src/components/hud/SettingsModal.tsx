@@ -656,6 +656,37 @@ function IndicatorPicker({
   );
 }
 
+/** The "start a new session?" guardrail. Bridge-side, not per-browser, so it also
+ *  silences the Mini App's check. */
+function PromptCheckCard() {
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    let live = true;
+    void api.state().then((s) => { if (live) setOn(s.relevance_check !== false); }).catch(() => { /* ignore */ });
+    return () => { live = false; };
+  }, []);
+
+  function toggle() {
+    const next = !on;
+    setOn(next);
+    void api.setRelevanceCheck(next).catch(() => setOn(!next));
+  }
+
+  return (
+    <div style={{ ...CARD, ...ROW, marginTop: 0 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: "var(--txh)", letterSpacing: 0.5 }}>PROMPT CHECK</div>
+        <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 2, lineHeight: 1.6 }}>
+          Before a long prompt resumes a chat, a cheap Haiku pass decides whether it belongs
+          there and offers a fresh, pre-titled session if it doesn&apos;t. Costs a few seconds
+          and one extra call per prompt.
+        </div>
+      </div>
+      <Switch on={on} onClick={toggle} />
+    </div>
+  );
+}
+
 /** City + unit for the header clock's weather — the same bridge-side setting the
  *  clock popover writes. */
 function WeatherCard({
@@ -1445,6 +1476,13 @@ export function SettingsModal(props: SettingsModalProps) {
                   <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
                   session was started with.
                 </div>
+
+                <Label top>GUARDRAIL</Label>
+                <PromptCheckCard />
+                <div style={NOTE}>
+                  Kept by the bridge for every surface — turning it off here silences the check
+                  in the Mini App too.
+                </div>
               </>
             )}
 
@@ -1489,7 +1527,8 @@ export function SettingsModal(props: SettingsModalProps) {
           }}
         >
           <span style={{ fontSize: 9, letterSpacing: ".5px", color: "var(--txl)", flex: 1 }}>
-            Stored in this browser — except weather, which the bridge keeps for every client.
+            Stored in this browser — except weather and the prompt check, which the bridge keeps
+            for every client.
           </span>
           <button
             onClick={onClose}

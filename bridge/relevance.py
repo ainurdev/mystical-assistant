@@ -11,6 +11,7 @@ The one-shot goes through runner.run_blocking (cheap model, no memory pack), the
 same path titler/memory use."""
 
 import json
+import os
 import re
 import sys
 
@@ -33,11 +34,40 @@ _TASK_CHARS = 2000      # of the incoming prompt
 _TITLE_CHARS = 60       # matches the store's title cap
 
 
+def _flag_path() -> str:
+    return os.path.join(os.path.dirname(config.BRIDGE_DB), "relevance.json")
+
+
+def enabled() -> bool:
+    """Whether the guardrail runs at all. The dashboard's toggle persists next to
+    the DB and wins over the RELEVANCE_CHECK env default; unset, the env decides.
+    ponytail: read per call, not cached — it runs once per prompt, and a fresh
+    read means the toggle takes effect without a bridge restart."""
+    try:
+        with open(_flag_path()) as f:
+            v = (json.load(f) or {}).get("enabled")
+    except (OSError, ValueError):
+        v = None
+    return v if isinstance(v, bool) else config.RELEVANCE_CHECK
+
+
+def set_enabled(on: bool) -> bool:
+    """Persist the global toggle. Applies to every surface (dashboard, Mini App)."""
+    on = bool(on)
+    try:
+        os.makedirs(os.path.dirname(_flag_path()), exist_ok=True)
+        with open(_flag_path(), "w") as f:
+            json.dump({"enabled": on}, f)
+    except OSError as e:
+        print(f"[relevance] persist failed: {e}", file=sys.stderr)
+    return enabled()
+
+
 def should_check(session: dict | None, prompt: str, force: bool = False) -> bool:
     """True only for a substantial prompt landing on a session that already has
     turns. Short follow-ups ("yes", "fix that") and fresh sessions never pay for a
     check — a session with no history has nothing to be unrelated to."""
-    if not config.RELEVANCE_CHECK or force or not session:
+    if not enabled() or force or not session:
         return False
     if not store.recent_prompts(session["id"], 1):
         return False

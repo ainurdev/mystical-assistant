@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
-import { Compartment, EditorState } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { HighlightStyle, syntaxHighlighting, indentOnInput, bracketMatching } from "@codemirror/language";
+import { basicSetup } from "codemirror";
+import { EditorView, keymap } from "@codemirror/view";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { indentWithTab } from "@codemirror/commands";
+import { HighlightStyle, syntaxHighlighting, indentUnit } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { api, type FileContent, type GrepHit } from "../../api";
 import { Markdown } from "../Markdown";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { cmpTreePath } from "../../lib/pathsort";
 import { langFor } from "../../lib/langfor";
+import { symbolsIn } from "../../lib/symbols";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
    the whole working tree of the selected branch/worktree, opens any file into an
@@ -18,7 +20,12 @@ import { langFor } from "../../lib/langfor";
 
    VS Code-ish extras: a quick-open palette (Ctrl-P files · Ctrl-Shift-O symbols
    in the open file · Ctrl-Shift-F search in files), expand/collapse-all in the
-   explorer, reveal-the-open-file, and new/rename/delete via right-click. */
+   explorer, reveal-the-open-file, and new/rename/delete via right-click.
+
+   Formatting matches VS Code's defaults too: indent width per .editorconfig
+   (falling back to each language's convention), trailing whitespace trimmed and
+   a final newline added on save, and Shift-Alt-F to run the project's own
+   formatter. The formatters run on the bridge — see bridge/fmt.py. */
 
 export interface BranchOpt {
   name: string;
@@ -118,26 +125,6 @@ function fuzzyScore(q: string, path: string): number {
   return score + (last < path.lastIndexOf("/") + 1 ? 40 : 0);
 }
 
-/* Definitions worth jumping to, across the languages the editor highlights: a
-   declaration keyword, an arrow-function const, or a bare `name(args) {`. The
-   leading modifiers cover Java/C#/PHP/Rust/Kotlin (`public static`, `pub`), and
-   the optional parens after the keyword cover Go methods (`func (s *S) Do()`). */
-const SYMBOL_RE = /^\s*(?:(?:export|default|async|public|private|protected|internal|static|final|abstract|open|override|pub)\s+)*(?:(function|func|fn|def|class|interface|type|enum|struct|trait|impl|module|record|sub|proc)\s+(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)|(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>|([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{)/;
-const NOT_SYMBOL = new Set(["if", "for", "foreach", "while", "switch", "catch", "return", "function", "with", "elseif", "unless", "until"]);
-
-function symbolsIn(doc: string): { name: string; kind: string; line: number }[] {
-  const out: { name: string; kind: string; line: number }[] = [];
-  doc.split("\n").forEach((text, i) => {
-    const m = SYMBOL_RE.exec(text);
-    if (!m) return;
-    const name = m[2] ?? m[4] ?? m[5];
-    const kind = m[1] ?? m[3] ?? "method";
-    if (!name || NOT_SYMBOL.has(name)) return;
-    out.push({ name, kind, line: i + 1 });
-  });
-  return out;
-}
-
 // Swapped in once the open file's language chunk has loaded (see langFor).
 const langComp = new Compartment();
 
@@ -179,6 +166,36 @@ const crtTheme = EditorView.theme({
   ".cm-activeLineGutter": { backgroundColor: "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--txd)" },
   ".cm-scroller": { fontFamily: "'JetBrains Mono',monospace", lineHeight: "1.6" },
   ".cm-selectionMatch": { backgroundColor: "color-mix(in srgb, var(--purple) 15%, transparent)" },
+  // basicSetup's own chrome — find/replace panel, completion popup, fold arrows.
+  // Without these they'd render in CodeMirror's stock dark, next to the CRT.
+  ".cm-panels": { backgroundColor: "color-mix(in srgb, var(--panel2) 98%, transparent)", color: "var(--txh)", border: "none" },
+  ".cm-panels.cm-panels-bottom": { borderTop: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)" },
+  ".cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label": {
+    fontFamily: "'JetBrains Mono',monospace", fontSize: "11px",
+  },
+  ".cm-panel.cm-search input": {
+    background: "color-mix(in srgb, var(--panel3) 60%, transparent)", color: "var(--txb)",
+    border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", outline: "none", padding: "2px 5px",
+  },
+  ".cm-panel.cm-search button": {
+    background: "transparent", color: "var(--txm)", cursor: "pointer",
+    border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", padding: "2px 7px",
+  },
+  ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--warn) 22%, transparent)" },
+  ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "color-mix(in srgb, var(--acc) 32%, transparent)" },
+  ".cm-tooltip": {
+    background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", color: "var(--txh)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "'JetBrains Mono',monospace", fontSize: "11px" },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    background: "color-mix(in srgb, var(--acc) 16%, transparent)", color: "var(--txb)",
+  },
+  ".cm-foldGutter span": { color: "var(--txd)" },
+  ".cm-foldPlaceholder": {
+    background: "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txm)",
+    border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+  },
 }, { dark: true });
 
 export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFile }: Props) {
@@ -191,6 +208,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const [meta, setMeta] = useState<FileContent | null>(null); // load result (binary/too_large flags)
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fmting, setFmting] = useState(false);
+  const [lang, setLang] = useState("");   // detected language, shown in the status bar
   const [cmd, setCmd] = useState("");
   const [note, setNote] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -214,6 +233,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const viewRef = useRef<EditorView | null>(null);
   const baseRef = useRef("");                     // last-saved content, for the dirty check
   const saveRef = useRef<() => void>(() => {});   // latest save fn, for the Ctrl-S keymap
+  const fmtRef = useRef<() => void>(() => {});    // ditto for Shift-Alt-F
   const noteT = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jumpRef = useRef(0);                      // line to scroll to once the buffer mounts
   const rowRef = useRef<HTMLButtonElement | null>(null); // the open file's tree row
@@ -272,23 +292,25 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     const state = EditorState.create({
       doc: meta.content ?? "",
       extensions: [
-        lineNumbers(),
-        highlightActiveLineGutter(),
-        highlightActiveLine(),
-        drawSelection(),
-        history(),
-        indentOnInput(),
-        bracketMatching(),
+        // Ours before basicSetup — earlier extensions take precedence, so the
+        // CRT palette beats its default highlight style and Ctrl-S beats the
+        // browser's Save Page.
+        Prec.highest(keymap.of([
+          { key: "Mod-s", preventDefault: true, run: () => { saveRef.current(); return true; } },
+          { key: "Shift-Alt-f", preventDefault: true, run: () => { fmtRef.current(); return true; } },
+        ])),
         syntaxHighlighting(crtHighlight),
+        // Line numbers, history, folding, bracket close/match, autocomplete,
+        // find-and-replace, selection-match highlighting, multiple selections.
+        basicSetup,
+        keymap.of([indentWithTab]),
+        // Indent width comes from the project's .editorconfig where it has one,
+        // otherwise the language's convention (4 for Python/PHP, tabs for Go) —
+        // resolved server-side in bridge/fmt.py and shipped with the content.
+        indentUnit.of(meta.indent ?? "  "),
+        EditorState.tabSize.of(meta.tab_size ?? 2),
         crtTheme,
         langComp.of([]),   // filled in below, once the language chunk lands
-        // Mod-s first so it wins over any default binding; then editing keymaps.
-        keymap.of([
-          { key: "Mod-s", preventDefault: true, run: () => { saveRef.current(); return true; } },
-          indentWithTab,
-          ...defaultKeymap,
-          ...historyKeymap,
-        ]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) setDirty(u.state.doc.toString() !== baseRef.current);
         }),
@@ -299,18 +321,46 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     view.focus();
     // Highlighting arrives a tick later: the language is a lazy chunk, so the
     // buffer renders plain and repaints when it loads (guard = view still live).
-    void langFor(open)?.load().then((sup) => {
+    const desc = langFor(open);
+    setLang(desc?.name ?? "plain text");
+    void desc?.load().then((sup) => {
       if (viewRef.current === view) view.dispatch({ effects: langComp.reconfigure(sup) });
-    }).catch(() => {});
+    }).catch(() => {
+      // LanguageDescription caches a rejected load for the life of the page, so
+      // one failed chunk fetch means this language stays plain until a reload.
+      // Say so instead of leaving an unexplained colourless buffer.
+      if (viewRef.current === view) {
+        setLang(`${desc?.name ?? "?"} — load failed`);
+        flash(`E485: ${desc?.name} highlighting failed to load — reload the page`);
+      }
+    });
     if (jumpRef.current) { gotoLine(view, jumpRef.current); jumpRef.current = 0; }
     return () => { view.destroy(); viewRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editable, open, meta]);
 
+  /* Replace the whole buffer in one transaction, keeping the cursor where it
+     was — used by both save-time cleanup and the formatter. */
+  function replaceDoc(v: EditorView, text: string) {
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: text },
+      selection: { anchor: Math.min(v.state.selection.main.head, text.length) },
+    });
+  }
+
+  /* The two save-time fixups VS Code does by default, both overridable per
+     project through .editorconfig. */
+  function tidy(text: string): string {
+    const out = meta?.trim_trailing_whitespace === false ? text : text.replace(/[ \t]+$/gm, "");
+    return meta?.insert_final_newline === false || out === "" || out.endsWith("\n") ? out : `${out}\n`;
+  }
+
   async function save() {
     const v = viewRef.current;
     if (!v || !open || saving) return;
-    const content = v.state.doc.toString();
+    const raw = v.state.doc.toString();
+    const content = tidy(raw);
+    if (content !== raw) replaceDoc(v, content);   // keep the buffer equal to disk
     setSaving(true);
     try {
       const r = await api.fileWrite(project, open, content, branch || undefined);
@@ -323,6 +373,29 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     }
   }
   saveRef.current = () => { void save(); };
+
+  /* Format the buffer with whatever the project actually uses — prettier from
+     its node_modules, ruff/black, gofmt, rustfmt, php-cs-fixer. The tools run
+     on the bridge (see bridge/fmt.py), so their config files resolve and no
+     formatter has to be bundled into the page. Nothing is written to disk;
+     the user still saves. */
+  async function format() {
+    const v = viewRef.current;
+    if (!v || !open || fmting) return;
+    const before = v.state.doc.toString();
+    setFmting(true);
+    try {
+      const r = await api.fileFormat(project, open, before, branch || undefined);
+      if (!r.ok || typeof r.content !== "string") flash(`E495: ${r.error || "format failed"}`);
+      else if (r.content === before) flash(`already formatted · ${r.tool}`);
+      else { replaceDoc(v, r.content); flash(`formatted with ${r.tool}`); }
+    } catch (e) {
+      flash(`E495: ${(e as Error).message}`);
+    } finally {
+      setFmting(false);
+    }
+  }
+  fmtRef.current = () => { void format(); };
 
   /* ---- quick-open palette ---- */
 
@@ -371,6 +444,14 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     return () => { live = false; clearTimeout(t); };
   }, [palMode, palTerm, project, branch]);
 
+  // Walk the syntax tree once when `@` mode opens, not per keystroke — on a big
+  // file the first walk has to wait for the parse.
+  const outline = useMemo(
+    () => (palMode === "@" && viewRef.current ? symbolsIn(viewRef.current.state) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [palMode, open],
+  );
+
   const palItems = useMemo<PalItem[]>(() => {
     if (palQ === null) return [];
     const q = palTerm.trim().toLowerCase();
@@ -379,8 +460,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     }
     if (palMode === "@") {
       if (!open) return [];
-      const doc = viewRef.current?.state.doc.toString() ?? meta?.content ?? "";
-      return symbolsIn(doc)
+      return outline
         .filter((s) => !q || s.name.toLowerCase().includes(q))
         .map((s) => ({ path: open, line: s.line, label: s.name, sub: `${s.kind} · line ${s.line}` }));
     }
@@ -391,7 +471,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       .slice(0, 60);
     return scored.map(({ p }) => ({ path: p, label: p.split("/").pop() ?? p, sub: p }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [palQ, palMode, palTerm, paths, hits, open, meta]);
+  }, [palQ, palMode, palTerm, paths, hits, open, outline]);
 
   useEffect(() => { setPalIdx(0); }, [palQ]);
 
@@ -531,14 +611,18 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     const c = cmd.trim().replace(/^:/, "");
     setCmd("");
     if (c === "w" || c === "write" || c === "wq" || c === "x") void save();
+    else if (c === "fmt" || c === "format") void format();
     else if (c) flash(`E492: not an editor command: ${c}`);
   }
 
   const lineCount = editable ? (meta?.content ?? "").split("\n").length : 0;
+  // Indent shown the way VS Code shows it, so a wrong .editorconfig is visible.
+  const indentLabel = meta?.indent === "\t" ? "tab" : `${meta?.tab_size ?? 2} spaces`;
   const statusRight = note
     || (meta && !meta.ok ? (meta.error || "can't open") : "")
     || (meta?.image ? `image · ${Math.round((meta.size ?? 0) / 1024)} KB`
-      : meta?.binary ? "binary file" : meta?.too_large ? "too large to edit" : editable ? `utf-8 · ${lineCount}L` : "");
+      : meta?.binary ? "binary file" : meta?.too_large ? "too large to edit"
+      : editable ? `${lang || "…"} · ${indentLabel} · utf-8 · ${lineCount}L` : "");
 
   return (
     <div style={{ animation: "mslide .3s ease both", height: "100%" }}>
@@ -666,6 +750,12 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", padding: "6px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
             <button onClick={() => void save()} disabled={!editable || saving || !dirty} title="save (Ctrl-S / :w)" {...hp("save")}
               style={{ appearance: "none", cursor: editable && dirty && !saving ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: hov === "save" && editable && dirty ? "color-mix(in srgb, var(--ok) 14%, transparent)" : "transparent", color: "var(--ok)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px", opacity: editable && dirty && !saving ? 1 : 0.45 }}>▸ SAVE</button>
+            {editable && (
+              <button onClick={() => void format()} disabled={fmting || meta?.formatter === false}
+                title={meta?.formatter === false ? "no formatter installed for this file type" : "format (Shift-Alt-F)"} {...hp("fmt")}
+                style={{ appearance: "none", cursor: fmting || meta?.formatter === false ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "fmt" && !fmting && meta?.formatter !== false ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px", opacity: fmting || meta?.formatter === false ? 0.45 : 1 }}>
+                {fmting ? "⋯ FORMATTING" : "⌘ FORMAT"}</button>
+            )}
             {editable && isMd && (
               <button onClick={() => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null))}
                 title={preview === null ? "preview rendered markdown" : "back to the editor"} {...hp("mdv")}
@@ -674,7 +764,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             )}
             <span style={{ color: "var(--acc)", flex: "none" }}>:</span>
             <input value={cmd} onChange={(e) => setCmd(e.target.value)} onKeyDown={onCmdKey}
-              placeholder="w · wq"
+              placeholder="w · wq · fmt"
               style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5 }} />
           </div>
         </div>
