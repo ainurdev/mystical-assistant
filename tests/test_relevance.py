@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import config, relevance, runner, store  # noqa: E402
+from bridge import aifeatures, config, relevance, runner, store  # noqa: E402
 from bridge.dashboard import server as dash  # noqa: E402
 
 store.init()
@@ -62,6 +62,20 @@ def test_should_check_skips_without_a_session():
 def test_should_check_skips_when_disabled(monkeypatch):
     monkeypatch.setattr(config, "RELEVANCE_CHECK", False)
     assert relevance.should_check(_session(), LONG) is False
+
+
+def test_settings_toggle_overrides_the_env_default(monkeypatch):
+    """The AI tab's NEW-SESSION GUARD switch wins over RELEVANCE_CHECK, both ways."""
+    monkeypatch.setattr(config, "RELEVANCE_CHECK", True)
+    try:
+        aifeatures.set_enabled("relevance", False)
+        assert relevance.should_check(_session(), LONG) is False
+        monkeypatch.setattr(config, "RELEVANCE_CHECK", False)
+        aifeatures.set_enabled("relevance", True)
+        assert relevance.should_check(_session(), LONG) is True
+    finally:
+        aifeatures.set_enabled("relevance", None)   # back to "env decides"
+    assert aifeatures.enabled("relevance") is False  # the patched env, again
 
 
 # --- parsing + fail-open -----------------------------------------------------

@@ -1507,6 +1507,12 @@ export function SettingsModal(props: SettingsModalProps) {
                   <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
                   session was started with.
                 </div>
+
+                <Label top>GUARDRAIL</Label>
+                <div style={NOTE}>
+                  Kept by the bridge for every surface — turning it off here silences the check
+                  in the Mini App too.
+                </div>
               </>
             )}
 
@@ -1553,7 +1559,8 @@ export function SettingsModal(props: SettingsModalProps) {
           }}
         >
           <span style={{ fontSize: 9, letterSpacing: ".5px", color: "var(--txl)", flex: 1 }}>
-            Stored in this browser — except weather, which the bridge keeps for every client.
+            Stored in this browser — except weather and the prompt check, which the bridge keeps
+            for every client.
           </span>
           <button
             onClick={onClose}
