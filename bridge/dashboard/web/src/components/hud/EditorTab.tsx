@@ -9,6 +9,7 @@ import { api, type FileContent, type GrepHit } from "../../api";
 import { Markdown } from "../Markdown";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { cmpTreePath } from "../../lib/pathsort";
+import { nextFocus, remapPaths, tabLabels, underPath } from "../../lib/tabs";
 import { langFor } from "../../lib/langfor";
 import { symbolsIn } from "../../lib/symbols";
 
@@ -204,6 +205,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   const [paths, setPaths] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [tabs, setTabs] = useState<string[]>([]);             // open buffers, left to right
   const [open, setOpen] = useState<string | null>(null);      // path being edited
   const [meta, setMeta] = useState<FileContent | null>(null); // load result (binary/too_large flags)
   const [dirty, setDirty] = useState(false);
@@ -231,6 +233,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // One entry per open tab: the load result, the buffer text as it was when we
+  // switched away, and the on-disk content. Switching tabs tears the CodeMirror
+  // view down, so without this every switch would lose unsaved edits.
+  const bufs = useRef(new Map<string, { meta: FileContent; text: string; base: string }>());
   const baseRef = useRef("");                     // last-saved content, for the dirty check
   const saveRef = useRef<() => void>(() => {});   // latest save fn, for the Ctrl-S keymap
   const fmtRef = useRef<() => void>(() => {});    // ditto for Shift-Alt-F
@@ -255,6 +261,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   // here, so its row renders and the scroll-into-view below reveals it.
   useEffect(() => {
     let live = true;
+    // A different project/branch is a different working tree — the old buffers
+    // no longer describe anything on disk, so they go.
+    bufs.current.clear();
+    setTabs(initialFile ? [initialFile] : []);
     setOpen(initialFile ?? null); setMeta(null); setCollapsed(new Set());
     void api.filesTree(project, branch || undefined)
       .then((r) => { if (live) setPaths(r.files); })
@@ -262,6 +272,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     return () => { live = false; };
   }, [project, branch, initialFile]);
 
+  const labels = useMemo(() => tabLabels(tabs), [tabs]);
   const rows = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);
   const allCollapsed = dirs.length > 0 && collapsed.size >= dirs.length;
@@ -269,13 +280,25 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   // Keep the open file's row visible when it's opened from the palette.
   useEffect(() => { rowRef.current?.scrollIntoView({ block: "nearest" }); }, [open, rows]);
 
-  // Load a file's contents when `open` changes.
+  // Load a file's contents when `open` changes — or restore them from the tab's
+  // buffer, which is both faster and the only way unsaved edits survive.
   useEffect(() => {
     if (!open) { setMeta(null); return; }
+    const cached = bufs.current.get(open);
+    if (cached) {
+      setMeta(cached.meta); baseRef.current = cached.base;
+      setDirty(cached.text !== cached.base); setPreview(null);
+      return;
+    }
     let live = true;
     setMeta(null); setDirty(false); setPreview(null);
     void api.fileRead(project, open, branch || undefined)
-      .then((r) => { if (live) { setMeta(r); baseRef.current = r.content ?? ""; } })
+      .then((r) => {
+        if (!live) return;
+        const text = r.content ?? "";
+        if (r.ok) bufs.current.set(open, { meta: r, text, base: text });
+        setMeta(r); baseRef.current = text;
+      })
       .catch((e) => { if (live) setMeta({ ok: false, error: (e as Error).message }); });
     return () => { live = false; };
   }, [open, project, branch]);
@@ -290,7 +313,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       return;
     }
     const state = EditorState.create({
-      doc: meta.content ?? "",
+      doc: bufs.current.get(open)?.text ?? meta.content ?? "",
       extensions: [
         // Ours before basicSetup — earlier extensions take precedence, so the
         // CRT palette beats its default highlight style and Ctrl-S beats the
@@ -335,7 +358,12 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       }
     });
     if (jumpRef.current) { gotoLine(view, jumpRef.current); jumpRef.current = 0; }
-    return () => { view.destroy(); viewRef.current = null; };
+    return () => {
+      // Stash the buffer on the way out so switching tabs keeps unsaved edits.
+      const b = bufs.current.get(open);
+      if (b) b.text = view.state.doc.toString();
+      view.destroy(); viewRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editable, open, meta]);
 
@@ -364,7 +392,12 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     setSaving(true);
     try {
       const r = await api.fileWrite(project, open, content, branch || undefined);
-      if (r.ok) { baseRef.current = content; setDirty(false); flash(`wrote ${open}`); }
+      if (r.ok) {
+        baseRef.current = content;
+        const b = bufs.current.get(open);
+        if (b) { b.text = content; b.base = content; }
+        setDirty(false); flash(`wrote ${open}`);
+      }
       else flash(`E212: ${r.error || "write failed"}`);
     } catch (e) {
       flash(`E212: ${(e as Error).message}`);
@@ -397,6 +430,36 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   }
   fmtRef.current = () => { void format(); };
 
+  /* ---- tabs ---- */
+
+  // Open a file in a tab (reusing its tab if it already has one) and focus it.
+  function openTab(path: string) {
+    setTabs((ts) => (ts.includes(path) ? ts : [...ts, path]));
+    setOpen(path);
+  }
+
+  function closeTab(path: string) {
+    const b = bufs.current.get(path);
+    if (b && b.text !== b.base && !window.confirm(`${path} has unsaved changes — close it anyway?`)) return;
+    bufs.current.delete(path);
+    const rest = tabs.filter((p) => p !== path);
+    setTabs(rest);
+    if (path === open) setOpen(nextFocus(tabs, path, rest));
+  }
+
+  /* Follow a rename (or a delete, with `to` null) through the tab strip and the
+     buffer cache, subtree included, so unsaved edits move with the file. */
+  function remapTabs(from: string, to: string | null) {
+    for (const [p, b] of [...bufs.current]) {
+      if (!underPath(from, p)) continue;
+      bufs.current.delete(p);
+      if (to !== null) bufs.current.set(to + p.slice(from.length), b);
+    }
+    const rest = remapPaths(tabs, from, to);
+    setTabs(rest);
+    return rest;
+  }
+
   /* ---- quick-open palette ---- */
 
   // Expand every ancestor of `path` so its row is actually rendered.
@@ -421,7 +484,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       return;
     }
     jumpRef.current = line ?? 0;
-    setOpen(path);
+    openTab(path);
   }
 
   const palMode = palQ === null ? "" : palQ.startsWith("@") ? "@" : palQ.startsWith("#") ? "#" : "p";
@@ -507,15 +570,17 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       if (!r.ok) { flash(`E212: ${r.error || "failed"}`); return; }
       await loadTree();
       if (op === "rename" && to) {
+        remapTabs(path, to);
         if (open === path) setOpen(to);
         else if (open?.startsWith(`${path}/`)) setOpen(`${to}${open.slice(path.length)}`);
         flash(`renamed to ${to}`);
       } else if (op === "delete") {
-        if (open === path || open?.startsWith(`${path}/`)) setOpen(null);
+        const rest = remapTabs(path, null);
+        if (open && underPath(path, open)) setOpen(nextFocus(tabs, open, rest));
         flash(`deleted ${path}`);
       } else if (op === "new") {
         reveal(path);
-        setOpen(path);
+        openTab(path);
       } else {
         // The tree comes from `git ls-files`, which can't see an empty folder —
         // so hand the user straight to "new file inside it".
@@ -697,7 +762,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 <span style={{ fontSize: 11, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.name}</span>
               </button>
             ) : (
-              <button key={r.key} onClick={() => setOpen(r.path)} ref={r.path === open ? rowRef : undefined}
+              <button key={r.key} onClick={() => openTab(r.path)} ref={r.path === open ? rowRef : undefined}
                 onContextMenu={(e) => onRowCtx(e, r.path, false)} title={r.path} {...hp(r.key)}
                 {...dragSourceProps(r.path)} {...dragTargetProps(parentOf(r.path))}
                 style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === open ? "var(--acc)" : "transparent"}`, background: r.path === open ? "color-mix(in srgb, var(--acc) 8%, transparent)" : hov === r.key ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
@@ -711,6 +776,32 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
         {/* buffer + chrome */}
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "color-mix(in srgb, var(--panel3) 50%, transparent)" }}>
+          {/* tab strip — click to focus, ✕ or middle-click to close. The dot marks
+              unsaved edits, which survive switching away and back. */}
+          {tabs.length > 0 && (
+            <div className="mscroll" style={{ flex: "none", display: "flex", alignItems: "stretch", overflowX: "auto", borderBottom: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 40%, transparent)" }}>
+              {tabs.map((p, ti) => {
+                const on = p === open;
+                const b = bufs.current.get(p);
+                const mod = on ? dirty : !!b && b.text !== b.base;
+                const name = labels[ti];
+                return (
+                  <div key={p} title={p} {...hp(`tab:${p}`)}
+                    onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(p); } }}
+                    style={{ display: "flex", alignItems: "center", gap: 6, flex: "none", maxWidth: 190, padding: "5px 8px 5px 10px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderTop: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--panel3) 70%, transparent)" : hov === `tab:${p}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent" }}>
+                    <span onClick={() => openTab(p)} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span style={{ width: 7, height: 9, flex: "none", background: iconColor(name), opacity: 0.85 }} />
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: on ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                    </span>
+                    <button onClick={() => closeTab(p)} title="close" {...hp(`tabx:${p}`)}
+                      style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", flex: "none", lineHeight: 1, padding: "1px 2px", fontFamily: "'JetBrains Mono',monospace", fontSize: mod ? 12 : 10, color: mod ? "var(--warn)" : hov === `tabx:${p}` ? "var(--txb)" : "var(--txd)" }}>
+                      {mod && hov !== `tabx:${p}` ? "●" : "✕"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
             {editable ? (
               <>
