@@ -1,7 +1,32 @@
 import { useState } from "react";
-import type { AccountInfo } from "../../api";
+import type { AccountInfo, GitStatus } from "../../api";
 import type { AgentOption } from "../../models";
 import { Drop } from "../Composer";
+
+/* Where the open session's branch stands against its remote. `upstream: ""`
+   means the branch was never pushed — ahead/behind are 0 there too, so the
+   counts alone would read as "in sync" for a branch the remote has never
+   seen. Undefined upstream = backend too old to report it; stay quiet rather
+   than guess. Counts come from the last fetch, so "SYNCED" means "synced as
+   of what this checkout knows", which the tooltip says out loud. */
+function syncChip(git: GitStatus): { text: string; warn: boolean; title: string } | null {
+  if (git.upstream === undefined) return null;
+  const { ahead, behind, upstream } = git;
+  if (!upstream)
+    return { text: "LOCAL ONLY", warn: true,
+             title: "This branch has no remote tracking branch — it exists only in this checkout" };
+  if (ahead && behind)
+    return { text: `↑${ahead} ↓${behind} DIVERGED`, warn: true,
+             title: `Diverged from ${upstream}: ${ahead} local, ${behind} remote. Counts are from the last fetch.` };
+  if (ahead)
+    return { text: `↑${ahead} UNPUSHED`, warn: true,
+             title: `${ahead} commit${ahead === 1 ? "" : "s"} not yet on ${upstream}` };
+  if (behind)
+    return { text: `↓${behind} BEHIND`, warn: true,
+             title: `${behind} commit${behind === 1 ? "" : "s"} on ${upstream} not pulled in. Counts are from the last fetch.` };
+  return { text: "SYNCED", warn: false,
+           title: `Even with ${upstream} as of the last fetch` };
+}
 
 export interface StatusBarProps {
   mount: string;
@@ -12,6 +37,7 @@ export interface StatusBarProps {
   agents?: AgentOption[];      // everything that pick could land on
   repo: string;
   changes: number;
+  git?: GitStatus | null;      // open session's working tree; null while loading
   onPalette: () => void;
   // Same action as the composer's AGENT picker, so the footer switches who runs
   // the turn rather than only reporting it. Takes an agent option id.
@@ -20,7 +46,7 @@ export interface StatusBarProps {
 
 export function StatusBar(props: StatusBarProps) {
   const { mount, usedPct, resetLabel, accounts = [], agent, agents = [], repo, changes,
-          onPalette, onPickAgent } = props;
+          git, onPalette, onPickAgent } = props;
   const [hovered, setHovered] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
 
@@ -32,6 +58,7 @@ export function StatusBar(props: StatusBarProps) {
   // is the *ambient* login's 5-hour window (from /local/usage), so it only
   // stands for the default account; another login reports its own headroom, and
   // a free agent has no Claude quota to report at all.
+  const sync = git?.is_repo ? syncChip(git) : null;
   const free = agent?.free ?? false;
   const pct = !agent || agent.def ? usedPct
     : agent.left === null ? null : 100 - agent.left;
@@ -177,6 +204,16 @@ export function StatusBar(props: StatusBarProps) {
       <span>
         REPO <span style={{ color: "var(--tx)" }}>{repo}</span>
       </span>
+      {git?.branch && (
+        <span title={`Branch checked out in the open session's working tree`}>
+          ⎇ <span style={{ color: "var(--tx)" }}>{git.branch}</span>
+        </span>
+      )}
+      {sync && (
+        <span title={sync.title} style={{ color: sync.warn ? "var(--warn)" : "var(--txd)" }}>
+          {sync.text}
+        </span>
+      )}
       <span style={{ color: "var(--warn)" }}>{changes} CHANGES</span>
       <button
         onClick={onPalette}

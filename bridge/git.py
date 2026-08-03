@@ -51,11 +51,16 @@ def _status_letter(xy: str) -> str:
 
 
 def _parse(raw: str):
-    """(branch, ahead, behind, [(status, path, untracked)]) from porcelain v2."""
-    branch, ahead, behind, entries = "", 0, 0, []
+    """(branch, upstream, ahead, behind, [(status, path, untracked)]) from
+    porcelain v2. `upstream` is "" when the branch has never been pushed —
+    which is also when ahead/behind stay 0, so the two can't be told apart
+    from the counts alone."""
+    branch, upstream, ahead, behind, entries = "", "", 0, 0, []
     for line in raw.splitlines():
         if line.startswith("# branch.head"):
             branch = line[len("# branch.head"):].strip()
+        elif line.startswith("# branch.upstream"):
+            upstream = line[len("# branch.upstream"):].strip()
         elif line.startswith("# branch.ab"):
             for tok in line.split():
                 if tok.startswith("+"):
@@ -74,7 +79,7 @@ def _parse(raw: str):
             entries.append(("U", line.rsplit(" ", 1)[-1], False))
         elif line.startswith("? "):
             entries.append(("?", line[2:], True))
-    return branch, ahead, behind, entries
+    return branch, upstream, ahead, behind, entries
 
 
 def _numstat(cwd: str) -> dict:
@@ -115,8 +120,9 @@ def _porcelain(cwd: str) -> str | None:
 def badge(cwd: str) -> dict | None:
     if not is_repo(cwd):
         return None
-    branch, ahead, behind, entries = _parse(_porcelain(cwd) or "")
-    return {"branch": branch, "ahead": ahead, "behind": behind, "dirty": len(entries),
+    branch, upstream, ahead, behind, entries = _parse(_porcelain(cwd) or "")
+    return {"branch": branch, "upstream": upstream,
+            "ahead": ahead, "behind": behind, "dirty": len(entries),
             "branches": len(branches(cwd)),
             # linked worktrees only (main checkout excluded), matching WORKTREES tab
             "worktrees": sum(1 for w in worktrees(cwd) if not w.get("is_main"))}
@@ -124,9 +130,9 @@ def badge(cwd: str) -> dict | None:
 
 def status(cwd: str) -> dict:
     if not is_repo(cwd):
-        return {"is_repo": False, "branch": "", "ahead": 0, "behind": 0,
+        return {"is_repo": False, "branch": "", "upstream": "", "ahead": 0, "behind": 0,
                 "dirty": 0, "files": []}
-    branch, ahead, behind, entries = _parse(_porcelain(cwd) or "")
+    branch, upstream, ahead, behind, entries = _parse(_porcelain(cwd) or "")
     nums = _numstat(cwd)
     files = []
     for st, path, untracked in entries:
@@ -134,7 +140,8 @@ def status(cwd: str) -> dict:
         if untracked:
             add = _count_lines(os.path.join(cwd, path))
         files.append({"path": path, "status": st, "add": add, "del": dele})
-    return {"is_repo": True, "branch": branch, "ahead": ahead, "behind": behind,
+    return {"is_repo": True, "branch": branch, "upstream": upstream,
+            "ahead": ahead, "behind": behind,
             "dirty": len(files), "files": files}
 
 
@@ -179,17 +186,26 @@ def commit_paths(cwd: str, message: str, paths: list[str]) -> tuple[bool, str]:
 _MAX_FILE = 1_000_000  # 1 MB — above this the editor won't load/edit the file
 
 
+# ponytail: name-matched skip list, not configurable — these are what turn a
+# 1k-path tree into a 60k-path one (node_modules alone is 62k here), and the
+# browser holds the whole list in memory. Add a name if another shows up.
+_TREE_SKIP = {"node_modules", ".venv", "venv", "__pycache__",
+              ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+
+
 def list_tree(cwd: str) -> list[str]:
-    """Every editable file in the working tree — tracked plus untracked, minus
-    anything .gitignore excludes — as sorted repo-relative paths. `-z` keeps
-    non-ASCII paths verbatim; empty list if cwd isn't a repo."""
+    """Every editable file in the working tree — tracked plus untracked,
+    .gitignore'd files included (minus _TREE_SKIP) — as sorted repo-relative
+    paths. `-z` keeps non-ASCII paths verbatim; empty list if cwd isn't a
+    repo."""
     if not is_repo(cwd):
         return []
     rc, out, _ = _run(cwd, "-c", "core.quotePath=false", "ls-files", "-z",
-                      "--cached", "--others", "--exclude-standard")
+                      "--cached", "--others")
     if rc != 0:
         return []
-    return sorted(set(_ztokens(out)))
+    return sorted(p for p in set(_ztokens(out))
+                  if _TREE_SKIP.isdisjoint(p.split("/")[:-1]))
 
 
 def read_file(cwd: str, path: str) -> dict:

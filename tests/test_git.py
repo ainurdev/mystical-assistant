@@ -188,6 +188,28 @@ def test_push_to_bare_remote():
     assert local and local == remote
 
 
+def test_upstream_distinguishes_unpushed_from_synced():
+    bare = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "--bare", "-q", bare], check=True)
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    # Never pushed: no upstream, and ahead/behind are 0 — the counts alone
+    # would read as "in sync with the remote", which is the bug this guards.
+    st = g.status(d)
+    assert st["upstream"] == "" and st["ahead"] == 0 and st["behind"] == 0, st
+    branch = g.current_branch(d)
+    _run(d, "remote", "add", "origin", bare)
+    _run(d, "push", "-q", "-u", "origin", branch)
+    assert g.status(d)["upstream"] == f"origin/{branch}"
+    assert g.badge(d)["upstream"] == f"origin/{branch}"
+    _write(d, "a.txt", "one\ntwo\n")
+    g.commit(d, "second")
+    st = g.status(d)
+    assert st["ahead"] == 1 and st["behind"] == 0, st
+
+
 def test_badge_counts_branches_and_worktrees():
     d = _mkrepo()
     _write(d, "a.txt", "one\n")

@@ -145,6 +145,9 @@ export interface GitFile {
 export interface GitStatus {
   is_repo: boolean;
   branch: string;
+  // "origin/main" when the branch tracks a remote, "" when it only exists
+  // locally. Absent on an old backend that hasn't restarted yet.
+  upstream?: string;
   ahead: number;
   behind: number;
   dirty: number;
@@ -161,6 +164,7 @@ export interface GitCommit {
 }
 export interface GitBadge {
   branch: string;
+  upstream?: string;
   ahead: number;
   behind: number;
   dirty: number;

@@ -8,6 +8,7 @@ import {
   type EffortLevel,
   type EnrichedSession,
   type GitBadge,
+  type GitStatus,
   type Lifecycle,
   type ModelId,
   type SessionBrief,
@@ -183,6 +184,9 @@ export function App() {
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [pins, togglePin] = useSessionPins();
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
+  // The open session's own working tree (its worktree when it has one), which
+  // gitBadges can't answer — those are keyed by project, one badge per repo.
+  const [sessionGit, setSessionGit] = useState<GitStatus | null>(null);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   // Free-agent rungs that are ready to run right now (configured + opencode
@@ -887,6 +891,23 @@ export function App() {
   const sessionProject = selected?.project ?? activeProject;
   const sessionBranch = selected?.branch;
 
+  // Footer git state for that tree. Same 10s cadence as the project badges;
+  // clears on switch so the footer never shows the last session's branch.
+  useEffect(() => {
+    setSessionGit(null);
+    if (!sessionProject) return;
+    let live = true;
+    const tick = async () => {
+      try {
+        const g = await api.git(sessionProject, sessionBranch || undefined);
+        if (live) setSessionGit(g);
+      } catch { /* ignore */ }
+    };
+    void tick();
+    const id = setInterval(tick, 10000);
+    return () => { live = false; clearInterval(id); };
+  }, [sessionProject, sessionBranch]);
+
   const rightTabs: PanelTab[] = [
     {
       id: "projects", label: "Projects", icon: "⊞",
@@ -1266,8 +1287,11 @@ export function App() {
             <StatusBar
               mount={wsRoot} usedPct={usedPct} resetLabel={resetLabel} accounts={accounts}
               agent={activeAgent}
-              repo={activeProject ?? "—"}
-              changes={activeBadge?.dirty ?? 0} onPalette={() => setPaletteOpen(true)}
+              // The footer reports the session you have open, not the bridge's
+              // active project — those differ while you read another session.
+              repo={sessionProject ?? "—"} git={sessionGit}
+              changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
+              onPalette={() => setPaletteOpen(true)}
               agents={agentOpts} onPickAgent={setAgent}
             />
 

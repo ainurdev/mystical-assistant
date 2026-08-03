@@ -52,9 +52,22 @@ def test_list_tree_tracked_untracked_and_ignored():
     assert "src/b.ts" in tree, tree
     assert "new.py" in tree, tree       # untracked-but-not-ignored is editable
     assert ".gitignore" in tree, tree
-    assert "debug.log" not in tree, tree
-    assert "ignored/x.txt" not in tree, tree
+    assert "debug.log" in tree, tree            # gitignore no longer hides it
+    assert "ignored/x.txt" in tree, tree
     assert tree == sorted(tree), tree   # stable, sorted
+
+
+def test_list_tree_skips_dependency_dirs():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "node_modules/pkg/index.js", "x\n")
+    _write(d, "web/node_modules/pkg/index.js", "x\n")
+    _write(d, "bridge/__pycache__/git.pyc", "x\n")
+    _write(d, "node_modules.txt", "not a dir\n")   # name match must be exact
+    tree = g.list_tree(d)
+    assert tree == ["a.txt", "node_modules.txt"], tree
 
 
 def test_list_tree_non_repo():
