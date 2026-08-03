@@ -182,6 +182,20 @@ def claude_bin() -> str:
     return _claude_bin
 
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _goal_mcp_config(claude_session_id: str) -> str:
+    """Inline --mcp-config JSON for the goal tool server. PYTHONPATH pins the repo
+    root so `-m bridge.goal_mcp` imports regardless of the run's cwd."""
+    return json.dumps({"mcpServers": {"goals": {
+        "command": sys.executable,
+        "args": ["-m", "bridge.goal_mcp"],
+        "env": {"PYTHONPATH": _REPO_ROOT,
+                "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id},
+    }}})
+
+
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
@@ -213,6 +227,11 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--input-format", "stream-json",
                 "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
                 "--permission-prompt-tool", "stdio"]
+        if claude_session_id:
+            # Goal tools, on interactive runs only. No --strict-mcp-config here,
+            # so this is added to the user's own MCP servers rather than replacing
+            # them. Internal one-shots below still take MCP off entirely.
+            cmd += ["--mcp-config", _goal_mcp_config(claude_session_id)]
     if model:
         cmd += ["--model", model]
     if effort:
@@ -1143,6 +1162,12 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             except Exception:  # noqa: BLE001 — never let the queue break a run
                 pass
         resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
+        if not resumed and not restart_killed:
+            # An active goal queues its own next turn. After auto-resume, so a
+            # limit-parked turn is picked up by the ladder rather than raced by
+            # a nudge that would run against the same exhausted account.
+            from bridge import goals  # local import: runner<->* cycle
+            resumed = goals.continue_after_turn(job, model, effort) or resumed
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:

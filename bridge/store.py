@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   cwd               TEXT,
   permission_mode   TEXT,
   title_source      TEXT DEFAULT 'auto',
-  fallback_policy   TEXT
+  fallback_policy   TEXT,
+  goal              TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -104,6 +105,10 @@ def init() -> None:
         # ('ask' | 'auto' | 'wait'; NULL = the configured default).
         if "fallback_policy" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN fallback_policy TEXT")
+        # Active goal as JSON {objective, state, iter}; NULL = no goal. One column
+        # because the three fields are only ever read and written together.
+        if "goal" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN goal TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -270,6 +275,27 @@ def set_fallback_policy(session_id: str, policy: str | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET fallback_policy=? WHERE id=?",
                   (policy, session_id))
+
+
+def get_goal(session_id: str) -> dict | None:
+    """This session's goal as {objective, state, iter}, or None if it has none."""
+    with closing(_connect()) as c:
+        row = c.execute("SELECT goal FROM sessions WHERE id=?",
+                        (session_id,)).fetchone()
+    if not row or not row["goal"]:
+        return None
+    try:
+        g = json.loads(row["goal"])
+    except ValueError:
+        return None                # hand-edited or truncated JSON — no goal
+    return g if isinstance(g, dict) else None
+
+
+def set_goal(session_id: str, goal: dict | None) -> None:
+    """Replace this session's goal; None clears it."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET goal=? WHERE id=?",
+                  (json.dumps(goal) if goal else None, session_id))
 
 
 def set_cwd(session_id: str, cwd: str | None) -> None:
