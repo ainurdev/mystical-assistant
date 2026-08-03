@@ -10,6 +10,7 @@ import {
   type TermInfo,
   type Worktree,
 } from "../../api";
+import { useAiFeatures } from "../../lib/ai";
 import { useStickyFlag } from "../../lib/prefs";
 import { ago, projectTint, setProjectTint } from "../../lib/surfaces";
 import { EditorTab, type BranchOpt } from "./EditorTab";
@@ -283,6 +284,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
 }) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+  const ai = useAiFeatures();   // GEN is hidden while commit messages are off
 
   const [st, setSt] = useState<GitStatus | null>(null);
   const [sel, setSel] = useState<string | null>(initialFile ?? null);
@@ -443,9 +445,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
               <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 9px 0" }}>
                 <input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="commit message…"
                   style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, padding: "6px 8px" }} />
-                <button onClick={() => void genMsg()} title="generate with Claude" {...hp("gen")}
+                {ai.commitmsg && <button onClick={() => void genMsg()} title="generate with Claude" {...hp("gen")}
                   style={{ appearance: "none", cursor: "pointer", border: `1px solid ${genBusy ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--purple) 35%, transparent)"}`, background: genBusy ? "color-mix(in srgb, var(--purple) 16%, transparent)" : hov === "gen" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 9px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ width: 5, height: 5, background: "var(--purple)", transform: "rotate(45deg)" }} />{genBusy ? "THINKING…" : "GEN"}</button>
+                  <span style={{ width: 5, height: 5, background: "var(--purple)", transform: "rotate(45deg)" }} />{genBusy ? "THINKING…" : "GEN"}</button>}
               </div>
               {gitOp && (
                 <div style={{ margin: "8px 9px 0", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: "color-mix(in srgb, var(--ok) 6%, transparent)", color: "var(--ok)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "6px 9px", display: "flex", alignItems: "center", gap: 7, animation: "mslide .2s ease both" }}>

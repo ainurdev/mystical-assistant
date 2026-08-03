@@ -61,3 +61,34 @@ def test_claude_prompt_is_tagged_internal():
     # keeps native.scan from surfacing it in the unified session list.
     from bridge import native
     assert pd._PROMPT.startswith(native.INTERNAL_ONESHOT_TAG)
+
+
+def test_detect_spends_nothing_while_the_switch_is_off(tmp_path, monkeypatch):
+    # Opening a TERMINAL tab reaches detect() with nobody pressing anything, so
+    # an unreadable repo must not fall through to a model call unasked.
+    _pkg(str(tmp_path / "web"), {"dev": "vite"})
+    _pkg(str(tmp_path / "app"), {"dev": "vite"})
+    assert pd.heuristic(str(tmp_path)) is None
+
+    from bridge import aifeatures, runner
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: False)
+    monkeypatch.setattr(runner, "run_blocking", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("spent a model call while the switch was off")))
+
+    out = pd.detect(str(tmp_path), 555)
+    assert out["source"] == "fallback"
+    assert out["command"]          # still offers something editable
+
+
+def test_detect_asks_the_model_once_the_switch_is_on(tmp_path, monkeypatch):
+    _pkg(str(tmp_path / "web"), {"dev": "vite"})
+    _pkg(str(tmp_path / "app"), {"dev": "vite"})
+
+    from bridge import aifeatures, runner
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key == "preview")
+    monkeypatch.setattr(runner, "run_blocking", lambda *a, **k: (
+        '{"command": "cd web && npm run dev", "explanation": "the web app"}', "s", 0, False))
+
+    out = pd.detect(str(tmp_path), 555)
+    assert out["source"] == "claude"
+    assert out["command"] == "cd web && npm run dev"

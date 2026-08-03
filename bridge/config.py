@@ -139,6 +139,23 @@ NEXTUP_DAYS = int(os.environ.get("NEXTUP_DAYS", "7"))        # activity window
 NEXTUP_MAX_REPOS = int(os.environ.get("NEXTUP_MAX_REPOS", "6"))  # hard cost ceiling
 NEXTUP_SCOUT_TIMEOUT = int(os.environ.get("NEXTUP_SCOUT_TIMEOUT", "120"))
 NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback path
+
+# --- Preview command detection -----------------------------------------------
+# Opening a project's TERMINAL tab or preview window works out how to start its
+# dev server. A free heuristic reads the lockfile and scripts first; this decides
+# whether a repo the heuristic can't read may fall through to a model call. That
+# fall-through is automatic — nobody clicks it — so it defaults OFF.
+PREVIEW_DETECT_AI = os.environ.get("PREVIEW_DETECT_AI", "0").lower() \
+    not in ("0", "false", "no", "")
+
+# --- Generated commit messages -----------------------------------------------
+# The GIT tab's "generate" button and the header's SHIP button describe a diff
+# with a one-shot haiku call. Unlike the extras above this only runs when you
+# press something, so it defaults ON; the switch is here to make the spend
+# visible and stoppable.
+COMMIT_MSG_AI = os.environ.get("COMMIT_MSG_AI", "1").lower() \
+    not in ("0", "false", "no", "")
+
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")

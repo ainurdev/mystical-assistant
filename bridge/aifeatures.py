@@ -1,10 +1,12 @@
 """Which AI-powered extras are on, and where that answer lives.
 
-Everything registered here spends a model call the user did not ask for: a title,
-a relevance verdict, a repo scout. That makes them power-user
-features rather than defaults, so every one is OFF until switched on, and the
-switch is in the dashboard's AI tab instead of an env var only whoever deployed
-the bridge can reach.
+Everything registered here spends a model call: a title, a relevance verdict, a
+repo scout, a commit message. Anything that runs on its own — nobody pressed
+anything — is a power-user feature rather than a default and ships OFF; the few
+that only fire on a press ship ON, and are listed anyway so that every model call
+in the bridge is visible and stoppable from one place. Either way the switch is
+in the dashboard's AI tab instead of an env var only whoever deployed the bridge
+can reach.
 
 Precedence is `ladder.default_policy`'s: the persisted setting wins; with none,
 the environment setting (config.*) decides; with neither, off. Persisting next to
@@ -49,6 +51,23 @@ FEATURES = (
               "session on it. Only a repo whose git state moved is re-scouted, and "
               "a free provider is tried before Claude quota. Off, the board is "
               "hidden entirely."},
+    {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "PREVIEW DETECT",
+     "hint": "works out how to start a repo whose dev script isn't obvious",
+     "cost": "1 call per repo the heuristic can't read",
+     "about": "Opening a project's TERMINAL tab or preview window fills in the "
+              "command that starts its dev server. A free heuristic reads the "
+              "lockfile and scripts first and answers for most repos; this decides "
+              "whether the rest may fall through to a model call. That fall-through "
+              "is automatic, not a button. Off, an unreadable repo gets a plain "
+              "'run dev' guess you can edit."},
+    {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
+     "hint": "writes a commit message from the diff you selected",
+     "cost": "1 haiku call per press",
+     "about": "The GIT tab's generate button and the header's SHIP button describe "
+              "your staged diff. This one only runs when you press something, so "
+              "unlike the extras above it ships ON — the switch is here so the "
+              "spend is visible and stoppable. Off, the generate button is hidden "
+              "and SHIP commits with a plain list of what changed."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}

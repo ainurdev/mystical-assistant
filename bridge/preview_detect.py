@@ -99,7 +99,11 @@ _JSON_RE = re.compile(r"\{.*\}", re.S)
 
 
 def _claude(cwd: str, chat_id: int) -> "dict | None":
-    from bridge import runner  # late import: runner → devserver would be a cycle
+    from bridge import aifeatures, runner  # late: runner → devserver is a cycle
+    # Nothing was pressed to get here — opening a tab is enough — so this asks
+    # first. Off, detect() falls through to its plain guess.
+    if not aifeatures.enabled("preview"):
+        return None
     result, _sid, _cost, is_error = runner.run_blocking(chat_id, _PROMPT, cwd=cwd, timeout=150)
     if is_error or not result:
         return None

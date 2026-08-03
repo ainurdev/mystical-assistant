@@ -67,3 +67,25 @@ def test_unknown_feature_reads_as_off():
 def test_every_feature_names_a_real_config_setting():
     for f in aifeatures.FEATURES:
         assert hasattr(config, f["env"]), f["env"]
+
+
+def test_the_registry_covers_every_model_call_the_bridge_makes():
+    """A model call with no entry here is spend the user can't see or stop. If a
+    new one is added, register it — don't delete this line."""
+    assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg"}
+
+
+def test_shipped_defaults_are_off_for_anything_automatic():
+    """Automatic features ship off; the press-to-run one ships on, and is listed
+    only so the spend stays visible.
+
+    Read out of the source rather than from config's attributes: those reflect
+    whatever .env this machine has, and reloading the module to clear that takes
+    the rest of the suite down with it."""
+    with open(config.__file__, encoding="utf-8") as f:
+        src = f.read()
+    shipped = {"TITLE_ENABLE": "0", "RELEVANCE_CHECK": "0", "NEXTUP_ENABLE": "0",
+               "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1"}
+    assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
+    for var, default in shipped.items():
+        assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"

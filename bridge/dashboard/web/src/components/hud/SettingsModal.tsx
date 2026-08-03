@@ -796,9 +796,11 @@ const POLICY_BLURB: Record<string, string> = {
   wait: "Only wait for the window to reset — the behaviour before the ladder existed.",
 };
 
-/** Every extra that spends a model call nobody asked for, and its switch. They
- *  all ship off: an install should cost exactly the turns you typed until you
- *  decide otherwise. Takes effect on the next turn — no restart. */
+/** Every model call the bridge makes on top of your own turns, and its switch.
+ *  Anything that runs on its own ships off: an install should cost exactly the
+ *  turns you typed until you decide otherwise. The ones that only fire on a
+ *  press ship on, and are listed so the spend is still visible and stoppable.
+ *  Takes effect on the next turn — no restart. */
 function AiPanel() {
   const [rows, setRows] = useState<AiFeature[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -860,10 +862,11 @@ function AiPanel() {
       </div>
       {err && <div style={{ ...NOTE, color: "var(--bad, #f66)" }}>{err}</div>}
       <div style={NOTE}>
-        Off by default, every one of them. A switch here beats the matching environment
-        setting and applies to the next turn — nothing to restart. Everything a feature
-        adds to the dashboard is hidden again the moment you switch it off. The next-up
-        board also prefers a free provider (ACCOUNTS tab) over spending Claude quota.
+        Anything that runs without you pressing something is off by default. A switch
+        here beats the matching environment setting and applies to the next turn —
+        nothing to restart. Everything a feature adds to the dashboard is hidden again
+        the moment you switch it off. The next-up board also prefers a free provider
+        (ACCOUNTS tab) over spending Claude quota.
       </div>
     </>
   );

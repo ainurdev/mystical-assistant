@@ -159,6 +159,15 @@ _COMMIT_MSG_PROMPT = (
 )
 
 
+def _plain_commit_message(paths: "list[str]") -> str:
+    """What SHIP commits with when generated messages are switched off: the files
+    that moved, not a guess at why."""
+    names = [p.split("/")[-1] for p in paths]
+    head = ", ".join(names[:3])
+    rest = len(names) - 3
+    return f"update {head}{f' and {rest} more' if rest > 0 else ''}" if names else "update"
+
+
 def _allowed_screenshot_url(url: str, dev_ports: "set[int]", prod_url: str | None) -> bool:
     """A screenshot target is allowed only if it is a local dev server
     (localhost/127.0.0.1 on a port a dev server bound) or the project's prod URL."""
@@ -916,6 +925,9 @@ class Handler(BaseHTTPRequestHandler):
         paths = [str(p) for p in paths][:500] if isinstance(paths, list) else []
         if not paths:
             return self._json({"error": "no files selected"}, 400)
+        from bridge import aifeatures
+        if not aifeatures.enabled("commitmsg"):
+            return self._json({"error": "commit messages are switched off in the AI tab"}, 403)
         diff = git.diff_multi(cwd, paths)
         if not diff.strip():
             return self._json({"error": "no changes to describe"}, 400)
@@ -929,18 +941,23 @@ class Handler(BaseHTTPRequestHandler):
     def _publish_update(self, chat):
         """The header button's other half: commit the platform checkout's own work
         with a generated message (same one-shot as the git tab) and push it."""
+        from bridge import aifeatures
         st = git.status(selfupdate.REPO)
         message = ""
         if st["dirty"]:
-            diff = git.diff_multi(selfupdate.REPO,
-                                  [f["path"] for f in st["files"]][:500])
-            result, _sid, _cost, is_error = runner.run_blocking(
-                chat, _COMMIT_MSG_PROMPT + diff, cwd=selfupdate.REPO, timeout=180,
-                model="haiku", skip_pack=True)
-            message = "" if is_error else git.clean_commit_message(result)
-            if not message:
-                return self._json({"ok": False, "message": "",
-                                   "output": "could not generate a commit message"})
+            paths = [f["path"] for f in st["files"]][:500]
+            if not aifeatures.enabled("commitmsg"):
+                # Switched off, SHIP still ships — it just says what moved.
+                message = _plain_commit_message(paths)
+            else:
+                diff = git.diff_multi(selfupdate.REPO, paths)
+                result, _sid, _cost, is_error = runner.run_blocking(
+                    chat, _COMMIT_MSG_PROMPT + diff, cwd=selfupdate.REPO, timeout=180,
+                    model="haiku", skip_pack=True)
+                message = "" if is_error else git.clean_commit_message(result)
+                if not message:
+                    return self._json({"ok": False, "message": "",
+                                       "output": "could not generate a commit message"})
         ok, output = selfupdate.publish(message)
         return self._json({"ok": ok, "output": output, "message": message})
 
