@@ -93,6 +93,7 @@ def _session_brief(s: dict) -> dict:
             "fallback_policy": s.get("fallback_policy"),
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
+            "tags": store.parse_tags(s.get("tags")),
             "branch": git.current_branch_cached(cwd) if cwd else ""}
 
 

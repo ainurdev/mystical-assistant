@@ -674,6 +674,16 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": f"lifecycle must be one of {store.LIFECYCLES}"}, 400)
             store.set_lifecycle(sid, state)
             return self._json({"ok": True, "lifecycle": state})
+        if path.startswith("/local/sessions/") and path.endswith("/tags"):
+            sid = path[len("/local/sessions/"):-len("/tags")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            tags = body.get("tags")
+            if not isinstance(tags, list):
+                return self._json({"error": "tags must be a list"}, 400)
+            # store.set_tags normalizes and caps; it returns what it kept.
+            return self._json({"ok": True, "tags": store.set_tags(sid, tags)})
         if path == "/local/git/commit":
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
             if cwd is None:

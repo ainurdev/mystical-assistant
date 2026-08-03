@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   title_source      TEXT DEFAULT 'auto',
   fallback_policy   TEXT,
   goal              TEXT,
-  lifecycle         TEXT
+  lifecycle         TEXT,
+  tags              TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -115,6 +116,10 @@ def init() -> None:
         if "lifecycle" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN lifecycle TEXT")
             c.execute("UPDATE sessions SET lifecycle='done' WHERE archived=1")
+        # Topic tags as a JSON array; NULL/[] = untagged. Written by the titler's
+        # existing one-shot, so tagging costs no extra model call.
+        if "tags" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN tags TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -293,6 +298,48 @@ def parse_goal(raw: "str | None") -> dict | None:
     except ValueError:
         return None                # hand-edited or truncated JSON — no goal
     return g if isinstance(g, dict) else None
+
+
+MAX_TAGS = 4
+_TAG_MAX_LEN = 24
+
+
+def parse_tags(raw: "str | None") -> list[str]:
+    """Stored tag JSON as a list of strings; anything malformed reads as no tags."""
+    if not raw:
+        return []
+    try:
+        v = json.loads(raw)
+    except ValueError:
+        return []
+    return [t for t in v if isinstance(t, str)] if isinstance(v, list) else []
+
+
+def clean_tags(tags) -> list[str]:
+    """Normalize model- or user-supplied tags: lowercase, trimmed, deduped, capped.
+    Shared by the titler and the manual-tag endpoint so both store the same shape."""
+    out: list[str] = []
+    for t in tags if isinstance(tags, list) else []:
+        t = " ".join(str(t).split()).strip("#").lower()[:_TAG_MAX_LEN].strip()
+        if t and t not in out:
+            out.append(t)
+    return out[:MAX_TAGS]
+
+
+def get_tags(session_id: str) -> list[str]:
+    with closing(_connect()) as c:
+        row = c.execute("SELECT tags FROM sessions WHERE id=?",
+                        (session_id,)).fetchone()
+    return parse_tags(row["tags"]) if row else []
+
+
+def set_tags(session_id: str, tags) -> list[str]:
+    """Replace this session's tags. Returns what was actually stored."""
+    clean = clean_tags(tags)
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET tags=? WHERE id=?",
+                  (json.dumps(clean) if clean else None, session_id))
+    return clean
 
 
 def get_goal(session_id: str) -> dict | None:

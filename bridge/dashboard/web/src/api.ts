@@ -36,6 +36,7 @@ export interface SessionBrief {
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
+  tags?: string[]; // topic tags, written by the titler's existing one-shot
 }
 export interface StoreTurn {
   id: string;
@@ -640,6 +641,14 @@ export const api = {
       method: "POST",
       body: { project, ...(cwd ? { cwd } : {}), ...(title ? { title } : {}) },
     }),
+  // Replaces the session's tags; the bridge normalizes and caps, and returns
+  // what it actually kept.
+  setTags: (id: string, tags: string[]) =>
+    req<{ ok: boolean; tags: string[] }>(
+      `/local/sessions/${encodeURIComponent(id)}/tags`, {
+        method: "POST",
+        body: { tags },
+      }),
   // done | abandoned | backlog, or null to make it active again.
   setLifecycle: (id: string, lifecycle: Lifecycle | null) =>
     req<{ ok: boolean; lifecycle: Lifecycle | null }>(

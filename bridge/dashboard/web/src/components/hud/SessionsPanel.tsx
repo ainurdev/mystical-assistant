@@ -130,6 +130,16 @@ function SessionRow({
             <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
+          {(s.tags ?? []).slice(0, 2).map((t) => (
+            <span
+              key={t}
+              title={`tag: ${t}`}
+              style={{ flex: "none", fontSize: 8.5, letterSpacing: 0.4,
+                       color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)",
+                       borderRadius: 3, padding: "0 4px", maxWidth: 64,
+                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >{t}</span>
+          ))}
           {s.goal && (
             // Active goals pulse; a blocked one is the row that wants you.
             <span
@@ -235,6 +245,7 @@ export function SessionsPanel(props: Props) {
   const [dragRel, setDragRel] = useState<string | null>(null);
   const [overRel, setOverRel] = useState<string | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   useEffect(() => {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify({ tab, order, custom: customOrder })); }
@@ -267,20 +278,32 @@ export function SessionsPanel(props: Props) {
 
   const sessionTotal = groups.reduce((n, g) => n + g.sessionCount, 0);
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
+  // Every tag in play, for the filter strip. Sorted so the strip doesn't reshuffle
+  // itself as sessions come and go.
+  const allTags = [...new Set(sessions.flatMap((s) => s.tags ?? []))].sort();
   // Pinned first, then newest-first. Every list below slices this one, so a pin
-  // holds the top of the RECENT list and of its own project's rows alike.
-  const sorted = [...sessions].sort((a, b) =>
-    Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
+  // holds the top of the RECENT list and of its own project's rows alike — and a
+  // tag filter applied here reaches RECENT and BY PROJECT from one place.
+  const sorted = [...sessions]
+    .filter((s) => !tagFilter || (s.tags ?? []).includes(tagFilter))
+    .sort((a, b) =>
+      Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
   // BY PROJECT: most-recently-used project first. g.sessions is already
   // newest-first, so [0] is the project's last activity; no sessions → last.
   const byLastUsed = [...groups].sort((a, b) => (b.sessions[0]?.updated ?? 0) - (a.sessions[0]?.updated ?? 0));
   // CUSTOM: pinned positions first (sort is stable, so anything you never
   // dragged keeps its last-used order behind them).
   const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
-  const ordered =
+  const orderedAll =
     order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
       : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
         : byLastUsed;
+  // Group headers come from `groups`, which the tag filter never touched — so
+  // without this a filtered BY PROJECT shows headers with nothing under them and
+  // reads as broken. `sorted` is already filtered, so ask it.
+  const ordered = tagFilter
+    ? orderedAll.filter((g) => sorted.some((s) => s.project === g.rel))
+    : orderedAll;
   // BY PROJECT rows: every session that's actually doing something (WORK/WAIT/
   // LIVE/DONE), holding a prompt of yours, pinned, or currently open — never
   // nothing, so a quiet project still shows its newest one. The open session
@@ -548,6 +571,28 @@ export function SessionsPanel(props: Props) {
             style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
           >BY PROJECT</button>
         </div>
+        {/* Tag filter. Only appears once something is tagged, so an untagged
+            machine never pays for a control it can't use. */}
+        {allTags.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+            {allTags.map((t) => {
+              const on = tagFilter === t;
+              return (
+                <button
+                  key={t}
+                  onClick={() => setTagFilter(on ? null : t)}
+                  title={on ? `showing only ${t} — click to clear` : `show only ${t}`}
+                  style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit",
+                           fontSize: 9, letterSpacing: 0.5, padding: "2px 7px",
+                           border: `1px solid color-mix(in srgb, var(--purple) ${on ? 60 : 25}%, transparent)`,
+                           background: on ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "transparent",
+                           color: on ? "var(--purple-b)" : "var(--purple-d)",
+                           transition: "all .15s ease" }}
+                >{t}</button>
+              );
+            })}
+          </div>
+        )}
         {tab === "recent" && (
           <button
             onClick={toggleForm} title="start a session — current worktree or a new one"
