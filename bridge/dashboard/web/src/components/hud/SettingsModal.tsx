@@ -52,6 +52,7 @@ export interface SettingsModalProps {
   // the panel needs to read the latter and write it back.
   sessionTools: string[];
   onSessionTools: (rules: string[]) => void;
+  onOpenInspector: () => void;
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
@@ -1362,6 +1363,7 @@ export function SettingsModal(props: SettingsModalProps) {
     onClose,
     sessionTools,
     onSessionTools,
+    onOpenInspector,
   } = props;
 
   const [tab, setTab] = useState<Tab>("appearance");
@@ -1700,6 +1702,24 @@ export function SettingsModal(props: SettingsModalProps) {
                     <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--tx)" }}>
                       {port}
                     </span>
+                  </div>
+                </div>
+
+                <Label top>HTTP INSPECTOR</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div>
+                      <div style={KEY_TX}>API TRAFFIC</div>
+                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                        Every request a run makes to the Anthropic API — its token accounting,
+                        its SSE frames, its timings — through a local pass-through proxy.
+                        Off by default: it sits on the critical path of the turns it watches.
+                      </div>
+                    </div>
+                    <button onClick={onOpenInspector}
+                      style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "6px 12px", flex: "none", marginLeft: 12 }}>
+                      OPEN
+                    </button>
                   </div>
                 </div>
 

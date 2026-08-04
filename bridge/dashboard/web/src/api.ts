@@ -464,6 +464,42 @@ export interface FreeAgents {
   installed: boolean; // is the opencode binary there at all
   providers: FreeAgentInfo[];
 }
+/** One captured call to the Anthropic API. Bodies are summarized rather than
+ *  stored: a request body is the whole conversation, which is already in the
+ *  transcript. Credentials never reach here. */
+export interface InspectorEntry {
+  seq: number;
+  ts: number; // unix seconds
+  method: string;
+  path: string;
+  status?: number; // 0 = never reached upstream
+  ms?: number;
+  ttfb_ms?: number | null;
+  request_bytes?: number;
+  response_bytes?: number;
+  aborted?: boolean;
+  request?: {
+    model?: string;
+    max_tokens?: number;
+    stream?: boolean;
+    messages?: number;
+    tools?: number;
+    system_chars?: number;
+    thinking?: boolean;
+  };
+  sse?: {
+    events: Record<string, number>;
+    usage: Record<string, number> | null;
+    stop_reason: string | null;
+  };
+  body?: string;
+  error?: string;
+}
+export interface InspectorState {
+  on: boolean;
+  base_url: string | null;
+  entries: InspectorEntry[];
+}
 /** Everything a session can switch off. `rule` is the string handed to
  *  `claude --disallowedTools`, and the key we store. */
 export interface Toolsets {
@@ -706,6 +742,12 @@ export const api = {
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.
   toolsets: () => req<Toolsets>("/local/toolsets"),
+  inspector: () => req<InspectorState>("/local/inspector"),
+  inspectorAction: (action: "on" | "off" | "clear") =>
+    req<{ ok: boolean; on: boolean }>("/local/inspector", {
+      method: "POST",
+      body: { action },
+    }),
   setSessionTools: (id: string, rules: string[]) =>
     req<{ ok: boolean; disabled_tools: string[] }>(
       `/local/sessions/${encodeURIComponent(id)}/tools`, {

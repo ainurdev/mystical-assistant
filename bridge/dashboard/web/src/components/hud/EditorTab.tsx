@@ -11,6 +11,7 @@ import { tags as t } from "@lezer/highlight";
 import { api, type FileContent, type GrepHit } from "../../api";
 import { Markdown } from "../Markdown";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
+import { chord } from "../../lib/chord";
 import { cmpTreePath } from "../../lib/pathsort";
 import { nextFocus, previewTabs, remapPaths, tabLabels, underPath } from "../../lib/tabs";
 import { langFor } from "../../lib/langfor";
@@ -68,19 +69,6 @@ interface Cmd {
   alt?: string;   // second binding, matched but not shown
   run: () => void;
   off?: boolean;  // hidden from the palette when it can't run
-}
-
-/* The event as a VS Code-notation chord, so CMDS' `key` strings are both the
-   label and the matcher. Letters come off `e.code` — Alt+N on macOS reports
-   e.key "˜", and a non-US layout can report anything. */
-function chord(e: KeyboardEvent): string {
-  const parts: string[] = [];
-  if (e.ctrlKey || e.metaKey) parts.push("Ctrl");
-  if (e.shiftKey) parts.push("Shift");
-  if (e.altKey) parts.push("Alt");
-  const letter = /^Key([A-Z])$/.exec(e.code);
-  parts.push(letter ? letter[1] : e.key.length === 1 ? e.key.toUpperCase() : e.key);
-  return parts.join("+");
 }
 
 export interface TreeRow {

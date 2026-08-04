@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, agents, config, devserver, git, ladder,
+from bridge import (accounts, agents, config, devserver, git, inspector, ladder,
                     limits, machine, native_activity,
                     pubsub, state, store, transcript_jsonl)
 from bridge.browser import rel
@@ -138,6 +138,11 @@ def _run_env(ponytail: "str | None",
     over = accounts.env_for(account_slot)
     if ponytail:
         over["PONYTAIL_DEFAULT_MODE"] = ponytail
+    base = inspector.base_url()
+    if base:
+        # The inspector is a pass-through proxy in front of api.anthropic.com;
+        # off (the default) this is None and the child talks to the API directly.
+        over["ANTHROPIC_BASE_URL"] = base
     if not over:
         return None
     return {**os.environ, **over}

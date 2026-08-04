@@ -63,6 +63,7 @@ import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/Conte
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
 import { ToolsModal } from "./components/hud/ToolsModal";
+import { InspectorModal } from "./components/hud/InspectorModal";
 import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
@@ -213,6 +214,7 @@ export function App() {
   const [showDashboard, setShowDashboard] = useState(skipBoot);
   const [manageOpen, setManageOpen] = useState(false);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [previewProject, setPreviewProject] = useState<string | null>(null);
   // Manage-projects bookkeeping. TODO(phase2-data): the bridge has no
   // remove/import endpoints, so those two persist client-side.
@@ -575,6 +577,7 @@ export function App() {
       } else if (e.key === "Escape") {
         if (ctxMenu) closeCtx();
         else if (previewProject) setPreviewProject(null);
+        else if (inspectorOpen) setInspectorOpen(false);
         else if (toolsFor) setToolsFor(null);
         else if (manageOpen) setManageOpen(false);
         else if (paletteOpen) setPaletteOpen(false);
@@ -585,7 +588,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, previewProject, toolsFor, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
+  }, [ctxMenu, previewProject, toolsFor, inspectorOpen, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
@@ -1041,6 +1044,7 @@ export function App() {
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
     { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
+    { id: "inspector", label: "HTTP inspector…", group: "Session", icon: "◫", run: () => setInspectorOpen(true) },
     { id: "radio", label: radio.radio.playing ? "Pause Claude·FM" : "Play Claude·FM", group: "Audio", icon: "♪", run: () => radio.toggle() },
     ...modelOpts.map((m) => ({
       id: `model-${m.id}`, label: `Use ${m.label}`, group: "Model",
@@ -1371,6 +1375,7 @@ export function App() {
                 onClose={() => setToolsFor(null)}
               />
             )}
+            {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"}
                 settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
@@ -1378,6 +1383,7 @@ export function App() {
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
                 sessionTools={selected?.disabled_tools ?? []}
                 onSessionTools={setSessionTools}
+                onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
                 onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}

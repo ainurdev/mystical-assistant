@@ -525,6 +525,11 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None or not q:
                 return self._json({"error": "invalid project or query"}, 400)
             return self._json({"text": graphmap.explain(abs_p, q)})
+        if path == "/local/inspector":
+            from bridge import inspector
+            return self._json({"on": inspector.running(),
+                               "base_url": inspector.base_url(),
+                               "entries": inspector.entries()})
         if path == "/local/toolsets":
             from bridge import toolsets
             return self._json({"builtins": toolsets.BUILTINS,
@@ -676,6 +681,21 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": f"policy must be one of {ladder.POLICIES}"}, 400)
             store.set_fallback_policy(sid, policy)
             return self._json({"ok": True, "fallback_policy": policy})
+        if path == "/local/inspector":
+            from bridge import inspector
+            action = body.get("action")
+            if action == "on":
+                inspector.start()
+            elif action == "off":
+                inspector.stop()
+            elif action == "clear":
+                inspector.clear()
+            else:
+                return self._json({"error": "action must be on | off | clear"}, 400)
+            # A turn already running keeps the base URL it was spawned with, so a
+            # switch here lands on the next turn.
+            return self._json({"ok": True, "on": inspector.running(),
+                               "base_url": inspector.base_url()})
         if path.startswith("/local/sessions/") and path.endswith("/tools"):
             from bridge import toolsets
             sid = path[len("/local/sessions/"):-len("/tools")]
