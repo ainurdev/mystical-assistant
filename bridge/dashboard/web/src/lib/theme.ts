@@ -27,7 +27,8 @@ export type ThemeKey =
   | "library"
   | "apex"
   | "gloam"
-  | "riso";
+  | "riso"
+  | "void";
 
 /**
  * AURORA is one theme in four colours — same glass, same CRT, only the
@@ -193,6 +194,14 @@ export const THEME_DEFS: ThemeDef[] = [
   // neutral shadow for a MISREGISTERED pair of 1.5px ink edges, the way a sheet
   // that shifted between passes prints.
   { key: "riso", name: "RISO", feel: "three-ink zine · overprint & misregistration", filter: "none", ops: [], sw: "#bd1a5e", bg: "rgba(214,209,199,.55)", pbg: "#f0eee9", crt: false, swp: false, glw: false, canvas: "radial-gradient(rgba(189,26,94,.05) .5px,transparent .5px) 0 0/6px 6px,radial-gradient(rgba(9,104,172,.045) .5px,transparent .5px) 3px 3px/6px 6px,#f0eee9", font: "'Space Grotesk',system-ui,-apple-system,sans-serif", prad: "2px", pal: { acc: "#bd1a5e", "acc-on": "#ffffff", "accent-rgb": "189 26 94", ok: "#0c7443", warn: "#9b5108", err: "#c5211c", "err-hi": "#b01a15", "err-b": "#9b140f", "err-g": "#b56c69", info: "#0968ac", "info-hi": "#065c9a", "info-b": "#045087", purple: "#962ed2", "purple-d": "#8526bc", "purple-h": "#771fab", "purple-b": "#6a1899", "purple-g": "#9a6fb3", txb: "#181c25", txh: "#2b303b", tx: "#383d49", txm: "#474d5a", txd: "#535966", txf: "#5a606e", txl: "#606774", txg: "#76808d", panel: "#fefdfb", panel2: "#faf8f4", panel3: "#f5f3ee", canvas: "#f0eee9", mono: "'JetBrains Mono',monospace" } },
+  // VOID is the dark counterpart to NEWSPRINT: its accent is achromatic on
+  // purpose (paper-white, where NEWSPRINT's is press-black), so the only colour
+  // on screen is a colour that MEANS something — a warning, an error, a link.
+  // The ground is true #000, so on an OLED panel the canvas is unlit pixels and
+  // a panel is one step of grey above nothing. No glow and no shadow: a drop
+  // shadow on black is invisible, so depth is that surface step plus the
+  // accent's own 16% hairline (--border), and nothing else.
+  { key: "void", name: "VOID", feel: "true black · colour only where it means something", filter: "none", ops: [], sw: "#ffffff", bg: "rgba(0,0,0,.55)", pbg: "#000000", crt: false, swp: false, glw: false, canvas: "#000000", font: "system-ui,-apple-system,'Segoe UI',sans-serif", prad: "0", pal: { acc: "#ffffff", "acc-on": "#000000", "accent-rgb": "255 255 255", ok: "#4ade80", warn: "#fbbf24", err: "#f87171", "err-hi": "#fca5a5", "err-b": "#fecaca", "err-g": "#8a5c5c", info: "#60a5fa", "info-hi": "#93c5fd", "info-b": "#bfdbfe", purple: "#c084fc", "purple-d": "#a855f7", "purple-h": "#d8b4fe", "purple-b": "#e9d5ff", "purple-g": "#6f5b86", txb: "#ffffff", txh: "#ededed", tx: "#d4d4d4", txm: "#b4b4b4", txd: "#9a9a9a", txf: "#8d8d8d", txl: "#828282", txg: "#565656", panel: "#121212", panel2: "#0b0b0b", panel3: "#070707", canvas: "#000000", mono: "'JetBrains Mono',monospace" } },
 ];
 
 export const THEMES: ThemeKey[] = THEME_DEFS.map((t) => t.key);

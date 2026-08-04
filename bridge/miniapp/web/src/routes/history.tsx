@@ -100,7 +100,8 @@ function HistoryPage() {
       ) : rows.length === 0 ? (
         <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">No chats yet.</div>
       ) : (
-        <div className="space-y-1.5">
+        // Every session in the store, uncapped — off-screen cards skip layout/paint.
+        <div className="space-y-1.5 vskip-card">
           {rows.map((s) => {
             const st = status[s.id]?.state;
             return (

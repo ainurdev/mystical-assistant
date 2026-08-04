@@ -42,6 +42,13 @@ _LEADING_TAGS = re.compile(r"^(?:\s*<[^>]+>.*?</[^>]+>\s*|\s*<[^>]+/>\s*)+", re.
 # the runner's heavy imports / env requirements).
 _SUMMARY_KEYS = ("command", "file_path", "path", "pattern", "url", "query", "prompt")
 
+# Max chars of Bash output kept per tool call (see bash_output).
+_OUT_MAX = 2000
+# Max diff lines kept per edit (see patch_lines).
+_PATCH_MAX = 120
+# Tools whose result carries a structuredPatch we can render as a diff.
+PATCH_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
 # Estimated Claude list prices, $ per million tokens, so an adopted native session
 # reports a cost instead of $0 (native JSONL records token usage, not a dollar
 # amount). Approximate — override this dict if prices change. cw = cache write,
@@ -127,6 +134,55 @@ def _text_of(content) -> str:
 def _is_tool_result(content) -> bool:
     return isinstance(content, list) and any(
         isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+
+
+def bash_output(content) -> str:
+    """A Bash tool_result's text, carried into the transcript so the UI can draw a
+    real terminal instead of a bare "ran a command" chip.
+    ponytail: head-capped and Bash-only — a Read result is the whole file, and
+    storing every tool's output would multiply the store for no visible gain."""
+    text = _text_of(content).strip()
+    if len(text) <= _OUT_MAX:
+        return text
+    return text[:_OUT_MAX].rstrip() + "\n…"
+
+
+def patch_lines(result) -> list:
+    """Flatten the unified-diff hunks Claude Code already computed for an edit
+    (`structuredPatch`) into plain diff lines, so the UI draws a diff without
+    re-diffing the file. Empty when the result carries no patch."""
+    hunks = result.get("structuredPatch") if isinstance(result, dict) else None
+    if not isinstance(hunks, list):
+        return []
+    out: list = []
+    for h in hunks:
+        if not isinstance(h, dict):
+            continue
+        out.append(f"@@ -{h.get('oldStart', 0)},{h.get('oldLines', 0)}"
+                   f" +{h.get('newStart', 0)},{h.get('newLines', 0)} @@")
+        out.extend(str(x) for x in (h.get("lines") or []))
+        if len(out) >= _PATCH_MAX:
+            return out[:_PATCH_MAX] + ["…"]
+    return out
+
+
+def tool_done(rid, name, ms: int, block: dict, result) -> dict:
+    """The tool_done event for one tool_result. Bash keeps its output, an edit
+    keeps its diff, everything else stays a bare marker. Shared by the live
+    runner and this translator so both surfaces render the same blocks —
+    `result` is the record-level tool result (`tool_use_result` on the live
+    stream, `toolUseResult` in the on-disk JSONL)."""
+    ev = {"type": "tool_done", "id": rid}
+    if ms > 0:
+        ev["ms"] = ms
+    if name == "Bash":
+        ev["output"] = bash_output(block.get("content"))
+        ev["is_error"] = bool(block.get("is_error"))
+    elif name in PATCH_TOOLS:
+        lines = patch_lines(result)
+        if lines:
+            ev["patch"] = lines
+    return ev
 
 
 def _answers_from_result(questions: list, content) -> list:
@@ -249,6 +305,7 @@ def _parse_full(path: str) -> dict:
     events: list[dict] = []
     state = {"seq": 0, "turn": None}
     aq: dict = {}   # AskUserQuestion request_id -> its questions, to pair with the answer
+    open_tools: dict = {}  # tool_use id -> (name, start ts), for output + duration
 
     def emit(ev: dict):
         cur = state["turn"]
@@ -295,7 +352,10 @@ def _parse_full(path: str) -> dict:
                             emit({"type": "question_answered", "request_id": rid,
                                   "answers": _answers_from_result(aq[rid], b.get("content"))})
                         else:
-                            emit({"type": "tool_done"})
+                            name, t0 = open_tools.pop(rid, (None, 0.0))
+                            end = _ts(rec)
+                            ms = int((end - t0) * 1000) if t0 and end else 0
+                            emit(tool_done(rid, name, ms, b, rec.get("toolUseResult")))
                 else:
                     open_turn(rec, _text_of(content))
             elif t == "assistant":
@@ -327,7 +387,8 @@ def _parse_full(path: str) -> dict:
                             aq[rid] = qs
                             emit({"type": "question", "request_id": rid, "questions": qs})
                         else:
-                            emit({"type": "tool", "name": name,
+                            open_tools[b.get("id")] = (name, _ts(rec))
+                            emit({"type": "tool", "name": name, "id": b.get("id"),
                                   "summary": _summarize_tool(name, b.get("input", {}))})
             # other record types (queue-operation, mode, file-history-snapshot,
             # last-prompt, attachment, ...) carry no transcript content -> skipped

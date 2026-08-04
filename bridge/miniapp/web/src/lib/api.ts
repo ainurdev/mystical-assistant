@@ -107,8 +107,17 @@ export interface AnswerSelection {
 
 export type RunEvent =
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; summary: string }
-  | { type: "tool_done" }
+  | { type: "tool"; name: string; summary: string; id?: string }
+  // `output`/`is_error` are Bash-only, `patch` edit-only (see
+  // transcript_jsonl.tool_done); turns recorded before this landed carry no `id`.
+  | {
+      type: "tool_done";
+      id?: string;
+      ms?: number;
+      output?: string;
+      is_error?: boolean;
+      patch?: string[];
+    }
   | { type: "result"; result: string; cost: number; elapsed: number }
   | { type: "error"; message: string }
   | { type: "stopped" }
@@ -174,7 +183,9 @@ export interface AwaitingSession {
 // "live" = a native session touched very recently but not writing this instant
 // (the backend emits it; runner._build_status). Missing it here silently dropped
 // the indicator for live VS Code/terminal sessions.
-export type SessionState = "working" | "awaiting" | "live" | "idle";
+// "checking" = a prompt of yours is being checked against this session before it
+// runs (bridge/relevance.py); no job exists yet, but the session is in play.
+export type SessionState = "working" | "awaiting" | "checking" | "live" | "idle";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/live/idle.
 export interface SessionStatus {

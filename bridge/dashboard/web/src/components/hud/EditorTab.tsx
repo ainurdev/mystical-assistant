@@ -236,6 +236,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   // at all (Ctrl-B, or clicking the active icon — VS Code's own toggle).
   const [view, setView] = useState<"explorer" | "search">("explorer");
   const [sideOpen, setSideOpen] = useState(true);
+  const [sideW, setSideW] = useState(230);   // dragged on the border, see the handle below
   const [searchQ, setSearchQ] = useState("");
   const [hits, setHits] = useState<GrepHit[]>([]);
   const [grepBusy, setGrepBusy] = useState(false);
@@ -272,17 +273,24 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       .catch(() => setPaths([]));
 
   // Load the file list whenever the project/branch changes. An `initialFile`
-  // (opened from the sidebar explorer) starts open — the tree is fully expanded
-  // here, so its row renders and the scroll-into-view below reveals it.
+  // (opened from the sidebar explorer) starts open — its ancestors are the one
+  // exception to folders-start-closed, so its row renders and the
+  // scroll-into-view below reveals it.
   useEffect(() => {
     let live = true;
     // A different project/branch is a different working tree — the old buffers
     // no longer describe anything on disk, so they go.
     bufs.current.clear();
     setTabs(initialFile ? [initialFile] : []); setPeek(null);
-    setOpen(initialFile ?? null); setMeta(null); setCollapsed(new Set());
+    setOpen(initialFile ?? null); setMeta(null);
     void api.filesTree(project, branch || undefined)
-      .then((r) => { if (live) setPaths(r.files); })
+      .then((r) => {
+        if (!live) return;
+        setPaths(r.files);
+        // Closed by default — a repo tree fully expanded is thousands of rows
+        // to scroll past before reaching anything.
+        setCollapsed(new Set(dirsOf(r.files).filter((d) => !initialFile || !underPath(d, initialFile))));
+      })
       .catch(() => { if (live) setPaths([]); });
     return () => { live = false; };
   }, [project, branch, initialFile]);
@@ -514,6 +522,24 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   // The activity bar's job — the view, plus opening the bar to show it.
   function showView(v: "explorer" | "search") { setView(v); setSideOpen(true); }
+
+  /* Drag the side bar's right edge — deep paths and long file names don't fit
+     230px. Pointer capture keeps the drag alive over the CodeMirror buffer;
+     double-click puts it back. */
+  function onResizeDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const el = e.currentTarget;
+    const x0 = e.clientX;
+    const w0 = sideW;
+    el.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => setSideW(Math.min(560, Math.max(140, w0 + ev.clientX - x0)));
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  }
 
   /* The new/rename input sits in the explorer, so a command that opens it has
      to bring the explorer back first. */
@@ -805,7 +831,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       {/* Fills the modal body exactly — no floor. A floor taller than the body
           made the whole modal scroll, so a long file list pushed the buffer out
           of view; explorer and buffer now scroll inside their own columns. */}
-      <div style={{ position: "relative", display: "grid", gridTemplateColumns: `42px ${sideOpen ? "230px " : ""}1fr`, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      <div style={{ position: "relative", display: "grid", gridTemplateColumns: `42px ${sideOpen ? `${sideW}px ` : ""}1fr`, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", height: "100%", minHeight: 0, overflow: "hidden" }}>
         {/* activity bar — VS Code's icon rail: picks the side view, and clicking
             the one already showing collapses the bar (same as Ctrl-B). */}
         <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4, gap: 2, background: "color-mix(in srgb, var(--panel2) 55%, transparent)" }}>
@@ -829,7 +855,11 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         </div>
         {/* side view — explorer tree or search-in-files */}
         {sideOpen && (
-        <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, background: "color-mix(in srgb, var(--panel2) 35%, transparent)" }}>
+        <div style={{ position: "relative", borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, background: "color-mix(in srgb, var(--panel2) 35%, transparent)" }}>
+          {/* the grabbable border between the side bar and the buffer */}
+          <div onPointerDown={onResizeDown} onDoubleClick={() => setSideW(230)} title="drag to resize · double-click to reset"
+            {...hp("rsz")}
+            style={{ position: "absolute", top: 0, bottom: 0, right: -3, width: 7, zIndex: 6, cursor: "col-resize", background: hov === "rsz" ? "color-mix(in srgb, var(--acc) 35%, transparent)" : "transparent" }} />
           {view === "search" ? (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>

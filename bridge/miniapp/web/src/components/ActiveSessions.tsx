@@ -16,7 +16,9 @@ function ago(sec: number | null): string {
 }
 
 // Awaiting you sorts first — it's the only state you can act on — then working.
-const ORDER: Record<SessionState, number> = { awaiting: 0, working: 1, live: 2, idle: 3 };
+const ORDER: Record<SessionState, number> = {
+  awaiting: 0, working: 1, checking: 2, live: 3, idle: 4,
+};
 
 interface Row {
   sessionId: string;

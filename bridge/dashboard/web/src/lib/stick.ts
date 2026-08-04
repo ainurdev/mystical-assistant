@@ -6,6 +6,15 @@
 // a tall result at the end of a run was impossible to scroll away from.
 // Sitting exactly at the bottom always says yes: a content shrink clamps us
 // there with no gesture involved, and that shouldn't read as scrolling up.
+// Close enough to the end that a prompt you just sent should pull the view down
+// to it? Within one screen of the bottom counts as close — further up you're
+// reading something, and a jump to the bottom would throw that place away.
+export function nearBottom(
+  el: { scrollTop: number; scrollHeight: number; clientHeight: number },
+): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= el.clientHeight;
+}
+
 export function stickToBottom(
   el: { scrollTop: number; scrollHeight: number; clientHeight: number },
   prev: number,

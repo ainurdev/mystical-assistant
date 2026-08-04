@@ -391,8 +391,9 @@ export interface AwaitingSession {
   kind: "question" | "permission";
 }
 // working = transcript being written right now; live = native session recently
-// active (alive but briefly paused); awaiting = blocked on you; else idle.
-export type SessionState = "working" | "awaiting" | "live" | "idle";
+// active (alive but briefly paused); awaiting = blocked on you; checking = a
+// prompt of yours is being checked against this session; else idle.
+export type SessionState = "working" | "awaiting" | "checking" | "live" | "idle";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/idle only.
 export interface SessionStatus {

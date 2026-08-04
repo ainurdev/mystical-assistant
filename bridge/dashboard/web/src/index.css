@@ -347,7 +347,9 @@ body {
 [data-theme="gloam"] .panel::before,
 [data-theme="gloam"] .panel::after,
 [data-theme="riso"] .panel::before,
-[data-theme="riso"] .panel::after { display: none; }
+[data-theme="riso"] .panel::after,
+[data-theme="void"] .panel::before,
+[data-theme="void"] .panel::after { display: none; }
 /* Card elevation, daylight rules: two hairline layers at low alpha tinted with
    the ground's own hue — a 30%-black drop shadow reads as grime on paper. */
 [data-theme="normal"] .panel { border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 30, 50, 0.07), 0 2px 6px rgba(15, 30, 50, 0.06); }
@@ -385,7 +387,9 @@ body {
 [data-theme="library"] .glow,
 [data-theme="apex"] .glow,
 [data-theme="gloam"] .glow,
-[data-theme="riso"] .glow { text-shadow: none; }
+[data-theme="riso"] .glow,
+/* VOID: a white bloom on true black is the one thing that would soften it. */
+[data-theme="void"] .glow { text-shadow: none; }
 /* RISO: a press with no blending gets depth from a MISREGISTERED plate, not a
    shadow — the pink pass lands low-right of the blue one, so a card looks
    printed rather than lifted. Both edges are the palette's own inks. */

@@ -41,7 +41,7 @@ import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins } from "./lib/prefs";
-import { stickToBottom } from "./lib/stick";
+import { nearBottom, stickToBottom } from "./lib/stick";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -260,6 +260,10 @@ export function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  // A smooth scroll of ours is in flight — the scroll listener must not read its
+  // downward travel as a gesture (mid-glide we're still far from the bottom,
+  // which would drop stick and flash the jump button).
+  const glideRef = useRef(false);
   // Mirror of stickRef for rendering — the ref drives the auto-scroll (no
   // re-render), the state drives the "jump to latest" button.
   const [atBottom, setAtBottom] = useState(true);
@@ -268,6 +272,22 @@ export function App() {
     setAtBottom(true);
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+  // Glide to the bottom instead of snapping — used when you send a prompt from
+  // near the end, so the new prompt slides into view. The ResizeObserver keeps
+  // retargeting the animation as the turn renders.
+  // ponytail: 700ms is an assumed animation ceiling; swap for `scrollend` if it
+  // ever ends late (a stuck flag would freeze stick until the next scroll).
+  const glideToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    glideRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    window.setTimeout(() => { glideRef.current = false; }, 700);
   }, []);
 
   // AUTO text size follows the window; a fixed textScale ignores this.
@@ -488,6 +508,9 @@ export function App() {
     if (!el || !content) return;
     let prev = el.scrollTop;
     const sync = () => {
+      // Keep `prev` fresh through a glide, or the first flick up afterwards
+      // still reads as "scrolled down" against a stale mark.
+      if (glideRef.current) { prev = el.scrollTop; return; }
       const stick = stickToBottom(el, prev);
       prev = el.scrollTop;
       stickRef.current = stick;
@@ -496,7 +519,11 @@ export function App() {
     el.addEventListener("scroll", sync, { passive: true });
     // Content grew/shrank: pull to the bottom if we were parked there, otherwise
     // re-check (a shrink can land us back at the bottom on its own).
-    const ro = new ResizeObserver(() => { if (stickRef.current) el.scrollTop = el.scrollHeight; else sync(); });
+    const ro = new ResizeObserver(() => {
+      if (!stickRef.current) sync();
+      else if (glideRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      else el.scrollTop = el.scrollHeight;
+    });
     ro.observe(content);
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
@@ -682,8 +709,15 @@ export function App() {
         notify("info", `Started in “${sessionName()}” — the session you sent it from.`);
         return;
       }
-      stickRef.current = true;      // your own prompt always pulls you back down
-      setAtBottom(true);
+      // Your own prompt pulls you down to it — but only from nearby. More than a
+      // screen up the transcript you're reading something; a jump to the bottom
+      // would throw that place away, so stay put and let the prompt land unseen.
+      const sc = scrollRef.current;
+      if (sc && nearBottom(sc)) {
+        stickRef.current = true;
+        setAtBottom(true);
+        glideToBottom();
+      }
       setTurns((prev) => [
         ...prev,
         { id: res.job_id, prompt: text, events: [], status: "running", pending: [], attachments: images },

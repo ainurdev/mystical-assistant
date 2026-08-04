@@ -258,7 +258,7 @@ function PickCell({
 // INVERSE of that filter's color matrix so the cards render TRUE colours.
 // AURORA's four hues and CLAUDE's four accents each collapse into one card with
 // a variant row; every other theme is its own card. The cards split by ground —
-// three dark profiles, three light — and each set gets its own labelled row.
+// six dark cards, six light — and each set gets its own labelled row.
 type ThemeCard = { key: ThemeKey; variants?: ThemeKey[] };
 
 const CARDS: ThemeCard[] = [

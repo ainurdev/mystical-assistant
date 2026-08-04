@@ -196,6 +196,72 @@ def test_user_tool_result_is_not_a_new_turn():
     assert [e["type"] for e in out["events"]] == ["tool", "tool_done"]
 
 
+def test_bash_output_pairs_by_id_and_stays_bash_only():
+    # The terminal block needs the command AND its output, paired by tool_use id.
+    # A Read result must stay output-free (a whole file would bloat the store).
+    recs = [
+        {"type": "user", "uuid": "t1", "message": {"role": "user", "content": "go"}},
+        {"type": "assistant", "uuid": "a1", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "ls"}},
+            {"type": "tool_use", "id": "tu2", "name": "Read", "input": {"file_path": "a"}}]}},
+        # Results land out of order — pairing must follow ids, not position.
+        {"type": "user", "uuid": "tr", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu2", "content": "whole file"},
+            {"type": "tool_result", "tool_use_id": "tu1", "content": "a\nb\n",
+             "is_error": True}]}},
+    ]
+    out = T.parse_jsonl(_write(recs))
+    done = {e["id"]: e for e in out["events"] if e["type"] == "tool_done"}
+    assert done["tu1"]["output"] == "a\nb" and done["tu1"]["is_error"] is True
+    assert "output" not in done["tu2"]
+    tools = {e["id"]: e["name"] for e in out["events"] if e["type"] == "tool"}
+    assert tools == {"tu1": "Bash", "tu2": "Read"}
+
+
+def test_edit_carries_diff_and_duration():
+    # An edit renders as a diff, using the structuredPatch Claude Code already
+    # computed; duration comes from the gap between the call and its result.
+    recs = [
+        {"type": "user", "uuid": "t1", "timestamp": "2026-01-01T00:00:00Z",
+         "message": {"role": "user", "content": "go"}},
+        {"type": "assistant", "uuid": "a1", "timestamp": "2026-01-01T00:00:01Z",
+         "message": {"role": "assistant", "content": [
+             {"type": "tool_use", "id": "tu1", "name": "Edit",
+              "input": {"file_path": "f.txt"}}]}},
+        {"type": "user", "uuid": "tr", "timestamp": "2026-01-01T00:00:03.5Z",
+         "message": {"role": "user", "content": [
+             {"type": "tool_result", "tool_use_id": "tu1", "content": "ok"}]},
+         "toolUseResult": {"filePath": "f.txt", "structuredPatch": [
+             {"oldStart": 1, "oldLines": 3, "newStart": 1, "newLines": 3,
+              "lines": [" alpha", "-beta", "+BETA", " gamma"]}]}},
+    ]
+    out = T.parse_jsonl(_write(recs))
+    done = next(e for e in out["events"] if e["type"] == "tool_done")
+    assert done["patch"] == ["@@ -1,3 +1,3 @@", " alpha", "-beta", "+BETA", " gamma"]
+    assert done["ms"] == 2500
+    assert "output" not in done          # diffs are not terminal output
+
+
+def test_patch_lines_ignores_resultless_and_patchless_tools():
+    assert T.patch_lines(None) == []
+    assert T.patch_lines("a string result") == []
+    assert T.patch_lines({"stdout": "hi"}) == []
+
+
+def test_bash_output_is_head_capped():
+    long = "x" * (T._OUT_MAX + 500)
+    recs = [
+        {"type": "user", "uuid": "t1", "message": {"role": "user", "content": "go"}},
+        {"type": "assistant", "uuid": "a1", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "yes"}}]}},
+        {"type": "user", "uuid": "tr", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu1", "content": long}]}},
+    ]
+    out = T.parse_jsonl(_write(recs))
+    got = next(e for e in out["events"] if e["type"] == "tool_done")["output"]
+    assert got == "x" * T._OUT_MAX + "\n…"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

@@ -593,27 +593,15 @@ def _ztokens(out: str) -> list[str]:
     return toks
 
 
-def compare(cwd: str, base: str, head: str, three_dot: bool = True) -> dict:
-    """Diff stats between `base` and `head`. With three_dot (default) the range is
-    `base...head` (changes since the merge-base) — powers the PR preview. With
-    three_dot=False it's a direct tip-to-tip `base..head` diff — powers the Changes
-    tab's branch comparison. Returns commit count, files changed, +/- totals."""
-    if not is_repo(cwd):
-        return {"ok": False, "commits": 0, "ahead": 0, "behind": 0,
-                "files": [], "add": 0, "del": 0}
-    rng = f"{base}...{head}" if three_dot else f"{base}..{head}"
-    # left-right count needs the symmetric (three-dot) form regardless of `rng`.
-    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", f"{base}...{head}")
-    behind = ahead = 0
-    if rc == 0 and out.strip():
-        parts = out.split()
-        if len(parts) == 2:
-            behind, ahead = int(parts[0] or 0), int(parts[1] or 0)
-    # -z keeps paths verbatim (no C-quoting of non-ASCII) and splits rename/copy
-    # entries into separate NUL fields, so every `name` is a real, diffable path —
-    # not the `old => new` numstat form or a "caf\303\251" quoted name.
+def _diff_files(cwd: str, *cmd: str) -> tuple[list[dict], int, int]:
+    """([{name, mark, add, del}], total_add, total_del) for a `git diff`/`git show`
+    invocation, run twice: --name-status for the letter, --numstat for the counts.
+
+    -z keeps paths verbatim (no C-quoting of non-ASCII) and splits rename/copy
+    entries into separate NUL fields, so every `name` is a real, diffable path —
+    not the `old => new` numstat form or a "caf\\303\\251" quoted name."""
     marks: dict[str, str] = {}
-    rc, out, _ = _run(cwd, "diff", "--name-status", "-z", rng)
+    rc, out, _ = _run(cwd, *cmd, "--name-status", "-z")
     if rc == 0:
         toks = _ztokens(out)
         i = 0
@@ -629,7 +617,7 @@ def compare(cwd: str, base: str, head: str, three_dot: bool = True) -> dict:
                 i += 1
     files = []
     total_add = total_del = 0
-    rc, out, _ = _run(cwd, "diff", "--numstat", "-z", rng)
+    rc, out, _ = _run(cwd, *cmd, "--numstat", "-z")
     if rc == 0:
         toks = _ztokens(out)
         i = 0
@@ -651,5 +639,48 @@ def compare(cwd: str, base: str, head: str, three_dot: bool = True) -> dict:
             total_del += dele
             files.append({"name": name, "mark": marks.get(name, "M"),
                           "add": add, "del": dele})
+    return files, total_add, total_del
+
+
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def commit_files(cwd: str, sha: str) -> dict:
+    """What a single commit changed — same file shape as compare(). Powers clicking
+    a row in the dashboard's commit graph. A merge gets git's combined diff (only
+    what differs from every parent), i.e. the conflict resolutions rather than both
+    sides replayed."""
+    if not _SHA_RE.match(sha) or not is_repo(cwd):
+        return {"ok": False, "files": [], "add": 0, "del": 0}
+    files, add, dele = _diff_files(cwd, "show", "--format=", sha)
+    return {"ok": True, "files": files, "add": add, "del": dele}
+
+
+def show_file(cwd: str, sha: str, path: str) -> str:
+    """One file's diff from one commit (`git show <sha> -- <path>`)."""
+    safe = _safe_path(cwd, path)
+    if safe is None or not _SHA_RE.match(sha):
+        return ""
+    _rc, out, _err = _run(cwd, "show", "--format=", sha, "--", safe)
+    return out
+
+
+def compare(cwd: str, base: str, head: str, three_dot: bool = True) -> dict:
+    """Diff stats between `base` and `head`. With three_dot (default) the range is
+    `base...head` (changes since the merge-base) — powers the PR preview. With
+    three_dot=False it's a direct tip-to-tip `base..head` diff — powers the Changes
+    tab's branch comparison. Returns commit count, files changed, +/- totals."""
+    if not is_repo(cwd):
+        return {"ok": False, "commits": 0, "ahead": 0, "behind": 0,
+                "files": [], "add": 0, "del": 0}
+    rng = f"{base}...{head}" if three_dot else f"{base}..{head}"
+    # left-right count needs the symmetric (three-dot) form regardless of `rng`.
+    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", f"{base}...{head}")
+    behind = ahead = 0
+    if rc == 0 and out.strip():
+        parts = out.split()
+        if len(parts) == 2:
+            behind, ahead = int(parts[0] or 0), int(parts[1] or 0)
+    files, total_add, total_del = _diff_files(cwd, "diff", rng)
     return {"ok": True, "commits": ahead, "ahead": ahead, "behind": behind,
             "files": files, "add": total_add, "del": total_del}

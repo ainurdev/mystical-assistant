@@ -32,6 +32,17 @@ _CTX_CHARS = 400        # per context turn
 _TASK_CHARS = 2000      # of the incoming prompt
 _TITLE_CHARS = 60       # matches the store's title cap
 
+# Sessions with a check in flight. No job exists yet for those ~10s, so without
+# this the session reads idle and drops out of every "active sessions" list until
+# the prompt is approved (runner._build_status turns these into state=checking).
+# ponytail: a plain set — two concurrent checks on one session clear each other's
+# mark, and the worst case is a row that stops glowing a few seconds early.
+_checking: set[str] = set()
+
+
+def checking_ids() -> set[str]:
+    return set(_checking)
+
 
 def should_check(session: dict | None, prompt: str, force: bool = False) -> bool:
     """True only for a substantial prompt landing on a session that already has
@@ -68,7 +79,11 @@ def gate(chat_id: int, project: str | None, session_id: str | None, prompt: str,
         chat_id, rel(project or state.project_dir(chat_id)), session_id)
     if not should_check(session, prompt, force):
         return None
-    r = check_relevance(session, prompt)
+    _checking.add(session["id"])
+    try:
+        r = check_relevance(session, prompt)
+    finally:
+        _checking.discard(session["id"])
     if r["related"]:
         return None
     return {"suggest_new": True, "reason": r["reason"],

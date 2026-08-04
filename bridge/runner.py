@@ -22,7 +22,7 @@ import uuid
 
 from bridge import (accounts, agents, config, devserver, git, inspector, ladder,
                     limits, machine, native_activity,
-                    pubsub, state, store, transcript_jsonl)
+                    pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -653,9 +653,10 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
                   external: list, native_snap: dict) -> dict:
     """Merge bridge + native liveness into one {session_id: {state, kind, source,
     label}} map — the single status contract both web surfaces render from. State
-    is 'awaiting' | 'working' | 'live' | 'idle'; bridge sessions are awaiting/
-    working, native (VS Code/terminal) sessions working/live/idle. External rows
-    are annotated in place with their `state` for the jobs monitor."""
+    is 'awaiting' | 'working' | 'checking' | 'live' | 'idle'; bridge sessions are
+    awaiting/working/checking, native (VS Code/terminal) sessions working/live/
+    idle. External rows are annotated in place with their `state` for the jobs
+    monitor."""
     awaiting_map = {a["session_id"]: a.get("kind") for a in awaiting}
     job_label = {j["session_id"]: (j.get("activity") or {}).get("label")
                  for j in jobs if j.get("session_id")}
@@ -669,6 +670,13 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
         else:
             status[sid] = {"state": "working", "kind": None, "source": "bridge",
                            "label": job_label.get(sid) or "working…"}
+    # A prompt being checked against its session (bridge/relevance.py) holds the
+    # send for ~10s before any job exists — surface it so the session stays in the
+    # active lists instead of vanishing until the prompt is approved.
+    for sid in relevance.checking_ids():
+        status.setdefault(sid, {"state": "checking", "kind": None,
+                                "source": "bridge",
+                                "label": "checking this prompt fits…"})
     now = time.time()
     for row in external:
         sid = row.get("session_id")

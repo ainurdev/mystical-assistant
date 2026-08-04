@@ -146,6 +146,31 @@ def test_empty_subject_leaves_provisional_title():
     assert store.get_session(sess["id"])["title"] == "set up CI"
 
 
+def test_titles_at_turn_start_without_a_reply():
+    # The kick fires when the turn STARTS, so there are no reply events yet —
+    # the prompt alone must still produce a title.
+    calls = []
+    runner.run_blocking = _stub_run_blocking("Center A Div", calls=calls)
+    sess, tid = _session_with_first_turn(reply=None)
+    titler.generate_after_turn(1, sess, tid)
+    got = store.get_session(sess["id"])
+    assert got["title"] == "Center A Div"
+    assert got["title_source"] == "subject"
+    assert "center a div" in calls[0] and "ASSISTANT" not in calls[0]
+
+
+def test_end_of_turn_call_skipped_while_start_call_is_inflight():
+    calls = []
+    runner.run_blocking = _stub_run_blocking("X Y Z", calls=calls)
+    sess, tid = _session_with_first_turn()
+    titler._inflight.add(sess["id"])
+    try:
+        titler.generate_after_turn(1, sess, tid)
+    finally:
+        titler._inflight.discard(sess["id"])
+    assert calls == []                            # no second model call
+
+
 def test_disabled_flag_short_circuits():
     calls = []
     runner.run_blocking = _stub_run_blocking("X", calls=calls)

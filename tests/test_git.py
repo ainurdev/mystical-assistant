@@ -223,6 +223,31 @@ def test_badge_counts_branches_and_worktrees():
     assert b["branches"] == 2 and b["worktrees"] == 1
 
 
+def test_commit_files_and_show_file():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\ntwo\n")
+    _write(d, "gone.txt", "bye\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "a.txt", "one\ntwo\nthree\n")
+    _write(d, "new.txt", "hi\n")
+    os.remove(os.path.join(d, "gone.txt"))
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "second")
+    sha = g.head_sha(d)
+    r = g.commit_files(d, sha)
+    marks = {f["name"]: f["mark"] for f in r["files"]}
+    assert r["ok"] and marks == {"a.txt": "M", "new.txt": "A", "gone.txt": "D"}, r
+    assert r["add"] == 2 and r["del"] == 1, r
+    assert "+three" in g.show_file(d, sha, "a.txt")
+    # the first commit has no parent — still lists its files
+    root = g.commit_files(d, g.log_graph(d, 10)[-1]["sha"])
+    assert len(root["files"]) == 2, root
+    # a sha-shaped argument is required, so no option injection through it
+    assert g.commit_files(d, "--upload-pack=x")["ok"] is False
+    assert g.show_file(d, sha, "../escape.txt") == ""
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

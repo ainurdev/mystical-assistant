@@ -161,6 +161,16 @@ input {
   font-family: inherit;
 }
 
+/* ponytail: a turn runs to hundreds of event cards — off-screen ones skip layout
+   and paint but stay in the DOM, so find-in-page and scroll-to-bottom still work.
+   Matters more here than on the desktop dashboard: same transcript, phone CPU.
+   Implies `contain: layout paint`, so never put this on a wrapper holding a
+   position:fixed modal — it would be clipped to the card. */
+.vskip-card > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60px;
+}
+
 /* HUD primitives */
 .glow {
   text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.35);

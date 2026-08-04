@@ -7,6 +7,7 @@ runner.run_blocking (one-shot, cheap model, no memory pack)."""
 
 import json
 import sys
+import threading
 
 from bridge import aifeatures, config, native, runner, store
 
@@ -59,14 +60,31 @@ def _parse(raw: str) -> "tuple[str, list[str]]":
     return _clean(raw), []
 
 
+_inflight: set[str] = set()   # sessions with a titling call already running
+
+
+def kick(chat_id: int, session: dict, turn_id: str) -> None:
+    """Fire the titler in the background. Called both when the first turn STARTS
+    (so the sidebar gets a real name within seconds, off the prompt alone) and
+    when it ends — the end call is a no-op once the start call landed a title,
+    and a retry with the reply as extra context when it didn't."""
+    threading.Thread(target=generate_after_turn,
+                     args=(chat_id, session, turn_id), daemon=True).start()
+
+
 def generate_after_turn(chat_id: int, session: dict, turn_id: str) -> None:
-    """After a session's FIRST turn, replace its provisional first-prompt title
-    with a generated subject. No-op unless the title is still 'auto' and this is
-    the only turn (so we never retro-title existing chats or clobber a rename)."""
+    """Replace a session's provisional first-prompt title with a generated
+    subject. No-op unless the title is still 'auto' and this is the only turn
+    (so we never retro-title existing chats or clobber a rename). The reply is
+    optional: at turn start there isn't one yet, and the prompt alone names the
+    topic well enough."""
+    sid = session["id"]
     try:
         if not aifeatures.enabled("title"):
             return
-        sid = session["id"]
+        if sid in _inflight:
+            return                         # start-of-turn call still running
+        _inflight.add(sid)
         fresh = store.get_session(sid)
         if not fresh or fresh.get("title_source") != "auto":
             return                         # manual rename or already subjected
@@ -93,6 +111,8 @@ def generate_after_turn(chat_id: int, session: dict, turn_id: str) -> None:
             store.set_tags(sid, tags)
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[titler] generate failed: {e}", file=sys.stderr)
+    finally:
+        _inflight.discard(sid)
 
 
 def _generate(chat_id: int, cwd: str | None, prompt: str,

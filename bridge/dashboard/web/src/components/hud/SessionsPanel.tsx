@@ -62,16 +62,19 @@ function loadPrefs(): Prefs {
 const STATUS_VIEW: Record<string, { c: string; l: string }> = {
   working: { c: "var(--ok)", l: "WORK" },
   awaiting: { c: "var(--warn)", l: "WAIT" },
+  checking: { c: "var(--purple)", l: "CHECK" },
   live: { c: "var(--info)", l: "LIVE" },
   idle: { c: "var(--txf)", l: "IDLE" },
   done: { c: "var(--acc)", l: "DONE" },
 };
 
+const BUSY_NOW = ["working", "awaiting", "checking"];
+
 function statusView(s: SessionStatus | undefined, done = false) {
-  // DONE (finished, unopened) outranks idle/live, but never a live working or
-  // awaiting state — those are what it's doing *now*.
+  // DONE (finished, unopened) outranks idle/live, but never a state it's in
+  // *now* — working, awaiting you, or having a prompt checked against it.
   const state = s?.state ?? "idle";
-  if (done && state !== "working" && state !== "awaiting") return STATUS_VIEW.done;
+  if (done && !BUSY_NOW.includes(state)) return STATUS_VIEW.done;
   return STATUS_VIEW[state] ?? STATUS_VIEW.idle;
 }
 

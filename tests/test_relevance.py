@@ -188,3 +188,22 @@ def test_related_prompt_runs_normally(monkeypatch):
     h, box = _handler()
     h._run(905, {"prompt": LONG, "session_id": s["id"]})
     assert box["obj"]["job_id"] == "job1" and len(started) == 1
+
+
+def test_session_shows_as_checking_while_the_check_runs(monkeypatch):
+    """No job exists for the ~10s a check takes, so without the checking state the
+    session drops out of every "active sessions" list until it's approved."""
+    s = _session(chat=906)
+    _no_jobs(monkeypatch)
+    mid: dict = {}
+
+    def fake_check(*a, **k):
+        mid.update(runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                        external=[], native_snap={}))
+        return {"related": True, "reason": "", "suggested_title": None}
+
+    monkeypatch.setattr(relevance, "check_relevance", fake_check)
+    h, _box = _handler()
+    h._run(906, {"prompt": LONG, "session_id": s["id"]})
+    assert mid[s["id"]]["state"] == "checking"
+    assert s["id"] not in relevance.checking_ids()      # cleared once it's done
