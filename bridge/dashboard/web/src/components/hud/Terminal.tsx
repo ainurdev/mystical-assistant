@@ -137,7 +137,7 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
-  loading, sessionId, hud, onRunCommand,
+  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -163,6 +163,8 @@ export function Terminal({
   hud?: HudSettings;
   /** Re-run a transcript command in this project's TERMINAL tab. */
   onRunCommand?: (command: string) => void;
+  onQuote?: (text: string) => void;
+  onOpenFile?: (path: string, line?: number) => void;
 }) {
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
@@ -269,23 +271,27 @@ export function Terminal({
         <>
           <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
             <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
-              {lastPrompt && !empty && peek && (
-                <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -18px 13px", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
-                  <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
-                  <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: 12 }}>~ ❯</span>
-                  <span style={{ color: "var(--txh)", fontSize: 12, lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
-                </div>
-              )}
               <div ref={contentRef} style={{ padding: "16px 0" }}>
                 {empty && loading ? (
                   <ChannelTuning />
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} />
                 )}
               </div>
             </div>
+            {/* Overlay, not a sticky child of the scroller: in-flow it added ~68px
+                to the content the instant it toggled, so the first scroll down from
+                the top lurched everything you were reading (and back up on the way
+                out). An absolute layer costs the scroll range nothing. */}
+            {lastPrompt && !empty && peek && (
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
+                <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
+                <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: 12 }}>~ ❯</span>
+                <span style={{ color: "var(--txh)", fontSize: 12, lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
+              </div>
+            )}
             {!empty && <CheckpointRail turns={turns} scrollRef={scrollRef} contentRef={contentRef} />}
             {/* Scrolled off the tail — the way back down. Hidden while parked at
                 the bottom, where new output already follows on its own. */}

@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ChevronRight, ChevronsRight, Merge, Paperclip, Square } from "lucide-react";
+import { ChevronRight, ChevronsRight, Merge, Paperclip, Pause, Square } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId } from "../api";
 import type { AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
+import { FileIcon } from "../lib/fileicon";
+import { applyMention, mentionAt, rankPaths } from "../lib/mention";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -174,7 +176,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
 export function Composer({
   disabled, running, model, models, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, onModel, onEffort, onSend, onSteer, onStop, onCompact,
-  queued, onCancelQueued, onEjectQueued, project, onOpenMap,
+  queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause,
 }: {
   disabled: boolean;
   running: boolean;
@@ -210,6 +212,10 @@ export function Composer({
   queued?: { id: string; text: string }[];
   onCancelQueued?: (id: string) => void;
   onEjectQueued?: (id: string) => void; // pull it out and run it in a fresh session
+  // Paused = the turn in flight finishes, but nothing starts on its own after it:
+  // no queued prompt, no goal nudge. Your own SEND still runs (and unpauses).
+  paused?: boolean;
+  onTogglePause?: () => void;
 }) {
   const text = draft;
   const setText = onDraft;
@@ -259,6 +265,68 @@ export function Composer({
     return () => { live = false; if (t) window.clearTimeout(t); };
   }, [project, running, mapOn]);
 
+  // --- @-mentions ----------------------------------------------------------
+  // The project's file list, fetched once per project and kept for the session.
+  // A repo's tree is a few thousand short strings; re-fetching it per keystroke
+  // to save that memory would be the expensive choice.
+  const [tree, setTree] = useState<string[]>([]);
+  useEffect(() => {
+    if (!project) { setTree([]); return; }
+    let live = true;
+    void api.filesTree(project)
+      .then((r) => { if (live) setTree(r.files); })
+      .catch(() => { if (live) setTree([]); });
+    return () => { live = false; };
+  }, [project]);
+
+  const [caret, setCaret] = useState(0);
+  const [mentionPick, setMentionPick] = useState(0);
+  // Escape dismisses the `@` you're on, not mentions in general: the next `@`
+  // sits at a different index and opens normally.
+  const [dismissed, setDismissed] = useState(-1);
+  const mention = tree.length ? mentionAt(text, caret) : null;
+  const hits = mention ? rankPaths(tree, mention.q) : [];
+  // A query that matches nothing closes the list rather than showing an empty
+  // box — you're writing an email address or a handle, not picking a file.
+  const mentionOpen = !!mention && hits.length > 0 && mention.start !== dismissed;
+  useEffect(() => { setMentionPick(0); }, [mention?.q, mention?.start]);
+
+  /** Splice the highlighted path over the `@query` and put the caret after it. */
+  function takeMention(path: string) {
+    if (!mention) return;
+    const next = applyMention(text, mention, caret, path);
+    setText(next.text);
+    requestAnimationFrame(() => {
+      const el = taRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.caret, next.caret);
+      setCaret(next.caret);
+    });
+  }
+
+  /** Arrow/Tab/Enter belong to the mention list while it's open; Escape closes
+   *  it without touching the draft. Returns true when the key was consumed. */
+  function mentionKey(e: React.KeyboardEvent): boolean {
+    if (!mentionOpen) return false;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setMentionPick((p) => (p + (e.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length);
+      return true;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      takeMention(hits[mentionPick]);
+      return true;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setDismissed(mention!.start);
+      return true;
+    }
+    return false;
+  }
+
   // Auto-grow the input with its content (1 line → up to ~9 lines, then scroll).
   useLayoutEffect(() => {
     const el = taRef.current;
@@ -304,6 +372,24 @@ export function Composer({
 
   return (
     <div style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px" }}>
+      {/* Paused: shown even when idle, because that's exactly when you can't tell
+          from the transcript that the queue and the goal loop are being held. */}
+      {paused && (
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 9, padding: "5px 9px", border: "1px solid color-mix(in srgb, var(--warn) 34%, transparent)", background: "color-mix(in srgb, var(--warn) 8%, transparent)" }}>
+          <Pause size={11} strokeWidth={0} fill="var(--warn)" aria-hidden style={{ flex: "none" }} />
+          <span style={{ fontSize: 10, letterSpacing: 1, color: "var(--warn)", flex: "none" }}>PAUSED</span>
+          <span style={{ fontSize: 10.5, color: "var(--txl)", flex: 1, minWidth: 0 }}>
+            {running ? "this turn finishes; nothing starts after it" : "nothing starts on its own"}
+            {queued && queued.length > 0 ? ` — ${queued.length} held` : ""}
+          </span>
+          {onTogglePause && (
+            <button onClick={onTogglePause} title="Let queued prompts and goal nudges run again"
+              style={{ ...chip, flex: "none", cursor: "pointer", border: "1px solid var(--warn)", color: "var(--warn)" }}>
+              RESUME
+            </button>
+          )}
+        </div>
+      )}
       {/* queued prompts — waiting to run after the current turn */}
       {queued && queued.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 9 }}>
@@ -440,7 +526,7 @@ export function Composer({
 
       {/* command line */}
       <div
-        style={{ display: "flex", alignItems: "flex-start", gap: 11, border: `1px solid ${dragging ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: "color-mix(in srgb, var(--panel2) 70%, transparent)", padding: "10px 13px", fontFamily: "'JetBrains Mono',monospace" }}
+        style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 11, border: `1px solid ${dragging ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: "color-mix(in srgb, var(--panel2) 70%, transparent)", padding: "10px 13px", fontFamily: "'JetBrains Mono',monospace" }}
         onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
@@ -451,11 +537,31 @@ export function Composer({
         }}
       >
         <span style={{ color: "var(--purple)", fontSize: 13, flex: "none", marginTop: 2 }}>~ ❯</span>
+        {mentionOpen && (
+          <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
+            {hits.map((p, i) => (
+              <button
+                key={p}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); takeMention(p); }}
+                onMouseEnter={() => setMentionPick(i)}
+                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === mentionPick ? "var(--acc)" : "transparent"}`, background: i === mentionPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === mentionPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, padding: "5px 10px" }}
+              >
+                <FileIcon name={p} size={12} />
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}>{p}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <textarea
           ref={taRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+          onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); }}
+          onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
+          onKeyDown={(e) => {
+            if (mentionKey(e)) return;
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+          }}
           onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
           placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
           rows={1}
@@ -471,6 +577,13 @@ export function Composer({
             <button onClick={onStop}
               style={{ ...actBtn, border: "1px solid var(--err)", background: "color-mix(in srgb, var(--err) 12%, transparent)", color: "var(--err)" }}>
               STOP <Square size={10} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+            {/* The graceful counterpart to STOP: no interrupt, no half-written
+                file — the turn lands, then the loop holds. */}
+            {onTogglePause && !paused && (
+              <button onClick={onTogglePause} title="Let this turn finish, then hold — no queued prompt or goal nudge starts after it"
+                style={{ ...actBtn, border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 10%, transparent)", color: "var(--warn)" }}>
+                PAUSE <Pause size={10} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+            )}
             {onSteer && (
               <button onClick={steer} disabled={!text.trim()} title="Fold this into the turn that's running now (text only — falls back to queueing if the run just ended)"
                 style={{ ...actBtn, cursor: !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--warn)", opacity: !text.trim() ? 0.4 : 1 }}>

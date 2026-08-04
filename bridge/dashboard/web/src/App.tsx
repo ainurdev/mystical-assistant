@@ -42,6 +42,8 @@ import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins } from "./lib/prefs";
 import { nearBottom, stickToBottom } from "./lib/stick";
+import { push, shouldPush } from "./lib/push";
+import { chatToMarkdown } from "./lib/chatmd";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -557,7 +559,18 @@ export function App() {
         && !["working", "awaiting"].includes(statusMap.get(id)?.state ?? ""))
       .map(([id]) => id);
     if (finished.length) setDoneIds((d) => new Set([...d, ...finished]));
-  }, [statusMap, sessionId]);
+    // Same transitions, sent to the OS. Finished is computed above against the
+    // session you have open; awaiting is not, because a question in the session
+    // you're looking at but a window you've left is still news.
+    if (!settings.push) return;
+    const name = (id: string) => sessions.find((s) => s.id === id)?.title || "session";
+    for (const id of finished)
+      if (shouldPush(id, sessionId)) push(`✓ ${name(id)}`, "finished", id);
+    for (const [id, st] of statusMap)
+      if (st.state === "awaiting" && prev.get(id)?.state !== "awaiting"
+          && shouldPush(id, sessionId))
+        push(`⏸ ${name(id)}`, "waiting on you", id);
+  }, [statusMap, sessionId, sessions, settings.push]);
 
   useEffect(() => {
     try { localStorage.setItem(DONE_KEY, JSON.stringify([...doneIds])); } catch { /* ignore */ }
@@ -677,6 +690,9 @@ export function App() {
       model, effort: effort || undefined, permission_mode: permMode || undefined,
       agent: settings.agent || undefined,
     }, sid);
+    // Sending by hand is the un-pause: otherwise the prompt joins a held queue and
+    // sits there looking sent.
+    queue.resumeIfPaused();
     // A turn is already in flight for this session — queue the prompt to run
     // after it (and any earlier queued prompts) instead of blocking on STOP.
     if (running && !opts?.sessionId) { enqueue(); return; }
@@ -757,6 +773,24 @@ export function App() {
     const sid = sessionIdRef.current;
     if (!sid) return;
     setDrafts((d) => (text ? { ...d, [sid]: text } : omit(d, sid)));
+  }
+
+  /** A path the model mentioned, opened in the editor. Routed through the same
+   *  call the file browser uses, so it lands on the session's own branch.
+   *  ponytail: the `:42` in a reference is parsed and then dropped — jumping to
+   *  the line means threading it through AnalyzeModal into the CM6 view. */
+  function openFileRef(path: string) {
+    if (!sessionProject) { notify("info", "No project open for this session."); return; }
+    openAnalyze(sessionProject, { path, branch: sessionBranch });
+  }
+
+  /** A line of the model's prose → a markdown blockquote in the prompt box, the
+   *  way you'd quote a mail. Appended, not substituted: you quote a sentence
+   *  because you're already halfway through writing about it. */
+  function quote(text: string) {
+    const q = text.trim().split("\n").map((l) => `> ${l}`).join("\n");
+    setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${q}\n\n` : `${q}\n\n`);
+    setView("chat");
   }
 
   async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) {
@@ -1069,6 +1103,12 @@ export function App() {
   const commands: Command[] = [
     { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => activeProject && void newSession(activeProject) },
     { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) },
+    { id: "copy-chat", label: "Copy chat as markdown", group: "Session", icon: "⧉", run: () => {
+      const md = chatToMarkdown(turns, sessions.find((s) => s.id === sessionId)?.title ?? undefined);
+      if (!md.trim()) { notify("info", "Nothing to copy yet."); return; }
+      try { void navigator.clipboard?.writeText(md); notify("info", "Chat copied as markdown."); }
+      catch { notify("error", "Clipboard refused the copy."); }
+    } },
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
     // Gated exactly like the tabs: an extra that's off has no way in at all.
@@ -1304,6 +1344,8 @@ export function App() {
                 liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession} hud={settings}
                 onRunCommand={runCommand}
+                onQuote={quote}
+                onOpenFile={openFileRef}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -1338,6 +1380,7 @@ export function App() {
                       onSteer={(t) => void queue.steer(t).then((ok) => { if (!ok) void send(t, []); })}
                       onCompact={() => void send("/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
+                      paused={queue.paused} onTogglePause={queue.togglePause}
                       onCancelQueued={(id) => queue.remove(id)}
                       onEjectQueued={(id) => void ejectQueued(id)}
                       project={sessionProject}

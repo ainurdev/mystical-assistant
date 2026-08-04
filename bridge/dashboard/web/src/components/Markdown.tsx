@@ -2,6 +2,8 @@ import { memo, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { tokenize, type Tok } from "../lib/hl";
+import { parseFileRef } from "../lib/filepath";
+import { FileIcon } from "../lib/fileicon";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
 // `.md` block in index.css. Links open in a new tab.
@@ -48,13 +50,52 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   );
 }
 
-export const Markdown = memo(function Markdown({ children, className = "" }: { children: string; className?: string }) {
+/** An inline code span that names a file, drawn as a link into the editor. The
+ *  icon is the same filetype icon the file browser uses, so a path reads as a
+ *  file at a glance rather than as more monospace. */
+function FileRefSpan({
+  path, line, label, onOpen,
+}: {
+  path: string;
+  line?: number;
+  label: string;
+  onOpen: (path: string, line?: number) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(path, line)}
+      title={`Open ${path}${line ? ` at line ${line}` : ""}`}
+      className="md-fileref"
+    >
+      <FileIcon name={path} size={11} />
+      <code>{label}</code>
+    </button>
+  );
+}
+
+export const Markdown = memo(function Markdown({
+  children, className = "", onOpenFile,
+}: {
+  children: string;
+  className?: string;
+  /** Given, inline code that parses as a repo path becomes a link. */
+  onOpenFile?: (path: string, line?: number) => void;
+}) {
   return (
     <div className={`md ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          code: ({ node, className: cls, children: kids, ...props }) => {
+            // Fenced blocks arrive here too (inside `pre`) — those are the `pre`
+            // handler's business, and they carry a language class.
+            const raw = textOf(kids);
+            const ref = onOpenFile && !cls ? parseFileRef(raw) : null;
+            if (ref && onOpenFile) return <FileRefSpan {...ref} label={raw} onOpen={onOpenFile} />;
+            return <code className={cls} {...props}>{kids}</code>;
+          },
           pre: ({ children }) => {
             const el = (Array.isArray(children) ? children[0] : children) as
               { props?: { className?: string; children?: unknown } } | undefined;

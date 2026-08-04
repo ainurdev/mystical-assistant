@@ -74,6 +74,9 @@ export function usePreviewQueue(sessionId: string | null) {
     cancel: (id: string) => run(api.queueOp("cancel", { session_id: sid, item_id: id })),
     retry: (id: string) => run(api.queueOp("retry", { session_id: sid, item_id: id })),
     togglePause: () => run(api.queueOp(snap.paused ? "resume" : "pause", { session_id: sid })),
+    /** Unpause only if paused — sending a prompt by hand means you want the loop
+     * back, and a blind toggle would pause a queue that was already running. */
+    resumeIfPaused: () => { if (snap.paused) run(api.queueOp("resume", { session_id: sid })); },
     clearDone: () => run(api.queueOp("clear-done", { session_id: sid })),
     /** Send text into the RUNNING turn (not the queue). Resolves false if the
      * server says nothing is running, so the caller can queue it instead. */

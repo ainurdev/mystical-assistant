@@ -28,6 +28,7 @@ import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
 import { setAiFeatures } from "../../lib/ai";
+import { pushSupported, requestPush } from "../../lib/push";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
@@ -1720,6 +1721,29 @@ export function SettingsModal(props: SettingsModalProps) {
                       style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "6px 12px", flex: "none", marginLeft: 12 }}>
                       OPEN
                     </button>
+                  </div>
+                </div>
+
+                <Label top>NOTIFICATIONS</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={KEY_TX}>DESKTOP</div>
+                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                        {pushSupported()
+                          ? "An OS notification when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
+                          : "This browser has no Notification API — Telegram remains the only push path."}
+                      </div>
+                    </div>
+                    <Switch
+                      on={settings.push}
+                      onClick={() => {
+                        if (settings.push) { onPatch({ push: false }); return; }
+                        // Ask only on switch-on; a denial can't be re-asked, so the
+                        // switch goes back off rather than sitting on and silent.
+                        void requestPush().then((ok) => onPatch({ push: ok }));
+                      }}
+                    />
                   </div>
                 </div>
 

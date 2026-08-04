@@ -314,6 +314,9 @@ export interface HudSettings {
   // Who runs the turn: 'claude:<slot>' (a login) or 'opencode:<provider>' (a
   // free agent). "" = the ambient login, same as claude:1.
   agent: string;
+  // OS-level notification when a session finishes or needs you, for the sessions
+  // you're not watching. Needs the browser's permission, asked for on switch-on.
+  push: boolean;
 }
 
 const KEY = "hud-settings";
@@ -323,7 +326,7 @@ const DEFAULTS: HudSettings = {
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
-  ponytailUi: true, graphUi: true, agent: "",
+  ponytailUi: true, graphUi: true, agent: "", push: false,
 };
 
 /**
@@ -402,6 +405,9 @@ export function loadSettings(): HudSettings {
         // Like model: an agent that has gone away (account removed, key
         // cleared) is snapped back to the default login by App's agentOpts effect.
         agent: str(p.agent, ""),
+        // Stored true only ever means "and the browser said yes at the time" —
+        // push() re-checks the live permission before every notification.
+        push: p.push ?? false,
       };
     }
   } catch {

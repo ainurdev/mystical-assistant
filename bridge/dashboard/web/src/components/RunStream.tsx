@@ -1,7 +1,7 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown,
-  Search, Globe, Bot, ListChecks, Plug,
+  Search, Globe, Bot, ListChecks, Plug, Quote,
 } from "lucide-react";
 import type { AnswerSelection, RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
@@ -611,6 +611,58 @@ function McpCard({
   );
 }
 
+/** What one call says inside a CallGroup — the header already carries the server
+ *  or the kind, so the row is only what this call reached for. */
+function callLine(name: string, summary: string): string {
+  return toolKind(name) === "mcp" ? mcpParts(name).tool : hostOf(summary) || summary;
+}
+
+/** A run of back-to-back calls of one kind drawn as one card, the way Bash calls
+ *  share a terminal: the tag once in the header, a row per call. Eight MCP calls
+ *  used to say the server's name eight times. */
+function CallGroup({
+  name,
+  calls,
+  animate,
+}: {
+  name: string;
+  calls: { name: string; summary: string; ms?: number }[];
+  animate: boolean;
+}) {
+  const kind = toolKind(name);
+  const accent = toolAccent(name);
+  const tag = kind === "mcp" ? mcpParts(name).server : kind;
+  const total = calls.reduce((t, c) => t + (c.ms ?? 0), 0);
+
+  return (
+    <div
+      className="my-1.5 ml-[18px] border bg-[var(--ac-03)]"
+      style={{
+        borderColor: edge(accent),
+        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
+      }}
+    >
+      <div
+        className="flex items-center gap-2 border-b px-2.5 py-1 text-[9.5px] tracking-[2px]"
+        style={{ borderColor: edge(accent), color: accent }}
+      >
+        {kind === "mcp" ? <Plug size={11} aria-hidden /> : kind === "web" ? <Globe size={11} aria-hidden /> : <Bot size={11} aria-hidden />}
+        <span className="truncate">{tag.toUpperCase()}</span>
+        <span className="flex-none tracking-[1px] text-muted-2">· {calls.length} CALLS</span>
+        {total > 0 && <span className="flex-none tracking-[1px] text-muted-2">· {dur(total)}</span>}
+      </div>
+      {calls.map((c, k) => (
+        <div key={k} className="flex items-center gap-2.5 border-t border-border px-2.5 py-1 first:border-t-0">
+          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground-bright">
+            {callLine(c.name, c.summary)}
+          </span>
+          <Took ms={c.ms} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** A delegated run (Task / Skill): a rail down the side and the brief it was
  *  handed, which is a paragraph, not a path — so it wraps instead of truncating. */
 function AgentCard({
@@ -688,6 +740,59 @@ function ToolCard({
   );
 }
 
+/** One block of the model's prose, with the two things you actually want to do
+ *  with it. The buttons float over the text on hover rather than taking a row of
+ *  their own — a transcript is mostly prose, and a permanent toolbar per
+ *  paragraph would read as chrome. */
+function MessageBlock({
+  text, onQuote, children,
+}: {
+  text: string;
+  onQuote?: (text: string) => void;
+  children: ReactNode;
+}) {
+  const [copied, setCopied] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  /** Your selection if it's inside this block, else the whole block. Quoting a
+   *  sentence is the common case; quoting the lot is the fallback. */
+  function selected(): string {
+    const sel = window.getSelection();
+    const t = sel?.toString().trim();
+    if (!t || !sel?.anchorNode || !ref.current?.contains(sel.anchorNode)) return text;
+    return t;
+  }
+
+  return (
+    <div ref={ref} className="group/msg relative">
+      {children}
+      <div className="absolute right-1 top-0 flex gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
+        <button
+          onClick={() => {
+            try { void navigator.clipboard?.writeText(text); } catch { /* ignore */ }
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          }}
+          title="Copy this message"
+          className="flex items-center gap-1 border border-[var(--ac-20)] bg-[var(--panel3)] px-1.5 py-0.5 text-[8.5px] tracking-[1px] text-muted-2 hover:text-[var(--acc)]"
+        >
+          {copied ? <Check size={9} aria-hidden /> : <Copy size={9} aria-hidden />}
+          {copied ? "COPIED" : "COPY"}
+        </button>
+        {onQuote && (
+          <button
+            onClick={() => onQuote(selected())}
+            title="Quote into the prompt box — your selection if you have one, else the whole message"
+            className="flex items-center gap-1 border border-[var(--ac-20)] bg-[var(--panel3)] px-1.5 py-0.5 text-[8.5px] tracking-[1px] text-muted-2 hover:text-[var(--acc)]"
+          >
+            <Quote size={9} aria-hidden /> QUOTE
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** A run of plain lookups (reads, greps, globs) collapsed to one line, so the
  *  turn reads as the commands and edits that actually changed something. */
 function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void }) {
@@ -725,6 +830,8 @@ export const RunStream = memo(function RunStream({
   turnId = "",
   openResults = false,
   onRunCommand,
+  onQuote,
+  onOpenFile,
   ended = false,
 }: {
   events: RunEvent[];
@@ -734,6 +841,8 @@ export const RunStream = memo(function RunStream({
   turnId?: string;
   openResults?: boolean;
   onRunCommand?: (command: string) => void;
+  onQuote?: (text: string) => void;
+  onOpenFile?: (path: string, line?: number) => void;
   ended?: boolean;
 }) {
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
@@ -758,13 +867,18 @@ export const RunStream = memo(function RunStream({
     if (e.type !== "tool") return false;
     return BLOCK_KINDS.has(toolKind(e.name)) || !!doneOf(e)?.patch;
   });
-  // Back-to-back Bash calls share one terminal window (see TerminalGroup); the
-  // head draws them all, the rest render nothing.
-  const isBash = (i: number) => {
+  // Back-to-back calls of one kind share a card — Bash a terminal window, the
+  // rest a CallGroup; the head draws them all, the rest render nothing. MCP
+  // groups by server, so two servers in a row stay two cards.
+  const groupKey = (i: number): string | null => {
     const e = events[i];
-    return e.type === "tool" && e.name === "Bash";
+    if (e.type !== "tool" || doneOf(e)?.patch) return null;
+    if (e.name === "Bash") return "bash";
+    const kind = toolKind(e.name);
+    if (kind === "mcp") return `mcp:${mcpParts(e.name).server}`;
+    return BLOCK_KINDS.has(kind) ? kind : null; // the quiet ones fold into chips
   };
-  const { folds: shells, headOf: shellOf } = runsOf(events, isBash, 2);
+  const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
 
   // The turn's closing text arrives twice — once streamed as a text block, once
   // as the run's result — so the same words used to print twice, the second time
@@ -782,7 +896,9 @@ export const RunStream = memo(function RunStream({
             if (resultText && event.text.trim() === resultText) return null;
             return (
               <div key={i} style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
-                <Markdown className="pl-[18px] leading-relaxed text-[var(--txm)]">{event.text}</Markdown>
+                <MessageBlock text={event.text} onQuote={onQuote}>
+                  <Markdown className="pl-[18px] leading-relaxed text-[var(--txm)]" onOpenFile={onOpenFile}>{event.text}</Markdown>
+                </MessageBlock>
               </div>
             );
           case "tool": {
@@ -798,9 +914,9 @@ export const RunStream = memo(function RunStream({
                 />
               );
             const done = doneOf(event);
-            if (event.name === "Bash") {
-              if (shellOf.has(i)) return null; // drawn by the run's head
-              const run = shells.get(i) ?? [i];
+            if (groupOf.has(i)) return null; // drawn by the run's head
+            const run = groups.get(i) ?? [i];
+            if (event.name === "Bash")
               return (
                 <TerminalGroup
                   key={i}
@@ -813,7 +929,18 @@ export const RunStream = memo(function RunStream({
                   onRerun={onRunCommand}
                 />
               );
-            }
+            if (run.length > 1)
+              return (
+                <CallGroup
+                  key={i}
+                  name={event.name}
+                  calls={run.map((j) => {
+                    const e = events[j] as { name: string; summary: string };
+                    return { name: e.name, summary: e.summary, ms: doneOf(events[j])?.ms };
+                  })}
+                  animate={animate}
+                />
+              );
             if (done?.patch)
               return (
                 <DiffBlock

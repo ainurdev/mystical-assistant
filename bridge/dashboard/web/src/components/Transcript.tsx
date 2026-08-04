@@ -84,6 +84,8 @@ export function Transcript({
   lastPromptRef,
   hud,
   onRunCommand,
+  onQuote,
+  onOpenFile,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -93,6 +95,8 @@ export function Transcript({
   lastPromptRef?: RefObject<HTMLDivElement | null>;
   hud?: HudSettings;
   onRunCommand?: (command: string) => void;
+  onQuote?: (text: string) => void;
+  onOpenFile?: (path: string, line?: number) => void;
 }) {
   if (!turns.length) {
     return <RuneSpirit variant="block" />;
@@ -132,6 +136,8 @@ export function Transcript({
                 turnId={turn.id}
                 openResults={hud?.openResults ?? false}
                 onRunCommand={onRunCommand}
+                onQuote={onQuote}
+                onOpenFile={onOpenFile}
                 ended={turn.status !== "running"}
               />
             )}
