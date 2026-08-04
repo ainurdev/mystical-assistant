@@ -930,6 +930,14 @@ export const api = {
       method: "POST",
       body: { tag, ...(next ? { new: next } : {}) },
     }),
+  /** Mint a read-only link to one session, or revoke every link it has. The
+   *  page is served by the bridge itself — which binds loopback, so a link only
+   *  opens elsewhere if you deliberately expose the port. */
+  share: (sessionId: string, opts: { days?: number; revoke?: boolean } = {}) =>
+    req<{ ok: boolean; token?: string; url?: string; expires?: number; revoked?: number }>(
+      `/local/sessions/${encodeURIComponent(sessionId)}/share`,
+      { method: "POST", body: opts },
+    ),
   /** Rename one session, or (no title) have the model name it again. */
   retitle: (sessionId: string, title?: string) =>
     req<{ ok: boolean; generating?: boolean; session?: SessionBrief }>(

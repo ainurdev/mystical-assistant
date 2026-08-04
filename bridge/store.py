@@ -10,6 +10,7 @@ docs/superpowers/specs/2026-06-23-unified-sessions-dashboard-design.md
 
 import json
 import os
+import secrets
 import sqlite3
 import time
 import uuid
@@ -57,6 +58,14 @@ CREATE TABLE IF NOT EXISTS turns (
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
 CREATE INDEX IF NOT EXISTS ix_sessions_csid ON sessions(claude_session_id);
+
+CREATE TABLE IF NOT EXISTS shares (
+  token       TEXT PRIMARY KEY,
+  session_id  TEXT NOT NULL,
+  created     REAL NOT NULL,
+  expires     REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_shares_session ON shares(session_id);
 
 CREATE TABLE IF NOT EXISTS events (
   session_id  TEXT NOT NULL,
@@ -404,6 +413,65 @@ def retag(old: str, new: "str | None") -> int:
             changed += 1
         c.execute("COMMIT")
     return changed
+
+
+# --- shares -----------------------------------------------------------------
+# A share is a read-only view of one session at an unguessable URL, good until
+# it expires. The token IS the authorisation, so it never appears in a list the
+# dashboard shows to anyone but its owner, and every read re-checks the clock.
+
+SHARE_MAX_DAYS = 7
+
+
+def create_share(session_id: str, days: int = 7) -> dict:
+    """Mint a share for `session_id`. Days is clamped to 1..7 — a link that
+    outlives your memory of making it is the one that leaks."""
+    days = max(1, min(SHARE_MAX_DAYS, int(days or 7)))
+    now = time.time()
+    row = {"token": secrets.token_urlsafe(24), "session_id": session_id,
+           "created": now, "expires": now + days * 86400}
+    with closing(_connect()) as c:
+        c.execute("INSERT INTO shares(token,session_id,created,expires) "
+                  "VALUES(?,?,?,?)",
+                  (row["token"], session_id, row["created"], row["expires"]))
+    return row
+
+
+def get_share(token: str) -> "dict | None":
+    """The live share for `token`, or None when it's unknown or expired. Expiry
+    is enforced here rather than by a sweeper, so a link dies on time even if
+    nothing has pruned the table."""
+    if not token:
+        return None
+    with closing(_connect()) as c:
+        r = c.execute("SELECT * FROM shares WHERE token=?", (token,)).fetchone()
+    if r is None or r["expires"] <= time.time():
+        return None
+    return dict(r)
+
+
+def list_shares(session_id: str) -> list[dict]:
+    """Live shares for a session, newest first."""
+    with closing(_connect()) as c:
+        rows = c.execute(
+            "SELECT * FROM shares WHERE session_id=? AND expires>? "
+            "ORDER BY created DESC", (session_id, time.time())).fetchall()
+    return [dict(r) for r in rows]
+
+
+def revoke_shares(session_id: str) -> int:
+    """Kill every share for a session. Returns how many were live."""
+    live = len(list_shares(session_id))
+    with closing(_connect()) as c:
+        c.execute("DELETE FROM shares WHERE session_id=?", (session_id,))
+    return live
+
+
+def prune_shares() -> int:
+    """Drop expired rows. Housekeeping only — get_share already refuses them."""
+    with closing(_connect()) as c:
+        cur = c.execute("DELETE FROM shares WHERE expires<=?", (time.time(),))
+    return cur.rowcount or 0
 
 
 def get_disabled_tools(session_id: str) -> list[str]:

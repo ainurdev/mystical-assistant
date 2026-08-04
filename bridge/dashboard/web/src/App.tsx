@@ -1177,6 +1177,12 @@ export function App() {
       items.push({ icon: "↻", label: "Regenerate title",
         hint: "let the model name it from the whole session",
         onClick: () => void regenerateTitle(ctxMenu.id) });
+      items.push({ icon: "⇗", label: "Share — read-only link",
+        hint: "expires in 7 days",
+        onClick: () => void shareSession(ctxMenu.id) });
+      items.push({ icon: "⊘", label: "Revoke share links",
+        hint: "every link to this session stops working",
+        onClick: () => void revokeShares(ctxMenu.id) });
       items.push({ icon: "⧉", label: "Duplicate session",
         hint: "copy the transcript into a new one",
         onClick: () => void duplicateSession(ctxMenu.id) });
@@ -1249,6 +1255,30 @@ export function App() {
       await api.retitle(id);
       notify("info", "Renaming — the new title lands in a moment.");
       setTimeout(() => void loadSessions(), 4000);
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
+  /** A read-only link to this session, on the clipboard. The bridge binds
+   *  loopback, so the link opens on this machine — reaching it from a phone
+   *  means putting the port behind the tunnel yourself, deliberately. */
+  async function shareSession(id: string) {
+    try {
+      const r = await api.share(id, { days: 7 });
+      const url = `${location.origin}${r.url}`;
+      try { void navigator.clipboard?.writeText(url); } catch { /* shown below anyway */ }
+      notify("info", `Link copied — read-only, expires in 7 days. ${url}`);
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
+  async function revokeShares(id: string) {
+    try {
+      const r = await api.share(id, { revoke: true });
+      notify("info", r.revoked ? `Revoked ${r.revoked} link${r.revoked === 1 ? "" : "s"}.`
+                               : "No live links to revoke.");
     } catch (e) {
       notify("error", (e as Error).message);
     }

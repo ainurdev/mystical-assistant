@@ -30,6 +30,7 @@ import re
 from bridge import (agents, browser, config, devserver, fmt, git, github, graphmap,
                     models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, runner, screenshot, selfupdate,
+                    share,
                     shell, skills, state, store, sysinfo, terminals, titler, tunnel, usage,
                     weather, wsutil)
 from bridge.miniapp.server import (_pre_title, _save_images, _session_brief,
@@ -221,10 +222,17 @@ class Handler(BaseHTTPRequestHandler):
     # --- routing ---
     def do_GET(self):
         try:
-            if not self._host_ok():
-                return self._json({"error": "bad host"}, 403)
             u = urlparse(self.path)
             path, qs = u.path, parse_qs(u.query)
+            # Before the Host gate on purpose: a share link has to open on a
+            # phone, which is never `localhost`. The unguessable token in the
+            # path is the authorisation, and the page it returns is one
+            # session's transcript, read-only, with no API behind it. Every
+            # other route stays loopback-only. (See bridge/share.py.)
+            if path.startswith("/share/"):
+                return self._share(path[len("/share/"):])
+            if not self._host_ok():
+                return self._json({"error": "bad host"}, 403)
             if path == "/local/ws/terminal":
                 return self._terminal_ws(qs)
             if path.startswith("/local/stream/"):
@@ -769,6 +777,19 @@ class Handler(BaseHTTPRequestHandler):
             if not titler.regenerate(chat, s):
                 return self._json({"error": "nothing to title yet"}, 400)
             return self._json({"ok": True, "generating": True})
+        if path.startswith("/local/sessions/") and path.endswith("/share"):
+            sid = path[len("/local/sessions/"):-len("/share")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            if body.get("revoke"):
+                return self._json({"ok": True, "revoked": store.revoke_shares(sid),
+                                   "shares": []})
+            row = store.create_share(sid, int(body.get("days") or 7))
+            store.prune_shares()
+            return self._json({"ok": True, "token": row["token"],
+                               "expires": row["expires"],
+                               "url": f"/share/{row['token']}"})
         if path.startswith("/local/sessions/") and path.endswith("/duplicate"):
             sid = path[len("/local/sessions/"):-len("/duplicate")]
             s = store.get_session(sid)
@@ -1473,6 +1494,15 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     # --- static (SPA) ---
+    def _share(self, token: str):
+        """A shared session's page. Unknown, revoked and expired tokens are one
+        answer — 404 — so a probe learns nothing from the difference."""
+        page = share.render((token or "").strip("/").split("/")[0])
+        if page is None:
+            return self._send(b"Not found or expired.", 404, "text/plain; charset=utf-8",
+                              cache="no-store")
+        self._send(page.encode(), 200, "text/html; charset=utf-8", cache="no-store")
+
     def _attachment(self, p: str):
         """Serve one uploaded screenshot back to the transcript, so a rehydrated
         turn shows the image instead of a chip. Confined to UPLOAD_DIR (the paths
