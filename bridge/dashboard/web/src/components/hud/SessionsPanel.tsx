@@ -79,7 +79,7 @@ function statusView(s: SessionStatus | undefined, done = false) {
 }
 
 function SessionRow({
-  s, i, on, loading, sv, flag, branch, pinned, onPin, onAttach, onAnalyzeProj, animate = true,
+  s, i, on, loading, sv, flag, branch, pinned, showProj, onPin, onAttach, onAnalyzeProj, animate = true,
 }: {
   s: SessionBrief;
   i: number;
@@ -89,6 +89,7 @@ function SessionRow({
   flag?: PromptFlag;
   branch: string;
   pinned: boolean;
+  showProj: boolean; // BY PROJECT rows sit under a header that already says it
   onPin: () => void;
   onAttach: () => void;
   onAnalyzeProj: () => void;
@@ -105,31 +106,38 @@ function SessionRow({
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
       style={{
-        display: "flex", gap: 10, padding: "10px 11px", marginBottom: 7, cursor: "pointer",
-        border: `1px solid ${on ? "color-mix(in srgb, var(--acc) 30%, transparent)" : "color-mix(in srgb, var(--acc) 10%, transparent)"}`,
-        borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
-        background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : hov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "color-mix(in srgb, var(--panel2) 35%, transparent)",
+        display: "flex", gap: 11, padding: "9px 12px", marginBottom: 2, cursor: "pointer",
+        borderRadius: 10,
+        // Flat by default: a quiet row is just text. Only the open one — and the
+        // one under the cursor — gets a card, so the list reads as a list.
+        border: `1px solid ${on ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "transparent"}`,
+        borderLeft: `2px solid ${on ? "var(--purple)" : "transparent"}`,
+        background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : hov ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent",
         transition: "background .18s ease",
         animation: animate ? "mfadeup .4s ease both" : "none",
         animationDelay: animate ? `${Math.min(i, 10) * 35}ms` : undefined,
       }}
     >
       {loading ? (
-        <span style={{ color: "var(--acc)", flex: "none", marginTop: 3, display: "flex" }}><Spinner className="h-[9px] w-[9px] border" /></span>
+        <span style={{ color: "var(--acc)", flex: "none", marginTop: 4, display: "flex" }}><Spinner className="h-[9px] w-[9px] border" /></span>
       ) : (
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: sv.c, flex: "none", marginTop: 4, boxShadow: `0 0 7px ${idle ? "transparent" : sv.c}` }} />
+        // The status word is gone from the row, so the dot carries it: filled +
+        // glowing when the session is doing something, a hollow ring when idle.
+        <span title={sv.l.toLowerCase()} style={{ width: 9, height: 9, borderRadius: "50%", flex: "none", marginTop: 5, boxSizing: "border-box", background: idle ? "transparent" : sv.c, border: idle ? `1.5px solid ${sv.c}` : 0, boxShadow: `0 0 8px ${idle ? "transparent" : sv.c}` }} />
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, lineHeight: 1.4, color: on ? "var(--txb)" : "var(--txh)", fontWeight: on ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ fontSize: 12, lineHeight: 1.35, color: on ? "var(--txb)" : "var(--txh)", fontWeight: on ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {s.title || "untitled session"}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6 }}>
-          <button
-            onClick={(e) => { e.stopPropagation(); onAnalyzeProj(); }} title="analyze project"
-            onMouseEnter={() => setTagHov(true)} onMouseLeave={() => setTagHov(false)}
-            style={{ appearance: "none", cursor: "pointer", flex: "none", fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, background: tagHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
-          >{tint.tag}</button>
-          <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: "var(--purple-d)", minWidth: 0 }} title="worktree">
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 5 }}>
+          {showProj && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onAnalyzeProj(); }} title="analyze project"
+              onMouseEnter={() => setTagHov(true)} onMouseLeave={() => setTagHov(false)}
+              style={{ appearance: "none", cursor: "pointer", flex: "none", fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 5, background: tagHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
+            >{tint.tag}</button>
+          )}
+          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--purple-d)", minWidth: 0 }} title="worktree">
             <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
@@ -137,9 +145,9 @@ function SessionRow({
             <span
               key={t}
               title={`tag: ${t}`}
-              style={{ flex: "none", fontSize: 8.5, letterSpacing: 0.4,
+              style={{ flex: "none", fontSize: 9.5, letterSpacing: 0.4,
                        color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)",
-                       borderRadius: 3, padding: "0 4px", maxWidth: 64,
+                       borderRadius: 6, padding: "1px 7px", maxWidth: 72,
                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             >{t}</span>
           ))}
@@ -159,10 +167,10 @@ function SessionRow({
             title={pinned ? "unpin — stops holding the top of the list" : "pin to the top of the list"}
             style={{
               appearance: "none", cursor: "pointer", flex: "none", border: 0, background: "transparent",
-              color: pinned ? "var(--acc)" : "var(--txf)", fontFamily: "inherit", fontSize: 10,
+              color: pinned ? "var(--warn)" : "var(--txf)", fontFamily: "inherit", fontSize: 11,
               lineHeight: 1, padding: "1px 3px", transition: "opacity .15s ease",
-              // Hidden until hovered, so a quiet row stays quiet — but a pin always shows.
-              opacity: pinned || hov ? 1 : 0, pointerEvents: pinned || hov ? "auto" : "none",
+              // Dim until hovered, so a quiet row stays quiet — but a pin always shows.
+              opacity: pinned ? 1 : hov ? 0.9 : 0.35,
             }}
           >{pinned ? "★" : "☆"}</button>
           {fv && (
@@ -172,12 +180,12 @@ function SessionRow({
                 fontSize: 8, letterSpacing: 0.8, color: fv.c, flex: "none", padding: "1px 5px",
                 border: `1px solid color-mix(in srgb, ${fv.c} 45%, transparent)`,
                 background: `color-mix(in srgb, ${fv.c} 10%, transparent)`,
+                borderRadius: 5,
                 animation: flag === "checking" ? "twinkle 1.1s ease-in-out infinite" : undefined,
               }}
             >{fv.l}</span>
           )}
-          <span style={{ fontSize: 8.5, letterSpacing: 1, color: sv.c, flex: "none" }}>{loading ? "LOADING…" : sv.l}</span>
-          <span style={{ fontSize: 9, color: "var(--txl)", flex: "none" }}>{ago(s.updated)}</span>
+          <span style={{ fontSize: 9.5, color: loading ? sv.c : "var(--txl)", flex: "none" }}>{loading ? "LOADING…" : ago(s.updated)}</span>
         </div>
       </div>
     </div>
@@ -209,12 +217,15 @@ function PlusBtn({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick} title="new session in this project"
+      // The project header is the drag handle in CUSTOM order — this button is
+      // not, or reaching for "+" would drag the project instead.
+      draggable={false} onDragStart={(e) => e.preventDefault()}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
-        appearance: "none", cursor: "pointer", flex: "none", lineHeight: 0, padding: "5px 9px 6px",
+        appearance: "none", cursor: "pointer", flex: "none", lineHeight: 0, padding: "5px 9px 6px", borderRadius: 8,
         border: `1px solid ${on || hov ? "var(--purple)" : "color-mix(in srgb, var(--purple) 28%, transparent)"}`,
         background: on || hov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
-        color: on || hov ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "inherit", fontSize: 14,
+        color: on || hov ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "inherit", fontSize: 13,
       }}
     >{on ? "✕" : "+"}</button>
   );
@@ -248,6 +259,9 @@ export function SessionsPanel(props: Props) {
   const [dragRel, setDragRel] = useState<string | null>(null);
   const [overRel, setOverRel] = useState<string | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
+  // Projects you collapsed with the caret. ponytail: not persisted — a collapse
+  // is a "get this out of my way right now", not a preference.
+  const [shut, setShut] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [sessionQ, setSessionQ] = useState("");
   // Tag strip is capped at two rows — a tagged machine grows dozens of them and
@@ -260,6 +274,20 @@ export function SessionsPanel(props: Props) {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify({ tab, order, custom: customOrder })); }
     catch { /* ignore */ }
   }, [tab, order, customOrder]);
+
+  // "/" jumps to the search box — the hint badge in it promises this.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (t?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "")) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Hovers.
   const [nsBtnHov, setNsBtnHov] = useState(false);
@@ -287,16 +315,29 @@ export function SessionsPanel(props: Props) {
 
   const sessionTotal = groups.reduce((n, g) => n + g.sessionCount, 0);
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
+  // One resolution of "which branch is this session on", so the row label and
+  // the search box can never disagree about it.
+  const branchFor = (s: SessionBrief) => s.branch || branchOf.get(s.project) || "main";
+  // "N active" per project header — counted once over the whole list rather than
+  // re-scanned per group.
+  const activeBy = new Map<string, number>();
+  for (const s of sessions) {
+    if (BUSY_NOW.includes(status.get(s.id)?.state ?? "idle")) {
+      activeBy.set(s.project, (activeBy.get(s.project) ?? 0) + 1);
+    }
+  }
   // Every tag in play, for the filter strip. Sorted so the strip doesn't reshuffle
   // itself as sessions come and go.
-  const allTags = [...new Set(sessions.flatMap((s) => s.tags ?? []))].sort();
+  // The active tag rides first so it stays visible in the collapsed one-row strip.
+  const allTags = [...new Set(sessions.flatMap((s) => s.tags ?? []))]
+    .sort((a, b) => Number(b === tagFilter) - Number(a === tagFilter) || a.localeCompare(b));
   const sq = sessionQ.trim().toLowerCase();
   // Pinned first, then newest-first. Every list below slices this one, so a pin
   // holds the top of the RECENT list and of its own project's rows alike — and the
   // tag filter + search applied here reach RECENT and BY PROJECT from one place.
   const sorted = [...sessions]
     .filter((s) => !tagFilter || (s.tags ?? []).includes(tagFilter))
-    .filter((s) => !sq || `${s.title ?? ""} ${(s.tags ?? []).join(" ")}`.toLowerCase().includes(sq))
+    .filter((s) => !sq || `${s.title ?? ""} ${(s.tags ?? []).join(" ")} ${branchFor(s)}`.toLowerCase().includes(sq))
     .sort((a, b) =>
       Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
   // BY PROJECT: most-recently-used project first. g.sessions is already
@@ -339,7 +380,7 @@ export function SessionsPanel(props: Props) {
   const rowV = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: recentActive ? sorted.length : 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 66,
+    estimateSize: () => 62,
     overscan: 8,
     scrollMargin,
   });
@@ -407,12 +448,12 @@ export function SessionsPanel(props: Props) {
     setNsParent(branches[(i + 1) % Math.max(1, branches.length)] || nsParent);
   }
 
-  const rowFor = (s: SessionBrief, i: number, animate = true) => (
+  const rowFor = (s: SessionBrief, i: number, animate = true, showProj = true) => (
     <SessionRow
-      key={s.id} s={s} i={i} animate={animate}
+      key={s.id} s={s} i={i} animate={animate} showProj={showProj}
       on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
       sv={statusView(status.get(s.id), done.has(s.id))} flag={flags.get(s.id)}
-      branch={s.branch || branchOf.get(s.project) || "main"}
+      branch={branchFor(s)}
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
       onAttach={() => onSelectSession(s)}
       onAnalyzeProj={() => onAnalyze(s.project)}
@@ -584,42 +625,52 @@ export function SessionsPanel(props: Props) {
           project's own header instead. */}
       <div style={{ flex: "none", padding: "10px 10px 2px" }}>
         {!drill && (
-        <div style={{ display: "flex", gap: 3, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 3 }}>
+        <div style={{ display: "flex", gap: 4, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", borderRadius: 12, background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 4 }}>
           <button
             onClick={() => { setTab("recent"); setNsOpen(false); }}
-            style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "recent" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "recent" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
+            style={{ flex: 1, appearance: "none", cursor: "pointer", borderRadius: 9, border: `1px solid ${tab === "recent" ? "color-mix(in srgb, var(--acc) 18%, transparent)" : "transparent"}`, background: tab === "recent" ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: tab === "recent" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "8px 7px", transition: "all .15s ease" }}
           >RECENT</button>
           <button
             onClick={() => { setTab("grouped"); setNsOpen(false); }}
-            style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
+            style={{ flex: 1, appearance: "none", cursor: "pointer", borderRadius: 9, border: `1px solid ${tab === "grouped" ? "color-mix(in srgb, var(--acc) 18%, transparent)" : "transparent"}`, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 11, letterSpacing: 2, padding: "8px 7px", transition: "all .15s ease" }}
           >BY PROJECT</button>
         </div>
         )}
-        {/* Search over titles + tags. Stays visible inside a project drill-down —
-            the filter still applies there, so hiding the box reads as broken. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel2) 45%, transparent)", padding: "0 7px" }}>
-          <span style={{ fontSize: 9, color: "var(--txf)", flex: "none" }}>⌕</span>
+        {/* Search over titles, tags + branch. Stays visible inside a project
+            drill-down — the filter still applies there, so hiding the box reads
+            as broken. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 7, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", borderRadius: 12, background: "color-mix(in srgb, var(--panel2) 45%, transparent)", padding: "0 11px" }}>
+          <span style={{ fontSize: 13, color: "var(--txf)", flex: "none" }}>⌕</span>
           <input
+            ref={searchRef}
             value={sessionQ} onChange={(e) => setSessionQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") setSessionQ(""); }}
-            placeholder="search sessions — title or tag"
-            style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 0" }}
+            onKeyDown={(e) => { if (e.key === "Escape") { setSessionQ(""); e.currentTarget.blur(); } }}
+            placeholder="Search title, tag, or branch"
+            style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, padding: "8px 0" }}
           />
-          {sessionQ && (
+          {sessionQ ? (
             <button
               onClick={() => setSessionQ("")} title="clear search"
-              style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, lineHeight: 1, padding: "2px 1px" }}
+              style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 11, lineHeight: 1, padding: "2px 1px" }}
             >✕</button>
+          ) : (
+            <span
+              title="press / to search"
+              style={{ flex: "none", fontSize: 10, color: "var(--txf)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", borderRadius: 6, padding: "1px 6px", lineHeight: 1.5 }}
+            >/</span>
           )}
         </div>
         {/* Tag filter. Only appears once something is tagged, so an untagged
             machine never pays for a control it can't use. */}
         {allTags.length > 0 && (
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 4, marginTop: 6 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 5, marginTop: 6 }}>
+            {/* Expanded caps at ~4 rows and scrolls: 60+ tags otherwise push the
+                session list off-screen, and MORE/LESS stays put at the top. */}
             <div
               ref={tagWrapRef}
-              style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", gap: 4,
-                       maxHeight: tagsOpen ? undefined : 42, overflow: "hidden" }}
+              className={tagsOpen ? "mscroll" : undefined}
+              style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", gap: 5,
+                       maxHeight: tagsOpen ? 92 : 24, overflow: tagsOpen ? undefined : "hidden" }}
             >
               {allTags.map((t) => {
                 const on = tagFilter === t;
@@ -629,7 +680,7 @@ export function SessionsPanel(props: Props) {
                     onClick={() => setTagFilter(on ? null : t)}
                     title={on ? `showing only ${t} — click to clear` : `show only ${t}`}
                     style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit",
-                             fontSize: 9, letterSpacing: 0.5, padding: "2px 7px",
+                             fontSize: 10, letterSpacing: 0.5, padding: "2px 10px", borderRadius: 999,
                              border: `1px solid color-mix(in srgb, var(--purple) ${on ? 60 : 25}%, transparent)`,
                              background: on ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "transparent",
                              color: on ? "var(--purple-b)" : "var(--purple-d)",
@@ -641,12 +692,11 @@ export function SessionsPanel(props: Props) {
             {(tagsOverflow || tagsOpen) && (
               <button
                 onClick={() => setTagsOpen((o) => !o)}
-                title={tagsOpen ? "collapse tags to two rows" : "show all tags"}
+                title={tagsOpen ? "collapse tags to one row" : "show all tags"}
                 style={{ appearance: "none", cursor: "pointer", flex: "none", fontFamily: "inherit",
-                         fontSize: 9, letterSpacing: 0.5, padding: "2px 6px",
-                         border: "1px dashed color-mix(in srgb, var(--purple) 30%, transparent)",
-                         background: "transparent", color: "var(--txd)" }}
-              >{tagsOpen ? "LESS" : "MORE"}</button>
+                         fontSize: 10, letterSpacing: 1, padding: "4px 4px",
+                         border: 0, background: "transparent", color: "var(--txd)" }}
+              >{tagsOpen ? "LESS ▴" : "MORE ▾"}</button>
             )}
           </div>
         )}
@@ -655,11 +705,11 @@ export function SessionsPanel(props: Props) {
             onClick={toggleForm} title="start a session — current worktree or a new one"
             onMouseEnter={() => setNsBtnHov(true)} onMouseLeave={() => setNsBtnHov(false)}
             style={{
-              width: "100%", marginTop: 6, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              width: "100%", marginTop: 7, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 11,
               border: `1px solid ${nsOpen ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
               background: nsOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
               color: nsOpen ? "var(--purple-b)" : "var(--tx)",
-              fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "6px 10px",
+              fontFamily: "inherit", fontSize: 10.5, letterSpacing: 2, padding: "8px 10px",
               transition: "all .15s ease", filter: nsBtnHov ? "brightness(1.18)" : "none",
             }}
           ><span style={{ fontSize: 12, lineHeight: 0 }}>+</span>NEW SESSION</button>
@@ -686,16 +736,16 @@ export function SessionsPanel(props: Props) {
             {/* Drilling into a busy project lists every one of its sessions, so
                 off-screen rows skip layout/paint. RECENT gets the virtualizer
                 instead — it is the one list long enough to be worth the code. */}
-            <div className="vskip-card">{drillSessions.map((s, i) => rowFor(s, i))}</div>
+            <div className="vskip-card">{drillSessions.map((s, i) => rowFor(s, i, true, false))}</div>
           </>
         ) : (
           <>
             {tab === "recent" ? (
               <>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px" }}>
-                  <span style={{ fontSize: 9.5, letterSpacing: 2, color: "var(--txl)", flex: "none" }}>RECENT SESSIONS</span>
-                  <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
-                  <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: "var(--txf)", flex: "none" }}>{pins.size ? "pinned · newest first" : "newest first"}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 7px" }}>
+                  <span style={{ fontSize: 11, letterSpacing: 2.5, color: "var(--txl)", flex: "none" }}>RECENT SESSIONS</span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontSize: 10, letterSpacing: 0.5, color: "var(--txf)", flex: "none" }}>{pins.size ? "pinned · newest first" : "newest first"}</span>
                 </div>
                 <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>
                   {rowV.getVirtualItems().map((vi) => (
@@ -712,17 +762,21 @@ export function SessionsPanel(props: Props) {
               </>
             ) : (
               <>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px", position: "relative" }}>
-                  <span style={{ fontSize: 9.5, letterSpacing: 2, color: "var(--txl)", flex: "none" }}>PROJECTS</span>
-                  <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "0 2px 2px", position: "relative" }}>
+                  <span style={{ fontSize: 10, letterSpacing: 2.5, color: "var(--txl)", flex: "none" }}>PROJECTS</span>
+                  <span
+                    title="grouped by project — a project shows its busy, pinned and open sessions; the rest hide behind SHOW MORE"
+                    style={{ flex: "none", cursor: "help", width: 13, height: 13, borderRadius: "50%", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", color: "var(--txf)", fontSize: 8, display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >?</span>
+                  <span style={{ flex: 1 }} />
                   <button
                     onClick={() => setOrderMenu((o) => !o)} title="project order"
-                    style={{ appearance: "none", cursor: "pointer", flex: "none", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${orderMenu ? "var(--acc)" : "color-mix(in srgb, var(--acc) 20%, transparent)"}`, background: orderMenu ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: orderMenu ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "3px 7px" }}
-                  >⇅ {ORDER_LABEL[order]} ▾</button>
+                    style={{ appearance: "none", cursor: "pointer", flex: "none", display: "flex", alignItems: "center", gap: 5, borderRadius: 8, border: `1px solid ${orderMenu ? "var(--acc)" : "color-mix(in srgb, var(--acc) 20%, transparent)"}`, background: orderMenu ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: orderMenu ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 9px" }}
+                  >⇅ {ORDER_LABEL[order]}</button>
                   {orderMenu && (
                     <>
                       <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
-                      <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 97, minWidth: 132, border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)", boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                      <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 97, minWidth: 132, border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", borderRadius: 10, background: "var(--panel)", boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
                         {(["recent", "alpha", "custom"] as OrderMode[]).map((m) => (
                           <button
                             key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
@@ -733,51 +787,68 @@ export function SessionsPanel(props: Props) {
                     </>
                   )}
                 </div>
-                {order === "custom" && (
-                  <div style={{ fontSize: 8.5, letterSpacing: 0.5, color: "var(--txf)", margin: "-2px 2px 8px" }}>
-                    drag ⠿ to reorder — pinned projects stay on top
-                  </div>
-                )}
                 {ordered.map((g) => {
                   const tint = projectTint(g.rel);
                   const shown = rowsFor(g.rel);
                   // Filtered rows are already the whole match set, and g.sessionCount
                   // counts the unfiltered project — so there is nothing more to show.
                   const more = sq || tagFilter ? 0 : g.sessionCount - shown.length;
+                  const hidden = shut.has(g.rel);
                   const dragging = dragRel === g.rel;
                   const dropHere = !!dragRel && overRel === g.rel && !dragging;
                   return (
                     <div
                       key={g.rel}
-                      // ponytail: native HTML5 DnD, no library — and only the grip is
-                      // draggable, so a stray drag on a row can't reorder anything.
+                      // ponytail: native HTML5 DnD, no library. Only the header is
+                      // draggable, so a stray drag on a session row reorders nothing.
                       onDragOver={dragRel ? (e) => { e.preventDefault(); setOverRel(g.rel); } : undefined}
                       onDrop={dragRel ? (e) => { e.preventDefault(); dropOn(g.rel); } : undefined}
                       style={{ opacity: dragging ? 0.4 : 1, borderTop: `2px solid ${dropHere ? "var(--acc)" : "transparent"}` }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "13px 2px 8px" }}>
-                        {order === "custom" && (
-                          <span
-                            draggable
-                            onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; setDragRel(g.rel); }}
-                            onDragEnd={() => { setDragRel(null); setOverRel(null); }}
-                            title="drag to reorder"
-                            style={{ cursor: "grab", flex: "none", color: "var(--txf)", fontSize: 11, lineHeight: 1, userSelect: "none" }}
-                          >⠿</span>
+                      {/* In CUSTOM order the whole header is the drag handle — no
+                          grip to aim at. The + opts out (draggable={false}) so
+                          starting a session never turns into a reorder. */}
+                      <div
+                        draggable={order === "custom"}
+                        onDragStart={order === "custom" ? (e) => { e.dataTransfer.effectAllowed = "move"; setDragRel(g.rel); } : undefined}
+                        onDragEnd={order === "custom" ? () => { setDragRel(null); setOverRel(null); } : undefined}
+                        title={order === "custom" ? "drag to reorder — pinned projects stay on top" : undefined}
+                        style={{ display: "flex", alignItems: "center", gap: 7, margin: "9px 2px 5px",
+                                 cursor: order === "custom" ? "grab" : undefined,
+                                 userSelect: order === "custom" ? "none" : undefined }}
+                      >
+                        <button
+                          onClick={() => setShut((c) => {
+                            const n = new Set(c);
+                            if (!n.delete(g.rel)) n.add(g.rel);
+                            return n;
+                          })}
+                          title={hidden ? "expand" : "collapse"}
+                          style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0, background: "transparent", color: "var(--txf)", fontFamily: "inherit", fontSize: 9, lineHeight: 1, padding: "3px 2px" }}
+                        >{hidden ? "▸" : "▾"}</button>
+                        <span style={{ fontSize: 10, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 6, padding: "2px 7px", flex: "none" }}>{tint.tag}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--txb)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                        <span style={{ flex: 1 }} />
+                        {(activeBy.get(g.rel) ?? 0) > 0 && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--ok)", flex: "none" }} title="sessions working, awaiting you, or being checked">
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--ok)" }} />
+                            {activeBy.get(g.rel)} active
+                          </span>
                         )}
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint.color, flex: "none" }} />
-                        <span style={{ fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, padding: "1px 6px", flex: "none" }}>{tint.tag}</span>
-                        <span style={{ fontSize: 10.5, color: "var(--txm)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-                        <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
-                        <span style={{ fontSize: 8.5, color: "var(--txf)", flex: "none" }}>{g.sessionCount} SESS</span>
+                        <span style={{ fontSize: 10, color: "var(--txf)", flex: "none" }}>{g.sessionCount} sess</span>
                         <PlusBtn on={nsOpen && nsScoped && nsProject === g.rel} onClick={() => openFor(g.rel)} />
                       </div>
                       {nsOpen && nsScoped && nsProject === g.rel && nsForm}
                       {/* A search or tag filter drops the per-project cap, so this
                           can be every session in the store — skip off-screen rows. */}
-                      <div className="vskip-card">{shown.map((s, i) => rowFor(s, i))}</div>
-                      {more > 0 && <DashedRow label={`SHOW MORE · ${more} →`} onClick={() => setDrill(g.rel)} />}
-                      {g.sessionCount === 0 && (
+                      {!hidden && <div className="vskip-card">{shown.map((s, i) => rowFor(s, i, true, false))}</div>}
+                      {!hidden && more > 0 && (
+                        <button
+                          onClick={() => setDrill(g.rel)}
+                          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 11.5, padding: "9px 12px 4px", margin: "0 0 4px" }}
+                        >show {more} more ↓</button>
+                      )}
+                      {!hidden && g.sessionCount === 0 && (
                         <DashedRow label="+ START SESSION" title="start a session in this project"
                           onClick={() => openFor(g.rel)} />
                       )}
