@@ -22,6 +22,7 @@ import {
   type Indicator,
   type ThemeKey,
 } from "../../lib/theme";
+import { describe, loadProfiles, saveProfiles, type Profile } from "../../lib/profiles";
 import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
@@ -47,6 +48,10 @@ export interface SettingsModalProps {
   onFeed: (texts: string[]) => void; // a failed self-update hands git's error to Claude
   onReplayBoot: () => void;
   onClose: () => void;
+  // Profiles snapshot the run knobs *and* the open session's tool switches, so
+  // the panel needs to read the latter and write it back.
+  sessionTools: string[];
+  onSessionTools: (rules: string[]) => void;
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
@@ -1244,6 +1249,100 @@ function MiniBtn({
   );
 }
 
+/** Named snapshots of the run knobs plus the open session's tool switches.
+ *  SAVE captures whatever is set right now; APPLY writes it all back. */
+function ProfilesPanel({
+  settings,
+  sessionTools,
+  onPatch,
+  onSessionTools,
+}: {
+  settings: HudSettings;
+  sessionTools: string[];
+  onPatch: (patch: Partial<HudSettings>) => void;
+  onSessionTools: (rules: string[]) => void;
+}) {
+  const [profiles, setProfiles] = useState<Profile[]>(loadProfiles);
+  const [name, setName] = useState("");
+
+  const write = (next: Profile[]) => {
+    setProfiles(next);
+    saveProfiles(next);
+  };
+
+  const save = () => {
+    const n = name.trim().slice(0, 32);
+    if (!n) return;
+    const p: Profile = {
+      id: `${Date.now().toString(36)}`,
+      name: n,
+      model: settings.model,
+      effort: settings.effort,
+      perm: settings.perm,
+      ponytail: settings.ponytail,
+      agent: settings.agent,
+      disabledTools: sessionTools,
+    };
+    // Same name = replace, so re-saving after a tweak doesn't grow a pile of
+    // near-identical profiles.
+    write([...profiles.filter((x) => x.name !== n), p]);
+    setName("");
+  };
+
+  const apply = (p: Profile) => {
+    onPatch({ model: p.model, effort: p.effort, perm: p.perm,
+              ponytail: p.ponytail, agent: p.agent });
+    onSessionTools(p.disabledTools);
+  };
+
+  const btn = (accent: string): CSSProperties => ({
+    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 8.5,
+    letterSpacing: 1, padding: "5px 10px", flex: "none",
+    border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
+    background: "transparent", color: accent,
+  });
+
+  return (
+    <>
+      <div style={CARD}>
+        {profiles.length === 0 && (
+          <div style={{ fontSize: 10, color: "var(--txd)" }}>
+            No profiles yet — set the knobs above and this session&apos;s tools, then save them under a name.
+          </div>
+        )}
+        {profiles.map((p, i) => (
+          <div key={p.id}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? "1px solid color-mix(in srgb, var(--acc) 8%, transparent)" : undefined }}>
+            <span style={{ fontSize: 12, color: "var(--txb)", flex: "none" }}>{p.name}</span>
+            <span style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {describe(p)}
+            </span>
+            <span style={{ flex: 1 }} />
+            <button onClick={() => apply(p)} style={btn("var(--ok)")}>APPLY</button>
+            <button onClick={() => write(profiles.filter((x) => x.id !== p.id))}
+              style={btn("var(--err)")} title="delete profile">✕</button>
+          </div>
+        ))}
+        <div style={{ ...ROW, marginTop: profiles.length ? 12 : 11 }}>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+            placeholder="name this setup"
+            style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, padding: "6px 9px" }}
+          />
+          <button onClick={save} style={btn("var(--acc)")}>SAVE CURRENT</button>
+        </div>
+      </div>
+      <div style={NOTE}>
+        A profile carries the four knobs above, the runtime, and the tools this session has
+        switched off. APPLY writes all of them — the knobs globally, the tools onto the open
+        session.
+      </div>
+    </>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
     host,
@@ -1261,6 +1360,8 @@ export function SettingsModal(props: SettingsModalProps) {
     onFeed,
     onReplayBoot,
     onClose,
+    sessionTools,
+    onSessionTools,
   } = props;
 
   const [tab, setTab] = useState<Tab>("appearance");
@@ -1524,6 +1625,14 @@ export function SettingsModal(props: SettingsModalProps) {
                   <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
                   session was started with.
                 </div>
+
+                <Label top>PROFILES</Label>
+                <ProfilesPanel
+                  settings={settings}
+                  sessionTools={sessionTools}
+                  onPatch={onPatch}
+                  onSessionTools={onSessionTools}
+                />
 
                 <Label top>PROMPT BOX</Label>
                 <div style={CARD}>

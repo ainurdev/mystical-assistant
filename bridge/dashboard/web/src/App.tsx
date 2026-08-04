@@ -1166,6 +1166,16 @@ export function App() {
     }
   }
 
+  /** Tools/MCP servers this session may not touch. Optimistic — the switch flips
+   *  now and the 5s session poll confirms. Takes effect on the next turn. */
+  function setSessionToolsFor(id: string, rules: string[]) {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, disabled_tools: rules } : s)));
+    void api.setSessionTools(id, rules).then(() => void loadSessions()).catch(() => void loadSessions());
+  }
+  const setSessionTools = (rules: string[]) => {
+    if (sessionId) setSessionToolsFor(sessionId, rules);
+  };
+
   async function setLifecycle(id: string, state: Lifecycle | null) {
     try {
       await api.setLifecycle(id, state);
@@ -1357,12 +1367,7 @@ export function App() {
               <ToolsModal
                 title={sessions.find((s) => s.id === toolsFor)?.title || "session"}
                 disabled={sessions.find((s) => s.id === toolsFor)?.disabled_tools ?? []}
-                onChange={(rules) => {
-                  // Optimistic: the switch flips now, the 5s session poll confirms.
-                  setSessions((prev) => prev.map((s) =>
-                    s.id === toolsFor ? { ...s, disabled_tools: rules } : s));
-                  void api.setSessionTools(toolsFor, rules).then(() => void loadSessions());
-                }}
+                onChange={(rules) => setSessionToolsFor(toolsFor, rules)}
                 onClose={() => setToolsFor(null)}
               />
             )}
@@ -1371,6 +1376,8 @@ export function App() {
                 settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
                 models={modelOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
+                sessionTools={selected?.disabled_tools ?? []}
+                onSessionTools={setSessionTools}
                 onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}

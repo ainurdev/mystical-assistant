@@ -829,10 +829,11 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             return (
               <button key={k} title={t} aria-label={t} {...hp(`act:${k}`)}
                 onClick={() => (on ? setSideOpen(false) : showView(k))}
-                style={{ appearance: "none", cursor: "pointer", border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: "transparent", width: 42, height: 40, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: on ? "var(--txb)" : hov === `act:${k}` ? "var(--txh)" : "var(--txd)" }}>
+                style={{ position: "relative", appearance: "none", cursor: "pointer", border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: "transparent", width: 42, height: 40, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: on ? "var(--txb)" : hov === `act:${k}` ? "var(--txh)" : "var(--txd)" }}>
                 <I size={17} strokeWidth={1.6} style={{ marginLeft: -2 }} />
+                {/* results waiting behind a view you're not looking at */}
                 {k === "search" && hits.length > 0 && !on && (
-                  <span style={{ position: "absolute", marginLeft: 16, marginTop: -13, fontSize: 8, color: "var(--acc)" }}>●</span>
+                  <span style={{ position: "absolute", top: 7, right: 7, width: 5, height: 5, borderRadius: "50%", background: "var(--acc)" }} />
                 )}
               </button>
             );
