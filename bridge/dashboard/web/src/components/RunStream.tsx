@@ -3,12 +3,13 @@ import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown,
   Search, Globe, Bot, ListChecks, Plug, Quote,
 } from "lucide-react";
-import type { AnswerSelection, RunEvent } from "../api";
+import { api, type AnswerSelection, type RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { SteerIcon } from "./Composer";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf } from "../lib/toolfold";
 import { hostOf, mcpParts, toolAccent, toolKind } from "../lib/tools";
@@ -71,7 +72,7 @@ const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
 const edge = (accent: string) => `color-mix(in srgb, ${accent} 24%, transparent)`;
 const tagEdge = (accent: string) => `color-mix(in srgb, ${accent} 35%, transparent)`;
 
-type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[] };
+type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]; images?: string[] };
 
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
@@ -611,6 +612,35 @@ function McpCard({
   );
 }
 
+/** Thumbnails for images a tool returned, clickable into the lightbox the
+ *  transcript already uses for prompt attachments. The upload dir is pruned by
+ *  age, so an old turn's screenshot 404s — that row just disappears rather than
+ *  leaving a broken-image glyph. */
+function ToolImages({ paths }: { paths: string[] }) {
+  const [zoom, setZoom] = useState<string | null>(null);
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  const live = paths.filter((p) => !gone.has(p));
+  if (!live.length) return null;
+  return (
+    <div className="my-1.5 ml-[18px] flex flex-wrap gap-2">
+      {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
+      {live.map((p) => {
+        const src = api.attachmentUrl(p);
+        return (
+          <ZoomButton key={p} onOpen={() => setZoom(src)}>
+            <img
+              src={src}
+              alt="tool output"
+              onError={() => setGone((g) => new Set(g).add(p))}
+              className="h-24 w-auto max-w-[240px] border border-border object-cover"
+            />
+          </ZoomButton>
+        );
+      })}
+    </div>
+  );
+}
+
 /** What one call says inside a CallGroup — the header already carries the server
  *  or the kind, so the row is only what this call reached for. */
 function callLine(name: string, summary: string): string {
@@ -967,13 +997,18 @@ export const RunStream = memo(function RunStream({
                 />
               );
             return (
-              <ToolCard
-                key={i}
-                name={event.name}
-                summary={event.summary}
-                ms={done?.ms}
-                animate={animate}
-              />
+              <div key={i}>
+                <ToolCard
+                  name={event.name}
+                  summary={event.summary}
+                  ms={done?.ms}
+                  animate={animate}
+                />
+                {/* Screenshots the tool handed back — Playwright, chrome-devtools,
+                    Figma. Drawn under whatever card the tool got, so every kind
+                    gets them without each card learning about images. */}
+                {done?.images?.length ? <ToolImages paths={done.images} /> : null}
+              </div>
             );
           }
           case "tool_done":

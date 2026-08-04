@@ -80,6 +80,8 @@ export type RunEvent =
       output?: string;
       is_error?: boolean;
       patch?: string[];
+      // Screenshots a tool returned, as upload-dir paths (see /local/attachment).
+      images?: string[];
     }
   // `is_error` landed later — turns recorded before it read as OK.
   | { type: "result"; result: string; cost: number; elapsed: number; is_error?: boolean }

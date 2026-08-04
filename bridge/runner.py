@@ -9,7 +9,9 @@ turns never hit the same Claude session at once, but different sessions run
 concurrently.
 """
 
+import base64
 import json
+import mimetypes
 import os
 import queue
 import shlex
@@ -976,8 +978,12 @@ def _handle_event(job: Job, d: dict):
                 rid = b.get("tool_use_id")
                 name, t0 = job.open_tools.pop(rid, (None, 0.0))
                 ms = int((time.time() - t0) * 1000) if t0 else 0
-                job.add(transcript_jsonl.tool_done(
-                    rid, name, ms, b, d.get("tool_use_result")))
+                ev = transcript_jsonl.tool_done(
+                    rid, name, ms, b, d.get("tool_use_result"))
+                imgs = _save_result_images(job.id, rid, b.get("content"))
+                if imgs:
+                    ev["images"] = imgs
+                job.add(ev)
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")
@@ -988,6 +994,43 @@ def _handle_event(job: Job, d: dict):
         job.elapsed = int(time.time() - job.started)
         job.add({"type": "result", "result": job.result, "cost": job.cost,
                  "elapsed": job.elapsed, "is_error": job.status == "error"})
+
+
+_MCP_IMG_MAX = 4                    # images kept per tool result
+_MCP_IMG_BYTES = 8 * 1024 * 1024    # per image, decoded
+
+
+def _save_result_images(job_id: str, rid: str, content) -> list[str]:
+    """Images a tool handed back (Playwright, chrome-devtools, Figma…), written
+    next to the run's uploads so the transcript can show them instead of the word
+    "image". Paths, not base64: a screenshot is a megabyte, and the event goes
+    into the store and down every SSE stream. Best-effort — a tool result must
+    never fail because its screenshot didn't land."""
+    if not isinstance(content, list):
+        return []
+    out: list[str] = []
+    for i, b in enumerate(content):
+        if len(out) >= _MCP_IMG_MAX or not isinstance(b, dict):
+            continue
+        if b.get("type") != "image":
+            continue
+        src = b.get("source") or {}
+        if src.get("type") != "base64" or not isinstance(src.get("data"), str):
+            continue
+        ext = mimetypes.guess_extension(src.get("media_type") or "") or ".png"
+        try:
+            raw = base64.b64decode(src["data"], validate=True)
+            if not raw or len(raw) > _MCP_IMG_BYTES:
+                continue
+            d = os.path.join(config.UPLOAD_DIR, job_id)
+            os.makedirs(d, exist_ok=True)
+            fp = os.path.join(d, f"mcp-{rid or 'tool'}-{i}{ext}")
+            with open(fp, "wb") as f:
+                f.write(raw)
+            out.append(fp)
+        except (ValueError, OSError) as e:
+            print(f"[runner] tool image dropped: {e}", file=sys.stderr)
+    return out
 
 
 def _cleanup_uploads(job_id: str):
