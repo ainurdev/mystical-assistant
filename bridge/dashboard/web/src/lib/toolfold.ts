@@ -8,8 +8,9 @@ const INVISIBLE = new Set(["tool_done", "permission_resolved", "question_answere
 export const MIN_RUN = 3;
 
 /**
- * Runs of `min`+ consecutive tool events matching `match`, ignoring events that
- * render nothing.
+ * Runs of `min`+ consecutive tool events sharing a key, ignoring events that
+ * render nothing. `keyOf` returns null for events that group with nothing; a
+ * different key starts a new run, so two servers never share one card.
  *
  * Returns `folds`: the head index of each run mapped to every index in it (head
  * included), plus `headOf`: each non-head index mapped back to its head, so a
@@ -17,12 +18,13 @@ export const MIN_RUN = 3;
  */
 export function runsOf(
   events: { type: string }[],
-  match: (i: number) => boolean,
+  keyOf: (i: number) => string | null,
   min: number,
 ): { folds: Map<number, number[]>; headOf: Map<number, number> } {
   const folds = new Map<number, number[]>();
   const headOf = new Map<number, number>();
   let run: number[] = [];
+  let key: string | null = null;
 
   const flush = () => {
     if (run.length >= min) {
@@ -30,10 +32,14 @@ export function runsOf(
       for (const i of run.slice(1)) headOf.set(i, run[0]);
     }
     run = [];
+    key = null;
   };
 
   events.forEach((e, i) => {
-    if (e.type === "tool" && match(i)) {
+    const k = e.type === "tool" ? keyOf(i) : null;
+    if (k !== null) {
+      if (k !== key) flush();
+      key = k;
       run.push(i);
     } else if (!INVISIBLE.has(e.type)) {
       flush();
@@ -54,5 +60,5 @@ export function foldChips(
   events: { type: string }[],
   blocky: (i: number) => boolean,
 ): { folds: Map<number, number[]>; headOf: Map<number, number> } {
-  return runsOf(events, (i) => !blocky(i), MIN_RUN);
+  return runsOf(events, (i) => (blocky(i) ? null : "chip"), MIN_RUN);
 }

@@ -50,10 +50,19 @@ const none = () => false;
 {
   const bash = [0, 1, 4];
   const evs = [t("tool"), t("tool"), t("tool_done"), t("text"), t("tool")];
-  const { folds, headOf } = runsOf(evs, (i) => bash.includes(i), 2);
+  const { folds, headOf } = runsOf(evs, (i) => (bash.includes(i) ? "bash" : null), 2);
   ok(folds.get(0)?.join() === "0,1", "two back-to-back commands share one window");
   ok(headOf.get(1) === 0 && !headOf.has(4), "the second command is drawn by the first, the lone one is not");
   ok(folds.size === 1, "a single command after prose stays its own window");
+}
+
+// A different key breaks the run: two MCP servers back to back are two cards.
+{
+  const keys = ["mcp:teamwork", "mcp:teamwork", "mcp:github", "mcp:github"];
+  const evs = keys.map(() => t("tool"));
+  const { folds } = runsOf(evs, (i) => keys[i], 2);
+  ok(folds.get(0)?.join() === "0,1" && folds.get(2)?.join() === "2,3", "each key gets its own run");
+  ok(folds.size === 2, "the two servers never share a card");
 }
 
 console.log("\nall toolfold checks passed");
