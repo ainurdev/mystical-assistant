@@ -3,6 +3,7 @@ import { createRoute } from "@tanstack/react-router";
 import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import type { PendingRequest } from "../lib/api";
+import { stickToBottom } from "../lib/stick";
 import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
 import { Banner } from "../components/ui";
@@ -19,12 +20,26 @@ function RunPage() {
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
   } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
 
-  // Auto-scroll to the latest message as the transcript grows.
+  // The transcript scrolls inside <main>, so that's who we watch.
+  useEffect(() => {
+    const el = bottomRef.current?.closest("main");
+    if (!el) return;
+    let prev = el.scrollTop;
+    const sync = () => {
+      stick.current = stickToBottom(el, prev);
+      prev = el.scrollTop;
+    };
+    el.addEventListener("scroll", sync, { passive: true });
+    return () => el.removeEventListener("scroll", sync);
+  }, []);
+
+  // Follow the latest message as the transcript grows, but only while parked.
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (stick.current) bottomRef.current?.scrollIntoView({ block: "end" });
   }, [eventCount, turns.length]);
 
   return (
@@ -93,6 +108,7 @@ function RunPage() {
                   events={turn.events}
                   pending={isActive ? activeTurn.pending : NO_PENDING}
                   onRespond={isActive ? respond : undefined}
+                  ended={turn.status !== "running"}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
               </div>

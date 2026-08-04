@@ -68,9 +68,19 @@ export interface AnswerSelection {
 
 export type RunEvent =
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; summary: string }
-  | { type: "tool_done" }
-  | { type: "result"; result: string; cost: number; elapsed: number }
+  | { type: "tool"; name: string; summary: string; id?: string }
+  // `output`/`is_error` are Bash-only, `patch` edit-only (see
+  // transcript_jsonl.tool_done); turns recorded before this landed carry no `id`.
+  | {
+      type: "tool_done";
+      id?: string;
+      ms?: number;
+      output?: string;
+      is_error?: boolean;
+      patch?: string[];
+    }
+  // `is_error` landed later — turns recorded before it read as OK.
+  | { type: "result"; result: string; cost: number; elapsed: number; is_error?: boolean }
   | { type: "error"; message: string }
   | { type: "stopped" }
   | { type: "steer"; text: string }
@@ -792,6 +802,13 @@ export const api = {
   gitLog: (project: string, limit = 200, branch?: string) =>
     req<{ commits: GitCommit[] }>(
       `/local/git/log?project=${encodeURIComponent(project)}&limit=${limit}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
+  // one commit from the graph: its changed files, or (with path) one file's diff
+  gitShow: (project: string, sha: string, path?: string) =>
+    req<{ ok?: boolean; files?: CompareFile[]; add?: number; del?: number; diff?: string }>(
+      `/local/git/show?project=${encodeURIComponent(project)}&sha=${encodeURIComponent(sha)}${
+        path ? `&path=${encodeURIComponent(path)}` : ""
+      }`,
     ),
   logs: (n = 200) => req<{ lines: string[] }>(`/local/logs?n=${n}`),
   gitDiff: (project: string, path: string, base?: string, head?: string, branch?: string) =>

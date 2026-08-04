@@ -83,6 +83,7 @@ export function Transcript({
   trailingWorking,
   lastPromptRef,
   hud,
+  onRunCommand,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -91,14 +92,18 @@ export function Transcript({
   trailingWorking?: boolean;
   lastPromptRef?: RefObject<HTMLDivElement | null>;
   hud?: HudSettings;
+  onRunCommand?: (command: string) => void;
 }) {
   if (!turns.length) {
     return <RuneSpirit variant="block" />;
   }
   return (
     // ponytail: every turn stays mounted — memoized RunStreams make re-renders
-    // free, but the DOM still holds the whole session. Virtualize with
-    // @tanstack/react-virtual (already a dep) if scrolling ever gets heavy.
+    // free, and each RunStream's cards skip layout/paint off-screen (.vskip-card),
+    // so the mounted DOM costs almost nothing. Not virtualized on purpose: that
+    // would cost us ctrl-F, checkpoint anchors and scroll-to-bottom to rebuild.
+    // The turn wrapper itself must stay uncontained — Attachments renders the
+    // position:fixed ImageLightbox inside it.
     <div className="flex flex-col gap-3">
       {turns.map((turn, i) => {
         const isActive = turn.id === activeId;
@@ -125,6 +130,9 @@ export function Transcript({
                 onRespond={isActive ? onRespond : undefined}
                 animate={liveTurns?.has(turn.id) ?? false}
                 turnId={turn.id}
+                openResults={hud?.openResults ?? false}
+                onRunCommand={onRunCommand}
+                ended={turn.status !== "running"}
               />
             )}
             {working && <WorkingIndicator hud={hud} />}

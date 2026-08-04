@@ -10,12 +10,15 @@ export function QuestionCard({
   requestId,
   active,
   answered,
+  stale,
   onSubmit,
 }: {
   questions: Question[];
   requestId: string;
   active: boolean;
   answered?: AnswerSelection[];
+  /** Asked, never answered, and the run has since ended (see PermissionCard). */
+  stale?: boolean;
   onSubmit: (answers: AnswerSelection[]) => void;
 }) {
   const [restored] = useState(() => readDraft(requestId));
@@ -70,6 +73,11 @@ export function QuestionCard({
             </div>
           );
         })}
+        {stale && (
+          <div className="text-xs text-[var(--warn)]">
+            Never answered — the run ended.
+          </div>
+        )}
       </Card>
     );
   }

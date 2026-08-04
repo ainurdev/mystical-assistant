@@ -1,4 +1,4 @@
-import { Wrench, Check, X } from "lucide-react";
+import { Wrench, Check, X, CircleSlash } from "lucide-react";
 import { Button, Card } from "./ui";
 
 // Mirrors bridge/miniapp/web/src/components/PermissionCard.tsx (shared design).
@@ -7,6 +7,7 @@ export function PermissionCard({
   summary,
   active,
   resolved,
+  stale,
   onAllow,
   onDeny,
 }: {
@@ -14,6 +15,9 @@ export function PermissionCard({
   summary?: string;
   active: boolean;
   resolved?: "allow" | "deny";
+  /** Asked, never answered, and the run has since ended — the process that would
+   *  receive the answer is gone, so the buttons would do nothing. */
+  stale?: boolean;
   onAllow: () => void;
   onDeny: () => void;
 }) {
@@ -50,6 +54,11 @@ export function PermissionCard({
           ) : resolved === "deny" ? (
             <>
               <X size={13} className="text-red-400" aria-hidden /> Denied
+            </>
+          ) : stale ? (
+            <>
+              <CircleSlash size={13} className="text-[var(--warn)]" aria-hidden /> Never
+              answered — the run ended
             </>
           ) : (
             "—"

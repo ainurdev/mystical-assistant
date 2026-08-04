@@ -413,6 +413,8 @@ class Job:
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
         self.texts: list[str] = []       # assistant text this turn
+        # tool_use id -> (name, start time), for output/diff + duration on tool_done
+        self.open_tools: dict[str, tuple[str, float]] = {}
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -948,12 +950,17 @@ def _handle_event(job: Job, d: dict):
             elif b.get("type") == "tool_use":
                 name = b.get("name", "tool")
                 inp = b.get("input", {})
-                job.add({"type": "tool", "name": name,
+                job.open_tools[b.get("id")] = (name, time.time())
+                job.add({"type": "tool", "name": name, "id": b.get("id"),
                          "summary": _summarize_tool(name, inp)})
     elif t == "user":
         for b in d.get("message", {}).get("content", []):
             if isinstance(b, dict) and b.get("type") == "tool_result":
-                job.add({"type": "tool_done"})
+                rid = b.get("tool_use_id")
+                name, t0 = job.open_tools.pop(rid, (None, 0.0))
+                ms = int((time.time() - t0) * 1000) if t0 else 0
+                job.add(transcript_jsonl.tool_done(
+                    rid, name, ms, b, d.get("tool_use_result")))
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")
@@ -962,8 +969,8 @@ def _handle_event(job: Job, d: dict):
         # An interrupted turn may report is_error; treat it as a clean stop.
         job.status = "error" if (d.get("is_error") and not job.interrupted) else "done"
         job.elapsed = int(time.time() - job.started)
-        job.add({"type": "result", "result": job.result,
-                 "cost": job.cost, "elapsed": job.elapsed})
+        job.add({"type": "result", "result": job.result, "cost": job.cost,
+                 "elapsed": job.elapsed, "is_error": job.status == "error"})
 
 
 def _cleanup_uploads(job_id: str):
