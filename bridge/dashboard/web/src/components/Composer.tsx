@@ -208,7 +208,7 @@ export function Composer({
   onSend: (text: string, images: string[]) => void;
   onSteer?: (text: string) => void;
   onStop: () => void;
-  onCompact?: () => void;
+  onCompact?: (instructions?: string) => void;
   queued?: { id: string; text: string }[];
   onCancelQueued?: (id: string) => void;
   onEjectQueued?: (id: string) => void; // pull it out and run it in a fresh session
@@ -419,7 +419,13 @@ export function Composer({
         <span style={{ color: suggest ? "var(--warn)" : "var(--acc)", flex: "none" }}>{ctxPct}%</span>
         {ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
         {onCompact && (
-          <button onClick={() => onCompact()} disabled={disabled || running} title="Compact context (/compact)"
+          // Whatever is in the box rides along as compaction instructions ("keep
+          // the auth work, drop the log spelunking") — Piebald opens a dialog for
+          // this; we already have a text box right there.
+          <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
+            title={text.trim()
+              ? "Compact the context, keeping what you've typed in mind"
+              : "Compact context (/compact) — type first to steer what the summary keeps"}
             style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer", opacity: disabled || running ? 0.4 : 1, ...(suggest ? { border: "1px solid var(--warn)", color: "var(--warn)" } : null) }}>
             COMPACT
           </button>

@@ -3,6 +3,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectTint } from "../../lib/surfaces";
+import { useStickyFlag } from "../../lib/prefs";
+import { Rows2, Rows4 } from "lucide-react";
 import { Spinner } from "../ui";
 import type { ProjectGroup } from "./ProjectsPanel";
 
@@ -79,7 +81,7 @@ function statusView(s: SessionStatus | undefined, done = false) {
 }
 
 function SessionRow({
-  s, i, on, loading, sv, flag, branch, pinned, showProj, onPin, onAttach, onAnalyzeProj, animate = true,
+  s, i, on, loading, sv, flag, branch, pinned, showProj, compact, onPin, onAttach, onAnalyzeProj, animate = true,
 }: {
   s: SessionBrief;
   i: number;
@@ -90,6 +92,7 @@ function SessionRow({
   branch: string;
   pinned: boolean;
   showProj: boolean; // BY PROJECT rows sit under a header that already says it
+  compact: boolean;  // title + status dot only
   onPin: () => void;
   onAttach: () => void;
   onAnalyzeProj: () => void;
@@ -106,7 +109,7 @@ function SessionRow({
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
       style={{
-        display: "flex", gap: 11, padding: "9px 12px", marginBottom: 2, cursor: "pointer",
+        display: "flex", gap: 11, padding: compact ? "5px 12px" : "9px 12px", marginBottom: 2, cursor: "pointer",
         borderRadius: 10,
         // Flat by default: a quiet row is just text. Only the open one — and the
         // one under the cursor — gets a card, so the list reads as a list.
@@ -129,6 +132,7 @@ function SessionRow({
         <div style={{ fontSize: 12, lineHeight: 1.35, color: on ? "var(--txb)" : "var(--txh)", fontWeight: on ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {s.title || "untitled session"}
         </div>
+        {!compact && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 5 }}>
           {showProj && (
             <button
@@ -187,6 +191,7 @@ function SessionRow({
           )}
           <span style={{ fontSize: 9.5, color: loading ? sv.c : "var(--txl)", flex: "none" }}>{loading ? "LOADING…" : ago(s.updated)}</span>
         </div>
+        )}
       </div>
     </div>
   );
@@ -256,6 +261,8 @@ export function SessionsPanel(props: Props) {
   const [order, setOrder] = useState<OrderMode>(() => loadPrefs().order);
   const [customOrder, setCustomOrder] = useState<string[]>(() => loadPrefs().custom);
   const [orderMenu, setOrderMenu] = useState(false);
+  // Row density — remembered, because it tracks the screen you use, not the task.
+  const [compact, setCompact] = useStickyFlag("hud-sessions-compact");
   const [dragRel, setDragRel] = useState<string | null>(null);
   const [overRel, setOverRel] = useState<string | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
@@ -380,7 +387,9 @@ export function SessionsPanel(props: Props) {
   const rowV = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: recentActive ? sorted.length : 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 62,
+    // Compact drops the metadata line, so the estimate has to follow or the
+    // scrollbar promises a list twice as long as the one that renders.
+    estimateSize: () => (compact ? 30 : 62),
     overscan: 8,
     scrollMargin,
   });
@@ -450,7 +459,7 @@ export function SessionsPanel(props: Props) {
 
   const rowFor = (s: SessionBrief, i: number, animate = true, showProj = true) => (
     <SessionRow
-      key={s.id} s={s} i={i} animate={animate} showProj={showProj}
+      key={s.id} s={s} i={i} animate={animate} showProj={showProj} compact={compact}
       on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
       sv={statusView(status.get(s.id), done.has(s.id))} flag={flags.get(s.id)}
       branch={branchFor(s)}
@@ -616,7 +625,18 @@ export function SessionsPanel(props: Props) {
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", flex: "none" }}>
         <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>SESSIONS</span>
-        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} PROJ · {sessionTotal} SESS</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} PROJ · {sessionTotal} SESS</span>
+          {/* Compact drops each row to its dot and its title. On a phone that's
+              the difference between four sessions on screen and nine. */}
+          <button
+            onClick={() => setCompact(!compact)}
+            title={compact ? "show branch, tags and age on every row" : "compact rows — title only"}
+            style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: compact ? "var(--acc)" : "var(--txf)", display: "flex", flex: "none", padding: 0 }}
+          >
+            {compact ? <Rows2 size={12} aria-hidden /> : <Rows4 size={12} aria-hidden />}
+          </button>
+        </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .16s", flex: "none" }} />
 

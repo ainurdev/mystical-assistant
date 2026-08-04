@@ -666,6 +666,23 @@ input {
   border-radius: 5px;
   padding: 0.08em 0.34em;
 }
+/* GitHub-style callouts (> [!NOTE]) — the type's colour on the rail and the
+   label, a wash of it behind. See ADMONITIONS in Markdown.tsx. */
+.md-admonition {
+  margin: 0.7em 0;
+  padding: 0.6em 0.9em;
+  border: 1px solid color-mix(in srgb, var(--adm) 30%, transparent);
+  border-left: 2px solid var(--adm);
+  background: color-mix(in srgb, var(--adm) 7%, transparent);
+}
+.md-admonition-label {
+  color: var(--adm);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  margin-bottom: 0.35em;
+}
+.md-admonition > :last-child { margin-bottom: 0; }
 /* A code span the model used as a path (see parseFileRef): same chrome as any
    other inline code, plus its filetype icon and a link's affordances. */
 .md-fileref {

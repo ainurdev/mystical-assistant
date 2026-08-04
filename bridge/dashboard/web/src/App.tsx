@@ -1378,7 +1378,7 @@ export function App() {
                       showPonytail={settings.ponytailUi}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onSteer={(t) => void queue.steer(t).then((ok) => { if (!ok) void send(t, []); })}
-                      onCompact={() => void send("/compact", [])}
+                      onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       paused={queue.paused} onTogglePause={queue.togglePause}
                       onCancelQueued={(id) => queue.remove(id)}

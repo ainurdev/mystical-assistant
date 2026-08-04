@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { cloneElement, isValidElement, memo, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { tokenize, type Tok } from "../lib/hl";
@@ -50,6 +50,35 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   );
 }
 
+/** GitHub-flavoured callouts: `> [!NOTE]` and friends. The model won't produce
+ *  them unbidden — ask for them in a prompt or a skill — but our own reports and
+ *  plenty of pasted README content do. */
+const ADMONITIONS: Record<string, { label: string; color: string }> = {
+  note: { label: "NOTE", color: "var(--acc)" },
+  tip: { label: "TIP", color: "var(--ok)" },
+  important: { label: "IMPORTANT", color: "var(--purple)" },
+  warning: { label: "WARNING", color: "var(--warn)" },
+  caution: { label: "CAUTION", color: "var(--err)" },
+};
+const ADMONITION_RE = /^\s*\[!(note|tip|important|warning|caution)\]\s*\n?/i;
+
+/** The same tree with the `[!NOTE]` marker cut out of its first text node. The
+ *  marker is always the leading text of the leading paragraph, so only the first
+ *  branch needs rewriting. */
+function stripMarker(node: unknown): unknown {
+  if (typeof node === "string") return node.replace(ADMONITION_RE, "");
+  if (Array.isArray(node)) {
+    const i = node.findIndex((n) => n !== null && n !== undefined && n !== "");
+    return i < 0 ? node : node.map((n, k) => (k === i ? stripMarker(n) : n));
+  }
+  if (isValidElement(node)) {
+    const props = node.props as { children?: unknown };
+    if (props.children === undefined) return node;
+    return cloneElement(node, undefined, stripMarker(props.children) as ReactNode);
+  }
+  return node;
+}
+
 /** An inline code span that names a file, drawn as a link into the editor. The
  *  icon is the same filetype icon the file browser uses, so a path reads as a
  *  file at a glance rather than as more monospace. */
@@ -88,6 +117,17 @@ export const Markdown = memo(function Markdown({
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          blockquote: ({ children }) => {
+            const kind = ADMONITION_RE.exec(textOf(children))?.[1]?.toLowerCase();
+            const spec = kind ? ADMONITIONS[kind] : undefined;
+            if (!spec) return <blockquote>{children}</blockquote>;
+            return (
+              <div className="md-admonition" style={{ ["--adm" as string]: spec.color }}>
+                <div className="md-admonition-label">{spec.label}</div>
+                {stripMarker(children) as ReactNode}
+              </div>
+            );
+          },
           code: ({ node, className: cls, children: kids, ...props }) => {
             // Fenced blocks arrive here too (inside `pre`) — those are the `pre`
             // handler's business, and they carry a language class.
