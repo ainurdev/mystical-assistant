@@ -72,6 +72,49 @@ def kick(chat_id: int, session: dict, turn_id: str) -> None:
                      args=(chat_id, session, turn_id), daemon=True).start()
 
 
+def regenerate(chat_id: int, session: dict) -> bool:
+    """Re-title a session on demand, whatever its title says now.
+
+    generate_after_turn deliberately refuses to touch a renamed or already-named
+    session, and only ever looks at the first turn — that's right for the
+    automatic path, wrong for a button that means "this name is bad, try again".
+    Here the whole conversation so far is fair game. Returns False when there's
+    nothing to name yet."""
+    sid = session["id"]
+    if not aifeatures.enabled("title") or sid in _inflight:
+        return False
+    t = store.transcript(sid)
+    turns = t.get("turns") or []
+    prompt = (turns[0].get("prompt") or "").strip() if turns else ""
+    if not prompt:
+        return False
+
+    def run() -> None:
+        try:
+            _inflight.add(sid)
+            # The latest exchange, not the first: a long session is about what it
+            # became, and that's the name you're asking to be fixed.
+            last = turns[-1]
+            reply = "\n\n".join(
+                (e.get("text") or e.get("result") or "")
+                for e in t.get("events", [])
+                if e.get("turn_id") == last.get("id") and e.get("type") in ("text", "result")
+            ).strip()
+            subject, tags = _generate(chat_id, session.get("cwd"),
+                                      (last.get("prompt") or prompt), reply)
+            if subject:
+                store.rename(sid, subject)   # manual: an asked-for name is a chosen one
+            if tags:
+                store.set_tags(sid, tags)
+        except Exception as e:  # noqa: BLE001 — a retitle must never break a session
+            print(f"[titler] regenerate failed: {e}", file=sys.stderr)
+        finally:
+            _inflight.discard(sid)
+
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
 def generate_after_turn(chat_id: int, session: dict, turn_id: str) -> None:
     """Replace a session's provisional first-prompt title with a generated
     subject. No-op unless the title is still 'auto' and this is the only turn

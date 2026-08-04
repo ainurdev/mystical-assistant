@@ -1171,6 +1171,12 @@ export function App() {
         hint: nOff ? `${nOff} switched off` : "all on",
         onClick: () => setToolsFor(ctxMenu.id) });
       items.push({ divider: true });
+      items.push({ icon: "✎", label: "Rename session…",
+        hint: "your own name for it",
+        onClick: () => void renameSession(ctxMenu.id, s?.title ?? "") });
+      items.push({ icon: "↻", label: "Regenerate title",
+        hint: "let the model name it from the whole session",
+        onClick: () => void regenerateTitle(ctxMenu.id) });
       items.push({ icon: "⧉", label: "Duplicate session",
         hint: "copy the transcript into a new one",
         onClick: () => void duplicateSession(ctxMenu.id) });
@@ -1222,6 +1228,31 @@ export function App() {
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxMenu, nativeCtx, sessions, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets]);
+
+  /** Your own name for a session. ponytail: the browser's own prompt — a modal
+   *  for one line of text is a component, a state and a focus trap to maintain. */
+  async function renameSession(id: string, current: string) {
+    const next = window.prompt("Name this session", current)?.trim();
+    if (!next || next === current) return;
+    try {
+      await api.retitle(id, next);
+      await loadSessions();
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
+  /** Hand the name back to the model, which reads the whole session this time
+   *  rather than just the first turn. Lands on the next poll. */
+  async function regenerateTitle(id: string) {
+    try {
+      await api.retitle(id);
+      notify("info", "Renaming — the new title lands in a moment.");
+      setTimeout(() => void loadSessions(), 4000);
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
 
   async function duplicateSession(id: string) {
     try {

@@ -5,6 +5,7 @@ import {
   type AiFeature,
   type FreeAgentInfo,
   type FreeAgents,
+  type TagCount,
   type UpdateInfo,
   type Weather,
 } from "../../api";
@@ -808,6 +809,78 @@ const POLICY_BLURB: Record<string, string> = {
  *  turns you typed until you decide otherwise. The ones that only fire on a
  *  press ship on, and are listed so the spend is still visible and stoppable.
  *  Takes effect on the next turn — no restart. */
+/** Every tag in play, with the two operations that actually come up: fix a name,
+ *  or get rid of one. Merging isn't a separate button — renaming a tag to one
+ *  that already exists is a merge, which is both true of the storage and one
+ *  fewer thing to explain. */
+function TagsPanel() {
+  const [tags, setTags] = useState<TagCount[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void api.tags().then((r) => { if (live) setTags(r.tags); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  async function commit(tag: string, next?: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api.retag(tag, next);
+      setTags(r.tags);
+    } catch { /* the list just doesn't change */ }
+    setBusy(false);
+    setEditing(null);
+  }
+
+  if (!tags.length)
+    return <div style={CARD}><span style={{ fontSize: 10.5, color: "var(--txl)" }}>No tags yet — they arrive with the first named session.</span></div>;
+
+  return (
+    <div style={CARD}>
+      {tags.map((t) => (
+        <div key={t.tag} style={{ ...KV, marginTop: 8, gap: 10 }}>
+          {editing === t.tag ? (
+            <input
+              autoFocus
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void commit(t.tag, value.trim() || undefined);
+                if (e.key === "Escape") setEditing(null);
+              }}
+              onBlur={() => setEditing(null)}
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, padding: "3px 7px", outline: "none" }}
+            />
+          ) : (
+            <>
+              <span style={{ fontSize: 11, color: "var(--purple-d)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {t.tag}
+              </span>
+              <span style={{ fontSize: 9.5, color: "var(--txl)", flex: "none" }}>
+                {t.count} session{t.count === 1 ? "" : "s"}
+              </span>
+              <button
+                onClick={() => { setEditing(t.tag); setValue(t.tag); }}
+                title="rename — an existing name merges the two"
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", flex: "none" }}
+              >RENAME</button>
+              <button
+                onClick={() => void commit(t.tag)}
+                title={`remove "${t.tag}" from all ${t.count} session${t.count === 1 ? "" : "s"}`}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", flex: "none" }}
+              >✕</button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AiPanel() {
   const [rows, setRows] = useState<AiFeature[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -1682,6 +1755,13 @@ export function SettingsModal(props: SettingsModalProps) {
                 <div style={NOTE}>
                   Kept by the bridge for every surface — turning it off here silences the check
                   in the Mini App too.
+                </div>
+
+                <Label top>TAGS</Label>
+                <TagsPanel />
+                <div style={NOTE}>
+                  Tags come from the model when it names a session. Renaming one onto another
+                  merges them; every session wearing the old name follows.
                 </div>
               </>
             )}

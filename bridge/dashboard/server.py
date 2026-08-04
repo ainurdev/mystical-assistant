@@ -30,7 +30,7 @@ import re
 from bridge import (agents, browser, config, devserver, fmt, git, github, graphmap,
                     models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, runner, screenshot, selfupdate,
-                    shell, skills, state, store, sysinfo, terminals, tunnel, usage,
+                    shell, skills, state, store, sysinfo, terminals, titler, tunnel, usage,
                     weather, wsutil)
 from bridge.miniapp.server import (_pre_title, _save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
@@ -541,6 +541,8 @@ class Handler(BaseHTTPRequestHandler):
             from bridge import toolsets
             return self._json({"builtins": toolsets.BUILTINS,
                                "servers": toolsets.servers()})
+        if path == "/local/tags":
+            return self._json({"tags": store.tag_counts()})
         if path == "/local/skills":
             # A blank/unknown project is fine — the system list still applies.
             return self._json({**skills.installed(_abs_project(qs.get("project", [None])[0])),
@@ -744,6 +746,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "tags must be a list"}, 400)
             # store.set_tags normalizes and caps; it returns what it kept.
             return self._json({"ok": True, "tags": store.set_tags(sid, tags)})
+        if path == "/local/tags":
+            # Rename a tag everywhere, or drop it (new omitted/empty). Renaming
+            # onto a tag that already exists is how you merge two.
+            old = (body.get("tag") or "").strip()
+            if not old:
+                return self._json({"error": "tag required"}, 400)
+            new = (body.get("new") or "").strip() or None
+            changed = store.retag(old, new)
+            return self._json({"ok": True, "changed": changed, "tags": store.tag_counts()})
+        if path.startswith("/local/sessions/") and path.endswith("/retitle"):
+            sid = path[len("/local/sessions/"):-len("/retitle")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            title = (body.get("title") or "").strip()
+            if title:
+                store.rename(sid, title[:80])      # a rename sticks: title_source=manual
+                return self._json({"ok": True, "session": _session_brief(store.get_session(sid))})
+            # No title given: hand it back to the model. Runs in a thread and
+            # lands on the next session poll, like the automatic titling does.
+            if not titler.regenerate(chat, s):
+                return self._json({"error": "nothing to title yet"}, 400)
+            return self._json({"ok": True, "generating": True})
         if path.startswith("/local/sessions/") and path.endswith("/duplicate"):
             sid = path[len("/local/sessions/"):-len("/duplicate")]
             s = store.get_session(sid)

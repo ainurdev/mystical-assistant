@@ -362,6 +362,50 @@ def set_tags(session_id: str, tags) -> list[str]:
     return clean
 
 
+def tag_counts() -> "list[dict]":
+    """Every tag in use with how many sessions carry it, most-used first. The
+    tag list is derived, not a table — a tag exists exactly as long as some
+    session wears it."""
+    counts: dict[str, int] = {}
+    with closing(_connect()) as c:
+        for row in c.execute("SELECT tags FROM sessions WHERE tags IS NOT NULL"):
+            for t in parse_tags(row["tags"]):
+                counts[t] = counts.get(t, 0) + 1
+    return [{"tag": t, "count": n} for t, n in
+            sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def retag(old: str, new: "str | None") -> int:
+    """Rename `old` to `new` across every session, or drop it when `new` is None.
+    Renaming onto an existing tag is a merge — a session wearing both ends up
+    with one, because tags are a set. Returns the number of sessions changed."""
+    old = (old or "").strip().lower()
+    if not old:
+        return 0
+    dest = clean_tags([new]) if new else []
+    changed = 0
+    with closing(_connect()) as c:
+        c.execute("BEGIN IMMEDIATE")
+        rows = c.execute(
+            "SELECT id, tags FROM sessions WHERE tags IS NOT NULL").fetchall()
+        for row in rows:
+            tags = parse_tags(row["tags"])
+            if old not in tags:
+                continue
+            # Position is preserved on a rename: the tag keeps its place in the
+            # row's strip rather than jumping to the end.
+            out: list[str] = []
+            for t in tags:
+                t = dest[0] if (t == old and dest) else t
+                if t != old and t not in out:
+                    out.append(t)
+            c.execute("UPDATE sessions SET tags=? WHERE id=?",
+                      (json.dumps(out) if out else None, row["id"]))
+            changed += 1
+        c.execute("COMMIT")
+    return changed
+
+
 def get_disabled_tools(session_id: str) -> list[str]:
     """Deny rules switched on for this session (see bridge/toolsets.py)."""
     with closing(_connect()) as c:

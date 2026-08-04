@@ -147,3 +147,71 @@ def test_brief_exposes_tags():
     sid = _session()
     store.set_tags(sid, ["auth"])
     assert _session_brief(store.get_session(sid))["tags"] == ["auth"]
+
+
+# --- tag management (rename / merge / delete across sessions) -----------------
+
+def test_tag_counts_reports_usage_most_used_first():
+    a, b = _session(), _session()
+    store.set_tags(a, ["shared", "solo"])
+    store.set_tags(b, ["shared"])
+    counts = {t["tag"]: t["count"] for t in store.tag_counts()}
+    assert counts["shared"] >= 2
+    assert counts["solo"] >= 1
+    tags = [t["tag"] for t in store.tag_counts()]
+    assert tags.index("shared") < tags.index("solo")
+
+
+def test_retag_renames_across_sessions_and_keeps_position():
+    sid = _session()
+    store.set_tags(sid, ["alpha", "beta", "gamma"])
+    assert store.retag("beta", "delta") >= 1
+    assert store.get_tags(sid) == ["alpha", "delta", "gamma"]
+
+
+def test_retag_onto_an_existing_tag_merges_without_duplicating():
+    sid = _session()
+    store.set_tags(sid, ["fish", "shell"])
+    store.retag("fish", "shell")
+    assert store.get_tags(sid) == ["shell"]
+
+
+def test_retag_without_a_target_deletes_the_tag():
+    sid = _session()
+    store.set_tags(sid, ["doomed", "kept"])
+    store.retag("doomed", None)
+    assert store.get_tags(sid) == ["kept"]
+
+
+def test_retag_clears_the_column_when_nothing_is_left():
+    sid = _session()
+    store.set_tags(sid, ["only"])
+    store.retag("only", None)
+    assert store.get_tags(sid) == []
+
+
+def test_retag_normalizes_the_new_name():
+    sid = _session()
+    store.set_tags(sid, ["raw"])
+    store.retag("raw", "  #Auth  ")
+    assert store.get_tags(sid) == ["auth"]
+
+
+def test_retag_ignores_an_unused_tag():
+    assert store.retag("nobody-wears-this", "x") == 0
+
+
+def test_tags_endpoint_renames_and_returns_counts():
+    sid = _session()
+    store.set_tags(sid, ["before"])
+    h, box = _handler()
+    h._post_api("/local/tags", {"tag": "before", "new": "after"})   # noqa: SLF001
+    assert box["code"] == 200
+    assert store.get_tags(sid) == ["after"]
+    assert any(t["tag"] == "after" for t in box["obj"]["tags"])
+
+
+def test_tags_endpoint_requires_a_tag():
+    h, box = _handler()
+    h._post_api("/local/tags", {"new": "x"})                        # noqa: SLF001
+    assert box["code"] == 400

@@ -267,6 +267,12 @@ export interface QueueItem {
 }
 // The whole per-session queue. `seq` is a revision counter (SSE dedup); the
 // server publishes a fresh snapshot on every change.
+/** A tag and how many sessions wear it (SETTINGS · SESSION manages these). */
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
 export interface QueueSnapshot {
   session_id: string;
   seq: number;
@@ -913,6 +919,21 @@ export const api = {
       method: "POST",
       body: { project, path, content, ...(branch ? { branch } : {}) },
     }),
+  // --- tags: the set every session's strip draws from ---
+  tags: () => req<{ tags: TagCount[] }>("/local/tags"),
+  /** Rename a tag everywhere. `next` omitted deletes it; naming an existing tag
+   *  merges the two. */
+  retag: (tag: string, next?: string) =>
+    req<{ ok: boolean; changed: number; tags: TagCount[] }>("/local/tags", {
+      method: "POST",
+      body: { tag, ...(next ? { new: next } : {}) },
+    }),
+  /** Rename one session, or (no title) have the model name it again. */
+  retitle: (sessionId: string, title?: string) =>
+    req<{ ok: boolean; generating?: boolean; session?: SessionBrief }>(
+      `/local/sessions/${encodeURIComponent(sessionId)}/retitle`,
+      { method: "POST", body: title ? { title } : {} },
+    ),
   filesGrep: (project: string, q: string, branch?: string) =>
     req<{ hits: GrepHit[] }>(
       `/local/files/grep?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
