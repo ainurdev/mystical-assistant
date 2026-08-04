@@ -344,7 +344,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
         job_id = uuid.uuid4().hex
-        store.start_turn(session["id"], job_id, prompt, [])
+        store.start_turn(session["id"], job_id, prompt, [],
+                         sha=git.head_sha(state.project_dir(chat_id)))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
@@ -1324,7 +1325,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         _register(job)
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
-                         runtime=runtime)
+                         runtime=runtime, sha=git.head_sha(cwd))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         _ensure_journal_thread()

@@ -476,6 +476,13 @@ class Handler(BaseHTTPRequestHandler):
             for w in wts:
                 w["rel"] = browser.rel(w["path"]) if browser.within_base(w["path"]) else None
             return self._json({"worktrees": wts})
+        if path == "/local/git/since":
+            # Drift since a checkpoint's commit (turns.sha).
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(git.since(cwd, (qs.get("sha", [""])[0] or "").strip()))
         if path == "/local/git/compare":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:

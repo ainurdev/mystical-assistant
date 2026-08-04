@@ -4,7 +4,7 @@ import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream } from "./RunStream";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
-import { ckId } from "./hud/Checkpoints";
+import { ckId } from "../lib/checkpoints";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
 

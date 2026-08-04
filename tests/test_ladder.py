@@ -73,6 +73,16 @@ def test_turn_runtime_defaults_to_null_for_plain_claude():
     assert store.transcript(s["id"])["turns"][-1]["runtime"] is None
 
 
+def test_turn_records_the_commit_it_started_from():
+    """A checkpoint needs its commit to say what the tree has drifted since."""
+    s = _session()
+    store.start_turn(s["id"], "t3", "hello", [], sha="a" * 40)
+    store.start_turn(s["id"], "t4", "outside a repo", [], sha="")
+    rows = store.transcript(s["id"])["turns"]
+    assert rows[-2]["sha"] == "a" * 40
+    assert rows[-1]["sha"] is None   # "" is not a commit — store it as absent
+
+
 # --- rungs(): what is actually available right now ---------------------------
 
 def _stub(accounts_pick=None, headroom=None, free=()):

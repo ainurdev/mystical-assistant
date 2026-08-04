@@ -9,7 +9,7 @@ import { SteerIcon } from "./Composer";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
-import { ckId, steerKey } from "./hud/Checkpoints";
+import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf } from "../lib/toolfold";
 import { hostOf, mcpParts, toolAccent, toolKind } from "../lib/tools";
 

@@ -277,6 +277,15 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* The transcript draws its own bar (CheckpointRail) over this edge — one rail,
+   not two. Everything else keeps the native scrollbar. */
+.mscroll-bare {
+  scrollbar-width: none;
+}
+.mscroll-bare::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 /* ponytail: long scrollers stay fully in the DOM — the children just skip layout
    and paint while off-screen. Keeps ctrl-F, anchor jumps, scroll-to-bottom and
    streaming working, which virtualization would each cost extra code to restore.

@@ -21,6 +21,9 @@ export interface Turn {
   // Which runtime produced the turn: null/undefined = the default Claude account,
   // 'claude:<slot>' = another login, 'opencode:<provider>' = a free agent.
   runtime?: string | null;
+  // Commit HEAD was on when the turn started; undefined for client-sent turns
+  // until the store echoes it back, null outside a repo.
+  sha?: string | null;
 }
 
 export function derivePending(events: RunEvent[]): PendingRequest[] {
@@ -61,8 +64,9 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         ex.attachments?.length || !st.attachments.length ? ex.attachments : st.attachments;
       const prompt = ex.prompt || st.prompt;
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
-          || ex.runtime !== st.runtime)
-        map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime });
+          || ex.runtime !== st.runtime || ex.sha !== st.sha)
+        map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
+                         sha: st.sha });
     } else
       map.set(st.id, {
         id: st.id,
@@ -72,6 +76,7 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         pending: [],
         attachments: st.attachments,
         runtime: st.runtime,
+        sha: st.sha,
       });
   }
   const touched = new Set<string>();

@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS turns (
   elapsed     INTEGER,
   started     REAL NOT NULL,
   model       TEXT,
-  runtime     TEXT
+  runtime     TEXT,
+  sha         TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
@@ -135,6 +136,10 @@ def init() -> None:
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
             c.execute("ALTER TABLE turns ADD COLUMN runtime TEXT")
+        # Commit HEAD pointed at when the turn started, so a checkpoint can show
+        # what the tree has drifted since. NULL = not a repo / predates this.
+        if "sha" not in cols:
+            c.execute("ALTER TABLE turns ADD COLUMN sha TEXT")
         # (Old DBs may carry a dead last_auto_resume column from the retired
         # auto-resume cooldown — harmless, never read.)
         # Turns left 'running' at startup are orphaned (the bridge restarted). They
@@ -448,7 +453,7 @@ def recent_prompts(session_id: str, limit: int) -> list[str]:
 
 def start_turn(session_id: str, turn_id: str, prompt: str,
                attachments: list[str] | None, model: str | None = None,
-               runtime: str | None = None) -> None:
+               runtime: str | None = None, sha: str | None = None) -> None:
     now = time.time()
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
@@ -456,9 +461,9 @@ def start_turn(session_id: str, turn_id: str, prompt: str,
                         (session_id,)).fetchone()["n"]
         c.execute(
             "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-            "elapsed,started,model,runtime) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "elapsed,started,model,runtime,sha) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (turn_id, session_id, seq, prompt, json.dumps(attachments or []),
-             "running", None, None, now, model, runtime))
+             "running", None, None, now, model, runtime, sha or None))
         c.execute("UPDATE sessions SET updated=? WHERE id=?", (now, session_id))
         cur = c.execute("SELECT title FROM sessions WHERE id=?", (session_id,)).fetchone()
         if cur is not None and not cur["title"]:
@@ -546,10 +551,10 @@ def duplicate(session_id: str) -> dict | None:
             idmap[t["id"]] = uuid.uuid4().hex
             c.execute(
                 "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-                "elapsed,started,model,runtime) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "elapsed,started,model,runtime,sha) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (idmap[t["id"]], copy["id"], t["seq"], t["prompt"], t["attachments"],
                  t["status"], t["cost"], t["elapsed"], t["started"], t["model"],
-                 t["runtime"]))
+                 t["runtime"], t["sha"]))
         for e in c.execute("SELECT * FROM events WHERE session_id=? ORDER BY seq",
                            (session_id,)).fetchall():
             c.execute("INSERT INTO events(session_id,turn_id,seq,type,payload,ts) "

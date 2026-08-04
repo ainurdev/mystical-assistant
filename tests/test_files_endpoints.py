@@ -62,6 +62,20 @@ def test_read_endpoint_returns_content():
     assert box["obj"]["content"] == "hello\n"
 
 
+def test_since_endpoint_reports_drift_from_a_checkpoint():
+    name, d = _mkproject("proj_since")
+    sha = subprocess.run(["git", "-C", d, "rev-parse", "HEAD"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    with open(os.path.join(d, "a.txt"), "w") as f:
+        f.write("hello\nagain\n")
+    h, box = _handler()
+    h._get_api("/local/git/since", {"project": [name], "sha": [sha], "branch": [""]})
+    assert box["obj"]["ok"] is True and box["obj"]["add"] == 1, box["obj"]
+    h, box = _handler()
+    h._get_api("/local/git/since", {"project": ["../escape"], "sha": [sha], "branch": [""]})
+    assert box["code"] == 400
+
+
 def test_read_endpoint_rejects_escape():
     name, _ = _mkproject("proj_read_escape")
     h, box = _handler()

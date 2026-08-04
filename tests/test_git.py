@@ -248,6 +248,28 @@ def test_commit_files_and_show_file():
     assert g.show_file(d, sha, "../escape.txt") == ""
 
 
+def test_since_a_checkpoint():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\ntwo\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    sha = g.head_sha(d)
+    # nothing has happened yet
+    assert g.since(d, sha) == {"ok": True, "files": [], "add": 0, "del": 0}
+    # a later commit AND uncommitted work both count as drift since the checkpoint
+    _write(d, "a.txt", "one\ntwo\nthree\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "more")
+    _write(d, "b.txt", "new\n")
+    _run(d, "add", "-A")
+    r = g.since(d, sha)
+    assert r["ok"] and r["add"] == 2 and r["del"] == 0, r
+    assert {f["name"] for f in r["files"]} == {"a.txt", "b.txt"}, r
+    # sha-shaped only, so no option injection; and no repo → not ok
+    assert g.since(d, "--output=/tmp/x")["ok"] is False
+    assert g.since(tempfile.mkdtemp(), sha)["ok"] is False
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

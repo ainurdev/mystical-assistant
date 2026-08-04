@@ -7,7 +7,7 @@ import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
-import { Checkpoints } from "./Checkpoints";
+import { Checkpoints, CheckpointRail } from "./Checkpoints";
 
 const FRESH_QUOTES = [
   "the prompt is blank, the potential is not.",
@@ -246,7 +246,9 @@ export function Terminal({
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
-          {view === "chat" && <Checkpoints turns={turns} />}
+          {view === "chat" && (
+            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} />
+          )}
           <span style={{ fontSize: 9, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
           </span>
@@ -266,7 +268,7 @@ export function Terminal({
       ) : (
         <>
           <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-            <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
+            <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
               {lastPrompt && !empty && peek && (
                 <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -18px 13px", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
                   <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
@@ -284,6 +286,7 @@ export function Terminal({
                 )}
               </div>
             </div>
+            {!empty && <CheckpointRail turns={turns} scrollRef={scrollRef} contentRef={contentRef} />}
             {/* Scrolled off the tail — the way back down. Hidden while parked at
                 the bottom, where new output already follows on its own. */}
             {!atBottom && !empty && (

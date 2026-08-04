@@ -665,6 +665,17 @@ def show_file(cwd: str, sha: str, path: str) -> str:
     return out
 
 
+def since(cwd: str, sha: str) -> dict:
+    """How far the tree has drifted from a commit — `git diff <sha>`, i.e. commits
+    AND uncommitted work. Powers a checkpoint's "+42 −7 since here"; same file shape
+    as compare(). Note it measures from that commit, not from that turn: several
+    checkpoints taken between two commits all report the same numbers."""
+    if not _SHA_RE.match(sha) or not is_repo(cwd):
+        return {"ok": False, "files": [], "add": 0, "del": 0}
+    files, add, dele = _diff_files(cwd, "diff", sha)
+    return {"ok": True, "files": files, "add": add, "del": dele}
+
+
 def compare(cwd: str, base: str, head: str, three_dot: bool = True) -> dict:
     """Diff stats between `base` and `head`. With three_dot (default) the range is
     `base...head` (changes since the merge-base) — powers the PR preview. With

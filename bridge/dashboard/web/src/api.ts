@@ -49,6 +49,7 @@ export interface StoreTurn {
   elapsed: number | null;
   started: number;
   runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
+  sha?: string | null;     // commit HEAD was on when the turn started (checkpoint drift)
 }
 
 export interface QuestionOption {
@@ -961,6 +962,13 @@ export const api = {
     req<CompareInfo>(
       `/local/git/compare?project=${encodeURIComponent(project)}&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}${
         dots === 2 ? "&dots=2" : ""
+      }`,
+    ),
+  // Drift between a checkpoint's commit and the tree right now (commits + uncommitted).
+  since: (project: string, sha: string, branch?: string) =>
+    req<{ ok: boolean; files: CompareFile[]; add: number; del: number }>(
+      `/local/git/since?project=${encodeURIComponent(project)}&sha=${encodeURIComponent(sha)}${
+        branch ? `&branch=${encodeURIComponent(branch)}` : ""
       }`,
     ),
   checkout: (project: string, ref: string) =>
