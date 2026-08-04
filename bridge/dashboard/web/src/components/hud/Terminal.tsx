@@ -137,7 +137,7 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
-  loading, sessionId, hud,
+  loading, sessionId, hud, onRunCommand,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -161,6 +161,8 @@ export function Terminal({
   loading?: boolean;
   sessionId?: string | null;
   hud?: HudSettings;
+  /** Re-run a transcript command in this project's TERMINAL tab. */
+  onRunCommand?: (command: string) => void;
 }) {
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
@@ -278,7 +280,7 @@ export function Terminal({
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} />
                 )}
               </div>
             </div>

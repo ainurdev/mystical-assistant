@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
-import { buildRows, dirsOf, iconColor } from "./EditorTab";
+import { buildRows, dirsOf } from "./EditorTab";
+import { FileIcon } from "../../lib/fileicon";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
    (project + its branch's worktree). Git-changed files carry their status
@@ -182,15 +183,16 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
             {changedOnly ? "Working tree clean." : loading ? "Reading tree…" : "No files — not a git repo?"}
           </div>
         )}
+        {/* vskip-row: a repo tree is thousands of rows once expanded — off-screen
+            ones skip layout and paint (see index.css). */}
+        <div className="vskip-row">
         {rows.map((r) => {
           const st = r.dir ? undefined : changed.get(r.path);
           const marked = r.dir ? changedDirs.has(r.path) : !!st;
-          const on = hov === r.key;
           return (
-            <button key={r.key} onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path, !!st))}
-              onMouseEnter={() => setHov(r.key)} onMouseLeave={() => setHov("")}
+            <button key={r.key} className="trow" onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path, !!st))}
               title={r.path}
-              style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textAlign: "left", background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "3px 7px", paddingLeft: 7 + r.depth * 11 }}>
+              style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "3px 7px", paddingLeft: 7 + r.depth * 11 }}>
               {r.dir ? (
                 <>
                   <span style={{ fontSize: 8, color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
@@ -200,7 +202,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
               ) : (
                 <>
                   <span style={{ width: 9, flex: "none" }} />
-                  <span style={{ width: 5, height: 5, flex: "none", background: iconColor(r.name), transform: "rotate(45deg)" }} />
+                  <FileIcon name={r.name} size={13} />
                   {/* Full paths truncate from the left, so the filename survives. */}
                   <span style={{ color: st ? ST_COLOR(st) : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: changedOnly ? "rtl" : "ltr", textAlign: "left" }}>{r.name}</span>
                   {st && <span style={{ fontSize: 9.5, fontWeight: 700, color: ST_COLOR(st), flex: "none" }}>{st}</span>}
@@ -209,6 +211,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
             </button>
           );
         })}
+        </div>
       </div>
 
       {scrolled && (

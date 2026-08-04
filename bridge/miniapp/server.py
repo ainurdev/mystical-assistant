@@ -91,6 +91,7 @@ def _session_brief(s: dict) -> dict:
             "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
             "fallback_policy": s.get("fallback_policy"),
+            "disabled_tools": store.parse_tags(s.get("disabled_tools")),
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
             "tags": store.parse_tags(s.get("tags")),

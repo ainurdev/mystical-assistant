@@ -26,7 +26,8 @@ export type ThemeKey =
   | "dusk"
   | "library"
   | "apex"
-  | "gloam";
+  | "gloam"
+  | "riso";
 
 /**
  * AURORA is one theme in four colours — same glass, same CRT, only the
@@ -55,7 +56,7 @@ export const CLAUDE_KEYS: ThemeKey[] = ["claude", "claude-ocean", "claude-fern",
  *      white is 1.02x, i.e. invisible. `:root[data-light]` in index.css
  *      re-derives every alpha-tinted token at light-appropriate strength.
  */
-export const LIGHT_KEYS: ThemeKey[] = ["normal", "newsprint", "candy", "apex", "gloam"];
+export const LIGHT_KEYS: ThemeKey[] = ["normal", "newsprint", "candy", "apex", "gloam", "riso"];
 
 export function isLight(t: ThemeKey): boolean {
   return LIGHT_KEYS.includes(t);
@@ -178,6 +179,20 @@ export const THEME_DEFS: ThemeDef[] = [
   { key: "library", name: "THE LIBRARY", feel: "lamplit vellum · vvd dark academia", filter: "none", ops: [], sw: "#cda76a", bg: "rgba(23,18,12,.55)", pbg: "#120e08", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(27deg,rgba(205,167,106,.022) 0 1px,transparent 1px 4px),repeating-linear-gradient(-63deg,rgba(205,167,106,.018) 0 1px,transparent 1px 5px),#17120c", font: "'EB Garamond',Georgia,serif", prad: "3px", pal: { acc: "#cda76a", "acc-on": "#150f08", "accent-rgb": "205 167 106", ok: "#3f9262", warn: "#848727", err: "#d65c50", "err-hi": "#dd796f", "err-b": "#e4938b", "err-g": "#9d5a54", info: "#3e8bb1", "info-hi": "#539ec3", "info-b": "#73b0ce", purple: "#a56bc2", "purple-d": "#a163bf", "purple-h": "#b483cc", "purple-b": "#c29ad6", "purple-g": "#855e99", txb: "#eceae7", txh: "#dcd7d1", tx: "#c9c2b8", txm: "#b2a99c", txd: "#a39787", txf: "#9a8d7c", txl: "#928471", txg: "#736859", panel: "#221a11", panel2: "#1c150e", panel3: "#13100a", canvas: "#17120c", mono: "'JetBrains Mono',monospace" } },
   { key: "apex", name: "APEX", feel: "steel daylight · vvd sci-fi calm", filter: "none", ops: [], sw: "#39688c", bg: "rgba(198,209,220,.55)", pbg: "#e4e9ee", crt: false, swp: false, glw: false, canvas: "#e4e9ee", font: "'Work Sans',system-ui,-apple-system,sans-serif", prad: "8px", pal: { acc: "#39688c", "acc-on": "#ffffff", "accent-rgb": "57 104 140", ok: "#217149", warn: "#895916", err: "#ba3023", "err-hi": "#9d291e", "err-b": "#822119", "err-g": "#9e6c67", info: "#1a6e71", "info-hi": "#165d5f", "info-b": "#124c4e", purple: "#8d35cd", "purple-d": "#822fbe", "purple-h": "#782cae", "purple-b": "#642491", "purple-g": "#8b6e9f", txb: "#11181f", txh: "#212d3a", tx: "#2b3b4c", txm: "#364b60", txd: "#3f5770", txf: "#445e79", txl: "#496582", txg: "#5b7ea2", panel: "#ffffff", panel2: "#f4f7fa", panel3: "#eaeff4", canvas: "#e4e9ee", mono: "'JetBrains Mono',monospace" } },
   { key: "gloam", name: "GLOAM", feel: "sage paper · vvd quiet serif", filter: "none", ops: [], sw: "#4e6b3a", bg: "rgba(206,211,196,.55)", pbg: "#e6e8e0", crt: false, swp: false, glw: false, canvas: "repeating-linear-gradient(27deg,rgba(78,107,58,.02) 0 1px,transparent 1px 4px),repeating-linear-gradient(-63deg,rgba(78,107,58,.016) 0 1px,transparent 1px 5px),#e6e8e0", font: "'Spectral',Georgia,serif", prad: "4px", pal: { acc: "#4e6b3a", "acc-on": "#ffffff", "accent-rgb": "78 107 58", ok: "#25704b", warn: "#805d17", err: "#b73225", "err-hi": "#992a1f", "err-b": "#80231a", "err-g": "#9e6b67", info: "#286795", "info-hi": "#21577e", "info-b": "#1c4868", purple: "#9137be", "purple-d": "#8532ae", "purple-h": "#7a2ea0", "purple-b": "#652684", "purple-g": "#8d6c9d", txb: "#131711", txh: "#262d21", tx: "#323c2b", txm: "#404c37", txd: "#4b5941", txf: "#516046", txl: "#56664a", txg: "#6b805d", panel: "#fbfbf7", panel2: "#f2f3ec", panel3: "#ebece4", canvas: "#e6e8e0", mono: "'JetBrains Mono',monospace" } },
+  // RISO is the only theme whose palette is a CONSTRAINT rather than a hue: a
+  // risograph press has a fixed ink catalog and no blending, so colour is
+  // chosen from stock inks and extended by OVERPRINTING one plate over another.
+  // Hence `purple` is not a picked violet — it's pink-over-blue, the third
+  // colour the press gives you for free. The inks are darkened off their fluoro
+  // originals (real riso pink #ff48b0 is ~1.9:1 on paper, i.e. invisible as
+  // text); hue is what survives, lightness is solved against the stock like
+  // every other light theme here.
+  //
+  // Two structural tells, both in index.css: the `canvas` carries two offset
+  // halftone dot fields — one per plate, pink and blue — and `.panel` drops the
+  // neutral shadow for a MISREGISTERED pair of 1.5px ink edges, the way a sheet
+  // that shifted between passes prints.
+  { key: "riso", name: "RISO", feel: "three-ink zine · overprint & misregistration", filter: "none", ops: [], sw: "#bd1a5e", bg: "rgba(214,209,199,.55)", pbg: "#f0eee9", crt: false, swp: false, glw: false, canvas: "radial-gradient(rgba(189,26,94,.05) .5px,transparent .5px) 0 0/6px 6px,radial-gradient(rgba(9,104,172,.045) .5px,transparent .5px) 3px 3px/6px 6px,#f0eee9", font: "'Space Grotesk',system-ui,-apple-system,sans-serif", prad: "2px", pal: { acc: "#bd1a5e", "acc-on": "#ffffff", "accent-rgb": "189 26 94", ok: "#0c7443", warn: "#9b5108", err: "#c5211c", "err-hi": "#b01a15", "err-b": "#9b140f", "err-g": "#b56c69", info: "#0968ac", "info-hi": "#065c9a", "info-b": "#045087", purple: "#962ed2", "purple-d": "#8526bc", "purple-h": "#771fab", "purple-b": "#6a1899", "purple-g": "#9a6fb3", txb: "#181c25", txh: "#2b303b", tx: "#383d49", txm: "#474d5a", txd: "#535966", txf: "#5a606e", txl: "#606774", txg: "#76808d", panel: "#fefdfb", panel2: "#faf8f4", panel3: "#f5f3ee", canvas: "#f0eee9", mono: "'JetBrains Mono',monospace" } },
 ];
 
 export const THEMES: ThemeKey[] = THEME_DEFS.map((t) => t.key);
@@ -274,6 +289,7 @@ export interface HudSettings {
   tilesSpeed: TileSpeed; // how long a tile takes to fall
   radioVolume: number; // 0..1, Claude·FM
   textScale: number; // whole-HUD zoom; 0 = AUTO (derived from the viewport)
+  openResults: boolean; // bash output and edit diffs draw themselves open
   // The composer's four run knobs. Kept here so they survive a reload — the
   // SESSION tab and the composer's dropdowns are the same state.
   model: string; // model id, or a short CLI alias
@@ -281,6 +297,11 @@ export interface HudSettings {
   effort: string; // "" = auto
   perm: string; // "" = the session's own mode
   ponytail: string; // "" = default
+  // Which composer clusters are worth their width. Off hides the cluster from
+  // the prompt box only — the PONYTAIL level above still applies to runs, and
+  // the map still builds and opens from ANALYZE.
+  ponytailUi: boolean;
+  graphUi: boolean;
   // Who runs the turn: 'claude:<slot>' (a login) or 'opencode:<provider>' (a
   // free agent). "" = the ambient login, same as claude:1.
   agent: string;
@@ -291,8 +312,9 @@ const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "projects",
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
-  tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0,
-  model: "opus", allModels: false, effort: "", perm: "", ponytail: "", agent: "",
+  tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0, openResults: false,
+  model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
+  ponytailUi: true, graphUi: true, agent: "",
 };
 
 /**
@@ -358,6 +380,7 @@ export function loadSettings(): HudSettings {
         textScale: typeof p.textScale === "number" && p.textScale >= 0.7 && p.textScale <= 1.6
           ? p.textScale
           : 0,
+        openResults: p.openResults === true,
         // A stored model id that the live Models API no longer offers is
         // snapped to an available one on load (see App's modelOpts effect).
         model: str(p.model, "opus"),
@@ -365,6 +388,8 @@ export function loadSettings(): HudSettings {
         effort: str(p.effort, ""),
         perm: str(p.perm, ""),
         ponytail: str(p.ponytail, ""),
+        ponytailUi: p.ponytailUi !== false,
+        graphUi: p.graphUi !== false,
         // Like model: an agent that has gone away (account removed, key
         // cleared) is snapped back to the default login by App's agentOpts effect.
         agent: str(p.agent, ""),

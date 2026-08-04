@@ -3,7 +3,7 @@
 // Closing a tab and renaming a file both move buffers around, and a buffer can
 // hold unsaved edits — a wrong path here silently drops someone's work. Pin the
 // subtree and focus rules.
-import { nextFocus, remapPaths, tabLabels, underPath } from "./tabs.ts";
+import { nextFocus, previewTabs, remapPaths, tabLabels, underPath } from "./tabs.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -41,5 +41,14 @@ eq(tabLabels(["a/SKILL.md", "b/SKILL.md", "README.md"]),
 eq(tabLabels(["x/y/z/SKILL.md", "q/SKILL.md"]), ["z/SKILL.md", "q/SKILL.md"],
   "only one level of parent is added");
 eq(tabLabels(["SKILL.md"]), ["SKILL.md"], "a root-level file has no parent to add");
+
+eq(previewTabs(tabs, null, "docs/x.md"), [...tabs, "docs/x.md"],
+  "the first preview appends a tab");
+eq(previewTabs(tabs, "src/nest/b.ts", "docs/x.md"), ["src/a.ts", "docs/x.md", "README.md"],
+  "the next preview takes the slot in place");
+eq(previewTabs(tabs, "src/a.ts", "README.md"), tabs,
+  "previewing an already-open file leaves the strip alone");
+eq(previewTabs(tabs, "gone.ts", "docs/x.md"), [...tabs, "docs/x.md"],
+  "a stale preview path appends rather than dropping a tab");
 
 console.log("\nall tab checks passed");

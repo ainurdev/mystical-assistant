@@ -379,8 +379,9 @@ def test_session_brief_shape():
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "updated", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal",
-                      "lifecycle", "tags"}
+                      "lifecycle", "tags", "disabled_tools"}
     assert b["id"] == s["id"] and b["project"] == "p6"
+    assert b["disabled_tools"] == []      # a fresh session can reach everything
     assert isinstance(b["branch"], str)   # "" when cwd has no repo
     assert b["goal"] is None              # parsed from the column, not the raw JSON
     assert b["lifecycle"] is None         # a fresh session is active

@@ -27,6 +27,19 @@ export function tabLabels(tabs: string[]): string[] {
   return tabs.map((p, i) => (dupes.has(names[i]) ? p.split("/").slice(-2).join("/") : names[i]));
 }
 
+/* VS Code's preview tab: a single click in the explorer reuses one slot instead
+   of piling up tabs. `peek` is the path currently sitting in that slot — the new
+   path takes its place, appends when there is no slot yet, and changes nothing
+   when the file already has a real tab of its own. */
+export function previewTabs(tabs: string[], peek: string | null, path: string): string[] {
+  if (tabs.includes(path)) return tabs;
+  const i = peek === null ? -1 : tabs.indexOf(peek);
+  if (i < 0) return [...tabs, path];
+  const out = [...tabs];
+  out[i] = path;
+  return out;
+}
+
 /* The tab to focus once `leaving` is gone, given the tabs that survive: its
    nearest right-hand neighbour, else the new last tab, else nothing — VS Code's
    rule. `rest` is passed in rather than derived because a directory delete can

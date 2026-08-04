@@ -246,6 +246,12 @@ export function SessionsPanel(props: Props) {
   const [overRel, setOverRel] = useState<string | null>(null);
   const [drill, setDrill] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [sessionQ, setSessionQ] = useState("");
+  // Tag strip is capped at two rows — a tagged machine grows dozens of them and
+  // they push the list off screen. Measured, so a short strip skips the toggle.
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const [tagsOverflow, setTagsOverflow] = useState(false);
+  const tagWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify({ tab, order, custom: customOrder })); }
@@ -281,11 +287,13 @@ export function SessionsPanel(props: Props) {
   // Every tag in play, for the filter strip. Sorted so the strip doesn't reshuffle
   // itself as sessions come and go.
   const allTags = [...new Set(sessions.flatMap((s) => s.tags ?? []))].sort();
+  const sq = sessionQ.trim().toLowerCase();
   // Pinned first, then newest-first. Every list below slices this one, so a pin
-  // holds the top of the RECENT list and of its own project's rows alike — and a
-  // tag filter applied here reaches RECENT and BY PROJECT from one place.
+  // holds the top of the RECENT list and of its own project's rows alike — and the
+  // tag filter + search applied here reach RECENT and BY PROJECT from one place.
   const sorted = [...sessions]
     .filter((s) => !tagFilter || (s.tags ?? []).includes(tagFilter))
+    .filter((s) => !sq || `${s.title ?? ""} ${(s.tags ?? []).join(" ")}`.toLowerCase().includes(sq))
     .sort((a, b) =>
       Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
   // BY PROJECT: most-recently-used project first. g.sessions is already
@@ -298,10 +306,10 @@ export function SessionsPanel(props: Props) {
     order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
       : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
         : byLastUsed;
-  // Group headers come from `groups`, which the tag filter never touched — so
-  // without this a filtered BY PROJECT shows headers with nothing under them and
-  // reads as broken. `sorted` is already filtered, so ask it.
-  const ordered = tagFilter
+  // Group headers come from `groups`, which the tag filter and search never
+  // touched — so without this a filtered BY PROJECT shows headers with nothing
+  // under them and reads as broken. `sorted` is already filtered, so ask it.
+  const ordered = tagFilter || sq
     ? orderedAll.filter((g) => sorted.some((s) => s.project === g.rel))
     : orderedAll;
   // BY PROJECT rows: every session that's actually doing something (WORK/WAIT/
@@ -310,8 +318,11 @@ export function SessionsPanel(props: Props) {
   // stays listed even when idle and draft-free: hiding the chat you're looking
   // at reads as "it's gone"; a pinned one likewise, or the pin did nothing.
   // ponytail: ignores g.sessions' cap on purpose; the rest hide behind SHOW MORE.
+  // Filtering (search or tag) overrides all of it: you asked for these rows, so
+  // every match shows, and nothing hides behind SHOW MORE.
   const rowsFor = (rel: string) => {
     const all = sorted.filter((s) => s.project === rel);
+    if (sq || tagFilter) return all;
     const busy = all.filter((s) => s.id === selectedSessionId || pins.has(s.id)
       || statusView(status.get(s.id), done.has(s.id)).l !== "IDLE" || flags.has(s.id));
     return busy.length ? busy : all.slice(0, 1);
@@ -336,6 +347,15 @@ export function SessionsPanel(props: Props) {
     if (!sc || !li) return;
     const m = li.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
     setScrollMargin((prev) => (Math.abs(prev - m) > 0.5 ? m : prev));
+  });
+
+  // Does the tag strip spill past its two rows? Only measurable while collapsed —
+  // expanded it never clips, so keep the last verdict and let LESS collapse it.
+  useLayoutEffect(() => {
+    const el = tagWrapRef.current;
+    if (!el || tagsOpen) return;
+    const over = el.scrollHeight > el.clientHeight + 1;
+    setTagsOverflow((prev) => (prev === over ? prev : over));
   });
 
   function resetForm() {
@@ -559,8 +579,8 @@ export function SessionsPanel(props: Props) {
       {/* Tabs pinned above the scroller so NEW SESSION sits right under them —
           RECENT owns the catch-all button; BY PROJECT starts sessions from each
           project's own header instead. */}
-      {!drill && (
       <div style={{ flex: "none", padding: "10px 10px 2px" }}>
+        {!drill && (
         <div style={{ display: "flex", gap: 3, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 3 }}>
           <button
             onClick={() => { setTab("recent"); setNsOpen(false); }}
@@ -571,44 +591,77 @@ export function SessionsPanel(props: Props) {
             style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7, transition: "all .15s ease" }}
           >BY PROJECT</button>
         </div>
+        )}
+        {/* Search over titles + tags. Stays visible inside a project drill-down —
+            the filter still applies there, so hiding the box reads as broken. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel2) 45%, transparent)", padding: "0 7px" }}>
+          <span style={{ fontSize: 9, color: "var(--txf)", flex: "none" }}>⌕</span>
+          <input
+            value={sessionQ} onChange={(e) => setSessionQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") setSessionQ(""); }}
+            placeholder="search sessions — title or tag"
+            style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 0" }}
+          />
+          {sessionQ && (
+            <button
+              onClick={() => setSessionQ("")} title="clear search"
+              style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, lineHeight: 1, padding: "2px 1px" }}
+            >✕</button>
+          )}
+        </div>
         {/* Tag filter. Only appears once something is tagged, so an untagged
             machine never pays for a control it can't use. */}
         {allTags.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-            {allTags.map((t) => {
-              const on = tagFilter === t;
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTagFilter(on ? null : t)}
-                  title={on ? `showing only ${t} — click to clear` : `show only ${t}`}
-                  style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit",
-                           fontSize: 9, letterSpacing: 0.5, padding: "2px 7px",
-                           border: `1px solid color-mix(in srgb, var(--purple) ${on ? 60 : 25}%, transparent)`,
-                           background: on ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "transparent",
-                           color: on ? "var(--purple-b)" : "var(--purple-d)",
-                           transition: "all .15s ease" }}
-                >{t}</button>
-              );
-            })}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 4, marginTop: 6 }}>
+            <div
+              ref={tagWrapRef}
+              style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", gap: 4,
+                       maxHeight: tagsOpen ? undefined : 42, overflow: "hidden" }}
+            >
+              {allTags.map((t) => {
+                const on = tagFilter === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setTagFilter(on ? null : t)}
+                    title={on ? `showing only ${t} — click to clear` : `show only ${t}`}
+                    style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit",
+                             fontSize: 9, letterSpacing: 0.5, padding: "2px 7px",
+                             border: `1px solid color-mix(in srgb, var(--purple) ${on ? 60 : 25}%, transparent)`,
+                             background: on ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "transparent",
+                             color: on ? "var(--purple-b)" : "var(--purple-d)",
+                             transition: "all .15s ease" }}
+                  >{t}</button>
+                );
+              })}
+            </div>
+            {(tagsOverflow || tagsOpen) && (
+              <button
+                onClick={() => setTagsOpen((o) => !o)}
+                title={tagsOpen ? "collapse tags to two rows" : "show all tags"}
+                style={{ appearance: "none", cursor: "pointer", flex: "none", fontFamily: "inherit",
+                         fontSize: 9, letterSpacing: 0.5, padding: "2px 6px",
+                         border: "1px dashed color-mix(in srgb, var(--purple) 30%, transparent)",
+                         background: "transparent", color: "var(--txd)" }}
+              >{tagsOpen ? "LESS" : "MORE"}</button>
+            )}
           </div>
         )}
-        {tab === "recent" && (
+        {!drill && tab === "recent" && (
           <button
             onClick={toggleForm} title="start a session — current worktree or a new one"
             onMouseEnter={() => setNsBtnHov(true)} onMouseLeave={() => setNsBtnHov(false)}
             style={{
-              width: "100%", marginTop: 8, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
+              width: "100%", marginTop: 6, appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               border: `1px solid ${nsOpen ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
               background: nsOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
               color: nsOpen ? "var(--purple-b)" : "var(--tx)",
-              fontFamily: "inherit", fontSize: 12, letterSpacing: 2, padding: "13px 10px",
+              fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "6px 10px",
               transition: "all .15s ease", filter: nsBtnHov ? "brightness(1.18)" : "none",
             }}
-          ><span style={{ fontSize: 17, lineHeight: 0 }}>+</span>NEW SESSION</button>
+          ><span style={{ fontSize: 12, lineHeight: 0 }}>+</span>NEW SESSION</button>
         )}
       </div>
-      )}
 
       <div ref={scrollRef} className="mscroll" style={{ flex: 1, padding: "9px 9px 11px" }}>
         {nsOpen && !nsScoped && nsForm}
@@ -627,7 +680,10 @@ export function SessionsPanel(props: Props) {
               <PlusBtn on={nsOpen && nsScoped && nsProject === drill} onClick={() => openFor(drill)} />
             </div>
             {nsOpen && nsScoped && nsProject === drill && nsForm}
-            {drillSessions.map((s, i) => rowFor(s, i))}
+            {/* Drilling into a busy project lists every one of its sessions, so
+                off-screen rows skip layout/paint. RECENT gets the virtualizer
+                instead — it is the one list long enough to be worth the code. */}
+            <div className="vskip-card">{drillSessions.map((s, i) => rowFor(s, i))}</div>
           </>
         ) : (
           <>
@@ -682,7 +738,9 @@ export function SessionsPanel(props: Props) {
                 {ordered.map((g) => {
                   const tint = projectTint(g.rel);
                   const shown = rowsFor(g.rel);
-                  const more = g.sessionCount - shown.length;
+                  // Filtered rows are already the whole match set, and g.sessionCount
+                  // counts the unfiltered project — so there is nothing more to show.
+                  const more = sq || tagFilter ? 0 : g.sessionCount - shown.length;
                   const dragging = dragRel === g.rel;
                   const dropHere = !!dragRel && overRel === g.rel && !dragging;
                   return (
@@ -712,7 +770,9 @@ export function SessionsPanel(props: Props) {
                         <PlusBtn on={nsOpen && nsScoped && nsProject === g.rel} onClick={() => openFor(g.rel)} />
                       </div>
                       {nsOpen && nsScoped && nsProject === g.rel && nsForm}
-                      {shown.map((s, i) => rowFor(s, i))}
+                      {/* A search or tag filter drops the per-project cap, so this
+                          can be every session in the store — skip off-screen rows. */}
+                      <div className="vskip-card">{shown.map((s, i) => rowFor(s, i))}</div>
                       {more > 0 && <DashedRow label={`SHOW MORE · ${more} →`} onClick={() => setDrill(g.rel)} />}
                       {g.sessionCount === 0 && (
                         <DashedRow label="+ START SESSION" title="start a session in this project"
@@ -727,6 +787,11 @@ export function SessionsPanel(props: Props) {
         )}
         {groups.length === 0 && (
           <div style={{ fontSize: 11, color: "var(--txl)", padding: "10px 4px" }}>No projects with sessions yet.</div>
+        )}
+        {groups.length > 0 && (sq || tagFilter) && sorted.length === 0 && (
+          <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "10px 4px" }}>
+            no session matches {sq ? `“${sessionQ.trim()}”` : `tag “${tagFilter}”`}
+          </div>
         )}
       </div>
     </div>

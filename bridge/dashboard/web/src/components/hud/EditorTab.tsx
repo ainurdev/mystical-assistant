@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronsDownUp, ChevronsUpDown, FilePlus, Files, FolderPlus, RefreshCw, Search,
+} from "lucide-react";
 import { basicSetup } from "codemirror";
 import { EditorView, keymap } from "@codemirror/view";
 import { Compartment, EditorState, Prec } from "@codemirror/state";
@@ -9,8 +12,9 @@ import { api, type FileContent, type GrepHit } from "../../api";
 import { Markdown } from "../Markdown";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { cmpTreePath } from "../../lib/pathsort";
-import { nextFocus, remapPaths, tabLabels, underPath } from "../../lib/tabs";
+import { nextFocus, previewTabs, remapPaths, tabLabels, underPath } from "../../lib/tabs";
 import { langFor } from "../../lib/langfor";
+import { FileIcon } from "../../lib/fileicon";
 import { symbolsIn } from "../../lib/symbols";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
@@ -19,9 +23,15 @@ import { symbolsIn } from "../../lib/symbols";
    Ctrl-S / :w (POST /local/files/write). Binary/oversized files load read-only
    with a placeholder.
 
-   VS Code-ish extras: a quick-open palette (Ctrl-P files · Ctrl-Shift-O symbols
-   in the open file · Ctrl-Shift-F search in files), expand/collapse-all in the
-   explorer, reveal-the-open-file, and new/rename/delete via right-click.
+   VS Code-ish extras: the activity bar picks the side view (EXPLORER tree ·
+   SEARCH in files), a quick-open palette (Ctrl-P files · Ctrl-Shift-O symbols ·
+   Ctrl-Shift-P commands), expand/collapse-all in the explorer,
+   reveal-the-open-file, and new/rename/delete via right-click.
+
+   One CMDS table below drives both the command palette and the key bindings, so
+   the palette shows exactly what's bound. Keys follow VS Code where the browser
+   allows it — Ctrl-N/Ctrl-W are reserved by the browser and can't be captured,
+   so new-file and close-editor sit on Alt-N and Alt-W (Ctrl-F4 too).
 
    Formatting matches VS Code's defaults too: indent width per .editorconfig
    (falling back to each language's convention), trailing whitespace trimmed and
@@ -42,12 +52,35 @@ interface Props {
   initialFile?: string; // opened straight away (sidebar FILES → editor modal)
 }
 
-// One row in the quick-open palette (a file, a symbol, or a search hit).
+// One row in the quick-open palette: a file, a symbol, or (`>` mode) a command.
 interface PalItem {
   path: string;
   line?: number;
   label: string;
   sub: string;
+  run?: () => void;
+}
+
+// A command: one entry in the Ctrl-Shift-P palette and, with `key`, one binding.
+interface Cmd {
+  label: string;
+  key?: string;   // VS Code notation — "Ctrl+Shift+F", "Shift+Alt+F", "F2"
+  alt?: string;   // second binding, matched but not shown
+  run: () => void;
+  off?: boolean;  // hidden from the palette when it can't run
+}
+
+/* The event as a VS Code-notation chord, so CMDS' `key` strings are both the
+   label and the matcher. Letters come off `e.code` — Alt+N on macOS reports
+   e.key "˜", and a non-US layout can report anything. */
+function chord(e: KeyboardEvent): string {
+  const parts: string[] = [];
+  if (e.ctrlKey || e.metaKey) parts.push("Ctrl");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.altKey) parts.push("Alt");
+  const letter = /^Key([A-Z])$/.exec(e.code);
+  parts.push(letter ? letter[1] : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  return parts.join("+");
 }
 
 export interface TreeRow {
@@ -56,19 +89,6 @@ export interface TreeRow {
   depth: number;
   name: string;
   path: string;
-}
-
-const EXT_COLOR: Record<string, string> = {
-  ts: "var(--info)", tsx: "var(--info)", js: "var(--warn)", jsx: "var(--warn)", mjs: "var(--warn)", cjs: "var(--warn)",
-  css: "var(--purple)", scss: "var(--purple)", md: "var(--txm)", json: "var(--warn)", py: "var(--ok)",
-  html: "var(--err)", htm: "var(--err)", toml: "var(--txm)", yml: "var(--txm)", yaml: "var(--txm)",
-  rs: "var(--err)", go: "var(--info)", rb: "var(--err)", php: "var(--purple)", java: "var(--err)",
-  c: "var(--info)", h: "var(--info)", cpp: "var(--info)", cs: "var(--purple)", swift: "var(--err)",
-  kt: "var(--purple)", sh: "var(--ok)", bash: "var(--ok)", zsh: "var(--ok)", sql: "var(--warn)",
-  xml: "var(--err)", svg: "var(--purple)", vue: "var(--ok)", svelte: "var(--err)", lua: "var(--info)",
-};
-export function iconColor(name: string): string {
-  return EXT_COLOR[name.split(".").pop()?.toLowerCase() ?? ""] ?? "#7fa8a0";
 }
 
 /* Flatten a sorted path list into a collapsible directory tree (dirs before
@@ -206,6 +226,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const [paths, setPaths] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [tabs, setTabs] = useState<string[]>([]);             // open buffers, left to right
+  const [peek, setPeek] = useState<string | null>(null);      // the preview tab, if any (see peekTab)
   const [open, setOpen] = useState<string | null>(null);      // path being edited
   const [meta, setMeta] = useState<FileContent | null>(null); // load result (binary/too_large flags)
   const [dirty, setDirty] = useState(false);
@@ -220,9 +241,14 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   // back never loses unsaved edits.
   const [preview, setPreview] = useState<string | null>(null);
 
-  // quick-open palette: null = closed; "" files, "@…" symbols, "#…" grep
+  // quick-open palette: null = closed; "" files, "@…" symbols, ">…" commands
   const [palQ, setPalQ] = useState<string | null>(null);
   const [palIdx, setPalIdx] = useState(0);
+  // activity bar: which side view is showing, and whether the side bar is open
+  // at all (Ctrl-B, or clicking the active icon — VS Code's own toggle).
+  const [view, setView] = useState<"explorer" | "search">("explorer");
+  const [sideOpen, setSideOpen] = useState(true);
+  const [searchQ, setSearchQ] = useState("");
   const [hits, setHits] = useState<GrepHit[]>([]);
   const [grepBusy, setGrepBusy] = useState(false);
   // explorer file management: right-click menu + the new/rename input bar
@@ -243,6 +269,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const noteT = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jumpRef = useRef(0);                      // line to scroll to once the buffer mounts
   const rowRef = useRef<HTMLButtonElement | null>(null); // the open file's tree row
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {}); // latest key handler (see CMDS)
 
   function flash(m: string) {
     setNote(m);
@@ -264,7 +291,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     // A different project/branch is a different working tree — the old buffers
     // no longer describe anything on disk, so they go.
     bufs.current.clear();
-    setTabs(initialFile ? [initialFile] : []);
+    setTabs(initialFile ? [initialFile] : []); setPeek(null);
     setOpen(initialFile ?? null); setMeta(null); setCollapsed(new Set());
     void api.filesTree(project, branch || undefined)
       .then((r) => { if (live) setPaths(r.files); })
@@ -335,7 +362,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         crtTheme,
         langComp.of([]),   // filled in below, once the language chunk lands
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) setDirty(u.state.doc.toString() !== baseRef.current);
+          if (!u.docChanged) return;
+          setDirty(u.state.doc.toString() !== baseRef.current);
+          setPeek((p) => (p === open ? null : p));   // editing a preview keeps it, VS Code-style
         }),
       ],
     });
@@ -432,19 +461,51 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   /* ---- tabs ---- */
 
-  // Open a file in a tab (reusing its tab if it already has one) and focus it.
+  // Open a file in a tab for keeps (reusing its tab if it already has one) and
+  // focus it — the palette, `new file`, and a double-click all land here.
   function openTab(path: string) {
     setTabs((ts) => (ts.includes(path) ? ts : [...ts, path]));
+    setPeek((p) => (p === path ? null : p));
     setOpen(path);
   }
 
-  function closeTab(path: string) {
+  /* A single click in the explorer: VS Code's preview tab. One reusable slot, so
+     browsing files doesn't leave a strip of tabs behind. Double-clicking the row
+     or the tab, or editing the buffer, promotes it to a tab that stays. */
+  function peekTab(path: string) {
+    if (path === open) return;
+    if (!tabs.includes(path)) {
+      // The slot's buffer goes with it — it can't hold unsaved edits, since the
+      // first keystroke promotes the tab.
+      if (peek) bufs.current.delete(peek);
+      setTabs((ts) => previewTabs(ts, peek, path));
+      setPeek(path);
+    }
+    setOpen(path);
+  }
+
+  /* Unsaved edits? The open tab's live text lives in the CodeMirror view and
+     only lands in `bufs` when we switch away, so it answers from `dirty`. */
+  function isDirty(path: string) {
+    if (path === open) return dirty;
     const b = bufs.current.get(path);
-    if (b && b.text !== b.base && !window.confirm(`${path} has unsaved changes — close it anyway?`)) return;
+    return !!b && b.text !== b.base;
+  }
+
+  function closeTab(path: string) {
+    if (isDirty(path) && !window.confirm(`${path} has unsaved changes — close it anyway?`)) return;
     bufs.current.delete(path);
     const rest = tabs.filter((p) => p !== path);
     setTabs(rest);
+    setPeek((p) => (p === path ? null : p));
     if (path === open) setOpen(nextFocus(tabs, path, rest));
+  }
+
+  function closeAll() {
+    const unsaved = tabs.filter(isDirty).length;
+    if (unsaved && !window.confirm(`${unsaved} open file${unsaved === 1 ? " has" : "s have"} unsaved changes — close anyway?`)) return;
+    bufs.current.clear();
+    setTabs([]); setPeek(null); setOpen(null);
   }
 
   /* Follow a rename (or a delete, with `to` null) through the tab strip and the
@@ -457,8 +518,18 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     }
     const rest = remapPaths(tabs, from, to);
     setTabs(rest);
+    setPeek((p) => (p && underPath(from, p) ? (to === null ? null : to + p.slice(from.length)) : p));
     return rest;
   }
+
+  /* ---- side views ---- */
+
+  // The activity bar's job — the view, plus opening the bar to show it.
+  function showView(v: "explorer" | "search") { setView(v); setSideOpen(true); }
+
+  /* The new/rename input sits in the explorer, so a command that opens it has
+     to bring the explorer back first. */
+  function beginEdit(e: NonNullable<typeof edit>) { showView("explorer"); setEdit(e); }
 
   /* ---- quick-open palette ---- */
 
@@ -487,14 +558,13 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     openTab(path);
   }
 
-  const palMode = palQ === null ? "" : palQ.startsWith("@") ? "@" : palQ.startsWith("#") ? "#" : "p";
+  const palMode = palQ === null ? "" : palQ.startsWith("@") ? "@" : palQ.startsWith(">") ? ">" : "p";
   const palTerm = palMode === "p" ? (palQ ?? "") : (palQ ?? "").slice(1);
 
-  // `#` searches the whole tree on the bridge — debounced so typing isn't a
-  // git grep per keystroke.
+  // SEARCH view — `git grep` on the bridge, debounced so typing isn't a search
+  // per keystroke.
   useEffect(() => {
-    if (palMode !== "#") return;
-    const q = palTerm.trim();
+    const q = searchQ.trim();
     if (q.length < 2) { setHits([]); setGrepBusy(false); return; }
     let live = true;
     setGrepBusy(true);
@@ -505,7 +575,18 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         .finally(() => { if (live) setGrepBusy(false); });
     }, 220);
     return () => { live = false; clearTimeout(t); };
-  }, [palMode, palTerm, project, branch]);
+  }, [searchQ, project, branch]);
+
+  // Hits by file, VS Code's search tree: a file header, then its matching lines.
+  const hitGroups = useMemo(() => {
+    const m = new Map<string, GrepHit[]>();
+    for (const h of hits) {
+      const list = m.get(h.path);
+      if (list) list.push(h);
+      else m.set(h.path, [h]);
+    }
+    return [...m];
+  }, [hits]);
 
   // Walk the syntax tree once when `@` mode opens, not per keystroke — on a big
   // file the first walk has to wait for the parse.
@@ -515,12 +596,34 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     [palMode, open],
   );
 
+  /* Every editor action, in one table: the Ctrl-Shift-P palette lists these and
+     the key handler below matches `key`/`alt` against the event's chord, so a
+     binding can't drift from what the palette advertises. */
+  const CMDS: Cmd[] = [
+    { label: "Go to File…", key: "Ctrl+P", run: () => setPalQ("") },
+    { label: "Go to Symbol in Editor…", key: "Ctrl+Shift+O", run: () => setPalQ("@"), off: !editable },
+    { label: "Show All Commands", key: "Ctrl+Shift+P", run: () => setPalQ(">") },
+    { label: "New File…", key: "Alt+N", run: () => startNew("new", open ?? "", !open) },
+    { label: "New Folder…", key: "Shift+Alt+N", run: () => startNew("newdir", open ?? "", !open) },
+    { label: "Rename File…", key: "F2", off: !open,
+      run: () => { if (open) beginEdit({ mode: "rename", path: open, value: open }); } },
+    { label: "Save", key: "Ctrl+S", run: () => void save(), off: !editable },
+    { label: "Format Document", key: "Shift+Alt+F", run: () => void format(), off: !editable || meta?.formatter === false },
+    { label: "Close Editor", key: "Ctrl+F4", alt: "Alt+W", off: !open, run: () => { if (open) closeTab(open); } },
+    { label: "Close All Editors", off: !tabs.length, run: closeAll },
+    { label: "Show Explorer", key: "Ctrl+Shift+E", run: () => { showView("explorer"); if (open) reveal(open); } },
+    { label: "Find in Files", key: "Ctrl+Shift+F", run: () => showView("search") },
+    { label: "Toggle Side Bar", key: "Ctrl+B", run: () => setSideOpen((o) => !o) },
+    { label: allCollapsed ? "Expand Folders in Explorer" : "Collapse Folders in Explorer",
+      run: () => { showView("explorer"); setCollapsed(allCollapsed ? new Set() : new Set(dirs)); } },
+    { label: "Refresh Explorer", run: () => void loadTree() },
+    { label: preview === null ? "Open Markdown Preview" : "Back to the Editor", off: !editable || !isMd,
+      run: () => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null)) },
+  ];
+
   const palItems = useMemo<PalItem[]>(() => {
-    if (palQ === null) return [];
+    if (palQ === null || palMode === ">") return [];
     const q = palTerm.trim().toLowerCase();
-    if (palMode === "#") {
-      return hits.map((h) => ({ path: h.path, line: h.line, label: h.text || h.path, sub: `${h.path}:${h.line}` }));
-    }
     if (palMode === "@") {
       if (!open) return [];
       return outline
@@ -534,31 +637,51 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       .slice(0, 60);
     return scored.map(({ p }) => ({ path: p, label: p.split("/").pop() ?? p, sub: p }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [palQ, palMode, palTerm, paths, hits, open, outline]);
+  }, [palQ, palMode, palTerm, paths, open, outline]);
+
+  /* Sixteen commands are cheap to filter, and their closures have to be this
+     render's — so `>` mode skips the memo the file list needs. */
+  const palRows: PalItem[] = palMode !== ">" ? palItems
+    : CMDS.filter((c) => !c.off && c.label.toLowerCase().includes(palTerm.trim().toLowerCase()))
+      .map((c) => ({ path: "", label: c.label, sub: c.key ?? "", run: c.run }));
 
   useEffect(() => { setPalIdx(0); }, [palQ]);
 
-  // Ctrl-P / Ctrl-Shift-O / Ctrl-Shift-F, captured so the modal's own Escape
-  // handler doesn't close the whole modal while the palette is open.
+  /* The bindings, matched against CMDS. Captured on window, so Ctrl-S beats the
+     browser's Save Page and the palette's Escape doesn't close the whole modal.
+     Held in a ref and rebuilt each render: the listener is registered once, but
+     every command still runs against current state. */
+  keyRef.current = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && palQ !== null) { e.preventDefault(); e.stopPropagation(); setPalQ(null); return; }
+    // A bare F-key belongs to whatever field is being typed in, not to us.
+    const el = e.target as HTMLElement | null;
+    if (el && /^(INPUT|TEXTAREA)$/.test(el.tagName) && !e.ctrlKey && !e.metaKey && !e.altKey) return;
+    const ch = chord(e);
+    const cmd = CMDS.find((c) => c.key === ch || c.alt === ch);
+    if (!cmd) return;
+    // Swallowed even when the command can't run — Ctrl-S must never reach the
+    // browser's Save Page just because the open file is binary.
+    e.preventDefault();
+    e.stopPropagation();
+    if (!cmd.off) cmd.run();
+  };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      const k = e.key.toLowerCase();
-      if (mod && !e.shiftKey && k === "p") { e.preventDefault(); setPalQ(""); }
-      else if (mod && e.shiftKey && k === "o") { e.preventDefault(); setPalQ("@"); }
-      else if (mod && e.shiftKey && k === "f") { e.preventDefault(); setPalQ("#"); }
-      else if (e.key === "Escape" && palQ !== null) { e.preventDefault(); e.stopPropagation(); setPalQ(null); }
-    };
+    const onKey = (e: KeyboardEvent) => keyRef.current(e);
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [palQ]);
+  }, []);
+
+  function runPal(it: PalItem) {
+    if (it.run) { setPalQ(null); it.run(); }
+    else openFile(it.path, it.line);
+  }
 
   function onPalKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") { e.preventDefault(); setPalIdx((i) => Math.min(i + 1, palItems.length - 1)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setPalIdx((i) => Math.min(i + 1, palRows.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setPalIdx((i) => Math.max(i - 1, 0)); }
     else if (e.key === "Enter") {
-      const it = palItems[palIdx];
-      if (it) openFile(it.path, it.line);
+      const it = palRows[palIdx];
+      if (it) runPal(it);
     }
   }
 
@@ -584,7 +707,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       } else {
         // The tree comes from `git ls-files`, which can't see an empty folder —
         // so hand the user straight to "new file inside it".
-        setEdit({ mode: "new", path, value: `${path}/` });
+        beginEdit({ mode: "new", path, value: `${path}/` });
         flash(`created ${path}/ — add a file to it`);
       }
     } catch (e) {
@@ -595,7 +718,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   // New file/folder go next to the clicked file, or inside the clicked folder.
   function startNew(mode: "new" | "newdir", anchor: string, dir: boolean) {
     const base = dir ? anchor : anchor.includes("/") ? anchor.slice(0, anchor.lastIndexOf("/")) : "";
-    setEdit({ mode, path: base, value: base ? `${base}/` : "" });
+    beginEdit({ mode, path: base, value: base ? `${base}/` : "" });
   }
 
   function submitEdit() {
@@ -609,14 +732,14 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   function ctxItems(target: { path: string; dir: boolean }): CtxItem[] {
     const head: CtxItem[] = [
-      { icon: "+", label: "New File…", onClick: () => startNew("new", target.path, target.dir) },
-      { icon: "▤", label: "New Folder…", onClick: () => startNew("newdir", target.path, target.dir) },
+      { icon: "+", label: "New File…", hint: "Alt+N", onClick: () => startNew("new", target.path, target.dir) },
+      { icon: "▤", label: "New Folder…", hint: "⇧Alt+N", onClick: () => startNew("newdir", target.path, target.dir) },
     ];
     if (!target.path) return head;   // right-click on empty space → repo root
     return [
       ...head,
       { divider: true },
-      { icon: "✎", label: "Rename…", onClick: () => setEdit({ mode: "rename", path: target.path, value: target.path }) },
+      { icon: "✎", label: "Rename…", hint: "F2", onClick: () => beginEdit({ mode: "rename", path: target.path, value: target.path }) },
       { icon: "⧉", label: "Copy Path", onClick: () => void navigator.clipboard?.writeText(target.path).then(() => flash("path copied")).catch(() => {}) },
       { divider: true },
       {
@@ -694,9 +817,73 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       {/* Fills the modal body exactly — no floor. A floor taller than the body
           made the whole modal scroll, so a long file list pushed the buffer out
           of view; explorer and buffer now scroll inside their own columns. */}
-      <div style={{ position: "relative", display: "grid", gridTemplateColumns: "230px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", height: "100%", minHeight: 0, overflow: "hidden" }}>
-        {/* explorer */}
+      <div style={{ position: "relative", display: "grid", gridTemplateColumns: `42px ${sideOpen ? "230px " : ""}1fr`, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", height: "100%", minHeight: 0, overflow: "hidden" }}>
+        {/* activity bar — VS Code's icon rail: picks the side view, and clicking
+            the one already showing collapses the bar (same as Ctrl-B). */}
+        <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4, gap: 2, background: "color-mix(in srgb, var(--panel2) 55%, transparent)" }}>
+          {([
+            { k: "explorer", I: Files, t: "Explorer · Ctrl-Shift-E" },
+            { k: "search", I: Search, t: "Search in files · Ctrl-Shift-F" },
+          ] as const).map(({ k, I, t }) => {
+            const on = sideOpen && view === k;
+            return (
+              <button key={k} title={t} aria-label={t} {...hp(`act:${k}`)}
+                onClick={() => (on ? setSideOpen(false) : showView(k))}
+                style={{ appearance: "none", cursor: "pointer", border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: "transparent", width: 42, height: 40, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: on ? "var(--txb)" : hov === `act:${k}` ? "var(--txh)" : "var(--txd)" }}>
+                <I size={17} strokeWidth={1.6} style={{ marginLeft: -2 }} />
+                {k === "search" && hits.length > 0 && !on && (
+                  <span style={{ position: "absolute", marginLeft: 16, marginTop: -13, fontSize: 8, color: "var(--acc)" }}>●</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {/* side view — explorer tree or search-in-files */}
+        {sideOpen && (
         <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, background: "color-mix(in srgb, var(--panel2) 35%, transparent)" }}>
+          {view === "search" ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>
+                <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)" }}>SEARCH</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txl)" }}>
+                  {grepBusy ? "…" : hits.length ? `${hits.length} in ${hitGroups.length}` : ""}
+                </span>
+              </div>
+              <div style={{ padding: "0 8px 8px", flex: "none" }}>
+                <input autoFocus value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSearchQ(""); } }}
+                  placeholder="search in files…"
+                  style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "5px 7px" }} />
+              </div>
+              <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingBottom: 8 }}>
+                {hitGroups.length === 0 && (
+                  <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
+                    {searchQ.trim().length < 2 ? "Type at least 2 characters." : grepBusy ? "…" : "No results."}
+                  </div>
+                )}
+                <div className="vskip-row">
+                {hitGroups.map(([path, list]) => (
+                  <div key={path}>
+                    <div title={path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px 3px", fontFamily: "'JetBrains Mono',monospace" }}>
+                      <FileIcon name={path} size={12} />
+                      <span style={{ fontSize: 10.5, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{path.split("/").pop()}</span>
+                      <span style={{ fontSize: 9, color: "var(--txl)", flex: "none" }}>{list.length}</span>
+                    </div>
+                    {list.map((h) => (
+                      <button key={`${h.line}:${h.text}`} className="trow" onClick={() => openFile(h.path, h.line)} title={`${h.path}:${h.line}`}
+                        style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "baseline", gap: 7, padding: "2px 8px 2px 22px" }}>
+                        <span style={{ fontSize: 9, color: "var(--txg)", flex: "none" }}>{h.line}</span>
+                        <span style={{ fontSize: 10, color: "var(--txm)", whiteSpace: "pre", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{h.text.trim()}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                </div>
+              </div>
+            </>
+          ) : (
+          <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>
             <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>EXPLORER · {paths.length}</span>
             <span style={{ flex: 1 }} />
@@ -723,17 +910,19 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
               )}
             </div>
           </div>
-          {/* explorer toolbar — quick open · new file/folder · collapse all · refresh */}
-          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 8px 7px", flex: "none" }}>
+          {/* explorer toolbar — VS Code's own four: new file · new folder ·
+              refresh · collapse all. Everything else is in Ctrl-Shift-P. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 8px 7px", flex: "none" }}>
             {([
-              { k: "find", g: "⌕", t: "quick open (Ctrl-P) · @ symbols · # search in files", on: () => setPalQ("") },
-              { k: "nf", g: "+", t: "new file", on: () => startNew("new", "", true) },
-              { k: "nd", g: "▤", t: "new folder", on: () => startNew("newdir", "", true) },
-              { k: "col", g: allCollapsed ? "⊞" : "⊟", t: allCollapsed ? "expand all folders" : "collapse all folders", on: () => setCollapsed(allCollapsed ? new Set() : new Set(dirs)) },
-              { k: "ref", g: "⟳", t: "refresh file list", on: () => void loadTree() },
-            ] as const).map((b) => (
-              <button key={b.k} onClick={b.on} title={b.t} {...hp(`tb:${b.k}`)}
-                style={{ appearance: "none", cursor: "pointer", border: `1px solid ${hov === `tb:${b.k}` ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: hov === `tb:${b.k}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, lineHeight: 1, padding: "4px 7px" }}>{b.g}</button>
+              { k: "nf", I: FilePlus, t: "New File… · Alt-N", on: () => startNew("new", "", true) },
+              { k: "nd", I: FolderPlus, t: "New Folder… · Shift-Alt-N", on: () => startNew("newdir", "", true) },
+              { k: "ref", I: RefreshCw, t: "Refresh Explorer", on: () => void loadTree() },
+              { k: "col", I: allCollapsed ? ChevronsUpDown : ChevronsDownUp, t: allCollapsed ? "Expand Folders" : "Collapse Folders", on: () => setCollapsed(allCollapsed ? new Set() : new Set(dirs)) },
+            ] as const).map(({ k, I, t, on }) => (
+              <button key={k} onClick={on} title={t} aria-label={t} {...hp(`tb:${k}`)}
+                style={{ appearance: "none", cursor: "pointer", border: 0, background: hov === `tb:${k}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: hov === `tb:${k}` ? "var(--txb)" : "var(--txm)", display: "flex", alignItems: "center", padding: 4 }}>
+                <I size={13} strokeWidth={1.7} />
+              </button>
             ))}
           </div>
           {edit && (
@@ -752,27 +941,36 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             {rows.length === 0 && (
               <div style={{ fontSize: 11, color: "var(--txl)", padding: "8px 10px" }}>No files on ⎇ {branch || "this branch"}.</div>
             )}
+            {/* vskip-row: the tree is thousands of rows once expanded, and rows
+                hover in CSS (.trow) — tracking the hovered one in state re-rendered
+                all of them on every mouse move. */}
+            <div className="vskip-row">
             {rows.map((r) => r.dir ? (
-              <button key={r.key} onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(r.path)) n.delete(r.path); else n.add(r.path); return n; })}
-                onContextMenu={(e) => onRowCtx(e, r.path, true)} title={r.path} {...hp(r.key)}
+              <button key={r.key} className="trow" onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(r.path)) n.delete(r.path); else n.add(r.path); return n; })}
+                onContextMenu={(e) => onRowCtx(e, r.path, true)} title={r.path}
                 {...dragSourceProps(r.path)} {...dragTargetProps(r.path)}
-                style={{ width: "100%", appearance: "none", border: 0, background: dropDir === r.path ? "color-mix(in srgb, var(--acc) 16%, transparent)" : hov === r.key ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
+                style={{ width: "100%", appearance: "none", border: 0, background: dropDir === r.path ? "color-mix(in srgb, var(--acc) 16%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
                 <span style={{ fontSize: 8, color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#7fa8a0" strokeWidth="1.7" style={{ flex: "none" }}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
                 <span style={{ fontSize: 11, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.name}</span>
               </button>
             ) : (
-              <button key={r.key} onClick={() => openTab(r.path)} ref={r.path === open ? rowRef : undefined}
-                onContextMenu={(e) => onRowCtx(e, r.path, false)} title={r.path} {...hp(r.key)}
+              <button key={r.key} className="trow" onClick={() => peekTab(r.path)} onDoubleClick={() => openTab(r.path)}
+                ref={r.path === open ? rowRef : undefined}
+                onContextMenu={(e) => onRowCtx(e, r.path, false)} title={r.path}
                 {...dragSourceProps(r.path)} {...dragTargetProps(parentOf(r.path))}
-                style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === open ? "var(--acc)" : "transparent"}`, background: r.path === open ? "color-mix(in srgb, var(--acc) 8%, transparent)" : hov === r.key ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
-                <span style={{ width: 8, height: 10, flex: "none", background: iconColor(r.name), opacity: 0.85 }} />
+                style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === open ? "var(--acc)" : "transparent"}`, background: r.path === open ? "color-mix(in srgb, var(--acc) 8%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
+                <FileIcon name={r.name} />
                 <span style={{ fontSize: 11, color: r.path === open ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>{r.name}</span>
                 {r.path === open && dirty && <span style={{ fontSize: 12, color: "var(--warn)", flex: "none", lineHeight: 1 }}>●</span>}
               </button>
             ))}
+            </div>
           </div>
+          </>
+          )}
         </div>
+        )}
 
         {/* buffer + chrome */}
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "color-mix(in srgb, var(--panel3) 50%, transparent)" }}>
@@ -782,16 +980,16 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             <div className="mscroll" style={{ flex: "none", display: "flex", alignItems: "stretch", overflowX: "auto", borderBottom: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel2) 40%, transparent)" }}>
               {tabs.map((p, ti) => {
                 const on = p === open;
-                const b = bufs.current.get(p);
-                const mod = on ? dirty : !!b && b.text !== b.base;
+                const mod = isDirty(p);
                 const name = labels[ti];
                 return (
-                  <div key={p} title={p} {...hp(`tab:${p}`)}
+                  <div key={p} title={p} {...hp(`tab:${p}`)} onDoubleClick={() => openTab(p)}
                     onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(p); } }}
                     style={{ display: "flex", alignItems: "center", gap: 6, flex: "none", maxWidth: 190, padding: "5px 8px 5px 10px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderTop: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--panel3) 70%, transparent)" : hov === `tab:${p}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent" }}>
-                    <span onClick={() => openTab(p)} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <span style={{ width: 7, height: 9, flex: "none", background: iconColor(name), opacity: 0.85 }} />
-                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: on ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                    <span onClick={() => setOpen(p)} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <FileIcon name={name} size={13} />
+                      {/* italic = the preview tab, the one the next single click replaces */}
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontStyle: p === peek ? "italic" : "normal", color: on ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
                     </span>
                     <button onClick={() => closeTab(p)} title="close" {...hp(`tabx:${p}`)}
                       style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", flex: "none", lineHeight: 1, padding: "1px 2px", fontFamily: "'JetBrains Mono',monospace", fontSize: mod ? 12 : 10, color: mod ? "var(--warn)" : hov === `tabx:${p}` ? "var(--txb)" : "var(--txd)" }}>
@@ -860,36 +1058,34 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           </div>
         </div>
 
-        {/* quick-open palette — files · @symbols · #search-in-files */}
+        {/* quick-open palette — files · @symbols · >commands */}
         {palQ !== null && (
           <>
             <div onClick={() => setPalQ(null)} style={{ position: "absolute", inset: 0, zIndex: 40, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }} />
             <div style={{ position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
                 <span style={{ color: "var(--acc)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, flex: "none" }}>
-                  {palMode === "@" ? "@" : palMode === "#" ? "#" : "⌕"}
+                  {palMode === "@" ? "@" : palMode === ">" ? ">" : "⌕"}
                 </span>
                 <input autoFocus value={palQ} onChange={(e) => setPalQ(e.target.value)} onKeyDown={onPalKey}
-                  placeholder="file name · @symbol in this file · #search in files"
+                  placeholder="file name · @symbol in this file · >command"
                   style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }} />
-                <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>
-                  {grepBusy ? "SEARCHING…" : `${palItems.length}`}
-                </span>
+                <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{palRows.length}</span>
               </div>
               <div className="mscroll" style={{ maxHeight: 300, overflowY: "auto" }}>
-                {palItems.length === 0 && (
+                {palRows.length === 0 && (
                   <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace" }}>
-                    {palMode === "@" && !open ? "Open a file first — @ lists its functions."
-                      : palMode === "#" && palTerm.trim().length < 2 ? "Type at least 2 characters to search the tree."
-                      : grepBusy ? "…" : "No matches."}
+                    {palMode === "@" && !open ? "Open a file first — @ lists its functions." : "No matches."}
                   </div>
                 )}
-                {palItems.map((it, i) => (
-                  <button key={`${it.path}:${it.line ?? 0}:${i}`} onClick={() => openFile(it.path, it.line)}
+                {palRows.map((it, i) => (
+                  <button key={`${it.path}:${it.line ?? 0}:${i}:${it.label}`} onClick={() => runPal(it)}
                     onMouseEnter={() => setPalIdx(i)}
                     style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${i === palIdx ? "var(--acc)" : "transparent"}`, background: i === palIdx ? "color-mix(in srgb, var(--acc) 9%, transparent)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "baseline", gap: 8, padding: "5px 10px" }}>
                     <span style={{ fontSize: 11, color: i === palIdx ? "var(--txb)" : "var(--txh)", flex: "none", maxWidth: "60%", whiteSpace: "pre", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</span>
-                    <span style={{ fontSize: 9.5, color: "var(--txl)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{it.sub}</span>
+                    {/* a command's `sub` is its key: right-aligned like VS Code, and
+                        never reversed the way a path is */}
+                    <span style={{ fontSize: 9.5, color: "var(--txl)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: it.run ? "ltr" : "rtl", textAlign: it.run ? "right" : "left" }}>{it.sub}</span>
                   </button>
                 ))}
               </div>

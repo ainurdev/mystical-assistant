@@ -360,6 +360,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 limit = 200
             return self._json({"commits": git.log_graph(cwd, limit)})
+        if path == "/local/git/show":
+            # One commit from the graph: its changed files, or one file's diff.
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            sha = (qs.get("sha", [""])[0] or "").strip()
+            fpath = qs.get("path", [""])[0]
+            if fpath:
+                return self._json({"path": fpath, "diff": git.show_file(cwd, sha, fpath)})
+            return self._json(git.commit_files(cwd, sha))
         if path == "/local/git/all":
             repos = {}
             seen = set()
@@ -514,6 +525,10 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None or not q:
                 return self._json({"error": "invalid project or query"}, 400)
             return self._json({"text": graphmap.explain(abs_p, q)})
+        if path == "/local/toolsets":
+            from bridge import toolsets
+            return self._json({"builtins": toolsets.BUILTINS,
+                               "servers": toolsets.servers()})
         if path == "/local/skills":
             # A blank/unknown project is fine — the system list still applies.
             return self._json({**skills.installed(_abs_project(qs.get("project", [None])[0])),
@@ -661,6 +676,15 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": f"policy must be one of {ladder.POLICIES}"}, 400)
             store.set_fallback_policy(sid, policy)
             return self._json({"ok": True, "fallback_policy": policy})
+        if path.startswith("/local/sessions/") and path.endswith("/tools"):
+            from bridge import toolsets
+            sid = path[len("/local/sessions/"):-len("/tools")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            rules = toolsets.clean(body.get("disabled_tools"))
+            store.set_disabled_tools(sid, rules)
+            return self._json({"ok": True, "disabled_tools": rules})
         if path.startswith("/local/sessions/") and path.endswith("/goal"):
             from bridge import goals
             sid = path[len("/local/sessions/"):-len("/goal")]

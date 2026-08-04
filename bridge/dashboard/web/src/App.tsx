@@ -41,6 +41,7 @@ import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins } from "./lib/prefs";
+import { stickToBottom } from "./lib/stick";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -61,6 +62,7 @@ import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
+import { ToolsModal } from "./components/hud/ToolsModal";
 import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
@@ -210,6 +212,7 @@ export function App() {
   const [booting, setBooting] = useState(!skipBoot);
   const [showDashboard, setShowDashboard] = useState(skipBoot);
   const [manageOpen, setManageOpen] = useState(false);
+  const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [previewProject, setPreviewProject] = useState<string | null>(null);
   // Manage-projects bookkeeping. TODO(phase2-data): the bridge has no
   // remove/import endpoints, so those two persist client-side.
@@ -238,6 +241,8 @@ export function App() {
   const [analyzeFile, setAnalyzeFile] = useState<{ path: string; branch?: string } | null>(null);
   // Set only when something opens the modal straight onto a tab (composer MAP).
   const [analyzeTab, setAnalyzeTab] = useState<AnalyzeTab | undefined>(undefined);
+  // Set only by re-run on a transcript terminal block — typed into the PTY.
+  const [analyzeCommand, setAnalyzeCommand] = useState<string | undefined>(undefined);
   const [ctxMenu, setCtxMenu] = useState<CtxState | null>(null);
   // The browser items we took away by preventDefault()-ing, rebuilt per open.
   const [nativeCtx, setNativeCtx] = useState<{ top: CtxItem[]; page: CtxItem[] }>({ top: [], page: [] });
@@ -351,10 +356,19 @@ export function App() {
 
   // Every AnalyzeModal open goes through here so a stale file deep-link can't
   // survive into the next (plain) open.
-  function openAnalyze(rel: string, file?: { path: string; branch?: string }, tab?: AnalyzeTab) {
+  function openAnalyze(rel: string, file?: { path: string; branch?: string }, tab?: AnalyzeTab,
+                       command?: string) {
     setAnalyzeFile(file ?? null);
     setAnalyzeTab(tab);
+    setAnalyzeCommand(command);
     setAnalyzeProject(rel);
+  }
+
+  // Re-run a command from a transcript terminal block: the project's TERMINAL
+  // tab, on a live PTY, with the command already typed in.
+  function runCommand(command: string) {
+    const rel = selected?.project ?? activeProject;
+    if (rel) openAnalyze(rel, undefined, "terminal", command);
   }
 
   // A changed file opens on the GIT tab (diff view) — an editor buffer hides
@@ -470,8 +484,10 @@ export function App() {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
+    let prev = el.scrollTop;
     const sync = () => {
-      const stick = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      const stick = stickToBottom(el, prev);
+      prev = el.scrollTop;
       stickRef.current = stick;
       setAtBottom(stick);           // no-op re-render-wise unless it flipped
     };
@@ -559,6 +575,7 @@ export function App() {
       } else if (e.key === "Escape") {
         if (ctxMenu) closeCtx();
         else if (previewProject) setPreviewProject(null);
+        else if (toolsFor) setToolsFor(null);
         else if (manageOpen) setManageOpen(false);
         else if (paletteOpen) setPaletteOpen(false);
         else if (settingsOpen) setSettingsOpen(false);
@@ -568,7 +585,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, previewProject, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
+  }, [ctxMenu, previewProject, toolsFor, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
@@ -1071,6 +1088,10 @@ export function App() {
         hint: "take the best fallback silently", onClick: () => setPol("auto") });
       items.push({ icon: pol === "wait" ? "●" : "○", label: "On limit: wait",
         hint: "only wait for the reset", onClick: () => setPol("wait") });
+      const nOff = s?.disabled_tools?.length ?? 0;
+      items.push({ icon: "⚒", label: "Tools & MCP…",
+        hint: nOff ? `${nOff} switched off` : "all on",
+        onClick: () => setToolsFor(ctxMenu.id) });
       items.push({ divider: true });
       items.push({ icon: "⧉", label: "Duplicate session",
         hint: "copy the transcript into a new one",
@@ -1207,8 +1228,8 @@ export function App() {
               className="grid min-h-0 flex-1 gap-[13px] p-[13px]"
               style={{ gridTemplateColumns: `360px minmax(0,1fr) ${settings.rightOpen ? "372px" : "30px"}`, minWidth: 0 }}
             >
-              {/* LEFT */}
-              <div className="mscroll flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
+              {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
+              <div className="flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
                 <SessionsPanel
                   sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
@@ -1234,6 +1255,7 @@ export function App() {
                   { title: it.title, cwd: it.cwd, force: true })}
                 liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession} hud={settings}
+                onRunCommand={runCommand}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -1263,6 +1285,7 @@ export function App() {
                       draft={draft} onDraft={setDraft}
                       contextTokens={contextTokens} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
+                      showPonytail={settings.ponytailUi}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onSteer={(t) => void queue.steer(t).then((ok) => { if (!ok) void send(t, []); })}
                       onCompact={() => void send("/compact", [])}
@@ -1270,7 +1293,7 @@ export function App() {
                       onCancelQueued={(id) => queue.remove(id)}
                       onEjectQueued={(id) => void ejectQueued(id)}
                       project={sessionProject}
-                      onOpenMap={sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
+                      onOpenMap={settings.graphUi && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                     />
                   </>
                 }
@@ -1299,10 +1322,10 @@ export function App() {
               <AnalyzeModal
                 // The file is part of the key so a second deep-link (same
                 // project, different file) remounts on that file.
-                key={`${analyzeProject}:${analyzeFile?.path ?? ""}:${analyzeTab ?? ""}`}
+                key={`${analyzeProject}:${analyzeFile?.path ?? ""}:${analyzeTab ?? ""}:${analyzeCommand ?? ""}`}
                 project={analyzeProject} badge={gitBadges.get(analyzeProject)}
                 initialFile={analyzeFile?.path} initialBranch={analyzeFile?.branch}
-                initialTab={analyzeTab}
+                initialTab={analyzeTab} initialCommand={analyzeCommand}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}
@@ -1328,6 +1351,19 @@ export function App() {
                 }}
                 onImport={importProject}
                 onClose={() => setManageOpen(false)}
+              />
+            )}
+            {toolsFor && (
+              <ToolsModal
+                title={sessions.find((s) => s.id === toolsFor)?.title || "session"}
+                disabled={sessions.find((s) => s.id === toolsFor)?.disabled_tools ?? []}
+                onChange={(rules) => {
+                  // Optimistic: the switch flips now, the 5s session poll confirms.
+                  setSessions((prev) => prev.map((s) =>
+                    s.id === toolsFor ? { ...s, disabled_tools: rules } : s));
+                  void api.setSessionTools(toolsFor, rules).then(() => void loadSessions());
+                }}
+                onClose={() => setToolsFor(null)}
               />
             )}
             {settingsOpen && (

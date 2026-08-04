@@ -35,6 +35,8 @@ interface Props {
   initialFile?: string;
   initialBranch?: string;
   initialTab?: Tab;
+  /** Re-run from a transcript terminal block: typed into the TERMINAL tab's PTY. */
+  initialCommand?: string;
   onClose: () => void;
   onFeed: (texts: string[], project?: string) => void;
   onSelectSession: (s: SessionBrief) => void;
@@ -226,7 +228,8 @@ export function AnalyzeModal(props: Props) {
               onPickBranch={setSelectedBranch} initialFile={props.initialFile} />
           )}
           {tab === "terminal" && (
-            <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount} />
+            <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount}
+              initialCommand={props.initialCommand} />
           )}
           {tab === "skills" && <SkillsTab project={project} name={name(project)} />}
           {tab === "issues" && (
@@ -715,9 +718,13 @@ function IssuesTab({ project, info, onFeed, onReload }: {
 
 /* ---------------- TERMINAL: run-project bar + multi-tab PTY terminals (design 1063–1120) ---------------- */
 
-function TerminalTab({ project, worktrees, branch, onCount }: {
+function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
   project: string; worktrees: Worktree[]; branch: string; onCount: (n: number) => void;
+  initialCommand?: string;
 }) {
+  // Consumed by the first pane that connects, then cleared so switching tabs or
+  // opening another terminal doesn't run it again.
+  const [preload, setPreload] = useState(initialCommand ?? "");
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
@@ -883,7 +890,8 @@ function TerminalTab({ project, worktrees, branch, onCount }: {
           <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
             {terms.map((t) => (
               <div key={t.id} style={{ position: "absolute", inset: 8, display: t.id === activeId ? "block" : "none" }}>
-                <XtermPane id={t.id} active={t.id === activeId} onEnded={() => removeTerm(t.id)} />
+                <XtermPane id={t.id} active={t.id === activeId} onEnded={() => removeTerm(t.id)}
+                  preload={t.id === activeId ? preload : ""} onPreloaded={() => setPreload("")} />
               </div>
             ))}
           </div>

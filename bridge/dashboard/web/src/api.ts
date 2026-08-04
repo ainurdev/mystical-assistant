@@ -34,6 +34,7 @@ export interface SessionBrief {
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
   branch?: string; // the session's git branch (worktree branch, or the project's)
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
+  disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   tags?: string[]; // topic tags, written by the titler's existing one-shot
@@ -463,6 +464,12 @@ export interface FreeAgents {
   installed: boolean; // is the opencode binary there at all
   providers: FreeAgentInfo[];
 }
+/** Everything a session can switch off. `rule` is the string handed to
+ *  `claude --disallowedTools`, and the key we store. */
+export interface Toolsets {
+  builtins: { rule: string; label: string; hint: string }[];
+  servers: { name: string; rule: string; ok: boolean; status: string }[];
+}
 export interface AccountsInfo {
   accounts: AccountInfo[];
   default_policy: string;
@@ -696,6 +703,15 @@ export const api = {
       method: "POST",
       body: { policy },
     }),
+  // The bridge health-checks every MCP server here, so the first call is slow
+  // (seconds) and the rest are served from its 5-minute cache.
+  toolsets: () => req<Toolsets>("/local/toolsets"),
+  setSessionTools: (id: string, rules: string[]) =>
+    req<{ ok: boolean; disabled_tools: string[] }>(
+      `/local/sessions/${encodeURIComponent(id)}/tools`, {
+        method: "POST",
+        body: { disabled_tools: rules },
+      }),
   // An empty objective clears the goal; the bridge owns the loop either way.
   setGoal: (id: string, objective: string) =>
     req<{ ok: boolean; goal: Goal | null }>(

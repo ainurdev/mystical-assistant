@@ -127,6 +127,10 @@ def init() -> None:
         # written to. Cleared the moment a real id lands.
         if "fork_from" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN fork_from TEXT")
+        # Tools/MCP servers switched off for this session, as a JSON array of
+        # claude deny rules ("Bash", "mcp__playwright"). NULL/[] = everything on.
+        if "disabled_tools" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN disabled_tools TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -351,6 +355,20 @@ def set_tags(session_id: str, tags) -> list[str]:
         c.execute("UPDATE sessions SET tags=? WHERE id=?",
                   (json.dumps(clean) if clean else None, session_id))
     return clean
+
+
+def get_disabled_tools(session_id: str) -> list[str]:
+    """Deny rules switched on for this session (see bridge/toolsets.py)."""
+    with closing(_connect()) as c:
+        row = c.execute("SELECT disabled_tools FROM sessions WHERE id=?",
+                        (session_id,)).fetchone()
+    return parse_tags(row["disabled_tools"]) if row else []
+
+
+def set_disabled_tools(session_id: str, rules: list[str]) -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET disabled_tools=? WHERE id=?",
+                  (json.dumps(rules) if rules else None, session_id))
 
 
 def get_goal(session_id: str) -> dict | None:

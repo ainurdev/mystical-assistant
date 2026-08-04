@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type GitCommit } from "../api";
+import { api, type CompareFile, type GitCommit } from "../api";
 import { ROW_H, laneColor, layout } from "../lib/gitgraph";
 import { ago } from "../lib/surfaces";
 import { Skeleton } from "./ui";
@@ -18,6 +18,20 @@ function chip(r: string): { label: string; kind: "head" | "tag" | "remote" | "lo
   return { label: r, kind: "local" };
 }
 
+const MARK_COLOR: Record<string, string> = {
+  A: "var(--ok)", D: "var(--err)", R: "var(--info)", C: "var(--info)",
+};
+
+// Unified-diff line → its color. Headers (---/+++) would otherwise read as a
+// whole-file add/delete, so they stay muted.
+function diffColor(l: string): string {
+  if (l.startsWith("@@")) return "var(--acc)";
+  if (/^(\+\+\+|---|diff |index |new file|deleted file|similarity|rename )/.test(l)) return "var(--txl)";
+  if (l.startsWith("+")) return "var(--ok)";
+  if (l.startsWith("-")) return "var(--err)";
+  return "var(--txd)";
+}
+
 const CHIP_CLASS: Record<string, string> = {
   head: "border-primary text-foreground-bright bg-[var(--ac-12)]",
   local: "border-border text-primary",
@@ -29,6 +43,11 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
   const [commits, setCommits] = useState<GitCommit[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [limit, setLimit] = useState(200);
+  // Click a row → its changed files; click a file → that file's diff in the commit.
+  const [openSha, setOpenSha] = useState<string | null>(null);
+  const [files, setFiles] = useState<CompareFile[] | null>(null);
+  const [openFile, setOpenFile] = useState<string | null>(null);
+  const [diff, setDiff] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -55,6 +74,26 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
       clearInterval(id);
     };
   }, [project, branch, limit]);
+
+  function pickCommit(sha: string) {
+    setOpenFile(null);
+    setDiff(null);
+    if (sha === openSha) return setOpenSha(null);
+    setOpenSha(sha);
+    setFiles(null);
+    void api.gitShow(project, sha)
+      .then((r) => setFiles(r.files ?? []))
+      .catch(() => setFiles([]));
+  }
+
+  function pickFile(sha: string, name: string) {
+    if (name === openFile) return setOpenFile(null);
+    setOpenFile(name);
+    setDiff(null);
+    void api.gitShow(project, sha, name)
+      .then((r) => setDiff(r.diff ?? ""))
+      .catch(() => setDiff(""));
+  }
 
   const { rows, width } = useMemo(() => layout(commits ?? []), [commits]);
   // Squeeze the rails when a repo has many branches in flight, so the graph
@@ -89,11 +128,13 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
       {rows.map(({ c, lane, edges }) => {
         const isHead = c.refs.some((r) => r === "HEAD" || r.startsWith("HEAD -> "));
         const color = laneColor(lane);
+        const open = c.sha === openSha;
         return (
+          <div key={c.sha}>
           <div
-            key={c.sha}
+            onClick={() => pickCommit(c.sha)}
             title={`${c.sha.slice(0, 12)}\n${c.subject}\n${c.author} · ${new Date(c.ts * 1000).toLocaleString()}`}
-            className="flex items-center gap-2 rounded px-1 hover:bg-accent"
+            className={`flex cursor-pointer items-center gap-2 rounded px-1 hover:bg-accent ${open ? "bg-accent" : ""}`}
             style={{ height: ROW_H }}
           >
             <svg width={gw} height={ROW_H} className="shrink-0 overflow-visible">
@@ -136,6 +177,60 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
             )}
             <span className="flex-1 truncate text-[11.5px] text-card-foreground">{c.subject}</span>
             <span className="shrink-0 font-mono text-[10px] text-muted-2">{ago(c.ts)}</span>
+          </div>
+          {/* ponytail: the expansion splits the rails of any lane passing this
+              row — the detail's left rule keeps the opened commit's own lane
+              readable, which is the one you're looking at. */}
+          {open && (
+            <div
+              className="mb-1 space-y-px py-1 pl-2"
+              style={{ marginLeft: x(lane), borderLeft: `1.5px solid ${color}` }}
+            >
+              <div className="px-1 pb-1 font-mono text-[9.5px] text-muted-2">
+                {c.sha.slice(0, 8)} · {c.author} · {new Date(c.ts * 1000).toLocaleString()}
+              </div>
+              {files === null && <div className="px-1 text-[10px] text-muted-2">Loading files…</div>}
+              {files?.length === 0 && <div className="px-1 text-[10px] text-muted-2">No file changes.</div>}
+              {files?.map((f) => (
+                <div key={f.name}>
+                  <div
+                    onClick={() => pickFile(c.sha, f.name)}
+                    title={f.name}
+                    className={`flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-accent ${
+                      openFile === f.name ? "bg-accent" : ""
+                    }`}
+                  >
+                    <span
+                      className="w-2.5 shrink-0 text-center font-mono text-[10px] font-bold"
+                      style={{ color: MARK_COLOR[f.mark] ?? "var(--warn)" }}
+                    >
+                      {f.mark}
+                    </span>
+                    {/* rtl keeps the filename visible when the path is truncated */}
+                    <span
+                      dir="rtl"
+                      className="flex-1 truncate text-left font-mono text-[10.5px] text-muted-foreground"
+                    >
+                      {f.name}
+                    </span>
+                    <span className="shrink-0 font-mono text-[9.5px] text-[var(--ok)]">+{f.add}</span>
+                    <span className="shrink-0 font-mono text-[9.5px] text-[var(--err)]">−{f.del}</span>
+                  </div>
+                  {openFile === f.name && (
+                    <pre className="my-1 max-h-72 overflow-auto rounded border border-border p-1 font-mono text-[10px] leading-[1.55]">
+                      {diff === null
+                        ? "loading…"
+                        : diff.split("\n").map((l, i) => (
+                            <div key={i} style={{ color: diffColor(l) }}>
+                              {l || " "}
+                            </div>
+                          ))}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           </div>
         );
       })}

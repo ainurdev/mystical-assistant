@@ -201,7 +201,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               effort: str | None = None, permission_mode: str | None = None,
               claude_session_id: str | None = None, cwd: str | None = None,
               skip_pack: bool = False, new_session: bool = False,
-              fork: bool = False) -> list[str]:
+              fork: bool = False, disabled_tools: list[str] | None = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -268,6 +268,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
     elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
+    if disabled_tools:
+        # Bare tool/server names, so a switched-off tool leaves the model's
+        # context entirely rather than being offered and then refused.
+        cmd += ["--disallowedTools", ",".join(disabled_tools)]
     return cmd
 
 
@@ -336,6 +340,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         started = time.time()
         job_id = uuid.uuid4().hex
         store.start_turn(session["id"], job_id, prompt, [])
+        from bridge import titler  # local import: runner<->* cycle
+        titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
@@ -374,10 +380,7 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         footer = f"\n\n— {int(time.time() - started)}s"
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
         if not is_error:
-            from bridge import titler  # local import: runner<->* cycle
-            threading.Thread(target=titler.generate_after_turn,
-                             args=(chat_id, session, job_id),
-                             daemon=True).start()
+            titler.kick(chat_id, session, job_id)   # retry if the start call missed
     finally:
         state.release_run(session["id"])
 
@@ -1072,7 +1075,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
-                        new_session=job.new_session)
+                        new_session=job.new_session,
+                        disabled_tools=store.get_disabled_tools(job.store_session_id)
+                        if job.store_session_id else None)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1199,9 +1204,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             _sess = store.get_session(job.store_session_id)
             if _sess:
                 from bridge import titler  # local import: runner<->* cycle
-                threading.Thread(target=titler.generate_after_turn,
-                                 args=(job.chat_id, _sess, job.id),
-                                 daemon=True).start()
+                titler.kick(job.chat_id, _sess, job.id)   # retry if the start call missed
 
 
 _FULL_PERM_ORIGINS = {"dashboard", "miniapp"}
@@ -1309,6 +1312,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime)
+        from bridge import titler  # local import: runner<->* cycle
+        titler.kick(chat_id, session, job.id)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,

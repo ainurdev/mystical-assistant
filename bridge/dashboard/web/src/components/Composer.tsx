@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronRight, ChevronsRight, Merge, Paperclip, Square } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId } from "../api";
 import type { AgentOption } from "../models";
@@ -50,19 +50,22 @@ export function Drop<T extends string>({
 }) {
   const cur = options.find((o) => o.id === value) ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
+  // min-width rides a custom property so the tight end of the layout ladder can
+  // drop it to 0 (inline styles win over any stylesheet rule otherwise).
   const btn: CSSProperties = {
     appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
     background: "color-mix(in srgb, var(--panel2) 60%, transparent)", color: "var(--txh)", fontFamily: "inherit",
     fontSize: 9.5, letterSpacing: ".3px", padding: "4px 9px", display: "flex",
-    alignItems: "center", gap: 10, justifyContent: "space-between", minWidth,
+    alignItems: "center", gap: 10, justifyContent: "space-between",
+    ["--dw" as string]: `${minWidth}px`,
   };
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
       {showLabel && (
         <span className="ctrl-label" style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{label}</span>
       )}
-      <button onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
-        {cur.short ?? cur.label}
+      <button className="drop-btn" onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur.short ?? cur.label}</span>
         <span style={{ color: "var(--txd)", fontSize: 8 }}>▾</span>
       </button>
       {open && (
@@ -111,6 +114,51 @@ const chip: CSSProperties = {
   letterSpacing: 1, padding: "3px 8px",
 };
 
+// The row's explanations, in the HUD's own type instead of the browser's yellow
+// box: hover settles for a beat before it opens (so sweeping across the row
+// doesn't strobe), click pins it open, Escape and blur close it. Touch has no
+// hover at all, which is the other half of why `title` had to go.
+// ponytail: one absolutely-positioned span, no floating-ui, no portal.
+function Tip({ text, anchor = "center", pin = true, children }: {
+  text: string;
+  anchor?: "center" | "right"; // "right" for the last cluster — a centred box would hang off the edge
+  pin?: boolean; // off when the trigger does something of its own — the click closes the tip instead
+  children: ReactNode;
+}) {
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const timer = useRef(0);
+  const open = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setHover(true), 400); };
+  const close = () => { window.clearTimeout(timer.current); setHover(false); };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", flex: "none" }}
+      onMouseEnter={open}
+      onMouseLeave={close}
+      onFocus={() => setHover(true)}
+      onBlur={() => { close(); setPinned(false); }}
+      onClick={() => { close(); setPinned((p) => pin && !p); }}
+      onKeyDown={(e) => { if (e.key === "Escape") { close(); setPinned(false); } }}
+    >
+      {children}
+      {(hover || pinned) && (
+        <span role="tooltip"
+          style={{ position: "absolute", bottom: "100%", paddingBottom: 7, zIndex: 40, pointerEvents: "none",
+                   ...(anchor === "right" ? { right: 0 } : { left: "50%", transform: "translateX(-50%)" }) }}>
+          <span style={{ display: "block", width: "max-content", maxWidth: 300, whiteSpace: "pre-line",
+                         border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
+                         background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
+                         boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
+                         color: "var(--txm)", fontSize: 10.5, lineHeight: 1.65, letterSpacing: ".2px", padding: "9px 11px" }}>
+            {text}
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 // Shared look for the command-line action buttons (STOP / STEER / QUEUE / SEND).
 const actBtn: CSSProperties = {
   appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 11, letterSpacing: 2,
@@ -124,7 +172,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
 }
 
 export function Composer({
-  disabled, running, model, models, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, project, onOpenMap,
 }: {
@@ -135,6 +183,7 @@ export function Composer({
   draft: string;
   onDraft: (text: string) => void;
   project?: string | null;
+  // Both clusters are switched off from SETTINGS · SESSION: no handler, no GRAPH.
   onOpenMap?: () => void;
   model: ModelId;
   models: { id: ModelId; label: string }[];
@@ -147,6 +196,7 @@ export function Composer({
   onPerm: (p: string) => void;
   ponytail: string;
   onPonytail: (v: string) => void;
+  showPonytail: boolean;
   injectedText?: string;
   injectNonce?: number;
   sessionId?: string | null;
@@ -191,9 +241,11 @@ export function Composer({
   // Project map freshness for the MAP button. Re-read when the project changes
   // and when a turn ends — that's when the bridge rebuilds the graph — then
   // follow the build so the age lands on the new map, not the one it replaced.
+  // Nothing to poll for when the cluster is switched off.
   const [graph, setGraph] = useState<GraphState | null>(null);
+  const mapOn = !!onOpenMap;
   useEffect(() => {
-    if (!project) { setGraph(null); return; }
+    if (!project || !mapOn) { setGraph(null); return; }
     let live = true;
     let t = 0;
     const poll = () => api.graphState(project)
@@ -205,7 +257,7 @@ export function Composer({
       .catch(() => { if (live) setGraph(null); });
     void poll();
     return () => { live = false; if (t) window.clearTimeout(t); };
-  }, [project, running]);
+  }, [project, running, mapOn]);
 
   // Auto-grow the input with its content (1 line → up to ~9 lines, then scroll).
   useLayoutEffect(() => {
@@ -322,13 +374,14 @@ export function Composer({
               onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
               onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
             {activeAgent?.free ? (
-              <span
-                title="This turn runs on opencode, not your Claude subscription — the provider's own model, no effort setting, and its work is worth reviewing."
-                style={{ ...chip, flex: "none", cursor: "help", color: "var(--warn)",
-                         borderColor: "color-mix(in srgb, var(--warn) 40%, transparent)" }}
-              >
-                {activeAgent.label.replace("⚡ ", "")}
-              </span>
+              <Tip text="This turn runs on opencode, not your Claude subscription — the provider's own model, no effort setting, and its work is worth reviewing.">
+                <span
+                  style={{ ...chip, flex: "none", cursor: "help", color: "var(--warn)",
+                           borderColor: "color-mix(in srgb, var(--warn) 40%, transparent)" }}
+                >
+                  {activeAgent.label.replace("⚡ ", "")}
+                </span>
+              </Tip>
             ) : (
               <>
                 <Drop label="MODEL" value={model} options={models} open={openDrop === "model"}
@@ -343,39 +396,43 @@ export function Composer({
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
           </div>
-          <div className="ctrl-group">
-            <span className="ctrl-tag">PONYTAIL</span>
-            <Drop label="PONYTAIL" showLabel={false} value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
-              onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
-              onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
-            {/* ponytail: native title tooltip, no popover component */}
-            <button type="button" aria-label="About ponytail"
-              title={"PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with."}
-              style={{ ...chip, flex: "none", cursor: "help", padding: "3px 6px", marginLeft: -5 }}>ⓘ</button>
-            <button onClick={() => onSend("/ponytail-review", [])} disabled={disabled} title="ponytail review of the working tree"
-              style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
-              REVIEW
-            </button>
-            <button onClick={() => onSend("/ponytail-audit", [])} disabled={disabled} title="ponytail repo audit"
-              style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
-              AUDIT
-            </button>
-          </div>
+          {showPonytail && (
+            <div className="ctrl-group">
+              <span className="ctrl-tag">PONYTAIL</span>
+              <Drop label="PONYTAIL" showLabel={false} value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
+                onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
+                onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
+              <Tip text={"PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with."}>
+                <button type="button" aria-label="About ponytail"
+                  style={{ ...chip, flex: "none", cursor: "help", padding: "3px 6px", marginLeft: -5 }}>ⓘ</button>
+              </Tip>
+              <button onClick={() => onSend("/ponytail-review", [])} disabled={disabled} title="ponytail review of the working tree"
+                style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
+                REVIEW
+              </button>
+              <button onClick={() => onSend("/ponytail-audit", [])} disabled={disabled} title="ponytail repo audit"
+                style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
+                AUDIT
+              </button>
+            </div>
+          )}
           {onOpenMap && graph?.available && (
             <div className="ctrl-group">
               <span className="ctrl-tag">GRAPH</span>
-              <button onClick={onOpenMap}
-                title={graph.building
+              <Tip anchor="right" pin={false}
+                text={graph.building
                   ? "Learning your project for better and faster responses. Opens the MAP tab."
                   : graph.exists
                   ? `Project map — built ${ago(graph.built_at)} ago${graph.stale ? ", stale" : ""}. Opens the MAP tab.`
-                  : "No project map yet — it builds itself after the first turn. Opens the MAP tab."}
-                style={{ ...chip, flex: "none", display: "flex", alignItems: "center", gap: 6, ...(graph.building ? { border: "1px solid var(--acc)", color: "var(--acc)" } : null) }}>
-                MAP
-                <span style={{ color: graph.stale && !graph.building ? "var(--warn)" : "inherit" }}>
-                  {graph.building ? "LEARNING…" : graph.exists ? ago(graph.built_at) : "—"}
-                </span>
-              </button>
+                  : "No project map yet — it builds itself after the first turn. Opens the MAP tab."}>
+                <button onClick={onOpenMap}
+                  style={{ ...chip, flex: "none", display: "flex", alignItems: "center", gap: 6, ...(graph.building ? { border: "1px solid var(--acc)", color: "var(--acc)" } : null) }}>
+                  MAP
+                  <span style={{ color: graph.stale && !graph.building ? "var(--warn)" : "inherit" }}>
+                    {graph.building ? "LEARNING…" : graph.exists ? ago(graph.built_at) : "—"}
+                  </span>
+                </button>
+              </Tip>
             </div>
           )}
         </div>

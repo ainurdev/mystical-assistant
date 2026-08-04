@@ -1525,6 +1525,47 @@ export function SettingsModal(props: SettingsModalProps) {
                   session was started with.
                 </div>
 
+                <Label top>PROMPT BOX</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div>
+                      <div style={KEY_TX}>PONYTAIL</div>
+                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                        The level picker and its REVIEW / AUDIT buttons. Off, they leave the prompt
+                        box — the level set above still applies to every run.
+                      </div>
+                    </div>
+                    <Switch on={settings.ponytailUi} onClick={() => onPatch({ ponytailUi: !settings.ponytailUi })} />
+                  </div>
+                  <div style={{ ...KV, marginTop: 12 }}>
+                    <div>
+                      <div style={KEY_TX}>GRAPH</div>
+                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                        The MAP chip and its freshness. Off, the map still builds itself and still
+                        opens from ANALYZE — the prompt box just stops asking about it.
+                      </div>
+                    </div>
+                    <Switch on={settings.graphUi} onClick={() => onPatch({ graphUi: !settings.graphUi })} />
+                  </div>
+                </div>
+
+                <Label top>TRANSCRIPT</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div>
+                      <div style={KEY_TX}>AUTO-OPEN RESULTS</div>
+                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                        Bash output and edit diffs draw themselves open. Off, a turn reads as the
+                        list of commands and files it touched — click one to see its result.
+                      </div>
+                    </div>
+                    <Switch
+                      on={settings.openResults}
+                      onClick={() => onPatch({ openResults: !settings.openResults })}
+                    />
+                  </div>
+                </div>
+
                 <Label top>GUARDRAIL</Label>
                 <div style={NOTE}>
                   Kept by the bridge for every surface — turning it off here silences the check

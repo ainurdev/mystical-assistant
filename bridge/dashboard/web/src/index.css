@@ -2,7 +2,7 @@
    themes ask for — EB Garamond (DUSK, THE LIBRARY), Work Sans (APEX), Spectral
    (GLOAM). One request for all of them; each ThemeDef.font still names a local
    fallback (Georgia / system-ui) so an offline dashboard stays readable. */
-@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&family=Space+Grotesk:wght@400;600&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -277,6 +277,31 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* ponytail: long scrollers stay fully in the DOM — the children just skip layout
+   and paint while off-screen. Keeps ctrl-F, anchor jumps, scroll-to-bottom and
+   streaming working, which virtualization would each cost extra code to restore.
+   Measured: 967-event transcript relayout 35ms -> 0.1ms, 3000-row tree 27ms ->
+   2.4ms. The size is only the guess before a child has rendered once; `auto`
+   makes the browser remember the real height after that, so pick it near the
+   common case and the scrollbar settles immediately.
+   Applies `contain: layout paint`, so a position:fixed descendant gets clipped
+   to its child box — never put these on a wrapper that holds a modal. */
+.vskip-card > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60px;
+}
+.vskip-row > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 21px;
+}
+/* ponytail: file-tree rows hover in CSS, not React state. Tracking the hovered
+   row in the parent re-rendered all ~1100 of them on every mouse move (measured
+   ~5ms of restyle per move at 1000 rows, before React's own reconciliation).
+   Rows that carry their own background (selected, drop target) set it inline,
+   which outranks this rule — so those keep reading as selected while hovered. */
+.trow:hover {
+  background: color-mix(in srgb, var(--acc) 6%, transparent);
+}
 .panel {
   position: relative;
 }
@@ -320,7 +345,9 @@ body {
 [data-theme="apex"] .panel::before,
 [data-theme="apex"] .panel::after,
 [data-theme="gloam"] .panel::before,
-[data-theme="gloam"] .panel::after { display: none; }
+[data-theme="gloam"] .panel::after,
+[data-theme="riso"] .panel::before,
+[data-theme="riso"] .panel::after { display: none; }
 /* Card elevation, daylight rules: two hairline layers at low alpha tinted with
    the ground's own hue — a 30%-black drop shadow reads as grime on paper. */
 [data-theme="normal"] .panel { border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 30, 50, 0.07), 0 2px 6px rgba(15, 30, 50, 0.06); }
@@ -357,7 +384,20 @@ body {
 [data-theme="dusk"] .glow,
 [data-theme="library"] .glow,
 [data-theme="apex"] .glow,
-[data-theme="gloam"] .glow { text-shadow: none; }
+[data-theme="gloam"] .glow,
+[data-theme="riso"] .glow { text-shadow: none; }
+/* RISO: a press with no blending gets depth from a MISREGISTERED plate, not a
+   shadow — the pink pass lands low-right of the blue one, so a card looks
+   printed rather than lifted. Both edges are the palette's own inks. */
+[data-theme="riso"] .panel {
+  border-radius: 2px;
+  box-shadow:
+    1.5px 1.5px 0 rgb(var(--accent-rgb) / 0.16),
+    -1.5px -1.5px 0 color-mix(in srgb, var(--info) 13%, transparent);
+}
+[data-theme="riso"] button,
+[data-theme="riso"] input,
+[data-theme="riso"] textarea { border-radius: 2px; }
 /* claude = the app's own surfaces: soft cards, no corner ticks, no bloom. */
 [data-theme^="claude"] .panel::before,
 [data-theme^="claude"] .panel::after { display: none; }
@@ -550,6 +590,17 @@ body {
 @keyframes quoteglow { 0%, 100% { text-shadow: 0 0 0 rgb(var(--accent-rgb) / 0); } 50% { text-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.25); } }
 /* New streamed line: phosphor write-on — rises in with a quick brightness flash. */
 @keyframes streamIn { 0% { opacity: 0; transform: translateY(7px); filter: brightness(1.75); } 100% { opacity: 1; transform: none; filter: none; } }
+/* A Bash block powers on like the terminal it draws: a slit of phosphor snaps
+   open, flares, then settles. Each command feeds in from the prompt margin, and
+   its output rolls down out of the line that printed it. */
+@keyframes termIn { 0% { opacity: 0; clip-path: inset(48% 0 48% 0); filter: brightness(2.6); } 42% { opacity: 1; clip-path: inset(0 0 0 0); filter: brightness(1.9); } 64% { filter: brightness(0.9); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
+@keyframes termLine { 0% { opacity: 0; transform: translateX(-9px); filter: brightness(2.1); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes termOpen { 0% { opacity: 0; clip-path: inset(0 0 100% 0); } 100% { opacity: 1; clip-path: inset(0 0 0 0); } }
+/* READ: a scanline crosses the file card once, the file being read off it. */
+@keyframes readIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes scanread { 0% { top: 0; opacity: 0.9; } 100% { top: 100%; opacity: 0; } }
+/* WRITE: the card is written on, left to right. */
+@keyframes writeOn { 0% { opacity: 0; clip-path: inset(0 100% 0 0); filter: brightness(1.9); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
 /* Channel "tuning" while a session loads: an unstable bright scanline — flickers,
    jitters, pulses width — held until the transcript lands and the viewport blooms. */
 @keyframes chanline { 0% { opacity: 0.4; transform: translateY(-50%) scaleX(0.5); } 10% { opacity: 1; transform: translateY(-50%) scaleX(1); } 16% { opacity: 0.45; } 24% { opacity: 1; transform: translateY(calc(-50% + 2px)) scaleX(0.92); } 38% { opacity: 0.7; transform: translateY(-50%) scaleX(1); } 52% { opacity: 1; } 66% { opacity: 0.5; transform: translateY(calc(-50% - 2px)) scaleX(0.82); } 80% { opacity: 1; transform: translateY(-50%) scaleX(1); } 90% { opacity: 0.55; } 100% { opacity: 1; transform: translateY(-50%) scaleX(1); } }
@@ -567,11 +618,18 @@ input {
 .md h1 { font-size: 1.3em; }
 .md h2 { font-size: 1.18em; }
 .md h3 { font-size: 1.06em; }
+.md h1, .md h2 { padding-bottom: 0.22em; border-bottom: 1px solid var(--border); }
+.md h1, .md h2, .md h3, .md h4 { color: var(--foreground-bright); }
 .md ul, .md ol { margin: 0.5em 0; padding-left: 1.4em; }
 .md ul { list-style: disc; }
 .md ol { list-style: decimal; }
+/* The marker is the accent, so a response's structure reads before its words. */
+.md li::marker { color: var(--acc); }
 .md li { margin: 0.2em 0; }
 .md li > ul, .md li > ol { margin: 0.2em 0; }
+/* GFM task lists: the box is a bullet, not a control — nothing here is clickable. */
+.md li:has(> input[type="checkbox"]) { list-style: none; }
+.md li > input[type="checkbox"] { margin-right: 0.45em; accent-color: var(--acc); pointer-events: none; }
 .md a { color: var(--brand-soft); text-decoration: underline; text-underline-offset: 2px; }
 /* Bold reads as a highlight, Claude-style: a translucent accent wash (never a
    solid fill) so contrast against the surface barely moves and the text stays
@@ -595,31 +653,58 @@ input {
   border-radius: 5px;
   padding: 0.08em 0.34em;
 }
-.md pre {
-  margin: 0.6em 0;
-  padding: 0.8em 0.9em;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  overflow-x: auto;
+/* A fenced block is a panel, not a paragraph: sunken well, hairline edge, and
+   the language named on a rail across the top (see CodeBlock in Markdown.tsx). */
+.md-code { margin: 0.7em 0; background: var(--code-bg); border: 1px solid var(--border); }
+.md-code-lang {
+  padding: 0.3em 0.75em;
+  border-bottom: 1px solid var(--border);
+  background: var(--ac-03);
+  color: var(--acc);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
 }
+.md pre { margin: 0; padding: 0.7em 0.9em; overflow-x: auto; }
 .md pre code {
   background: none;
   border: none;
   padding: 0;
   font-size: 0.86em;
-  line-height: 1.5;
+  line-height: 1.55;
 }
+/* Syntax colours for the tok-* classes @lezer/highlight emits (see lib/hl.ts) —
+   the same palette the editor's CodeMirror theme uses. */
+.md .tok-keyword { color: var(--purple); }
+.md .tok-atom, .md .tok-bool, .md .tok-literal, .md .tok-number,
+.md .tok-typeName, .md .tok-className, .md .tok-namespace { color: var(--warn); }
+.md .tok-string, .md .tok-inserted { color: var(--ok); }
+.md .tok-string2, .md .tok-operator, .md .tok-url, .md .tok-link,
+.md .tok-labelName { color: var(--acc); }
+.md .tok-variableName, .md .tok-variableName2, .md .tok-propertyName,
+.md .tok-macroName, .md .tok-deleted { color: var(--txh); }
+.md .tok-comment, .md .tok-meta { color: var(--txd); font-style: italic; }
+.md .tok-invalid { color: var(--err); }
+.md .tok-strong { font-weight: 700; }
+.md .tok-emphasis { font-style: italic; }
 .md blockquote {
   margin: 0.6em 0;
-  padding-left: 0.9em;
-  border-left: 3px solid var(--border);
+  padding: 0.35em 0.9em;
+  border-left: 2px solid var(--acc);
+  background: var(--ac-03);
   color: var(--muted-foreground);
 }
-.md hr { margin: 1em 0; border: none; border-top: 1px solid var(--border); }
+.md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--border-bright); }
 .md table { margin: 0.6em 0; border-collapse: collapse; font-size: 0.92em; }
 .md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
-.md th { background: var(--muted); font-weight: 600; }
+.md th {
+  background: var(--ac-06);
+  color: var(--foreground-bright);
+  font-weight: 600;
+  letter-spacing: 0.6px;
+}
+.md tbody tr:nth-child(even) { background: var(--ac-03); }
 .md img { max-width: 100%; border-radius: 8px; }
 
 /* Composer control row — three fenced clusters: AI · PONYTAIL · GRAPH. The row
@@ -627,17 +712,33 @@ input {
    when the sidebars and floating windows open, so a media query would collapse
    at the wrong moments. */
 .ctrl-cq { container-type: inline-size; }
-/* ponytail: wrap is the only floor — one line for as long as the content fits,
-   no measured width collapsing the row early. Groups wrap inside themselves
-   too, so a cluster wider than the container breaks instead of overflowing. */
-.ctrl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 11px; }
-.ctrl-group { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 11px; min-width: 0; }
+/* One line, always: the row never wraps, it sheds. Each rung below buys width
+   back, and the last one lets the dropdowns themselves shrink and ellipsise so
+   even a very narrow composer keeps every control on the one line. */
+.ctrl-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 9px 11px; }
+.ctrl-group { display: flex; align-items: center; flex-wrap: nowrap; gap: 7px 11px; min-width: 0; }
 .ctrl-group + .ctrl-group { padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); }
 .ctrl-tag { flex: none; font-size: 8px; letter-spacing: 1.5px; color: var(--acc); }
+.drop-btn { min-width: var(--dw, 78px); }
 
 /* 1000px: the per-field eyebrows go — worth ~115px. The cluster tag names the
    group, and every control keeps a "FIELD — value" tooltip for the name it just
    dropped. Fires early on purpose: it buys the row its one line. */
 @container (max-width: 1000px) {
   .ctrl-label { display: none; }
+}
+
+/* 900px: the cluster tags (AI · PONYTAIL · GRAPH) go — worth another ~110px.
+   The fences between the groups stay, so the grouping still reads. */
+@container (max-width: 900px) {
+  .ctrl-tag { display: none; }
+  .ctrl-group + .ctrl-group { padding-left: 9px; }
+  .ctrl-row, .ctrl-group { gap: 7px; }
+}
+
+/* Below that there is nothing left to drop: the dropdowns give up their
+   uniform width and truncate their value instead of pushing GRAPH onto a
+   second line. The full value is still in each control's own tooltip. */
+@container (max-width: 780px) {
+  .drop-btn { min-width: 0; }
 }

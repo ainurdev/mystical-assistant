@@ -45,16 +45,20 @@ function resolveTheme(spec: Record<string, string>): Record<string, string> {
  *  websocket. Client→server frames are binary with a 1-byte channel prefix
  *  (0x00 = stdin, 0x01 = resize-JSON); server→client frames are raw PTY output.
  *  Reconnects a few times if the socket drops while the PTY is still alive. */
-export function XtermPane({ id, active, onEnded }: {
+export function XtermPane({ id, active, onEnded, preload, onPreloaded }: {
   id: string;
   active: boolean;
   onEnded?: () => void;
+  /** Typed into the PTY once, as soon as it is connected (transcript re-run). */
+  preload?: string;
+  onPreloaded?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const sendResizeRef = useRef<() => void>(() => {});
+  const sendDataRef = useRef<(s: string) => void>(() => {});
   const deadRef = useRef(false);
   const endedRef = useRef(onEnded);
   endedRef.current = onEnded;
@@ -85,6 +89,7 @@ export function XtermPane({ id, active, onEnded }: {
     const sendResize = () =>
       sendCtl(0x01, enc.encode(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })));
     sendResizeRef.current = sendResize;
+    sendDataRef.current = (s: string) => sendCtl(0x00, enc.encode(s));
 
     term.onData((d) => sendCtl(0x00, enc.encode(d)));
 
@@ -124,6 +129,20 @@ export function XtermPane({ id, active, onEnded }: {
       wsRef.current = null;
     };
   }, [id]);
+
+  // Re-run from the transcript: type the command in once the socket is up. The
+  // PTY may still be spawning when the pane mounts, so poll briefly for OPEN.
+  useEffect(() => {
+    if (!preload) return;
+    const tick = setInterval(() => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+      clearInterval(tick);
+      sendDataRef.current(preload.endsWith("\n") ? preload : `${preload}\n`);
+      onPreloaded?.();
+    }, 120);
+    return () => clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preload]);
 
   // Hidden panes have zero size — refit + focus when this one becomes visible.
   useEffect(() => {
