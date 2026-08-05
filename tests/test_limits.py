@@ -109,6 +109,26 @@ def test_is_server_error_matches_real_shapes():
         assert not limits.is_server_error(t), f"should NOT match: {t!r}"
 
 
+def test_is_context_error_matches_real_shapes():
+    yes = [
+        "Prompt is too long",
+        "API Error: 400 {\"type\":\"error\",\"error\":{\"message\":\"prompt is too long\"}}",
+        "input length and `max_tokens` exceed context limit",
+        "Context window exceeded",
+    ]
+    no = [
+        "You've hit your weekly limit · resets Thu 09:00",
+        "API Error: 529 Overloaded",
+        "claude exited 1",
+        "",
+        None,
+    ]
+    for t in yes:
+        assert limits.is_context_error(t), f"should match: {t!r}"
+    for t in no:
+        assert not limits.is_context_error(t), f"should NOT match: {t!r}"
+
+
 def test_defer_server_walks_the_backoff_ladder():
     """First retry is instant, then 1/5/10/15/30 min; a 7th gives up, and a
     completed turn (note_ok) starts the next episode back at instant."""

@@ -373,15 +373,18 @@ def test_runner_job_without_session_does_not_journal():
     assert job.events and job.store_session_id is None   # in-memory only, no error
 
 
-def test_session_brief_shape():
+def test_session_brief_shape(monkeypatch):
+    from bridge import toolsets
     from bridge.miniapp.server import _session_brief
+    # Don't shell out to `claude mcp list` for the never-configured default.
+    monkeypatch.setattr(toolsets, "servers", lambda *a, **k: [{"rule": "mcp__github"}])
     s = store.create_session(555, "p6")
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "updated", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal",
                       "lifecycle", "tags", "disabled_tools"}
     assert b["id"] == s["id"] and b["project"] == "p6"
-    assert b["disabled_tools"] == []      # a fresh session can reach everything
+    assert b["disabled_tools"] == ["mcp__github"]   # servers off until switched on
     assert isinstance(b["branch"], str)   # "" when cwd has no repo
     assert b["goal"] is None              # parsed from the column, not the raw JSON
     assert b["lifecycle"] is None         # a fresh session is active

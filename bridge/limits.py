@@ -83,6 +83,21 @@ def is_server_error(text: "str | None") -> bool:
     return bool(_SERVER_RE.search(text or ""))
 
 
+# Turn-death texts that mean "the request didn't fit the context window". Unlike
+# the two above this is not a wait: no reset clears it and a resume resends the
+# same too-long transcript, so it gets no defer() counterpart — the caller stops
+# and hands it back to the user.
+_CONTEXT_RE = re.compile(
+    r"prompt is too long"
+    r"|input length and .{0,40}exceed context limit"
+    r"|context (?:window|length) exceeded",
+    re.IGNORECASE)
+
+
+def is_context_error(text: "str | None") -> bool:
+    return bool(_CONTEXT_RE.search(text or ""))
+
+
 def wait_str(epoch: float) -> str:
     s = max(0.0, epoch - time.time())
     return "now" if s < 30 else f"in {round(s / 60)} min"

@@ -65,6 +65,23 @@ def test_a_foreign_session_is_404_not_a_write(monkeypatch):
     h, box = _handler()
     h._post_api(f"/local/sessions/{s['id']}/tools", {"disabled_tools": ["Bash"]})
     assert box["code"] == 404
+    # Nothing written, so the session still reads as never-configured.
+    assert store.get_disabled_tools(s["id"]) == ["mcp__github"]
+
+
+def test_a_new_session_denies_every_mcp_server(monkeypatch):
+    """Their schemas are bigger than the context window, and Claude Code only
+    sometimes loads them lazily — on by default is a session that can't start."""
+    _no_mcp(monkeypatch)
+    s = store.create_session(CHAT, "/tools4")
+    assert store.get_disabled_tools(s["id"]) == ["mcp__github"]
+
+
+def test_switching_every_server_on_is_honoured_over_the_default(monkeypatch):
+    _no_mcp(monkeypatch)
+    s = store.create_session(CHAT, "/tools5")
+    h, _ = _handler()
+    h._post_api(f"/local/sessions/{s['id']}/tools", {"disabled_tools": []})
     assert store.get_disabled_tools(s["id"]) == []
 
 

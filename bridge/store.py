@@ -474,18 +474,38 @@ def prune_shares() -> int:
     return cur.rowcount or 0
 
 
+def parse_disabled_tools(raw: "str | None") -> list[str]:
+    """Deny rules for a session (see bridge/toolsets.py), from the stored column.
+
+    NULL means never configured, and that defaults to every MCP server denied.
+    The configured servers carry ~275k tokens of tool schemas — more than the
+    200k window — and Claude Code only *sometimes* loads them lazily. A session
+    that draws the eager path is born over the limit and cannot recover:
+    "Prompt is too long", then autocompact thrashing forever, because compaction
+    shrinks the conversation and never the system prompt. Denying a server by
+    bare name keeps its schemas out either way.
+
+    A stored "[]" is a real choice (everything on) and is honoured."""
+    if raw is None:
+        from bridge import toolsets  # local: toolsets imports runner
+        return [s["rule"] for s in toolsets.servers()]
+    return parse_tags(raw)
+
+
 def get_disabled_tools(session_id: str) -> list[str]:
     """Deny rules switched on for this session (see bridge/toolsets.py)."""
     with closing(_connect()) as c:
         row = c.execute("SELECT disabled_tools FROM sessions WHERE id=?",
                         (session_id,)).fetchone()
-    return parse_tags(row["disabled_tools"]) if row else []
+    return parse_disabled_tools(row["disabled_tools"]) if row else []
 
 
 def set_disabled_tools(session_id: str, rules: list[str]) -> None:
+    # Always a JSON list, never NULL: "[]" has to mean "user switched everything
+    # on" and stay distinguishable from the never-configured default above.
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET disabled_tools=? WHERE id=?",
-                  (json.dumps(rules) if rules else None, session_id))
+                  (json.dumps(rules), session_id))
 
 
 def get_goal(session_id: str) -> dict | None:

@@ -24,7 +24,7 @@ import uuid
 
 from bridge import (accounts, agents, config, devserver, git, inspector, ladder,
                     limits, machine, native_activity,
-                    pubsub, relevance, state, store, transcript_jsonl)
+                    pubsub, relevance, state, store, toolsets, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -275,6 +275,17 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
     elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
+    if "--strict-mcp-config" not in cmd:
+        # MCP schemas are context, not capability. All servers on costs ~263k
+        # tokens of tool definitions (measured: 313682 vs 50283 cache-creation
+        # tokens for the same `say ok`) — more than the whole 200k window, so a
+        # session dies with "Prompt is too long" before its first word. The
+        # one-shots above already opt out via --strict-mcp-config; interactive
+        # runs can't (it would drop the goal server too), so deny by name
+        # instead — a denied server leaves the model's context entirely.
+        allowed = {s.strip() for s in config.MCP_SERVERS.split(",") if s.strip()}
+        off = [s["rule"] for s in toolsets.servers() if s["name"] not in allowed]
+        disabled_tools = sorted(set(disabled_tools or []) | set(off))
     if disabled_tools:
         # Bare tool/server names, so a switched-off tool leaves the model's
         # context entirely rather than being offered and then refused.
@@ -855,6 +866,14 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                 f"{limits.wait_str(when)} "
                 f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).")
         return True
+    if limits.is_context_error(job.result or job.error_msg):
+        # The transcript no longer fits the window. A resume resends the same
+        # too-long context, so every retry below fails identically at full turn
+        # price. Stop and hand it back.
+        _notify(job.chat_id,
+                f"🧱 {_session_label(sid)} ran out of context window. "
+                f"Run /compact in it, or start a fresh session.")
+        return False
     fails = _resume_fails.get(sid, 0) + 1
     _resume_fails[sid] = fails
     if fails > AUTO_RESUME_MAX:
