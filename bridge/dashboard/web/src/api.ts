@@ -515,6 +515,8 @@ export interface InspectorState {
 export interface Toolsets {
   builtins: { rule: string; label: string; hint: string }[];
   servers: { name: string; rule: string; ok: boolean; status: string }[];
+  /** What a session that never opened this modal runs with. */
+  default: string[];
 }
 export interface AccountsInfo {
   accounts: AccountInfo[];
@@ -753,6 +755,11 @@ export const api = {
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.
   toolsets: () => req<Toolsets>("/local/toolsets"),
+  setToolsetDefault: (disabled_tools: string[]) =>
+    req<{ ok: boolean; default: string[] }>("/local/toolsets/default", {
+      method: "POST",
+      body: { disabled_tools },
+    }),
   inspector: () => req<InspectorState>("/local/inspector"),
   inspectorAction: (action: "on" | "off" | "clear") =>
     req<{ ok: boolean; on: boolean }>("/local/inspector", {

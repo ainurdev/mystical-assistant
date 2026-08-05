@@ -548,7 +548,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/toolsets":
             from bridge import toolsets
             return self._json({"builtins": toolsets.BUILTINS,
-                               "servers": toolsets.servers()})
+                               "servers": toolsets.servers(),
+                               "default": store.default_disabled_tools()})
         if path == "/local/tags":
             return self._json({"tags": store.tag_counts()})
         if path == "/local/prompts":
@@ -715,6 +716,13 @@ class Handler(BaseHTTPRequestHandler):
             # switch here lands on the next turn.
             return self._json({"ok": True, "on": inspector.running(),
                                "base_url": inspector.base_url()})
+        if path == "/local/toolsets/default":
+            from bridge import toolsets
+            # What a session with no choice of its own runs with. Stored, so it
+            # takes effect on the next turn rather than needing a restart.
+            rules = toolsets.clean(body.get("disabled_tools"))
+            store.set_setting(store.DEFAULT_TOOLS_KEY, json.dumps(rules))
+            return self._json({"ok": True, "default": rules})
         if path.startswith("/local/sessions/") and path.endswith("/tools"):
             from bridge import toolsets
             sid = path[len("/local/sessions/"):-len("/tools")]

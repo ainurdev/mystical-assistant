@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS shares (
 );
 CREATE INDEX IF NOT EXISTS ix_shares_session ON shares(session_id);
 
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   session_id  TEXT NOT NULL,
   turn_id     TEXT NOT NULL,
@@ -474,22 +479,53 @@ def prune_shares() -> int:
     return cur.rowcount or 0
 
 
+DEFAULT_TOOLS_KEY = "default_disabled_tools"
+
+
+def default_disabled_tools() -> list[str]:
+    """Deny rules a session starts with, until it's configured its own.
+
+    Editable from the Tools modal (SAVE AS DEFAULT); config.MCP_SERVERS only
+    seeds it the first time, so changing the default never needs a restart.
+
+    Why there is a default at all: the configured MCP servers carry ~263k
+    tokens of tool schemas — more than the whole 200k window — and Claude Code
+    only *sometimes* loads them lazily. A session that draws the eager path is
+    born over the limit and cannot recover ("Prompt is too long", then
+    autocompact thrashing forever, because compaction shrinks the conversation
+    and never the system prompt). Denying a server by bare name keeps its
+    schemas out either way."""
+    from bridge import toolsets  # local: toolsets imports runner
+    stored = get_setting(DEFAULT_TOOLS_KEY)
+    if stored is not None:
+        return parse_tags(stored)
+    allowed = {s.strip() for s in config.MCP_SERVERS.split(",") if s.strip()}
+    return sorted(s["rule"] for s in toolsets.servers() if s["name"] not in allowed)
+
+
 def parse_disabled_tools(raw: "str | None") -> list[str]:
     """Deny rules for a session (see bridge/toolsets.py), from the stored column.
 
-    NULL means never configured, and that defaults to every MCP server denied.
-    The configured servers carry ~275k tokens of tool schemas — more than the
-    200k window — and Claude Code only *sometimes* loads them lazily. A session
-    that draws the eager path is born over the limit and cannot recover:
-    "Prompt is too long", then autocompact thrashing forever, because compaction
-    shrinks the conversation and never the system prompt. Denying a server by
-    bare name keeps its schemas out either way.
+    NULL means never configured, and falls back to default_disabled_tools().
+    A stored "[]" is a real choice (everything on) and is honoured — including
+    by the run itself, which no longer re-denies on top."""
+    return default_disabled_tools() if raw is None else parse_tags(raw)
 
-    A stored "[]" is a real choice (everything on) and is honoured."""
-    if raw is None:
-        from bridge import toolsets  # local: toolsets imports runner
-        return [s["rule"] for s in toolsets.servers()]
-    return parse_tags(raw)
+
+def get_setting(key: str) -> "str | None":
+    with closing(_connect()) as c:
+        row = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_setting(key: str, value: "str | None") -> None:
+    """None deletes the key, which is how a setting goes back to its config default."""
+    with closing(_connect()) as c:
+        if value is None:
+            c.execute("DELETE FROM settings WHERE key=?", (key,))
+        else:
+            c.execute("INSERT INTO settings(key, value) VALUES(?, ?) "
+                      "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
 
 def get_disabled_tools(session_id: str) -> list[str]:

@@ -33,7 +33,16 @@ export function ToolsModal({
   onClose: () => void;
 }) {
   const [sets, setSets] = useState<Toolsets | null>(null);
+  const [saved, setSaved] = useState(false);
   const off = new Set(disabled);
+
+  const saveDefault = () => {
+    void api.setToolsetDefault(disabled).then((r) => {
+      setSets((s) => (s ? { ...s, default: r.default } : s));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1600);
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     let live = true;
@@ -75,6 +84,10 @@ export function ToolsModal({
           <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>TOOLS</span>
           <span style={{ fontSize: 15, color: "var(--txb)", letterSpacing: ".5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           <span style={{ flex: 1 }} />
+          <button onClick={saveDefault} title="new sessions start with these switches"
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: saved ? "var(--ok)" : "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "6px 10px" }}>
+            {saved ? "SAVED ✓" : "SAVE AS DEFAULT"}
+          </button>
           {off.size > 0 && (
             <button onClick={() => onChange([])}
               style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "6px 10px" }}>
@@ -95,7 +108,12 @@ export function ToolsModal({
           </div>
 
           <div style={LABEL}>
-            MCP SERVERS{sets ? ` · ${sets.servers.length}` : ""}
+            MCP SERVERS{sets ? ` · ${sets.servers.filter((s) => !off.has(s.rule)).length}/${sets.servers.length} ON` : ""}
+            {/* All 17 on measured ~263k tokens of schemas against a 200k window,
+                so the count is the number that matters most on this screen. */}
+            {sets && sets.servers.every((s) => !off.has(s.rule)) && sets.servers.length > 6 && (
+              <span style={{ color: "var(--warn)" }}> · every server on can exceed the context window</span>
+            )}
           </div>
           <div style={box}>
             {sets === null && (

@@ -377,7 +377,8 @@ def test_session_brief_shape(monkeypatch):
     from bridge import toolsets
     from bridge.miniapp.server import _session_brief
     # Don't shell out to `claude mcp list` for the never-configured default.
-    monkeypatch.setattr(toolsets, "servers", lambda *a, **k: [{"rule": "mcp__github"}])
+    monkeypatch.setattr(toolsets, "servers",
+                        lambda *a, **k: [{"rule": "mcp__github", "name": "github"}])
     s = store.create_session(555, "p6")
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "updated", "archived",

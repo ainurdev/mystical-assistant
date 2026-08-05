@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ.setdefault("ACCOUNTS_DIR", os.path.join(tempfile.mkdtemp(), "accounts"))
 
-from bridge import inspector, store, toolsets  # noqa: E402
+from bridge import config, inspector, runner, store, toolsets  # noqa: E402
 from bridge.dashboard import server as dash  # noqa: E402
 
 store.init()
@@ -69,12 +69,15 @@ def test_a_foreign_session_is_404_not_a_write(monkeypatch):
     assert store.get_disabled_tools(s["id"]) == ["mcp__github"]
 
 
-def test_a_new_session_denies_every_mcp_server(monkeypatch):
+def test_a_new_session_denies_every_mcp_server_outside_the_allowlist(monkeypatch):
     """Their schemas are bigger than the context window, and Claude Code only
-    sometimes loads them lazily — on by default is a session that can't start."""
+    sometimes loads them lazily — all on by default is a session that can't
+    start. MCP_SERVERS names the ones worth the tokens."""
     _no_mcp(monkeypatch)
     s = store.create_session(CHAT, "/tools4")
     assert store.get_disabled_tools(s["id"]) == ["mcp__github"]
+    monkeypatch.setattr(config, "MCP_SERVERS", "github")
+    assert store.get_disabled_tools(s["id"]) == []      # allowlisted -> not denied
 
 
 def test_switching_every_server_on_is_honoured_over_the_default(monkeypatch):
@@ -83,6 +86,32 @@ def test_switching_every_server_on_is_honoured_over_the_default(monkeypatch):
     h, _ = _handler()
     h._post_api(f"/local/sessions/{s['id']}/tools", {"disabled_tools": []})
     assert store.get_disabled_tools(s["id"]) == []
+
+
+def test_the_run_does_not_re_deny_what_the_modal_switched_on(monkeypatch):
+    """The bug that made the modal a lie: an explicit [] must reach the command
+    line as no --disallowedTools, not get unioned back with the default."""
+    _no_mcp(monkeypatch)
+    monkeypatch.setattr(runner.config, "EXTRA_CLAUDE_ARGS", "")
+    on = runner._base_cmd("hi", CHAT, stream=True, interactive=True, disabled_tools=[])
+    assert "--disallowedTools" not in on
+    # None means "no choice made" — that one still gets the default.
+    dflt = runner._base_cmd("hi", CHAT, stream=True, interactive=True)
+    assert dflt[dflt.index("--disallowedTools") + 1] == "mcp__github"
+
+
+def test_saving_a_default_replaces_the_env_seed(monkeypatch):
+    _no_mcp(monkeypatch)
+    monkeypatch.setattr(config, "MCP_SERVERS", "github")   # seed says github is on
+    h, box = _handler()
+    try:
+        h._post_api("/local/toolsets/default", {"disabled_tools": ["mcp__github", "nope"]})
+        assert box["obj"]["default"] == ["mcp__github"]    # unknown rule dropped
+        assert store.default_disabled_tools() == ["mcp__github"]
+        assert store.get_disabled_tools(store.create_session(CHAT, "/tools6")["id"]) \
+            == ["mcp__github"]
+    finally:
+        store.set_setting(store.DEFAULT_TOOLS_KEY, None)   # session-shared DB
 
 
 def test_inspector_endpoint_starts_and_stops_the_proxy():

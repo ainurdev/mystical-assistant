@@ -58,12 +58,15 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
 
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
 
-# MCP servers a bridge run may load, comma-separated, by their `claude mcp list`
-# name (e.g. "playwright,chrome-devtools"). Everything else is denied by name so
-# its tool schemas stay out of the context window. Empty (the default) = none:
-# all servers on costs ~263k tokens of schemas against a 200k window, which kills
-# a session with "Prompt is too long" before it reads anything. Per-session
-# switches in the dashboard can deny more, never re-enable — widen here instead.
+# MCP servers a *new* session starts with, comma-separated, by their
+# `claude mcp list` name (e.g. "playwright,chrome-devtools"). The rest start
+# denied by name, so their tool schemas stay out of the context window: all
+# servers on costs ~263k tokens of schemas against a 200k window, which kills a
+# session with "Prompt is too long" before it reads anything.
+#
+# Only a seed. The Tools modal owns this — switching a server on there wins, and
+# SAVE AS DEFAULT stores a new default (bridge/store.py) that this no longer
+# overrides. Empty = every server denied by default.
 MCP_SERVERS = os.environ.get("MCP_SERVERS", "")
 
 # Auto-resume: only the user may stop a turn. A restart leaves the in-flight turn

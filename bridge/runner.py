@@ -24,7 +24,7 @@ import uuid
 
 from bridge import (accounts, agents, config, devserver, git, inspector, ladder,
                     limits, machine, native_activity,
-                    pubsub, relevance, state, store, toolsets, transcript_jsonl)
+                    pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import send, typing
 
@@ -275,17 +275,13 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
     elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
-    if "--strict-mcp-config" not in cmd:
-        # MCP schemas are context, not capability. All servers on costs ~263k
-        # tokens of tool definitions (measured: 313682 vs 50283 cache-creation
-        # tokens for the same `say ok`) — more than the whole 200k window, so a
-        # session dies with "Prompt is too long" before its first word. The
-        # one-shots above already opt out via --strict-mcp-config; interactive
-        # runs can't (it would drop the goal server too), so deny by name
-        # instead — a denied server leaves the model's context entirely.
-        allowed = {s.strip() for s in config.MCP_SERVERS.split(",") if s.strip()}
-        off = [s["rule"] for s in toolsets.servers() if s["name"] not in allowed]
-        disabled_tools = sorted(set(disabled_tools or []) | set(off))
+    if disabled_tools is None and "--strict-mcp-config" not in cmd:
+        # No per-session choice on this run (a Telegram one-shot, a sessionless
+        # job), so fall back to the same default a never-configured session
+        # gets. Only when it's None: an explicit [] is the user switching
+        # everything on from the Tools modal, and that has to win — a run that
+        # silently re-denies what the UI shows as ON is the UI lying.
+        disabled_tools = store.default_disabled_tools()
     if disabled_tools:
         # Bare tool/server names, so a switched-off tool leaves the model's
         # context entirely rather than being offered and then refused.
