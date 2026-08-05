@@ -551,6 +551,8 @@ class Handler(BaseHTTPRequestHandler):
                                "servers": toolsets.servers()})
         if path == "/local/tags":
             return self._json({"tags": store.tag_counts()})
+        if path == "/local/prompts":
+            return self._json({"prompts": store.prompt_history()})
         if path == "/local/skills":
             # A blank/unknown project is fine — the system list still applies.
             return self._json({**skills.installed(_abs_project(qs.get("project", [None])[0])),

@@ -29,7 +29,7 @@ import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
 import { setAiFeatures } from "../../lib/ai";
-import { pushSupported, requestPush } from "../../lib/push";
+import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
@@ -93,6 +93,8 @@ const TEXT_SCALES: { label: string; value: string }[] = [
   { label: "110%", value: "1.1" },
   { label: "125%", value: "1.25" },
 ];
+
+const TONE_OPTS = (Object.keys(TONES) as ToneKey[]).map((k) => ({ label: TONES[k].label, value: k }));
 
 const CRT_TOGGLES: { key: "scanlines" | "sweep" | "glow"; label: string; desc: string }[] = [
   { key: "scanlines", label: "SCANLINES", desc: "horizontal CRT raster lines" },
@@ -1825,6 +1827,53 @@ export function SettingsModal(props: SettingsModalProps) {
                       }}
                     />
                   </div>
+                  {/* The blip rides on the notification above, so with DESKTOP off
+                      these would be knobs on nothing. */}
+                  {settings.push && (
+                  <div style={KV}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={KEY_TX}>SOUND</div>
+                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                        A short blip with that notification, for when the banner lands on a
+                        screen you aren&apos;t looking at. One per batch, not per session.
+                      </div>
+                    </div>
+                    <Switch
+                      on={settings.pushSound}
+                      onClick={() => {
+                        // Switching it on plays it once — otherwise you find out how
+                        // loud it is at the wrong moment.
+                        if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
+                        onPatch({ pushSound: !settings.pushSound });
+                      }}
+                    />
+                  </div>
+                  )}
+                  {settings.push && settings.pushSound && (
+                    // Every change plays itself: picking a notification sound you
+                    // can't hear until the next notification is guesswork.
+                    <div style={{ ...ROW, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <Cell label="TONE" grow="2 1 200px">
+                        <Segmented
+                          options={TONE_OPTS}
+                          value={settings.pushTone}
+                          onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
+                        />
+                      </Cell>
+                      <Cell label="VOLUME" grow="1 1 150px">
+                        {/* Preview when the drag ends, not on every step — a chime
+                            per pixel of travel is a swarm, not a sample. */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                          onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+                          onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+                          <Volume
+                            value={settings.pushVolume}
+                            onChange={(pushVolume) => onPatch({ pushVolume })}
+                          />
+                        </div>
+                      </Cell>
+                    </div>
+                  )}
                 </div>
 
                 <Label top>PLATFORM</Label>

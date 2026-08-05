@@ -791,7 +791,7 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
     try {
       const r = await api.createTerminal(project, cwdRel, 80, 24);
       if (r.error || !r.id) { setError(r.error || "could not open terminal"); return; }
-      const fresh: TermInfo = { id: r.id, project, cwd_rel: r.cwd_rel ?? cwdRel, cols: 80, rows: 24, created: Date.now() / 1000, alive: true };
+      const fresh: TermInfo = { id: r.id, project, cwd_rel: r.cwd_rel ?? cwdRel, cols: 80, rows: 24, created: Date.now() / 1000, alive: true, venv: r.venv };
       setTerms((prev) => [...prev, fresh]);
       setActiveId(r.id);
       setNewOpen(false);
@@ -859,6 +859,14 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
                 style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderBottom: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov === `term:${t.id}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", flex: "none" }}>
                 <span style={{ color: "var(--acc)", fontSize: 10, flex: "none" }}>❯_</span>
                 <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: on ? "var(--txb)" : "var(--txd)", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {branchOf(t)}</span>
+                {t.venv && (
+                  // The shell started activated — say so, or `python` being the
+                  // project's 3.12 instead of the system one is a mystery.
+                  <span title={`${t.venv} is activated in this shell`}
+                    style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, letterSpacing: ".5px", color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 4px", flex: "none" }}>
+                    {t.venv}
+                  </span>
+                )}
                 <button onClick={(e) => { e.stopPropagation(); void closeTerm(t.id); }} title="close terminal" {...hp(`termx:${t.id}`)}
                   style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === `termx:${t.id}` ? "var(--err)" : "var(--txd)", fontFamily: "inherit", fontSize: 12, lineHeight: 1, padding: "0 2px", flex: "none" }}>✕</button>
               </div>

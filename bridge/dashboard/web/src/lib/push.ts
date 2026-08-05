@@ -42,6 +42,50 @@ export function push(title: string, body: string, tag?: string, onClick?: () => 
   }
 }
 
+/** The blip that goes with the notification, for when the OS banner lands on a
+ *  screen you aren't looking at. Synthesised rather than shipped as files: four
+ *  note lists and one envelope, so there's nothing to decode, cache or 404.
+ *  Each is short on purpose — this is punctuation, not a ringtone. */
+export const TONES = {
+  blip: { label: "BLIP", notes: [880, 1320], wave: "sine" },
+  chime: { label: "CHIME", notes: [1318, 1046, 784], wave: "sine" },
+  ping: { label: "PING", notes: [1568], wave: "sine" },
+  knock: { label: "KNOCK", notes: [196, 147], wave: "triangle" },
+} as const satisfies Record<string, { label: string; notes: number[]; wave: OscillatorType }>;
+
+export type ToneKey = keyof typeof TONES;
+
+/** Play one. Silent until the browser has had a user gesture, which by the time
+ *  a session pings it has. `volume` is the 0..1 the settings slider carries. */
+let ac: AudioContext | null = null;
+export function chime(tone: ToneKey = "blip", volume = 0.6): void {
+  if (volume <= 0) return;
+  try {
+    ac ??= new AudioContext();
+    void ac.resume();
+    const now = ac.currentTime;
+    const spec = TONES[tone] ?? TONES.blip;
+    // exponentialRamp can't touch zero, hence the floor on both ends.
+    const peak = Math.max(0.002, 0.16 * volume);
+    spec.notes.forEach((hz, i) => {
+      const osc = ac!.createOscillator();
+      const gain = ac!.createGain();
+      const t = now + i * 0.09;
+      osc.type = spec.wave;
+      osc.frequency.value = hz;
+      // Ramps, not a square step — an abrupt gain change clicks.
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(peak, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      osc.connect(gain).connect(ac!.destination);
+      osc.start(t);
+      osc.stop(t + 0.18);
+    });
+  } catch {
+    /* no audio device, or a context the browser won't start */
+  }
+}
+
 /** Piebald's rule, and the right one: never notify about what you're already
  *  looking at. Anything else — another session, a hidden tab, another window —
  *  is news. */

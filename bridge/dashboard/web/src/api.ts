@@ -657,6 +657,7 @@ export interface TermInfo {
   rows: number;
   created: number;
   alive: boolean;
+  venv?: string; // project virtualenv dir this shell starts activated in, if any
 }
 
 // graphify knowledge-graph state for a project (Task 8's /local/graph/* endpoints).
@@ -839,7 +840,7 @@ export const api = {
   terminals: (project: string) =>
     req<{ terminals: TermInfo[] }>(`/local/terminals?project=${encodeURIComponent(project)}`),
   createTerminal: (project: string, cwdRel: string, cols: number, rows: number) =>
-    req<{ id?: string; cwd_rel?: string; project?: string; error?: string }>("/local/terminals", {
+    req<{ id?: string; cwd_rel?: string; project?: string; venv?: string; error?: string }>("/local/terminals", {
       method: "POST",
       body: { project, cwd_rel: cwdRel, cols, rows },
     }),
@@ -923,6 +924,8 @@ export const api = {
     }),
   // --- tags: the set every session's strip draws from ---
   tags: () => req<{ tags: TagCount[] }>("/local/tags"),
+  /** Every session's prompts, newest first and deduped — what Ctrl+R searches. */
+  promptHistory: () => req<{ prompts: string[] }>("/local/prompts"),
   /** Rename a tag everywhere. `next` omitted deletes it; naming an existing tag
    *  merges the two. */
   retag: (tag: string, next?: string) =>

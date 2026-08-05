@@ -7,6 +7,7 @@
 // (scanlines / sweep / glow) have per-theme defaults applied on pick.
 
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
+import { TONES, type ToneKey } from "./push";
 import { VOICE_KEYS, type VoiceKey } from "./piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "./songs";
 
@@ -317,6 +318,9 @@ export interface HudSettings {
   // OS-level notification when a session finishes or needs you, for the sessions
   // you're not watching. Needs the browser's permission, asked for on switch-on.
   push: boolean;
+  pushSound: boolean; // blip alongside that notification
+  pushTone: ToneKey; // which blip
+  pushVolume: number; // 0..1
 }
 
 const KEY = "hud-settings";
@@ -326,7 +330,8 @@ const DEFAULTS: HudSettings = {
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
-  ponytailUi: true, graphUi: true, agent: "", push: false,
+  ponytailUi: true, graphUi: true, agent: "", push: false, pushSound: true,
+  pushTone: "blip", pushVolume: 0.6,
 };
 
 /**
@@ -408,6 +413,9 @@ export function loadSettings(): HudSettings {
         // Stored true only ever means "and the browser said yes at the time" —
         // push() re-checks the live permission before every notification.
         push: p.push ?? false,
+        pushSound: p.pushSound ?? true,
+        pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
+        pushVolume: clamp01(p.pushVolume, 0.6),
       };
     }
   } catch {

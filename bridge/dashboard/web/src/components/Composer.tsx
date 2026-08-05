@@ -327,6 +327,43 @@ export function Composer({
     return false;
   }
 
+  // --- Ctrl+R: reverse prompt search ---------------------------------------
+  // Shell muscle memory, over every session's prompts rather than this one's:
+  // the prompt worth re-running is usually one you wrote somewhere else. Re-read
+  // on each open, not once per mount: a few hundred short strings off localhost,
+  // and anything else would miss the prompt you sent a minute ago.
+  const [rsearch, setRsearch] = useState<string | null>(null);
+  const [rpick, setRpick] = useState(0);
+  const [history, setHistory] = useState<string[]>([]);
+  const rOpen = rsearch !== null;
+  useEffect(() => {
+    if (!rOpen) return;
+    void api.promptHistory().then((r) => setHistory(r.prompts)).catch(() => { /* keep the last list */ });
+  }, [rOpen]);
+  const rhits = rsearch === null
+    ? []
+    : history.filter((p) => p.toLowerCase().includes(rsearch.toLowerCase())).slice(0, 8);
+  useEffect(() => { setRpick(0); }, [rsearch]);
+
+  /** Put a past prompt in the box — to edit before sending, as `!!` would. */
+  function takeHistory(p: string) {
+    setText(p);
+    setRsearch(null);
+    requestAnimationFrame(() => taRef.current?.focus());
+  }
+
+  function rsearchKey(e: React.KeyboardEvent) {
+    const step = (d: number) => {
+      e.preventDefault();
+      setRpick((p) => (rhits.length ? (p + d + rhits.length) % rhits.length : 0));
+    };
+    if (e.key === "Escape") { e.preventDefault(); setRsearch(null); taRef.current?.focus(); return; }
+    if (e.key === "Enter") { e.preventDefault(); if (rhits[rpick]) takeHistory(rhits[rpick]); return; }
+    // Ctrl+R again walks the matches, the way holding it in a shell does.
+    if (e.key === "ArrowDown" || (e.key === "r" && e.ctrlKey)) return step(1);
+    if (e.key === "ArrowUp") return step(-1);
+  }
+
   // Auto-grow the input with its content (1 line → up to ~9 lines, then scroll).
   useLayoutEffect(() => {
     const el = taRef.current;
@@ -543,6 +580,39 @@ export function Composer({
         }}
       >
         <span style={{ color: "var(--purple)", fontSize: 13, flex: "none", marginTop: 2 }}>~ ❯</span>
+        {rsearch !== null && (
+          <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
+              <span style={{ flex: "none", fontSize: 9, letterSpacing: 1, color: "var(--purple)" }}>REVERSE-I-SEARCH</span>
+              <input
+                autoFocus
+                value={rsearch}
+                onChange={(e) => setRsearch(e.target.value)}
+                onKeyDown={rsearchKey}
+                onBlur={() => setRsearch(null)}
+                placeholder="a prompt you wrote before…"
+                style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}
+              />
+              <span style={{ flex: "none", fontSize: 9, color: "var(--txd)" }}>
+                {rhits.length ? `${rpick + 1}/${rhits.length}` : "no match"}
+              </span>
+            </div>
+            <div style={{ maxHeight: 210, overflowY: "auto" }}>
+              {rhits.map((p, i) => (
+                <button
+                  key={p}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); takeHistory(p); }}
+                  onMouseEnter={() => setRpick(i)}
+                  title={p}
+                  style={{ appearance: "none", cursor: "pointer", display: "block", width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === rpick ? "var(--purple)" : "transparent"}`, background: i === rpick ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: i === rpick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, padding: "5px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
+                  {p.replace(/\s+/g, " ")}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {mentionOpen && (
           <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
             {hits.map((p, i) => (
@@ -566,6 +636,9 @@ export function Composer({
           onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
           onKeyDown={(e) => {
             if (mentionKey(e)) return;
+            // Ctrl+R is the browser's reload; in the command line it's the shell's
+            // history search, which is what the hands in this box expect.
+            if (e.key === "r" && e.ctrlKey) { e.preventDefault(); setRsearch(""); return; }
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
           }}
           onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}

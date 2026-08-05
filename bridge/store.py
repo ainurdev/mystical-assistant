@@ -583,6 +583,18 @@ def recent_prompts(session_id: str, limit: int) -> list[str]:
     return [r["prompt"] or "" for r in rows]
 
 
+def prompt_history(limit: int = 200) -> list[str]:
+    """Recent prompts across every session, newest first, one row per distinct
+    text. Deliberately not per-session: what you reach for with Ctrl+R is usually
+    a prompt you wrote in another session, not the one you're already in."""
+    with closing(_connect()) as c:
+        rows = c.execute(
+            "SELECT prompt, MAX(started) AS last FROM turns "
+            "WHERE prompt IS NOT NULL AND TRIM(prompt) <> '' "
+            "GROUP BY prompt ORDER BY last DESC LIMIT ?", (limit,)).fetchall()
+    return [r["prompt"] for r in rows]
+
+
 def start_turn(session_id: str, turn_id: str, prompt: str,
                attachments: list[str] | None, model: str | None = None,
                runtime: str | None = None, sha: str | None = None) -> None:

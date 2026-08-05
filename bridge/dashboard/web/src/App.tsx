@@ -42,7 +42,7 @@ import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins } from "./lib/prefs";
 import { nearBottom, stickToBottom } from "./lib/stick";
-import { push, shouldPush } from "./lib/push";
+import { chime, push, shouldPush } from "./lib/push";
 import { chatToMarkdown } from "./lib/chatmd";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
@@ -571,13 +571,32 @@ export function App() {
       const s = brief(id);
       if (s) void selectSession(s); else openSession(id);
     };
+    // One blip per batch, not per session: five sessions landing together is one
+    // piece of news, and five overlapping chimes is an alarm.
+    let rang = false;
+    const ping = (title: string, body: string, id: string) => {
+      push(title, body, id, reveal(id));
+      if (settings.pushSound && !rang) { rang = true; chime(settings.pushTone, settings.pushVolume); }
+    };
     for (const id of finished)
-      if (shouldPush(id, sessionId)) push(`✓ ${name(id)}`, "finished", id, reveal(id));
+      if (shouldPush(id, sessionId)) ping(`✓ ${name(id)}`, "finished", id);
     for (const [id, st] of statusMap)
       if (st.state === "awaiting" && prev.get(id)?.state !== "awaiting"
           && shouldPush(id, sessionId))
-        push(`⏸ ${name(id)}`, "waiting on you", id, reveal(id));
-  }, [statusMap, sessionId, sessions, settings.push]);
+        ping(`⏸ ${name(id)}`, "waiting on you", id);
+  }, [statusMap, sessionId, sessions, settings.push, settings.pushSound,
+      settings.pushTone, settings.pushVolume]);
+
+  // Closing the tab costs the server nothing — runs are local processes, not
+  // browser ones — but it takes away the only place their questions can be
+  // answered. Ask first, for any session on the machine, not just the open one.
+  const busy = [...statusMap.values()].some((st) => st.state === "working" || st.state === "awaiting");
+  useEffect(() => {
+    if (!busy) return;
+    const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [busy]);
 
   useEffect(() => {
     try { localStorage.setItem(DONE_KEY, JSON.stringify([...doneIds])); } catch { /* ignore */ }

@@ -40,6 +40,15 @@ def _rel(path: str) -> str:
         return path
 
 
+def venv_dir(cwd: str) -> str:
+    """The project's virtualenv directory name, or "" when it has none. Same two
+    conventions fmt.py already looks for when resolving project-local tools."""
+    for name in (".venv", "venv"):
+        if os.path.isfile(os.path.join(cwd, name, "bin", "python")):
+            return name
+    return ""
+
+
 class Term:
     def __init__(self, cwd: str, project: str, cols: int, rows: int):
         self.id = uuid.uuid4().hex[:12]
@@ -50,6 +59,7 @@ class Term:
         self.created = time.time()
         self.alive = True
         self.last_detached = 0.0
+        self.venv = venv_dir(cwd)
         self._subs: set = set()                  # {(send, on_close)}
         self._subs_lock = threading.Lock()
         self._close_lock = threading.Lock()
@@ -61,6 +71,15 @@ class Term:
                 os.chdir(cwd)
             except OSError:
                 pass
+            if self.venv:
+                # What `source .venv/bin/activate` does, minus the prompt string:
+                # `python` and `pip` in this terminal are the project's, without
+                # the activate line every time. Child of a fork — the bridge's
+                # own environment is untouched.
+                os.environ["VIRTUAL_ENV"] = os.path.join(cwd, self.venv)
+                os.environ["PATH"] = (os.path.join(cwd, self.venv, "bin")
+                                      + os.pathsep + os.environ.get("PATH", ""))
+                os.environ.pop("PYTHONHOME", None)
             shell = _DEFAULT_SHELL
             try:
                 os.execvp(shell, [os.path.basename(shell), "-i"])
@@ -146,7 +165,7 @@ def create(cwd: str, project: str = "", cols: int = 80, rows: int = 24) -> dict:
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
         _terms[t.id] = t
-    return {"id": t.id, "project": project, "cwd_rel": _rel(cwd)}
+    return {"id": t.id, "project": project, "cwd_rel": _rel(cwd), "venv": t.venv}
 
 
 def info(project: "str | None" = None) -> list:
@@ -159,7 +178,7 @@ def info(project: "str | None" = None) -> list:
             continue
         out.append({"id": t.id, "project": t.project, "cwd_rel": _rel(t.cwd),
                     "cols": t.cols, "rows": t.rows, "created": t.created,
-                    "alive": t.alive})
+                    "alive": t.alive, "venv": t.venv})
     return out
 
 
