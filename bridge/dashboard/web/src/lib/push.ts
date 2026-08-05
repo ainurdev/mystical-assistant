@@ -31,12 +31,12 @@ export async function requestPush(): Promise<boolean> {
 
 /** Fire one notification. `tag` collapses repeats for the same session, so a
  *  chatty session replaces its own notification instead of stacking twenty. */
-export function push(title: string, body: string, tag?: string): void {
+export function push(title: string, body: string, tag?: string, onClick?: () => void): void {
   if (!pushGranted()) return;
   try {
     const n = new Notification(title, { body, tag, icon: "/favicon.svg" });
-    // Clicking should land you in the dashboard, not just dismiss.
-    n.onclick = () => { window.focus(); n.close(); };
+    // Clicking should land you in the dashboard, on the session that pinged.
+    n.onclick = () => { window.focus(); onClick?.(); n.close(); };
   } catch {
     /* some browsers throw for notifications outside a service worker; ignore */
   }

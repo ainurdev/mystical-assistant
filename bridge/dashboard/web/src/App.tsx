@@ -563,13 +563,20 @@ export function App() {
     // session you have open; awaiting is not, because a question in the session
     // you're looking at but a window you've left is still news.
     if (!settings.push) return;
-    const name = (id: string) => sessions.find((s) => s.id === id)?.title || "session";
+    const brief = (id: string) => sessions.find((s) => s.id === id);
+    const name = (id: string) => brief(id)?.title || "session";
+    // Clicking the notification opens the session it's about, switching project
+    // if that session lives in another one.
+    const reveal = (id: string) => () => {
+      const s = brief(id);
+      if (s) void selectSession(s); else openSession(id);
+    };
     for (const id of finished)
-      if (shouldPush(id, sessionId)) push(`✓ ${name(id)}`, "finished", id);
+      if (shouldPush(id, sessionId)) push(`✓ ${name(id)}`, "finished", id, reveal(id));
     for (const [id, st] of statusMap)
       if (st.state === "awaiting" && prev.get(id)?.state !== "awaiting"
           && shouldPush(id, sessionId))
-        push(`⏸ ${name(id)}`, "waiting on you", id);
+        push(`⏸ ${name(id)}`, "waiting on you", id, reveal(id));
   }, [statusMap, sessionId, sessions, settings.push]);
 
   useEffect(() => {
