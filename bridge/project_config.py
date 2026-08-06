@@ -94,6 +94,12 @@ def set_hidden(project: str, on: bool) -> bool:
     return on
 
 
+def set_learn_off(project: str, off: bool) -> None:
+    """Opt one repo out of per-turn lessons (bridge/learn.py). Project-wide: what
+    a repo is teaching you isn't a per-branch subject."""
+    _set_field(project, None, "learn_off", "1" if off else "")
+
+
 def hidden_projects() -> list[str]:
     """Every project rel currently hidden. Only ever written project-wide, so
     branch-scoped keys never carry the flag."""

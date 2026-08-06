@@ -151,6 +151,13 @@ NEXTUP_MAX_REPOS = int(os.environ.get("NEXTUP_MAX_REPOS", "6"))  # hard cost cei
 NEXTUP_SCOUT_TIMEOUT = int(os.environ.get("NEXTUP_SCOUT_TIMEOUT", "120"))
 NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback path
 
+# --- Lessons -----------------------------------------------------------------
+# Write a short lesson about what each finished turn built, into that repo's
+# .mystical/learn/. Read (and opted out of, per repo) in the dashboard's LEARN
+# tab. Automatic — nobody clicks it — so it defaults OFF.
+LEARN_ENABLE = os.environ.get("LEARN_ENABLE", "0").lower() \
+    not in ("0", "false", "no", "")
+
 # --- Preview command detection -----------------------------------------------
 # Opening a project's TERMINAL tab or preview window works out how to start its
 # dev server. A free heuristic reads the lockfile and scripts first; this decides

@@ -396,6 +396,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
         if not is_error:
             titler.kick(chat_id, session, job_id)   # retry if the start call missed
+            from bridge import learn  # local import: runner<->* cycle
+            learn.kick(chat_id, session, job_id)
     finally:
         state.release_run(session["id"])
 
@@ -1275,8 +1277,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if job.store_session_id and job.status == "done":
             _sess = store.get_session(job.store_session_id)
             if _sess:
-                from bridge import titler  # local import: runner<->* cycle
+                from bridge import learn, titler  # local import: runner<->* cycle
                 titler.kick(job.chat_id, _sess, job.id)   # retry if the start call missed
+                learn.kick(job.chat_id, _sess, job.id)
 
 
 _FULL_PERM_ORIGINS = {"dashboard", "miniapp"}

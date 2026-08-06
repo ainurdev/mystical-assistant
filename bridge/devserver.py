@@ -55,7 +55,7 @@ def _detect_url(line: str):
     return f"http://localhost:{port}", port
 
 
-def _mystical_dir(cwd: str) -> str:
+def mystical_dir(cwd: str) -> str:
     """<cwd>/.mystical, created on demand and self-ignored from git."""
     d = os.path.join(cwd, ".mystical")
     os.makedirs(d, exist_ok=True)
@@ -70,7 +70,7 @@ def _open_logfile(cwd: str):
     """Open <cwd>/.mystical/dev.log (truncating). Best-effort: returns the file
     handle, or None if it can't be created."""
     try:
-        return open(os.path.join(_mystical_dir(cwd), "dev.log"), "w",
+        return open(os.path.join(mystical_dir(cwd), "dev.log"), "w",
                     encoding="utf-8", buffering=1)
     except OSError:
         return None

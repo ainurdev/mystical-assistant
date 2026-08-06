@@ -60,6 +60,15 @@ FEATURES = (
               "whether the rest may fall through to a model call. That fall-through "
               "is automatic, not a button. Off, an unreadable repo gets a plain "
               "'run dev' guess you can edit."},
+    {"key": "learn", "env": "LEARN_ENABLE", "label": "LESSONS",
+     "hint": "teaches you what each turn just built, per repo",
+     "cost": "1 haiku call per finished turn",
+     "about": "After a turn finishes, a short lesson is written about what was "
+              "built — the change, the idea behind it, where to look — and saved "
+              "in that repo's .mystical/learn/ (git-ignored). Read them in a "
+              "project's LEARN tab, which is also where a single repo can opt "
+              "out. A turn that only answered a question or read files is "
+              "skipped. Off, no lesson is written and the tab is hidden."},
     {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
      "hint": "writes a commit message from the diff you selected",
      "cost": "1 haiku call per press",

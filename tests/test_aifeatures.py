@@ -72,7 +72,8 @@ def test_every_feature_names_a_real_config_setting():
 def test_the_registry_covers_every_model_call_the_bridge_makes():
     """A model call with no entry here is spend the user can't see or stop. If a
     new one is added, register it — don't delete this line."""
-    assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg"}
+    assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg",
+                         "learn"}
 
 
 def test_shipped_defaults_are_off_for_anything_automatic():
@@ -85,7 +86,7 @@ def test_shipped_defaults_are_off_for_anything_automatic():
     with open(config.__file__, encoding="utf-8") as f:
         src = f.read()
     shipped = {"TITLE_ENABLE": "0", "RELEVANCE_CHECK": "0", "NEXTUP_ENABLE": "0",
-               "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1"}
+               "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0"}
     assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
     for var, default in shipped.items():
         assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"
