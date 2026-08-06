@@ -34,7 +34,7 @@ doctor() {
   else warn "tunnel client not found — only needed for the Mini App panel and /preview"; fi
   if have_opencode; then ok "opencode found (free-agent fallback available)"
   else warn "opencode not found — no free-agent rung when the Claude accounts run out"; fi
-  if have npm; then ok "npm found (builds the dashboard + Mini App UIs)"
+  if have npm; then ok "npm found (builds the web bundles)"
   else warn "npm not found — the bot still works, but the dashboard and Mini App can't be built"; fi
   if have graphify; then ok "graphify found (projects map themselves after the first turn)"
   else warn "graphify not found — no project maps. Install: pipx install graphifyy"; fi
