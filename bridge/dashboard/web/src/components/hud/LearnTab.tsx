@@ -5,7 +5,10 @@ import { ago } from "../../lib/surfaces";
 
 /* LEARN tab — the lessons written after this repo's turns (bridge/learn.py),
    read as a list on the left and the selected one rendered on the right. Also
-   where a single repo opts out, without touching the global switch. */
+   where a single repo opts out, without touching the global switch.
+
+   Same component serves the right sidebar (LearnPanel), where the sidebar is
+   too narrow for two columns and the list stacks above the lesson instead. */
 
 const mono: React.CSSProperties = {
   fontFamily: "'JetBrains Mono',monospace", fontSize: 11,
@@ -17,7 +20,7 @@ const btn: React.CSSProperties = {
   color: "var(--txm)", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
 };
 
-export function LearnTab({ project }: { project: string }) {
+export function LearnTab({ project, compact }: { project: string; compact?: boolean }) {
   const [list, setList] = useState<Lesson[] | null>(null);
   const [repoOn, setRepoOn] = useState(true);
   const [sel, setSel] = useState("");
@@ -65,7 +68,7 @@ export function LearnTab({ project }: { project: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none", flexWrap: "wrap" }}>
         <span style={{ ...mono, color: "var(--txm)" }}>
           {list.length ? `${list.length} LESSON${list.length === 1 ? "" : "S"}` : "NO LESSONS YET"}
         </span>
@@ -85,9 +88,12 @@ export function LearnTab({ project }: { project: string }) {
             : "Lessons are off for this repo. Enable here to start writing them again."}
         </div>
       ) : (
-        <div style={{ display: "flex", gap: 12, flex: 1, minHeight: 0 }}>
-          <div className="mscroll" style={{ width: 220, flex: "none", overflowY: "auto",
-            borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", paddingRight: 8 }}>
+        <div style={{ display: "flex", flexDirection: compact ? "column" : "row", gap: 12, flex: 1, minHeight: 0 }}>
+          <div className="mscroll" style={compact
+            ? { maxHeight: "45%", flex: "none", overflowY: "auto",
+                borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", paddingBottom: 6 }
+            : { width: 220, flex: "none", overflowY: "auto",
+                borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", paddingRight: 8 }}>
             {list.map((l) => (
               <button key={l.file} onClick={() => setSel(l.file)}
                 style={{ display: "block", width: "100%", textAlign: "left", appearance: "none",
@@ -107,6 +113,27 @@ export function LearnTab({ project }: { project: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Right-sidebar panel — the active session's repo, no project modal needed. */
+export function LearnPanel({ project }: { project: string | null }) {
+  return (
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+      background: "color-mix(in srgb, var(--panel) 86%, transparent)",
+      display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
+        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>LEARN</span>
+        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {project ? project.split("/").pop() : "NO PROJECT"}
+        </span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: 11 }}>
+        {project
+          ? <LearnTab key={project} project={project} compact />
+          : <div style={{ ...mono, color: "var(--txd)" }}>No project selected.</div>}
+      </div>
     </div>
   );
 }

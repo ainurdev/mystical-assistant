@@ -52,7 +52,7 @@ MIN_LADDER_STEP = 1.008  # each rung measurably lighter than the one below
 # was grey-on-grey. The claude-* set is exempt: its brand clay accent sits ~7
 # degrees off its err salmon on purpose.
 COLORFUL = ["normal", "newsprint", "candy", "blueprint",
-            "dusk", "library", "apex", "gloam", "riso", "void"]
+            "dusk", "library", "apex", "gloam", "riso", "void", "nocturne"]
 HUE_KEYS = ["acc", "ok", "warn", "err", "info", "purple"]
 MIN_HUE_GAP = 20.0   # degrees between any two saturated semantics
 MIN_SAT = 0.16       # below this a colour is neutral ink, so it has no hue to space

@@ -29,7 +29,8 @@ export type ThemeKey =
   | "apex"
   | "gloam"
   | "riso"
-  | "void";
+  | "void"
+  | "nocturne";
 
 /**
  * AURORA is one theme in four colours — same glass, same CRT, only the
@@ -203,6 +204,21 @@ export const THEME_DEFS: ThemeDef[] = [
   // shadow on black is invisible, so depth is that surface step plus the
   // accent's own 16% hairline (--border), and nothing else.
   { key: "void", name: "VOID", feel: "true black · colour only where it means something", filter: "none", ops: [], sw: "#ffffff", bg: "rgba(0,0,0,.55)", pbg: "#000000", crt: false, swp: false, glw: false, canvas: "#000000", font: "system-ui,-apple-system,'Segoe UI',sans-serif", prad: "0", pal: { acc: "#ffffff", "acc-on": "#000000", "accent-rgb": "255 255 255", ok: "#4ade80", warn: "#fbbf24", err: "#f87171", "err-hi": "#fca5a5", "err-b": "#fecaca", "err-g": "#8a5c5c", info: "#60a5fa", "info-hi": "#93c5fd", "info-b": "#bfdbfe", purple: "#c084fc", "purple-d": "#a855f7", "purple-h": "#d8b4fe", "purple-b": "#e9d5ff", "purple-g": "#6f5b86", txb: "#ffffff", txh: "#ededed", tx: "#d4d4d4", txm: "#b4b4b4", txd: "#9a9a9a", txf: "#8d8d8d", txl: "#828282", txg: "#565656", panel: "#121212", panel2: "#0b0b0b", panel3: "#070707", canvas: "#000000", mono: "'JetBrains Mono',monospace" } },
+  // NOCTURNE is the gap the other eleven darks leave: every one of them is loud
+  // about something — CRT glass (AURORA), true black (VOID), a drafting grid
+  // (BLUEPRINT), a mood (LIBRARY, DUSK). This one is the plain low-chroma night
+  // an editor theme is: an indigo ground, a periwinkle accent, and ink solved to
+  // DUSK's contrast ladder (txb 15.5 · txh 13 · tx 10.5 · txm 8 · txd 6.5 ·
+  // txf 5.75 · txl 5.1 · txg 3.45 on its own canvas) so 9px captions survive a
+  // long session. The ink carries the ground's hue (232°) instead of going
+  // neutral grey — grey ink on a tinted ground is the tell that a palette was
+  // recoloured rather than authored.
+  //
+  // Its semantics deliberately spread AWAY from the accent: the accent is a
+  // blue-violet, so `info` is pushed to cyan (195°) and `purple` to a magenta
+  // violet (271°), keeping every pair >20° apart. The only structural tell is a
+  // faint sky-glow at the top of the canvas — no grid, no grain, no bloom.
+  { key: "nocturne", name: "NOCTURNE", feel: "indigo night · low chroma, long sessions", filter: "none", ops: [], sw: "#a3b3f5", bg: "rgba(20,20,31,.55)", pbg: "#101019", crt: false, swp: false, glw: false, canvas: "radial-gradient(120% 80% at 50% 0%,rgba(163,179,245,.05),transparent 60%),#14141f", font: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace", prad: "6px", pal: { acc: "#a3b3f5", "acc-on": "#12121c", "accent-rgb": "163 179 245", ok: "#6fd7a2", warn: "#e0b458", err: "#e88b7d", "err-hi": "#f2b3a8", "err-b": "#f7d2ca", "err-g": "#8c6058", info: "#63c7e8", "info-hi": "#95dcf2", "info-b": "#c4ecf9", purple: "#c79af0", "purple-d": "#b98ae8", "purple-h": "#d5b0f5", "purple-b": "#e6d1fa", "purple-g": "#7a6690", txb: "#ebecf2", txh: "#d7d8e5", tx: "#c0c3d7", txm: "#a6aac6", txd: "#9399ba", txf: "#898eb3", txl: "#7f86ad", txg: "#616898", panel: "#1f1f2e", panel2: "#191926", panel3: "#101019", canvas: "#14141f", mono: "'JetBrains Mono',monospace" } },
 ];
 
 export const THEMES: ThemeKey[] = THEME_DEFS.map((t) => t.key);
@@ -274,7 +290,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => (t.pal ? Object.keys(t.pal) : []))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["projects", "files", "changes", "git", "queue"] as const;
+export const RIGHT_TABS = ["projects", "files", "changes", "git", "learn", "queue"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 /** What the transcript shows while the agent works. */

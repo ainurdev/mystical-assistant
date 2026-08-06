@@ -212,6 +212,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(usage.get_usage())
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
+                if path == "/api/queue":
+                    return self._api_queue_get(chat_id)
+                if path == "/api/nextup":
+                    from bridge import nextup
+                    return self._json(nextup.board(chat_id))
+                if path == "/api/goal":
+                    return self._api_goal(chat_id, qs)
                 if path == "/api/files":
                     return self._json(
                         {"files": git.list_tree(state.project_dir(chat_id))})
@@ -265,6 +272,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_preview(chat_id, body)
             if path == "/api/files/write":
                 return self._api_file_write(chat_id, body)
+            if path == "/api/queue":
+                return self._api_queue_post(chat_id, body)
+            if path == "/api/nextup/refresh":
+                from bridge import nextup
+                threading.Thread(target=nextup.refresh, args=(chat_id,),
+                                 daemon=True).start()
+                return self._json(nextup.board(chat_id))
             return self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             self._safe_500(e)
@@ -519,6 +533,66 @@ class Handler(BaseHTTPRequestHandler):
         ok, res = git.write_file(state.project_dir(chat_id),
                                  str(body.get("path") or ""), content)
         self._json({"ok": ok, "path": res} if ok else {"error": res}, 200 if ok else 400)
+
+    # --- queue / next up / goal (the WORK tab + the chat's goal pill) --------
+    def _owned_session(self, chat_id: int, sid: str):
+        s = store.get_session(sid) if sid else None
+        return s if s and s["chat_id"] == chat_id else None
+
+    def _api_queue_get(self, chat_id: int):
+        """Every queue of this chat that still holds something. The phone's WORK
+        tab lists prompts across chats, so it asks for all of them at once."""
+        from bridge import queue_manager
+        out = []
+        for sid in queue_manager.sessions():
+            s = self._owned_session(chat_id, sid)
+            if not s:
+                continue
+            snap = queue_manager.snapshot(sid)
+            out.append({**snap, "title": s.get("title"), "project": s.get("project")})
+        self._json({"queues": out})
+
+    def _api_queue_post(self, chat_id: int, body: dict):
+        from bridge import queue_manager
+        op = (body.get("op") or "").strip()
+        sid = (body.get("session_id") or "").strip()
+        s = self._owned_session(chat_id, sid)
+        if not s:
+            return self._json({"error": "not found"}, 404)
+        if op == "enqueue":
+            prompt = (body.get("prompt") or body.get("text") or "").strip()
+            if not prompt:
+                return self._json({"error": "empty prompt"}, 400)
+            ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
+            if not ok:
+                return self._json({"error": "invalid model"}, 400)
+            project = os.path.realpath(
+                os.path.join(config.BASE_PATH, str(s.get("project") or "").lstrip("/")))
+            queue_manager.enqueue(
+                sid, text=prompt, prompt=prompt, images=[], model=model, effort=effort,
+                permission_mode=normalize_permission_mode(body.get("permission_mode")),
+                width=0, sel=[], surface="miniapp", chat_id=chat_id,
+                project=project if browser.within_base(project) else None,
+                run_job_id=uuid.uuid4().hex)
+        elif op in ("pause", "resume", "clear_done"):
+            getattr(queue_manager, op)(sid)
+        elif op in ("remove", "bump", "cancel", "retry"):
+            item_id = (body.get("item_id") or "").strip()
+            if not item_id:
+                return self._json({"error": "item required"}, 400)
+            getattr(queue_manager, op)(sid, item_id)
+        else:
+            return self._json({"error": "unknown queue op"}, 404)
+        self._json(queue_manager.snapshot(sid))
+
+    def _api_goal(self, chat_id: int, qs):
+        """The session's objective, for the chat header's goal pill (read-only:
+        the model owns the verdict — see goals.py)."""
+        from bridge import goals
+        s = self._owned_session(chat_id, qs.get("session", [""])[0])
+        if not s:
+            return self._json({"error": "not found"}, 404)
+        self._json({"goal": goals.get(s["id"]), "max_iter": goals.MAX_ITER})
 
     # --- static (SPA) --------------------------------------------------------
     def _serve_static(self, path: str):

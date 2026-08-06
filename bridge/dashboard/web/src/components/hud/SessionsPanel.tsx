@@ -4,7 +4,7 @@ import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
-import { Rows2, Rows4 } from "lucide-react";
+import { Rows2, Rows4, Tag, TagX } from "lucide-react";
 import { Spinner } from "../ui";
 import type { ProjectGroup } from "./ProjectsPanel";
 
@@ -81,7 +81,7 @@ function statusView(s: SessionStatus | undefined, done = false) {
 }
 
 function SessionRow({
-  s, i, on, loading, sv, flag, branch, pinned, showProj, compact, onPin, onAttach, onAnalyzeProj, animate = true,
+  s, i, on, loading, sv, flag, branch, pinned, showProj, showTags, compact, onPin, onAttach, onAnalyzeProj, animate = true,
 }: {
   s: SessionBrief;
   i: number;
@@ -92,6 +92,7 @@ function SessionRow({
   branch: string;
   pinned: boolean;
   showProj: boolean; // BY PROJECT rows sit under a header that already says it
+  showTags: boolean; // tags turned off panel-wide
   compact: boolean;  // title + status dot only
   onPin: () => void;
   onAttach: () => void;
@@ -141,17 +142,17 @@ function SessionRow({
               style={{ appearance: "none", cursor: "pointer", flex: "none", fontSize: 8.5, letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 5, background: tagHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
             >{tint.tag}</button>
           )}
-          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--purple-d)", minWidth: 0 }} title="worktree">
-            <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--txd)", minWidth: 0 }} title="worktree">
+            <span style={{ color: "var(--txf)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
-          {(s.tags ?? []).slice(0, 2).map((t) => (
+          {showTags && (s.tags ?? []).slice(0, 2).map((t) => (
             <span
               key={t}
               title={`tag: ${t}`}
-              style={{ flex: "none", fontSize: 9.5, letterSpacing: 0.4,
-                       color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)",
-                       borderRadius: 6, padding: "1px 7px", maxWidth: 72,
+              style={{ flex: "none", fontSize: 8.5, letterSpacing: 0.4,
+                       color: "var(--txd)", border: "1px solid var(--txl)",
+                       borderRadius: 5, padding: "0 5px", maxWidth: 60,
                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             >{t}</span>
           ))}
@@ -271,6 +272,9 @@ export function SessionsPanel(props: Props) {
   const [shut, setShut] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [sessionQ, setSessionQ] = useState("");
+  // Tags off — rows and the filter strip both go. Stored inverted so the default
+  // (nothing in localStorage) keeps tags on.
+  const [noTags, setNoTags] = useStickyFlag("hud-sessions-notags");
   // Tag strip is capped at two rows — a tagged machine grows dozens of them and
   // they push the list off screen. Measured, so a short strip skips the toggle.
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -459,7 +463,7 @@ export function SessionsPanel(props: Props) {
 
   const rowFor = (s: SessionBrief, i: number, animate = true, showProj = true) => (
     <SessionRow
-      key={s.id} s={s} i={i} animate={animate} showProj={showProj} compact={compact}
+      key={s.id} s={s} i={i} animate={animate} showProj={showProj} showTags={!noTags} compact={compact}
       on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
       sv={statusView(status.get(s.id), done.has(s.id))} flag={flags.get(s.id)}
       branch={branchFor(s)}
@@ -636,6 +640,15 @@ export function SessionsPanel(props: Props) {
           >
             {compact ? <Rows2 size={12} aria-hidden /> : <Rows4 size={12} aria-hidden />}
           </button>
+          {/* Tags off hides them on the rows and drops the filter strip. Clearing
+              the filter on the way out — an invisible filter reads as data loss. */}
+          <button
+            onClick={() => { setNoTags((v) => !v); setTagFilter(null); }}
+            title={noTags ? "show tags on rows and the tag filter" : "hide tags"}
+            style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: noTags ? "var(--txf)" : "var(--acc)", display: "flex", flex: "none", padding: 0 }}
+          >
+            {noTags ? <TagX size={12} aria-hidden /> : <Tag size={12} aria-hidden />}
+          </button>
         </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .16s", flex: "none" }} />
@@ -682,7 +695,7 @@ export function SessionsPanel(props: Props) {
         </div>
         {/* Tag filter. Only appears once something is tagged, so an untagged
             machine never pays for a control it can't use. */}
-        {allTags.length > 0 && (
+        {!noTags && allTags.length > 0 && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 5, marginTop: 6 }}>
             {/* Expanded caps at ~4 rows and scrolls: 60+ tags otherwise push the
                 session list off-screen, and MORE/LESS stays put at the top. */}

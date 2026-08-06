@@ -1,11 +1,15 @@
 import { createRouter, createHashHistory } from "@tanstack/react-router";
 import { rootRoute } from "./routes/root";
 import { runRoute } from "./routes/run";
-import { historyRoute } from "./routes/history";
-import { issuesRoute } from "./routes/issues";
+import { chatsRoute } from "./routes/chats";
+import { workRoute } from "./routes/work";
 import { filesRoute } from "./routes/files";
+import { systemRoute } from "./routes/system";
 
-const routeTree = rootRoute.addChildren([runRoute, historyRoute, issuesRoute, filesRoute]);
+// One route per bottom tab: CHAT · CHATS · WORK · REPO · SYSTEM.
+const routeTree = rootRoute.addChildren([
+  runRoute, chatsRoute, workRoute, filesRoute, systemRoute,
+]);
 
 // Telegram launches the webview at "#tgWebAppData=…" and telegram-web-app.js only
 // ever reads that hash — it never clears it. That script is blocking and in <head>,

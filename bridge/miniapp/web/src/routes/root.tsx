@@ -1,195 +1,49 @@
-import { useState } from "react";
-import {
-  createRootRoute,
-  Outlet,
-  Link,
-  useRouterState,
-} from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import {
-  Sparkles,
-  ChevronUp,
-  ChevronDown,
-  SquarePen,
-  History,
-  CircleDot,
-  FileCode,
-} from "lucide-react";
-import { api } from "../lib/api";
+import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
+import { SquarePen } from "lucide-react";
 import { ChatProvider, useChat } from "../lib/chat";
-import { FolderNavigator } from "../components/FolderNavigator";
-import { ActiveSessions } from "../components/ActiveSessions";
+import { ChatSwitcher } from "../components/ChatSwitcher";
+import { CheckpointsButton } from "../components/CheckpointsSheet";
+import { TabBar } from "../components/TabBar";
 
-// Side trips from the composer — History and Issues feed it a prompt and come
-// back; Files is a place you go to read or edit. Tapping an open one returns.
-const pickers = [
-  { to: "/files", label: "Files", icon: FileCode },
-  { to: "/history", label: "History", icon: History },
-  { to: "/issues", label: "Issues", icon: CircleDot },
-] as const;
-
-function HeaderBar({
-  pickerOpen,
-  onTogglePicker,
-}: {
-  pickerOpen: boolean;
-  onTogglePicker: () => void;
-}) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const state = useQuery({
-    queryKey: ["state"],
-    queryFn: () => api.getState(),
-    refetchInterval: 5000,
-  });
-  const project = state.data?.project;
-  const running = useQuery({
-    queryKey: ["running"],
-    queryFn: () => api.getRunning(),
-    refetchInterval: 4000,
-  });
-  const status = running.data?.status ?? {};
-  const { newChat, isRunning, sessions, sessionId, selectSession } = useChat();
-
+/** The chat's own header: who you're talking to (ChatSwitcher), the marks in
+ *  this conversation (checkpoints), and a fresh start. The other tabs title
+ *  themselves — a shared bar would just repeat what the tab already says. */
+function ChatHeader() {
+  const { newChat, isRunning } = useChat();
   return (
-    <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--tg-bg)] px-3 pb-2 pt-2">
-      <div className="flex items-center gap-2">
+    // z-30 beats the fixed composer's z-10: the chat sheet renders inside this
+    // header, so its own z-50 is scoped to whatever this row wins.
+    <header className="sticky top-0 z-30 border-b border-border bg-[var(--tg-bg)] px-3 py-1.5">
+      <div className="flex items-center gap-1">
+        <ChatSwitcher />
+        <CheckpointsButton />
         <button
-          onClick={onTogglePicker}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left active:opacity-70"
+          onClick={() => void newChat()}
+          disabled={isRunning}
+          aria-label="New chat"
+          className="shrink-0 p-2 text-[var(--tg-hint)] active:opacity-70 disabled:opacity-40"
         >
-          <Sparkles
-            size={16}
-            className="shrink-0 text-[var(--brand-soft)]"
-            aria-hidden
-          />
-          <span className="truncate text-sm font-semibold">
-            {project ? project.name : "No project"}
-          </span>
-          {state.data?.busy && (
-            <span className="rounded-full bg-[var(--tg-button)] px-2 py-0.5 text-[10px] text-[var(--tg-button-text)]">
-              busy
-            </span>
-          )}
-          {pickerOpen ? (
-            <ChevronUp size={14} className="text-[var(--tg-hint)]" aria-hidden />
-          ) : (
-            <ChevronDown
-              size={14}
-              className="text-[var(--tg-hint)]"
-              aria-hidden
-            />
-          )}
+          <SquarePen size={16} aria-hidden />
         </button>
-        <div className="flex shrink-0 items-center gap-1">
-          {pickers.map((picker) => {
-            const active = pathname === picker.to;
-            const Icon = picker.icon;
-            return (
-              <Link
-                key={picker.to}
-                // Tapping the open picker closes it — back to the prompt.
-                to={active ? "/" : picker.to}
-                aria-label={picker.label}
-                aria-current={active ? "page" : undefined}
-                className={`rounded-lg p-2 active:opacity-70 ${
-                  active
-                    ? "bg-[var(--tg-button)] text-[var(--tg-button-text)] shadow-[0_0_16px_var(--brand-glow)]"
-                    : "text-[var(--tg-hint)]"
-                }`}
-              >
-                <Icon size={16} aria-hidden />
-              </Link>
-            );
-          })}
-          {pathname === "/" && (
-            <button
-              onClick={() => void newChat()}
-              disabled={isRunning}
-              className="flex items-center gap-1 rounded-lg bg-[var(--tg-secondary-bg)] px-3 py-1.5 text-xs disabled:opacity-40"
-            >
-              <SquarePen size={14} aria-hidden />
-              New
-            </button>
-          )}
-        </div>
       </div>
-
-      {/* Second row exists only to give chat titles the full width to read in. */}
-      {pathname === "/" && sessions.length > 0 && (
-        <div className="mt-2 flex items-center gap-2">
-          <select
-            value={sessionId ?? ""}
-            onChange={(e) => selectSession(e.target.value)}
-            disabled={isRunning}
-            className="min-w-0 flex-1 truncate rounded-lg bg-[var(--tg-secondary-bg)] px-2 py-1.5 text-xs outline-none disabled:opacity-40"
-            aria-label="Chat session"
-          >
-            {sessions.map((s) => {
-              const st = status[s.id]?.state;
-              return (
-                <option key={s.id} value={s.id}>
-                  {(st === "awaiting" ? "❓ " : st === "working" ? "● " : st === "live" ? "○ " : "") +
-                    (s.title || "New chat")}
-                </option>
-              );
-            })}
-          </select>
-          <PolicyChip
-            sessionId={sessionId}
-            stored={sessions.find((s) => s.id === sessionId)?.fallback_policy ?? null}
-          />
-        </div>
-      )}
     </header>
   );
 }
 
-const POLICIES = ["ask", "auto", "wait"] as const;
-const POLICY_ICON: Record<string, string> = { ask: "⛔", auto: "↪", wait: "⏳" };
-
-/** What a usage-limit death does to this chat — tap to cycle ask → auto → wait.
- *  Optimistic: the tapped value shows at once; the session poll confirms it. */
-function PolicyChip({ sessionId, stored }: { sessionId: string | null; stored: string | null }) {
-  const [local, setLocal] = useState<{ id: string; v: string } | null>(null);
-  if (!sessionId) return null;
-  const value = (local?.id === sessionId ? local.v : stored) ?? "ask";
-  const next = POLICIES[(POLICIES.indexOf(value as (typeof POLICIES)[number]) + 1) % POLICIES.length];
-  return (
-    <button
-      onClick={() => {
-        setLocal({ id: sessionId, v: next });
-        void api.setPolicy(sessionId, next).catch(() => setLocal(null));
-      }}
-      title={`On usage limit: ${value}. Tap for ${next}.`}
-      aria-label={`On usage limit: ${value}`}
-      className="shrink-0 rounded-lg bg-[var(--tg-secondary-bg)] px-2.5 py-1.5 text-xs text-[var(--tg-hint)]"
-    >
-      {POLICY_ICON[value]} {value}
-    </button>
-  );
-}
-
 function Layout() {
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
     <ChatProvider>
       <div className="crt" />
       <div className="mx-auto flex h-full max-w-screen-sm flex-col">
-        <HeaderBar
-          pickerOpen={pickerOpen}
-          onTogglePicker={() => setPickerOpen((v) => !v)}
-        />
-        {pickerOpen && (
-          <div className="border-b border-white/5 bg-[var(--tg-bg)] px-3 py-2">
-            <FolderNavigator onSelected={() => setPickerOpen(false)} />
-          </div>
-        )}
-        {/* Header-anchored, outside the scrolling transcript: an active-session
-            switcher you can't reach is no switcher. */}
-        <ActiveSessions />
-        <main className="flex-1 overflow-y-auto px-4 py-4">
+        {pathname === "/" && <ChatHeader />}
+        <main
+          className="flex-1 overflow-y-auto px-3 py-3"
+          style={{ paddingBottom: "calc(var(--tabbar-h) + 0.75rem)" }}
+        >
           <Outlet />
         </main>
+        <TabBar />
       </div>
     </ChatProvider>
   );

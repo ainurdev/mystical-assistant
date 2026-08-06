@@ -3,50 +3,65 @@
 :root {
   color-scheme: dark;
   /* === HUD identity (dashboard + Mini App). Keep BOTH index.css in sync. ===
-     Phosphor accent derived from --accent-rgb + --primary. */
+     Design palette tokens = the source of truth (aqua base, same hexes as the
+     dashboard's :root). lib/theme.ts OVERRIDES these per-theme on :root and
+     every token below is derived from them with var(), so one palette swap
+     recolours the whole app. A theme that leaves a token unset falls back to
+     the aqua value here — which is why AURORA's pal{} can be empty. */
+  --acc: #7fe9d8;   --acc-on: #06100e;
+  --ok: #8fd9a8;    --warn: #e3c279;
+  --err: #e0897a;   --info: #6fb5ff;  --purple: #b9a6ff;
+  --txb: #dff8f2;   --txh: #cfe9e3;  --tx: #bfe6de;   --txm: #9fc7c0;
+  --txd: #6f938d;   --txf: #5a6f6a;  --txl: #3c544f;  --txg: #2e423f;
+  --panel: #091010; --panel2: #070d0d; --panel3: #040707; --canvas: #060a0a;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Phosphor accent as an RGB triplet, for the rgb(var(--accent-rgb)/x) washes
+     below and the scrollbar/selection chrome. Palettes set it alongside --acc. */
   --accent-rgb: 127 233 216;
-  --primary: #7fe9d8;
-  --foreground: #bfe6de;
-  --foreground-bright: #dff8f2;
 
-  --background: #060a0a;
-  --panel: rgba(9, 16, 16, 0.5);
-  --card: rgba(7, 13, 13, 0.6);
-  --card-foreground: #bfe6de;
-  --popover: rgba(7, 13, 13, 0.97);
-  --popover-foreground: #dff8f2;
+  --primary: var(--acc);
+  --foreground: var(--tx);
+  --foreground-bright: var(--txb);
 
-  --primary-foreground: #060a0a;
+  --background: var(--canvas);
+  --panel-surface: color-mix(in srgb, var(--panel) 50%, transparent);
+  --card: color-mix(in srgb, var(--panel2) 60%, transparent);
+  --card-foreground: var(--tx);
+  --popover: color-mix(in srgb, var(--panel2) 97%, transparent);
+  --popover-foreground: var(--txb);
+
+  --primary-foreground: var(--acc-on);
   --brand: var(--primary);
   --brand-soft: var(--primary);
   --brand-bright: var(--foreground-bright);
   --brand-glow: rgb(var(--accent-rgb) / 0.25);
 
   --secondary: rgb(var(--accent-rgb) / 0.08);
-  --secondary-foreground: #bfe6de;
+  --secondary-foreground: var(--tx);
   --muted: rgb(var(--accent-rgb) / 0.05);
-  --muted-foreground: #6f938d;
-  --muted-2: #3c544f;
+  --muted-foreground: var(--txd);
+  --muted-2: var(--txl);
   --accent: rgb(var(--accent-rgb) / 0.08);
-  --accent-foreground: #dff8f2;
+  --accent-foreground: var(--txb);
 
   --ac-03: rgb(var(--accent-rgb) / 0.03);
   --ac-06: rgb(var(--accent-rgb) / 0.06);
   --ac-12: rgb(var(--accent-rgb) / 0.12);
   --ac-22: rgb(var(--accent-rgb) / 0.22);
 
-  --success: #8fd9a8;
-  --warning: #e3c279;
-  --danger: #e0897a;
-  --destructive: #e0897a;
-  --destructive-foreground: #060a0a;
-  --violet: #b9a6ff;
-  --blue: #6fb5ff;
+  --success: var(--ok);
+  --warning: var(--warn);
+  --danger: var(--err);
+  --destructive: var(--err);
+  --destructive-foreground: var(--acc-on);
+  --violet: var(--purple);
+  --blue: var(--info);
 
-  --surface-vs: var(--primary);  --surface-vs-bg: rgb(var(--accent-rgb) / 0.08);
-  --surface-tg: #6fb5ff;  --surface-tg-bg: rgba(111, 181, 255, 0.06);
-  --surface-ma: #b9a6ff;  --surface-ma-bg: rgba(185, 166, 255, 0.06);
-  --surface-web: #8fd9a8; --surface-web-bg: rgba(143, 217, 168, 0.06);
+  --surface-vs: var(--acc);    --surface-vs-bg: rgb(var(--accent-rgb) / 0.08);
+  --surface-tg: var(--info);   --surface-tg-bg: color-mix(in srgb, var(--info) 6%, transparent);
+  --surface-ma: var(--purple); --surface-ma-bg: color-mix(in srgb, var(--purple) 6%, transparent);
+  --surface-web: var(--ok);    --surface-web-bg: color-mix(in srgb, var(--ok) 6%, transparent);
 
   --border: rgb(var(--accent-rgb) / 0.16);
   --border-bright: rgb(var(--accent-rgb) / 0.4);
@@ -60,20 +75,22 @@
   --tg-button: var(--primary);
   --tg-button-text: var(--primary-foreground);
   --tg-link: var(--primary);
-  --surface-2: var(--panel);
+  --surface-2: var(--panel-surface);
 
   --radius: 0;
+
+  /* The bottom tab bar owns this much of the screen — the fixed composer sits
+     on top of it and every page pads by it, so one number moves them all. */
+  --tabbar-h: calc(54px + env(safe-area-inset-bottom, 0px));
 }
 
-[data-theme="green"]   { --accent-rgb: 95 221 143;  --primary: #5fdd8f; --foreground: #aee0bd; --foreground-bright: #d6ffe1; }
-[data-theme="amber"]   { --accent-rgb: 232 176 74;  --primary: #e8b04a; --foreground: #e6cf9c; --foreground-bright: #ffe7b0; }
-[data-theme="magenta"] { --accent-rgb: 255 122 217; --primary: #ff7ad9; --foreground: #f1c2e6; --foreground-bright: #ffd9f3; }
-
 @theme inline {
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
+  /* Corner radius is part of a theme's identity (the dashboard calls it `prad`):
+     AURORA is hard-cornered, CLAUDE is 8px, DUSK 6px. applyTheme sets --prad. */
+  --radius-sm: var(--prad, 0px);
+  --radius-md: var(--prad, 0px);
+  --radius-lg: var(--prad, 0px);
+  --radius-xl: var(--prad, 0px);
 
   --font-sans: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
@@ -81,7 +98,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-foreground-bright: var(--foreground-bright);
-  --color-panel: var(--panel);
+  --color-panel: var(--panel-surface);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -123,9 +140,12 @@ body,
 
 body {
   margin: 0;
-  background: #060a0a;
+  /* --page-bg is the theme's own ground and may be a gradient (BLUEPRINT's grid,
+     THE LIBRARY's cross-hatch, NOCTURNE's sky glow), which is why it is a
+     separate token from the flat --canvas hex the palette carries. */
+  background: var(--page-bg, var(--canvas));
   color: var(--foreground);
-  font-family: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--page-font, "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -136,7 +156,7 @@ body {
 
 ::selection {
   background: rgb(var(--accent-rgb) / 0.25);
-  color: #eafffb;
+  color: var(--txb);
 }
 ::-webkit-scrollbar {
   width: 7px;
@@ -200,7 +220,10 @@ input {
   border-left: 0;
   border-top: 0;
 }
+/* Scanlines belong to the sci-fi glass only — applyTheme sets [data-fx] for
+   AURORA's four. On CLAUDE's flat greys a CRT overlay reads as a dirty screen. */
 .crt {
+  display: none;
   position: fixed;
   inset: 0;
   pointer-events: none;
@@ -214,6 +237,9 @@ input {
     rgba(0, 0, 0, 0) 4px
   );
 }
+:root[data-fx] .crt {
+  display: block;
+}
 
 @keyframes mpulse { 0% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0.55); } 70% { box-shadow: 0 0 0 6px rgba(143, 217, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0); } }
 @keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
@@ -224,15 +250,15 @@ input {
 /* Markdown rendering for assistant messages (react-markdown + remark-gfm). */
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
-.md p { margin: 0.5em 0; }
+.md p { margin: 0.4em 0; }
 .md h1, .md h2, .md h3, .md h4 { margin: 0.9em 0 0.4em; font-weight: 600; line-height: 1.3; }
 .md h1 { font-size: 1.3em; }
 .md h2 { font-size: 1.18em; }
 .md h3 { font-size: 1.06em; }
-.md ul, .md ol { margin: 0.5em 0; padding-left: 1.4em; }
+.md ul, .md ol { margin: 0.4em 0; padding-left: 1.25em; }
 .md ul { list-style: disc; }
 .md ol { list-style: decimal; }
-.md li { margin: 0.2em 0; }
+.md li { margin: 0.15em 0; }
 .md li > ul, .md li > ol { margin: 0.2em 0; }
 .md a { color: var(--brand-soft); text-decoration: underline; text-underline-offset: 2px; }
 /* Bold reads as a highlight, Claude-style: a translucent accent wash (never a
@@ -258,8 +284,8 @@ input {
   padding: 0.08em 0.34em;
 }
 .md pre {
-  margin: 0.6em 0;
-  padding: 0.8em 0.9em;
+  margin: 0.5em 0;
+  padding: 0.65em 0.75em;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -273,7 +299,28 @@ input {
   color: var(--muted-foreground);
 }
 .md hr { margin: 1em 0; border: none; border-top: 1px solid var(--border); }
-.md table { margin: 0.6em 0; border-collapse: collapse; font-size: 0.92em; }
-.md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
+/* On a phone a table wider than the screen gets squeezed to one word per line
+   and a row goes six lines tall. Let it keep its natural width and scroll
+   instead (GitHub's rule). */
+.md table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.6em 0;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+/* Inside a cell the chip border is what pushes a phrase onto the next line —
+   the tint alone reads as code. */
+.md td code, .md th code { border-color: transparent; padding: 0 0.2em; }
+/* …but cap a column so a prose-heavy cell wraps at a readable measure instead
+   of becoming one endless line you have to swipe through. */
+.md th, .md td {
+  border: 1px solid var(--border);
+  padding: 0.3em 0.55em;
+  text-align: left;
+  max-width: min(58vw, 40ch);
+}
 .md th { background: var(--muted); font-weight: 600; }
 .md img { max-width: 100%; border-radius: 8px; }

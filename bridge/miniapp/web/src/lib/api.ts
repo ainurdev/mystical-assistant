@@ -64,6 +64,7 @@ export interface SessionBrief {
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
+  branch?: string; // the checkout this session runs in ("" when unknown)
 }
 
 export interface StoreTurn {
@@ -289,6 +290,56 @@ export interface IssuesInfo {
   issues: Issue[];
 }
 
+// One session's prompt queue (bridge/queue_manager.py). Items run one at a time
+// per session and auto-advance when the chat frees up.
+export interface QueueItem {
+  id: string;
+  status: "queued" | "running" | "done" | "failed";
+  text: string;
+  job_id: string | null;
+  error: string | null;
+  cost: number | null;
+  elapsed: number | null;
+  created: number;
+  started: number | null;
+}
+export interface QueueSnapshot {
+  session_id: string;
+  seq: number;
+  paused: boolean;
+  items: QueueItem[];
+  title?: string | null;   // set by /api/queue (the list across chats)
+  project?: string | null;
+}
+
+// NEXT UP: ranked next steps across recent repos (bridge/nextup.py).
+export interface NextUpItem {
+  id: string;
+  title: string;
+  why: string;
+  effort: "small" | "medium" | "large";
+  evidence: string;
+  repo: string;
+  project: string;
+  branch: string | null;
+  prompt: string;
+}
+export interface NextUpBoard {
+  items: NextUpItem[];
+  generated: number | null;
+  repos: string[];
+  refreshing: boolean;
+  enabled: boolean;
+}
+
+// The session's objective, if one is running (bridge/goals.py).
+export interface Goal {
+  objective: string;
+  state: "active" | "complete" | "blocked";
+  iter: number;
+  note?: string;
+}
+
 // Claude usage — only computed percentages / reset times (no token, ever).
 export interface UsageBucket {
   percent: number;
@@ -466,6 +517,27 @@ export const api = {
       method: "POST",
       body,
     }),
+
+  getQueues: () => request<{ queues: QueueSnapshot[] }>("/api/queue"),
+
+  queueOp: (body: {
+    op: "enqueue" | "remove" | "bump" | "cancel" | "retry" | "pause" | "resume" | "clear_done";
+    session_id: string;
+    prompt?: string;
+    item_id?: string;
+    model?: string;
+    effort?: string;
+    permission_mode?: string;
+  }) => request<QueueSnapshot>("/api/queue", { method: "POST", body }),
+
+  getNextUp: () => request<NextUpBoard>("/api/nextup"),
+  refreshNextUp: () =>
+    request<NextUpBoard>("/api/nextup/refresh", { method: "POST", body: {} }),
+
+  getGoal: (sessionId: string) =>
+    request<{ goal: Goal | null; max_iter: number }>(
+      `/api/goal?session=${encodeURIComponent(sessionId)}`,
+    ),
 
   agents: (sessionId: string) =>
     request<AgentsInfo>(`/api/agents?session=${encodeURIComponent(sessionId)}`),

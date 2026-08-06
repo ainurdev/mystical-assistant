@@ -167,15 +167,23 @@ function FileView({ path, onBack }: { path: string; onBack: () => void }) {
 
 function FilesPage() {
   const [path, setPath] = useState<string | null>(null);
-  return path ? (
-    <FileView path={path} onBack={() => setPath(null)} />
-  ) : (
-    <FileList onPick={setPath} />
+  const { data } = useQuery({ queryKey: ["state"], queryFn: () => api.getState() });
+  if (path) return <FileView path={path} onBack={() => setPath(null)} />;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline gap-2.5">
+        <span className="text-[13px] tracking-[3px] text-foreground-bright">REPO</span>
+        <span className="truncate text-[10px] tracking-wider text-[var(--tg-hint)]">
+          {(data?.project?.rel ?? "NO PROJECT").toUpperCase()}
+        </span>
+      </div>
+      <FileList onPick={setPath} />
+    </div>
   );
 }
 
 export const filesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/files",
+  path: "/repo",
   component: FilesPage,
 });

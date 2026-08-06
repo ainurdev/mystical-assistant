@@ -10,6 +10,8 @@ import { Banner } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox } from "../components/ImageLightbox";
+import { GoalPill, PolicyChip } from "../components/GoalPill";
+import { RunMonitor } from "../components/RunMonitor";
 
 // Shared empty list — a fresh `[]` per render would defeat RunStream's memo.
 const NO_PENDING: PendingRequest[] = [];
@@ -43,8 +45,19 @@ function RunPage() {
   }, [eventCount, turns.length]);
 
   return (
-    <div className="space-y-4 pb-44">
+    <div className="space-y-3 pb-[13rem]">
       {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
+
+      {/* What this session is for, and what a usage limit does to it. */}
+      <div className="flex items-center gap-1.5">
+        <GoalPill sessionId={sessionId} />
+        <PolicyChip
+          sessionId={sessionId}
+          stored={sessions.find((s) => s.id === sessionId)?.fallback_policy ?? null}
+        />
+      </div>
+
+      <RunMonitor />
 
       {turns.length === 0 && (
         <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">
@@ -56,7 +69,8 @@ function RunPage() {
         const isActive = turn.jobId === activeTurn?.jobId;
         const working = isActive && turn.status === "running" && activeTurn.pending.length === 0;
         return (
-          <div key={turn.id} className="space-y-2">
+          // id: what a checkpoint scrolls to (CheckpointsSheet).
+          <div key={turn.id} id={`turn-${turn.id}`} className="space-y-2">
             {/* user message */}
             <div className="flex justify-end">
               <div className="max-w-[85%] space-y-1">

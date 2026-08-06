@@ -109,29 +109,39 @@ export function QuestionCard({
     );
   }
 
+  // An open question is the one thing in the transcript that is blocking you —
+  // it wears the amber corner-tick frame so it reads as such at a glance.
   return (
-    <Card className="space-y-3 border border-[var(--tg-button)]/30">
+    <div className="panel space-y-3 border border-amber-400/45 bg-[var(--card)] p-3.5">
+      <div className="text-[9.5px] tracking-[2px] text-amber-400">? QUESTION // NEEDS YOU</div>
       {questions.map((q) => (
         <div key={q.header} className="space-y-1.5">
-          <div className="text-sm font-medium">{q.question}</div>
+          <div className="text-sm font-medium text-foreground-bright">{q.question}</div>
           <div className="flex flex-col gap-1.5">
-            {q.options.map((o) => {
+            {q.options.map((o, i) => {
               const picked = (sel[q.header] ?? []).includes(o.label);
               return (
                 <button
                   key={o.label}
                   onClick={() => toggle(q, o.label)}
-                  className={`rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
+                  className={`border px-3 py-2.5 text-left text-sm active:opacity-70 ${
                     picked
-                      ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
-                      : "bg-[var(--tg-bg)]"
+                      ? "border-[var(--brand-soft)] bg-[var(--ac-12)] text-foreground-bright"
+                      : "border-border bg-[var(--tg-bg)]"
                   }`}
                 >
-                  <div className="font-medium">{o.label}</div>
-                  {o.description && (
-                    <div
-                      className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`shrink-0 text-[10px] tracking-wider ${
+                        picked ? "text-[var(--brand-soft)]" : "text-[var(--tg-hint)]"
+                      }`}
                     >
+                      {i + 1}
+                    </span>
+                    <span className="font-medium">{o.label}</span>
+                  </div>
+                  {o.description && (
+                    <div className={`pl-[17px] text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}>
                       {o.description}
                     </div>
                   )}
@@ -157,9 +167,9 @@ export function QuestionCard({
           </details>
         </div>
       ))}
-      <Button className="w-full" disabled={!ready} onClick={submit}>
+      <Button className="w-full shadow-[0_0_18px_var(--brand-glow)]" disabled={!ready} onClick={submit}>
         {multi ? "Submit" : "Send answer"}
       </Button>
-    </Card>
+    </div>
   );
 }

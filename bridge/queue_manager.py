@@ -306,6 +306,12 @@ class PreviewQueue:
             snap = self._snap(sid, self._bucket(sid))
             return [snap] if snap["seq"] >= cursor else []
 
+    def sessions(self) -> list:
+        """Session ids that still hold items — the Mini App's WORK tab lists
+        every queued prompt at once, not one session's."""
+        with self._lock:
+            return [sid for sid, b in self._q.items() if b["items"]]
+
     # --- persistence -------------------------------------------------------
 
     def _save(self) -> None:
@@ -410,6 +416,10 @@ def snapshot(sid):
 
 def backfill(sid, cursor):
     return get().backfill(sid, cursor)
+
+
+def sessions():
+    return get().sessions()
 
 
 def pause(sid):

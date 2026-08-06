@@ -36,6 +36,7 @@ export interface Turn {
   pending: PendingRequest[];
   // null/undefined = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
   runtime?: string | null;
+  started?: number; // epoch seconds — the run monitor's clock
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -115,6 +116,7 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         status: st.status,
         pending: [],
         runtime: st.runtime,
+        started: st.started,
       });
     }
   }
@@ -380,6 +382,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           events: [],
           status: "running",
           pending: [],
+          started: Date.now() / 1000,
         },
       ]);
       refresh();

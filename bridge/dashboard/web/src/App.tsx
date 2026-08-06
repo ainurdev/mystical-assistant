@@ -53,6 +53,7 @@ import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
+import { LearnPanel } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
@@ -1067,6 +1068,10 @@ export function App() {
     {
       id: "skills", label: "Skills", icon: "✦",
       render: () => <SkillsPanel project={sessionProject} />,
+    },
+    {
+      id: "learn", label: "Learn", icon: "◎", ownScroll: true,
+      render: () => <LearnPanel project={sessionProject} />,
     },
     { id: "queue", label: "Queue", icon: "≡", render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];

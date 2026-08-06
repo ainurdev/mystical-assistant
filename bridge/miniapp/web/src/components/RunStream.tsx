@@ -249,7 +249,7 @@ function FinalResult({
 }) {
   return (
     <Card className="space-y-2 border border-[var(--tg-button)]/30">
-      <Markdown className="text-sm leading-relaxed">{result}</Markdown>
+      <Markdown className="text-sm leading-normal">{result}</Markdown>
       {(typeof elapsed === "number" || typeof cost === "number") && (
         <div className="text-xs text-[var(--tg-hint)]">
           {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
@@ -313,7 +313,7 @@ export const RunStream = memo(function RunStream({
           case "text":
             if (resultText && event.text.trim() === resultText) return null;
             return (
-              <Markdown key={i} className="text-sm leading-relaxed">
+              <Markdown key={i} className="text-sm leading-normal">
                 {event.text}
               </Markdown>
             );

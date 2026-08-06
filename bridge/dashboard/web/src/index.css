@@ -358,7 +358,9 @@ body {
 [data-theme="riso"] .panel::before,
 [data-theme="riso"] .panel::after,
 [data-theme="void"] .panel::before,
-[data-theme="void"] .panel::after { display: none; }
+[data-theme="void"] .panel::after,
+[data-theme="nocturne"] .panel::before,
+[data-theme="nocturne"] .panel::after { display: none; }
 /* Card elevation, daylight rules: two hairline layers at low alpha tinted with
    the ground's own hue — a 30%-black drop shadow reads as grime on paper. */
 [data-theme="normal"] .panel { border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 30, 50, 0.07), 0 2px 6px rgba(15, 30, 50, 0.06); }
@@ -392,11 +394,18 @@ body {
 [data-theme="gloam"] button,
 [data-theme="gloam"] input,
 [data-theme="gloam"] textarea { border-radius: 4px; }
+/* NOCTURNE is a reading surface too — soft cards, a shadow tinted with its own
+   indigo rather than neutral black, and no phosphor bloom (see .glow below). */
+[data-theme="nocturne"] .panel { border-radius: 6px; box-shadow: 0 1px 2px rgba(8, 8, 18, 0.5); }
+[data-theme="nocturne"] button,
+[data-theme="nocturne"] input,
+[data-theme="nocturne"] textarea { border-radius: 6px; }
 [data-theme="dusk"] .glow,
 [data-theme="library"] .glow,
 [data-theme="apex"] .glow,
 [data-theme="gloam"] .glow,
 [data-theme="riso"] .glow,
+[data-theme="nocturne"] .glow,
 /* VOID: a white bloom on true black is the one thing that would soften it. */
 [data-theme="void"] .glow { text-shadow: none; }
 /* RISO: a press with no blending gets depth from a MISREGISTERED plate, not a
