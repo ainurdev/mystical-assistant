@@ -892,10 +892,14 @@ export function App() {
     } catch { /* ignore */ }
   }
 
-  async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string) {
+  async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
+                                 firstPrompt?: string) {
     try {
       const wt = await api.worktreeAdd(rel, branch, parent, create);
       if (!wt.ok) { notify("error", wt.output || "worktree failed"); return; }
+      // With a prompt this is startIn's job — it already opens a session in a
+      // given cwd and addresses the run to it by id.
+      if (firstPrompt) { await startIn(rel, firstPrompt, { cwd: wt.path }); return; }
       const { session } = await api.createSession(rel, wt.path);
       await loadSessions();
       openSession(session.id);
@@ -1507,7 +1511,7 @@ export function App() {
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}
-                onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
+                onWorktreeSession={(rel, branch, create, parent, firstPrompt) => { void worktreeSession(rel, branch, create, parent, firstPrompt); setAnalyzeProject(null); }}
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />

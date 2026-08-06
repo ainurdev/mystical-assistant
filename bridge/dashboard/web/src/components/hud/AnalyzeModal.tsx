@@ -11,9 +11,11 @@ import {
   type Worktree,
 } from "../../api";
 import { useAiFeatures } from "../../lib/ai";
+import { branchForIssue } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
 import { ago, projectTint, setProjectTint } from "../../lib/surfaces";
 import { EditorTab, type BranchOpt } from "./EditorTab";
+import { LearnTab } from "./LearnTab";
 import { MapTab } from "./MapTab";
 import { SkillsTab } from "./SkillsTab";
 import { WorktreesTab } from "./WorktreesTab";
@@ -23,7 +25,7 @@ import { XtermPane } from "./XtermPane";
    530–1258): header with editable short tag, tab bar (EDITOR / GIT /
    WORKTREES / TERMINAL / ISSUES), and per-tab bodies. */
 
-export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map";
+export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map" | "learn";
 
 interface Props {
   project: string;
@@ -40,7 +42,10 @@ interface Props {
   onClose: () => void;
   onFeed: (texts: string[], project?: string) => void;
   onSelectSession: (s: SessionBrief) => void;
-  onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
+  /** `firstPrompt` is sent to the session the worktree gets, not the one you
+      were looking at — that is what makes SHIP IT one press instead of four. */
+  onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string,
+                      firstPrompt?: string) => void;
 }
 
 const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
@@ -70,6 +75,7 @@ export function AnalyzeModal(props: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
+  const aiFeatures = useAiFeatures();   // LEARN is hidden while lessons are off
   const [tab, setTab] = useState<Tab>(props.initialTab ?? "editor");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [issues, setIssues] = useState<IssuesInfo | null>(null);
@@ -149,6 +155,8 @@ export function AnalyzeModal(props: Props) {
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
     { k: "skills", l: "SKILLS" },
     { k: "map", l: "MAP" },
+    // hidden while the LESSONS switch is off — nothing is being written
+    ...(aiFeatures.learn ? [{ k: "learn" as Tab, l: "LEARN" }] : []),
   ];
 
   return (
@@ -234,9 +242,12 @@ export function AnalyzeModal(props: Props) {
           {tab === "skills" && <SkillsTab project={project} name={name(project)} />}
           {tab === "issues" && (
             <IssuesTab project={project} info={issues} onFeed={(t) => props.onFeed(t, project)}
+              onShip={(i) => props.onWorktreeSession(
+                project, branchForIssue(i.number, i.title), true, undefined, issueText(i))}
               onReload={() => void api.issues(project).then(setIssues).catch(() => {})} />
           )}
           {tab === "map" && <MapTab project={project} />}
+          {tab === "learn" && <LearnTab project={project} />}
         </div>
       </div>
     </div>
@@ -518,8 +529,9 @@ function agoIso(iso: string): string {
   return ago(t / 1000) || "now";
 }
 
-function IssuesTab({ project, info, onFeed, onReload }: {
-  project: string; info: IssuesInfo | null; onFeed: (t: string[]) => void; onReload: () => void;
+function IssuesTab({ project, info, onFeed, onShip, onReload }: {
+  project: string; info: IssuesInfo | null; onFeed: (t: string[]) => void;
+  onShip: (i: Issue) => void; onReload: () => void;
 }) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
@@ -697,6 +709,15 @@ function IssuesTab({ project, info, onFeed, onReload }: {
                 <button onClick={() => feedOne(selIssue)} {...hp("feedone")}
                   style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedone" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>
                   {fed.has(selIssue.number) ? "FEED AGAIN" : "FEED TO CLAUDE"}</button>
+                {/* FEED puts the issue in front of the session you already had
+                    open, in whatever branch that was. SHIP IT gives the issue
+                    its own branch, worktree and session first — the three steps
+                    everyone does by hand between reading an issue and starting
+                    it. Pressing it twice reuses the worktree it made. */}
+                <button onClick={() => onShip(selIssue)} {...hp("shipissue")}
+                  title={`branch ${branchForIssue(selIssue.number, selIssue.title)}, its own worktree, and a session already working it`}
+                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "shipissue" ? "color-mix(in srgb, var(--purple) 22%, transparent)" : "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>
+                  SHIP IT →</button>
                 <span style={{ flex: 1 }} />
                 {/* TODO(phase2-data): no close-issue endpoint yet (unwired in the design too) */}
                 <button {...hp("closeissue")}
