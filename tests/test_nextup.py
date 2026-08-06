@@ -3,6 +3,7 @@ repo) is stubbed; what is tested is everything around it: which repos qualify,
 what the cache lets us skip, and that every failure path still yields a list.
 Run: python -m pytest tests/test_nextup.py -v"""
 
+import datetime
 import itertools
 import os
 import subprocess
@@ -143,6 +144,56 @@ def test_cache_key_moves_on_a_new_commit():
 def test_cache_key_is_stable_when_nothing_moved():
     d = _mkrepo()
     assert nextup.cache_key(nextup.facts(CHAT, d)) == nextup.cache_key(nextup.facts(CHAT, d))
+
+
+# --- issue triage state ------------------------------------------------------
+
+NOW = 1_700_000_000.0
+
+
+def _iss(n, title, labels=(), days_idle=0):
+    """One issue as bridge.github.issues() hands it over."""
+    stamp = datetime.datetime.fromtimestamp(NOW - days_idle * 86400, datetime.timezone.utc)
+    return {"number": n, "title": title, "updated": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "labels": [{"name": x, "color": ""} for x in labels]}
+
+
+def test_issue_facts_carry_labels_and_age():
+    [f] = nextup._issue_facts([_iss(7, "Fix login", ["bug"], days_idle=3)], NOW)
+    assert (f["n"], f["title"], f["labels"], f["idle_days"]) == (7, "Fix login", ["bug"], 3)
+
+
+def test_an_unreadable_timestamp_is_unknown_not_fresh():
+    [f] = nextup._issue_facts([{"number": 1, "title": "x", "updated": "not a date"}], NOW)
+    assert f["idle_days"] is None
+
+
+def test_untriaged_issues_come_before_labelled_ones():
+    issues = nextup._issue_facts([
+        _iss(1, "labelled and old", ["bug"], days_idle=90),
+        _iss(2, "never labelled", [], days_idle=1),
+        _iss(3, "labelled, older", ["bug"], days_idle=200),
+    ], NOW)
+    assert [i["n"] for i in nextup._by_triage(issues)] == [2, 3, 1]
+
+
+def test_the_heuristic_says_why_an_issue_needs_a_decision():
+    f = {"stalled": [], "dirty": 0, "ahead": 0, "branch": "main", "files": [],
+         "issues": nextup._issue_facts([_iss(4, "never sorted"),
+                                        _iss(5, "gone quiet", ["bug"], days_idle=60)], NOW)}
+    whys = {i["evidence"]: i["why"] for i in nextup._heuristic(f)}
+    assert whys["#4"] == "open issue, never labelled"
+    assert whys["#5"] == "open issue, untouched for 60 days"
+
+
+def test_cache_key_moves_when_an_issue_gets_labelled(monkeypatch):
+    d = _mkrepo()
+    raw = [_iss(1, "needs triage")]
+    monkeypatch.setattr(nextup.github, "issues",
+                        lambda cwd: {"open_count": 1, "issues": raw, "slug": "o/r"})
+    before = nextup.cache_key(nextup.facts(CHAT, d))
+    raw[0]["labels"] = [{"name": "bug", "color": ""}]
+    assert nextup.cache_key(nextup.facts(CHAT, d)) != before
 
 
 # --- refresh, caching, failure -----------------------------------------------
