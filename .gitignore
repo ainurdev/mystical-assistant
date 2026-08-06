@@ -12,22 +12,12 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-/dist/          # Python build output at the repo root only — NOT the web bundles
 
-# Mini App frontend build artifacts (dist/ is committed — ships prebuilt)
-bridge/miniapp/web/.vite/
+# Build output anywhere — no dist/ is committed; setup.sh (or `mystical build`)
+# builds the dashboard, Mini App and landing page.
+dist/
+.vite/
 *.tsbuildinfo
-
-# Dashboard frontend build artifacts (dist/ is NOT committed — run `npm run build`)
-bridge/dashboard/web/.vite/
-bridge/dashboard/web/dist/
-
-# Marketing landing page (dist/ is NOT committed — the host builds it)
-site/.vite/
-site/dist/
-
-# Vite cache (when vite is run from the repo root)
-/.vite/
 
 # Session store (default lives in $HOME; ignore any local copy)
 .bridge_state/

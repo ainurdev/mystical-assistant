@@ -34,8 +34,8 @@ doctor() {
   else warn "tunnel client not found — only needed for the Mini App panel and /preview"; fi
   if have_opencode; then ok "opencode found (free-agent fallback available)"
   else warn "opencode not found — no free-agent rung when the Claude accounts run out"; fi
-  if have npm; then ok "npm found (only needed to rebuild the web UI)"
-  else warn "npm not found — fine unless you rebuild the web clients"; fi
+  if have npm; then ok "npm found (builds the dashboard + Mini App UIs)"
+  else warn "npm not found — the bot still works, but the dashboard and Mini App can't be built"; fi
   if have graphify; then ok "graphify found (projects map themselves after the first turn)"
   else warn "graphify not found — no project maps. Install: pipx install graphifyy"; fi
   return $hard
@@ -186,6 +186,10 @@ fi
 mkdir -p "$HOME/.local/bin"
 ln -sf "$REPO/bin/mystical" "$HOME/.local/bin/mystical"
 ok "linked 'mystical' → ~/.local/bin/mystical"
+
+# -- build the web bundles (dist/ is git-ignored, so a fresh clone has none) ---
+"$REPO/bin/mystical" build
+
 case ":${PATH_ORIG:-$PATH}:" in
   *":$HOME/.local/bin:"*) : ;;
   *) rc="$HOME/.bashrc"; case "${SHELL:-}" in *zsh) rc="$HOME/.zshrc";; esac

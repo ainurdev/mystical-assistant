@@ -16,7 +16,9 @@ REPO="$(cd "$(dirname "$SELF")/.." && pwd)"
 RUN_SH="$REPO/run.sh"
 ENV_FILE="$REPO/.env"                        # secrets/overrides (git-ignored)
 ENTRY="claude_telegram_bridge.py"            # process we manage
-WEB_DIR="$REPO/bridge/dashboard/web"         # dashboard UI sources (dist/ is built, not committed)
+# label:path of every bundle we build — no dist/ is committed, so setup and
+# start have to produce them.
+WEB_DIRS=("dashboard:bridge/dashboard/web" "Mini App:bridge/miniapp/web" "landing page:site")
 
 STATE_DIR="${BRIDGE_STATE_DIR:-$HOME/.bridge_state}"
 LOG="${MYSTICAL_LOG:-$STATE_DIR/mystical.log}"
@@ -35,7 +37,7 @@ mystical — control the mystical-assistant bridge
   mystical [start]   start in the background; logs -> $LOG
   mystical stop      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
   mystical restart   stop, then start
-  mystical build     rebuild the dashboard UI now (start does it when stale)
+  mystical build     rebuild every web bundle now (start does it when stale)
   mystical status    is it running? ports + dashboard URL + tunnel link
   mystical doctor    check prerequisites (claude, python, tunnel client, npm)
   mystical logs      follow the log (Ctrl-C to stop following)
@@ -76,24 +78,28 @@ dash_url() {
   else printf 'http://127.0.0.1:%s/' "$port"; fi
 }
 
-web_build() {   # $1 = "force" to build even when the bundle looks current
+web_build() {   # $1 = "force" to build even when a bundle looks current
   # dist/ is generated and git-ignored, so a fresh clone or a pull that touched
-  # the UI would keep serving a missing/stale dashboard. Build only when a
-  # source is newer than the bundle — a no-op on an unchanged checkout.
-  local dist="$WEB_DIR/dist/index.html"
-  if [ "${1:-}" != force ] && [ -f "$dist" ] && \
-     [ -z "$(find "$WEB_DIR/src" "$WEB_DIR/index.html" "$WEB_DIR/package.json" \
-                  "$WEB_DIR/vite.config.ts" -newer "$dist" 2>/dev/null | head -n1)" ]; then
-    return 0
-  fi
-  command -v npm >/dev/null 2>&1 || { warn "dashboard UI needs a rebuild but npm isn't installed — serving what's on disk."; return 0; }
-  mkdir -p "$STATE_DIR"
-  say "Building the dashboard UI…  (output: $LOG)"
-  if [ ! -d "$WEB_DIR/node_modules" ]; then
-    (cd "$WEB_DIR" && npm install) >>"$LOG" 2>&1 || { warn "npm install failed — see $LOG"; return 0; }
-  fi
-  if (cd "$WEB_DIR" && npm run build) >>"$LOG" 2>&1; then ok "dashboard UI built"
-  else warn "dashboard build failed — see $LOG (starting with the bundle on disk)"; fi
+  # the UI would leave a missing/stale bundle. Build only when a source is newer
+  # than the bundle — a no-op on an unchanged checkout.
+  local e name dir dist
+  for e in "${WEB_DIRS[@]}"; do
+    name="${e%%:*}"; dir="$REPO/${e#*:}"
+    dist="$dir/dist/index.html"
+    if [ "${1:-}" != force ] && [ -f "$dist" ] && \
+       [ -z "$(find "$dir/src" "$dir/index.html" "$dir/package.json" \
+                    "$dir/vite.config.ts" -newer "$dist" 2>/dev/null | head -n1)" ]; then
+      continue
+    fi
+    command -v npm >/dev/null 2>&1 || { warn "the web UIs need a rebuild but npm isn't installed — using what's on disk."; return 0; }
+    mkdir -p "$STATE_DIR"
+    say "Building the $name…  (output: $LOG)"
+    if [ ! -d "$dir/node_modules" ]; then
+      (cd "$dir" && npm install) >>"$LOG" 2>&1 || { warn "$name: npm install failed — see $LOG"; continue; }
+    fi
+    if (cd "$dir" && npm run build) >>"$LOG" 2>&1; then ok "$name built"
+    else warn "$name build failed — see $LOG (using the bundle on disk)"; fi
+  done
 }
 
 # --- commands ----------------------------------------------------------------

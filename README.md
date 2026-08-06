@@ -296,9 +296,10 @@ before it changes anything, and a second pass only asks for what's still missing
 The rest runs itself: it captures your Telegram chat id (it asks you to message
 the bot, then reads the id off that message), generates the dashboard token,
 links `mystical` onto your `PATH`, and offers to add `~/.local/bin` to your shell
-rc if it isn't there. The Mini App ships prebuilt; the dashboard's bundle is not
-committed, so the first `mystical` start builds it. That one needs `npm` and
-takes a minute longer.
+rc if it isn't there. No web bundle is committed, so setup builds the dashboard,
+Mini App and landing page at the end (`mystical build` redoes it any time, and
+`mystical` start rebuilds whatever went stale). That step needs `npm` and takes
+a minute longer.
 
 Then open the dashboard URL setup prints at the end.
 
