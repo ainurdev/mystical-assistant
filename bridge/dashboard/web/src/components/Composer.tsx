@@ -491,9 +491,10 @@ export function Composer({
         </div>
       )}
 
-      {/* session controls — three fenced clusters: what runs the turn (AI), how
-          much code it writes (PONYTAIL, with its two review commands), and the
-          project map (GRAPH). Layout ladder lives in index.css. */}
+      {/* session controls — four fenced clusters: what runs the turn (AI), how
+          much code it writes (PONYTAIL, with its two review commands), the
+          interview that precedes the code (FLOW), and the project map (GRAPH).
+          Layout ladder lives in index.css. */}
       {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
@@ -545,6 +546,21 @@ export function Composer({
               </button>
             </div>
           )}
+          {/* GRILL — an interview that asks one question at a time until every
+              branch of a decision is resolved. It is the one skill shaped like
+              this app: the questions arrive as answerable cards on whatever
+              you're holding, so the interview survives you walking away. Like
+              COMPACT, whatever is in the box becomes the subject. */}
+          <div className="ctrl-group">
+            <span className="ctrl-tag">FLOW</span>
+            <Tip text={"GRILL — a relentless interview before any code gets written.\n\nIt asks one question at a time until every open branch of the decision is closed, then you have something worth building from.\n\nType first to grill a specific idea; leave the box empty to grill the conversation so far.\n\nNeeds a grill skill installed — SKILLS ▸ PLUGINS."}>
+              <button onClick={() => { const t = text.trim(); setText(""); onSend(t ? `/grill-me ${t}` : "/grill-me", []); }}
+                disabled={disabled}
+                style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
+                GRILL
+              </button>
+            </Tip>
+          </div>
           {onOpenMap && graph?.available && (
             <div className="ctrl-group">
               <span className="ctrl-tag">GRAPH</span>
