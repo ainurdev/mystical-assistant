@@ -591,6 +591,28 @@ export interface SkillsInfo {
   catalog: CatalogSkill[];
 }
 
+// Plugins are the catalog's bigger sibling: Claude Code installs and versions a
+// whole bundle (multi-file skills, agents, MCP servers), so `claude plugin`
+// owns all of this and the bridge only relays it.
+export interface Marketplace { name: string; source: string; repo?: string }
+export interface InstalledPlugin {
+  id: string;          // "plugin@marketplace"
+  version: string;
+  scope: string;       // user | project | local
+  enabled: boolean;
+  mcp: string[];       // MCP servers it brings — they cost context, so we show them
+}
+export interface AvailablePlugin {
+  id: string; name: string; description: string; marketplace: string;
+}
+export interface PluginsInfo {
+  marketplaces: Marketplace[];
+  installed: InstalledPlugin[];
+  available: AvailablePlugin[];
+}
+export type PluginAction =
+  | "market/add" | "market/remove" | "install" | "uninstall" | "update" | "enable";
+
 async function req<T>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
@@ -671,6 +693,14 @@ export interface GraphState {
   head: string | null;
   stale: boolean;
   building: boolean;
+}
+
+// One lesson written after a turn, listed by the LEARN tab. Body is fetched
+// separately — a repo can hold hundreds, and the list only needs their titles.
+export interface Lesson {
+  file: string; // 0007-a-slug.md, also its identity in the read endpoint
+  title: string;
+  at: number; // epoch seconds
 }
 
 // The platform's own checkout vs its upstream — powers the header sync button,
@@ -1082,6 +1112,12 @@ export const api = {
   removeSkill: (id: string, scope: SkillScope, project?: string | null) =>
     req<{ ok: boolean; error: string | null; project: InstalledSkill[]; system: InstalledSkill[] }>(
       "/local/skills/remove", { method: "POST", body: { id, scope, project } }),
+  // --- plugins (marketplaces, via Claude Code's own `claude plugin`) ---
+  plugins: () => req<PluginsInfo>("/local/plugins"),
+  // Every mutation answers with the fresh listing, so callers never refetch.
+  pluginAct: (action: PluginAction, id: string, extra?: { scope?: string; enabled?: boolean }) =>
+    req<{ ok: boolean; error: string | null } & PluginsInfo>(
+      `/local/plugins/${action}`, { method: "POST", body: { id, ...extra } }),
   // --- MAP tab: graphify knowledge graph (graph.html) ---
   graphState: (project: string) =>
     req<GraphState>(`/local/graph/state?project=${encodeURIComponent(project)}`),
@@ -1093,6 +1129,17 @@ export const api = {
     req<GraphState>("/local/graph/update", { method: "POST", body: { project } }),
   graphHtmlUrl: (project: string) =>
     `/local/graph/html?project=${encodeURIComponent(project)}`,
+  // --- LEARN tab: per-turn lessons in <repo>/.mystical/learn/ ---
+  lessons: (project: string) =>
+    req<{ lessons: Lesson[]; repo_enabled: boolean }>(
+      `/local/learn?project=${encodeURIComponent(project)}`,
+    ),
+  lesson: (project: string, file: string) =>
+    req<{ file: string; body: string }>(
+      `/local/learn?project=${encodeURIComponent(project)}&file=${encodeURIComponent(file)}`,
+    ),
+  setLessonsForRepo: (project: string, on: boolean) =>
+    req<{ repo_enabled: boolean }>("/local/learn/toggle", { method: "POST", body: { project, on } }),
 };
 
 /** Query string for a preview context (cwd/project/branch), omitting blanks. */

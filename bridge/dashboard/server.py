@@ -540,6 +540,19 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None or not q:
                 return self._json({"error": "invalid project or query"}, 400)
             return self._json({"text": graphmap.explain(abs_p, q)})
+        if path == "/local/learn":
+            from bridge import learn
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            name = (qs.get("file", [""])[0] or "").strip()
+            if name:
+                body = learn.read(abs_p, name)
+                if body is None:
+                    return self._json({"error": "not found"}, 404)
+                return self._json({"file": name, "body": body})
+            return self._json({"lessons": learn.lessons(abs_p),
+                               "repo_enabled": learn.repo_enabled(browser.rel(abs_p))})
         if path == "/local/inspector":
             from bridge import inspector
             return self._json({"on": inspector.running(),
@@ -558,6 +571,11 @@ class Handler(BaseHTTPRequestHandler):
             # A blank/unknown project is fine — the system list still applies.
             return self._json({**skills.installed(_abs_project(qs.get("project", [None])[0])),
                                "catalog": skills.catalog()})
+        if path == "/local/plugins":
+            # Two `claude plugin` calls; slow enough to be worth its own fetch,
+            # so the SKILLS panel paints before this lands.
+            from bridge import plugins
+            return self._json(plugins.listing())
         if path == "/local/update":
             # the platform's own checkout — new commits waiting upstream?
             return self._json(selfupdate.check())
@@ -577,6 +595,13 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(graphmap.update_async(abs_p))
+        if path == "/local/learn/toggle":
+            from bridge import learn
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            on = learn.set_repo_enabled(browser.rel(abs_p), bool(body.get("on")))
+            return self._json({"repo_enabled": on})
         if path.startswith("/local/queue/"):
             return self._queue(path[len("/local/queue/"):], chat, body)
         if path == "/local/shell":
@@ -988,6 +1013,25 @@ class Handler(BaseHTTPRequestHandler):
             ok, err = act(str(body.get("id", ""))[:100], scope, abs_p)
             return self._json({"ok": ok, "error": err or None,
                                **skills.installed(abs_p)}, 200 if ok else 400)
+        if path.startswith("/local/plugins/"):
+            # Marketplace and plugin mutations. Every one runs `claude plugin`,
+            # which owns validation and state; we return its fresh listing.
+            from bridge import plugins
+            action = path[len("/local/plugins/"):]
+            name = str(body.get("id", ""))[:200]
+            acts = {
+                "market/add": lambda: plugins.add_marketplace(name),
+                "market/remove": lambda: plugins.remove_marketplace(name),
+                "install": lambda: plugins.install(name, str(body.get("scope") or "user")),
+                "uninstall": lambda: plugins.uninstall(name),
+                "update": lambda: plugins.update(name),
+                "enable": lambda: plugins.set_enabled(name, bool(body.get("enabled"))),
+            }
+            if action not in acts:
+                return self._json({"error": "not found"}, 404)
+            ok, err = acts[action]()
+            return self._json({"ok": ok, "error": err or None, **plugins.listing()},
+                              200 if ok else 400)
         return self._json({"error": "not found"}, 404)
 
     def _worktree(self, body):
