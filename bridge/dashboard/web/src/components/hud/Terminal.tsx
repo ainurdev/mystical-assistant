@@ -98,21 +98,21 @@ function FreshState({ project }: { project: string | null }) {
             ))}
           </div>
         </div>
-        <span style={{ position: "absolute", top: 4, right: 8, color: "var(--purple)", fontSize: 13, animation: "twinkle 3s infinite" }}>✦</span>
-        <span style={{ position: "absolute", bottom: 10, left: 4, color: "var(--acc)", fontSize: 10, animation: "twinkle 4s infinite .5s" }}>✦</span>
-        <span style={{ position: "absolute", top: 26, left: -2, color: "var(--ok)", fontSize: 9, animation: "twinkle 3.5s infinite 1s" }}>+</span>
+        <span style={{ position: "absolute", top: 4, right: 8, color: "var(--purple)", fontSize: "var(--t13)", animation: "twinkle 3s infinite" }}>✦</span>
+        <span style={{ position: "absolute", bottom: 10, left: 4, color: "var(--acc)", fontSize: "var(--t10)", animation: "twinkle 4s infinite .5s" }}>✦</span>
+        <span style={{ position: "absolute", top: 26, left: -2, color: "var(--ok)", fontSize: "var(--t9)", animation: "twinkle 3.5s infinite 1s" }}>+</span>
       </div>
       <div style={{ maxWidth: 450 }}>
-        <div style={{ fontSize: 9.5, letterSpacing: 3, color: "var(--txl)", marginBottom: 13 }}>
+        <div style={{ fontSize: "var(--t95)", letterSpacing: 3, color: "var(--txl)", marginBottom: 13 }}>
           {(basename(project) || "WORKSPACE").toUpperCase()} · FRESH SESSION
         </div>
-        <div style={{ fontSize: 16, lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
+        <div style={{ fontSize: "var(--t16)", lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
           <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) both, quoteglow 7.2s ease-in-out infinite" }}>
             “{FRESH_QUOTES[qi % FRESH_QUOTES.length]}”
           </span>
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }}>
         <span style={{ color: "var(--purple)" }}>~ ❯</span>
         <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>awaiting your command</span>
         <span style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
@@ -128,7 +128,7 @@ function ChannelTuning() {
   return (
     <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease both" }}>
       <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s ease-in-out infinite" }} />
-      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: 10, letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s linear infinite" }}>TUNING SIGNAL…</span>
+      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s linear infinite" }}>TUNING SIGNAL…</span>
     </div>
   );
 }
@@ -233,16 +233,16 @@ export function Terminal({
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, overflow: "hidden" }}>
-            <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: 9, letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
+            <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
               <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
               {projectLabel || "—"}
             </span>
             {branch && (
-              <span title="session branch" style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: 9, letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px" }}>
+              <span title="session branch" style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px" }}>
                 <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
               </span>
             )}
-            <span style={{ fontSize: 11, letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {selected?.title || "new session"}
             </span>
           </div>
@@ -251,7 +251,7 @@ export function Terminal({
           {view === "chat" && (
             <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} />
           )}
-          <span style={{ fontSize: 9, letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
+          <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
           </span>
           <ViewTabs view={view} onView={onView} />
@@ -270,7 +270,7 @@ export function Terminal({
       ) : (
         <>
           <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-            <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.6, overflowWrap: "break-word" }}>
+            <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
               <div ref={contentRef} style={{ padding: "16px 0" }}>
                 {empty && loading ? (
                   <ChannelTuning />
@@ -287,9 +287,9 @@ export function Terminal({
                 out). An absolute layer costs the scroll range nothing. */}
             {lastPrompt && !empty && peek && (
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
-                <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
-                <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: 12 }}>~ ❯</span>
-                <span style={{ color: "var(--txh)", fontSize: 12, lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
+                <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
+                <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: "var(--t12)" }}>~ ❯</span>
+                <span style={{ color: "var(--txh)", fontSize: "var(--t12)", lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
               </div>
             )}
             {!empty && <CheckpointRail turns={turns} scrollRef={scrollRef} contentRef={contentRef} />}
@@ -302,14 +302,14 @@ export function Terminal({
                   position: "absolute", right: 20, bottom: 14, zIndex: 6,
                   display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
                   padding: "5px 10px", fontFamily: "'JetBrains Mono',monospace",
-                  fontSize: 9, letterSpacing: 1.5, color: "var(--acc)",
+                  fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--acc)",
                   background: "color-mix(in srgb, var(--panel2) 92%, transparent)",
                   border: "1px solid color-mix(in srgb, var(--acc) 34%, transparent)",
                   boxShadow: "0 6px 20px rgba(0,0,0,.45), 0 0 14px color-mix(in srgb, var(--acc) 14%, transparent)",
                   backdropFilter: "blur(6px)", animation: "mfadeup .25s ease both",
                 }}
               >
-                <span style={{ fontSize: 11, lineHeight: 1 }}>↓</span>LATEST
+                <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST
               </button>
             )}
           </div>

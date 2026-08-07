@@ -34,8 +34,8 @@ interface ConfirmState {
 }
 
 const MARK_COLOR = (s: string) => (s === "A" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
-const SECTION: React.CSSProperties = { fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", margin: "12px 0 5px" };
-const BTN: React.CSSProperties = { appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "5px 10px", lineHeight: 1.4, flex: "none" };
+const SECTION: React.CSSProperties = { fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", margin: "12px 0 5px" };
+const BTN: React.CSSProperties = { appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "5px 10px", lineHeight: 1.4, flex: "none" };
 
 export function WorktreesTab({
   project, sessions, worktrees, branches, defaultBranch, git,
@@ -192,23 +192,23 @@ export function WorktreesTab({
         <div onClick={() => setExpanded((v) => (v === name ? "" : name))} {...hp(`row:${name}`)}
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", cursor: "pointer", background: hov === `row:${name}` && !on ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent" }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: dot, flex: "none" }} />
-          <span style={{ flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: current ? "var(--txb)" : open ? "var(--txh)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
-          {current && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "1px 5px", flex: "none" }}>HEAD</span>}
-          {isMerged && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--ok)", flex: "none" }}>MERGED</span>}
+          <span style={{ flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: current ? "var(--txb)" : open ? "var(--txh)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+          {current && <span style={{ fontSize: "var(--t75)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "1px 5px", flex: "none" }}>HEAD</span>}
+          {isMerged && <span style={{ fontSize: "var(--t75)", letterSpacing: 1, color: "var(--ok)", flex: "none" }}>MERGED</span>}
           {open && (
-            <span style={{ display: "flex", gap: 6, flex: "none", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "var(--txd)" }}>
+            <span style={{ display: "flex", gap: 6, flex: "none", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", color: "var(--txd)" }}>
               <span style={{ color: "var(--ok)" }}>↑{st?.ahead ?? 0}</span>
               <span style={{ color: "var(--info)" }}>↓{st?.behind ?? 0}</span>
               {(st?.dirty ?? 0) > 0 && <span style={{ color: "var(--warn)" }}>●{st?.dirty}</span>}
             </span>
           )}
-          {sess.length > 0 && <span style={{ fontSize: 9, color: "var(--purple-d)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{sess.length}⧉</span>}
-          <span style={{ fontSize: 8, color: "var(--txd)", flex: "none", width: 8, textAlign: "center" }}>{on ? "▾" : "▸"}</span>
+          {sess.length > 0 && <span style={{ fontSize: "var(--t9)", color: "var(--purple-d)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{sess.length}⧉</span>}
+          <span style={{ fontSize: "var(--t8)", color: "var(--txd)", flex: "none", width: 8, textAlign: "center" }}>{on ? "▾" : "▸"}</span>
         </div>
 
         {on && (
           <div style={{ padding: "2px 9px 9px", animation: "mslide .16s ease both" }}>
-            {open && <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "var(--txf)", marginBottom: 7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={wt.path}>{wt.path}</div>}
+            {open && <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", color: "var(--txf)", marginBottom: 7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={wt.path}>{wt.path}</div>}
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
               {!current && (
                 <button onClick={() => void checkout(name)} title="checkout this branch here" {...hp(`co:${name}`)}
@@ -223,32 +223,32 @@ export function WorktreesTab({
                   <button onClick={() => { const s = sess[0]; if (s) onSelectSession(s); else onWorktreeSession(project, name, false); }} title="attach a session on this worktree" {...hp(`att:${name}`)}
                     style={{ ...BTN, border: "1px solid var(--acc)", background: hov === `att:${name}` ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)" }}>▸ ATTACH SESSION</button>
                   <button onClick={() => onWorktreeSession(project, name, false)} title="start another session on this worktree" {...hp(`plus:${name}`)}
-                    style={{ ...BTN, border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", background: hov === `plus:${name}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txm)", fontSize: 11, padding: "4px 9px" }}>+</button>
+                    style={{ ...BTN, border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", background: hov === `plus:${name}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txm)", fontSize: "var(--t11)", padding: "4px 9px" }}>+</button>
                 </>
               )}
               <span style={{ flex: 1 }} />
               <button onClick={() => setConfirmDel({ branch: name, path: wt?.path ?? "", sessCount: sess.length, hasWorktree: open })} title={open ? "delete branch + worktree" : "delete branch"} {...hp(`del:${name}`)}
-                style={{ ...BTN, border: "1px solid color-mix(in srgb, var(--err) 28%, transparent)", background: hov === `del:${name}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: hov === `del:${name}` ? "var(--err)" : "var(--err-g)", fontSize: 11, padding: "4px 9px" }}>✕</button>
+                style={{ ...BTN, border: "1px solid color-mix(in srgb, var(--err) 28%, transparent)", background: hov === `del:${name}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: hov === `del:${name}` ? "var(--err)" : "var(--err-g)", fontSize: "var(--t11)", padding: "4px 9px" }}>✕</button>
             </div>
 
             {open && !isMerged && (
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, paddingTop: 8, borderTop: "1px dashed color-mix(in srgb, var(--acc) 12%, transparent)" }}>
-                <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txd)", flex: "none" }}>MERGE INTO</span>
+                <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txd)", flex: "none" }}>MERGE INTO</span>
                 <div style={{ position: "relative", flex: 1, minWidth: 0, maxWidth: 280 }}>
                   <button onClick={() => setMergeMenu((m) => (m === name ? "" : name))} title="choose destination branch" {...hp(`mt:${name}`)}
-                    style={{ width: "100%", boxSizing: "border-box", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `mt:${name}` ? "var(--ok)" : "color-mix(in srgb, var(--ok) 35%, transparent)"}`, background: "color-mix(in srgb, var(--ok) 5%, transparent)", color: "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "5px 8px" }}>
+                    style={{ width: "100%", boxSizing: "border-box", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `mt:${name}` ? "var(--ok)" : "color-mix(in srgb, var(--ok) 35%, transparent)"}`, background: "color-mix(in srgb, var(--ok) 5%, transparent)", color: "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "5px 8px" }}>
                     <span style={{ color: "var(--ok)", flex: "none" }}>⎇</span>
                     <span style={{ flex: 1, minWidth: 0, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{mtSel}</span>
                     <span style={{ color: "var(--txd)", flex: "none" }}>▾</span>
                   </button>
                   {mergeMenu === name && (
                     <div className="mscroll" style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0, zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 12px 34px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
-                      <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>MERGE {name} INTO</div>
+                      <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>MERGE {name} INTO</div>
                       {targets.map((m) => {
                         const sel = m === mtSel;
                         return (
                           <button key={m} onClick={() => { setMergeTarget((t) => ({ ...t, [name]: m })); setMergeMenu(""); }} {...hp(`mti:${name}:${m}`)}
-                            style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, borderLeft: `2px solid ${sel ? "var(--ok)" : "transparent"}`, background: hov === `mti:${name}:${m}` ? "color-mix(in srgb, var(--ok) 10%, transparent)" : sel ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "transparent", color: sel ? "var(--txb)" : "var(--txm)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "6px 9px", textAlign: "left" }}>
+                            style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, borderLeft: `2px solid ${sel ? "var(--ok)" : "transparent"}`, background: hov === `mti:${name}:${m}` ? "color-mix(in srgb, var(--ok) 10%, transparent)" : sel ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "transparent", color: sel ? "var(--txb)" : "var(--txm)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", padding: "6px 9px", textAlign: "left" }}>
                             <span style={{ color: "var(--ok)", flex: "none" }}>⎇</span>
                             <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m}</span>
                             {sel && <span style={{ color: "var(--ok)", flex: "none" }}>✓</span>}
@@ -263,7 +263,7 @@ export function WorktreesTab({
               </div>
             )}
             {isMerged && (
-              <div style={{ marginTop: 7, fontSize: 9.5, letterSpacing: ".5px", color: "var(--ok)" }}>✓ merged into {mtSel}</div>
+              <div style={{ marginTop: 7, fontSize: "var(--t95)", letterSpacing: ".5px", color: "var(--ok)" }}>✓ merged into {mtSel}</div>
             )}
           </div>
         )}
@@ -275,19 +275,19 @@ export function WorktreesTab({
     <div style={{ animation: "mslide .3s ease both" }}>
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>WORKTREES</span>
-          <span style={{ fontSize: 8.5, letterSpacing: ".5px", color: "var(--purple-g)" }}>{wtOpenCount} OPEN</span>
-          <span style={{ fontSize: 8.5, letterSpacing: ".5px", color: "var(--txd)" }}>{branches.length} BRANCHES</span>
+          <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>WORKTREES</span>
+          <span style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: "var(--purple-g)" }}>{wtOpenCount} OPEN</span>
+          <span style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: "var(--txd)" }}>{branches.length} BRANCHES</span>
           <span style={{ flex: 1 }} />
           {list.length > 8 && (
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="filter…"
-              style={{ width: 130, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: `1px solid ${q ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "3px 7px" }} />
+              style={{ width: 130, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: `1px solid ${q ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", padding: "3px 7px" }} />
           )}
-          <span style={{ fontSize: 9, letterSpacing: ".5px", color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace" }}>●{git?.dirty ?? 0} ↑{git?.ahead ?? 0} ↓{git?.behind ?? 0}</span>
+          <span style={{ fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace" }}>●{git?.dirty ?? 0} ↑{git?.ahead ?? 0} ↓{git?.behind ?? 0}</span>
         </div>
 
         {banner && (
-          <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontSize: 10, letterSpacing: ".2px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both", fontFamily: "'JetBrains Mono',monospace" }}>
+          <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontSize: "var(--t10)", letterSpacing: ".2px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both", fontFamily: "'JetBrains Mono',monospace" }}>
             <span style={{ color: "var(--acc)", flex: "none" }}>▸</span>
             <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{banner}</span>
           </div>
@@ -295,11 +295,11 @@ export function WorktreesTab({
 
         {/* base branch row */}
         <div style={{ display: "flex", alignItems: "center", gap: 9, border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "8px 11px", marginBottom: 8, background: "color-mix(in srgb, var(--panel2) 30%, transparent)" }}>
-          <span style={{ fontSize: 12, color: "var(--acc)", flex: "none" }}>⎇</span>
+          <span style={{ fontSize: "var(--t12)", color: "var(--acc)", flex: "none" }}>⎇</span>
           <button onClick={() => void checkout(base)} title={`checkout ${base}`} {...hp("base")}
-            style={{ flex: 1, minWidth: 0, appearance: "none", border: 0, background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: hov === "base" ? "var(--txb)" : "var(--txh)" }}>{base}</button>
-          <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--txf)", flex: "none" }}>BASE</span>
-          {cur === base && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "2px 6px", flex: "none" }}>HEAD</span>}
+            style={{ flex: 1, minWidth: 0, appearance: "none", border: 0, background: "transparent", cursor: "pointer", textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: hov === "base" ? "var(--txb)" : "var(--txh)" }}>{base}</button>
+          <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txf)", flex: "none" }}>BASE</span>
+          {cur === base && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "2px 6px", flex: "none" }}>HEAD</span>}
         </div>
 
         {/* live worktrees, then the worktree-less tail */}
@@ -319,26 +319,26 @@ export function WorktreesTab({
           </>
         )}
         {hits.length === 0 && (
-          <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "10px 2px" }}>No branch matches “{q}”.</div>
+          <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "10px 2px" }}>No branch matches “{q}”.</div>
         )}
 
         {/* new worktree */}
         <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 25%, transparent)", background: "color-mix(in srgb, var(--purple) 4%, transparent)", padding: "8px 9px", marginTop: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
-            <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>NEW WORKTREE FROM</span>
+            <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>NEW WORKTREE FROM</span>
             <select value={parentName} onChange={(e) => setParent(e.target.value)} title="parent branch"
-              style={{ appearance: "none", cursor: "pointer", maxWidth: 200, border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 8px", outline: "none" }}>
+              style={{ appearance: "none", cursor: "pointer", maxWidth: 200, border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", padding: "3px 8px", outline: "none" }}>
               {branches.map((b) => <option key={b} value={b} style={{ background: "var(--panel2)" }}>⎇ {b}</option>)}
             </select>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontSize: 13, color: "var(--purple)", flex: "none" }}>⎇</span>
+            <span style={{ fontSize: "var(--t13)", color: "var(--purple)", flex: "none" }}>⎇</span>
             <input value={branchInput} onChange={(e) => setBranchInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") createAndOpen(); }}
               placeholder="new branch name…"
-              style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: "5px 8px" }} />
+              style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", padding: "5px 8px" }} />
             <button onClick={createAndOpen} title="create branch + worktree + session" {...hp("wtopen")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "wtopen" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 10px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "wtopen" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "6px 10px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
               <span>▸</span>OPEN</button>
           </div>
         </div>
@@ -347,12 +347,12 @@ export function WorktreesTab({
         {prCreated && (
           <div title={prCreated.url} style={{ marginTop: 11, border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: "color-mix(in srgb, var(--ok) 6%, transparent)", padding: "10px 12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--ok)" }}>⇡ PR {prCreated.num != null ? `#${prCreated.num}` : ""}</span>
+              <span style={{ fontSize: "var(--t11)", color: "var(--ok)" }}>⇡ PR {prCreated.num != null ? `#${prCreated.num}` : ""}</span>
               <span style={{ flex: 1 }} />
-              <span style={{ fontSize: 9, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", padding: "1px 6px" }}>OPEN</span>
+              <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", padding: "1px 6px" }}>OPEN</span>
             </div>
-            <div style={{ fontSize: 11, color: "var(--txh)", marginTop: 6 }}>{prCreated.title}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 4, fontSize: 9.5, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace" }}>
+            <div style={{ fontSize: "var(--t11)", color: "var(--txh)", marginTop: 6 }}>{prCreated.title}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 4, fontSize: "var(--t95)", color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace" }}>
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{prCreated.branch} → {prCreated.base}</span>
               <span style={{ flex: 1 }} />
               <span style={{ color: "var(--ok)" }}>+{prCreated.add}</span>
@@ -362,48 +362,48 @@ export function WorktreesTab({
         )}
         {prOpen && (
           <div style={{ marginTop: 11, border: "1px solid color-mix(in srgb, var(--purple) 32%, transparent)", background: "color-mix(in srgb, var(--purple) 5%, transparent)", padding: "11px 12px" }}>
-            <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>NEW PULL REQUEST</div>
+            <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>NEW PULL REQUEST</div>
             <input value={prTitle} onChange={(e) => setPrTitle(e.target.value)} placeholder="pull request title…"
-              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 11.5, padding: "7px 9px" }} />
-            <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", margin: "10px 0 6px" }}>MERGE INTO · DESTINATION</div>
+              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t115)", padding: "7px 9px" }} />
+            <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", margin: "10px 0 6px" }}>MERGE INTO · DESTINATION</div>
             <select value={prBaseSel} onChange={(e) => setPrBase(e.target.value)}
-              style={{ width: "100%", boxSizing: "border-box", appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-b)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "6px 9px", outline: "none" }}>
+              style={{ width: "100%", boxSizing: "border-box", appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-b)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", padding: "6px 9px", outline: "none" }}>
               {prDests.map((d) => <option key={d} value={d} style={{ background: "var(--panel2)" }}>⎇ {d}</option>)}
             </select>
             <div style={{ marginTop: 9, border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: "color-mix(in srgb, var(--panel2) 50%, transparent)", padding: "8px 10px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'JetBrains Mono',monospace", fontSize: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)" }}>
                 <span style={{ color: "var(--purple-h)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cur} → {prBaseSel}</span>
                 <span style={{ flex: 1 }} />
                 <span style={{ color: "var(--ok)" }}>+{prCmp?.add ?? 0}</span>
                 <span style={{ color: "var(--err)" }}>−{prCmp?.del ?? 0}</span>
               </div>
-              <div style={{ display: "flex", gap: 12, marginTop: 5, fontSize: 9, letterSpacing: ".5px", color: "var(--txd)" }}>
+              <div style={{ display: "flex", gap: 12, marginTop: 5, fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--txd)" }}>
                 <span>{prCmp?.commits ?? 0} commits</span>
                 <span>{prCmp?.files.length ?? 0} files changed</span>
               </div>
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
                 {(prCmp?.files ?? []).map((f) => (
-                  <div key={f.name} style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'JetBrains Mono',monospace", fontSize: 10 }}>
+                  <div key={f.name} style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)" }}>
                     <span style={{ color: MARK_COLOR(f.mark), width: 9, flex: "none", fontWeight: 700 }}>{f.mark}</span>
                     <span style={{ color: "var(--txm)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.name}</span>
-                    <span style={{ color: "var(--ok)", fontSize: 9, flex: "none" }}>+{f.add}</span>
-                    <span style={{ color: "var(--err)", fontSize: 9, flex: "none" }}>−{f.del}</span>
+                    <span style={{ color: "var(--ok)", fontSize: "var(--t9)", flex: "none" }}>+{f.add}</span>
+                    <span style={{ color: "var(--err)", fontSize: "var(--t9)", flex: "none" }}>−{f.del}</span>
                   </div>
                 ))}
               </div>
             </div>
             <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
               <button onClick={() => void createPr()} {...hp("propen")}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "propen" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 7 }}>OPEN PR</button>
+                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "propen" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 7 }}>OPEN PR</button>
               <button onClick={() => setPrOpen(false)} {...hp("prcancel")}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "prcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "prcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
             </div>
           </div>
         )}
         {!prOpen && (
           <button onClick={() => { if (!prDisabled) { setPrOpen(true); setPrTitle(`Merge ${cur} into ${prBaseSel}`); } }}
             title={prDisabled ? "check out a feature branch to open a PR" : "open a pull request"} {...hp("prbtn")}
-            style={{ width: "100%", marginTop: 11, appearance: "none", cursor: prDisabled ? "not-allowed" : "pointer", border: `1px solid ${prDisabled ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: !prDisabled && hov === "prbtn" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: prDisabled ? "var(--txl)" : "var(--tx)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 9 }}>⇡ CREATE PULL REQUEST</button>
+            style={{ width: "100%", marginTop: 11, appearance: "none", cursor: prDisabled ? "not-allowed" : "pointer", border: `1px solid ${prDisabled ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: !prDisabled && hov === "prbtn" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: prDisabled ? "var(--txl)" : "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 9 }}>⇡ CREATE PULL REQUEST</button>
         )}
       </div>
 
@@ -415,17 +415,17 @@ export function WorktreesTab({
             style={{ width: 450, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--err) 50%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 0 60px var(--shadow-modal),0 0 26px color-mix(in srgb, var(--err) 12%, transparent)", animation: "mslide .2s ease both" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 18px", borderBottom: "1px solid color-mix(in srgb, var(--err) 20%, transparent)" }}>
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--err)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none" }}><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
-              <span style={{ fontSize: 14, color: "var(--err-hi)", letterSpacing: ".5px" }}>Delete worktree</span>
+              <span style={{ fontSize: "var(--t14)", color: "var(--err-hi)", letterSpacing: ".5px" }}>Delete worktree</span>
             </div>
             <div style={{ padding: "16px 18px" }}>
-              <div style={{ fontSize: 12.5, color: "var(--txh)", lineHeight: 1.6 }}>
+              <div style={{ fontSize: "var(--t125)", color: "var(--txh)", lineHeight: 1.6 }}>
                 Removes the worktree checkout and deletes branch <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--err)" }}>⎇ {confirmDel.branch}</span>. This can’t be undone.
               </div>
-              <div style={{ marginTop: 11, fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "var(--txf)", borderLeft: "2px solid color-mix(in srgb, var(--err) 30%, transparent)", padding: "3px 0 3px 10px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div style={{ marginTop: 11, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txf)", borderLeft: "2px solid color-mix(in srgb, var(--err) 30%, transparent)", padding: "3px 0 3px 10px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {confirmDel.hasWorktree ? confirmDel.path : "no worktree checkout — deletes the branch ref only"}
               </div>
               {confirmDel.sessCount > 0 && (
-                <div style={{ marginTop: 12, border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", background: "color-mix(in srgb, var(--warn) 6%, transparent)", color: "var(--warn)", fontSize: 10.5, letterSpacing: ".3px", padding: "8px 11px", display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ marginTop: 12, border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", background: "color-mix(in srgb, var(--warn) 6%, transparent)", color: "var(--warn)", fontSize: "var(--t105)", letterSpacing: ".3px", padding: "8px 11px", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ flex: "none" }}>⚠</span>
                   <span>{confirmDel.sessCount} session{confirmDel.sessCount === 1 ? "" : "s"} running here will be ended.</span>
                 </div>
@@ -433,9 +433,9 @@ export function WorktreesTab({
             </div>
             <div style={{ display: "flex", gap: 9, padding: "0 18px 16px" }}>
               <button onClick={() => setConfirmDel(null)} {...hp("dcancel")}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "dcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: 10 }}>CANCEL</button>
+                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "dcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10 }}>CANCEL</button>
               <button onClick={() => void doDelete()} disabled={busy} {...hp("dgo")}
-                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--err)", background: hov === "dgo" ? "color-mix(in srgb, var(--err) 28%, transparent)" : "color-mix(in srgb, var(--err) 16%, transparent)", color: "var(--err-b)", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: busy ? 0.6 : 1 }}>
+                style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--err)", background: hov === "dgo" ? "color-mix(in srgb, var(--err) 28%, transparent)" : "color-mix(in srgb, var(--err) 16%, transparent)", color: "var(--err-b)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: busy ? 0.6 : 1 }}>
                 <span>✕</span>DELETE BRANCH</button>
             </div>
           </div>

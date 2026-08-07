@@ -37,7 +37,7 @@ function Attachments({ items }: { items: string[] }) {
           ),
         )}
         {missing > 0 && (
-          <span className="text-[11px] tracking-[0.5px] text-muted-2">
+          <span className="text-[length:var(--t11)] tracking-[0.5px] text-muted-2">
             📎 {missing} image{missing > 1 ? "s" : ""}
           </span>
         )}
@@ -55,7 +55,7 @@ function RuntimeBadge({ runtime }: { runtime: string }) {
   return (
     <div className="ml-[27px] flex">
       <span
-        className="border px-1.5 py-px text-[9.5px] tracking-[1px]"
+        className="border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{
           color: free ? "var(--warn)" : "var(--acc)",
           borderColor: "color-mix(in srgb, currentColor 40%, transparent)",

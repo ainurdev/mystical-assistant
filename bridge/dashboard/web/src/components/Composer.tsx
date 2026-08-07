@@ -57,18 +57,18 @@ export function Drop<T extends string>({
   const btn: CSSProperties = {
     appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
     background: "color-mix(in srgb, var(--panel2) 60%, transparent)", color: "var(--txh)", fontFamily: "inherit",
-    fontSize: 9.5, letterSpacing: ".3px", padding: "4px 9px", display: "flex",
+    fontSize: "var(--t95)", letterSpacing: ".3px", padding: "4px 9px", display: "flex",
     alignItems: "center", gap: 10, justifyContent: "space-between",
     ["--dw" as string]: `${minWidth}px`,
   };
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
       {showLabel && (
-        <span className="ctrl-label" style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{label}</span>
+        <span className="ctrl-label" style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{label}</span>
       )}
       <button className="drop-btn" onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur.short ?? cur.label}</span>
-        <span style={{ color: "var(--txd)", fontSize: 8 }}>▾</span>
+        <span style={{ color: "var(--txd)", fontSize: "var(--t8)" }}>▾</span>
       </button>
       {open && (
         <div
@@ -88,7 +88,7 @@ export function Drop<T extends string>({
                   width: "100%", appearance: "none", cursor: "pointer", border: 0,
                   borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
                   background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
-                  color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: 10.5,
+                  color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
                   letterSpacing: ".3px", textAlign: "left", padding: "8px 11px",
                   display: "flex", alignItems: "center", gap: 8,
                 }}
@@ -112,7 +112,7 @@ function fmtTokens(n: number): string {
 // Shared look for the small action chips (REVIEW / AUDIT / MAP, and COMPACT on the context line).
 const chip: CSSProperties = {
   appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
-  background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9,
+  background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)",
   letterSpacing: 1, padding: "3px 8px",
 };
 
@@ -152,7 +152,7 @@ function Tip({ text, anchor = "center", pin = true, children }: {
                          border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
                          background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
                          boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
-                         color: "var(--txm)", fontSize: 10.5, lineHeight: 1.65, letterSpacing: ".2px", padding: "9px 11px" }}>
+                         color: "var(--txm)", fontSize: "var(--t105)", lineHeight: 1.65, letterSpacing: ".2px", padding: "9px 11px" }}>
             {text}
           </span>
         </span>
@@ -163,7 +163,7 @@ function Tip({ text, anchor = "center", pin = true, children }: {
 
 // Shared look for the command-line action buttons (STOP / STEER / QUEUE / SEND).
 const actBtn: CSSProperties = {
-  appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 11, letterSpacing: 2,
+  appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 2,
   padding: "6px 14px", flex: "none", display: "inline-flex", alignItems: "center", gap: 6,
 };
 
@@ -414,8 +414,8 @@ export function Composer({
       {paused && (
         <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 9, padding: "5px 9px", border: "1px solid color-mix(in srgb, var(--warn) 34%, transparent)", background: "color-mix(in srgb, var(--warn) 8%, transparent)" }}>
           <Pause size={11} strokeWidth={0} fill="var(--warn)" aria-hidden style={{ flex: "none" }} />
-          <span style={{ fontSize: 10, letterSpacing: 1, color: "var(--warn)", flex: "none" }}>PAUSED</span>
-          <span style={{ fontSize: 10.5, color: "var(--txl)", flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: "var(--t10)", letterSpacing: 1, color: "var(--warn)", flex: "none" }}>PAUSED</span>
+          <span style={{ fontSize: "var(--t105)", color: "var(--txl)", flex: 1, minWidth: 0 }}>
             {running ? "this turn finishes; nothing starts after it" : "nothing starts on its own"}
             {queued && queued.length > 0 ? ` — ${queued.length} held` : ""}
           </span>
@@ -430,25 +430,25 @@ export function Composer({
       {/* queued prompts — waiting to run after the current turn */}
       {queued && queued.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 9 }}>
-          <span style={{ fontSize: 10, letterSpacing: 1, color: "var(--purple)", flex: "none" }}>QUEUED · {queued.length}</span>
+          <span style={{ fontSize: "var(--t10)", letterSpacing: 1, color: "var(--purple)", flex: "none" }}>QUEUED · {queued.length}</span>
           {queued.map((q) => (
             <span key={q.id} title={q.text}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 240, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontSize: 10, letterSpacing: 0.5, padding: "2px 6px" }}>
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 240, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontSize: "var(--t10)", letterSpacing: 0.5, padding: "2px 6px" }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
               {onEjectQueued && (
                 <button onClick={() => onEjectQueued(q.id)} title="Run in a new session"
-                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: 11, lineHeight: 1, padding: 0, flex: "none" }}>↗</button>
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>↗</button>
               )}
               {onCancelQueued && (
                 <button onClick={() => onCancelQueued(q.id)} title="Remove from queue"
-                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: 11, lineHeight: 1, padding: 0, flex: "none" }}>✕</button>
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>✕</button>
               )}
             </span>
           ))}
         </div>
       )}
       {/* context meter — full-width status line above the controls */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, letterSpacing: 1, color: "var(--txl)", marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--t10)", letterSpacing: 1, color: "var(--txl)", marginBottom: 10 }}>
         CONTEXT
         <span style={{ flex: 1, height: 4, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
           <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${ctxPct}%`, background: "linear-gradient(90deg,var(--acc),var(--purple))", transition: "width .4s ease" }} />
@@ -482,7 +482,7 @@ export function Composer({
                 type="button"
                 onClick={() => setImages((p) => p.filter((_, j) => j !== i))}
                 aria-label="Remove image"
-                style={{ position: "absolute", right: -6, top: -6, width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "var(--panel3)", color: "var(--txd)", fontSize: 11, lineHeight: 1, cursor: "pointer" }}
+                style={{ position: "absolute", right: -6, top: -6, width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "var(--panel3)", color: "var(--txd)", fontSize: "var(--t11)", lineHeight: 1, cursor: "pointer" }}
               >
                 ×
               </button>
@@ -595,11 +595,11 @@ export function Composer({
           if (imgs.length) addFiles(imgs);
         }}
       >
-        <span style={{ color: "var(--purple)", fontSize: 13, flex: "none", marginTop: 2 }}>~ ❯</span>
+        <span style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>
         {rsearch !== null && (
           <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
-              <span style={{ flex: "none", fontSize: 9, letterSpacing: 1, color: "var(--purple)" }}>REVERSE-I-SEARCH</span>
+              <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: "var(--purple)" }}>REVERSE-I-SEARCH</span>
               <input
                 autoFocus
                 value={rsearch}
@@ -607,9 +607,9 @@ export function Composer({
                 onKeyDown={rsearchKey}
                 onBlur={() => setRsearch(null)}
                 placeholder="a prompt you wrote before…"
-                style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}
+                style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }}
               />
-              <span style={{ flex: "none", fontSize: 9, color: "var(--txd)" }}>
+              <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txd)" }}>
                 {rhits.length ? `${rpick + 1}/${rhits.length}` : "no match"}
               </span>
             </div>
@@ -621,7 +621,7 @@ export function Composer({
                   onMouseDown={(e) => { e.preventDefault(); takeHistory(p); }}
                   onMouseEnter={() => setRpick(i)}
                   title={p}
-                  style={{ appearance: "none", cursor: "pointer", display: "block", width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === rpick ? "var(--purple)" : "transparent"}`, background: i === rpick ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: i === rpick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, padding: "5px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  style={{ appearance: "none", cursor: "pointer", display: "block", width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === rpick ? "var(--purple)" : "transparent"}`, background: i === rpick ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: i === rpick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 >
                   {p.replace(/\s+/g, " ")}
                 </button>
@@ -637,7 +637,7 @@ export function Composer({
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); takeMention(p); }}
                 onMouseEnter={() => setMentionPick(i)}
-                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === mentionPick ? "var(--acc)" : "transparent"}`, background: i === mentionPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === mentionPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, padding: "5px 10px" }}
+                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === mentionPick ? "var(--acc)" : "transparent"}`, background: i === mentionPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === mentionPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
               >
                 <FileIcon name={p} size={12} />
                 <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}>{p}</span>
@@ -660,7 +660,7 @@ export function Composer({
           onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
           placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
           rows={1}
-          style={{ flex: 1, minWidth: 0, display: "block", maxHeight: 180, overflowY: "auto", resize: "none", background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.5 }}
+          style={{ flex: 1, minWidth: 0, display: "block", maxHeight: 180, overflowY: "auto", resize: "none", background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.5 }}
         />
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
           onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />

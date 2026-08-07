@@ -21,7 +21,7 @@ const seg = (on: boolean): CSSProperties => ({
   flex: 1, appearance: "none", cursor: "pointer", border: 0,
   background: on ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent",
   color: on ? "var(--txb)" : "var(--txd)",
-  fontFamily: "inherit", fontSize: "10px", letterSpacing: "1px", padding: "7px",
+  fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: "1px", padding: "7px",
 });
 
 export function Strip(props: StripProps) {
@@ -112,7 +112,7 @@ export function Strip(props: StripProps) {
         />
       </svg>
       <span
-        style={{ fontSize: "12px", letterSpacing: "3px", color: "var(--acc)" }}
+        style={{ fontSize: "var(--t12)", letterSpacing: "3px", color: "var(--acc)" }}
         className="glow"
       >
         MYSTICAL//ASSISTANT
@@ -138,18 +138,18 @@ export function Strip(props: StripProps) {
             fontFamily: "inherit",
           }}
         >
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "12px", color: "var(--txh)", letterSpacing: ".5px" }}>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", color: "var(--txh)", letterSpacing: ".5px" }}>
             {clockMini}
           </span>
           {fmt12 && (
-            <span style={{ fontSize: "7px", letterSpacing: "1px", color: "var(--txd)" }}>{ampm}</span>
+            <span style={{ fontSize: "var(--t7)", letterSpacing: "1px", color: "var(--txd)" }}>{ampm}</span>
           )}
           <span style={{ width: "1px", height: "11px", background: "color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none" }}></span>
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--warn)" strokeWidth="1.6" strokeLinecap="round" style={{ flex: "none" }}>
             <circle cx="12" cy="12" r="4" />
             <path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" />
           </svg>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "11px", color: "var(--txm)" }}>{wxTempStr}</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--txm)" }}>{wxTempStr}</span>
         </button>
         {clockOpen && (
           <div
@@ -167,30 +167,30 @@ export function Strip(props: StripProps) {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "11px" }}>
-              <span style={{ fontSize: "9px", letterSpacing: "2px", color: "var(--acc)" }}>CLOCK &amp; WEATHER</span>
+              <span style={{ fontSize: "var(--t9)", letterSpacing: "2px", color: "var(--acc)" }}>CLOCK &amp; WEATHER</span>
               <span style={{ flex: 1 }}></span>
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "9px", color: "var(--txf)" }}>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", color: "var(--txf)" }}>
                 {weather.cond} {wxTempStr}
               </span>
             </div>
-            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "var(--txl)", marginBottom: "6px" }}>LOCATION</div>
+            <div style={{ fontSize: "var(--t8)", letterSpacing: "1.5px", color: "var(--txl)", marginBottom: "6px" }}>LOCATION</div>
             <input
               value={city}
               onChange={(e) => setCityInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void submitCity(); }}
               placeholder="City"
               disabled={saving}
-              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: `1px solid ${cityErr ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "12px", padding: "7px 9px" }}
+              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: `1px solid ${cityErr ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t12)", padding: "7px 9px" }}
             />
             {cityErr && (
-              <div style={{ fontSize: "8.5px", color: "var(--err)", marginTop: "4px" }}>{cityErr}</div>
+              <div style={{ fontSize: "var(--t85)", color: "var(--err)", marginTop: "4px" }}>{cityErr}</div>
             )}
-            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>TIME FORMAT</div>
+            <div style={{ fontSize: "var(--t8)", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>TIME FORMAT</div>
             <div style={{ display: "flex", gap: "2px", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
               <button onClick={() => setFmt12(false)} style={seg(!fmt12)}>24H</button>
               <button onClick={() => setFmt12(true)} style={seg(fmt12)}>12H</button>
             </div>
-            <div style={{ fontSize: "8px", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>UNITS</div>
+            <div style={{ fontSize: "var(--t8)", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>UNITS</div>
             <div style={{ display: "flex", gap: "2px", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
               <button onClick={() => void onSetUnit("celsius")} style={seg(weather.unit === "C")}>°C</button>
               <button onClick={() => void onSetUnit("fahrenheit")} style={seg(weather.unit === "F")}>°F</button>
@@ -242,7 +242,7 @@ export function Strip(props: StripProps) {
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span
-              style={{ fontSize: "7.5px", letterSpacing: "1.5px", color: "var(--acc)", flex: "none" }}
+              style={{ fontSize: "var(--t75)", letterSpacing: "1.5px", color: "var(--acc)", flex: "none" }}
             >
               CLAUDE·FM
             </span>
@@ -288,7 +288,7 @@ export function Strip(props: StripProps) {
             <span style={{ flex: 1 }}></span>
             <span
               style={{
-                fontSize: "7.5px",
+                fontSize: "var(--t75)",
                 color: "var(--txf)",
                 flex: "none",
                 fontFamily: "'JetBrains Mono',monospace",
@@ -299,7 +299,7 @@ export function Strip(props: StripProps) {
           </div>
           <div
             style={{
-              fontSize: "10px",
+              fontSize: "var(--t10)",
               color: "var(--tx)",
               whiteSpace: "nowrap",
               overflow: "hidden",

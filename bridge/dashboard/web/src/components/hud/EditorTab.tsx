@@ -165,7 +165,7 @@ const crtHighlight = HighlightStyle.define([
 ]);
 
 const crtTheme = EditorView.theme({
-  "&": { backgroundColor: "transparent", color: "var(--txh)", height: "100%", fontSize: "12px" },
+  "&": { backgroundColor: "transparent", color: "var(--txh)", height: "100%", fontSize: "var(--t12)" },
   "&.cm-focused": { outline: "none" },
   ".cm-content": { fontFamily: "'JetBrains Mono',monospace", caretColor: "var(--acc)" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--acc)" },
@@ -180,7 +180,7 @@ const crtTheme = EditorView.theme({
   ".cm-panels": { backgroundColor: "color-mix(in srgb, var(--panel2) 98%, transparent)", color: "var(--txh)", border: "none" },
   ".cm-panels.cm-panels-bottom": { borderTop: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)" },
   ".cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label": {
-    fontFamily: "'JetBrains Mono',monospace", fontSize: "11px",
+    fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)",
   },
   ".cm-panel.cm-search input": {
     background: "color-mix(in srgb, var(--panel3) 60%, transparent)", color: "var(--txb)",
@@ -196,7 +196,7 @@ const crtTheme = EditorView.theme({
     background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
     border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", color: "var(--txh)",
   },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "'JetBrains Mono',monospace", fontSize: "11px" },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)" },
   ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
     background: "color-mix(in srgb, var(--acc) 16%, transparent)", color: "var(--txb)",
   },
@@ -863,9 +863,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           {view === "search" ? (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>
-                <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)" }}>SEARCH</span>
+                <span style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)" }}>SEARCH</span>
                 <span style={{ flex: 1 }} />
-                <span style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txl)" }}>
+                <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txl)" }}>
                   {grepBusy ? "…" : hits.length ? `${hits.length} in ${hitGroups.length}` : ""}
                 </span>
               </div>
@@ -873,11 +873,11 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 <input autoFocus value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSearchQ(""); } }}
                   placeholder="search in files…"
-                  style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "5px 7px" }} />
+                  style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", padding: "5px 7px" }} />
               </div>
               <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingBottom: 8 }}>
                 {hitGroups.length === 0 && (
-                  <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
+                  <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
                     {searchQ.trim().length < 2 ? "Type at least 2 characters." : grepBusy ? "…" : "No results."}
                   </div>
                 )}
@@ -886,14 +886,14 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                   <div key={path}>
                     <div title={path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px 3px", fontFamily: "'JetBrains Mono',monospace" }}>
                       <FileIcon name={path} size={12} />
-                      <span style={{ fontSize: 10.5, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{path.split("/").pop()}</span>
-                      <span style={{ fontSize: 9, color: "var(--txl)", flex: "none" }}>{list.length}</span>
+                      <span style={{ fontSize: "var(--t105)", color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{path.split("/").pop()}</span>
+                      <span style={{ fontSize: "var(--t9)", color: "var(--txl)", flex: "none" }}>{list.length}</span>
                     </div>
                     {list.map((h) => (
                       <button key={`${h.line}:${h.text}`} className="trow" onClick={() => openFile(h.path, h.line)} title={`${h.path}:${h.line}`}
                         style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "baseline", gap: 7, padding: "2px 8px 2px 22px" }}>
-                        <span style={{ fontSize: 9, color: "var(--txg)", flex: "none" }}>{h.line}</span>
-                        <span style={{ fontSize: 10, color: "var(--txm)", whiteSpace: "pre", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{h.text.trim()}</span>
+                        <span style={{ fontSize: "var(--t9)", color: "var(--txg)", flex: "none" }}>{h.line}</span>
+                        <span style={{ fontSize: "var(--t10)", color: "var(--txm)", whiteSpace: "pre", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{h.text.trim()}</span>
                       </button>
                     ))}
                   </div>
@@ -904,24 +904,24 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           ) : (
           <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>
-            <span style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>EXPLORER · {paths.length}</span>
+            <span style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>EXPLORER · {paths.length}</span>
             <span style={{ flex: 1 }} />
             <div style={{ position: "relative", flex: "none" }}>
               <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
-                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, padding: "3px 7px", maxWidth: 150 }}>
+                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", padding: "3px 7px", maxWidth: 150 }}>
                 <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch || "—"}</span>
                 <span style={{ color: "var(--purple-g)", flex: "none" }}>▾</span>
               </button>
               {menuOpen && (
                 <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 0, zIndex: 30, minWidth: 210, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
-                  <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
+                  <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
                   {branchOpts.map((b) => (
                     <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
-                      style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "7px 9px", textAlign: "left" }}>
+                      style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", padding: "7px 9px", textAlign: "left" }}>
                       <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
                       <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
-                      {b.hasWorktree && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
+                      {b.hasWorktree && <span style={{ fontSize: "var(--t75)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
                       {b.on && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
                     </button>
                   ))}
@@ -946,19 +946,19 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           </div>
           {edit && (
             <div style={{ padding: "0 8px 8px", flex: "none" }}>
-              <div style={{ fontSize: 8, letterSpacing: 1.2, color: "var(--txl)", marginBottom: 4 }}>
+              <div style={{ fontSize: "var(--t8)", letterSpacing: 1.2, color: "var(--txl)", marginBottom: 4 }}>
                 {edit.mode === "rename" ? "RENAME" : edit.mode === "newdir" ? "NEW FOLDER" : "NEW FILE"}
               </div>
               <input autoFocus value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })}
                 onKeyDown={(e) => { if (e.key === "Enter") submitEdit(); else if (e.key === "Escape") { e.stopPropagation(); setEdit(null); } }}
                 onBlur={() => setEdit(null)} placeholder="path/name"
-                style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "5px 7px" }} />
+                style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", padding: "5px 7px" }} />
             </div>
           )}
           <div className="mscroll" onContextMenu={(e) => onRowCtx(e, "", true)} {...dragTargetProps("")}
             style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingBottom: 8, outline: dropDir === "" ? "1px dashed color-mix(in srgb, var(--acc) 45%, transparent)" : "none", outlineOffset: -2 }}>
             {rows.length === 0 && (
-              <div style={{ fontSize: 11, color: "var(--txl)", padding: "8px 10px" }}>No files on ⎇ {branch || "this branch"}.</div>
+              <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: "8px 10px" }}>No files on ⎇ {branch || "this branch"}.</div>
             )}
             {/* vskip-row: the tree is thousands of rows once expanded, and rows
                 hover in CSS (.trow) — tracking the hovered one in state re-rendered
@@ -969,9 +969,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 onContextMenu={(e) => onRowCtx(e, r.path, true)} title={r.path}
                 {...dragSourceProps(r.path)} {...dragTargetProps(r.path)}
                 style={{ width: "100%", appearance: "none", border: 0, background: dropDir === r.path ? "color-mix(in srgb, var(--acc) 16%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
-                <span style={{ fontSize: 8, color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
+                <span style={{ fontSize: "var(--t8)", color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#7fa8a0" strokeWidth="1.7" style={{ flex: "none" }}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
-                <span style={{ fontSize: 11, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.name}</span>
+                <span style={{ fontSize: "var(--t11)", color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.name}</span>
               </button>
             ) : (
               <button key={r.key} className="trow" onClick={() => peekTab(r.path)} onDoubleClick={() => openTab(r.path)}
@@ -980,8 +980,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 {...dragSourceProps(r.path)} {...dragTargetProps(parentOf(r.path))}
                 style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === open ? "var(--acc)" : "transparent"}`, background: r.path === open ? "color-mix(in srgb, var(--acc) 8%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
                 <FileIcon name={r.name} />
-                <span style={{ fontSize: 11, color: r.path === open ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>{r.name}</span>
-                {r.path === open && dirty && <span style={{ fontSize: 12, color: "var(--warn)", flex: "none", lineHeight: 1 }}>●</span>}
+                <span style={{ fontSize: "var(--t11)", color: r.path === open ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>{r.name}</span>
+                {r.path === open && dirty && <span style={{ fontSize: "var(--t12)", color: "var(--warn)", flex: "none", lineHeight: 1 }}>●</span>}
               </button>
             ))}
             </div>
@@ -1008,10 +1008,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                     <span onClick={() => setOpen(p)} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                       <FileIcon name={name} size={13} />
                       {/* italic = the preview tab, the one the next single click replaces */}
-                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontStyle: p === peek ? "italic" : "normal", color: on ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", fontStyle: p === peek ? "italic" : "normal", color: on ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
                     </span>
                     <button onClick={() => closeTab(p)} title="close" {...hp(`tabx:${p}`)}
-                      style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", flex: "none", lineHeight: 1, padding: "1px 2px", fontFamily: "'JetBrains Mono',monospace", fontSize: mod ? 12 : 10, color: mod ? "var(--warn)" : hov === `tabx:${p}` ? "var(--txb)" : "var(--txd)" }}>
+                      style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", flex: "none", lineHeight: 1, padding: "1px 2px", fontFamily: "'JetBrains Mono',monospace", fontSize: mod ? "var(--t12)" : "var(--t10)", color: mod ? "var(--warn)" : hov === `tabx:${p}` ? "var(--txb)" : "var(--txd)" }}>
                       {mod && hov !== `tabx:${p}` ? "●" : "✕"}
                     </button>
                   </div>
@@ -1025,7 +1025,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 {/* hidden, not unmounted, while previewing — CodeMirror keeps the buffer (and its unsaved edits) */}
                 <div ref={hostRef} className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", visibility: preview === null ? "visible" : "hidden" }} />
                 {preview !== null && (
-                  <div className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", padding: "14px 18px", fontSize: 12.5, lineHeight: 1.65, color: "var(--tx)" }}>
+                  <div className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", padding: "14px 18px", fontSize: "var(--t125)", lineHeight: 1.65, color: "var(--tx)" }}>
                     <Markdown>{preview}</Markdown>
                   </div>
                 )}
@@ -1035,7 +1035,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 <img src={meta.image} alt={open ?? ""} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
               </div>
             ) : (
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, color: "var(--txd)" }}>
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txd)" }}>
                 {!open ? "Select a file to edit."
                   : !meta ? "Loading…"
                   : !meta.ok ? (meta.error || "Can't open this file.")
@@ -1045,7 +1045,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
               </div>
             )}
           </div>
-          <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5 }}>
+          <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)" }}>
             <span style={{ background: dirty ? "var(--warn)" : "var(--acc)", color: "var(--acc-on)", fontWeight: 700, letterSpacing: 1.5, padding: "5px 12px", flex: "none" }}>{saving ? "SAVING" : dirty ? "UNSAVED" : preview !== null ? "VIEW" : "EDIT"}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 12px", color: "var(--txm)", flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--acc) 5%, transparent)" }}>
               <span style={{ color: "var(--purple)", flex: "none" }}>⎇ {branch || "—"}</span>
@@ -1057,23 +1057,23 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           </div>
           <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", padding: "6px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
             <button onClick={() => void save()} disabled={!editable || saving || !dirty} title="save (Ctrl-S / :w)" {...hp("save")}
-              style={{ appearance: "none", cursor: editable && dirty && !saving ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: hov === "save" && editable && dirty ? "color-mix(in srgb, var(--ok) 14%, transparent)" : "transparent", color: "var(--ok)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px", opacity: editable && dirty && !saving ? 1 : 0.45 }}>▸ SAVE</button>
+              style={{ appearance: "none", cursor: editable && dirty && !saving ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: hov === "save" && editable && dirty ? "color-mix(in srgb, var(--ok) 14%, transparent)" : "transparent", color: "var(--ok)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", opacity: editable && dirty && !saving ? 1 : 0.45 }}>▸ SAVE</button>
             {editable && (
               <button onClick={() => void format()} disabled={fmting || meta?.formatter === false}
                 title={meta?.formatter === false ? "no formatter installed for this file type" : "format (Shift-Alt-F)"} {...hp("fmt")}
-                style={{ appearance: "none", cursor: fmting || meta?.formatter === false ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "fmt" && !fmting && meta?.formatter !== false ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px", opacity: fmting || meta?.formatter === false ? 0.45 : 1 }}>
+                style={{ appearance: "none", cursor: fmting || meta?.formatter === false ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "fmt" && !fmting && meta?.formatter !== false ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", opacity: fmting || meta?.formatter === false ? 0.45 : 1 }}>
                 {fmting ? "⋯ FORMATTING" : "⌘ FORMAT"}</button>
             )}
             {editable && isMd && (
               <button onClick={() => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null))}
                 title={preview === null ? "preview rendered markdown" : "back to the editor"} {...hp("mdv")}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: hov === "mdv" || preview !== null ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 10px" }}>
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: hov === "mdv" || preview !== null ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px" }}>
                 {preview === null ? "◧ VIEW" : "✎ EDIT"}</button>
             )}
             <span style={{ color: "var(--acc)", flex: "none" }}>:</span>
             <input value={cmd} onChange={(e) => setCmd(e.target.value)} onKeyDown={onCmdKey}
               placeholder="w · wq · fmt"
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5 }} />
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)" }} />
           </div>
         </div>
 
@@ -1083,17 +1083,17 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             <div onClick={() => setPalQ(null)} style={{ position: "absolute", inset: 0, zIndex: 40, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }} />
             <div style={{ position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 41, width: "min(520px, 92%)", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
-                <span style={{ color: "var(--acc)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, flex: "none" }}>
+                <span style={{ color: "var(--acc)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", flex: "none" }}>
                   {palMode === "@" ? "@" : palMode === ">" ? ">" : "⌕"}
                 </span>
                 <input autoFocus value={palQ} onChange={(e) => setPalQ(e.target.value)} onKeyDown={onPalKey}
                   placeholder="file name · @symbol in this file · >command"
-                  style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }} />
-                <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{palRows.length}</span>
+                  style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }} />
+                <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{palRows.length}</span>
               </div>
               <div className="mscroll" style={{ maxHeight: 300, overflowY: "auto" }}>
                 {palRows.length === 0 && (
-                  <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace" }}>
+                  <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace" }}>
                     {palMode === "@" && !open ? "Open a file first — @ lists its functions." : "No matches."}
                   </div>
                 )}
@@ -1101,10 +1101,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                   <button key={`${it.path}:${it.line ?? 0}:${i}:${it.label}`} onClick={() => runPal(it)}
                     onMouseEnter={() => setPalIdx(i)}
                     style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${i === palIdx ? "var(--acc)" : "transparent"}`, background: i === palIdx ? "color-mix(in srgb, var(--acc) 9%, transparent)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "baseline", gap: 8, padding: "5px 10px" }}>
-                    <span style={{ fontSize: 11, color: i === palIdx ? "var(--txb)" : "var(--txh)", flex: "none", maxWidth: "60%", whiteSpace: "pre", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</span>
+                    <span style={{ fontSize: "var(--t11)", color: i === palIdx ? "var(--txb)" : "var(--txh)", flex: "none", maxWidth: "60%", whiteSpace: "pre", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</span>
                     {/* a command's `sub` is its key: right-aligned like VS Code, and
                         never reversed the way a path is */}
-                    <span style={{ fontSize: 9.5, color: "var(--txl)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: it.run ? "ltr" : "rtl", textAlign: it.run ? "right" : "left" }}>{it.sub}</span>
+                    <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: it.run ? "ltr" : "rtl", textAlign: it.run ? "right" : "left" }}>{it.sub}</span>
                   </button>
                 ))}
               </div>

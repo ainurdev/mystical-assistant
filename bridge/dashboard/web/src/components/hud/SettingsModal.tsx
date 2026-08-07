@@ -10,9 +10,11 @@ import {
   type Weather,
 } from "../../api";
 import {
-  autoTextScale,
+  autoBaseFont,
   AURORA_KEYS,
+  BASE_FONTS,
   CLAUDE_KEYS,
+  FONTS,
   isLight,
   THEME_DEFS,
   themeCompensator,
@@ -72,15 +74,25 @@ export interface SettingsModalProps {
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
-// The first three tabs are pure taste — how the HUD looks, what plays while it
-// works, what surrounds it. The last two are what a run and the bridge do.
+// A category is "what were you trying to change", not "which file holds it".
+// The first four are taste — how the HUD looks, what plays while it works, how
+// it behaves, what surrounds it. NOTIFICATIONS is when it interrupts you. The
+// last four are what a run, an account and the bridge do.
+//
+// NOTIFICATIONS used to be a block inside SYSTEM, between the HTTP inspector
+// and the updater, which is where you look for it only if you already know it
+// is there; likewise the prompt-box and transcript switches sat under SESSION
+// among the model/mode/effort knobs they have nothing to do with.
 
-type Tab = "appearance" | "indicator" | "ambient" | "session" | "ai" | "accounts" | "system";
+type Tab = "appearance" | "indicator" | "interface" | "ambient" | "notifications"
+  | "session" | "ai" | "accounts" | "system";
 
 const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot" },
   { key: "indicator", label: "INDICATOR", hint: "what plays while working" },
+  { key: "interface", label: "INTERFACE", hint: "prompt box · transcript" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM" },
+  { key: "notifications", label: "NOTIFY", hint: "desktop · a sound per event" },
   { key: "session", label: "SESSION", hint: "model · mode · effort" },
   { key: "ai", label: "AI", hint: "extras that spend model calls" },
   { key: "accounts", label: "ACCOUNTS", hint: "logins · usage-limit fallback" },
@@ -99,14 +111,13 @@ const INDICATOR_TABS: { key: Indicator; label: string; blurb: string }[] = [
   { key: "tiles", label: "TILES", blurb: "piano tiles — clear each falling note on the key that plays it" },
 ];
 
-// 0 = AUTO (viewport-derived); the rest are fixed whole-HUD zoom factors.
-const TEXT_SCALES: { label: string; value: string }[] = [
-  { label: "AUTO", value: "0" },
-  { label: "90%", value: "0.9" },
-  { label: "100%", value: "1" },
-  { label: "110%", value: "1.1" },
-  { label: "125%", value: "1.25" },
-];
+// 0 = AUTO (viewport-derived); the rest are the base the type scale hangs off.
+const BASE_FONT_OPTS: { label: string; value: string }[] = BASE_FONTS.map((n) => ({
+  label: n === 0 ? "AUTO" : `${n}PX`,
+  value: String(n),
+}));
+
+const FONT_OPTS = FONTS.map((f) => ({ label: f.label, value: f.key }));
 
 const TONE_OPTS = (Object.keys(TONES) as ToneKey[]).map((k) => ({ label: TONES[k].label, value: k }));
 
@@ -122,7 +133,7 @@ const field = {
   outline: "none",
   color: "var(--txb)",
   fontFamily: "inherit",
-  fontSize: 10,
+  fontSize: "var(--t10)",
   letterSpacing: 1,
   padding: "6px 8px",
 };
@@ -130,16 +141,16 @@ const field = {
 const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 10, marginTop: 11 };
 // Several controls abreast, wrapping onto a second line when the panel narrows.
 const LINE: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 12, marginTop: 11 };
-const CAPTION: CSSProperties = { fontSize: 9.5, letterSpacing: 1, color: "var(--txd)", flex: "none", width: 62 };
+const CAPTION: CSSProperties = { fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txd)", flex: "none", width: 62 };
 const CARD: CSSProperties = { border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "12px 13px" };
 const KV: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between" };
-const KEY_TX: CSSProperties = { fontSize: 10, letterSpacing: 1, color: "var(--txd)" };
-const NOTE: CSSProperties = { fontSize: 9.5, color: "var(--txl)", marginTop: 11, lineHeight: 1.7 };
+const KEY_TX: CSSProperties = { fontSize: "var(--t10)", letterSpacing: 1, color: "var(--txd)" };
+const NOTE: CSSProperties = { fontSize: "var(--t95)", color: "var(--txl)", marginTop: 11, lineHeight: 1.7 };
 
 /** Section caption above a settings block. */
 function Label({ children, top }: { children: ReactNode; top?: boolean }) {
   return (
-    <div style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)", margin: top ? "20px 0 11px" : "0 0 11px" }}>
+    <div style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", margin: top ? "20px 0 11px" : "0 0 11px" }}>
       {children}
     </div>
   );
@@ -162,10 +173,10 @@ function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
         fontFamily: "inherit",
       }}
     >
-      <span style={{ fontSize: 9, letterSpacing: 1, padding: "3px 10px", background: on ? "var(--acc)" : "transparent", color: on ? "var(--acc-on)" : "var(--txl)" }}>
+      <span style={{ fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", background: on ? "var(--acc)" : "transparent", color: on ? "var(--acc-on)" : "var(--txl)" }}>
         ON
       </span>
-      <span style={{ fontSize: 9, letterSpacing: 1, padding: "3px 10px", background: on ? "transparent" : "color-mix(in srgb, var(--acc) 18%, transparent)", color: on ? "var(--txl)" : "var(--txb)" }}>
+      <span style={{ fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", background: on ? "transparent" : "color-mix(in srgb, var(--acc) 18%, transparent)", color: on ? "var(--txl)" : "var(--txb)" }}>
         OFF
       </span>
     </button>
@@ -186,7 +197,7 @@ function Volume({ value, disabled, onChange }: { value: number; disabled?: boole
         title={`Volume ${Math.round(value * 100)}%`}
         style={{ width: 96, flex: "none", accentColor: "var(--acc)" }}
       />
-      <span style={{ fontSize: 9.5, color: "var(--txl)", flex: "none", width: 30, textAlign: "right", fontFamily: "'JetBrains Mono',monospace" }}>
+      <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none", width: 30, textAlign: "right", fontFamily: "'JetBrains Mono',monospace" }}>
         {Math.round(value * 100)}%
       </span>
     </>
@@ -198,12 +209,12 @@ function Segmented<T extends string>({
   options,
   value,
   onPick,
-  size = 10,
+  size = "var(--t10)",
 }: {
   options: { label: string; value: T }[];
   value: T;
   onPick: (v: T) => void;
-  size?: number;
+  size?: string;
 }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
@@ -287,7 +298,7 @@ function ListRow({ on, children, onClick }: { on?: boolean; children: ReactNode;
         display: "block", width: "100%", textAlign: "left", appearance: "none", cursor: "pointer",
         border: 0, borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
         background: on ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent",
-        color: on ? "var(--txb)" : "var(--tx)", fontFamily: "inherit", fontSize: 10,
+        color: on ? "var(--txb)" : "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)",
         letterSpacing: .5, padding: "7px 9px", lineHeight: 1.4,
       }}
     >
@@ -340,7 +351,7 @@ function PackBrowser({ cat, volume, onPick }: {
           <div style={LIST}>
             {groups.map((g) => (
               <div key={g.cat}>
-                <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", padding: "6px 9px 3px" }}>
+                <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", padding: "6px 9px 3px" }}>
                   {g.cat === cat ? `${g.cat} — written for this` : g.cat}
                 </div>
                 {g.sounds.map((s) => {
@@ -379,7 +390,7 @@ function PackBrowser({ cat, volume, onPick }: {
         {hits.map((p) => (
           <ListRow key={p.name} onClick={() => setPack(p)}>
             {p.display_name}
-            <span style={{ color: "var(--txl)", fontSize: 9 }}>
+            <span style={{ color: "var(--txl)", fontSize: "var(--t9)" }}>
               {"  "}· {p.sound_count ?? "?"} sounds{p.categories.includes(cat) ? "" : " · no clip for this event"}
             </span>
           </ListRow>
@@ -414,11 +425,11 @@ function SoundBoard({ settings, onPatch }: {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={KEY_TX}>{meta.label}</div>
-                <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 3 }}>{meta.hint}</div>
+                <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 3 }}>{meta.hint}</div>
               </div>
               <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{
-                  fontSize: 9, letterSpacing: .5, maxWidth: 150, overflow: "hidden",
+                  fontSize: "var(--t9)", letterSpacing: .5, maxWidth: 150, overflow: "hidden",
                   textOverflow: "ellipsis", whiteSpace: "nowrap",
                   color: cur ? "var(--acc)" : "var(--txl)",
                 }}>
@@ -431,7 +442,7 @@ function SoundBoard({ settings, onPatch }: {
             {on && (
               <div style={{ marginTop: 9 }}>
                 <Segmented
-                  size={9}
+                  size="var(--t9)"
                   options={[
                     { label: "DEFAULT", value: "" },
                     { label: "OFF", value: "off" },
@@ -565,7 +576,7 @@ function ThemeCardGrid({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: 10.5,
+                    fontSize: "var(--t105)",
                     letterSpacing: 1,
                     color: nameC,
                     fontFamily: pfont,
@@ -578,7 +589,7 @@ function ThemeCardGrid({
                 </div>
                 <div
                   style={{
-                    fontSize: 8,
+                    fontSize: "var(--t8)",
                     letterSpacing: 0.4,
                     color: descC,
                     marginTop: 1,
@@ -594,7 +605,7 @@ function ThemeCardGrid({
               {on && (
                 <span
                   style={{
-                    fontSize: 7,
+                    fontSize: "var(--t7)",
                     letterSpacing: 1,
                     color: chipC,
                     background: sw,
@@ -668,8 +679,8 @@ function CrtToggles({
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: "var(--txh)", letterSpacing: 0.5 }}>{g.label}</div>
-            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 2 }}>{g.desc}</div>
+            <div style={{ fontSize: "var(--t12)", color: "var(--txh)", letterSpacing: 0.5 }}>{g.label}</div>
+            <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 2 }}>{g.desc}</div>
           </div>
           <Switch on={settings[g.key]} onClick={() => onToggle(g.key)} />
         </div>
@@ -706,7 +717,7 @@ function IndicatorPicker({
                 background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent",
                 color: on ? "var(--txb)" : "var(--txd)",
                 fontFamily: "inherit",
-                fontSize: 9.5,
+                fontSize: "var(--t95)",
                 letterSpacing: 1.5,
                 padding: "8px 4px",
               }}
@@ -718,7 +729,7 @@ function IndicatorPicker({
       </div>
 
       <div style={{ padding: "12px 13px" }}>
-        <div style={{ fontSize: 9.5, color: "var(--txl)" }}>{active.blurb}</div>
+        <div style={{ fontSize: "var(--t95)", color: "var(--txl)" }}>{active.blurb}</div>
 
         {settings.indicator === "nyan" && (
           <>
@@ -750,8 +761,8 @@ function IndicatorPicker({
 
             <div style={ROW}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: "var(--txh)", letterSpacing: 0.5 }}>EXTRA ANIMATIONS</div>
-                <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 2 }}>
+                <div style={{ fontSize: "var(--t11)", color: "var(--txh)", letterSpacing: 0.5 }}>EXTRA ANIMATIONS</div>
+                <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 2 }}>
                   fly the cat, draw nyan.cat's rainbow trail + pixel stars
                 </div>
               </div>
@@ -912,7 +923,7 @@ function WeatherCard({
                 outline: "none",
                 color: "var(--txb)",
                 fontFamily: "inherit",
-                fontSize: 11.5,
+                fontSize: "var(--t115)",
                 padding: "7px 9px",
               }}
             />
@@ -926,7 +937,7 @@ function WeatherCard({
                 background: "color-mix(in srgb, var(--acc) 8%, transparent)",
                 color: "var(--tx)",
                 fontFamily: "inherit",
-                fontSize: 10,
+                fontSize: "var(--t10)",
                 letterSpacing: 1.5,
                 padding: "7px 13px",
                 flex: "none",
@@ -947,7 +958,7 @@ function WeatherCard({
           />
         </Cell>
       </div>
-      {err && <div style={{ fontSize: 9, color: "var(--err)", marginTop: 5 }}>{err}</div>}
+      {err && <div style={{ fontSize: "var(--t9)", color: "var(--err)", marginTop: 5 }}>{err}</div>}
     </div>
   );
 }
@@ -965,20 +976,20 @@ function UpdatePanel({ onFeed }: { onFeed: (texts: string[]) => void }) {
     <div style={CARD}>
       <div style={KV}>
         <span style={KEY_TX}>BRANCH</span>
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--tx)" }}>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
           {info ? `⎇ ${info.branch || "—"}` : "…"}
         </span>
       </div>
       <div style={{ ...KV, marginTop: 10 }}>
         <span style={KEY_TX}>UPSTREAM</span>
-        <span style={{ fontSize: 10.5, color: info && info.behind > 0 ? "var(--warn)" : "var(--ok)" }}>
+        <span style={{ fontSize: "var(--t105)", color: info && info.behind > 0 ? "var(--warn)" : "var(--ok)" }}>
           {!info ? "…" : info.behind > 0 ? `${info.behind} COMMIT${info.behind === 1 ? "" : "S"} BEHIND` : "UP TO DATE"}
         </span>
       </div>
       {info && info.dirty > 0 && (
         <div style={{ ...KV, marginTop: 10 }}>
           <span style={KEY_TX}>WORKING TREE</span>
-          <span style={{ fontSize: 10.5, color: "var(--warn)" }}>{info.dirty} UNCOMMITTED</span>
+          <span style={{ fontSize: "var(--t105)", color: "var(--warn)" }}>{info.dirty} UNCOMMITTED</span>
         </div>
       )}
       {info && info.behind > 0 && (
@@ -1040,7 +1051,7 @@ function TagsPanel() {
   }
 
   if (!tags.length)
-    return <div style={CARD}><span style={{ fontSize: 10.5, color: "var(--txl)" }}>No tags yet — they arrive with the first named session.</span></div>;
+    return <div style={CARD}><span style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>No tags yet — they arrive with the first named session.</span></div>;
 
   return (
     <div style={CARD}>
@@ -1056,25 +1067,25 @@ function TagsPanel() {
                 if (e.key === "Escape") setEditing(null);
               }}
               onBlur={() => setEditing(null)}
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, padding: "3px 7px", outline: "none" }}
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 7px", outline: "none" }}
             />
           ) : (
             <>
-              <span style={{ fontSize: 11, color: "var(--purple-d)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: "var(--t11)", color: "var(--purple-d)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {t.tag}
               </span>
-              <span style={{ fontSize: 9.5, color: "var(--txl)", flex: "none" }}>
+              <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none" }}>
                 {t.count} session{t.count === 1 ? "" : "s"}
               </span>
               <button
                 onClick={() => { setEditing(t.tag); setValue(t.tag); }}
                 title="rename — an existing name merges the two"
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", flex: "none" }}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
               >RENAME</button>
               <button
                 onClick={() => void commit(t.tag)}
                 title={`remove "${t.tag}" from all ${t.count} session${t.count === 1 ? "" : "s"}`}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "3px 8px", flex: "none" }}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
               >✕</button>
             </>
           )}
@@ -1126,18 +1137,18 @@ function AiPanel() {
         {rows.map((f) => (
           <div key={f.key} style={CARD}>
             <div style={KV}>
-              <span style={{ fontSize: 11, letterSpacing: 1, color: "var(--txb)" }}>{f.label}</span>
+              <span style={{ fontSize: "var(--t11)", letterSpacing: 1, color: "var(--txb)" }}>{f.label}</span>
               <Switch on={f.enabled} onClick={() => void (busy ? null : toggle(f))} />
             </div>
-            <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 7, lineHeight: 1.7 }}>
+            <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 7, lineHeight: 1.7 }}>
               {f.hint}
             </div>
             {f.about && (
-              <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 6, lineHeight: 1.8 }}>
+              <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 6, lineHeight: 1.8 }}>
                 {f.about}
               </div>
             )}
-            <div style={{ fontSize: 9, color: "var(--txd)", marginTop: 6, letterSpacing: 0.5 }}>
+            <div style={{ fontSize: "var(--t9)", color: "var(--txd)", marginTop: 6, letterSpacing: 0.5 }}>
               costs {f.cost}
             </div>
           </div>
@@ -1235,7 +1246,7 @@ function AccountsPanel() {
       <div style={CARD}>
         {rows === null && <div style={{ ...KEY_TX }}>LOADING…</div>}
         {rows?.length === 0 && (
-          <div style={{ fontSize: 10.5, color: "var(--txl)" }}>
+          <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
             No login found. Run <span style={{ color: "var(--tx)" }}>claude /login</span> in a
             terminal.
           </div>
@@ -1246,7 +1257,7 @@ function AccountsPanel() {
               <span style={{ ...KEY_TX, color: "var(--acc)", flex: "none" }}>A{a.slot}</span>
               <span
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--t11)",
                   color: a.disabled ? "var(--txd)" : "var(--tx)",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -1260,7 +1271,7 @@ function AccountsPanel() {
             <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
               <span
                 style={{
-                  fontSize: 10.5,
+                  fontSize: "var(--t105)",
                   color: a.left === null ? "var(--txd)" : a.left <= 1 ? "var(--warn)" : "var(--ok)",
                 }}
               >
@@ -1301,7 +1312,7 @@ function AccountsPanel() {
             <MiniBtn disabled={busy} onClick={() => void act("add")}>
               COPY CURRENT LOGIN
             </MiniBtn>
-            {err && <span style={{ fontSize: 10, color: "var(--warn)" }}>{err}</span>}
+            {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
           </div>
         )}
       </div>
@@ -1317,7 +1328,7 @@ function AccountsPanel() {
       <Label>FREE AGENTS</Label>
       <div style={CARD}>
         {!free.installed && (
-          <div style={{ fontSize: 10.5, color: "var(--txl)", marginBottom: 13 }}>
+          <div style={{ fontSize: "var(--t105)", color: "var(--txl)", marginBottom: 13 }}>
             <span style={{ color: "var(--warn)" }}>opencode is not installed</span> — the rungs below
             stay unusable until it is. Install it with{" "}
             <code style={CODE}>curl -fsSL https://opencode.ai/install | bash</code>
@@ -1346,7 +1357,7 @@ function AccountsPanel() {
 
 const CODE: CSSProperties = {
   fontFamily: "'JetBrains Mono',monospace",
-  fontSize: 9.5,
+  fontSize: "var(--t95)",
   color: "var(--tx)",
   background: "var(--panel3)",
   padding: "1px 5px",
@@ -1360,7 +1371,7 @@ const FIELD: CSSProperties = {
   outline: "none",
   color: "var(--txb)",
   fontFamily: "inherit",
-  fontSize: 11,
+  fontSize: "var(--t11)",
   padding: "6px 8px",
 };
 
@@ -1395,7 +1406,7 @@ function LoginFlow({
 
   return (
     <div style={{ marginTop: 13, borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", paddingTop: 12 }}>
-      <div style={{ fontSize: 10.5, color: "var(--txl)", lineHeight: 1.7 }}>
+      <div style={{ fontSize: "var(--t105)", color: "var(--txl)", lineHeight: 1.7 }}>
         1 · Sign in as the account you want to add —{" "}
         <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--acc)" }}>
           open the sign-in page
@@ -1418,7 +1429,7 @@ function LoginFlow({
           CANCEL
         </MiniBtn>
       </div>
-      {err && <div style={{ fontSize: 10, color: "var(--warn)", marginTop: 8 }}>{err}</div>}
+      {err && <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 8 }}>{err}</div>}
     </div>
   );
 }
@@ -1451,9 +1462,9 @@ function FreeAgentRow({
   return (
     <div style={{ marginTop: first ? 0 : 13 }}>
       <div style={KV}>
-        <span style={{ fontSize: 11, color: p.ready ? "var(--tx)" : "var(--txl)" }}>{p.label}</span>
+        <span style={{ fontSize: "var(--t11)", color: p.ready ? "var(--tx)" : "var(--txl)" }}>{p.label}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
-          <span style={{ fontSize: 10, color: p.ready ? "var(--ok)" : "var(--txd)" }}>
+          <span style={{ fontSize: "var(--t10)", color: p.ready ? "var(--ok)" : "var(--txd)" }}>
             {p.source === "env" ? "FROM ENV" : state}
           </span>
           {p.source !== "env" && (
@@ -1485,7 +1496,7 @@ function FreeAgentRow({
         </div>
       )}
       {!open && p.ready && (
-        <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 4 }}>{p.model}</div>
+        <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 4 }}>{p.model}</div>
       )}
     </div>
   );
@@ -1516,7 +1527,7 @@ function MiniBtn({
         background: hov && !disabled ? `color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} 10%, transparent)` : "transparent",
         color: disabled ? "var(--txd)" : danger ? "var(--warn)" : "var(--tx)",
         fontFamily: "inherit",
-        fontSize: 9.5,
+        fontSize: "var(--t95)",
         letterSpacing: 1,
         padding: "4px 9px",
         opacity: disabled ? 0.5 : 1,
@@ -1574,7 +1585,7 @@ function ProfilesPanel({
   };
 
   const btn = (accent: string): CSSProperties => ({
-    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 8.5,
+    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t85)",
     letterSpacing: 1, padding: "5px 10px", flex: "none",
     border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
     background: "transparent", color: accent,
@@ -1584,15 +1595,15 @@ function ProfilesPanel({
     <>
       <div style={CARD}>
         {profiles.length === 0 && (
-          <div style={{ fontSize: 10, color: "var(--txd)" }}>
+          <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
             No profiles yet — set the knobs above and this session&apos;s tools, then save them under a name.
           </div>
         )}
         {profiles.map((p, i) => (
           <div key={p.id}
             style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? "1px solid color-mix(in srgb, var(--acc) 8%, transparent)" : undefined }}>
-            <span style={{ fontSize: 12, color: "var(--txb)", flex: "none" }}>{p.name}</span>
-            <span style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span style={{ fontSize: "var(--t12)", color: "var(--txb)", flex: "none" }}>{p.name}</span>
+            <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {describe(p)}
             </span>
             <span style={{ flex: 1 }} />
@@ -1607,7 +1618,7 @@ function ProfilesPanel({
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") save(); }}
             placeholder="name this setup"
-            style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, padding: "6px 9px" }}
+            style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }}
           />
           <button onClick={save} style={btn("var(--acc)")}>SAVE CURRENT</button>
         </div>
@@ -1644,7 +1655,7 @@ export function SettingsModal(props: SettingsModalProps) {
   } = props;
 
   const [tab, setTab] = useState<Tab>("appearance");
-  const autoPct = Math.round(autoTextScale(window.innerWidth, window.innerHeight) * 100);
+  const autoBase = autoBaseFont(window.innerWidth, window.innerHeight);
   const [escHover, setEscHover] = useState(false);
   const [replayHover, setReplayHover] = useState(false);
   const [doneHover, setDoneHover] = useState(false);
@@ -1705,11 +1716,11 @@ export function SettingsModal(props: SettingsModalProps) {
             <circle cx="12" cy="12" r="3.2" />
             <path d="M12 3.3v2.4M12 18.3v2.4M20.7 12h-2.4M5.7 12H3.3M18.16 5.84l-1.7 1.7M7.54 16.46l-1.7 1.7M18.16 18.16l-1.7-1.7M7.54 7.54l-1.7-1.7" />
           </svg>
-          <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>
+          <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>
             CONFIGURE
           </span>
           <span
-            style={{ fontSize: 15, color: "var(--txb)", letterSpacing: ".5px" }}
+            style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}
             className="glow"
           >
             DASHBOARD SETTINGS
@@ -1726,7 +1737,7 @@ export function SettingsModal(props: SettingsModalProps) {
               background: escHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
               color: "var(--txm)",
               fontFamily: "inherit",
-              fontSize: 9.5,
+              fontSize: "var(--t95)",
               letterSpacing: 1.5,
               padding: "4px 10px",
             }}
@@ -1735,44 +1746,25 @@ export function SettingsModal(props: SettingsModalProps) {
           </button>
         </div>
 
-        {/* Category rail + the active category's panel */}
-        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-          <div
-            style={{
-              width: 158,
-              flex: "none",
-              borderRight: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
-              padding: "10px 0",
-              display: "flex",
-              flexDirection: "column",
-              gap: 1,
-            }}
-          >
-            {TABS.map((t) => {
-              const on = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  style={{
-                    appearance: "none",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    border: 0,
-                    borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
-                    background: on ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent",
-                    color: on ? "var(--txb)" : "var(--txd)",
-                    fontFamily: "inherit",
-                    padding: "9px 12px",
-                  }}
-                >
-                  <div style={{ fontSize: 10, letterSpacing: 1.5 }}>{t.label}</div>
-                  <div style={{ fontSize: 8.5, letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
-                    {t.hint}
-                  </div>
-                </button>
-              );
-            })}
+        {/* Category rail + the active category's panel. Both the rail's own
+            layout and its selected-tab marker live in index.css, which is what
+            lets it turn from a side rail into a top strip on a phone. */}
+        <div className="setbody">
+          <div className="setrail">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                className={tab === t.key ? "on" : undefined}
+                aria-current={tab === t.key ? "page" : undefined}
+                onClick={() => setTab(t.key)}
+              >
+                <div style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{t.label}</div>
+                <div className="hint"
+                  style={{ fontSize: "var(--t85)", letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
+                  {t.hint}
+                </div>
+              </button>
+            ))}
           </div>
 
           <div className="mscroll" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
@@ -1794,21 +1786,35 @@ export function SettingsModal(props: SettingsModalProps) {
                   </>
                 )}
 
-                <Label top>TEXT SIZE</Label>
+                <Label top>FONT</Label>
                 <Segmented
-                  options={TEXT_SCALES}
-                  value={String(settings.textScale)}
-                  onPick={(v) => onPatch({ textScale: Number(v) })}
+                  options={FONT_OPTS}
+                  value={settings.font}
+                  onPick={(v) => onPatch({ font: v })}
                 />
                 <div style={NOTE}>
-                  Scales the whole HUD — type, icons and spacing together.{" "}
-                  <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window: {autoPct}% on
-                  this one.
+                  A theme is a palette; the type voice is yours.{" "}
+                  <span style={{ color: "var(--txd)" }}>THEME</span> follows whichever one the
+                  palette brought — anything else stays put when you switch palettes. Code and
+                  logs keep their monospace either way.
+                </div>
+
+                <Label top>BASE FONT SIZE</Label>
+                <Segmented
+                  options={BASE_FONT_OPTS}
+                  value={String(settings.baseFont)}
+                  onPick={(v) => onPatch({ baseFont: Number(v) })}
+                />
+                <div style={NOTE}>
+                  Every size in the HUD is derived from this one — captions, body and headings
+                  move together, spacing stays put.{" "}
+                  <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window: {autoBase}px
+                  on this one.
                 </div>
 
                 <Label top>BOOT SEQUENCE</Label>
                 <div style={{ ...CARD, display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0, fontSize: 9.5, color: "var(--txl)" }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: "var(--t95)", color: "var(--txl)" }}>
                     Replay the intro this dashboard boots with.
                   </div>
                   <button
@@ -1822,7 +1828,7 @@ export function SettingsModal(props: SettingsModalProps) {
                       background: replayHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
                       color: "var(--tx)",
                       fontFamily: "inherit",
-                      fontSize: 10,
+                      fontSize: "var(--t10)",
                       letterSpacing: 1.5,
                       padding: "8px 13px",
                       flex: "none",
@@ -1913,47 +1919,6 @@ export function SettingsModal(props: SettingsModalProps) {
                   onSessionTools={onSessionTools}
                 />
 
-                <Label top>PROMPT BOX</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div>
-                      <div style={KEY_TX}>PONYTAIL</div>
-                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
-                        The level picker and its REVIEW / AUDIT buttons. Off, they leave the prompt
-                        box — the level set above still applies to every run.
-                      </div>
-                    </div>
-                    <Switch on={settings.ponytailUi} onClick={() => onPatch({ ponytailUi: !settings.ponytailUi })} />
-                  </div>
-                  <div style={{ ...KV, marginTop: 12 }}>
-                    <div>
-                      <div style={KEY_TX}>GRAPH</div>
-                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
-                        The MAP chip and its freshness. Off, the map still builds itself and still
-                        opens from ANALYZE — the prompt box just stops asking about it.
-                      </div>
-                    </div>
-                    <Switch on={settings.graphUi} onClick={() => onPatch({ graphUi: !settings.graphUi })} />
-                  </div>
-                </div>
-
-                <Label top>TRANSCRIPT</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div>
-                      <div style={KEY_TX}>AUTO-OPEN RESULTS</div>
-                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
-                        Bash output and edit diffs draw themselves open. Off, a turn reads as the
-                        list of commands and files it touched — click one to see its result.
-                      </div>
-                    </div>
-                    <Switch
-                      on={settings.openResults}
-                      onClick={() => onPatch({ openResults: !settings.openResults })}
-                    />
-                  </div>
-                </div>
-
                 <Label top>GUARDRAIL</Label>
                 <div style={NOTE}>
                   Kept by the bridge for every surface — turning it off here silences the check
@@ -1979,11 +1944,11 @@ export function SettingsModal(props: SettingsModalProps) {
                 <div style={CARD}>
                   <div style={KV}>
                     <span style={KEY_TX}>HOST</span>
-                    <span style={{ fontSize: 11, color: "var(--tx)" }}>{host}</span>
+                    <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>
                   </div>
                   <div style={{ ...KV, marginTop: 10 }}>
                     <span style={KEY_TX}>PORT</span>
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "var(--tx)" }}>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
                       {port}
                     </span>
                   </div>
@@ -1994,14 +1959,14 @@ export function SettingsModal(props: SettingsModalProps) {
                   <div style={KV}>
                     <div>
                       <div style={KEY_TX}>API TRAFFIC</div>
-                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
                         Every request a run makes to the Anthropic API — its token accounting,
                         its SSE frames, its timings — through a local pass-through proxy.
                         Off by default: it sits on the critical path of the turns it watches.
                       </div>
                     </div>
                     <button onClick={onOpenInspector}
-                      style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "6px 12px", flex: "none", marginLeft: 12 }}>
+                      style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none", marginLeft: 12 }}>
                       OPEN
                     </button>
                   </div>
@@ -2012,7 +1977,7 @@ export function SettingsModal(props: SettingsModalProps) {
                   <div style={KV}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={KEY_TX}>DESKTOP</div>
-                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
                         {pushSupported()
                           ? "An OS notification when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
                           : "This browser has no Notification API — Telegram remains the only push path."}
@@ -2034,7 +1999,7 @@ export function SettingsModal(props: SettingsModalProps) {
                   <div style={{ ...KV, marginTop: 11 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={KEY_TX}>SOUND</div>
-                      <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
                         A sound per event, for when the news lands on a screen you aren&apos;t
                         looking at. One per event per batch, not per session.
                       </div>
@@ -2108,7 +2073,7 @@ export function SettingsModal(props: SettingsModalProps) {
             flex: "none",
           }}
         >
-          <span style={{ fontSize: 9, letterSpacing: ".5px", color: "var(--txl)", flex: 1 }}>
+          <span style={{ fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--txl)", flex: 1 }}>
             Stored in this browser — except weather and the prompt check, which the bridge keeps
             for every client.
           </span>
@@ -2125,7 +2090,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 : "color-mix(in srgb, var(--acc) 12%, transparent)",
               color: "var(--txb)",
               fontFamily: "inherit",
-              fontSize: 10,
+              fontSize: "var(--t10)",
               letterSpacing: 2,
               padding: "9px 22px",
             }}

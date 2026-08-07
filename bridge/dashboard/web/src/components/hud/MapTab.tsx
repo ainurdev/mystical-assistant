@@ -6,7 +6,7 @@ import { ago } from "../../lib/surfaces";
    staleness header, build/refresh, and a one-line explain query. */
 
 const mono: React.CSSProperties = {
-  fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "pre-wrap",
+  fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", whiteSpace: "pre-wrap",
 };
 
 export function MapTab({ project }: { project: string }) {
@@ -60,7 +60,7 @@ export function MapTab({ project }: { project: string }) {
             style={{ appearance: "none", cursor: "pointer",
               border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
               background: "transparent", color: "var(--txm)", fontFamily: "inherit",
-              fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px" }}>
+              fontSize: "var(--t95)", letterSpacing: 1.5, padding: "4px 10px" }}>
             RETRY
           </button>
         </div>
@@ -90,7 +90,7 @@ export function MapTab({ project }: { project: string }) {
           style={{ appearance: "none", cursor: st.building ? "default" : "pointer",
             border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
             background: "transparent", color: "var(--txm)", fontFamily: "inherit",
-            fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px",
+            fontSize: "var(--t95)", letterSpacing: 1.5, padding: "4px 10px",
             opacity: st.building ? 0.5 : 1 }}>
           {st.exists ? "REFRESH" : "BUILD MAP"}
         </button>
@@ -106,7 +106,7 @@ export function MapTab({ project }: { project: string }) {
           style={{ appearance: "none", cursor: "pointer", border:
             "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
             background: "transparent", color: "var(--txm)", fontFamily: "inherit",
-            fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px" }}>
+            fontSize: "var(--t95)", letterSpacing: 1.5, padding: "4px 10px" }}>
           {asking ? "…" : "EXPLAIN"}
         </button>
       </div>

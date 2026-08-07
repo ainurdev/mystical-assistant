@@ -102,7 +102,7 @@ export function AgentsModal({
         <div style={{ display: "flex", alignItems: "center", padding: "10px 14px",
                       borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
                       background: "color-mix(in srgb, var(--panel2) 90%, transparent)" }}>
-          <span style={{ fontSize: 11, letterSpacing: 1.5, color: "var(--txm)" }}>
+          <span style={{ fontSize: "var(--t11)", letterSpacing: 1.5, color: "var(--txm)" }}>
             {workflows.length ? "AGENTS · WORKFLOWS" : "AGENTS"}
           </span>
           <span style={{ flex: 1 }} />
@@ -111,7 +111,7 @@ export function AgentsModal({
                   style={{ appearance: "none", cursor: "pointer",
                   border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
                   background: escHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-                  color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5,
+                  color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5,
                   padding: "6px 12px" }}>
             ESC ✕
           </button>
@@ -128,12 +128,12 @@ export function AgentsModal({
                               background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     {dot(a.status === "running")}
-                    <span style={{ fontSize: 12, color: "var(--txh)", overflow: "hidden",
+                    <span style={{ fontSize: "var(--t12)", color: "var(--txh)", overflow: "hidden",
                                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {a.description || a.agent_id}
                     </span>
                   </div>
-                  <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 4 }}>
+                  <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 4 }}>
                     {a.agent_type}{a.spawn_depth > 1 ? ` · depth ${a.spawn_depth}` : ""}
                   </div>
                 </div>
@@ -155,16 +155,16 @@ export function AgentsModal({
                                 background: "color-mix(in srgb, var(--acc) 4%, transparent)",
                                 borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 9, color: "var(--txd)", width: 8, flex: "none" }}>
+                      <span style={{ fontSize: "var(--t9)", color: "var(--txd)", width: 8, flex: "none" }}>
                         {open ? "▾" : "▸"}
                       </span>
                       {dot(w.status === "running")}
-                      <span style={{ fontSize: 12, color: "var(--txh)", overflow: "hidden",
+                      <span style={{ fontSize: "var(--t12)", color: "var(--txh)", overflow: "hidden",
                                      textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         ⛓ {w.name}
                       </span>
                     </div>
-                    <div style={{ fontSize: 9.5, color: "var(--txd)", marginTop: 4, paddingLeft: 14 }}>
+                    <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 4, paddingLeft: 14 }}>
                       workflow · {meta}
                     </div>
                   </div>
@@ -178,7 +178,7 @@ export function AgentsModal({
                                     background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           {dot(a.status === "running", 5)}
-                          <span style={{ fontSize: 11.5, color: "var(--tx)", overflow: "hidden",
+                          <span style={{ fontSize: "var(--t115)", color: "var(--tx)", overflow: "hidden",
                                          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {a.description || `${a.agent_type} · ${a.agent_id.replace(/^agent-/, "").slice(0, 7)}`}
                           </span>
@@ -193,23 +193,23 @@ export function AgentsModal({
           <div ref={feedRef} className="mscroll" style={{ overflowY: "auto", minHeight: 0,
                        padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
             {events.length === 0 && (
-              <div style={{ fontSize: 11, color: "var(--txd)" }}>No activity yet.</div>
+              <div style={{ fontSize: "var(--t11)", color: "var(--txd)" }}>No activity yet.</div>
             )}
             {events.map((e, i) =>
               e.type === "text" ? (
-                <div key={i} style={{ fontSize: 12, color: "var(--tx)", lineHeight: 1.6 }}>
+                <div key={i} style={{ fontSize: "var(--t12)", color: "var(--tx)", lineHeight: 1.6 }}>
                   <Markdown>{e.text}</Markdown>
                 </div>
               ) : (
                 <div key={i} style={{ display: "flex", gap: 8, fontFamily: "'JetBrains Mono',monospace",
-                             fontSize: 11, color: "var(--txd)" }}>
+                             fontSize: "var(--t11)", color: "var(--txd)" }}>
                   <span style={{ color: "var(--txm)" }}>{e.name}</span>
                   <span style={{ minWidth: 0, wordBreak: "break-all" }}>{e.summary}</span>
                 </div>
               ),
             )}
             {activityData?.status === "running" && (
-              <div style={{ fontSize: 11, color: "var(--txd)" }}>Working…</div>
+              <div style={{ fontSize: "var(--t11)", color: "var(--txd)" }}>Working…</div>
             )}
           </div>
         </div>

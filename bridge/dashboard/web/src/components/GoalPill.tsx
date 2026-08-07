@@ -30,7 +30,7 @@ export function GoalPill({
       style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center",
                gap: 8, maxWidth: "100%", border: `1px solid color-mix(in srgb, ${tint} 38%, transparent)`,
                background: `color-mix(in srgb, ${tint} ${active ? 8 : 4}%, transparent)`,
-               color: tint, fontSize: 11, letterSpacing: 0.5,
+               color: tint, fontSize: "var(--t11)", letterSpacing: 0.5,
                padding: "4px 12px", borderRadius: 999 }}
     >
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint,

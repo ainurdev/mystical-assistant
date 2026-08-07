@@ -45,7 +45,7 @@ export function AgentsPill({
                  border: `1px solid rgba(127,233,216,${working ? 0.45 : 0.28})`,
                  background: hov ? "color-mix(in srgb, var(--acc) 12%, transparent)"
                                  : `rgba(127,233,216,${working ? 0.08 : 0.04})`,
-                 color: working ? "var(--acc)" : "var(--txm)", fontFamily: "inherit", fontSize: 11,
+                 color: working ? "var(--acc)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)",
                  letterSpacing: 0.5, padding: "4px 12px", borderRadius: 999,
                  transition: "background .15s ease" }}
       >

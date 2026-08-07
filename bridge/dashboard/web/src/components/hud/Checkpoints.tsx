@@ -114,7 +114,7 @@ export function Checkpoints({
           background: open || hover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
           color: open || hover ? "var(--txb)" : "var(--txm)",
           fontFamily: "inherit",
-          fontSize: 9,
+          fontSize: "var(--t9)",
           letterSpacing: 1,
           padding: "3px 6px",
           display: "flex",
@@ -146,7 +146,7 @@ export function Checkpoints({
             animation: "mslide .16s ease both",
           }}
         >
-          <div style={{ padding: "11px 11px 7px", fontSize: 9, letterSpacing: 2, color: "var(--acc)" }}>
+          <div style={{ padding: "11px 11px 7px", fontSize: "var(--t9)", letterSpacing: 2, color: "var(--acc)" }}>
             CHECKPOINTS
           </div>
           <input
@@ -157,7 +157,7 @@ export function Checkpoints({
             style={{
               appearance: "none", width: "100%", boxSizing: "border-box",
               border: 0, borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
-              background: "transparent", fontFamily: "inherit", fontSize: 11.5,
+              background: "transparent", fontFamily: "inherit", fontSize: "var(--t115)",
               color: "var(--tx)", padding: "7px 11px", outline: "none",
             }}
           />
@@ -187,15 +187,15 @@ export function Checkpoints({
                     padding: sub ? "7px 11px 7px 26px" : "7px 11px",
                   }}
                 >
-                  <span style={{ flex: "none", fontSize: 9, letterSpacing: 1, color: tone, marginTop: 2 }}>
+                  <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: tone, marginTop: 2 }}>
                     {m.kind === "question" ? "?" : m.kind === "steer" ? <SteerIcon size={10} /> : m.n}
                   </span>
                   <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ fontSize: 11.5, lineHeight: 1.45, color: "var(--tx)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>
+                    <span style={{ fontSize: "var(--t115)", lineHeight: 1.45, color: "var(--tx)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>
                       {m.label}
                     </span>
                     {(m.kind === "prompt" || m.waiting) && (
-                      <span style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 3, fontSize: 9, letterSpacing: .5, color: "var(--txd)" }}>
+                      <span style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 3, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>
                         {m.waiting && <span style={{ color: "var(--purple)" }}>WAITING</span>}
                         {m.failed && <span style={{ color: "var(--err)" }}>FAILED</span>}
                         {m.stopped && <span>STOPPED</span>}
@@ -216,7 +216,7 @@ export function Checkpoints({
               );
             })}
             {!shown.length && (
-              <div style={{ padding: "10px 11px", fontSize: 11, color: "var(--txd)" }}>no match</div>
+              <div style={{ padding: "10px 11px", fontSize: "var(--t11)", color: "var(--txd)" }}>no match</div>
             )}
           </div>
         </div>
@@ -359,7 +359,7 @@ export function CheckpointRail({
           position: "absolute", right: 16, top: `${(pos[near] ?? 0) * 100}%`,
           transform: "translateY(-50%)", pointerEvents: "none", maxWidth: 300,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          padding: "3px 8px", fontSize: 10.5, color: "var(--tx)",
+          padding: "3px 8px", fontSize: "var(--t105)", color: "var(--tx)",
           background: "color-mix(in srgb, var(--panel2) 97%, transparent)",
           border: `1px solid ${toneOf(hovered)}`, boxShadow: "0 8px 22px var(--shadow-pop)",
         }}>

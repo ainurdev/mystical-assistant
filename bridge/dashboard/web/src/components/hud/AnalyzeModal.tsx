@@ -170,20 +170,20 @@ export function AnalyzeModal(props: Props) {
         style={{ width: full ? "96vw" : "min(94vw, max(560px, 50vw))", height: full ? "94vh" : "min(90vh, max(440px, 50vh))", transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
+          <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: tagColor }} />
-          <span style={{ fontSize: 15, color: "var(--txb)", letterSpacing: ".5px" }}>{name(project)}</span>
+          <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>{name(project)}</span>
           <span style={{ position: "relative", flex: "none" }}>
             <button onClick={openTagEdit} title="edit short tag & color" {...hp("tag")}
-              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 9, letterSpacing: ".5px", color: tagColor, border: `1px solid ${tagBd}`, background: hov === "tag" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", fontFamily: "inherit", padding: "3px 7px" }}>
-              {tag}<span style={{ fontSize: 8, color: "var(--txd)" }}>✎</span>
+              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: "var(--t9)", letterSpacing: ".5px", color: tagColor, border: `1px solid ${tagBd}`, background: hov === "tag" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", fontFamily: "inherit", padding: "3px 7px" }}>
+              {tag}<span style={{ fontSize: "var(--t8)", color: "var(--txd)" }}>✎</span>
             </button>
             {tagEditOpen && (
               <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 224, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", padding: 12, animation: "mslide .16s ease both" }}>
-                <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 7 }}>SHORT TAG</div>
+                <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 7 }}>SHORT TAG</div>
                 <input value={tagDraft} onChange={(e) => setTagDraft(e.target.value)} placeholder="MYST" maxLength={5}
-                  style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 13, letterSpacing: 2, textAlign: "center", padding: 7, textTransform: "uppercase" }} />
-                <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", margin: "11px 0 7px" }}>COLOR</div>
+                  style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", letterSpacing: 2, textAlign: "center", padding: 7, textTransform: "uppercase" }} />
+                <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", margin: "11px 0 7px" }}>COLOR</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {TAG_COLORS.map((c) => (
                     <button key={c} onClick={() => setTagColorDraft(c)}
@@ -192,30 +192,30 @@ export function AnalyzeModal(props: Props) {
                 </div>
                 <div style={{ display: "flex", gap: 7, marginTop: 13 }}>
                   <button onClick={saveTagEdit} {...hp("tagsave")}
-                    style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "tagsave" ? "color-mix(in srgb, var(--acc) 24%, transparent)" : "color-mix(in srgb, var(--acc) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: 7 }}>SAVE</button>
+                    style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "tagsave" ? "color-mix(in srgb, var(--acc) 24%, transparent)" : "color-mix(in srgb, var(--acc) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: 7 }}>SAVE</button>
                   <button onClick={() => setTagEditOpen(false)} {...hp("tagcancel")}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "tagcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5, padding: "7px 11px" }}>CANCEL</button>
+                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "tagcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "7px 11px" }}>CANCEL</button>
                 </div>
               </div>
             )}
           </span>
-          <span style={{ fontSize: 11, color: "var(--txd)", display: "flex", gap: 9, fontFamily: "'JetBrains Mono',monospace" }}>
+          <span style={{ fontSize: "var(--t11)", color: "var(--txd)", display: "flex", gap: 9, fontFamily: "'JetBrains Mono',monospace" }}>
             <span style={{ color: "var(--ok)" }}>↑{git?.ahead ?? badge?.ahead ?? 0}</span>
             <span>↓{git?.behind ?? badge?.behind ?? 0}</span>
           </span>
-          {live && <span style={{ fontSize: 9, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 6px" }}>LIVE</span>}
+          {live && <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 6px" }}>LIVE</span>}
           <span style={{ flex: 1 }} />
           <button onClick={() => setFull((v) => !v)} title={full ? "restore size" : "expand"} {...hp("full")}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "full" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 11, padding: "3px 9px", lineHeight: 1.4 }}>{full ? "⤡" : "⤢"}</button>
-          <button onClick={close} style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "4px 10px" }}>ESC ✕</button>
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "full" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 9px", lineHeight: 1.4 }}>{full ? "⤡" : "⤢"}</button>
+          <button onClick={close} style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "4px 10px" }}>ESC ✕</button>
         </div>
         {/* tabs */}
         <div style={{ display: "flex", flex: "none", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "0 6px", overflowX: "auto" }}>
           {tabs.map((t) => (
             <button key={t.k} onClick={() => setTab(t.k)} {...hp(`tab:${t.k}`)}
-              style={{ appearance: "none", border: 0, borderBottom: `2px solid ${tab === t.k ? "var(--acc)" : "transparent"}`, cursor: "pointer", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "10px 11px", background: tab === t.k ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov === `tab:${t.k}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", color: tab === t.k ? "var(--txb)" : "var(--txl)", display: "flex", alignItems: "center", gap: 7 }}>
+              style={{ appearance: "none", border: 0, borderBottom: `2px solid ${tab === t.k ? "var(--acc)" : "transparent"}`, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "10px 11px", background: tab === t.k ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov === `tab:${t.k}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", color: tab === t.k ? "var(--txb)" : "var(--txl)", display: "flex", alignItems: "center", gap: 7 }}>
               {t.l}
-              {t.badge != null && <span style={{ fontSize: 9, color: "var(--acc)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", padding: "0 5px" }}>{t.badge}</span>}
+              {t.badge != null && <span style={{ fontSize: "var(--t9)", color: "var(--acc)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", padding: "0 5px" }}>{t.badge}</span>}
             </button>
           ))}
         </div>
@@ -395,24 +395,24 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
       {/* Header row always renders the branch switcher — inside the file grid it
           unmounted on a clean branch, leaving no way to switch back. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, flex: "none" }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>WORKING TREE</span>
+        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>WORKING TREE</span>
         <span style={{ flex: 1 }} />
         <div style={{ position: "relative", flex: "none" }}>
           <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
-            style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px", maxWidth: 160 }}>
+            style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 8px", maxWidth: 160 }}>
             <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch || "—"}</span>
             <span style={{ color: "var(--purple-g)", flex: "none" }}>▾</span>
           </button>
           {menuOpen && (
             <div style={{ position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
-              <div style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
+              <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
               {branchOpts.map((b) => (
                 <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
-                  style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: "7px 9px", textAlign: "left" }}>
+                  style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", padding: "7px 9px", textAlign: "left" }}>
                   <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
                   <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
-                  {b.hasWorktree && <span style={{ fontSize: 7.5, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
+                  {b.hasWorktree && <span style={{ fontSize: "var(--t75)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
                   {b.on && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
                 </button>
               ))}
@@ -421,7 +421,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
         </div>
       </div>
       {st && files.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>
+        <div style={{ fontSize: "var(--t12)", color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>
           {wrongTree
             ? <>⎇ {branch} isn't checked out — no working tree to show. Create a worktree for it in the WORKTREES tab.</>
             : "Working tree clean."}
@@ -436,8 +436,8 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
           <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 12px 8px", flex: "none" }}>
               <button onClick={toggleAll} disabled={!files.length} title={allChecked ? "deselect all" : "select all"} {...hp("all")}
-                style={{ appearance: "none", cursor: files.length ? "pointer" : "default", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "all" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 8.5, letterSpacing: 1, padding: "3px 7px", flex: "none" }}>{allChecked ? "NONE" : "ALL"}</button>
-              <span style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)" }}>{checked.size}/{files.length} SEL</span>
+                style={{ appearance: "none", cursor: files.length ? "pointer" : "default", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "all" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: 1, padding: "3px 7px", flex: "none" }}>{allChecked ? "NONE" : "ALL"}</button>
+              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)" }}>{checked.size}/{files.length} SEL</span>
             </div>
             <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               {files.map((f) => {
@@ -448,9 +448,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
                     style={{ borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : hov === `f:${f.path}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px" }}>
                     <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(f.path)} onClick={(e) => e.stopPropagation()} title="stage this file for commit"
                       style={{ accentColor: "var(--acc)", cursor: "pointer", flex: "none", width: 13, height: 13, margin: 0 }} />
-                    <span style={{ fontSize: 11, fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
-                    <span style={{ fontSize: 11, color: on ? "var(--txb)" : isChecked ? "var(--txm)" : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
-                    <span style={{ fontSize: 10, flex: "none", display: "flex", gap: 5 }}><span style={{ color: "var(--ok)" }}>+{f.add}</span><span style={{ color: "var(--err)" }}>−{f.del}</span></span>
+                    <span style={{ fontSize: "var(--t11)", fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
+                    <span style={{ fontSize: "var(--t11)", color: on ? "var(--txb)" : isChecked ? "var(--txm)" : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
+                    <span style={{ fontSize: "var(--t10)", flex: "none", display: "flex", gap: 5 }}><span style={{ color: "var(--ok)" }}>+{f.add}</span><span style={{ color: "var(--err)" }}>−{f.del}</span></span>
                   </div>
                 );
               })}
@@ -458,39 +458,39 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
             <div style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", flex: "none" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 9px 0" }}>
                 <input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="commit message…"
-                  style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 11, padding: "6px 8px" }} />
+                  style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 8px" }} />
                 {ai.commitmsg && <button onClick={() => void genMsg()} title="generate with Claude" {...hp("gen")}
-                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${genBusy ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--purple) 35%, transparent)"}`, background: genBusy ? "color-mix(in srgb, var(--purple) 16%, transparent)" : hov === "gen" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "6px 9px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${genBusy ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--purple) 35%, transparent)"}`, background: genBusy ? "color-mix(in srgb, var(--purple) 16%, transparent)" : hov === "gen" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "6px 9px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ width: 5, height: 5, background: "var(--purple)", transform: "rotate(45deg)" }} />{genBusy ? "THINKING…" : "GEN"}</button>}
               </div>
               {gitOp && (
-                <div style={{ margin: "8px 9px 0", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: "color-mix(in srgb, var(--ok) 6%, transparent)", color: "var(--ok)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "6px 9px", display: "flex", alignItems: "center", gap: 7, animation: "mslide .2s ease both" }}>
+                <div style={{ margin: "8px 9px 0", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: "color-mix(in srgb, var(--ok) 6%, transparent)", color: "var(--ok)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "6px 9px", display: "flex", alignItems: "center", gap: 7, animation: "mslide .2s ease both" }}>
                   <span style={{ color: "var(--ok)", flex: "none" }}>✓</span>
                   <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gitOp}</span>
                 </div>
               )}
               <div style={{ padding: "8px 9px 6px" }}>
                 <button onClick={() => void doCommit()} disabled={!checked.size || !msg.trim() || busy} {...hp("commit")}
-                  style={{ width: "100%", appearance: "none", cursor: checked.size && msg.trim() && !busy ? "pointer" : "not-allowed", border: "1px solid var(--acc)", background: hov === "commit" ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, opacity: !checked.size || !msg.trim() || busy ? 0.45 : 1 }}>COMMIT {checked.size} FILE{checked.size === 1 ? "" : "S"}</button>
+                  style={{ width: "100%", appearance: "none", cursor: checked.size && msg.trim() && !busy ? "pointer" : "not-allowed", border: "1px solid var(--acc)", background: hov === "commit" ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, opacity: !checked.size || !msg.trim() || busy ? 0.45 : 1 }}>COMMIT {checked.size} FILE{checked.size === 1 ? "" : "S"}</button>
               </div>
               <div style={{ display: "flex", gap: 7, padding: "0 9px 9px" }}>
                 <button onClick={() => void doPush()} title="push to origin" {...hp("push")}
-                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "push" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "push" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                   <span style={{ color: "var(--ok)" }}>↑</span>PUSH {st?.ahead ?? 0}</button>
                 <button onClick={doPull} title="pull from origin" {...hp("pull")}
-                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "pull" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "pull" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                   <span style={{ color: "var(--info)" }}>↓</span>PULL {st?.behind ?? 0}</button>
               </div>
             </div>
           </div>
           {/* diff panel */}
           <div style={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, flex: "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", flex: "none" }}>
               <span style={{ color: FILE_COLOR(selFile?.status ?? "M"), fontWeight: 700 }}>{selFile?.status ?? ""}</span>
               <span style={{ flex: 1, color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{selName || ""}</span>
               <span style={{ color: "var(--ok)" }}>+{selFile?.add ?? 0}</span><span style={{ color: "var(--err)" }}>−{selFile?.del ?? 0}</span>
             </div>
-            <div className="mscroll" style={{ flex: 1, overflow: "auto", minHeight: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: 11.5, lineHeight: 1.7 }}>
+            <div className="mscroll" style={{ flex: 1, overflow: "auto", minHeight: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", lineHeight: 1.7 }}>
               {rows.map((d, i) => {
                 const v = DIFF_VIEW[d.kind];
                 return (
@@ -585,51 +585,51 @@ function IssuesTab({ project, info, onFeed, onShip, onReload }: {
     setTitle(""); setNewOpen(false); onReload();
   }
 
-  if (info && !info.has_remote) return <div style={{ fontSize: 12, color: "var(--txd)", padding: "6px 2px" }}>No GitHub remote for this project.</div>;
-  if (info && !info.gh_ok) return <div style={{ fontSize: 12, color: "var(--err)", padding: "6px 2px" }}>gh CLI unavailable: {info.error || "not authenticated"}.</div>;
+  if (info && !info.has_remote) return <div style={{ fontSize: "var(--t12)", color: "var(--txd)", padding: "6px 2px" }}>No GitHub remote for this project.</div>;
+  if (info && !info.gh_ok) return <div style={{ fontSize: "var(--t12)", color: "var(--err)", padding: "6px 2px" }}>gh CLI unavailable: {info.error || "not authenticated"}.</div>;
 
   return (
     <div style={{ animation: "mslide .3s ease both" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11 }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--txl)" }}>{info?.open_count ?? 0} OPEN ISSUES</span>
+        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>{info?.open_count ?? 0} OPEN ISSUES</span>
         <span style={{ flex: 1 }} />
         {selCount > 0 && (
           <button onClick={feedSelected} {...hp("feedsel")}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedsel" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 6 }}>
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedsel" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ color: "var(--ok)" }}>▸</span>FEED {selCount} TO CLAUDE</button>
         )}
         <button onClick={() => setNewOpen((o) => !o)} {...hp("newissue")}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "newissue" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: 12 }}>+</span>NEW ISSUE</button>
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "newissue" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: "var(--t12)" }}>+</span>NEW ISSUE</button>
       </div>
 
       {banner && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "var(--ok)", fontSize: 10.5, letterSpacing: ".5px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both" }}>
+        <div style={{ border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "var(--ok)", fontSize: "var(--t105)", letterSpacing: ".5px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both" }}>
           <span style={{ color: "var(--ok)" }}>▸</span>{banner}
         </div>
       )}
 
       {newOpen && (
         <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 32%, transparent)", background: "color-mix(in srgb, var(--purple) 5%, transparent)", padding: "11px 12px", marginBottom: 10, animation: "mslide .2s ease both" }}>
-          <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>NEW ISSUE · {name(project)}</div>
+          <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>NEW ISSUE · {name(project)}</div>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="describe the issue…"
-            style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: 12, padding: "7px 9px" }} />
-          <div style={{ fontSize: 8.5, letterSpacing: 1, color: "var(--txl)", margin: "9px 0 6px" }}>LABEL</div>
+            style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t12)", padding: "7px 9px" }} />
+          <div style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txl)", margin: "9px 0 6px" }}>LABEL</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
             {NEW_ISSUE_LABELS.map((l) => {
               const on = label === l.name;
               return (
                 <button key={l.name} onClick={() => setLabel(l.name)}
-                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on ? `color-mix(in srgb, ${l.color} 60%, transparent)` : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? `color-mix(in srgb, ${l.color} 12%, transparent)` : "transparent", color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: 9, letterSpacing: ".5px", padding: "4px 9px", display: "flex", alignItems: "center", gap: 5 }}>
+                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on ? `color-mix(in srgb, ${l.color} 60%, transparent)` : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? `color-mix(in srgb, ${l.color} 12%, transparent)` : "transparent", color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: ".5px", padding: "4px 9px", display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: l.color }} />{l.name}</button>
               );
             })}
           </div>
           <div style={{ display: "flex", gap: 7, marginTop: 10 }}>
             <button onClick={() => void create()} {...hp("createissue")}
-              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "createissue" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: 7 }}>CREATE ISSUE</button>
+              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "createissue" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 7 }}>CREATE ISSUE</button>
             <button onClick={() => setNewOpen(false)} {...hp("cancelissue")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "cancelissue" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "cancelissue" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
           </div>
         </div>
       )}
@@ -646,32 +646,32 @@ function IssuesTab({ project, info, onFeed, onShip, onReload }: {
                 <div key={i.number} onClick={() => setOpen(i.number)} data-ctx-type="issue" data-ctx-id={String(i.number)} data-ctx-label={`#${i.number}`} {...hp(`row:${i.number}`)}
                   style={{ border: `1px solid ${isOpen ? "color-mix(in srgb, var(--acc) 40%, transparent)" : hov === `row:${i.number}` ? "color-mix(in srgb, var(--acc) 30%, transparent)" : isSel ? "color-mix(in srgb, var(--acc) 25%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)"}`, borderLeft: `2px solid ${isOpen ? "var(--acc)" : "transparent"}`, padding: "9px 10px", marginBottom: 7, cursor: "pointer", background: isOpen ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", display: "flex", gap: 9 }}>
                   <span onClick={(e) => { e.stopPropagation(); toggleSel(i.number); }} title="select"
-                    style={{ width: 15, height: 15, border: `1px solid ${isSel ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: isSel ? "var(--acc)" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--acc-on)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
+                    style={{ width: 15, height: 15, border: `1px solid ${isSel ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: isSel ? "var(--acc)" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--acc-on)", fontSize: "var(--t11)", fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
-                      <div style={{ fontSize: 12, color: "var(--txh)", lineHeight: 1.35, flex: 1 }}>{i.title}</div>
-                      {fed.has(i.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 5px", flex: "none" }}>✓</span>}
+                      <div style={{ fontSize: "var(--t12)", color: "var(--txh)", lineHeight: 1.35, flex: 1 }}>{i.title}</div>
+                      {fed.has(i.number) && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 5px", flex: "none" }}>✓</span>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 9.5, color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{i.number}</span>
+                      <span style={{ fontSize: "var(--t95)", color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{i.number}</span>
                       {i.labels.slice(0, 2).map((l) => (
-                        <span key={l.name} style={{ fontSize: 8.5, letterSpacing: ".5px", padding: "1px 6px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
+                        <span key={l.name} style={{ fontSize: "var(--t85)", letterSpacing: ".5px", padding: "1px 6px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
                       ))}
-                      <span style={{ fontSize: 9.5, color: "var(--txg)", marginLeft: "auto" }}>{agoIso(i.updated)}</span>
+                      <span style={{ fontSize: "var(--t95)", color: "var(--txg)", marginLeft: "auto" }}>{agoIso(i.updated)}</span>
                     </div>
                   </div>
                 </div>
               );
             })}
-            {issues.length === 0 && <div style={{ fontSize: 11, color: "var(--txl)", padding: 6 }}>No open issues.</div>}
+            {issues.length === 0 && <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: 6 }}>No open issues.</div>}
           </div>
           {pageCount > 1 && (
             <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 9px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", flex: "none" }}>
               <button onClick={() => setPage((p) => Math.max(0, p - 1))} {...hp("prev")}
-                style={{ appearance: "none", cursor: pageIdx > 0 ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "prev" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: pageIdx > 0 ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1, padding: "5px 10px" }}>‹ PREV</button>
-              <span style={{ flex: 1, textAlign: "center", fontSize: 9, letterSpacing: 1, color: "var(--txd)" }}>{pageIdx + 1} / {pageCount}</span>
+                style={{ appearance: "none", cursor: pageIdx > 0 ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "prev" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: pageIdx > 0 ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1, padding: "5px 10px" }}>‹ PREV</button>
+              <span style={{ flex: 1, textAlign: "center", fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txd)" }}>{pageIdx + 1} / {pageCount}</span>
               <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} {...hp("next")}
-                style={{ appearance: "none", cursor: pageIdx < pageCount - 1 ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "next" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: pageIdx < pageCount - 1 ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1, padding: "5px 10px" }}>NEXT ›</button>
+                style={{ appearance: "none", cursor: pageIdx < pageCount - 1 ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "next" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: pageIdx < pageCount - 1 ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1, padding: "5px 10px" }}>NEXT ›</button>
             </div>
           )}
         </div>
@@ -681,33 +681,33 @@ function IssuesTab({ project, info, onFeed, onShip, onReload }: {
             <>
               <div style={{ flex: "none", padding: "15px 18px 13px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", animation: "mslide .25s ease both" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <span style={{ fontSize: 10, color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{selIssue.number}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", padding: "2px 8px" }}>
+                  <span style={{ fontSize: "var(--t10)", color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{selIssue.number}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", padding: "2px 8px" }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--ok)" }} />OPEN</span>
-                  {fed.has(selIssue.number) && <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 6px" }}>✓ FED</span>}
+                  {fed.has(selIssue.number) && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 6px" }}>✓ FED</span>}
                   <span style={{ flex: 1 }} />
                   <button onClick={() => setOpen(null)} title="close detail" {...hp("closedetail")}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "closedetail" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 11, padding: "2px 8px", lineHeight: 1 }}>✕</button>
+                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "closedetail" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "2px 8px", lineHeight: 1 }}>✕</button>
                 </div>
-                <div style={{ fontSize: 15, color: "var(--txb)", marginTop: 11, lineHeight: 1.4 }}>{selIssue.title}</div>
+                <div style={{ fontSize: "var(--t15)", color: "var(--txb)", marginTop: 11, lineHeight: 1.4 }}>{selIssue.title}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 9, flexWrap: "wrap" }}>
                   {selIssue.labels.map((l) => (
-                    <span key={l.name} style={{ fontSize: 9, letterSpacing: ".5px", padding: "1px 7px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
+                    <span key={l.name} style={{ fontSize: "var(--t9)", letterSpacing: ".5px", padding: "1px 7px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
                   ))}
                 </div>
                 {/* TODO(phase2-data): author/assignee aren't in the issues endpoint yet */}
-                <div style={{ fontSize: 10, color: "var(--txd)", marginTop: 11 }}>opened {agoIso(selIssue.updated)} ago by <span style={{ color: "var(--txm)" }}>—</span> · assignee <span style={{ color: "var(--txm)" }}>—</span></div>
+                <div style={{ fontSize: "var(--t10)", color: "var(--txd)", marginTop: 11 }}>opened {agoIso(selIssue.updated)} ago by <span style={{ color: "var(--txm)" }}>—</span> · assignee <span style={{ color: "var(--txm)" }}>—</span></div>
               </div>
               <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
-                <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>DESCRIPTION</div>
-                <div style={{ fontSize: 12, color: "var(--tx)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{selIssue.body || "No description."}</div>
-                <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", margin: "18px 0 11px" }}>ACTIVITY</div>
+                <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>DESCRIPTION</div>
+                <div style={{ fontSize: "var(--t12)", color: "var(--tx)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{selIssue.body || "No description."}</div>
+                <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", margin: "18px 0 11px" }}>ACTIVITY</div>
                 {/* TODO(phase2-data): no issue-activity endpoint yet */}
-                <div style={{ fontSize: 10.5, color: "var(--txg)" }}>No activity yet.</div>
+                <div style={{ fontSize: "var(--t105)", color: "var(--txg)" }}>No activity yet.</div>
               </div>
               <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
                 <button onClick={() => feedOne(selIssue)} {...hp("feedone")}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedone" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>
+                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedone" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>
                   {fed.has(selIssue.number) ? "FEED AGAIN" : "FEED TO CLAUDE"}</button>
                 {/* FEED puts the issue in front of the session you already had
                     open, in whatever branch that was. SHIP IT gives the issue
@@ -716,19 +716,19 @@ function IssuesTab({ project, info, onFeed, onShip, onReload }: {
                     it. Pressing it twice reuses the worktree it made. */}
                 <button onClick={() => onShip(selIssue)} {...hp("shipissue")}
                   title={`branch ${branchForIssue(selIssue.number, selIssue.title)}, its own worktree, and a session already working it`}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "shipissue" ? "color-mix(in srgb, var(--purple) 22%, transparent)" : "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>
+                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "shipissue" ? "color-mix(in srgb, var(--purple) 22%, transparent)" : "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>
                   SHIP IT →</button>
                 <span style={{ flex: 1 }} />
                 {/* TODO(phase2-data): no close-issue endpoint yet (unwired in the design too) */}
                 <button {...hp("closeissue")}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === "closeissue" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1, padding: "8px 13px" }}>CLOSE ISSUE</button>
+                  style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === "closeissue" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>CLOSE ISSUE</button>
               </div>
             </>
           ) : (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
               <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="var(--txg)" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
-              <div style={{ fontSize: 11, letterSpacing: 1.5, color: "var(--txl)" }}>SELECT AN ISSUE</div>
-              <div style={{ fontSize: 10, color: "var(--txg)", maxWidth: 210, lineHeight: 1.55 }}>Click any issue on the left to read its full description and activity.</div>
+              <div style={{ fontSize: "var(--t11)", letterSpacing: 1.5, color: "var(--txl)" }}>SELECT AN ISSUE</div>
+              <div style={{ fontSize: "var(--t10)", color: "var(--txg)", maxWidth: 210, lineHeight: 1.55 }}>Click any issue on the left to read its full description and activity.</div>
             </div>
           )}
         </div>
@@ -853,22 +853,22 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
     <div style={{ animation: "mslide .3s ease both", height: "100%", display: "flex", flexDirection: "column" }}>
       {/* run project */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, border: "1px solid color-mix(in srgb, var(--ok) 24%, transparent)", background: "color-mix(in srgb, var(--ok) 4%, transparent)", padding: "9px 11px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--ok)", flex: "none" }}>RUN PROJECT</span>
-        <span style={{ fontSize: 13, color: "var(--ok)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>$</span>
+        <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--ok)", flex: "none" }}>RUN PROJECT</span>
+        <span style={{ fontSize: "var(--t13)", color: "var(--ok)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>$</span>
         <input value={runCmd} onChange={(e) => setRunCmd(e.target.value)} placeholder="command to run this project…"
-          style={{ flex: 1, minWidth: 120, background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, padding: "7px 9px" }} />
-        <span title="auto-detected" style={{ fontSize: 8, letterSpacing: ".5px", color: "var(--txf)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{runSource}</span>
+          style={{ flex: 1, minWidth: 120, background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", padding: "7px 9px" }} />
+        <span title="auto-detected" style={{ fontSize: "var(--t8)", letterSpacing: ".5px", color: "var(--txf)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{runSource}</span>
         {detected && !runCmd && (
           <button onClick={() => void genRun()} title="complex project — let Claude generate the run command" {...hp("gen")}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "gen" ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: 9, letterSpacing: 1, padding: "7px 11px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "gen" ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "7px 11px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ color: "var(--purple)" }}>✦</span>{genBusy ? "THINKING…" : "GENERATE"}</button>
         )}
         <button onClick={() => void runProject()} title="run in terminal" {...hp("run")}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "run" ? "color-mix(in srgb, var(--ok) 24%, transparent)" : "color-mix(in srgb, var(--ok) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.5, padding: "7px 14px", flex: "none", display: "flex", alignItems: "center", gap: 6, opacity: runBusy ? 0.6 : 1 }}>
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "run" ? "color-mix(in srgb, var(--ok) 24%, transparent)" : "color-mix(in srgb, var(--ok) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "7px 14px", flex: "none", display: "flex", alignItems: "center", gap: 6, opacity: runBusy ? 0.6 : 1 }}>
           <span style={{ color: "var(--ok)" }}>▸</span>RUN</button>
       </div>
       {error && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", color: "var(--err)", fontSize: 10.5, padding: "7px 11px", marginBottom: 9, fontFamily: "'JetBrains Mono',monospace" }}>{error}</div>
+        <div style={{ border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", color: "var(--err)", fontSize: "var(--t105)", padding: "7px 11px", marginBottom: 9, fontFamily: "'JetBrains Mono',monospace" }}>{error}</div>
       )}
       {/* terminal box */}
       <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
@@ -878,40 +878,40 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
             return (
               <div key={t.id} onClick={() => setActiveId(t.id)} {...hp(`term:${t.id}`)}
                 style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderBottom: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov === `term:${t.id}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", flex: "none" }}>
-                <span style={{ color: "var(--acc)", fontSize: 10, flex: "none" }}>❯_</span>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, color: on ? "var(--txb)" : "var(--txd)", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {branchOf(t)}</span>
+                <span style={{ color: "var(--acc)", fontSize: "var(--t10)", flex: "none" }}>❯_</span>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", color: on ? "var(--txb)" : "var(--txd)", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {branchOf(t)}</span>
                 {t.venv && (
                   // The shell started activated — say so, or `python` being the
                   // project's 3.12 instead of the system one is a mystery.
                   <span title={`${t.venv} is activated in this shell`}
-                    style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, letterSpacing: ".5px", color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 4px", flex: "none" }}>
+                    style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t85)", letterSpacing: ".5px", color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 4px", flex: "none" }}>
                     {t.venv}
                   </span>
                 )}
                 <button onClick={(e) => { e.stopPropagation(); void closeTerm(t.id); }} title="close terminal" {...hp(`termx:${t.id}`)}
-                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === `termx:${t.id}` ? "var(--err)" : "var(--txd)", fontFamily: "inherit", fontSize: 12, lineHeight: 1, padding: "0 2px", flex: "none" }}>✕</button>
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === `termx:${t.id}` ? "var(--err)" : "var(--txd)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1, padding: "0 2px", flex: "none" }}>✕</button>
               </div>
             );
           })}
           <button onClick={() => setNewOpen((o) => !o)} title="new terminal on a worktree" {...hp("termnew")}
-            style={{ appearance: "none", cursor: "pointer", border: 0, background: hov === "termnew" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: 15, lineHeight: 1, padding: "4px 13px", flex: "none" }}>+</button>
+            style={{ appearance: "none", cursor: "pointer", border: 0, background: hov === "termnew" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t15)", lineHeight: 1, padding: "4px 13px", flex: "none" }}>+</button>
         </div>
         {newOpen && (
           <div style={{ flex: "none", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, padding: "9px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", background: "color-mix(in srgb, var(--purple) 4%, transparent)" }}>
-            <span style={{ fontSize: 8, letterSpacing: 1.5, color: "var(--purple-g)", flex: "none" }}>OPEN ON WORKTREE</span>
+            <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none" }}>OPEN ON WORKTREE</span>
             {wtOpts.map((w) => (
               <button key={w.name} onClick={() => void create(w.rel)} {...hp(`wt:${w.name}`)}
-                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `wt:${w.name}` ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, padding: "4px 8px" }}>
+                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `wt:${w.name}` ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 8px" }}>
                 <span style={{ color: "var(--purple)" }}>⎇</span>{w.name}</button>
             ))}
           </div>
         )}
         {terms.length === 0 ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 11 }}>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 22, color: "var(--txg)" }}>❯_</span>
-            <div style={{ fontSize: 11, letterSpacing: 1.5, color: "var(--txl)" }}>NO OPEN TERMINALS</div>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t22)", color: "var(--txg)" }}>❯_</span>
+            <div style={{ fontSize: "var(--t11)", letterSpacing: 1.5, color: "var(--txl)" }}>NO OPEN TERMINALS</div>
             <button onClick={() => setNewOpen(true)} {...hp("emptynew")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: hov === "emptynew" ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontFamily: "inherit", fontSize: 10, letterSpacing: 1.5, padding: "8px 14px" }}>+ NEW TERMINAL</button>
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: hov === "emptynew" ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "8px 14px" }}>+ NEW TERMINAL</button>
           </div>
         ) : (
           /* real PTY panes replace the design's simulated output/input; all stay

@@ -186,33 +186,33 @@ export function TilesIndicator({
 
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex items-center gap-2">
-          <span className="glow text-[11px] tracking-[2.5px] text-primary">{phrase}</span>
-          <span className="ml-auto font-mono text-[10px] tracking-[1px] text-muted-2">{elapsed}s</span>
+          <span className="glow text-[length:var(--t11)] tracking-[2.5px] text-primary">{phrase}</span>
+          <span className="ml-auto font-mono text-[length:var(--t10)] tracking-[1px] text-muted-2">{elapsed}s</span>
         </div>
 
-        <div className="text-[10px] leading-tight tracking-[1.5px] text-foreground-bright">
+        <div className="text-[length:var(--t10)] leading-tight tracking-[1.5px] text-foreground-bright">
           {song.title}
         </div>
-        <div className="text-[8.5px] tracking-[1px] text-muted-2">
+        <div className="text-[length:var(--t85)] tracking-[1px] text-muted-2">
           {song.composer} · {song.year} · PUBLIC DOMAIN
         </div>
 
-        <div className="mt-1 font-mono text-[17px] leading-none text-primary">
+        <div className="mt-1 font-mono text-[length:var(--t17)] leading-none text-primary">
           {score.points.toLocaleString()}
         </div>
         <div className="flex items-baseline gap-1">
           <span
-            className="font-mono text-[13px] leading-none"
+            className="font-mono text-[length:var(--t13)] leading-none"
             style={{ color: score.combo >= 8 ? "var(--acc)" : "var(--txm)" }}
           >
             ×{score.combo}
           </span>
-          <span className="text-[8px] tracking-[1px] text-muted-2">
+          <span className="text-[length:var(--t8)] tracking-[1px] text-muted-2">
             COMBO · BEST {score.best} · {accuracy}%
           </span>
         </div>
 
-        <div className="mt-auto flex items-center gap-2 text-[9px] tracking-[1.5px]">
+        <div className="mt-auto flex items-center gap-2 text-[length:var(--t9)] tracking-[1.5px]">
           <span className={live ? "text-primary" : "text-muted-2"}>
             {live ? "● LIVE" : "○ CLICK TO PLAY"}
           </span>

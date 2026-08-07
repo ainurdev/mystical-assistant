@@ -10,6 +10,7 @@ import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
+import { askBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf } from "../lib/toolfold";
 import { hostOf, mcpParts, toolAccent, toolKind } from "../lib/tools";
@@ -102,7 +103,7 @@ function HeadBtn({
       type="button"
       title={title}
       onClick={onClick}
-      className="flex-none px-0.5 text-[10px] leading-none tracking-[1px] text-muted-2 hover:text-foreground-bright"
+      className="flex-none px-0.5 text-[length:var(--t10)] leading-none tracking-[1px] text-muted-2 hover:text-foreground-bright"
     >
       {children}
     </button>
@@ -171,10 +172,10 @@ function CommandRow({
             aria-hidden
             style={{ background: dot, animation: running ? "blink 1.1s steps(1) infinite" : undefined }}
           />
-          <span className="flex-none select-none font-mono text-[12px] leading-relaxed" style={{ color: "var(--primary)" }}>
+          <span className="flex-none select-none font-mono text-[length:var(--t12)] leading-relaxed" style={{ color: "var(--primary)" }}>
             ❯
           </span>
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[12px] leading-relaxed text-foreground-bright">
+          <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[length:var(--t12)] leading-relaxed text-foreground-bright">
             {command}
             {running && (
               <span
@@ -183,7 +184,7 @@ function CommandRow({
               />
             )}
           </span>
-          <span className="mt-[3px] flex flex-none items-center gap-1.5 text-[9.5px] tracking-[1px] text-muted-2">
+          <span className="mt-[3px] flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px] text-muted-2">
             {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
             {done?.ms ? <span>{dur(done.ms)}</span> : null}
             {lines > 0 && <span>{lines}L</span>}
@@ -209,7 +210,7 @@ function CommandRow({
       </div>
       {open && lines > 0 && (
         <pre
-          className="max-h-[280px] overflow-auto whitespace-pre-wrap break-all px-2.5 pb-2 pl-[30px] text-[11.5px] leading-[1.55]"
+          className="max-h-[280px] overflow-auto whitespace-pre-wrap break-all px-2.5 pb-2 pl-[30px] text-[length:var(--t115)] leading-[1.55]"
           style={{
             color: failed ? "var(--err)" : "var(--muted-foreground)",
             animation: "termOpen .2s ease both",
@@ -260,13 +261,13 @@ function TerminalGroup({
           <i className="block h-[5px] w-[5px] bg-[var(--txl)]" />
           <i className="block h-[5px] w-[5px] bg-[var(--txg)]" />
         </span>
-        <span className="flex-none text-[9.5px] tracking-[2px]" style={{ color: accent }}>
+        <span className="flex-none text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
           BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
         </span>
         {cmds.length > 1 && (
-          <span className="flex-none text-[9.5px] tracking-[1px] text-muted-2">· {cmds.length} CMDS</span>
+          <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {cmds.length} CMDS</span>
         )}
-        {ms > 0 && <span className="flex-none text-[9.5px] tracking-[1px] text-muted-2">· {dur(ms)}</span>}
+        {ms > 0 && <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>}
       </div>
       {cmds.map((c, k) => (
         <CommandRow
@@ -327,12 +328,12 @@ function DiffBlock({
           title={shownMax ? "hide the diff" : "show the diff"}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <span className="flex-none text-[9.5px] tracking-[2px] text-success">
+          <span className="flex-none text-[length:var(--t95)] tracking-[2px] text-success">
             {name.toUpperCase()} //
           </span>
-          <span className="min-w-0 truncate font-mono text-[11px] text-foreground-bright">{path}</span>
+          <span className="min-w-0 truncate font-mono text-[length:var(--t11)] text-foreground-bright">{path}</span>
           {ms ? (
-            <span className="flex-none text-[9.5px] tracking-[1px] text-muted-2">· {dur(ms)}</span>
+            <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>
           ) : null}
           <ChevronDown
             size={12}
@@ -341,7 +342,7 @@ function DiffBlock({
           />
         </button>
         <span className="flex flex-none items-center gap-1.5">
-          <span className="text-[9.5px] tracking-[1px]">
+          <span className="text-[length:var(--t95)] tracking-[1px]">
             <span style={{ color: "var(--ok)" }}>+{add}</span>{" "}
             <span style={{ color: "var(--err)" }}>−{del}</span>
           </span>
@@ -352,7 +353,7 @@ function DiffBlock({
           )}
         </span>
       </div>
-      <div className="overflow-x-auto px-2.5 py-1.5 font-mono text-[11.5px] leading-[1.55] empty:hidden">
+      <div className="overflow-x-auto px-2.5 py-1.5 font-mono text-[length:var(--t115)] leading-[1.55] empty:hidden">
         {shown.map((line, i) => (
           <div key={i} className="whitespace-pre" style={{ color: diffColor(line) }}>
             {line || " "}
@@ -367,7 +368,7 @@ function DiffBlock({
 function FilePath({ path }: { path: string }) {
   const cut = path.lastIndexOf("/");
   return (
-    <span className="flex min-w-0 flex-1 font-mono text-[12px]" title={path}>
+    <span className="flex min-w-0 flex-1 font-mono text-[length:var(--t12)]" title={path}>
       <span className="truncate text-muted-2">{cut >= 0 ? path.slice(0, cut + 1) : ""}</span>
       <span className="flex-none text-foreground-bright">{path.slice(cut + 1)}</span>
     </span>
@@ -376,7 +377,7 @@ function FilePath({ path }: { path: string }) {
 
 function Took({ ms }: { ms?: number }) {
   if (!ms) return null;
-  return <span className="flex-none text-[9.5px] tracking-[1px] text-muted-2">{dur(ms)}</span>;
+  return <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">{dur(ms)}</span>;
 }
 
 /** A read is a page glanced at: no box at all — a hairline gutter, the path, and
@@ -392,7 +393,7 @@ function ReadCard({ path, ms, animate }: { path: string; ms?: number; animate: b
         ...(animate ? { animation: "readIn .3s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <span className="flex-none text-[10px] tracking-[2px]" style={{ color: accent }}>
+      <span className="flex-none text-[length:var(--t10)] tracking-[2px]" style={{ color: accent }}>
         READ
       </span>
       <span aria-hidden className="h-3 w-px flex-none" style={{ background: tagEdge(accent) }} />
@@ -440,7 +441,7 @@ function WriteCard({
       }}
     >
       <span
-        className="flex-none px-1.5 py-px text-[10px] tracking-[1px]"
+        className="flex-none px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
         style={{ background: accent, color: "var(--acc-on)" }}
       >
         {name.toUpperCase()}
@@ -477,13 +478,13 @@ function ToolBox({
       }}
     >
       <span
-        className="flex flex-none items-center gap-1.5 border px-1.5 py-px text-[10px] tracking-[1px]"
+        className="flex flex-none items-center gap-1.5 border px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
         style={{ color: accent, borderColor: tagEdge(accent) }}
       >
         {icon}
         {tag}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-muted-foreground">
         {children}
       </span>
       <Took ms={ms} />
@@ -513,12 +514,12 @@ function SearchCard({
         ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <span className="flex flex-none items-center gap-1.5 text-[10px] tracking-[1px]" style={{ color: accent }}>
+      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1px]" style={{ color: accent }}>
         <Search size={11} aria-hidden />
         {name.toUpperCase()}
       </span>
       <span
-        className="min-w-0 flex-1 truncate border border-dashed px-1.5 py-px font-mono text-[12px] text-foreground-bright"
+        className="min-w-0 flex-1 truncate border border-dashed px-1.5 py-px font-mono text-[length:var(--t12)] text-foreground-bright"
         style={{ borderColor: edge(accent) }}
       >
         {summary}
@@ -552,13 +553,13 @@ function WebCard({
       }}
     >
       <span
-        className="flex flex-none items-center gap-1.5 rounded-full px-2 py-px text-[10px] tracking-[1px]"
+        className="flex flex-none items-center gap-1.5 rounded-full px-2 py-px text-[length:var(--t10)] tracking-[1px]"
         style={{ color: accent, background: `color-mix(in srgb, ${accent} 14%, transparent)` }}
       >
         <Globe size={11} aria-hidden />
         {name === "WebSearch" ? "SEARCH" : "FETCH"}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-muted-foreground">
         {host ? (
           <>
             <span className="text-foreground-bright">{host}</span>
@@ -595,7 +596,7 @@ function McpCard({
       }}
     >
       <span
-        className="flex flex-none items-center gap-1.5 text-[10px] tracking-[1px]"
+        className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1px]"
         style={{ color: accent }}
       >
         <Plug size={11} aria-hidden />
@@ -606,7 +607,7 @@ function McpCard({
         className="h-px w-5 flex-none"
         style={{ backgroundImage: `repeating-linear-gradient(90deg, ${accent} 0 2px, transparent 2px 5px)` }}
       />
-      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground-bright">{tool}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">{tool}</span>
       <Took ms={ms} />
     </div>
   );
@@ -673,7 +674,7 @@ function CallGroup({
       }}
     >
       <div
-        className="flex items-center gap-2 border-b px-2.5 py-1 text-[9.5px] tracking-[2px]"
+        className="flex items-center gap-2 border-b px-2.5 py-1 text-[length:var(--t95)] tracking-[2px]"
         style={{ borderColor: edge(accent), color: accent }}
       >
         {kind === "mcp" ? <Plug size={11} aria-hidden /> : kind === "web" ? <Globe size={11} aria-hidden /> : <Bot size={11} aria-hidden />}
@@ -683,7 +684,7 @@ function CallGroup({
       </div>
       {calls.map((c, k) => (
         <div key={k} className="flex items-center gap-2.5 border-t border-border px-2.5 py-1 first:border-t-0">
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground-bright">
+          <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">
             {callLine(c.name, c.summary)}
           </span>
           <Took ms={c.ms} />
@@ -717,16 +718,16 @@ function AgentCard({
       }}
     >
       <span
-        className="mt-px flex flex-none items-center gap-1.5 border px-1.5 py-px text-[10px] tracking-[1px]"
+        className="mt-px flex flex-none items-center gap-1.5 border px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
         style={{ color: accent, borderColor: tagEdge(accent) }}
       >
         <Bot size={11} aria-hidden />
         {name.toUpperCase()}
       </span>
-      <span className="min-w-0 flex-1 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
+      <span className="min-w-0 flex-1 line-clamp-2 text-[length:var(--t12)] leading-relaxed text-muted-foreground">
         {summary}
       </span>
-      {ms ? <span className="mt-[3px] flex-none text-[9.5px] tracking-[1px] text-muted-2">{dur(ms)}</span> : null}
+      {ms ? <span className="mt-[3px] flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">{dur(ms)}</span> : null}
     </div>
   );
 }
@@ -804,7 +805,7 @@ function MessageBlock({
             setTimeout(() => setCopied(false), 1200);
           }}
           title="Copy this message"
-          className="flex items-center gap-1 border border-[var(--ac-20)] bg-[var(--panel3)] px-1.5 py-0.5 text-[8.5px] tracking-[1px] text-muted-2 hover:text-[var(--acc)]"
+          className="flex items-center gap-1 border border-[var(--ac-20)] bg-[var(--panel3)] px-1.5 py-0.5 text-[length:var(--t85)] tracking-[1px] text-muted-2 hover:text-[var(--acc)]"
         >
           {copied ? <Check size={9} aria-hidden /> : <Copy size={9} aria-hidden />}
           {copied ? "COPIED" : "COPY"}
@@ -813,7 +814,7 @@ function MessageBlock({
           <button
             onClick={() => onQuote(selected())}
             title="Quote into the prompt box — your selection if you have one, else the whole message"
-            className="flex items-center gap-1 border border-[var(--ac-20)] bg-[var(--panel3)] px-1.5 py-0.5 text-[8.5px] tracking-[1px] text-muted-2 hover:text-[var(--acc)]"
+            className="flex items-center gap-1 border border-[var(--ac-20)] bg-[var(--panel3)] px-1.5 py-0.5 text-[length:var(--t85)] tracking-[1px] text-muted-2 hover:text-[var(--acc)]"
           >
             <Quote size={9} aria-hidden /> QUOTE
           </button>
@@ -836,11 +837,11 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
       title="show these steps"
       className="my-1.5 ml-[18px] flex w-[calc(100%-18px)] items-center gap-2.5 border border-border bg-[var(--ac-03)] px-2.5 py-1.5 text-left hover:border-[var(--border-bright)]"
     >
-      <span className="flex-none border border-border px-1.5 py-px text-[10px] tracking-[1px] text-muted-foreground">
+      <span className="flex-none border border-border px-1.5 py-px text-[length:var(--t10)] tracking-[1px] text-muted-foreground">
         {names.length} STEPS
       </span>
-      <span className="min-w-0 truncate text-[12px] text-muted-2">{label}</span>
-      <span className="ml-auto flex-none text-[10px] text-muted-2">⌄</span>
+      <span className="min-w-0 truncate text-[length:var(--t12)] text-muted-2">{label}</span>
+      <span className="ml-auto flex-none text-[length:var(--t10)] text-muted-2">⌄</span>
     </button>
   );
 }
@@ -862,6 +863,7 @@ export const RunStream = memo(function RunStream({
   onRunCommand,
   onQuote,
   onOpenFile,
+  onAnswer,
   ended = false,
 }: {
   events: RunEvent[];
@@ -873,6 +875,9 @@ export const RunStream = memo(function RunStream({
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
   onOpenFile?: (path: string, line?: number) => void;
+  /** Send a reply to a question the model asked in prose. Only the last, finished
+   *  turn gets one — an old question is history, not something to answer. */
+  onAnswer?: (text: string) => void;
   ended?: boolean;
 }) {
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
@@ -916,6 +921,18 @@ export const RunStream = memo(function RunStream({
   // event, so its final text keeps rendering as text.
   const resultText = events.find((e) => e.type === "result")?.result?.trim();
 
+  // A turn that ends on an AskUserQuestion emits no result event, so the prose
+  // explaining the card used to render as bare text while every other answer got
+  // the RESULT box. This is the text that belongs to the card below it.
+  const asksNext = (i: number): boolean => {
+    for (let j = i + 1; j < events.length; j++) {
+      const t = events[j].type;
+      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered") continue;
+      return t === "question";
+    }
+    return false;
+  };
+
   return (
     // vskip-card: a turn runs to hundreds of events, so each card skips layout
     // and paint while it's off-screen (see .vskip-card in index.css).
@@ -924,6 +941,16 @@ export const RunStream = memo(function RunStream({
         switch (event.type) {
           case "text":
             if (resultText && event.text.trim() === resultText) return null;
+            if (asksNext(i))
+              return (
+                <FinalResult
+                  key={i}
+                  result={event.text}
+                  label="RESULT // ASK"
+                  animate={animate}
+                  idKey={`${turnId}:${i}`}
+                />
+              );
             return (
               <div key={i} style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
                 <MessageBlock text={event.text} onQuote={onQuote}>
@@ -1017,7 +1044,7 @@ export const RunStream = memo(function RunStream({
             // Sent into this turn while it was already running — shown so the
             // transcript explains why the agent changed course mid-task.
             return (
-              <div key={i} id={ckId(turnId, steerKey(i))} className="my-1.5 ml-[18px] flex scroll-mt-2 items-start gap-2 border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[12px] leading-relaxed text-[var(--violet)]">
+              <div key={i} id={ckId(turnId, steerKey(i))} className="my-1.5 ml-[18px] flex scroll-mt-2 items-start gap-2 border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[length:var(--t12)] leading-relaxed text-[var(--violet)]">
                 <span className="mt-0.5"><SteerIcon size={12} /></span>
                 <span>{event.text}</span>
               </div>
@@ -1032,6 +1059,8 @@ export const RunStream = memo(function RunStream({
                 isError={event.is_error}
                 animate={animate}
                 idKey={`${turnId}:${i}`}
+                onAnswer={onAnswer}
+                onQuote={onQuote}
               />
             );
           case "error":
@@ -1096,6 +1125,67 @@ export const RunStream = memo(function RunStream({
   );
 });
 
+/** The question a result ended on, lifted out of its body: highlighted the way a
+ *  question card is, with the replies it was waiting for as one-tap chips. The
+ *  chips send their own label as the next prompt — nothing is answered for you,
+ *  and "write answer" hands the question to the prompt box instead. */
+function AskBackBar({
+  ask,
+  onAnswer,
+  onQuote,
+}: {
+  ask: AskBack;
+  onAnswer: (text: string) => void;
+  onQuote?: (text: string) => void;
+}) {
+  const [sent, setSent] = useState<string | null>(null);
+  const chip = "border px-2 py-1 text-[length:var(--t12)] disabled:opacity-40";
+  return (
+    <div
+      className="border-t px-3 py-2.5"
+      style={{
+        borderColor: "color-mix(in srgb, var(--acc) 18%, transparent)",
+        background: "color-mix(in srgb, var(--acc) 6%, transparent)",
+      }}
+    >
+      <div className="flex items-start gap-2">
+        <span className="mt-1 flex-none text-[length:var(--t95)] tracking-[2px] text-[var(--acc)]">
+          ASK //
+        </span>
+        <Markdown className="min-w-0 leading-relaxed text-foreground-bright">{ask.question}</Markdown>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {ask.options.map((o) => (
+          <button
+            key={o}
+            type="button"
+            disabled={sent !== null}
+            onClick={() => { setSent(o); onAnswer(o); }}
+            title={`Reply "${o}"`}
+            className={`${chip} border-[var(--ac-22)] bg-[var(--ac-08)] text-foreground-bright hover:border-[var(--acc)] ${
+              sent === o ? "border-[var(--acc)]" : ""
+            }`}
+          >
+            {o}
+          </button>
+        ))}
+        {onQuote && (
+          <button
+            type="button"
+            disabled={sent !== null}
+            onClick={() => onQuote(ask.question)}
+            title="Quote the question into the prompt box and answer in your own words"
+            className={`${chip} border-border bg-[var(--panel3)] tracking-[1px] text-muted-2 hover:text-[var(--acc)]`}
+          >
+            <Quote size={9} className="mr-1 inline" aria-hidden />
+            WRITE ANSWER
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Lines a result prints before it folds — long enough that an ordinary answer
  *  never folds, short enough that a 300-line report doesn't bury the transcript. */
 const RESULT_FOLD_LINES = 30;
@@ -1107,6 +1197,9 @@ function FinalResult({
   isError,
   animate,
   idKey,
+  label,
+  onAnswer,
+  onQuote,
 }: {
   result: string;
   elapsed?: number;
@@ -1114,10 +1207,18 @@ function FinalResult({
   isError?: boolean;
   animate: boolean;
   idKey: string;
+  /** Overrides "RESULT // OK" — the accent-toned box drawn above a question card. */
+  label?: string;
+  onAnswer?: (text: string) => void;
+  onQuote?: (text: string) => void;
 }) {
   const flash = animate && !typedResults.has(idKey);
-  const tone = isError ? "var(--err)" : "var(--ok)";
-  const lines = result.split("\n").length;
+  const tone = isError ? "var(--err)" : label ? "var(--acc)" : "var(--ok)";
+  // The model asked in prose instead of using a question card: lift the question
+  // out of the body so it reads as an ask, and offer the answers it expected.
+  const ask = onAnswer && !isError ? askBack(result) : null;
+  const body = ask ? ask.body : result;
+  const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
   // the session arrive folded.
   const [open, setOpen] = useState(flash || lines <= RESULT_FOLD_LINES);
@@ -1131,10 +1232,10 @@ function FinalResult({
       }}
     >
       <div
-        className="flex items-center gap-2 border-b px-3 py-1.5 text-[9.5px] tracking-[2px]"
+        className="flex items-center gap-2 border-b px-3 py-1.5 text-[length:var(--t95)] tracking-[2px]"
         style={{ borderColor: `color-mix(in srgb, ${tone} 18%, transparent)`, color: tone }}
       >
-        <span>RESULT // {isError ? "ERROR" : "OK"}</span>
+        <span>{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
         <span className="ml-auto flex items-center gap-2 tracking-[1px] text-muted-2">
           {typeof elapsed === "number" && elapsed > 0 && (
             <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
@@ -1145,23 +1246,26 @@ function FinalResult({
           <CopyBtn text={result} title="copy result" />
         </span>
       </div>
-      <div className="relative px-3 py-2.5">
-        <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
-          <Typewriter text={result} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
+      {body && (
+        <div className="relative px-3 py-2.5">
+          <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
+            <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
+          </div>
+          {!open && (
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-20"
+              style={{ background: "linear-gradient(to bottom, transparent, var(--background))" }}
+              aria-hidden
+            />
+          )}
         </div>
-        {!open && (
-          <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-20"
-            style={{ background: "linear-gradient(to bottom, transparent, var(--background))" }}
-            aria-hidden
-          />
-        )}
-      </div>
+      )}
+      {ask && <AskBack ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
       {lines > RESULT_FOLD_LINES && (
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center justify-center gap-1.5 border-t px-3 py-1 text-[9.5px] tracking-[1.5px] text-muted-2 hover:text-foreground-bright"
+          className="flex w-full items-center justify-center gap-1.5 border-t px-3 py-1 text-[length:var(--t95)] tracking-[1.5px] text-muted-2 hover:text-foreground-bright"
           style={{ borderColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
         >
           <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />

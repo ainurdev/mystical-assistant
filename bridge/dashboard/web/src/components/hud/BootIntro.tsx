@@ -327,7 +327,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void; the
         <div
           className="glow"
           style={{
-            fontSize: "34px",
+            fontSize: "var(--t34)",
             letterSpacing: "10px",
             color: "var(--txb)",
             animation: "wordflick 1.4s steps(1) both .9s",
@@ -335,7 +335,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void; the
         >
           MYSTICAL//ASSISTANT
         </div>
-        <div style={{ fontSize: "11px", letterSpacing: "6px", color: "var(--txl)", marginTop: "8px" }}>
+        <div style={{ fontSize: "var(--t11)", letterSpacing: "6px", color: "var(--txl)", marginTop: "8px" }}>
           REMOTE DEV BRIDGE · CLAUDE CODE
         </div>
       </div>
@@ -349,7 +349,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void; the
           position: "relative",
           marginTop: "6px",
           fontFamily: "'JetBrains Mono',monospace",
-          fontSize: "11.5px",
+          fontSize: "var(--t115)",
           lineHeight: 1.9,
           color: "var(--txd)",
         }}
@@ -392,7 +392,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void; the
             display: "flex",
             justifyContent: "space-between",
             marginTop: "9px",
-            fontSize: "10px",
+            fontSize: "var(--t10)",
             letterSpacing: "2px",
             color: "var(--txl)",
             animation: "tickfade .5s ease both 1.4s",

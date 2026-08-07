@@ -149,7 +149,7 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
           appearance: "none", cursor: "pointer", flex: "none",
           border: `1px solid color-mix(in srgb, ${tone} 45%, transparent)`,
           background: `color-mix(in srgb, ${tone} ${hov === "btn" ? 18 : 9}%, transparent)`,
-          color: tone, fontFamily: "inherit", fontSize: 9, letterSpacing: 1.5,
+          color: tone, fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
           padding: "4px 8px", display: "flex", alignItems: "center", gap: 6,
           opacity: incoming || local ? 1 : 0.75,
         }}
@@ -170,17 +170,17 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
           <div onClick={(e) => e.stopPropagation()} className="panel"
             style={{ width: 470, maxWidth: "92vw", border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: "rgba(9,13,13,.99)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
-              <span style={{ fontSize: 13, color: "var(--txb)", letterSpacing: ".5px" }}>
+              <span style={{ fontSize: "var(--t13)", color: "var(--txb)", letterSpacing: ".5px" }}>
                 {incoming && local ? "Sync platform" : incoming ? "Update platform" : "Ship your changes"}
               </span>
               <span style={{ flex: 1 }} />
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "var(--txf)" }}>⎇ {info.branch}</span>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", color: "var(--txf)" }}>⎇ {info.branch}</span>
             </div>
             <div style={{ padding: "16px 18px" }}>
               {local > 0 && (
                 <>
-                  <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--warn)", marginBottom: 7 }}>YOURS ↑</div>
-                  <div style={{ fontSize: 12.5, color: "var(--txh)", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--warn)", marginBottom: 7 }}>YOURS ↑</div>
+                  <div style={{ fontSize: "var(--t125)", color: "var(--txh)", lineHeight: 1.6 }}>
                     {info.dirty > 0
                       ? `Commits ${info.dirty} change${info.dirty === 1 ? "" : "s"} with a message written from the diff, then pushes`
                       : "Pushes"}
@@ -189,7 +189,7 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
                   </div>
                   <div style={{ marginTop: 10, maxHeight: 150, overflowY: "auto", borderLeft: "2px solid color-mix(in srgb, var(--warn) 30%, transparent)", padding: "2px 0 2px 10px" }}>
                     {(info.files ?? []).map((f) => (
-                      <div key={f.path} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "var(--txm)", padding: "2px 0", display: "flex", gap: 7, whiteSpace: "nowrap" }}>
+                      <div key={f.path} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txm)", padding: "2px 0", display: "flex", gap: 7, whiteSpace: "nowrap" }}>
                         <span style={{ color: "var(--warn)", flex: "none" }}>{f.status}</span>
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{f.path}</span>
                         <span style={{ flex: 1 }} />
@@ -202,15 +202,15 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
               )}
               {incoming > 0 && (
                 <>
-                  <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--ok)", marginTop: local > 0 ? 18 : 0, marginBottom: 7 }}>THEIRS ↓</div>
-                  <div style={{ fontSize: 12.5, color: "var(--txh)", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--ok)", marginTop: local > 0 ? 18 : 0, marginBottom: 7 }}>THEIRS ↓</div>
+                  <div style={{ fontSize: "var(--t125)", color: "var(--txh)", lineHeight: 1.6 }}>
                     Pulls {incoming} new commit{incoming === 1 ? "" : "s"}, rebuilds the dashboard and restarts the
                     bridge. Running turns are resumed automatically; dev servers and the tunnel come
                     back with it.
                   </div>
                   <div style={{ marginTop: 10, maxHeight: 150, overflowY: "auto", borderLeft: "2px solid color-mix(in srgb, var(--acc) 30%, transparent)", padding: "2px 0 2px 10px" }}>
                     {(info.commits ?? []).map((c) => (
-                      <div key={c.sha} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "var(--txm)", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <div key={c.sha} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txm)", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         <span style={{ color: "var(--acc)" }}>{c.sha}</span> {c.subject}
                       </div>
                     ))}
@@ -218,35 +218,35 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
                 </>
               )}
               {incoming > 0 && info.dirty > 0 && (
-                <div style={{ marginTop: 12, border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", background: "color-mix(in srgb, var(--warn) 6%, transparent)", color: "var(--warn)", fontSize: 10.5, letterSpacing: ".3px", padding: "8px 11px", display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ marginTop: 12, border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", background: "color-mix(in srgb, var(--warn) 6%, transparent)", color: "var(--warn)", fontSize: "var(--t105)", letterSpacing: ".3px", padding: "8px 11px", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ flex: "none" }}>⚠</span>
                   <span>A fast-forward pull refuses on a dirty tree — commit &amp; push first.</span>
                 </div>
               )}
               {err && (
                 <div style={{ marginTop: 12, border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)", background: "color-mix(in srgb, var(--err) 7%, transparent)", padding: "9px 11px" }}>
-                  <div style={{ fontSize: 9, letterSpacing: 1.5, color: "var(--err)", marginBottom: 6 }}>{failed === "ship" ? "PUSH FAILED" : "UPDATE FAILED"}</div>
-                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "var(--txm)", whiteSpace: "pre-wrap", maxHeight: 150, overflowY: "auto" }}>{err}</div>
+                  <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--err)", marginBottom: 6 }}>{failed === "ship" ? "PUSH FAILED" : "UPDATE FAILED"}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", color: "var(--txm)", whiteSpace: "pre-wrap", maxHeight: 150, overflowY: "auto" }}>{err}</div>
                 </div>
               )}
             </div>
             <div style={{ display: "flex", gap: 9, padding: "0 18px 16px" }}>
               <button onClick={() => setOpen(false)} disabled={busy} {...hp("cancel")}
-                style={{ flex: 1, appearance: "none", cursor: busy ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "cancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: 10, opacity: busy ? 0.5 : 1 }}>CANCEL</button>
+                style={{ flex: 1, appearance: "none", cursor: busy ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "cancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.5 : 1 }}>CANCEL</button>
               {err ? (
                 <button onClick={fixWithClaude} {...hp("fix")}
-                  style={{ flex: 1.4, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "fix" ? "color-mix(in srgb, var(--acc) 28%, transparent)" : "color-mix(in srgb, var(--acc) 16%, transparent)", color: "var(--acc)", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: 10 }}>
+                  style={{ flex: 1.4, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "fix" ? "color-mix(in srgb, var(--acc) 28%, transparent)" : "color-mix(in srgb, var(--acc) 16%, transparent)", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10 }}>
                   ▸ FIX WITH CLAUDE</button>
               ) : (
                 <>
                   {local > 0 && (
                     <button onClick={() => void ship()} disabled={busy} {...hp("ship")}
-                      style={{ flex: 1.3, appearance: "none", cursor: busy ? "wait" : "pointer", border: "1px solid var(--warn)", background: hov === "ship" ? "color-mix(in srgb, var(--warn) 28%, transparent)" : "color-mix(in srgb, var(--warn) 16%, transparent)", color: "var(--warn)", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: 10, opacity: busy ? 0.7 : 1 }}>
+                      style={{ flex: 1.3, appearance: "none", cursor: busy ? "wait" : "pointer", border: "1px solid var(--warn)", background: hov === "ship" ? "color-mix(in srgb, var(--warn) 28%, transparent)" : "color-mix(in srgb, var(--warn) 16%, transparent)", color: "var(--warn)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.7 : 1 }}>
                       {phase === "shipping" ? "COMMITTING…" : info.dirty > 0 ? "COMMIT & PUSH" : "PUSH"}</button>
                   )}
                   {incoming > 0 && (
                     <button onClick={() => void apply()} disabled={busy} {...hp("go")}
-                      style={{ flex: 1.3, appearance: "none", cursor: busy ? "wait" : "pointer", border: "1px solid var(--ok)", background: hov === "go" ? "color-mix(in srgb, var(--ok) 28%, transparent)" : "color-mix(in srgb, var(--ok) 16%, transparent)", color: "var(--ok)", fontFamily: "inherit", fontSize: 10.5, letterSpacing: 1.5, padding: 10, opacity: busy ? 0.7 : 1 }}>
+                      style={{ flex: 1.3, appearance: "none", cursor: busy ? "wait" : "pointer", border: "1px solid var(--ok)", background: hov === "go" ? "color-mix(in srgb, var(--ok) 28%, transparent)" : "color-mix(in srgb, var(--ok) 16%, transparent)", color: "var(--ok)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.7 : 1 }}>
                       {phase === "updating" ? "UPDATING…" : phase === "restarting" ? "RESTARTING…" : "PULL & RESTART"}</button>
                   )}
                 </>

@@ -108,18 +108,18 @@ export function RuneSpirit({ variant = "line" }: { variant?: "line" | "block" })
     return (
       <div className="flex items-start gap-3.5 py-7">
         <span
-          className="glow inline-flex h-[34px] w-[34px] flex-none items-center justify-center text-[26px] leading-none text-primary"
+          className="glow inline-flex h-[34px] w-[34px] flex-none items-center justify-center text-[length:var(--t26)] leading-none text-primary"
           style={{ animation: "twinkle 1.7s ease-in-out infinite" }}
         >
           {rune}
         </span>
         <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-[11px] tracking-[1.5px] text-muted-2">
+          <span className="text-[length:var(--t11)] tracking-[1.5px] text-muted-2">
             // no messages in this session yet
           </span>
           <Quote
             {...quote}
-            className="text-[12.5px] italic leading-relaxed text-muted-foreground"
+            className="text-[length:var(--t125)] italic leading-relaxed text-muted-foreground"
           />
         </div>
       </div>
@@ -130,14 +130,14 @@ export function RuneSpirit({ variant = "line" }: { variant?: "line" | "block" })
     <div className="mt-2.5 flex items-center gap-[10px] text-muted-foreground">
       <span className="flex-none text-violet">~ ❯</span>
       <span
-        className="glow inline-flex h-[18px] w-[18px] flex-none items-center justify-center text-[15px] leading-none text-primary"
+        className="glow inline-flex h-[18px] w-[18px] flex-none items-center justify-center text-[length:var(--t15)] leading-none text-primary"
         style={{ animation: "twinkle 1.7s ease-in-out infinite" }}
       >
         {rune}
       </span>
       <Quote
         {...quote}
-        className="min-w-0 truncate text-[11.5px] italic tracking-[0.3px] text-muted-2"
+        className="min-w-0 truncate text-[length:var(--t115)] italic tracking-[0.3px] text-muted-2"
       />
     </div>
   );

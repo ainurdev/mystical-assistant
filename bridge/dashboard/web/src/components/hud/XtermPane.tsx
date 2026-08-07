@@ -68,7 +68,11 @@ export function XtermPane({ id, active, onEnded, preload, onPreloaded }: {
     const enc = new TextEncoder();
     const term = new Terminal({
       fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-      fontSize: 12, lineHeight: 1.15, cursorBlink: true, scrollback: 5000,
+      // xterm paints to a canvas, so this one wants a NUMBER — read the live
+      // base font size instead of a CSS token. ponytail: read at mount; a base
+      // change lands on the next time the pane opens.
+      fontSize: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--fs")) || 12,
+      lineHeight: 1.15, cursorBlink: true, scrollback: 5000,
       theme: resolveTheme(THEME), allowProposedApi: true,
     });
     const fit = new FitAddon();

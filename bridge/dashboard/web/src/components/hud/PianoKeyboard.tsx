@@ -151,7 +151,7 @@ function Key({
   return (
     <span
       {...common}
-      className="flex flex-1 cursor-pointer items-end justify-center border-r border-black/25 pb-[2px] text-[7px] leading-none transition-[background] duration-75 last:border-r-0"
+      className="flex flex-1 cursor-pointer items-end justify-center border-r border-black/25 pb-[2px] text-[length:var(--t7)] leading-none transition-[background] duration-75 last:border-r-0"
       style={{
         background: tint ?? (on ? "var(--acc)" : "#e8eceb"),
         color: on || tint ? "var(--acc-on)" : "#8a9694",

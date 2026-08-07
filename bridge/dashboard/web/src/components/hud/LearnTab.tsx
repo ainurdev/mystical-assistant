@@ -22,11 +22,11 @@ import { useStickyFlag, useStickySet, useStickyStr } from "../../lib/prefs";
    too narrow for two columns and the list stacks above the lesson instead. */
 
 const mono: React.CSSProperties = {
-  fontFamily: "'JetBrains Mono',monospace", fontSize: 11,
+  fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)",
 };
 
 const btn: React.CSSProperties = {
-  appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 9.5,
+  appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t95)",
   letterSpacing: 1.5, padding: "4px 10px", background: "transparent",
   color: "var(--txm)", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
 };
@@ -146,14 +146,14 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
           {list.length ? `${list.length} LESSON${list.length === 1 ? "" : "S"}` : "NO LESSONS YET"}
         </span>
         {unread > 0 && (
-          <span style={{ ...mono, fontSize: 9.5, letterSpacing: 1, color: "var(--acc)" }}>
+          <span style={{ ...mono, fontSize: "var(--t95)", letterSpacing: 1, color: "var(--acc)" }}>
             {unread} NEW
           </span>
         )}
         {/* Which repo, only when that is the answer — in the ALL scope every row
             names its own, and one repo in the header would contradict them. */}
         {scope !== "*" && (
-          <span style={{ ...mono, fontSize: 9.5, letterSpacing: 1, color: "var(--acc)" }}>
+          <span style={{ ...mono, fontSize: "var(--t95)", letterSpacing: 1, color: "var(--acc)" }}>
             {project.split("/").pop()}
           </span>
         )}
@@ -199,14 +199,14 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
                     })}
                     style={{ ...mono, display: "flex", alignItems: "center", gap: 6, width: "100%",
                       appearance: "none", border: 0, background: "transparent", cursor: "pointer",
-                      padding: "6px 4px", fontSize: 9.5, letterSpacing: 1.5, color: "var(--txm)",
+                      padding: "6px 4px", fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txm)",
                       textTransform: "uppercase" }}>
                     <span style={{ color: "var(--txd)", width: 8 }}>{shut ? "▸" : "▾"}</span>
                     <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {sh.concept}
                     </span>
                     <span style={{ flex: 1 }} />
-                    <span style={{ color: sh.unread ? "var(--acc)" : "var(--txd)", fontSize: 9 }}>
+                    <span style={{ color: sh.unread ? "var(--acc)" : "var(--txd)", fontSize: "var(--t9)" }}>
                       {sh.unread ? `${sh.unread}/${sh.lessons.length}` : sh.lessons.length}
                     </span>
                   </button>
@@ -219,12 +219,12 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
                           border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
                           cursor: "pointer", fontFamily: "inherit", padding: "7px 9px", marginBottom: 2,
                           background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
-                          color: on ? "var(--txb)" : "var(--txl)", fontSize: 11, lineHeight: 1.35 }}>
+                          color: on ? "var(--txb)" : "var(--txl)", fontSize: "var(--t11)", lineHeight: 1.35 }}>
                         <span style={{ flex: "none", marginTop: 4, width: 5, height: 5, borderRadius: 5,
                           background: readSet.has(k) ? "transparent" : "var(--acc)" }} />
                         <span style={{ minWidth: 0 }}>
                           {l.title}
-                          <span style={{ display: "block", ...mono, fontSize: 9, color: "var(--txd)", marginTop: 3,
+                          <span style={{ display: "block", ...mono, fontSize: "var(--t9)", color: "var(--txd)", marginTop: 3,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {scope === "*" && l.project ? `${l.project.split("/").pop()} · ` : `${l.file.slice(0, 4)} · `}
                             {ago(l.at)} ago
@@ -257,15 +257,15 @@ function Quiz({ title, concept, question, onReveal }: {
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "18px 4px", maxWidth: 560 }}>
-      <span style={{ ...mono, fontSize: 9.5, letterSpacing: 1.5, color: "var(--txd)", textTransform: "uppercase" }}>
+      <span style={{ ...mono, fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txd)", textTransform: "uppercase" }}>
         {concept || "new lesson"}
       </span>
-      <span style={{ fontSize: 15, lineHeight: 1.4, color: "var(--txb)" }}>{title}</span>
+      <span style={{ fontSize: "var(--t15)", lineHeight: 1.4, color: "var(--txb)" }}>{title}</span>
       <div style={{ borderLeft: "2px solid var(--acc)", paddingLeft: 12 }}>
-        <span style={{ ...mono, fontSize: 9.5, letterSpacing: 1.5, color: "var(--acc)", display: "block", marginBottom: 6 }}>
+        <span style={{ ...mono, fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--acc)", display: "block", marginBottom: 6 }}>
           CAN YOU ANSWER THIS?
         </span>
-        <span style={{ fontSize: 13, lineHeight: 1.55, color: "var(--txl)" }}>{question}</span>
+        <span style={{ fontSize: "var(--t13)", lineHeight: 1.55, color: "var(--txl)" }}>{question}</span>
       </div>
       <div>
         <button onClick={onReveal} style={{ ...btn, padding: "7px 14px" }}>SHOW THE LESSON</button>
@@ -288,7 +288,7 @@ export function LearnPanel({ project, read, onRead }: {
       {/* No repo chip here: the panel spans repos by default, and naming the
           active session's one made the header disagree with the list. */}
       <div style={{ display: "flex", alignItems: "center", padding: "8px 12px" }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>LEARN</span>
+        <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>LEARN</span>
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: 11 }}>
         {/* No `key={project}`: remounting on every session switch is what threw

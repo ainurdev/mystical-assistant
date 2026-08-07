@@ -163,7 +163,7 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
               return (
                 <span
                   key={r}
-                  className={`shrink-0 truncate rounded border px-1 font-mono text-[9.5px] leading-[15px] ${CHIP_CLASS[kind]}`}
+                  className={`shrink-0 truncate rounded border px-1 font-mono text-[length:var(--t95)] leading-[15px] ${CHIP_CLASS[kind]}`}
                   style={{ maxWidth: 80 }}
                 >
                   {label}
@@ -171,12 +171,12 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
               );
             })}
             {c.refs.length > 2 && (
-              <span className="shrink-0 font-mono text-[9.5px] text-muted-2" title={c.refs.join(", ")}>
+              <span className="shrink-0 font-mono text-[length:var(--t95)] text-muted-2" title={c.refs.join(", ")}>
                 +{c.refs.length - 2}
               </span>
             )}
-            <span className="flex-1 truncate text-[11.5px] text-card-foreground">{c.subject}</span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-2">{ago(c.ts)}</span>
+            <span className="flex-1 truncate text-[length:var(--t115)] text-card-foreground">{c.subject}</span>
+            <span className="shrink-0 font-mono text-[length:var(--t10)] text-muted-2">{ago(c.ts)}</span>
           </div>
           {/* ponytail: the expansion splits the rails of any lane passing this
               row — the detail's left rule keeps the opened commit's own lane
@@ -186,11 +186,11 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
               className="mb-1 space-y-px py-1 pl-2"
               style={{ marginLeft: x(lane), borderLeft: `1.5px solid ${color}` }}
             >
-              <div className="px-1 pb-1 font-mono text-[9.5px] text-muted-2">
+              <div className="px-1 pb-1 font-mono text-[length:var(--t95)] text-muted-2">
                 {c.sha.slice(0, 8)} · {c.author} · {new Date(c.ts * 1000).toLocaleString()}
               </div>
-              {files === null && <div className="px-1 text-[10px] text-muted-2">Loading files…</div>}
-              {files?.length === 0 && <div className="px-1 text-[10px] text-muted-2">No file changes.</div>}
+              {files === null && <div className="px-1 text-[length:var(--t10)] text-muted-2">Loading files…</div>}
+              {files?.length === 0 && <div className="px-1 text-[length:var(--t10)] text-muted-2">No file changes.</div>}
               {files?.map((f) => (
                 <div key={f.name}>
                   <div
@@ -201,7 +201,7 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
                     }`}
                   >
                     <span
-                      className="w-2.5 shrink-0 text-center font-mono text-[10px] font-bold"
+                      className="w-2.5 shrink-0 text-center font-mono text-[length:var(--t10)] font-bold"
                       style={{ color: MARK_COLOR[f.mark] ?? "var(--warn)" }}
                     >
                       {f.mark}
@@ -209,15 +209,15 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
                     {/* rtl keeps the filename visible when the path is truncated */}
                     <span
                       dir="rtl"
-                      className="flex-1 truncate text-left font-mono text-[10.5px] text-muted-foreground"
+                      className="flex-1 truncate text-left font-mono text-[length:var(--t105)] text-muted-foreground"
                     >
                       {f.name}
                     </span>
-                    <span className="shrink-0 font-mono text-[9.5px] text-[var(--ok)]">+{f.add}</span>
-                    <span className="shrink-0 font-mono text-[9.5px] text-[var(--err)]">−{f.del}</span>
+                    <span className="shrink-0 font-mono text-[length:var(--t95)] text-[var(--ok)]">+{f.add}</span>
+                    <span className="shrink-0 font-mono text-[length:var(--t95)] text-[var(--err)]">−{f.del}</span>
                   </div>
                   {openFile === f.name && (
-                    <pre className="my-1 max-h-72 overflow-auto rounded border border-border p-1 font-mono text-[10px] leading-[1.55]">
+                    <pre className="my-1 max-h-72 overflow-auto rounded border border-border p-1 font-mono text-[length:var(--t10)] leading-[1.55]">
                       {diff === null
                         ? "loading…"
                         : diff.split("\n").map((l, i) => (
@@ -237,7 +237,7 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
       {commits.length >= limit && (
         <button
           onClick={() => setLimit((l) => l + 200)}
-          className="mt-1 w-full rounded-lg border border-input bg-secondary py-1.5 text-[11px] text-muted-foreground hover:bg-accent"
+          className="mt-1 w-full rounded-lg border border-input bg-secondary py-1.5 text-[length:var(--t11)] text-muted-foreground hover:bg-accent"
         >
           Load older commits
         </button>

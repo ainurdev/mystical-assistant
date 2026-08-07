@@ -61,8 +61,8 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
   return (
     <div style={{ padding: "18px 18px 40px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 14 }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 2.5, color: "var(--txl)" }}>NEXT UP</span>
-        <span style={{ fontSize: 9, color: "var(--txd)" }}>
+        <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>NEXT UP</span>
+        <span style={{ fontSize: "var(--t9)", color: "var(--txd)" }}>
           {board ? `${board.repos.length} repo(s) · ${when(board.generated)}` : "…"}
         </span>
         <span style={{ flex: 1 }} />
@@ -76,7 +76,7 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
             background: "transparent",
             color: busy ? "var(--txd)" : "var(--txm)",
             fontFamily: "inherit",
-            fontSize: 9,
+            fontSize: "var(--t9)",
             letterSpacing: 1.5,
             padding: "4px 10px",
           }}
@@ -86,14 +86,14 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
       </div>
 
       {board && !board.enabled && (
-        <div style={{ fontSize: 9.5, color: "var(--txl)", lineHeight: 1.7, marginBottom: 14 }}>
+        <div style={{ fontSize: "var(--t95)", color: "var(--txl)", lineHeight: 1.7, marginBottom: 14 }}>
           Ranking is off, so this is the plain heuristic order and costs nothing. Switch
           NEXT-UP BOARD on in Settings → AI to have a scout read each repo.
         </div>
       )}
 
       {!items.length && (
-        <div style={{ fontSize: 10, color: "var(--txd)", lineHeight: 1.8 }}>
+        <div style={{ fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.8 }}>
           {board === null
             ? "Reading…"
             : "Nothing yet — REFRESH looks over the repos you have worked in recently."}
@@ -112,17 +112,17 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
               alignItems: "flex-start",
             }}
           >
-            <span style={{ fontSize: 10, color: "var(--txd)", flex: "none", marginTop: 2 }}>
+            <span style={{ fontSize: "var(--t10)", color: "var(--txd)", flex: "none", marginTop: 2 }}>
               {String(n + 1).padStart(2, "0")}
             </span>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 12, color: "var(--txb)", overflowWrap: "anywhere" }}>
+              <div style={{ fontSize: "var(--t12)", color: "var(--txb)", overflowWrap: "anywhere" }}>
                 {it.title}
               </div>
-              <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4, lineHeight: 1.7 }}>
+              <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4, lineHeight: 1.7 }}>
                 {it.why}
               </div>
-              <div style={{ fontSize: 9, color: "var(--txd)", marginTop: 5, letterSpacing: 0.5 }}>
+              <div style={{ fontSize: "var(--t9)", color: "var(--txd)", marginTop: 5, letterSpacing: 0.5 }}>
                 {it.repo}
                 {it.branch ? ` ⎇ ${it.branch}` : ""} · {EFFORT[it.effort] ?? "··"}
                 {it.evidence ? ` · ${it.evidence}` : ""}
@@ -138,7 +138,7 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
                 background: "transparent",
                 color: "var(--txm)",
                 fontFamily: "inherit",
-                fontSize: 9,
+                fontSize: "var(--t9)",
                 letterSpacing: 1.5,
                 padding: "4px 10px",
               }}

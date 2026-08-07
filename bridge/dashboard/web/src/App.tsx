@@ -22,7 +22,8 @@ import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
 import { useTelemetry } from "./lib/telemetry";
 import { ago, useProjectTints } from "./lib/surfaces";
 import {
-  autoTextScale,
+  autoBaseFont,
+  fontStack,
   isLight,
   loadSettings,
   sameFamily,
@@ -30,7 +31,6 @@ import {
   themeCanvas,
   themeDef,
   themeFilter,
-  themeFont,
   themeVars,
   THEME_TOKEN_KEYS,
   type HudSettings,
@@ -142,14 +142,14 @@ function CheckingBanner({ prompt }: { prompt: string }) {
         <span style={{ color: "var(--purple-b)", display: "flex", flex: "none" }}>
           <Spinner className="h-[11px] w-[11px] border" />
         </span>
-        <span style={{ fontSize: 12, letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s ease-in-out infinite" }}>
+        <span style={{ fontSize: "var(--t12)", letterSpacing: 2, fontWeight: 600, color: "var(--purple-b)", flex: "none", animation: "twinkle 1.2s ease-in-out infinite" }}>
           CHECKING CONTEXT…
         </span>
-        <span style={{ fontSize: 10, letterSpacing: 0.5, color: "var(--txd)" }}>
+        <span style={{ fontSize: "var(--t10)", letterSpacing: 0.5, color: "var(--txd)" }}>
           deciding if this belongs in this session — nothing has run yet
         </span>
       </div>
-      <div style={{ marginTop: 7, fontSize: 11, color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div style={{ marginTop: 7, fontSize: "var(--t11)", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         <span style={{ color: "var(--purple)" }}>❯ </span>{prompt}
       </div>
     </div>
@@ -297,14 +297,18 @@ export function App() {
     window.setTimeout(() => { glideRef.current = false; }, 700);
   }, []);
 
-  // AUTO text size follows the window; a fixed textScale ignores this.
+  // AUTO base font size follows the window; a fixed baseFont ignores this.
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
     const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  const uiScale = settings.textScale || autoTextScale(vp.w, vp.h);
+  const baseFont = settings.baseFont || autoBaseFont(vp.w, vp.h);
+  // One knob for the whole type scale: index.css derives every --tNN from --fs.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--fs", `${baseFont}px`);
+  }, [baseFont]);
 
   // Ambient widgets.
   const host = useHostVitals();
@@ -1098,6 +1102,8 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [ai.learn]);
   const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
+  // Uncommitted files in the session's repo — the CHANGES tab badges the count.
+  const dirtyFiles = gitBadges.get(sessionProject ?? "")?.dirty ?? 0;
 
   const rightTabs: PanelTab[] = [
     {
@@ -1122,8 +1128,8 @@ export function App() {
       ),
     },
     {
-      id: "changes", label: "Changed files", icon: "◈", ownScroll: true,
-      badge: gitBadges.get(sessionProject ?? "")?.dirty ? "●" : null,
+      id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: "◈", ownScroll: true,
+      badge: dirtyFiles ? String(dirtyFiles) : null,
       render: () => (
         <FilesPanel
           project={sessionProject} branch={sessionBranch} changedOnly
@@ -1133,7 +1139,7 @@ export function App() {
     },
     {
       id: "git", label: "Source Control", icon: "⎇",
-      badge: gitBadges.get(sessionProject ?? "")?.dirty ? "●" : null,
+      badge: dirtyFiles ? "●" : null,
       render: () => <GitTab project={sessionProject} />,
     },
     {
@@ -1463,10 +1469,9 @@ export function App() {
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
-            zoom: uiScale,
             filter: themeFilter(settings.theme),
             background: themeCanvas(settings.theme),
-            fontFamily: themeFont(settings.theme) || undefined,
+            fontFamily: fontStack(settings.font, settings.theme) || undefined,
             ...themeVars(settings.theme),
           } as CSSProperties}
         >

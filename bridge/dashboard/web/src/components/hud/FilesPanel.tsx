@@ -133,22 +133,22 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
   return (
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 2.5, color: "var(--txl)" }}>{changedOnly ? "CHANGES" : "FILES"}</span>
+        <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>{changedOnly ? "CHANGES" : "FILES"}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {changed.size > 0 && (
-            <span style={{ fontSize: 9.5, letterSpacing: 1.5, color: "var(--warn)" }}>{changed.size} CHANGED</span>
+            <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--warn)" }}>{changed.size} CHANGED</span>
           )}
           {tools.map((t) => (
             <button key={t.k} onClick={t.on} title={t.t}
               onMouseEnter={() => setHov(t.k)} onMouseLeave={() => setHov("")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === t.k ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, lineHeight: 1.3, padding: "2px 6px" }}>{t.g}</button>
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === t.k ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", lineHeight: 1.3, padding: "2px 6px" }}>{t.g}</button>
           ))}
         </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
 
       {branch && (
-        <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px 0", fontSize: 9, color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px 0", fontSize: "var(--t9)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", minWidth: 0 }}>
           <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
         </div>
@@ -161,7 +161,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
         {changedOnly && project && (
           <div style={{ borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "3px 8px 9px", marginBottom: 6 }}>
             <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={2} placeholder="Commit message…"
-              style={{ width: "100%", resize: "none", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "transparent", color: "var(--txf)", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, lineHeight: 1.5, padding: "6px 7px", outline: "none" }} />
+              style={{ width: "100%", resize: "none", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "transparent", color: "var(--txf)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", lineHeight: 1.5, padding: "6px 7px", outline: "none" }} />
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               {[
                 { k: "cm", l: "COMMIT ALL", on: () => void commit(), off: busy || !msg.trim() || !changed.size, grow: 1 },
@@ -169,17 +169,17 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
               ].map((b) => (
                 <button key={b.k} onClick={b.on} disabled={b.off}
                   onMouseEnter={() => setHov(b.k)} onMouseLeave={() => setHov("")}
-                  style={{ flex: b.grow ? 1 : "none", appearance: "none", cursor: b.off ? "not-allowed" : "pointer", opacity: b.off ? 0.4 : 1, border: "1px solid color-mix(in srgb, var(--acc) 24%, transparent)", background: hov === b.k && !b.off ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.2, padding: "5px 10px" }}>{b.l}</button>
+                  style={{ flex: b.grow ? 1 : "none", appearance: "none", cursor: b.off ? "not-allowed" : "pointer", opacity: b.off ? 0.4 : 1, border: "1px solid color-mix(in srgb, var(--acc) 24%, transparent)", background: hov === b.k && !b.off ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.2, padding: "5px 10px" }}>{b.l}</button>
               ))}
             </div>
             {note && (
-              <div style={{ marginTop: 6, fontFamily: "'JetBrains Mono',monospace", fontSize: 9.5, color: "var(--txl)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{note}</div>
+              <div style={{ marginTop: 6, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", color: "var(--txl)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{note}</div>
             )}
           </div>
         )}
-        {!project && <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "8px 9px" }}>No session selected.</div>}
+        {!project && <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>No session selected.</div>}
         {project && !rows.length && (
-          <div style={{ fontSize: 10.5, color: "var(--txl)", padding: "8px 9px" }}>
+          <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>
             {changedOnly ? "Working tree clean." : loading ? "Reading tree…" : "No files — not a git repo?"}
           </div>
         )}
@@ -192,10 +192,10 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
           return (
             <button key={r.key} className="trow" onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path, !!st))}
               title={r.path}
-              style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, padding: "3px 7px", paddingLeft: 7 + r.depth * 11 }}>
+              style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", padding: "3px 7px", paddingLeft: 7 + r.depth * 11 }}>
               {r.dir ? (
                 <>
-                  <span style={{ fontSize: 8, color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
+                  <span style={{ fontSize: "var(--t8)", color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
                   <span style={{ color: marked ? "var(--warn)" : "var(--txm)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
                   {marked && <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--warn)", flex: "none" }} />}
                 </>
@@ -205,7 +205,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
                   <FileIcon name={r.name} size={13} />
                   {/* Full paths truncate from the left, so the filename survives. */}
                   <span style={{ color: st ? ST_COLOR(st) : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: changedOnly ? "rtl" : "ltr", textAlign: "left" }}>{r.name}</span>
-                  {st && <span style={{ fontSize: 9.5, fontWeight: 700, color: ST_COLOR(st), flex: "none" }}>{st}</span>}
+                  {st && <span style={{ fontSize: "var(--t95)", fontWeight: 700, color: ST_COLOR(st), flex: "none" }}>{st}</span>}
                 </>
               )}
             </button>
@@ -217,7 +217,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
       {scrolled && (
         <button onClick={() => listRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
           title={changedOnly ? "back to top — commit box" : "back to top"} aria-label="back to top"
-          style={{ position: "absolute", right: 14, bottom: 12, zIndex: 4, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 94%, transparent)", color: "var(--txm)", fontFamily: "inherit", fontSize: 9.5, letterSpacing: 1.2, padding: "4px 9px" }}>↑ TOP</button>
+          style={{ position: "absolute", right: 14, bottom: 12, zIndex: 4, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "color-mix(in srgb, var(--panel2) 94%, transparent)", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.2, padding: "4px 9px" }}>↑ TOP</button>
       )}
     </div>
   );

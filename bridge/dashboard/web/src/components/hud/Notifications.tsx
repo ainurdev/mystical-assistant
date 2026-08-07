@@ -51,20 +51,20 @@ function Row({ n, onDismiss }: { n: Notice; onDismiss: () => void }) {
   return (
     <div style={{ padding: "9px 11px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-        <span style={{ fontSize: 7.5, letterSpacing: 1.5, color: k.color, border: `1px solid color-mix(in srgb, ${k.color} 35%, transparent)`, padding: "1px 5px", flex: "none" }}>
+        <span style={{ fontSize: "var(--t75)", letterSpacing: 1.5, color: k.color, border: `1px solid color-mix(in srgb, ${k.color} 35%, transparent)`, padding: "1px 5px", flex: "none" }}>
           {k.label}
         </span>
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 8.5, color: "var(--txl)" }}>{fmtTime(n.time)}</span>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t85)", color: "var(--txl)" }}>{fmtTime(n.time)}</span>
         <span style={{ flex: 1 }}></span>
         <button
           onClick={onDismiss}
           title="dismiss"
-          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 12, lineHeight: 1, padding: "0 2px" }}
+          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1, padding: "0 2px" }}
         >
           ×
         </button>
       </div>
-      <div style={{ marginTop: 5, fontSize: 11.5, lineHeight: 1.5, color: "var(--tx)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace" }}>
+      <div style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--tx)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace" }}>
         {n.text}
       </div>
     </div>
@@ -132,7 +132,7 @@ export function NotificationCenter() {
           <path d="M13.7 21a2 2 0 0 1-3.4 0" />
         </svg>
         {unread > 0 && (
-          <span style={{ position: "absolute", top: -5, right: -5, minWidth: 13, height: 13, borderRadius: 7, background: "var(--err)", color: "var(--panel3)", fontFamily: "'JetBrains Mono',monospace", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", boxSizing: "border-box" }}>
+          <span style={{ position: "absolute", top: -5, right: -5, minWidth: 13, height: 13, borderRadius: 7, background: "var(--err)", color: "var(--panel3)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t8)", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", boxSizing: "border-box" }}>
             {unread > 9 ? "9+" : unread}
           </span>
         )}
@@ -153,12 +153,12 @@ export function NotificationCenter() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "11px 11px 9px" }}>
-            <span style={{ fontSize: 9, letterSpacing: 2, color: "var(--acc)" }}>NOTIFICATIONS</span>
+            <span style={{ fontSize: "var(--t9)", letterSpacing: 2, color: "var(--acc)" }}>NOTIFICATIONS</span>
             <span style={{ flex: 1 }}></span>
             {list.length > 0 && (
               <button
                 onClick={clearAll}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: 7.5, letterSpacing: 1.5, padding: "3px 7px" }}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t75)", letterSpacing: 1.5, padding: "3px 7px" }}
               >
                 CLEAR ALL
               </button>
@@ -166,7 +166,7 @@ export function NotificationCenter() {
           </div>
           <div className="mscroll" style={{ maxHeight: 320, overflowY: "auto" }}>
             {list.length === 0 ? (
-              <div style={{ padding: "18px 11px", textAlign: "center", fontSize: 10, letterSpacing: 1.5, color: "var(--txl)" }}>
+              <div style={{ padding: "18px 11px", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 1.5, color: "var(--txl)" }}>
                 NO NOTIFICATIONS
               </div>
             ) : (
@@ -192,19 +192,19 @@ export function NotificationCenter() {
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <span style={{ fontSize: 7.5, letterSpacing: 1.5, color: k.color, border: `1px solid color-mix(in srgb, ${k.color} 35%, transparent)`, padding: "1px 5px", flex: "none" }}>
+                  <span style={{ fontSize: "var(--t75)", letterSpacing: 1.5, color: k.color, border: `1px solid color-mix(in srgb, ${k.color} 35%, transparent)`, padding: "1px 5px", flex: "none" }}>
                     {k.label}
                   </span>
                   <span style={{ flex: 1 }}></span>
                   <button
                     onClick={() => setToastIds((p) => p.filter((id) => id !== n.id))}
                     title="dismiss"
-                    style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: 12, lineHeight: 1, padding: "0 2px" }}
+                    style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1, padding: "0 2px" }}
                   >
                     ×
                   </button>
                 </div>
-                <div style={{ marginTop: 5, fontSize: 11.5, lineHeight: 1.5, color: "var(--txb)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                <div style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--txb)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                   {n.text}
                 </div>
               </div>

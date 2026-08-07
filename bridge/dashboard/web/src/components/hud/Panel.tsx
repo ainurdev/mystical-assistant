@@ -23,8 +23,8 @@ export function Panel({
       style={{ animation: `boot .5s ease both ${delay}` }}
     >
       <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-[10.5px] tracking-[2.5px] text-muted-2">{label}</span>
-        <span className="text-[10.5px] tracking-[2.5px] text-primary">{title}</span>
+        <span className="text-[length:var(--t105)] tracking-[2.5px] text-muted-2">{label}</span>
+        <span className="text-[length:var(--t105)] tracking-[2.5px] text-primary">{title}</span>
       </div>
       <div
         className="h-px flex-none origin-left"

@@ -42,9 +42,9 @@ export function WorkingIndicator({ hud }: { hud?: HudSettings }) {
 
   return (
     <div className="my-2 ml-[18px] flex items-center gap-3 border border-border bg-[var(--ac-03)] px-3 py-2">
-      <span className="text-[14px] leading-none text-primary">{frame}</span>
-      <span className="glow text-[11px] tracking-[2.5px] text-primary">{phrase}</span>
-      <span className="text-[11px] tracking-[2px] text-muted-2">{".".repeat(1 + (tick % 3))}</span>
+      <span className="text-[length:var(--t14)] leading-none text-primary">{frame}</span>
+      <span className="glow text-[length:var(--t11)] tracking-[2.5px] text-primary">{phrase}</span>
+      <span className="text-[length:var(--t11)] tracking-[2px] text-muted-2">{".".repeat(1 + (tick % 3))}</span>
       <span className="flex h-3 items-end gap-[2px]">
         {[0, 1, 2, 3, 4].map((b) => (
           <span
@@ -54,7 +54,7 @@ export function WorkingIndicator({ hud }: { hud?: HudSettings }) {
           />
         ))}
       </span>
-      <span className="ml-auto font-mono text-[10px] tracking-[1px] text-muted-2">{elapsed}s</span>
+      <span className="ml-auto font-mono text-[length:var(--t10)] tracking-[1px] text-muted-2">{elapsed}s</span>
       <span
         className="inline-block h-[12px] w-[7px] bg-primary"
         style={{ animation: "caret 1.05s steps(1) infinite" }}
@@ -121,11 +121,11 @@ function NyanIndicator({
   // keeps the whole readout together on the right, off the rainbow.
   const readout = (push: boolean) => (
     <>
-      <span className="text-[11px] tracking-[2.5px] text-white/85 [text-shadow:0_1px_2px_#000]">
+      <span className="text-[length:var(--t11)] tracking-[2.5px] text-white/85 [text-shadow:0_1px_2px_#000]">
         {phrase}
       </span>
       <span
-        className={`flex-none font-mono text-[10px] tracking-[1px] text-white/70 [text-shadow:0_1px_2px_#000] ${push ? "ml-auto" : ""}`}
+        className={`flex-none font-mono text-[length:var(--t10)] tracking-[1px] text-white/70 [text-shadow:0_1px_2px_#000] ${push ? "ml-auto" : ""}`}
       >
         {elapsed}s
       </span>

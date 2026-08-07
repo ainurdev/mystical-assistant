@@ -51,7 +51,7 @@ export function RightPanel({
               title={on ? `${t.label} — click to collapse` : t.label}
               aria-label={t.label}
               aria-current={on}
-              className={`relative flex h-[30px] items-center justify-center border-l-2 text-[13px] hover:bg-accent ${
+              className={`relative flex h-[30px] items-center justify-center border-l-2 text-[length:var(--t13)] hover:bg-accent ${
                 on
                   ? "border-primary bg-[var(--ac-06)] text-foreground-bright"
                   : "border-transparent text-muted-2 hover:text-primary"
@@ -61,7 +61,7 @@ export function RightPanel({
               {/* The badge is drawn as given — a dot for "is there anything",
                   a number when the count is the point (unread lessons). */}
               {t.badge ? (
-                <span className="absolute right-0 top-0 text-[7px] leading-none text-primary">{t.badge}</span>
+                <span className="absolute right-0 top-0 text-[length:var(--t7)] leading-none text-primary">{t.badge}</span>
               ) : null}
             </button>
           );

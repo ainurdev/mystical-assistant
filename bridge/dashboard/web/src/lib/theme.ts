@@ -240,6 +240,31 @@ export function themeFont(t: ThemeKey): string {
   return themeDef(t).font;
 }
 
+/**
+ * A theme carries a palette and a DEFAULT type voice; the voice is not welded
+ * to it. `HudSettings.font` holds a key from here ("" = whatever the theme
+ * brought), so any palette can be read in any of these. The list is exactly the
+ * families the dashboard already loads (index.css `@import`, main.tsx
+ * `@fontsource`) — picking one never waits on a font that isn't there.
+ */
+export const FONTS: { key: string; label: string; stack: string }[] = [
+  { key: "", label: "THEME", stack: "" },
+  { key: "hud", label: "SHARE TECH", stack: '"Share Tech Mono","JetBrains Mono",ui-monospace,monospace' },
+  { key: "jetbrains", label: "JETBRAINS", stack: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
+  { key: "system", label: "SYSTEM", stack: "system-ui,-apple-system,'Segoe UI',sans-serif" },
+  { key: "work", label: "WORK SANS", stack: "'Work Sans',system-ui,-apple-system,sans-serif" },
+  { key: "grotesk", label: "GROTESK", stack: "'Space Grotesk',system-ui,-apple-system,sans-serif" },
+  { key: "garamond", label: "GARAMOND", stack: "'EB Garamond',Georgia,serif" },
+  { key: "spectral", label: "SPECTRAL", stack: "'Spectral',Georgia,serif" },
+  { key: "georgia", label: "GEORGIA", stack: "Georgia,'Times New Roman',serif" },
+  { key: "trebuchet", label: "TREBUCHET", stack: "'Trebuchet MS','Comic Sans MS',sans-serif" },
+];
+
+/** "" (or an unknown key) → the theme's own font. */
+export function fontStack(key: string, t: ThemeKey): string {
+  return FONTS.find((f) => f.key === key && f.key)?.stack || themeFont(t);
+}
+
 export function themePrad(t: ThemeKey): string {
   return themeDef(t).prad;
 }
@@ -315,7 +340,9 @@ export interface HudSettings {
   tilesSong: string; // which melody the tiles game drops
   tilesSpeed: TileSpeed; // how long a tile takes to fall
   radioVolume: number; // 0..1, Claude·FM
-  textScale: number; // whole-HUD zoom; 0 = AUTO (derived from the viewport)
+  font: string; // FONTS key; "" = the theme's own voice
+  baseFont: number; // BASE FONT SIZE in px — the whole type scale is derived
+                    // from it (index.css --fs); 0 = AUTO (from the viewport)
   openResults: boolean; // bash output and edit diffs draw themselves open
   // The composer's four run knobs. Kept here so they survive a reload — the
   // SESSION tab and the composer's dropdowns are the same state.
@@ -349,22 +376,29 @@ const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "projects",
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
-  tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0, openResults: false,
+  tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6,
+  font: "", baseFont: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   ponytailUi: true, graphUi: true, agent: "", push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, pushSounds: {},
 };
 
+/** The base every size in the type scale is authored against (index.css --fs). */
+export const BASE_FONT = 12;
+
+/** The BASE FONT SIZE picker's fixed steps, in px. 0 = AUTO. */
+export const BASE_FONTS = [0, 10, 11, 12, 13, 14, 16] as const;
+
 /**
- * AUTO text size: the HUD is authored for a 1440×900 window, so scale with the
- * viewport and clamp it — small laptops stay readable, big displays stop
+ * AUTO base font size: the HUD is authored at 12px for a 1440×900 window, so
+ * track the viewport and clamp — small laptops stay readable, big displays stop
  * rendering 9px captions. Height counts as much as width: the three-column
- * layout runs out of vertical room first on a short screen. `textScale`
+ * layout runs out of vertical room first on a short screen. `baseFont`
  * overrides this when non-zero.
  */
-export function autoTextScale(width: number, height: number): number {
+export function autoBaseFont(width: number, height: number): number {
   const fit = Math.min(width / 1440, height / 900);
-  return Math.round(Math.min(1.25, Math.max(0.85, fit)) * 20) / 20;
+  return Math.round(BASE_FONT * Math.min(1.25, Math.max(0.85, fit)));
 }
 
 const str = (v: unknown, fallback: string): string => (typeof v === "string" ? v : fallback);
@@ -394,7 +428,7 @@ export function loadSettings(): HudSettings {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const p = JSON.parse(raw) as Partial<HudSettings>;
+      const p = JSON.parse(raw) as Partial<HudSettings> & { textScale?: number };
       return {
         // Unknown / legacy keys migrate to aqua; CLAUDE's old dark key is now
         // the only CLAUDE ground, so it lands on the clay default.
@@ -430,9 +464,14 @@ export function loadSettings(): HudSettings {
           ? (p.tilesSpeed as TileSpeed)
           : "normal",
         radioVolume: clamp01(p.radioVolume, 0.6),
-        textScale: typeof p.textScale === "number" && p.textScale >= 0.7 && p.textScale <= 1.6
-          ? p.textScale
-          : 0,
+        font: FONTS.some((f) => f.key === p.font) ? (p.font as string) : "",
+        // `textScale` was the old whole-HUD zoom factor; a stored one carries
+        // over as the base font size it was effectively rendering at.
+        baseFont:
+          typeof p.baseFont === "number" && p.baseFont >= 8 && p.baseFont <= 24 ? p.baseFont
+          : typeof p.textScale === "number" && p.textScale >= 0.7 && p.textScale <= 1.6
+            ? Math.round(BASE_FONT * p.textScale)
+            : 0,
         openResults: p.openResults === true,
         // A stored model id that the live Models API no longer offers is
         // snapped to an available one on load (see App's modelOpts effect).

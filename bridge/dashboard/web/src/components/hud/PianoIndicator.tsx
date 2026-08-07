@@ -33,10 +33,10 @@ export function PianoIndicator({
 
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
         <div className="flex items-center gap-2">
-          <span className="glow text-[11px] tracking-[2.5px] text-primary">{phrase}</span>
-          <span className="ml-auto font-mono text-[10px] tracking-[1px] text-muted-2">{elapsed}s</span>
+          <span className="glow text-[length:var(--t11)] tracking-[2.5px] text-primary">{phrase}</span>
+          <span className="ml-auto font-mono text-[length:var(--t10)] tracking-[1px] text-muted-2">{elapsed}s</span>
         </div>
-        <div className="flex items-center gap-2 text-[9px] tracking-[1.5px]">
+        <div className="flex items-center gap-2 text-[length:var(--t9)] tracking-[1.5px]">
           <span className={live ? "text-primary" : "text-muted-2"}>{live ? "● LIVE" : "○ CLICK TO PLAY"}</span>
           <span className="truncate text-muted-2">
             {held.length

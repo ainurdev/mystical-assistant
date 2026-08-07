@@ -111,10 +111,10 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
           padding: "8px 12px",
         }}
       >
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--txl)" }}>
+        <span style={{ fontSize: "var(--t105)", letterSpacing: "2.5px", color: "var(--txl)" }}>
           QUEUE
         </span>
-        <span style={{ fontSize: "10.5px", letterSpacing: "2.5px", color: "var(--acc)" }}>
+        <span style={{ fontSize: "var(--t105)", letterSpacing: "2.5px", color: "var(--acc)" }}>
           TASK QUEUE
         </span>
       </div>
@@ -129,7 +129,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
       <div style={{ padding: "10px 12px 13px" }}>
         <div
           style={{
-            fontSize: "9.5px",
+            fontSize: "var(--t95)",
             letterSpacing: "1px",
             color: "var(--txl)",
             padding: "0 2px 4px",
@@ -170,7 +170,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                   border: `1px solid ${boxBorder}`,
                   background: boxBg,
                   color: "var(--acc-on)",
-                  fontSize: "10px",
+                  fontSize: "var(--t10)",
                   lineHeight: 1,
                   display: "flex",
                   alignItems: "center",
@@ -184,7 +184,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: "12px",
+                    fontSize: "var(--t12)",
                     lineHeight: 1.4,
                     color: textColor,
                     textDecoration: t.done ? "line-through" : "none",
@@ -211,7 +211,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                         background: "transparent",
                         color: color,
                         fontFamily: "inherit",
-                        fontSize: "8.5px",
+                        fontSize: "var(--t85)",
                         letterSpacing: "1px",
                         padding: "2px 7px",
                         display: "flex",
@@ -233,7 +233,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                   {t.sent && (
                     <span
                       style={{
-                        fontSize: "8.5px",
+                        fontSize: "var(--t85)",
                         letterSpacing: "1px",
                         color: "var(--ok)",
                       }}
@@ -255,7 +255,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                     background: "color-mix(in srgb, var(--acc) 12%, transparent)",
                     color: "var(--txb)",
                     fontFamily: "inherit",
-                    fontSize: "11px",
+                    fontSize: "var(--t11)",
                     padding: "4px 9px",
                     marginTop: "1px",
                   }}
@@ -289,7 +289,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                 background: "transparent",
                 color: projectTint(newProject).color,
                 fontFamily: "inherit",
-                fontSize: "8.5px",
+                fontSize: "var(--t85)",
                 letterSpacing: "1px",
                 padding: "3px 6px",
                 flex: "none",
@@ -313,7 +313,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
               outline: "none",
               color: "var(--txb)",
               fontFamily: "inherit",
-              fontSize: "12px",
+              fontSize: "var(--t12)",
             }}
           />
           <button
@@ -325,7 +325,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
               background: "transparent",
               color: "var(--acc)",
               fontFamily: "inherit",
-              fontSize: "10.5px",
+              fontSize: "var(--t105)",
               letterSpacing: "1px",
               padding: "0 3px",
               flex: "none",
@@ -346,7 +346,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
             background: feedAllHover ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)",
             color: "var(--tx)",
             fontFamily: "inherit",
-            fontSize: "10px",
+            fontSize: "var(--t10)",
             letterSpacing: "2px",
             padding: "9px",
             marginTop: "9px",

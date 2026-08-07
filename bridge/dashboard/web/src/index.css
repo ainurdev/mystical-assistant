@@ -178,7 +178,47 @@
   color: var(--txb);
 }
 
+/* === Type scale ============================================================
+   Every font size in the dashboard is one of these tokens — the HUD is dense
+   and its sizes are a fixed set, so the set IS the scale. All of them derive
+   from ONE knob, --fs (BASE FONT SIZE in settings): --fsu is the base divided
+   by the 12px the HUD was authored at, so at --fs:12px each token equals the
+   px it is named after, and at --fs:16px everything is a third bigger.
+   Text only — padding, icons and gaps stay put, so a bigger base makes rows
+   taller without re-laying-out the HUD (the old whole-container `zoom` did
+   scale those, and broke every position:fixed modal and vh unit inside it). */
+:root {
+  --fs: 12px;
+  --fsu: calc(var(--fs) / 12);
+  --t7: calc(var(--fsu) * 7);
+  --t75: calc(var(--fsu) * 7.5);
+  --t8: calc(var(--fsu) * 8);
+  --t85: calc(var(--fsu) * 8.5);
+  --t9: calc(var(--fsu) * 9);
+  --t95: calc(var(--fsu) * 9.5);
+  --t10: calc(var(--fsu) * 10);
+  --t105: calc(var(--fsu) * 10.5);
+  --t11: calc(var(--fsu) * 11);
+  --t115: calc(var(--fsu) * 11.5);
+  --t12: calc(var(--fsu) * 12);
+  --t125: calc(var(--fsu) * 12.5);
+  --t13: calc(var(--fsu) * 13);
+  --t135: calc(var(--fsu) * 13.5);
+  --t14: calc(var(--fsu) * 14);
+  --t15: calc(var(--fsu) * 15);
+  --t16: calc(var(--fsu) * 16);
+  --t17: calc(var(--fsu) * 17);
+  --t22: calc(var(--fsu) * 22);
+  --t26: calc(var(--fsu) * 26);
+  --t34: calc(var(--fsu) * 34);
+}
+
 @theme inline {
+  /* Tailwind's own two type utilities join the scale; its rem SPACING scale is
+     left alone so gaps don't move when the base font does. */
+  --text-xs: var(--t12);
+  --text-sm: var(--t14);
+
   --radius-sm: 0px;
   --radius-md: 0px;
   --radius-lg: 0px;
@@ -234,6 +274,9 @@ body {
   margin: 0;
   background: #060a0a;
   color: var(--foreground);
+  /* The inherited size for anything that doesn't name one — the UA's 16px, but
+     from the scale, so untokenised text follows the base like everything else. */
+  font-size: var(--t16);
   font-family: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
   -webkit-font-smoothing: antialiased;
 }
@@ -687,7 +730,7 @@ input {
 .md-admonition-label {
   color: var(--adm);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--t9);
   letter-spacing: 1.5px;
   margin-bottom: 0.35em;
 }
@@ -718,7 +761,7 @@ input {
   background: var(--ac-03);
   color: var(--acc);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--t95);
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }
@@ -774,7 +817,7 @@ input {
 .ctrl-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 9px 11px; }
 .ctrl-group { display: flex; align-items: center; flex-wrap: nowrap; gap: 7px 11px; min-width: 0; }
 .ctrl-group + .ctrl-group { padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); }
-.ctrl-tag { flex: none; font-size: 8px; letter-spacing: 1.5px; color: var(--acc); }
+.ctrl-tag { flex: none; font-size: var(--t8); letter-spacing: 1.5px; color: var(--acc); }
 .drop-btn { min-width: var(--dw, 78px); }
 
 /* 1000px: the per-field eyebrows go — worth ~115px. The cluster tag names the
@@ -797,4 +840,70 @@ input {
    second line. The full value is still in each control's own tooltip. */
 @container (max-width: 780px) {
   .drop-btn { min-width: 0; }
+}
+
+/* --- SETTINGS MODAL --------------------------------------------------------
+   The category rail runs down the side of the panel, and across the top of it
+   once the modal is phone-narrow: 158px of rail out of a 350px modal leaves
+   less room for a setting than for the name of its category.
+
+   A media query rather than a container query — unlike the composer, whose
+   width depends on which sidebars are open, this modal is min(720px, 94vw), so
+   its width IS the viewport. 94vw drops under 560px at a 600px viewport. */
+.setbody { flex: 1; display: flex; min-height: 0; }
+
+.setrail {
+  width: 158px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 0;
+  overflow: hidden auto;
+  border-right: 1px solid color-mix(in srgb, var(--acc) 16%, transparent);
+}
+
+.setrail button {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--txd);
+  font-family: inherit;
+  padding: 9px 12px;
+}
+
+.setrail button.on {
+  border-left-color: var(--acc);
+  color: var(--txb);
+  background: color-mix(in srgb, var(--acc) 12%, transparent);
+}
+
+@media (max-width: 600px) {
+  .setbody { flex-direction: column; }
+  .setrail {
+    width: auto;
+    flex-direction: row;
+    gap: 0;
+    padding: 0;
+    overflow: auto hidden;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--acc) 16%, transparent);
+    scrollbar-width: none;
+  }
+  .setrail::-webkit-scrollbar { display: none; }
+  .setrail button {
+    flex: none;
+    white-space: nowrap;
+    text-align: center;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    padding: 10px 14px;
+  }
+  .setrail button.on { border-bottom-color: var(--acc); }
+  /* The one-line hint under each category is the first thing to go — a
+     horizontal strip has width to spend, not height. */
+  .setrail .hint { display: none; }
 }

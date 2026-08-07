@@ -127,7 +127,7 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                   {s.archived ? " (archived)" : ""}
                 </span>
                 {originLabel(s.origin) && (
-                  <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-[var(--brand-soft)]">
+                  <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[length:var(--t10)] text-[var(--brand-soft)]">
                     {originLabel(s.origin)}
                   </span>
                 )}
@@ -136,7 +136,7 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                 {s.lifecycle && (
                   <span
                     title={`marked ${s.lifecycle}`}
-                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[length:var(--t10)] ${
                       s.lifecycle === "backlog"
                         ? "bg-amber-400/15 text-amber-300"
                         : "bg-muted-foreground/15 text-muted-foreground"

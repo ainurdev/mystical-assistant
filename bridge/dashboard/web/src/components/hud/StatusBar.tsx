@@ -73,7 +73,7 @@ export function StatusBar(props: StatusBarProps) {
         gap: "16px",
         padding: "8px 16px",
         borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
-        fontSize: "10px",
+        fontSize: "var(--t10)",
         letterSpacing: "1.5px",
         color: "var(--txl)",
         animation: "enterUp .55s cubic-bezier(.2,.8,.2,1) both .36s",
@@ -226,7 +226,7 @@ export function StatusBar(props: StatusBarProps) {
           background: hovered ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
           color: hovered ? "var(--tx)" : "var(--txd)",
           fontFamily: "inherit",
-          fontSize: "10px",
+          fontSize: "var(--t10)",
           letterSpacing: "1.5px",
           padding: "4px 11px",
         }}

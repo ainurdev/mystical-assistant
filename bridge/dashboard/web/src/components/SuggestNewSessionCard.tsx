@@ -15,14 +15,14 @@ export function SuggestNewSessionCard({
 }) {
   const btn = {
     appearance: "none" as const, cursor: busy ? "wait" : "pointer", fontFamily: "inherit",
-    fontSize: 10, letterSpacing: 1, padding: "5px 11px", opacity: busy ? 0.5 : 1,
+    fontSize: "var(--t10)", letterSpacing: 1, padding: "5px 11px", opacity: busy ? 0.5 : 1,
   };
   return (
     <div style={{ margin: "0 16px 9px", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", padding: "9px 12px" }}>
-      <div style={{ fontSize: 10, letterSpacing: 1, color: "var(--purple)", marginBottom: 5 }}>
+      <div style={{ fontSize: "var(--t10)", letterSpacing: 1, color: "var(--purple)", marginBottom: 5 }}>
         DIFFERENT WORK?
       </div>
-      <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--txb)" }}>
+      <div style={{ fontSize: "var(--t12)", lineHeight: 1.5, color: "var(--txb)" }}>
         This looks unrelated to <span style={{ color: "var(--purple-b)" }}>{currentTitle || "this session"}</span>
         {reason ? ` — ${reason}` : "."}
       </div>
