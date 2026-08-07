@@ -20,6 +20,10 @@ eq(mergePrefs('{"fontSize":"14"}').fontSize, DEFAULT_PREFS.fontSize,
   "a wrongly typed field falls back");
 eq(mergePrefs('{"nope":1}'), DEFAULT_PREFS, "an unknown field is dropped");
 
+eq(mergePrefs(null).vim, false, "vim mode is off by default");
+eq(mergePrefs('{"vim":true}').vim, true, "a stored vim flag wins");
+eq(mergePrefs('{"vim":"yes"}').vim, false, "a wrongly typed vim flag falls back");
+
 // Font size is written into a CSS length — an out-of-range number would make the
 // buffer unreadable with no way back except clearing localStorage.
 eq(clampFont(11), 11, "an in-range size is kept");

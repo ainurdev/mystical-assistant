@@ -8,6 +8,7 @@ import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting, indentUnit } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
+import { Vim, vim } from "@replit/codemirror-vim";
 import { api, type FileContent, type GrepHit } from "../../api";
 import { Markdown } from "../Markdown";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
@@ -140,8 +141,17 @@ const langComp = new Compartment();
 // Reconfigured live when the prefs change, so a toggle doesn't rebuild the buffer.
 const wrapComp = new Compartment();
 const fontComp = new Compartment();
+const vimComp = new Compartment();
 const wrapExt = (on: boolean) => (on ? EditorView.lineWrapping : []);
 const fontExt = (px: number) => EditorView.theme({ "&": { fontSize: `${px}px` } });
+
+/* `:w` and `:fmt` route through the editor's own save/format so .editorconfig
+   cleanup and the bridge formatter still run. Registered against refs, so they
+   always hit the current file. */
+const vimSaveRef = { current: () => {} };
+const vimFmtRef = { current: () => {} };
+Vim.defineEx("write", "w", () => vimSaveRef.current());
+Vim.defineEx("fmt", "fmt", () => vimFmtRef.current());
 
 /* Put line `n` in the middle of the viewport with the cursor on it. */
 function gotoLine(view: EditorView, n: number) {
@@ -227,7 +237,6 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const [saving, setSaving] = useState(false);
   const [fmting, setFmting] = useState(false);
   const [lang, setLang] = useState("");   // detected language, shown in the status bar
-  const [cmd, setCmd] = useState("");
   const [note, setNote] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   // Markdown preview: the rendered text, or null while editing. Holding the text
@@ -347,6 +356,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     const fresh = EditorState.create({
       doc: bufs.current.get(open)?.text ?? meta.content ?? "",
       extensions: [
+        // Above even the Ctrl-S binding: vim owns Escape and every bare key while
+        // it's on, and a keymap below it would swallow operator-pending input.
+        vimComp.of(prefs.vim ? vim() : []),
         // Ours before basicSetup — earlier extensions take precedence, so the
         // CRT palette beats its default highlight style and Ctrl-S beats the
         // browser's Save Page.
@@ -389,6 +401,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     view.dispatch({ effects: [
       wrapComp.reconfigure(wrapExt(prefs.wordWrap)),
       fontComp.reconfigure(fontExt(prefs.fontSize)),
+      vimComp.reconfigure(prefs.vim ? vim() : []),
     ] });
     // Highlighting arrives a tick later: the language is a lazy chunk, so the
     // buffer renders plain and repaints when it loads (guard = view still live).
@@ -422,8 +435,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     viewRef.current?.dispatch({ effects: [
       wrapComp.reconfigure(wrapExt(prefs.wordWrap)),
       fontComp.reconfigure(fontExt(prefs.fontSize)),
+      vimComp.reconfigure(prefs.vim ? vim() : []),
     ] });
-  }, [prefs.wordWrap, prefs.fontSize]);
+  }, [prefs.wordWrap, prefs.fontSize, prefs.vim]);
 
   /* Replace the whole buffer in one transaction, keeping the cursor where it
      was — used by both save-time cleanup and the formatter. */
@@ -471,6 +485,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     }
   }
   saveRef.current = () => { void save(); };
+  vimSaveRef.current = () => { void save(); };
+  vimFmtRef.current = () => { void format(); };
 
   /* Format the buffer with whatever the project actually uses — prettier from
      its node_modules, ruff/black, gofmt, rustfmt, php-cs-fixer. The tools run
@@ -681,6 +697,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       run: () => setPrefs((p) => ({ ...p, fontSize: clampFont(p.fontSize + 1) })) },
     { label: "Decrease Font Size", key: "Ctrl+-",
       run: () => setPrefs((p) => ({ ...p, fontSize: clampFont(p.fontSize - 1) })) },
+    { label: `Vim Mode — ${prefs.vim ? "on" : "off"}`,
+      run: () => setPrefs((p) => ({ ...p, vim: !p.vim })) },
   ];
 
   const palItems = useMemo<PalItem[]>(() => {
@@ -854,15 +872,6 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     e.preventDefault();
     e.stopPropagation();   // the dashboard's own right-click menu listens on window
     setCtx({ x: e.clientX, y: e.clientY, path, dir });
-  }
-
-  function onCmdKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== "Enter") return;
-    const c = cmd.trim().replace(/^:/, "");
-    setCmd("");
-    if (c === "w" || c === "write" || c === "wq" || c === "x") void save();
-    else if (c === "fmt" || c === "format") void format();
-    else if (c) flash(`E492: not an editor command: ${c}`);
   }
 
   const lineCount = editable ? (meta?.content ?? "").split("\n").length : 0;
@@ -1118,10 +1127,6 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: hov === "mdv" || preview !== null ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px" }}>
                 {preview === null ? "◧ VIEW" : "✎ EDIT"}</button>
             )}
-            <span style={{ color: "var(--acc)", flex: "none" }}>:</span>
-            <input value={cmd} onChange={(e) => setCmd(e.target.value)} onKeyDown={onCmdKey}
-              placeholder="w · wq · fmt"
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)" }} />
           </div>
         </div>
 

@@ -7,12 +7,14 @@ export interface EditorPrefs {
   formatOnSave: boolean;
   wordWrap: boolean;
   fontSize: number;   // px
+  vim: boolean;
 }
 
 export const DEFAULT_PREFS: EditorPrefs = {
   formatOnSave: false,
   wordWrap: false,
   fontSize: 12,       // matches the crtTheme default in EditorTab
+  vim: false,
 };
 
 export const KEY = "hud-editor-prefs";
@@ -39,6 +41,7 @@ export function mergePrefs(raw: string | null): EditorPrefs {
     formatOnSave: typeof stored.formatOnSave === "boolean" ? stored.formatOnSave : DEFAULT_PREFS.formatOnSave,
     wordWrap: typeof stored.wordWrap === "boolean" ? stored.wordWrap : DEFAULT_PREFS.wordWrap,
     fontSize: typeof stored.fontSize === "number" ? clampFont(stored.fontSize) : DEFAULT_PREFS.fontSize,
+    vim: typeof stored.vim === "boolean" ? stored.vim : DEFAULT_PREFS.vim,
   };
 }
 
