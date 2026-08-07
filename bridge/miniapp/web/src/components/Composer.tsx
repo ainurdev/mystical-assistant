@@ -11,9 +11,6 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from "./ui/dropdown-menu";
 
@@ -36,6 +33,46 @@ const PERMS: { id: string; label: string }[] = [
   { id: "auto", label: "Auto" },
   { id: "bypassPermissions", label: "Full autonomy" },
 ];
+
+/** One setting as a wrapped row of chips — three of these fit on a phone
+ *  screen at once, where three stacked radio lists meant scrolling to find
+ *  the group you wanted. Picking doesn't close the menu: you're usually here
+ *  to change more than one thing. */
+function OptionRow({
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  options: { id: string; label: string }[];
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div className="px-1 pb-1.5">
+      <div className="px-1 py-1 text-[10px] tracking-[1.5px] text-muted-foreground">{label}</div>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={o.id === value}
+            onClick={() => onPick(o.id)}
+            className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
+              o.id === value
+                ? "border-[var(--brand-soft)] text-[var(--brand-soft)]"
+                : "border-border text-foreground/70 active:opacity-70"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const chipClass =
   "inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/60 px-2.5 py-1.5 text-xs font-medium text-foreground outline-none transition-colors active:opacity-70 focus-visible:ring-2 focus-visible:ring-ring";
@@ -63,6 +100,7 @@ export function Composer() {
   } = useChat();
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
   const qc = useQueryClient();
   const { data: queues } = useQuery({
@@ -73,6 +111,19 @@ export function Composer() {
   const queued = (queues?.queues.find((q) => q.session_id === sessionId)?.items ?? []).filter(
     (i) => i.status === "queued",
   ).length;
+
+  // This bar is fixed, so the transcript can't see how much room it takes —
+  // attachments, the queue hint and a grown textarea all move it. Publish the
+  // measured height; run.tsx pads by it instead of guessing.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() =>
+      document.documentElement.style.setProperty("--composer-h", `${el.offsetHeight}px`),
+    );
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Grow the textarea with its content, up to ~6 rows.
   useEffect(() => {
@@ -119,6 +170,7 @@ export function Composer() {
 
   return (
     <div
+      ref={barRef}
       className="fixed inset-x-0 z-10 mx-auto max-w-screen-sm border-t border-border bg-[var(--tg-bg)] px-3 pb-3 pt-2"
       style={{ bottom: "var(--tabbar-h)" }}
     >
@@ -206,39 +258,31 @@ export function Composer() {
             <span className="truncate">{settingsLabel}</span>
             <ChevronDown size={13} className="shrink-0 text-muted-foreground" aria-hidden />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-[60vh] overflow-y-auto">
-            <DropdownMenuLabel>Model</DropdownMenuLabel>
-            <DropdownMenuRadioGroup
+          <DropdownMenuContent
+            align="start"
+            collisionPadding={12}
+            className="max-h-[70vh] w-[min(23rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5"
+          >
+            <OptionRow
+              label="MODEL"
               value={model}
-              onValueChange={(v) => setModel(v as ModelId)}
-            >
-              {models.map((m) => (
-                <DropdownMenuRadioItem key={m.id} value={m.id}>
-                  {m.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
+              options={models.map((m) => ({ id: m.id, label: m.label.replace(/^Claude /, "") }))}
+              onPick={(v) => setModel(v as ModelId)}
+            />
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Reasoning effort</DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={effort || "auto"}
-              onValueChange={(v) => setEffort(v === "auto" ? "" : (v as EffortLevel))}
-            >
-              {EFFORTS.map((e) => (
-                <DropdownMenuRadioItem key={e.id || "auto"} value={e.id || "auto"}>
-                  {e.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
+            <OptionRow
+              label="REASONING EFFORT"
+              value={effort}
+              options={EFFORTS}
+              onPick={(v) => setEffort(v as EffortLevel | "")}
+            />
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Operating mode (this run)</DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={perm || "session"} onValueChange={(v) => setPerm(v === "session" ? "" : v)}>
-              {PERMS.map((p) => (
-                <DropdownMenuRadioItem key={p.id || "session"} value={p.id || "session"}>
-                  {p.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
+            <OptionRow
+              label="OPERATING MODE · THIS RUN"
+              value={perm}
+              options={PERMS}
+              onPick={setPerm}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
 

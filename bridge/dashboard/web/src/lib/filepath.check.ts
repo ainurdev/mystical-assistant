@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/filepath.check.ts
-import { parseFileRef } from "./filepath.ts";
+import { parseFileRef, resolveFileRef } from "./filepath.ts";
 
 const yes: [string, string, number | undefined][] = [
   ["bridge/runner.py", "bridge/runner.py", undefined],
@@ -31,5 +31,27 @@ const no = [
 ];
 for (const s of no)
   console.assert(parseFileRef(s) === null, `${JSON.stringify(s)} should not be a file ref`);
+
+// resolveFileRef: a path in prose, matched against the tree it opens in.
+const tree = [
+  "bridge/git.py",
+  "bridge/dashboard/web/src/App.tsx",
+  "bridge/miniapp/web/src/lib/api.ts",
+  "bridge/dashboard/web/src/api.ts",
+];
+const resolved: [string, string | null][] = [
+  ["bridge/git.py", "bridge/git.py"],                                     // exact
+  ["src/App.tsx", "bridge/dashboard/web/src/App.tsx"],                    // one suffix hit
+  ["web/src/lib/api.ts", "bridge/miniapp/web/src/lib/api.ts"],            // deeper suffix
+  ["src/api.ts", "bridge/dashboard/web/src/api.ts"],                      // suffix beats the lib/ one
+  ["api.ts", null],                                                       // ambiguous: 2 bare hits
+  ["bridge/invented.py", null],                                           // never existed
+  ["git.py", "bridge/git.py"],                                            // bare name, unique
+  ["App.tsx", "bridge/dashboard/web/src/App.tsx"],
+];
+for (const [input, want] of resolved) {
+  const got = resolveFileRef(tree, input);
+  console.assert(got === want, `resolve ${input} → ${got}, wanted ${want}`);
+}
 
 console.log("filepath ok");

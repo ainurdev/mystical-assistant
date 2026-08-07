@@ -24,24 +24,33 @@ STATE_DIR="${BRIDGE_STATE_DIR:-$HOME/.bridge_state}"
 LOG="${MYSTICAL_LOG:-$STATE_DIR/mystical.log}"
 PID_FILE="$STATE_DIR/mystical.pid"
 
-c_g=$'\033[32m'; c_r=$'\033[31m'; c_y=$'\033[33m'; c_0=$'\033[0m'
+# Colour only on a terminal — `mystical status` gets piped into scripts, and
+# escape codes would land in whatever parses it.
+if [ -t 1 ]; then
+  c_g=$'\033[32m'; c_r=$'\033[31m'; c_y=$'\033[33m'; c_c=$'\033[36m'
+  c_d=$'\033[2m';  c_b=$'\033[1m';  c_0=$'\033[0m'
+else
+  c_g=; c_r=; c_y=; c_c=; c_d=; c_b=; c_0=
+fi
 say()  { printf '%s\n' "$*"; }
-ok()   { printf '%s✓%s %s\n' "$c_g" "$c_0" "$*"; }
-warn() { printf '%s!%s %s\n' "$c_y" "$c_0" "$*"; }
-die()  { printf '%s✗%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
+ok()   { printf '  %s✔%s %s\n' "$c_g" "$c_0" "$*"; }
+warn() { printf '  %s▲%s %s\n' "$c_y" "$c_0" "$*"; }
+die()  { printf '  %s✘%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
+# One aligned row of the status/recap block: icon, dim label, value.
+row()  { printf '  %s  %s%-9s%s %s\n' "$1" "$c_d" "$2" "$c_0" "$3"; }
 
 usage() {
   cat <<EOF
-mystical — control the mystical-assistant bridge
+${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the bridge${c_0}
 
-  mystical [start]   start in the background; logs -> $LOG
-  mystical stop      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
-  mystical restart   stop, then start
-  mystical build     rebuild every web bundle now (start does it when stale)
-  mystical status    is it running? ports + dashboard URL + tunnel link
-  mystical doctor    check prerequisites (claude, python, tunnel client, npm)
-  mystical logs      follow the log (Ctrl-C to stop following)
-  mystical run       run in the foreground (live logs, Ctrl-C to quit)
+  ${c_b}▶${c_0}  mystical ${c_c}[start]${c_0}   start in the background; logs -> $LOG
+  ${c_b}■${c_0}  mystical ${c_c}stop${c_0}      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
+  ${c_b}↻${c_0}  mystical ${c_c}restart${c_0}   stop, then start
+  ${c_b}🔨${c_0} mystical ${c_c}build${c_0}     rebuild every web bundle now (start does it when stale)
+  ${c_b}📊${c_0} mystical ${c_c}status${c_0}    is it running? ports, dashboard and Mini App URLs
+  ${c_b}🩺${c_0} mystical ${c_c}doctor${c_0}    check prerequisites, and what each missing one costs you
+  ${c_b}📜${c_0} mystical ${c_c}logs${c_0}      follow the log (Ctrl-C to stop following)
+  ${c_b}⚡${c_0} mystical ${c_c}run${c_0}       run in the foreground (live logs, Ctrl-C to quit)
 EOF
 }
 
@@ -70,6 +79,14 @@ env_port() {   # $1 = var name in .env, $2 = default — mirror dash_url's parsi
   printf '%s' "${p:-$2}"
 }
 
+panel_url() {
+  # The bridge prints its public panel URL once per run. Read only the CURRENT
+  # run's line: the log is append-only across restarts, so an earlier run's URL
+  # is dead, and each run may publish a different hostname.
+  [ -f "$LOG" ] || return 0
+  awk '/^Bridge online as /{u=""} /^Mini App live: /{u=$4} END{if(u)print u}' "$LOG" 2>/dev/null
+}
+
 dash_url() {
   local port token
   port="$(env_port DASH_PORT 8790)"
@@ -93,7 +110,7 @@ web_build() {   # $1 = "force" to build even when a bundle looks current
     fi
     command -v npm >/dev/null 2>&1 || { warn "the web UIs need a rebuild but npm isn't installed — using what's on disk."; return 0; }
     mkdir -p "$STATE_DIR"
-    say "Building the $name…  (output: $LOG)"
+    say "  ${c_c}🔨${c_0} building the $name… ${c_d}(output: $LOG)${c_0}"
     if [ ! -d "$dir/node_modules" ]; then
       (cd "$dir" && npm install) >>"$LOG" 2>&1 || { warn "$name: npm install failed — see $LOG"; continue; }
     fi
@@ -108,7 +125,7 @@ cmd_start() {
   if [ -n "$pid" ]; then warn "Already running (pid $pid). Use 'mystical restart' to reload."; return 0; fi
   mkdir -p "$STATE_DIR"
   web_build
-  say "Starting mystical bridge…  (logs: $LOG)"
+  say "  ${c_c}⚡${c_0} starting the bridge… ${c_d}(logs: $LOG)${c_0}"
   if command -v setsid >/dev/null 2>&1; then
     setsid env PYTHONUNBUFFERED=1 "$RUN_SH" >>"$LOG" 2>&1 < /dev/null &
   else
@@ -136,7 +153,7 @@ cmd_stop() {
   local pgid; pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
   local target="$pid"
   [ -n "$pgid" ] && [ "$pgid" = "$pid" ] && target="-$pgid"
-  say "Stopping (pid $pid)…"
+  say "  ${c_y}■${c_0} stopping ${c_d}(pid $pid)${c_0}…"
   kill -INT -- "$target" 2>/dev/null || true     # KeyboardInterrupt -> clean _shutdown()
   local i
   for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
@@ -145,20 +162,28 @@ cmd_stop() {
   ok "Stopped."
 }
 
+# Green for a 2xx/3xx port, red for anything else (000 = nothing listening).
+health() { case "$1" in 2*|3*) printf '%sHTTP %s%s' "$c_g" "$1" "$c_0";; *) printf '%sHTTP %s%s' "$c_r" "$1" "$c_0";; esac; }
+
 cmd_status() {
   local pid; pid="$(bridge_pid || true)"
-  if [ -z "$pid" ]; then say "${c_r}●${c_0} stopped"; return 0; fi
-  ok "running (pid $pid)"
+  if [ -z "$pid" ]; then
+    say ""
+    say "  ${c_r}●${c_0} ${c_b}stopped${c_0}"
+    say "  ${c_d}start it with:${c_0}  ${c_c}mystical${c_0}"
+    return 0
+  fi
+  say ""
+  say "  ${c_g}●${c_0} ${c_b}running${c_0} ${c_d}(pid $pid)${c_0}"
   local d m dport mport
   dport="$(env_port DASH_PORT 8790)"; mport="$(env_port MINIAPP_PORT 8787)"
   d="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dport/" 2>/dev/null || echo 000)"
   m="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$mport/" 2>/dev/null || echo 000)"
-  say "  dashboard $dport : HTTP $d"
-  say "  mini app  $mport : HTTP $m"
-  say "  dashboard URL  : $(dash_url)"
-  local turl; turl="$(grep -ohE 'https://[a-z0-9-]+\.trycloudflare\.com' "$LOG" 2>/dev/null | tail -n1 || true)"
-  [ -n "$turl" ] && say "  mini app tunnel: $turl"
-  say "  logs           : $LOG"
+  row 🌐 dashboard "$c_d:$dport$c_0  $(health "$d")  $(dash_url)"
+  local purl; purl="$(panel_url)"
+  if [ -n "$purl" ]; then row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  $purl"
+  else row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  ${c_d}localhost only — no tunnel this run${c_0}"; fi
+  row 📜 logs "$LOG"
 }
 
 cmd_logs() { [ -f "$LOG" ] || die "No log yet at $LOG — start it first."; exec tail -n 200 -f "$LOG"; }

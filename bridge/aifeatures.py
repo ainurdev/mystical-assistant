@@ -51,24 +51,37 @@ FEATURES = (
               "session on it. Only a repo whose git state moved is re-scouted, and "
               "a free provider is tried before Claude quota. Off, the board is "
               "hidden entirely."},
-    {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "PREVIEW DETECT",
+    {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 call per repo the heuristic can't read",
-     "about": "Opening a project's TERMINAL tab or preview window fills in the "
+     "about": "Opening a project's TERMINAL tab, or analysing it, fills in the "
               "command that starts its dev server. A free heuristic reads the "
               "lockfile and scripts first and answers for most repos; this decides "
               "whether the rest may fall through to a model call. That fall-through "
               "is automatic, not a button. Off, an unreadable repo gets a plain "
               "'run dev' guess you can edit."},
     {"key": "learn", "env": "LEARN_ENABLE", "label": "LESSONS",
-     "hint": "teaches you what each turn just built, per repo",
+     "hint": "teaches you what each turn just built, shelved by concept",
      "cost": "1 haiku call per finished turn",
      "about": "After a turn finishes, a short lesson is written about what was "
               "built — the change, the idea behind it, where to look — and saved "
-              "in that repo's .mystical/learn/ (git-ignored). Read them in a "
-              "project's LEARN tab, which is also where a single repo can opt "
-              "out. A turn that only answered a question or read files is "
-              "skipped. Off, no lesson is written and the tab is hidden."},
+              "in that repo's .mystical/learn/ (git-ignored). The LEARN panel "
+              "collects every repo's into one list, grouped by the concept each "
+              "teaches, and asks an unread one's own question before showing it. "
+              "A single repo can still opt out there. A turn that only answered "
+              "a question or read files is skipped. Off, no lesson is written "
+              "and the tab is hidden."},
+    {"key": "tailstate", "env": "TAIL_STATE_AI", "label": "ENDED-ON-A-QUESTION",
+     "hint": "flags a turn that finished needing you, instead of calling it done",
+     "cost": "1 haiku call per turn ending in a question",
+     "about": "A turn that stops mid-run on a question already says WAIT. One "
+              "that ENDS on a question — 'apply this fix or just report it?' — "
+              "reads DONE, and the ping says finished. Auth failures, usage "
+              "limits and 'reply go' closings are caught for free either way; "
+              "this decides whether the rest may fall through to a model call "
+              "that tells a real gate from a passing offer to do more. Off, only "
+              "the free markers count.",
+     },
     {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
      "hint": "writes a commit message from the diff you selected",
      "cost": "1 haiku call per press",

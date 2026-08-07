@@ -1,10 +1,9 @@
 """Dev servers: long-lived background processes owned by the bridge.
 
-One server per run directory, so several projects / worktrees / branches can be
-previewed at the same time. Each server detects the localhost URL the framework
-actually bound (dev servers auto-pick the next free port when the default is
-busy) by scanning its own output, and that detected URL is what the preview
-surface points at.
+One server per run directory, so several projects / worktrees / branches can run
+at the same time. Each server detects the localhost URL the framework actually
+bound (dev servers auto-pick the next free port when the default is busy) by
+scanning its own output, and that detected URL is what /server reports.
 
 Legacy single-server helpers (``start_server``/``stop_server``/``server_state``/
 ``log_tail``/``server_status``) operate on the most-recently-started server so
@@ -204,7 +203,7 @@ def start(cwd: str, cmd: str, project: str = "", branch: str = "") -> str:
     where = srv.url or f"http://localhost:{config.PREVIEW_PORT}"
     suffix = "" if srv.url else " (port not detected yet)"
     return (f"✅ Server started (pid {srv.proc.pid}) in {_safe_rel(cwd)}: {cmd}\n"
-            f"Preview: {where}{suffix} · /logs to see output.")
+            f"Running at: {where}{suffix} · /logs to see output.")
 
 
 def stop(cwd: str) -> str:

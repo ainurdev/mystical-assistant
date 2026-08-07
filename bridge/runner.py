@@ -192,15 +192,17 @@ def claude_bin() -> str:
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _goal_mcp_config(claude_session_id: str) -> str:
-    """Inline --mcp-config JSON for the goal tool server. PYTHONPATH pins the repo
-    root so `-m bridge.goal_mcp` imports regardless of the run's cwd."""
-    return json.dumps({"mcpServers": {"goals": {
-        "command": sys.executable,
-        "args": ["-m", "bridge.goal_mcp"],
-        "env": {"PYTHONPATH": _REPO_ROOT,
-                "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id},
-    }}})
+def _mcp_config(claude_session_id: str) -> str:
+    """Inline --mcp-config JSON for the bridge's own tool servers. PYTHONPATH pins
+    the repo root so `-m bridge.*` imports regardless of the run's cwd."""
+    env = {"PYTHONPATH": _REPO_ROOT,
+           "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id}
+    return json.dumps({"mcpServers": {
+        "goals": {"command": sys.executable,
+                  "args": ["-m", "bridge.goal_mcp"], "env": env},
+        "verify": {"command": sys.executable,
+                   "args": ["-m", "bridge.verify_mcp"], "env": env},
+    }})
 
 
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
@@ -236,10 +238,11 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
                 "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
                 "--permission-prompt-tool", "stdio"]
         if claude_session_id:
-            # Goal tools, on interactive runs only. No --strict-mcp-config here,
-            # so this is added to the user's own MCP servers rather than replacing
-            # them. Internal one-shots below still take MCP off entirely.
-            cmd += ["--mcp-config", _goal_mcp_config(claude_session_id)]
+            # Goal + verify tools, on interactive runs only. No
+            # --strict-mcp-config here, so this is added to the user's own MCP
+            # servers rather than replacing them. Internal one-shots below still
+            # take MCP off entirely.
+            cmd += ["--mcp-config", _mcp_config(claude_session_id)]
     if model:
         cmd += ["--model", model]
     if effort:
@@ -430,6 +433,7 @@ class Job:
         self.interrupted = False         # user pressed Stop
         self.timed_out = False           # watchdog killed the run
         self.error_msg: str | None = None  # stderr/exit error when no result event came
+        self.tail_needs: str | None = None  # set when the closing ended needing the user
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
         self.texts: list[str] = []       # assistant text this turn
@@ -624,6 +628,22 @@ def awaiting_input() -> list[dict]:
     return out
 
 
+def blocked_sessions() -> dict[str, str]:
+    """Store-session ids whose MOST RECENT turn ended needing you, mapped to the
+    ask. Latest-job-only, so starting another turn on that session clears the
+    flag by replacing it — there is no state to reset."""
+    latest: dict[str, Job] = {}
+    with _jobs_lock:
+        for j in _jobs.values():
+            if not j.store_session_id:
+                continue
+            cur = latest.get(j.store_session_id)
+            if cur is None or j.started > cur.started:
+                latest[j.store_session_id] = j
+    return {sid: j.tail_needs for sid, j in latest.items()
+            if j.status != "running" and j.tail_needs}
+
+
 def running_jobs(chat_id: int) -> list[dict]:
     """Rich detail for this chat's live streaming (bridge) jobs — powers the
     background-jobs monitor. External VS Code/terminal sessions come separately
@@ -682,6 +702,14 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
         else:
             status[sid] = {"state": "working", "kind": None, "source": "bridge",
                            "label": job_label.get(sid) or "working…"}
+    # A turn that ENDED on a question only you can answer is awaiting you just as
+    # much as one stopped mid-run — it just had no card to raise (see
+    # bridge/tailstate.py). Same state, so every surface already sorts, counts and
+    # flags it; `kind` is None because there is no pending card to respond to.
+    # setdefault: a session that has since started another turn is working now.
+    for sid, needs in blocked_sessions().items():
+        status.setdefault(sid, {"state": "awaiting", "kind": None,
+                                "source": "bridge", "label": needs})
     # A prompt being checked against its session (bridge/relevance.py) holds the
     # send for ~10s before any job exists — surface it so the session stays in the
     # active lists instead of vanishing until the prompt is approved.
@@ -768,6 +796,14 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
     """Ping when a streaming run finishes (or errors), so you can step away."""
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}")
+
+
+def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) -> None:
+    """Ping when a turn *ended* on something only you can answer. Carries the ask
+    itself: it's read off a lock screen, and acting on it shouldn't cost opening
+    the transcript to find out what was asked (bridge/tailstate.py)."""
+    link = f"\n{state.miniapp_url}" if state.miniapp_url else ""
+    _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}{link}")
 
 
 # ---------------------------------------------------------------------------
@@ -1281,7 +1317,10 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
-            notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
+            # Owns the ping: "finished" is a lie for a turn that ended asking you
+            # something, so what it says depends on how the closing reads.
+            from bridge import tailstate  # local import: runner<->tailstate cycle
+            tailstate.kick(job, cwd)
         if job.store_session_id and job.status == "done":
             _sess = store.get_session(job.store_session_id)
             if _sess:

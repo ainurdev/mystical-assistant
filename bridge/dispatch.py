@@ -10,7 +10,6 @@ from bridge.browser import browser_view, list_dirs, open_browser, rel, within_ba
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
 from bridge.telegram import answer_cb, edit, send, tg
-from bridge.tunnel import handle_preview, tunnel_state
 
 HELP = (
     "Claude Code remote bridge.\n\n"
@@ -22,7 +21,6 @@ HELP = (
     "/new — fresh Claude session for the active project\n"
     "/server [cmd] — start the dev server · /server stop\n"
     "/logs [n] — recent server output\n"
-    f"/preview [port] — public link (default {config.PREVIEW_PORT}) · /preview stop\n"
     "/map [query] — project map: summary · /map build · /map <thing>\n"
     "/next — ranked next steps across your recent repos · /next refresh\n"
     "/accounts — Claude logins and their usage · /accounts add\n"
@@ -173,11 +171,6 @@ def on_message(msg: dict):
     if cmd0 == "/logs":
         handle_logs(chat_id, text[len("/logs"):].strip())
         return
-    if cmd0 == "/preview":
-        threading.Thread(target=handle_preview,
-                         args=(chat_id, text[len("/preview"):].strip()),
-                         daemon=True).start()
-        return
     if cmd0 == "/map":
         threading.Thread(target=_handle_map,
                          args=(chat_id, text[len("/map"):].strip()),
@@ -197,13 +190,11 @@ def on_message(msg: dict):
     if text == "/status":
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
-        ts = tunnel_state()
-        tunnel = f"{ts['url']} (port {ts['port']})" if ts["url"] else "none"
         s = store.latest_session(chat_id, state.project_key(chat_id))
         sid = (s["title"] or s["id"][:8]) if s else "none yet"
         app = state.miniapp_url or "off"
         send(chat_id, f"Project: {rel(state.project_dir(chat_id))}\nClaude: {st}\n"
-                      f"Server: {server_status()}\nPreview: {tunnel}\n"
+                      f"Server: {server_status()}\n"
                       f"Mini App: {app}\nSession: {sid}")
         return
 

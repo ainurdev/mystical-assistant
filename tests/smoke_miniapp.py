@@ -65,7 +65,7 @@ try:
 
     r = requests.get(base + "/api/state", headers=H, timeout=5)
     js = r.json()
-    check("GET /api/state authed", r.status_code == 200 and "server" in js and "preview" in js,
+    check("GET /api/state authed", r.status_code == 200 and "server" in js,
           r.status_code)
 
     r = requests.get(base + "/api/projects", headers=H, timeout=5)

@@ -66,6 +66,54 @@ def test_real_network_error_backs_off(monkeypatch):
     assert slept == [3]
 
 
+def test_markdown_becomes_telegram_html():
+    """Model output is markdown; without conversion it arrived as punctuation."""
+    html = telegram._md_to_html(                              # noqa: SLF001
+        "## Done\n**fixed** the `a < b` guard\n- see [it](http://x.io/a?b=1&c=2)")
+    assert "<b>Done</b>" in html
+    assert "<b>fixed</b>" in html
+    assert "<code>a &lt; b</code>" in html                    # escaped inside code
+    assert '<a href="http://x.io/a?b=1&amp;c=2">it</a>' in html
+    assert "• see" in html
+
+
+def test_code_fences_are_left_alone():
+    """Markup inside a fence is content, not markup — and snake_case is not italic."""
+    html = telegram._md_to_html(                              # noqa: SLF001
+        "```py\nx = a_b_c  # **not bold** <tag>\n```")
+    assert '<pre><code class="language-py">' in html
+    assert "x = a_b_c  # **not bold** &lt;tag&gt;" in html
+    assert "<b>" not in html and "<i>" not in html
+
+
+def test_long_message_splits_on_lines_and_reopens_the_fence():
+    """The old blind slice cut code blocks in half mid-token."""
+    body = "\n".join(f"line {i} " + "x" * 60 for i in range(40))
+    parts = telegram._chunks(f"intro\n```py\n{body}\n```", 500)   # noqa: SLF001
+    assert len(parts) > 1
+    for p in parts:
+        assert len(p) <= 500 + 8                # +the reopened/closing fence
+        assert p.count("```") % 2 == 0          # every chunk is self-contained
+        assert not p.startswith("x")            # never split mid-line
+    assert "".join(p for p in parts).count("line 39") == 1
+
+
+def test_send_falls_back_to_plain_text_when_telegram_rejects_html():
+    """A converter bug must cost the formatting, never the message."""
+    sent = []
+
+    def fake_tg(method, **params):
+        sent.append(params)
+        return None if params.get("parse_mode") else {"ok": True}
+    telegram.tg, real = fake_tg, telegram.tg
+    try:
+        telegram.send(1, "**hi**")
+    finally:
+        telegram.tg = real
+    assert [s.get("parse_mode") for s in sent] == ["HTML", None]
+    assert sent[-1]["text"] == "**hi**"
+
+
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))

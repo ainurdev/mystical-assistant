@@ -5,10 +5,15 @@ the work can fill in by itself: when a turn ends, a cheap model call writes one
 short lesson — what was built, the idea behind it, where to look — and drops it
 in that repo's own `.mystical/learn/`. Read them in the dashboard's LEARN tab.
 
-Per repo, because "what we are building" is a different subject in every repo:
-the lessons live beside the code they describe (git-ignored, like `dev.log`) and
-so does the numbering. Prior titles are fed back into the prompt so a lesson
-teaches the next thing rather than the same thing.
+Stored per repo, because "what we are building" is a different subject in every
+repo: the lessons live beside the code they describe (git-ignored, like
+`dev.log`) and so does the numbering. Prior titles are fed back into the prompt
+so a lesson teaches the next thing rather than the same thing.
+
+Read across repos, though — the concepts a lesson teaches are not repo-shaped.
+Each one names its shelf on a `> concept:` line drawn from a fixed vocabulary
+(CONCEPTS), and `all_lessons()` gathers every repo's into one list so the tab
+keeps your place when the session you are watching moves to another repo.
 
 Best-effort, like bridge/titler.py: every call is guarded and swallows its own
 errors, so nothing here can raise into the turn lifecycle. Two switches, both
@@ -40,6 +45,8 @@ _SYS = (
     "error, a trivial edit.\n\n"
     "Otherwise reply with ONLY markdown, no code fences around the whole thing:\n"
     "- a '# ' title line, 3-8 words, naming the thing that was built\n"
+    "- directly under it a '> concept: X' line, where X is EXACTLY one of: "
+    "{concepts}. Pick the closest one; never invent a new one.\n"
     "- **What changed** — two or three sentences, naming the real files\n"
     "- **The idea** — the concept behind it (the pattern, protocol, algorithm or "
     "trade-off), taught so it transfers to the next project. This is the part "
@@ -54,6 +61,14 @@ _SYS = (
 
 _PRIOR = ("\nThey have already been taught these lessons in this repo — teach "
           "something new, and refer back to them rather than repeating:\n{titles}\n")
+
+# A fixed vocabulary, because the LEARN tab groups by this line. Let the model
+# phrase its own and you get forty near-synonyms ("routing", "routes", "route
+# patterns") that group into nothing; a closed list keeps a concept a shelf you
+# can fill. Lessons written before this existed have no line and read as "".
+CONCEPTS = ("architecture", "state & data flow", "async & concurrency",
+            "protocols & apis", "ui & rendering", "persistence", "testing",
+            "tooling & build", "security", "performance", "error handling")
 
 _MAX_LESSONS = 200          # what the tab lists; older files stay on disk
 _SLUG_MAX = 40
@@ -74,18 +89,26 @@ def _dir(cwd: str, create: bool = False) -> str:
     return os.path.join(cwd, ".mystical", "learn")
 
 
-def _title_of(path: str) -> str:
-    """The lesson's own '# ' heading, falling back to its filename."""
+def _head(path: str) -> "tuple[str, str]":
+    """The lesson's own '# ' heading and its '> concept:' line, falling back to
+    the filename and to no concept. Both live in the first few lines, so the
+    body is never read — the tab lists hundreds of these."""
+    title = concept = ""
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
-                if line.startswith("# "):
-                    return line[2:].strip()[:80]
-                if line.strip():
+                s = line.strip()
+                if not title and s.startswith("# "):
+                    title = s[2:].strip()[:80]
+                elif s.lower().startswith("> concept:"):
+                    concept = s.split(":", 1)[1].strip().lower()[:30]
                     break
+                elif s:
+                    break                 # past the header; the body has begun
     except OSError:
         pass
-    return os.path.basename(path)[:-3].replace("-", " ")
+    return (title or os.path.basename(path)[:-3].replace("-", " "),
+            concept if concept in CONCEPTS else "")
 
 
 def lessons(cwd: str) -> list[dict]:
@@ -103,8 +126,23 @@ def lessons(cwd: str) -> list[dict]:
             at = os.path.getmtime(p)
         except OSError:
             continue
-        out.append({"file": n, "title": _title_of(p), "at": at})
+        title, concept = _head(p)
+        out.append({"file": n, "title": title, "concept": concept, "at": at})
     return out
+
+
+def all_lessons() -> list[dict]:
+    """Every lesson in every repo under BASE_PATH, newest first, each tagged with
+    the project that wrote it. What the LEARN panel's ALL scope reads: a lesson
+    you are half-way through belongs to its own repo, not to whichever session
+    happens to be focused, so switching sessions no longer changes the shelf."""
+    from bridge import browser   # local import: learn<->browser cycle
+    out = []
+    for p in browser.list_projects():
+        for ls in lessons(os.path.join(config.BASE_PATH, p.lstrip("/"))):
+            out.append({**ls, "project": p})
+    out.sort(key=lambda ls: ls["at"], reverse=True)
+    return out[:_MAX_LESSONS]
 
 
 def read(cwd: str, name: str) -> "str | None":
@@ -216,9 +254,13 @@ def _turn_text(session_id: str, turn_id: str) -> "tuple[str, str, list[str]]":
 
 def _generate(chat_id: int, cwd: str, prompt: str, reply: str,
               tools: list[str]) -> str:
-    prior = [ls["title"] for ls in lessons(cwd)[:20]]
+    # Prior titles carry their concept so the model can see which shelves are
+    # already full and teach off a different one.
+    prior = [f"{ls['title']} ({ls['concept']})" if ls["concept"] else ls["title"]
+             for ls in lessons(cwd)[:20]]
     sys_prompt = _SYS.format(
         repo=os.path.basename(cwd.rstrip("/")) or cwd,
+        concepts=", ".join(CONCEPTS),
         prior=_PRIOR.format(titles="\n".join(f"- {p}" for p in prior)) if prior else "")
     turn = f"USER ASKED:\n{prompt[:2000]}"
     if tools:

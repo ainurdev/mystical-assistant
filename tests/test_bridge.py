@@ -400,14 +400,6 @@ def test_store_list_sessions_all():
 
 # --- dashboard security ------------------------------------------------------
 
-def test_tunnel_refuses_reserved_ports():
-    from bridge import tunnel
-    url, msg = tunnel.start_tunnel(config.DASH_PORT)
-    assert url is None and "reserved" in msg.lower()
-    url2, _ = tunnel.start_tunnel(config.MINIAPP_PORT)
-    assert url2 is None
-
-
 def test_dashboard_security_helpers():
     from bridge.dashboard import server as dash
     assert dash._tok_ok(config.DASH_TOKEN) is True
@@ -1108,18 +1100,6 @@ def test_project_config_prod_url_roundtrip():
     assert project_config.prod_url("proj/pu") == "https://app.example.com/"
     project_config.set_prod_url("proj/pu", "")     # blank clears
     assert project_config.prod_url("proj/pu") is None
-
-
-def test_allowed_screenshot_url():
-    from bridge.dashboard.server import _allowed_screenshot_url
-    # dev_ports is the set of localhost ports a dev server bound (concurrent previews).
-    assert _allowed_screenshot_url("http://localhost:3000", {3000}, None)
-    assert _allowed_screenshot_url("http://127.0.0.1:3000/x", {3000}, None)
-    assert _allowed_screenshot_url("http://localhost:5174", {3000, 5174}, None)  # another preview
-    assert not _allowed_screenshot_url("http://localhost:9999", {3000}, None)
-    assert _allowed_screenshot_url("https://app.example.com/p", {3000}, "https://app.example.com")
-    assert not _allowed_screenshot_url("https://evil.example.com", {3000}, "https://app.example.com")
-    assert not _allowed_screenshot_url("file:///etc/passwd", {3000}, None)
 
 
 # --- auto-resume: only the user may stop a turn ------------------------------

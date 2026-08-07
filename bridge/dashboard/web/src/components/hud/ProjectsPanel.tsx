@@ -15,7 +15,6 @@ interface Props {
   activeProject: string | null;
   onSelectProject: (rel: string) => void;
   onAnalyze: (rel: string) => void;
-  onPreview: (rel: string) => void;
   onManage: () => void;
   onCreateProject: (name: string, prompt: string) => void;
 }
@@ -48,13 +47,12 @@ function clusterByParent(groups: ProjectGroup[]): { parent: string; items: Proje
 }
 
 function ProjectRow({
-  g, active, onSelectProject, onAnalyze, onPreview,
+  g, active, onSelectProject, onAnalyze,
 }: {
   g: ProjectGroup;
   active: boolean;
   onSelectProject: (rel: string) => void;
   onAnalyze: (rel: string) => void;
-  onPreview: (rel: string) => void;
 }) {
   const [anHov, setAnHov] = useState(false);
   const dirty = g.badge?.dirty ?? 0;
@@ -88,8 +86,6 @@ function ProjectRow({
       {g.running && (
         <span style={{ fontSize: 8, letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 5px", flex: "none" }}>LIVE</span>
       )}
-      {/* ponytail: preview (eye) button hidden — the preview flow isn't working
-          yet. onPreview plumbing kept so re-enabling is just this button back. */}
       <button
         onClick={() => onAnalyze(g.rel)} title="open project details"
         onMouseEnter={() => setAnHov(true)} onMouseLeave={() => setAnHov(false)}
@@ -105,7 +101,7 @@ function ProjectRow({
 }
 
 export function ProjectsPanel(props: Props) {
-  const { groups, activeProject, onSelectProject, onAnalyze, onPreview, onManage, onCreateProject } = props;
+  const { groups, activeProject, onSelectProject, onAnalyze, onManage, onCreateProject } = props;
   const [newOpen, setNewOpen] = useState(false);
   const [npName, setNpName] = useState("");
   const [npPrompt, setNpPrompt] = useState("");
@@ -168,7 +164,7 @@ export function ProjectsPanel(props: Props) {
           if (!parent) {
             return items.map((g) => (
               <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
-                onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
+                onSelectProject={onSelectProject} onAnalyze={onAnalyze} />
             ));
           }
           // "ainurhq/efas" — an org inside an org. Ancestors stay dim, the owning
@@ -189,7 +185,7 @@ export function ProjectsPanel(props: Props) {
               <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 12, borderLeft: `1px solid color-mix(in srgb, var(--acc) ${sub ? 45 : 28}%, transparent)` }}>
                 {items.map((g) => (
                   <ProjectRow key={g.rel} g={g} active={g.rel === activeProject}
-                    onSelectProject={onSelectProject} onAnalyze={onAnalyze} onPreview={onPreview} />
+                    onSelectProject={onSelectProject} onAnalyze={onAnalyze} />
                 ))}
               </div>
             </div>

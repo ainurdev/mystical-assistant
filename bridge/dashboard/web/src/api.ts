@@ -121,21 +121,16 @@ export interface DevServerInfo {
   branch: string;
   tail: string[];           // recent log lines (for status/errors)
 }
-// Identifies which run directory + branch a preview request targets.
-export interface PreviewCtx {
+// Identifies which run directory + branch a request targets.
+export interface RunCtx {
   cwd?: string | null;      // absolute worktree dir (from a session)
   cwd_rel?: string | null;  // rel run dir (from the running-servers list)
   project?: string | null;  // canonical project rel; resolution fallback + label
   branch?: string | null;
 }
-export interface PreviewInfo {
-  url: string | null;
-  port: number | null;
-}
 export interface DashState {
   project: Project | null;
   server: ServerInfo;
-  preview: PreviewInfo;
   servers?: DevServerInfo[]; // all concurrent dev servers
   dev_port?: number; // legacy default dev-server port (config.PREVIEW_PORT)
   permission_mode?: string | null;
@@ -247,7 +242,7 @@ export interface ProjectSettings {
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
-// One prompt in the preview console's per-session queue. `text` is the human
+// One prompt in a session's prompt queue. `text` is the human
 // instruction shown in the UI; the full composed prompt that runs stays server-side.
 export interface QueueItem {
   id: string;
@@ -702,7 +697,9 @@ export interface GraphState {
 export interface Lesson {
   file: string; // 0007-a-slug.md, also its identity in the read endpoint
   title: string;
+  concept: string; // one of learn.CONCEPTS; "" for lessons written before them
   at: number; // epoch seconds
+  project?: string; // only in the ALL scope, where a lesson can be from any repo
 }
 
 // The platform's own checkout vs its upstream — powers the header sync button,
@@ -864,11 +861,12 @@ export const api = {
   ) => req(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
-  server: (action: "start" | "stop", opts: { cmd?: string } & PreviewCtx = {}) =>
+  server: (action: "start" | "stop", opts: { cmd?: string } & RunCtx = {}) =>
     req<{ message: string; server: DevServerInfo; servers: DevServerInfo[] }>(
       "/local/server", { method: "POST", body: { action, ...opts } }),
   servers: () => req<{ servers: DevServerInfo[] }>("/local/servers"),
-  detectPreview: (ctx: PreviewCtx) =>
+  // Path is historical — this only works out a project's run command now.
+  detectRunCommand: (ctx: RunCtx) =>
     req<{ command: string; source: string; explanation: string }>(
       "/local/preview/detect", { method: "POST", body: { ...ctx } }),
   shell: (cursor: number) => req<ShellSnapshot>(`/local/shell?cursor=${cursor}`),
@@ -891,8 +889,6 @@ export const api = {
   termWsUrl: (id: string) =>
     `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/local/ws/terminal` +
     `?id=${encodeURIComponent(id)}&token=${encodeURIComponent(TOKEN)}`,
-  preview: (action: "start" | "stop", port?: number) =>
-    req<{ message: string }>("/local/preview", { method: "POST", body: { action, port } }),
   select: (dir: string) =>
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
   running: () => req<RunningInfo>("/local/running"),
@@ -995,9 +991,9 @@ export const api = {
       method: "POST",
       body: { project, op, path, ...(to ? { to } : {}), ...(branch ? { branch } : {}) },
     }),
-  projectSettings: (ctx: PreviewCtx) =>
+  projectSettings: (ctx: RunCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
-  setProjectSettings: (ctx: PreviewCtx, patch: { run_cmd?: string; prod_url?: string; hidden?: boolean }) =>
+  setProjectSettings: (ctx: RunCtx, patch: { run_cmd?: string; prod_url?: string; hidden?: boolean }) =>
     req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; hidden?: boolean }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
@@ -1079,9 +1075,7 @@ export const api = {
       "/local/projects/create",
       { method: "POST", body: { name, prompt } },
     ),
-  screenshot: (width: number, url?: string, ctx: PreviewCtx = {}) =>
-    req<{ data_url: string }>("/local/preview/screenshot", { method: "POST", body: { width, url, ...ctx } }),
-  // --- preview console prompt queue (per session) ---
+  // --- prompt queue (per session) ---
   queue: (sessionId: string) =>
     req<QueueSnapshot>(`/local/queue?session=${encodeURIComponent(sessionId)}`),
   queueEnqueue: (body: {
@@ -1144,8 +1138,8 @@ export const api = {
     req<{ repo_enabled: boolean }>("/local/learn/toggle", { method: "POST", body: { project, on } }),
 };
 
-/** Query string for a preview context (cwd/project/branch), omitting blanks. */
-function ctxQuery(ctx: PreviewCtx): string {
+/** Query string for a run context (cwd/project/branch), omitting blanks. */
+function ctxQuery(ctx: RunCtx): string {
   const p = new URLSearchParams();
   if (ctx.cwd) p.set("cwd", ctx.cwd);
   if (ctx.cwd_rel) p.set("cwd_rel", ctx.cwd_rel);
@@ -1168,7 +1162,7 @@ export function logStream(onLine: (line: string) => void): () => void {
   return () => es.close();
 }
 
-/** Subscribe to a session's preview queue (SSE). Each message is a full snapshot
+/** Subscribe to a session's prompt queue (SSE). Each message is a full snapshot
  * (the server publishes one on every change). Returns an unsubscribe fn. */
 export function queueStream(sessionId: string, onSnap: (snap: QueueSnapshot) => void): () => void {
   const es = new EventSource(

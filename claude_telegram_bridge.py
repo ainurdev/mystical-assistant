@@ -96,7 +96,6 @@ def _on_stop_signal(signum, frame):
 def _shutdown():
     state.shutting_down = True
     native_activity.stop()
-    tunnel.stop_tunnel()
     devserver.stop_all()      # every registered dev server, not just the primary
     if config.MINIAPP_ENABLE:
         from bridge.miniapp import server as miniapp

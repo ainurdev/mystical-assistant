@@ -186,7 +186,8 @@ def test_brief_exposes_the_parsed_goal():
 
 def test_mcp_config_carries_the_session_and_repo_root():
     from bridge import runner
-    cfg = json.loads(runner._goal_mcp_config("abc-123"))   # noqa: SLF001
+    cfg = json.loads(runner._mcp_config("abc-123"))   # noqa: SLF001
+    assert set(cfg["mcpServers"]) == {"goals", "verify"}
     env = cfg["mcpServers"]["goals"]["env"]
     assert env["MYSTICAL_CLAUDE_SESSION_ID"] == "abc-123"
     assert os.path.isdir(os.path.join(env["PYTHONPATH"], "bridge"))

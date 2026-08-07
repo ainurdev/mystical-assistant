@@ -22,7 +22,7 @@ export interface EnqueueInput {
 /** Live view of a session's server-side prompt queue, plus the ops to mutate it.
  * The server returns the fresh snapshot from every op and pushes changes over SSE,
  * so we just adopt whatever the server reports (newest revision wins). */
-export function usePreviewQueue(sessionId: string | null) {
+export function useSessionQueue(sessionId: string | null) {
   const [snap, setSnap] = useState<QueueSnapshot>(EMPTY);
   const seqRef = useRef(0);
 

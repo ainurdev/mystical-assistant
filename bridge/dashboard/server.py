@@ -1,8 +1,9 @@
 """Localhost-only desktop dashboard: a full-parity Claude client + live log
 streaming over the SAME store/runner/devserver as the Mini App.
 
-SECURITY (critical): bound to 127.0.0.1 and NEVER tunneled (tunnel.start_tunnel
-refuses DASH_PORT). Any web page the user visits can reach 127.0.0.1:DASH_PORT, so:
+SECURITY (critical): bound to 127.0.0.1 and never exposed publicly — the only
+tunnel this bridge runs fronts the Mini App, never DASH_PORT. Any web page the
+user visits can reach 127.0.0.1:DASH_PORT, so:
   - EVERY request must carry an allow-listed Host header  -> defeats DNS-rebinding;
   - every state-changing (POST) request must carry the per-process secret
     DASH_TOKEN in X-Dash-Token plus an allow-listed Origin  -> defeats CSRF;
@@ -12,7 +13,6 @@ The dashboard operates as config.DASH_CHAT_ID, sharing that user's store session
 and active project with the Telegram bot + Mini App.
 """
 
-import base64
 import hmac
 import json
 import mimetypes
@@ -29,9 +29,9 @@ import re
 
 from bridge import (agents, browser, config, devserver, fmt, git, github, graphmap,
                     models, native, preview_detect, project_config,
-                    pubsub, queue_manager, relevance, runner, screenshot, selfupdate,
+                    pubsub, queue_manager, relevance, runner, selfupdate,
                     share,
-                    shell, skills, state, store, sysinfo, terminals, titler, tunnel, usage,
+                    shell, skills, state, store, sysinfo, terminals, titler, usage,
                     weather, wsutil)
 from bridge.miniapp.server import (_pre_title, _save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
@@ -81,7 +81,7 @@ def _abs_within(path: str) -> str | None:
 
 
 def _server_cwd(chat, body) -> str:
-    """The run directory a preview/dev-server request targets: an absolute
+    """The run directory a dev-server request targets: an absolute
     worktree cwd if given, else a project rel, else the chat's active project.
     Mirrors the worktree resolution used by /local/sessions."""
     return (_abs_within((body.get("cwd") or "").strip())
@@ -169,25 +169,6 @@ def _plain_commit_message(paths: "list[str]") -> str:
     return f"update {head}{f' and {rest} more' if rest > 0 else ''}" if names else "update"
 
 
-def _allowed_screenshot_url(url: str, dev_ports: "set[int]", prod_url: str | None) -> bool:
-    """A screenshot target is allowed only if it is a local dev server
-    (localhost/127.0.0.1 on a port a dev server bound) or the project's prod URL."""
-    try:
-        u = urlparse((url or "").strip())
-    except ValueError:
-        return False
-    if u.scheme not in ("http", "https") or not u.hostname:
-        return False
-    if u.hostname in ("localhost", "127.0.0.1") and u.port in dev_ports:
-        return True
-    if prod_url:
-        p = urlparse(prod_url.strip())
-        if (u.scheme == p.scheme and u.hostname == p.hostname
-                and (u.port or None) == (p.port or None)):
-            return True
-    return False
-
-
 class Handler(BaseHTTPRequestHandler):
     server_version = "ClaudeBridgeDashboard"
 
@@ -273,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
             pd = state.project_dir(chat)
             return self._json({
                 "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)},
-                "server": devserver.server_state(), "preview": tunnel.tunnel_state(),
+                "server": devserver.server_state(),
                 "servers": devserver.list_servers(),
                 "dev_port": config.PREVIEW_PORT,
                 "permission_mode": config.MINIAPP_PERMISSION_MODE,
@@ -542,7 +523,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"text": graphmap.explain(abs_p, q)})
         if path == "/local/learn":
             from bridge import learn
-            abs_p = _abs_project(qs.get("project", [None])[0])
+            project = qs.get("project", [None])[0]
+            if project == "*":
+                # ALL scope — every repo's lessons in one list. No single repo to
+                # report a switch for, so the tab hides the per-repo toggle here.
+                return self._json({"lessons": learn.all_lessons(), "repo_enabled": True})
+            abs_p = _abs_project(project)
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             name = (qs.get("file", [""])[0] or "").strip()
@@ -621,12 +607,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(terminals.close(path[len("/local/terminals/"):-len("/close")]))
         if path == "/local/server":
             return self._server(chat, body)
-        if path == "/local/preview":
-            return self._preview(body)
         if path == "/local/preview/detect":
             return self._preview_detect(chat, body)
-        if path == "/local/preview/screenshot":
-            return self._api_preview_screenshot(body)
         if path == "/local/select":
             return self._select(chat, body)
         if path == "/local/sessions":
@@ -1206,7 +1188,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(job.snapshot(_cursor(body)))
 
     def _queue(self, op, chat, body):
-        """Preview-console prompt queue. Runs are keyed by the store session id —
+        """Per-session prompt queue. Runs are keyed by the store session id —
         the same key the run slot uses — so queued prompts serialise with normal
         chat runs in that session and run strictly one at a time."""
         sid = (body.get("session_id") or "").strip()
@@ -1286,7 +1268,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(queue_manager.snapshot(sid))
 
     def _server(self, chat, body):
-        # A preview targets one run directory (a project, or a linked worktree
+        # A dev server targets one run directory (a project, or a linked worktree
         # with its own branch), so several can run concurrently on their own
         # ports. The caller names the cwd/branch; we fall back to the active one.
         cwd = _server_cwd(chat, body)
@@ -1315,48 +1297,6 @@ class Handler(BaseHTTPRequestHandler):
             project_config.set_run_cmd(rel, cmd, branch)
         self._json({"command": cmd, "source": res.get("source"),
                     "explanation": res.get("explanation", "")})
-
-    def _preview(self, body):
-        action = body.get("action", "start")
-        if action == "stop":
-            msg = tunnel.stop_tunnel()
-        else:
-            try:
-                port = int(body.get("port") or config.PREVIEW_PORT)
-            except (ValueError, TypeError):
-                port = config.PREVIEW_PORT
-            _, msg = tunnel.start_tunnel(port)
-        self._json({"preview": tunnel.tunnel_state(), "message": msg})
-
-    def _api_preview_screenshot(self, body: dict):
-        chat = _chat()
-        target = (body.get("url") or "").strip()
-        if target:
-            dev_ports = {s["port"] for s in devserver.list_servers() if s.get("port")}
-            dev_ports.add(config.PREVIEW_PORT)
-            abs_p = (_abs_within((body.get("cwd") or "").strip())
-                     or _abs_project(body.get("cwd_rel") or body.get("project"))
-                     or state.project_dir(chat))
-            rel = browser.rel(abs_p)
-            branch = (body.get("branch") or "").strip() or None
-            if not _allowed_screenshot_url(target, dev_ports,
-                                           project_config.prod_url(rel, branch)):
-                return self._json({"error": "url not allowed"}, 400)
-            url = target
-        else:
-            url = tunnel.tunnel_state().get("url")
-        if not url:
-            return self._json({"error": "preview not running"}, 409)
-        try:
-            width = int(body.get("width") or 375)
-        except (TypeError, ValueError):
-            width = 375
-        try:
-            png = screenshot.capture(url, width)
-        except Exception as e:  # noqa: BLE001
-            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
-        data_url = "data:image/png;base64," + base64.b64encode(png).decode()
-        return self._json({"data_url": data_url})
 
     def _select(self, chat, body):
         d = (body.get("dir") or "").strip()

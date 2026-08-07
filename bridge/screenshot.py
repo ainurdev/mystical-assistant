@@ -1,17 +1,30 @@
-"""Headless-Chrome screenshot of the live preview, for visual context to Claude.
+"""Headless-Chrome screenshot of a URL, for visual context to Claude.
 
 Uses chrome-headless-shell directly (no Playwright module). In this WSL env Chrome
 needs an ALSA stub on LD_LIBRARY_PATH; both are configurable via env.
 """
 
+import glob
 import os
 import subprocess
 import tempfile
 
-_DEFAULT_CHROME = os.path.expanduser(
-    "~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
+_GLOB = os.path.expanduser(
+    "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"
 )
-CHROME = os.environ.get("CHROME_HEADLESS_SHELL", _DEFAULT_CHROME)
+
+
+def _installed_chrome() -> str:
+    """Newest local install. Playwright puts its build number in the path and
+    bumps it on every update, so the build this used to hardcode went stale
+    silently — every capture failing with a not-found on a path nobody reads."""
+    def build(p: str) -> int:
+        return int(p.split("chromium_headless_shell-")[1].split(os.sep)[0])
+    hits = glob.glob(_GLOB)
+    return max(hits, key=build) if hits else "chrome-headless-shell"
+
+
+CHROME = os.environ.get("CHROME_HEADLESS_SHELL") or _installed_chrome()
 CHROME_LD = os.environ.get("CHROME_LD_LIBRARY_PATH", os.path.expanduser("~/.cache/ms-playwright"))
 
 

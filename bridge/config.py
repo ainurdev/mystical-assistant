@@ -50,11 +50,16 @@ NEW_SESSION_PERMISSION_MODE = os.environ.get("NEW_SESSION_PERMISSION_MODE", "byp
 # Appended to Claude's system prompt so it asks instead of guessing. Set empty
 # to disable.
 ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
-    "You are operating through a Telegram bridge with a human who can reply. "
-    "If a task is ambiguous, or you need a decision, a credential, or "
-    "confirmation before doing something irreversible, STOP and ask exactly one "
-    "concise question rather than guessing. Otherwise finish the task and report "
-    "the result briefly."))
+    "You are operating through a Telegram bridge with a human who is usually on "
+    "a phone, away from the keyboard. Lead with what is true now rather than "
+    "what you did: the outcome first, then the evidence for it — the command you "
+    "ran and its result, or the file:line to look at — then the one thing that "
+    "needs them. Never report something as passing, working or fixed unless you "
+    "ran it; say it is unverified instead. If a task is ambiguous, or you need a "
+    "decision, a credential, or confirmation before doing something "
+    "irreversible, STOP and ask rather than guessing, and ask with "
+    "AskUserQuestion so the choice arrives as a card to tap instead of prose to "
+    "type a reply to. One decision, not an interrogation."))
 
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
 
@@ -98,11 +103,11 @@ CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
 
 # --- Named tunnel ------------------------------------------------------------
 # The Mini App panel runs behind a *named* tunnel so its URL is stable
-# (https://PREVIEW_HOSTNAME) instead of a random throwaway hostname that would
-# break every panel link already sent to Telegram on each restart. The tunnel +
-# DNS are provisioned once with the provider's API; the credentials file
-# (git-ignored, in $HOME) lets the client run it locally. Unset -> the panel falls
-# back to a quick tunnel. /preview always uses a quick tunnel.
+# (https://PREVIEW_HOSTNAME — the name is historical, it fronts the panel)
+# instead of a random throwaway hostname that would break every panel link
+# already sent to Telegram on each restart. The tunnel + DNS are provisioned once
+# with the provider's API; the credentials file (git-ignored, in $HOME) lets the
+# client run it locally. Unset -> the panel falls back to a quick tunnel.
 PREVIEW_HOSTNAME = os.environ.get("PREVIEW_HOSTNAME", "")
 TUNNEL_NAME = os.environ.get("TUNNEL_NAME", "")
 TUNNEL_ID = os.environ.get("TUNNEL_ID", "")
@@ -158,8 +163,15 @@ NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback p
 LEARN_ENABLE = os.environ.get("LEARN_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 
-# --- Preview command detection -----------------------------------------------
-# Opening a project's TERMINAL tab or preview window works out how to start its
+# Decide whether a turn that ENDED on a question is waiting on you or just being
+# polite. Free markers (auth failures, usage limits, "reply go") always count;
+# this is the fall-through to a model call for the ambiguous rest. Automatic —
+# nobody clicks it — so it defaults OFF.
+TAIL_STATE_AI = os.environ.get("TAIL_STATE_AI", "0").lower() \
+    not in ("0", "false", "no", "")
+
+# --- Run command detection ----------------------------------------------------
+# Opening a project's TERMINAL tab, or analysing it, works out how to start its
 # dev server. A free heuristic reads the lockfile and scripts first; this decides
 # whether a repo the heuristic can't read may fall through to a model call. That
 # fall-through is automatic — nobody clicks it — so it defaults OFF.

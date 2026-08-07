@@ -1,4 +1,4 @@
-"""Per-session sequential prompt queue for the dashboard Preview Console.
+"""Per-session sequential prompt queue for the dashboard composer.
 
 A session may hold only one in-flight Claude turn (see bridge/state.py), so the
 queue runs queued prompts ONE AT A TIME per session and auto-advances when each

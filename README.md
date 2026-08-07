@@ -39,7 +39,7 @@ your repos.
 | **0** deps | on the server. Python standard library, end to end. |
 | **1** page | for every session, wherever you started it. |
 | **3** ways on | when a limit lands, before the work is lost. |
-| **14** panes | editor, git, terminal, issues, map, preview. |
+| **12** panes | editor, git, terminal, issues, map, skills. |
 
 **MIT licensed** · **no API key** · **no account** · **no telemetry** ·
 **macOS, Linux, WSL**
@@ -176,7 +176,6 @@ embedding bill.
 | Skills, per repo | Plus a catalog to add more from |
 | A real terminal | xterm.js on the session's own worktree |
 | It can look at the page | A headless shot of your dev server |
-| A public preview URL | cloudflared, no port forwarding |
 | The same session on your phone | A Telegram bot and Mini App |
 | Ten display profiles | Light, dark, CRT scanlines |
 
@@ -202,7 +201,7 @@ same way.
 Everything the workspace opens:
 
 `CHAT` · `HISTORY` · `PROJECTS` · `FILES` · `QUEUE` · `EDITOR` ·
-`GIT` · `WORKTREES` · `TERMINAL` · `ISSUES` · `SKILLS` · `MAP` · `PREVIEW`
+`GIT` · `WORKTREES` · `TERMINAL` · `ISSUES` · `SKILLS` · `MAP`
 
 **Four surfaces, one session store.** A session started on any of them continues
 on any other. The run never leaves your machine, and there's no app to install.
@@ -237,7 +236,6 @@ exists, that's the one running. Where the work belongs on your machine, it's you
 | **GIT · WORKTREES** | **your git**, invoked the way you'd invoke it. Nothing is modelled twice, so nothing drifts |
 | **ISSUES** | **the `gh` CLI**, under the auth you already granted it. No second token to mint |
 | **MAP** | **graphify.** Repo structure from tree-sitter ASTs, with no LLM pass and no embedding bill |
-| **PREVIEW** | **cloudflared.** Your dev server reaches your phone without opening a port on your router |
 | **SKILLS** | **community `SKILL.md`.** Installing one downloads the maintained original from GitHub, verbatim |
 | **THE ENGINE** | **`claude`.** The CLI you already logged into, reading the transcripts it already writes. No API key, no wrapper between you and the model |
 | **FALLBACK** | **opencode.** The open-source CLI itself, run headless on a free provider. Not a second route into your subscription |
@@ -332,9 +330,10 @@ mystical run        run in the foreground (Ctrl-C to quit)
   `.env.example` documents every option. Required: `TELEGRAM_BOT_TOKEN`,
   `BASE_PATH`, `ALLOWED_CHAT_IDS`.
 - **Dashboard only, no tunnel:** set `MINIAPP_ENABLE="0"`.
-- **Stable preview URL:** `/preview` hands out a throwaway public link by
-  default. For a fixed hostname, provision a named tunnel and set
-  `PREVIEW_HOSTNAME` / `TUNNEL_NAME` / `TUNNEL_ID` / `TUNNEL_CREDENTIALS_FILE`.
+- **Stable Mini App URL:** the panel gets a throwaway tunnel hostname by
+  default, which changes on every restart. For a fixed one, provision a named
+  tunnel and set `PREVIEW_HOSTNAME` / `TUNNEL_NAME` / `TUNNEL_ID` /
+  `TUNNEL_CREDENTIALS_FILE`.
 - **Rebuild the web UI** (only if you change the frontend):
   `npm --prefix bridge/miniapp/web ci && npm --prefix bridge/miniapp/web run build`
   (same for `bridge/dashboard/web`).
