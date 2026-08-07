@@ -17,6 +17,7 @@ import { nextFocus, previewTabs, remapPaths, tabLabels, underPath } from "../../
 import { langFor } from "../../lib/langfor";
 import { FileIcon } from "../../lib/fileicon";
 import { symbolsIn } from "../../lib/symbols";
+import { clampFont, loadPrefs, savePrefs, type EditorPrefs } from "../../lib/editorprefs";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
    the whole working tree of the selected branch/worktree, opens any file into an
@@ -136,6 +137,9 @@ function fuzzyScore(q: string, path: string): number {
 
 // Swapped in once the open file's language chunk has loaded (see langFor).
 const langComp = new Compartment();
+// Reconfigured live when the prefs change, so a toggle doesn't rebuild the buffer.
+const wrapComp = new Compartment();
+const fontComp = new Compartment();
 
 /* Put line `n` in the middle of the viewport with the cursor on it. */
 function gotoLine(view: EditorView, n: number) {
@@ -228,6 +232,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   // (not a bool) lets the CodeMirror view stay mounted underneath, so toggling
   // back never loses unsaved edits.
   const [preview, setPreview] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState<EditorPrefs>(loadPrefs);
+  useEffect(() => { savePrefs(prefs); }, [prefs]);
 
   // quick-open palette: null = closed; "" files, "@…" symbols, ">…" commands
   const [palQ, setPalQ] = useState<string | null>(null);
@@ -357,6 +363,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         indentUnit.of(meta.indent ?? "  "),
         EditorState.tabSize.of(meta.tab_size ?? 2),
         crtTheme,
+        wrapComp.of(prefs.wordWrap ? EditorView.lineWrapping : []),
+        fontComp.of(EditorView.theme({ "&": { fontSize: `${prefs.fontSize}px` } })),
         langComp.of([]),   // filled in below, once the language chunk lands
         EditorView.updateListener.of((u) => {
           if (!u.docChanged) return;
@@ -399,6 +407,15 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editable, open, meta]);
 
+  // Prefs change far more often than files do — reconfigure in place rather than
+  // rebuilding the buffer, which would drop the cursor.
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: [
+      wrapComp.reconfigure(prefs.wordWrap ? EditorView.lineWrapping : []),
+      fontComp.reconfigure(EditorView.theme({ "&": { fontSize: `${prefs.fontSize}px` } })),
+    ] });
+  }, [prefs.wordWrap, prefs.fontSize]);
+
   /* Replace the whole buffer in one transaction, keeping the cursor where it
      was — used by both save-time cleanup and the formatter. */
   function replaceDoc(v: EditorView, text: string) {
@@ -418,6 +435,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   async function save() {
     const v = viewRef.current;
     if (!v || !open || saving) return;
+    // Format first when asked — format() swaps the buffer, and the read below
+    // picks the result up. A formatter failure only flashes; the save still runs.
+    if (prefs.formatOnSave && meta?.formatter !== false) await format();
     const raw = v.state.doc.toString();
     const content = tidy(raw);
     if (content !== raw) replaceDoc(v, content);   // keep the buffer equal to disk
@@ -640,6 +660,14 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     { label: "Refresh Explorer", run: () => void loadTree() },
     { label: preview === null ? "Open Markdown Preview" : "Back to the Editor", off: !editable || !isMd,
       run: () => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null)) },
+    { label: `Format on Save — ${prefs.formatOnSave ? "on" : "off"}`,
+      run: () => setPrefs((p) => ({ ...p, formatOnSave: !p.formatOnSave })) },
+    { label: `Toggle Word Wrap — ${prefs.wordWrap ? "on" : "off"}`, key: "Alt+Z",
+      run: () => setPrefs((p) => ({ ...p, wordWrap: !p.wordWrap })) },
+    { label: "Increase Font Size", key: "Ctrl+=", alt: "Ctrl++",
+      run: () => setPrefs((p) => ({ ...p, fontSize: clampFont(p.fontSize + 1) })) },
+    { label: "Decrease Font Size", key: "Ctrl+-",
+      run: () => setPrefs((p) => ({ ...p, fontSize: clampFont(p.fontSize - 1) })) },
   ];
 
   const palItems = useMemo<PalItem[]>(() => {
