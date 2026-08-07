@@ -30,6 +30,20 @@ import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
 import { setAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
+import {
+  loadPackSounds,
+  loadPacks,
+  OFF,
+  packChoice,
+  playSound,
+  PUSH_EVENT_KEYS,
+  PUSH_EVENTS,
+  soundsFor,
+  type Pack,
+  type PackSound,
+  type PushEvent,
+  type SoundChoice,
+} from "../../lib/sounds";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
@@ -254,6 +268,193 @@ function PickCell({
         ))}
       </select>
     </Cell>
+  );
+}
+
+// ---- NOTIFICATION SOUNDS ----------------------------------------------------
+
+/** One scrolling list, used for both halves of the browser. */
+const LIST: CSSProperties = {
+  maxHeight: 168, overflowY: "auto", marginTop: 6,
+  border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
+};
+
+function ListRow({ on, children, onClick }: { on?: boolean; children: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "block", width: "100%", textAlign: "left", appearance: "none", cursor: "pointer",
+        border: 0, borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+        background: on ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent",
+        color: on ? "var(--txb)" : "var(--tx)", fontFamily: "inherit", fontSize: 10,
+        letterSpacing: .5, padding: "7px 9px", lineHeight: 1.4,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Browse peonping.com: search the catalog, open a pack, click a sound to hear
+ *  it and assign it. Every sound in the pack is offered, not just the ones
+ *  written for this event — a victory line on FAILURE is a valid taste. */
+function PackBrowser({ cat, volume, onPick }: {
+  cat: string;
+  volume: number;
+  onPick: (c: SoundChoice) => void;
+}) {
+  const [packs, setPacks] = useState<Pack[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [pack, setPack] = useState<Pack | null>(null);
+  const [byCat, setByCat] = useState<Record<string, PackSound[]> | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    loadPacks().then((p) => { if (live) setPacks(p); },
+      (e: Error) => { if (live) setErr(e.message); });
+    return () => { live = false; };
+  }, []);
+
+  // Re-fetching a manifest is free (module-cached), so this just re-renders.
+  useEffect(() => {
+    if (!pack) { setByCat(null); return; }
+    let live = true;
+    setByCat(null);
+    loadPackSounds(pack).then((m) => { if (live) setByCat(m); },
+      (e: Error) => { if (live) setErr(e.message); });
+    return () => { live = false; };
+  }, [pack]);
+
+  if (err) return <div style={{ ...NOTE, color: "var(--err)" }}>peonping.com unreachable — {err}</div>;
+  if (!packs) return <div style={NOTE}>Loading the pack catalog…</div>;
+
+  if (pack) {
+    const groups = byCat ? soundsFor(byCat, cat) : [];
+    return (
+      <>
+        <ListRow onClick={() => setPack(null)}>← {packs.length} packs</ListRow>
+        <div style={{ ...NOTE, marginTop: 6 }}>{pack.display_name}</div>
+        {!byCat ? <div style={NOTE}>Loading sounds…</div> : (
+          <div style={LIST}>
+            {groups.map((g) => (
+              <div key={g.cat}>
+                <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: "var(--txl)", padding: "6px 9px 3px" }}>
+                  {g.cat === cat ? `${g.cat} — written for this` : g.cat}
+                </div>
+                {g.sounds.map((s) => {
+                  const choice = packChoice(pack, s);
+                  return (
+                    <ListRow key={choice.src} onClick={() => { playSound(choice, volume, "blip"); onPick(choice); }}>
+                      ♪ {choice.label.split(" · ").slice(1).join(" · ")}
+                    </ListRow>
+                  );
+                })}
+              </div>
+            ))}
+            {!groups.length && <div style={{ ...NOTE, padding: "0 9px 8px" }}>This pack ships no sounds.</div>}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  const needle = q.trim().toLowerCase();
+  const hits = packs
+    // A pack without this event's category still has sounds you can assign, so
+    // it stays in the list — it just sorts below the ones written for it.
+    .filter((p) => !needle || `${p.display_name} ${p.name} ${(p.tags ?? []).join(" ")}`.toLowerCase().includes(needle))
+    .sort((a, b) => Number(b.categories.includes(cat)) - Number(a.categories.includes(cat)))
+    .slice(0, 120);
+  return (
+    <>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={`search ${packs.length} packs — glados, peon, rick…`}
+        style={{ ...field, width: "100%", boxSizing: "border-box" }}
+      />
+      <div style={LIST}>
+        {hits.map((p) => (
+          <ListRow key={p.name} onClick={() => setPack(p)}>
+            {p.display_name}
+            <span style={{ color: "var(--txl)", fontSize: 9 }}>
+              {"  "}· {p.sound_count ?? "?"} sounds{p.categories.includes(cat) ? "" : " · no clip for this event"}
+            </span>
+          </ListRow>
+        ))}
+        {!hits.length && <div style={{ ...NOTE, padding: "8px 9px" }}>No pack matches “{q}”.</div>}
+      </div>
+    </>
+  );
+}
+
+/** The per-event table: one assignable sound per thing the dashboard notifies
+ *  about. An unassigned event falls back to the single TONE below, which is
+ *  what every install sounded like before this panel existed. */
+function SoundBoard({ settings, onPatch }: {
+  settings: HudSettings;
+  onPatch: (patch: Partial<HudSettings>) => void;
+}) {
+  const [open, setOpen] = useState<PushEvent | null>(null);
+  const set = (ev: PushEvent, c: SoundChoice | undefined) => {
+    const next = { ...settings.pushSounds };
+    if (c) next[ev] = c; else delete next[ev];
+    onPatch({ pushSounds: next });
+  };
+  return (
+    <div style={{ marginTop: 11 }}>
+      {PUSH_EVENT_KEYS.map((ev) => {
+        const meta = PUSH_EVENTS[ev];
+        const cur = settings.pushSounds[ev];
+        const on = open === ev;
+        return (
+          <div key={ev} style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", padding: "9px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={KEY_TX}>{meta.label}</div>
+                <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 3 }}>{meta.hint}</div>
+              </div>
+              <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{
+                  fontSize: 9, letterSpacing: .5, maxWidth: 150, overflow: "hidden",
+                  textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  color: cur ? "var(--acc)" : "var(--txl)",
+                }}>
+                  {cur ? cur.label : `${TONES[settings.pushTone].label} (default)`}
+                </span>
+                <MiniBtn onClick={() => playSound(cur, settings.pushVolume, settings.pushTone)}>♪</MiniBtn>
+                <MiniBtn onClick={() => setOpen(on ? null : ev)}>{on ? "×" : "…"}</MiniBtn>
+              </div>
+            </div>
+            {on && (
+              <div style={{ marginTop: 9 }}>
+                <Segmented
+                  size={9}
+                  options={[
+                    { label: "DEFAULT", value: "" },
+                    { label: "OFF", value: "off" },
+                    ...TONE_OPTS.map((t) => ({ label: t.label, value: `tone:${t.value}` })),
+                  ]}
+                  value={cur?.src ?? ""}
+                  onPick={(v) => {
+                    if (!v) { set(ev, undefined); playSound(undefined, settings.pushVolume, settings.pushTone); return; }
+                    const c = v === "off" ? OFF
+                      : { src: v, label: TONES[v.slice(5) as ToneKey].label };
+                    set(ev, c);
+                    playSound(c, settings.pushVolume, settings.pushTone);
+                  }}
+                />
+                <div style={{ marginTop: 9 }}>
+                  <PackBrowser cat={meta.cat} volume={settings.pushVolume} onPick={(c) => set(ev, c)} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1827,15 +2028,15 @@ export function SettingsModal(props: SettingsModalProps) {
                       }}
                     />
                   </div>
-                  {/* The blip rides on the notification above, so with DESKTOP off
-                      these would be knobs on nothing. */}
-                  {settings.push && (
-                  <div style={KV}>
+                  {/* Sound is its own switch, not a rider on DESKTOP: the failure
+                      sound belongs to an in-app toast, which fires whether or not
+                      the OS is showing banners. */}
+                  <div style={{ ...KV, marginTop: 11 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={KEY_TX}>SOUND</div>
                       <div style={{ fontSize: 9.5, color: "var(--txl)", marginTop: 4 }}>
-                        A short blip with that notification, for when the banner lands on a
-                        screen you aren&apos;t looking at. One per batch, not per session.
+                        A sound per event, for when the news lands on a screen you aren&apos;t
+                        looking at. One per event per batch, not per session.
                       </div>
                     </div>
                     <Switch
@@ -1848,31 +2049,40 @@ export function SettingsModal(props: SettingsModalProps) {
                       }}
                     />
                   </div>
-                  )}
-                  {settings.push && settings.pushSound && (
-                    // Every change plays itself: picking a notification sound you
-                    // can't hear until the next notification is guesswork.
-                    <div style={{ ...ROW, alignItems: "flex-end", flexWrap: "wrap" }}>
-                      <Cell label="TONE" grow="2 1 200px">
-                        <Segmented
-                          options={TONE_OPTS}
-                          value={settings.pushTone}
-                          onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
-                        />
-                      </Cell>
-                      <Cell label="VOLUME" grow="1 1 150px">
-                        {/* Preview when the drag ends, not on every step — a chime
-                            per pixel of travel is a swarm, not a sample. */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                          onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
-                          onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
-                          <Volume
-                            value={settings.pushVolume}
-                            onChange={(pushVolume) => onPatch({ pushVolume })}
+                  {settings.pushSound && (
+                    <>
+                      <SoundBoard settings={settings} onPatch={onPatch} />
+                      {/* Every change plays itself: picking a notification sound you
+                          can't hear until the next notification is guesswork. */}
+                      <div style={{ ...ROW, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <Cell label="DEFAULT" grow="2 1 200px">
+                          <Segmented
+                            options={TONE_OPTS}
+                            value={settings.pushTone}
+                            onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
                           />
-                        </div>
-                      </Cell>
-                    </div>
+                        </Cell>
+                        <Cell label="VOLUME" grow="1 1 150px">
+                          {/* Preview when the drag ends, not on every step — a chime
+                              per pixel of travel is a swarm, not a sample. */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                            onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+                            onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+                            <Volume
+                              value={settings.pushVolume}
+                              onChange={(pushVolume) => onPatch({ pushVolume })}
+                            />
+                          </div>
+                        </Cell>
+                      </div>
+                      <div style={NOTE}>
+                        Pack sounds come from{" "}
+                        <a href="https://www.peonping.com/" target="_blank" rel="noreferrer"
+                          style={{ color: "var(--acc)" }}>peonping.com</a>
+                        {" "}and stream from the pack&apos;s own repo — nothing is installed here.
+                        Events left on DEFAULT ring the tone above.
+                      </div>
+                    </>
                   )}
                 </div>
 

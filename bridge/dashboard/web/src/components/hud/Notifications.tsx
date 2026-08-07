@@ -18,10 +18,17 @@ function emit() { for (const fn of subs) fn(); }
 function subscribe(fn: () => void) { subs.add(fn); return () => { subs.delete(fn); }; }
 function getNotices() { return notices; }
 
+// The feed is written from async handlers all over the app, so it can't read
+// settings through a hook. App installs one callback here instead of every
+// notify() site learning what a sound is.
+let onNotice: ((kind: NoticeKind) => void) | null = null;
+export function setNoticeSound(fn: ((kind: NoticeKind) => void) | null) { onNotice = fn; }
+
 /** Push a notification: shows a toast popup and lands in the bell dropdown. */
 export function notify(kind: NoticeKind, text: string) {
   notices = [{ id: nextId++, kind, text: text || "unknown error", time: Date.now(), read: false }, ...notices].slice(0, 50);
   emit();
+  onNotice?.(kind);
 }
 
 function dismiss(id: number) { notices = notices.filter((n) => n.id !== id); emit(); }

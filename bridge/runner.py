@@ -665,8 +665,8 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
                   external: list, native_snap: dict) -> dict:
     """Merge bridge + native liveness into one {session_id: {state, kind, source,
     label}} map — the single status contract both web surfaces render from. State
-    is 'awaiting' | 'working' | 'checking' | 'live' | 'idle'; bridge sessions are
-    awaiting/working/checking, native (VS Code/terminal) sessions working/live/
+    is 'awaiting' | 'working' | 'checking' | 'parked' | 'live' | 'idle'; bridge
+    sessions are awaiting/working/checking/parked, native (VS Code/terminal) working/live/
     idle. External rows are annotated in place with their `state` for the jobs
     monitor."""
     awaiting_map = {a["session_id"]: a.get("kind") for a in awaiting}
@@ -689,6 +689,14 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
         status.setdefault(sid, {"state": "checking", "kind": None,
                                 "source": "bridge",
                                 "label": "checking this prompt fits…"})
+    # A limit- or error-parked turn (bridge/limits.py) has no process, but it is
+    # coming back on its own — reported as idle it reads as finished, and every
+    # surface would announce a DONE that never happened.
+    for sid, (pkind, at) in limits.parked().items():
+        status.setdefault(sid, {
+            "state": "parked", "kind": pkind, "source": "bridge",
+            "label": (f"usage limit — resuming ~{limits.when_str(at)}" if pkind == "limit"
+                      else f"API error — retrying {limits.wait_str(at)}")})
     now = time.time()
     for row in external:
         sid = row.get("session_id")

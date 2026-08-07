@@ -401,13 +401,15 @@ export interface AwaitingSession {
 }
 // working = transcript being written right now; live = native session recently
 // active (alive but briefly paused); awaiting = blocked on you; checking = a
-// prompt of yours is being checked against this session; else idle.
-export type SessionState = "working" | "awaiting" | "checking" | "live" | "idle";
+// prompt of yours is being checked against this session; parked = killed by a
+// usage limit or API error and waiting to auto-resume; else idle.
+export type SessionState = "working" | "awaiting" | "checking" | "parked" | "live" | "idle";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/idle only.
 export interface SessionStatus {
   state: SessionState;
-  kind: "question" | "permission" | null;
+  // question/permission on `awaiting`; limit/server on `parked`.
+  kind: "question" | "permission" | "limit" | "server" | null;
   source: "bridge" | "native";
   label: string | null;
 }

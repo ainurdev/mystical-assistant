@@ -42,7 +42,8 @@ import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins } from "./lib/prefs";
 import { nearBottom, stickToBottom } from "./lib/stick";
-import { chime, push, shouldPush } from "./lib/push";
+import { push, shouldPush } from "./lib/push";
+import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
@@ -59,7 +60,7 @@ import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
-import { notify } from "./components/hud/Notifications";
+import { notify, setNoticeSound } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
@@ -551,19 +552,27 @@ export function App() {
   // ponytail: only transitions this tab actually polls get flagged — a session
   // that finishes while the dashboard is closed won't. Needs a bridge-side
   // finished_at/seen_at pair to cover that.
+  // States that mean a turn is already under way — see SessionState in api.ts.
+  const IN_FLIGHT = ["working", "awaiting", "checking", "parked"];
   const prevStatus = useRef(statusMap);
+  // The first poll lands against an empty map, so every session already running
+  // would read as one that just started (and every open question as one just
+  // asked). Nothing that predates the tab counts as news.
+  const statusSeen = useRef(false);
   useEffect(() => {
     const prev = prevStatus.current;
     prevStatus.current = statusMap;
+    const first = !statusSeen.current;
+    statusSeen.current = true;
     const finished = [...prev]
       .filter(([id, st]) => st.state === "working" && id !== sessionId
-        && !["working", "awaiting"].includes(statusMap.get(id)?.state ?? ""))
+        && !["working", "awaiting", "parked"].includes(statusMap.get(id)?.state ?? ""))
       .map(([id]) => id);
     if (finished.length) setDoneIds((d) => new Set([...d, ...finished]));
     // Same transitions, sent to the OS. Finished is computed above against the
     // session you have open; awaiting is not, because a question in the session
     // you're looking at but a window you've left is still news.
-    if (!settings.push) return;
+    if (first) return;
     const brief = (id: string) => sessions.find((s) => s.id === id);
     const name = (id: string) => brief(id)?.title || "session";
     // Clicking the notification opens the session it's about, switching project
@@ -572,21 +581,54 @@ export function App() {
       const s = brief(id);
       if (s) void selectSession(s); else openSession(id);
     };
-    // One blip per batch, not per session: five sessions landing together is one
-    // piece of news, and five overlapping chimes is an alarm.
-    let rang = false;
-    const ping = (title: string, body: string, id: string) => {
-      push(title, body, id, reveal(id));
-      if (settings.pushSound && !rang) { rang = true; chime(settings.pushTone, settings.pushVolume); }
+    // One sound per event per batch, not per session: five sessions finishing
+    // together is one piece of news, and five overlapping samples is an alarm.
+    // Different events still each get their voice — that's the whole point of
+    // assigning them separately.
+    const rang = new Set<PushEvent>();
+    const ping = (ev: PushEvent, title: string, body: string, id: string) => {
+      if (settings.push) push(title, body, id, reveal(id));
+      if (settings.pushSound && !rang.has(ev)) {
+        rang.add(ev);
+        playSound(settings.pushSounds[ev], settings.pushVolume, settings.pushTone);
+      }
     };
     for (const id of finished)
-      if (shouldPush(id, sessionId)) ping(`✓ ${name(id)}`, "finished", id);
-    for (const [id, st] of statusMap)
-      if (st.state === "awaiting" && prev.get(id)?.state !== "awaiting"
+      if (shouldPush(id, sessionId)) ping("done", `✓ ${name(id)}`, "finished", id);
+    for (const [id, st] of statusMap) {
+      const was = prev.get(id)?.state;
+      if (st.state === "awaiting" && was !== "awaiting" && shouldPush(id, sessionId))
+        ping(st.kind === "permission" ? "permission" : "question", `⏸ ${name(id)}`,
+          st.label || "waiting on you", id);
+      // Parked is the bridge saying "this died but I'll bring it back" — worth
+      // hearing wherever you are, including in the session you're looking at.
+      else if (st.state === "parked" && was !== "parked")
+        ping("limit", `⏳ ${name(id)}`, st.label || "parked", id);
+      // A turn beginning on a session you didn't start yourself (Telegram, a
+      // scheduled run) is the one start worth announcing. Coming back from
+      // awaiting/checking/parked is the same turn resuming, not a new one —
+      // announcing those means a sound every time you answer a question.
+      else if (st.state === "working" && !IN_FLIGHT.includes(was ?? "")
           && shouldPush(id, sessionId))
-        ping(`⏸ ${name(id)}`, "waiting on you", id);
+        ping("start", `▸ ${name(id)}`, st.label || "working…", id);
+    }
   }, [statusMap, sessionId, sessions, settings.push, settings.pushSound,
-      settings.pushTone, settings.pushVolume]);
+      settings.pushTone, settings.pushVolume, settings.pushSounds]);
+
+  // The error toast is the dashboard's own failure channel — a request that
+  // came back 500, a worktree that wouldn't create. It never had a sound.
+  useEffect(() => {
+    setNoticeSound((kind) => {
+      if (kind !== "error" || !settings.pushSound) return;
+      playSound(settings.pushSounds.failure, settings.pushVolume, settings.pushTone);
+    });
+  }, [settings.pushSound, settings.pushSounds, settings.pushVolume, settings.pushTone]);
+
+  // Fetch each assigned pack sound once, up front — the first notification
+  // shouldn't be the one that waits on GitHub.
+  useEffect(() => {
+    for (const c of Object.values(settings.pushSounds)) preloadSound(c?.src);
+  }, [settings.pushSounds]);
 
   // Closing the tab costs the server nothing — runs are local processes, not
   // browser ones — but it takes away the only place their questions can be

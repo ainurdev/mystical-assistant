@@ -165,6 +165,15 @@ def note_ok(session_id: str) -> None:
     _last_tries.pop(session_id, None)
 
 
+def parked() -> dict:
+    """{session_id: (kind, fire_at)} for every session waiting on a reset or a
+    backoff step. Read-only view for the status map — a parked session is alive
+    and coming back, which is neither 'working' nor 'idle'."""
+    with _lock:
+        return {sid: (e.get("kind", "limit"), e.get("at", 0.0))
+                for sid, e in _pending.items()}
+
+
 def _tries_locked(session_id: str) -> int:
     prev = _pending.get(session_id)
     return (prev["tries"] if prev else _last_tries.pop(session_id, 0)) + 1

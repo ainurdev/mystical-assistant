@@ -8,6 +8,7 @@
 
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { TONES, type ToneKey } from "./push";
+import { PUSH_EVENT_KEYS, type PushEvent, type SoundChoice } from "./sounds";
 import { VOICE_KEYS, type VoiceKey } from "./piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "./songs";
 
@@ -335,8 +336,12 @@ export interface HudSettings {
   // you're not watching. Needs the browser's permission, asked for on switch-on.
   push: boolean;
   pushSound: boolean; // blip alongside that notification
-  pushTone: ToneKey; // which blip
+  pushTone: ToneKey; // the blip an event with no sound of its own falls back to
   pushVolume: number; // 0..1
+  // One sound per event (see PUSH_EVENTS) — a synth tone, a PeonPing pack
+  // sound, or "off". An event missing here has never been assigned and rings
+  // pushTone, so an install that never opens this panel sounds unchanged.
+  pushSounds: Partial<Record<PushEvent, SoundChoice>>;
 }
 
 const KEY = "hud-settings";
@@ -347,7 +352,7 @@ const DEFAULTS: HudSettings = {
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6, textScale: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   ponytailUi: true, graphUi: true, agent: "", push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6,
+  pushTone: "blip", pushVolume: 0.6, pushSounds: {},
 };
 
 /**
@@ -369,6 +374,21 @@ const legacyVoice = (p: Partial<HudSettings> & { pianoWave?: string }): unknown 
 
 const clamp01 = (v: unknown, fallback: number): number =>
   typeof v === "number" ? Math.min(1, Math.max(0, v)) : fallback;
+
+/** Keep only the events we still ship and the entries that still look like a
+ *  choice — a stored sound is a URL someone else's repo owns, so a hand-edited
+ *  or half-written value shouldn't take the whole settings blob down with it. */
+const soundChoices = (v: unknown): Partial<Record<PushEvent, SoundChoice>> => {
+  const out: Partial<Record<PushEvent, SoundChoice>> = {};
+  if (!v || typeof v !== "object") return out;
+  for (const k of PUSH_EVENT_KEYS) {
+    const c = (v as Record<string, unknown>)[k] as SoundChoice | undefined;
+    if (c && typeof c.src === "string" && c.src) {
+      out[k] = { src: c.src, label: typeof c.label === "string" && c.label ? c.label : c.src };
+    }
+  }
+  return out;
+};
 
 export function loadSettings(): HudSettings {
   try {
@@ -432,6 +452,7 @@ export function loadSettings(): HudSettings {
         pushSound: p.pushSound ?? true,
         pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
         pushVolume: clamp01(p.pushVolume, 0.6),
+        pushSounds: soundChoices(p.pushSounds),
       };
     }
   } catch {
