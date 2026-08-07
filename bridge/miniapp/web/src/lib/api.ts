@@ -180,7 +180,14 @@ export interface AwaitingSession {
 // the indicator for live VS Code/terminal sessions.
 // "checking" = a prompt of yours is being checked against this session before it
 // runs (bridge/relevance.py); no job exists yet, but the session is in play.
-export type SessionState = "working" | "awaiting" | "checking" | "live" | "idle";
+// "asking" = the last turn finished by asking you something (the ASK card in the
+// transcript). Nothing is blocked — but the next move is yours.
+export type SessionState = "working" | "awaiting" | "asking" | "checking" | "live" | "idle";
+/** The two states where the session is stopped until you say something — one
+ *  mid-turn, one at the end of it. Every "waiting" count, filter and badge
+ *  means both. */
+export const needsYou = (s: SessionState | string | undefined) =>
+  s === "awaiting" || s === "asking";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/live/idle.
 export interface SessionStatus {

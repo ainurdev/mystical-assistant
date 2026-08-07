@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Sparkles, SquarePen, X } from "lucide-react";
-import { api, type SessionState } from "../lib/api";
+import { api, needsYou, type SessionState } from "../lib/api";
 import { useChat } from "../lib/chat";
 import { FolderNavigator } from "./FolderNavigator";
 import { SurfaceBadge } from "./SurfaceBadge";
@@ -17,13 +17,14 @@ function ago(sec: number | null): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// Awaiting you sorts first — it's the only state you can act on — then working.
+// The states you can act on sort first — blocked mid-turn, then ended on a
+// question — and only then what is running.
 const ORDER: Record<SessionState, number> = {
-  awaiting: 0, working: 1, checking: 2, live: 3, idle: 4,
+  awaiting: 0, asking: 1, working: 2, checking: 3, live: 4, idle: 5,
 };
 const DOT: Record<SessionState, string> = {
-  awaiting: "bg-amber-400", working: "bg-emerald-400", checking: "bg-emerald-400/60",
-  live: "bg-sky-400", idle: "bg-[var(--tg-hint)]/40",
+  awaiting: "bg-amber-400", asking: "bg-amber-400/60", working: "bg-emerald-400",
+  checking: "bg-emerald-400/60", live: "bg-sky-400", idle: "bg-[var(--tg-hint)]/40",
 };
 
 interface Row {
@@ -108,7 +109,7 @@ export function ChatSwitcher() {
   // The checkout this chat runs in — a worktree session is not on the repo's
   // current branch, and that difference is worth a word in the header.
   const branch = sessions.find((s) => s.id === sessionId)?.branch ?? "";
-  const waiting = rows.filter((r) => r.state === "awaiting");
+  const waiting = rows.filter((r) => needsYou(r.state));
   const running = rows.filter((r) => r.state === "working" || r.state === "checking" || r.state === "live");
   const recent = rows.filter((r) => r.state === "idle");
 
@@ -132,7 +133,7 @@ export function ChatSwitcher() {
           {label}
         </div>
         {list.map((r) => {
-          const isWaiting = r.state === "awaiting";
+          const isWaiting = needsYou(r.state);
           const isLive = r.state !== "idle" && !isWaiting;
           return (
             <button

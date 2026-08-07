@@ -397,8 +397,11 @@ export interface AwaitingSession {
 // working = transcript being written right now; live = native session recently
 // active (alive but briefly paused); awaiting = blocked on you; checking = a
 // prompt of yours is being checked against this session; parked = killed by a
-// usage limit or API error and waiting to auto-resume; else idle.
-export type SessionState = "working" | "awaiting" | "checking" | "parked" | "live" | "idle";
+// usage limit or API error and waiting to auto-resume; asking = the last turn
+// finished by asking you something (the transcript's ASK card) — your move, but
+// nothing is blocked; else idle.
+export type SessionState =
+  "working" | "awaiting" | "checking" | "parked" | "asking" | "live" | "idle";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/idle only.
 export interface SessionStatus {

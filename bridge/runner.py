@@ -14,6 +14,7 @@ import json
 import mimetypes
 import os
 import queue
+import re
 import shlex
 import shutil
 import subprocess
@@ -634,10 +635,10 @@ def awaiting_input() -> list[dict]:
     return out
 
 
-def blocked_sessions() -> dict[str, str]:
-    """Store-session ids whose MOST RECENT turn ended needing you, mapped to the
-    ask. Latest-job-only, so starting another turn on that session clears the
-    flag by replacing it — there is no state to reset."""
+def _latest_jobs() -> dict[str, "Job"]:
+    """The newest job per store-session id — the only one whose ending still
+    describes the session. Starting another turn replaces it, so nothing that
+    reads this needs state to reset."""
     latest: dict[str, Job] = {}
     with _jobs_lock:
         for j in _jobs.values():
@@ -646,8 +647,45 @@ def blocked_sessions() -> dict[str, str]:
             cur = latest.get(j.store_session_id)
             if cur is None or j.started > cur.started:
                 latest[j.store_session_id] = j
-    return {sid: j.tail_needs for sid, j in latest.items()
+    return latest
+
+
+def blocked_sessions() -> dict[str, str]:
+    """Store-session ids whose MOST RECENT turn ended needing you, mapped to the
+    ask."""
+    return {sid: j.tail_needs for sid, j in _latest_jobs().items()
             if j.status != "running" and j.tail_needs}
+
+
+# The closing sentence when a turn signed off by asking you something. Same shape
+# the transcript's ASK card splits out (web/src/lib/askback.ts): the last
+# sentence, ending in "?", short enough to be a question rather than a paragraph
+# that happens to end in one.
+_ASK_SPLIT = re.compile(r"(?:[.!?][\"'`)\]]*\s+|\n)")
+_ASK_MAX = 240
+_ASK_TAIL = 1200      # the question is at the end; no need to scan a 300-line report
+
+
+def _closing_question(text: str) -> str | None:
+    t = (text or "").rstrip()[-_ASK_TAIL:]
+    if not t.endswith("?"):
+        return None
+    q = _ASK_SPLIT.split(t)[-1].strip(" \t-*>")
+    return q if q.endswith("?") and len(q) <= _ASK_MAX else None
+
+
+def asked_sessions() -> dict[str, str]:
+    """Store-session ids whose last turn *finished* by asking you something,
+    mapped to the question. Not blocked_sessions(): that turn couldn't deliver
+    what you asked for, this one did and then asked a follow-up. It's still your
+    move, and only you can make it."""
+    out: dict[str, str] = {}
+    for sid, j in _latest_jobs().items():
+        if j.status != "done" or j.tail_needs:
+            continue
+        if q := _closing_question(j.result or (j.texts[-1] if j.texts else "")):
+            out[sid] = q
+    return out
 
 
 def running_jobs(chat_id: int) -> list[dict]:
@@ -731,6 +769,13 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
             "state": "parked", "kind": pkind, "source": "bridge",
             "label": (f"usage limit — resuming ~{limits.when_str(at)}" if pkind == "limit"
                       else f"API error — retrying {limits.wait_str(at)}")})
+    # A turn that signed off with a question — the ASK card in the transcript —
+    # is finished, not blocked: the work landed and nothing is parked. But the
+    # next move is yours, and reported as idle it looks like nobody is waiting.
+    # Last, so a session already working, checking or parked stays that way.
+    for sid, q in asked_sessions().items():
+        status.setdefault(sid, {"state": "asking", "kind": None,
+                                "source": "bridge", "label": q})
     now = time.time()
     for row in external:
         sid = row.get("session_id")

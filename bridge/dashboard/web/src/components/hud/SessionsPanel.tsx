@@ -64,17 +64,19 @@ function loadPrefs(): Prefs {
 const STATUS_VIEW: Record<string, { c: string; l: string }> = {
   working: { c: "var(--ok)", l: "WORK" },
   awaiting: { c: "var(--warn)", l: "WAIT" },
+  asking: { c: "var(--acc)", l: "ASK" },
   checking: { c: "var(--purple)", l: "CHECK" },
   live: { c: "var(--info)", l: "LIVE" },
   idle: { c: "var(--txf)", l: "IDLE" },
   done: { c: "var(--acc)", l: "DONE" },
 };
 
-const BUSY_NOW = ["working", "awaiting", "checking"];
+const BUSY_NOW = ["working", "awaiting", "asking", "checking"];
 
 function statusView(s: SessionStatus | undefined, done = false) {
   // DONE (finished, unopened) outranks idle/live, but never a state it's in
-  // *now* — working, awaiting you, or having a prompt checked against it.
+  // *now* — working, awaiting you, asking you, or having a prompt checked
+  // against it. ASK beats DONE for the same reason: it says what to do next.
   const state = s?.state ?? "idle";
   if (done && !BUSY_NOW.includes(state)) return STATUS_VIEW.done;
   return STATUS_VIEW[state] ?? STATUS_VIEW.idle;
@@ -863,7 +865,7 @@ export function SessionsPanel(props: Props) {
                         <span style={{ fontSize: "var(--t125)", fontWeight: 600, color: "var(--txb)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
                         <span style={{ flex: 1 }} />
                         {(activeBy.get(g.rel) ?? 0) > 0 && (
-                          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "var(--t10)", color: "var(--ok)", flex: "none" }} title="sessions working, awaiting you, or being checked">
+                          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "var(--t10)", color: "var(--ok)", flex: "none" }} title="sessions working, waiting on you, or being checked">
                             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--ok)" }} />
                             {activeBy.get(g.rel)} active
                           </span>

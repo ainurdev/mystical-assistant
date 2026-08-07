@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { MessageSquare, MessagesSquare, Zap, GitBranch, Settings } from "lucide-react";
-import { api } from "../lib/api";
+import { api, needsYou } from "../lib/api";
 
 /* The five places this app goes, one tap apart. CHAT is the conversation, CHATS
    every session on the machine, WORK everything you could feed Claude next,
@@ -30,7 +30,7 @@ export function TabBar() {
   });
 
   const waiting = Object.values(running?.status ?? {}).filter(
-    (s) => s.state === "awaiting",
+    (s) => needsYou(s.state),
   ).length;
   const queued = (queues?.queues ?? []).reduce(
     (n, q) => n + q.items.filter((i) => i.status === "queued").length,

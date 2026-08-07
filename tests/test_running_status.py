@@ -37,6 +37,48 @@ def test_bridge_awaiting_takes_precedence_over_running():
     assert status["b1"]["kind"] == "question"
 
 
+def _finished_job(sid: str, result: str, *, needs: str | None = None,
+                  status: str = "done"):
+    """A finished job in the registry, as _build_status sees it."""
+    job = runner.Job.__new__(runner.Job)
+    job.store_session_id, job.result, job.texts = sid, result, []
+    job.status, job.started, job.tail_needs = status, time.time(), needs
+    runner._jobs[sid + "-job"] = job
+
+
+def test_turn_that_ended_on_a_question_is_asking():
+    runner._jobs.clear()
+    _finished_job("q1", "Wired the importer.\nWant me to add the two screens too?")
+    status = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                  external=[], native_snap={})
+    assert status["q1"]["state"] == "asking"
+    assert status["q1"]["label"] == "Want me to add the two screens too?"
+    runner._jobs.clear()
+
+
+def test_asking_never_outranks_a_live_turn_or_a_real_block():
+    runner._jobs.clear()
+    _finished_job("q2", "Done. Want the docs too?")
+    _finished_job("q3", "Which branch should this land on?", needs="pick a branch")
+    status = runner._build_status(bridge_running=["q2"], awaiting=[], jobs=[],
+                                  external=[], native_snap={})
+    assert status["q2"]["state"] == "working"     # a new turn is already going
+    assert status["q3"]["state"] == "awaiting"    # blocked beats merely asking
+    runner._jobs.clear()
+
+
+def test_declarative_ending_and_error_turns_are_not_asking():
+    runner._jobs.clear()
+    _finished_job("q4", "Shipped it. Tests pass.")
+    _finished_job("q5", "Crashed. Retry?", status="error")
+    # A paragraph that happens to end in "?" is rhetoric, not an ask.
+    _finished_job("q6", "x" * 300 + "?")
+    status = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                  external=[], native_snap={})
+    assert not [s for s in ("q4", "q5", "q6") if s in status]
+    runner._jobs.clear()
+
+
 def test_native_working_session_in_status_and_annotates_external():
     external = [{"session_id": "n1", "source": "vscode"}]
     status = runner._build_status(

@@ -3,7 +3,7 @@ import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Search, CircleHelp } from "lucide-react";
 import { rootRoute } from "./root";
-import { api, type EnrichedSession } from "../lib/api";
+import { api, needsYou, type EnrichedSession } from "../lib/api";
 import { useChat } from "../lib/chat";
 import { Skeleton } from "../components/ui";
 import { SurfaceBadge } from "../components/SurfaceBadge";
@@ -43,7 +43,7 @@ function ChatsPage() {
   const status = running.data?.status ?? {};
 
   const all = history.data?.sessions ?? [];
-  const waiting = all.filter((s) => status[s.id]?.state === "awaiting").length;
+  const waiting = all.filter((s) => needsYou(status[s.id]?.state)).length;
   const live = all.filter((s) => {
     const st = status[s.id]?.state;
     return st === "working" || st === "live" || st === "checking";
@@ -54,14 +54,15 @@ function ChatsPage() {
     const q = filter.trim().toLowerCase();
     const rank = (s: EnrichedSession) => {
       const st = status[s.id]?.state;
-      return st === "awaiting" ? 0 : st === "working" || st === "checking" ? 1 : st === "live" ? 2 : 3;
+      return st === "awaiting" ? 0 : st === "asking" ? 1
+        : st === "working" || st === "checking" ? 2 : st === "live" ? 3 : 4;
     };
     return all
       .filter((s) => {
         if (q && !(s.title ?? "").toLowerCase().includes(q) && !s.project.toLowerCase().includes(q))
           return false;
         const st = status[s.id]?.state;
-        if (tab === "waiting") return st === "awaiting";
+        if (tab === "waiting") return needsYou(st);
         if (tab === "running") return st === "working" || st === "checking" || st === "live";
         return true;
       })
@@ -139,7 +140,7 @@ function ChatsPage() {
         <div className="vskip-card space-y-1.5">
           {rows.map((s) => {
             const st = status[s.id]?.state;
-            const isWaiting = st === "awaiting";
+            const isWaiting = needsYou(st);
             return (
               <button
                 key={s.id}
