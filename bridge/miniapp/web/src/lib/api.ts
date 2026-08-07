@@ -16,16 +16,10 @@ export interface ServerInfo {
   pid: number | null;
 }
 
-export interface PreviewInfo {
-  url: string | null;
-  port: number | null;
-}
-
 export interface AppState {
   project: Project | null;
   busy: boolean;
   server: ServerInfo;
-  preview: PreviewInfo;
   permission_mode?: string; // server-side default operating mode
   models?: { id: string; label: string }[]; // live list from GET /v1/models (bridge/models.py)
 }

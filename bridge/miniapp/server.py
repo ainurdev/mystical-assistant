@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, git, github,
                     models, native, project_config, relevance, runner, state,
-                    store, transcript_jsonl, tunnel, usage)
+                    store, transcript_jsonl, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -268,8 +268,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_run(chat_id, body)
             if path == "/api/server":
                 return self._api_server(chat_id, body)
-            if path == "/api/preview":
-                return self._api_preview(chat_id, body)
             if path == "/api/files/write":
                 return self._api_file_write(chat_id, body)
             if path == "/api/queue":
@@ -296,7 +294,6 @@ class Handler(BaseHTTPRequestHandler):
             "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)} if pd else None,
             "busy": state.any_running(),
             "server": devserver.server_state(pd),
-            "preview": tunnel.tunnel_state(),
             "permission_mode": config.MINIAPP_PERMISSION_MODE,
             "models": models.get_models(),
         })
@@ -511,18 +508,6 @@ class Handler(BaseHTTPRequestHandler):
                    or config.START_CMD)
             msg = devserver.start_server(cmd, pd)
         self._json({"server": devserver.server_state(pd), "message": msg})
-
-    def _api_preview(self, chat_id: int, body: dict):
-        action = body.get("action", "start")
-        if action == "stop":
-            msg = tunnel.stop_tunnel()
-        else:
-            try:
-                port = int(body.get("port") or config.PREVIEW_PORT)
-            except (ValueError, TypeError):
-                port = config.PREVIEW_PORT
-            _, msg = tunnel.start_tunnel(port)
-        self._json({"preview": tunnel.tunnel_state(), "message": msg})
 
     def _api_file_write(self, chat_id: int, body: dict):
         """Save an edit from the Mini App's file view. git.write_file rejects

@@ -37,11 +37,6 @@ const STACK: { pane: string; tool: string; body: string }[] = [
     body: "Repo structure read from tree-sitter ASTs. No LLM pass and no embedding bill to see how a codebase fits together.",
   },
   {
-    pane: "PREVIEW",
-    tool: "cloudflared",
-    body: "Cloudflare's own tunnel client. Your dev server reaches your phone without opening a port on your router.",
-  },
-  {
     pane: "SKILLS",
     tool: "community SKILL.md",
     body: "Installing a community skill downloads the maintained original from GitHub, verbatim. You get the author's file, not our paraphrase of it.",

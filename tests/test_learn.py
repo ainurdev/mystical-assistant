@@ -17,12 +17,15 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
-from bridge import aifeatures, learn, runner, store  # noqa: E402
+from bridge import aifeatures, browser, config, learn, runner, store  # noqa: E402
 
 store.init()
 
 LESSON = ("# Streaming Turns Over SSE\n\n**What changed** — added bridge/x.py.\n\n"
           "**The idea** — server-sent events are one-way and text-framed.\n")
+
+CONCEPT_LESSON = ("# Streaming Turns Over SSE\n> concept: protocols & apis\n\n"
+                  "**What changed** — added bridge/x.py.\n")
 
 
 @pytest.fixture(autouse=True)
@@ -148,6 +151,63 @@ def test_a_repo_without_lessons_is_not_littered(repo):
     """Listing must not create .mystical/ in every repo the tab is opened on."""
     assert learn.lessons(repo) == []
     assert not os.path.exists(os.path.join(repo, ".mystical"))
+
+
+# --- concepts: the shelf the LEARN tab groups a lesson onto -----------------
+
+def test_a_concept_line_is_shelved_with_the_lesson(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(CONCEPT_LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    got = learn.lessons(repo)[0]
+    assert got["concept"] == "protocols & apis"
+    assert got["title"] == "Streaming Turns Over SSE"   # the tag is not the title
+
+
+def test_a_concept_off_the_list_is_dropped(repo):
+    """An invented shelf fragments the grouping into near-synonyms — better
+    unsorted than wrong."""
+    sess, tid = _session_with_turn(repo)
+    _stub("# A Title\n> concept: vibes\n\n**What changed** — x.\n")
+    learn.generate_after_turn(1, sess, tid)
+
+    assert learn.lessons(repo)[0]["concept"] == ""
+
+
+def test_a_lesson_written_before_concepts_is_unshelved(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(LESSON)                       # no concept line, like the ones on disk
+    learn.generate_after_turn(1, sess, tid)
+
+    assert learn.lessons(repo)[0]["concept"] == ""
+
+
+def test_all_lessons_span_repos_newest_first(repo, monkeypatch):
+    """The ALL scope: one list across repos, each lesson naming its own, so the
+    active session's repo can't carry a lesson off the screen."""
+    other = tempfile.mkdtemp()
+    for cwd, text, when in ((repo, LESSON, 1000), (other, CONCEPT_LESSON, 2000)):
+        sess, tid = _session_with_turn(cwd)
+        _stub(text)
+        learn.generate_after_turn(1, sess, tid)
+        d = os.path.join(cwd, ".mystical", "learn")
+        for n in os.listdir(d):         # pinned, or the two tie on a coarse fs
+            os.utime(os.path.join(d, n), (when, when))
+
+    names = [os.path.basename(repo), os.path.basename(other)]
+    monkeypatch.setattr(config, "BASE_PATH", os.path.dirname(repo))
+    monkeypatch.setattr(browser, "list_projects", lambda *a, **k: ["/" + n for n in names])
+
+    got = learn.all_lessons()
+    assert [ls["project"] for ls in got] == ["/" + names[1], "/" + names[0]]
+    assert [ls["concept"] for ls in got] == ["protocols & apis", ""]
+
+
+def test_all_lessons_skips_repos_that_never_had_one(repo, monkeypatch):
+    monkeypatch.setattr(config, "BASE_PATH", os.path.dirname(repo))
+    monkeypatch.setattr(browser, "list_projects", lambda *a, **k: ["/" + os.path.basename(repo)])
+    assert learn.all_lessons() == []
 
 
 if __name__ == "__main__":

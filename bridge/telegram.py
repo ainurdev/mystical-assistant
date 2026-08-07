@@ -1,6 +1,7 @@
 """Telegram Bot API helpers (HTTP long-polling client)."""
 
 import json
+import re
 import sys
 import time
 from urllib.error import HTTPError
@@ -36,12 +37,90 @@ def tg(method: str, **params):
         return None
 
 
+# --- markdown -> Telegram HTML ----------------------------------------------
+# The model answers in markdown and Telegram renders none of it without a
+# parse_mode, so bold, headings and code arrived as literal punctuation. HTML
+# rather than MarkdownV2: MarkdownV2 needs ~15 characters escaped everywhere
+# except inside code spans, and a single miss rejects the whole message — here a
+# miss only costs the formatting (see send's fallback).
+
+_FENCE = re.compile(r"```(\w*)\n?(.*?)```", re.S)
+_INLINE_CODE = re.compile(r"`([^`\n]+)`")
+_BOLD = re.compile(r"\*\*(\S(?:.*?\S)?)\*\*", re.S)
+_LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
+_HEADING = re.compile(r"^#{1,6}\s+(.+)$", re.M)
+_BULLET = re.compile(r"^(\s*)[-*]\s+", re.M)
+_HELD = re.compile("\x00(\\d+)\x00")
+
+
+def _esc(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _md_to_html(md: str) -> str:
+    """Markdown to the small HTML subset Telegram accepts.
+
+    Code spans are lifted out first so their contents are never read as markup.
+    `_underscore_` italics are deliberately unsupported: in this chat an
+    underscore is a snake_case identifier far more often than emphasis."""
+    held: list[str] = []
+
+    def hold(html: str) -> str:
+        held.append(html)
+        return f"\x00{len(held) - 1}\x00"
+
+    def fence(m: "re.Match") -> str:
+        lang = f' class="language-{m[1]}"' if m[1] else ""
+        return hold(f"<pre><code{lang}>{_esc(m[2].strip(chr(10)))}</code></pre>")
+
+    md = _FENCE.sub(fence, md)
+    md = _INLINE_CODE.sub(lambda m: hold(f"<code>{_esc(m[1])}</code>"), md)
+    out = _esc(md)
+    out = _HEADING.sub(r"<b>\1</b>", out)
+    out = _BOLD.sub(r"<b>\1</b>", out)
+    out = _LINK.sub(r'<a href="\2">\1</a>', out)
+    out = _BULLET.sub(r"\1• ", out)
+    return _HELD.sub(lambda m: held[int(m[1])], out)
+
+
+def _chunks(text: str, limit: int) -> list[str]:
+    """Split on line boundaries rather than mid-word, closing and reopening a
+    code fence a split would otherwise have cut in half."""
+    out: list[str] = []
+    cur: list[str] = []
+    fence: str | None = None
+    size = 0
+    for line in text.split("\n"):
+        parts = ([line] if len(line) <= limit else
+                 [line[i:i + limit] for i in range(0, len(line), limit)])
+        for part in parts:
+            if cur and size + len(part) + 1 > limit:
+                out.append("\n".join(cur + (["```"] if fence is not None else [])))
+                cur = [f"```{fence}"] if fence is not None else []
+                size = sum(len(c) + 1 for c in cur)
+            cur.append(part)
+            size += len(part) + 1
+        if line.lstrip().startswith("```"):
+            fence = None if fence is not None else line.lstrip()[3:].strip()
+    if cur:
+        out.append("\n".join(cur))
+    return [c for c in out if c.strip()]
+
+
 def send(chat_id: int, text: str, reply_markup: dict | None = None):
     text = text or "(empty)"
     extra = {"reply_markup": json.dumps(reply_markup)} if reply_markup else {}
-    for i in range(0, len(text), config.TG_MAX):
-        tg("sendMessage", chat_id=chat_id, text=text[i:i + config.TG_MAX],
-           disable_web_page_preview="true", **(extra if i == 0 else {}))
+    # Margin under TG_MAX: escaping and tags only ever grow the text.
+    for i, raw in enumerate(_chunks(text, config.TG_MAX - 512) or [text]):
+        html = _md_to_html(raw)
+        params = dict(chat_id=chat_id, disable_web_page_preview="true",
+                      **(extra if i == 0 else {}))
+        # Whatever outgrew the hard limit, or that Telegram rejects as malformed
+        # HTML, goes as the plain markdown it sent before parse_mode existed:
+        # unformatted is a worse message, dropped is a lost one.
+        if len(html) > config.TG_MAX or not tg("sendMessage", text=html,
+                                               parse_mode="HTML", **params):
+            tg("sendMessage", text=raw[:config.TG_MAX], **params)
 
 
 def edit(chat_id: int, message_id: int, text: str, reply_markup: dict | None = None):

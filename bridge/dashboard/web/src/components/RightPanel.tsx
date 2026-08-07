@@ -58,8 +58,10 @@ export function RightPanel({
               }`}
             >
               {t.icon}
+              {/* The badge is drawn as given — a dot for "is there anything",
+                  a number when the count is the point (unread lessons). */}
               {t.badge ? (
-                <span className="absolute right-0 top-0 text-[7px] leading-none text-primary">●</span>
+                <span className="absolute right-0 top-0 text-[7px] leading-none text-primary">{t.badge}</span>
               ) : null}
             </button>
           );

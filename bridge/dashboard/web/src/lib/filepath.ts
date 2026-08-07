@@ -39,3 +39,20 @@ export function parseFileRef(raw: string): FileRef | null {
   if (!EXT.test(path) && path.split("/").length < 3) return null;
   return line ? { path, line } : { path };
 }
+
+/** The parsed path, matched against the working tree it will be opened in.
+ *
+ *  A path in prose is a claim, not a fact: the model names files it has not
+ *  created yet, and it writes them relative to whatever directory it was
+ *  thinking in (`src/App.tsx` for `bridge/dashboard/web/src/App.tsx`). Both
+ *  land the editor on nothing. Exact hit wins; otherwise a single tree entry
+ *  ending in the path is the file that was meant. Ambiguous or absent → null,
+ *  and the click says so instead of opening an empty buffer.
+ *  ponytail: no fuzzy/basename fallback — a wrong file opened silently is
+ *  worse than a message. Add one if real misses turn out to be near-misses.
+ */
+export function resolveFileRef(files: string[], path: string): string | null {
+  if (files.includes(path)) return path;
+  const hits = files.filter((f) => f.endsWith(`/${path}`));
+  return hits.length === 1 ? hits[0] : null;
+}

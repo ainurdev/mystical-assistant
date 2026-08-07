@@ -141,7 +141,6 @@ const REST: { group: string; items: [string, string][] }[] = [
       ["Skills, per repo", "Plus a catalog to add more from"],
       ["A real terminal", "xterm.js on the session's own worktree"],
       ["It can look at the page", "A headless shot of your dev server"],
-      ["A public preview URL", "cloudflared, no port forwarding"],
       ["The same session on your phone", "A Telegram bot and Mini App"],
       ["Ten display profiles", "Light, dark, CRT scanlines"],
     ],

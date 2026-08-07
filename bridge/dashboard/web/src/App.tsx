@@ -40,10 +40,11 @@ import {
 import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
-import { useSessionPins } from "./lib/prefs";
+import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickToBottom } from "./lib/stick";
 import { chime, push, shouldPush } from "./lib/push";
 import { chatToMarkdown } from "./lib/chatmd";
+import { resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -53,7 +54,7 @@ import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
-import { LearnPanel } from "./components/hud/LearnTab";
+import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
@@ -67,10 +68,9 @@ import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeMo
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
 import { ToolsModal } from "./components/hud/ToolsModal";
 import { InspectorModal } from "./components/hud/InspectorModal";
-import { ProjectPreviewModal } from "./components/hud/ProjectPreviewModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
-import { usePreviewQueue } from "./components/design/usePreviewQueue";
+import { useSessionQueue } from "./components/design/useSessionQueue";
 import { Spinner } from "./components/ui";
 
 
@@ -189,6 +189,10 @@ export function App() {
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [pins, togglePin] = useSessionPins();
+  // Owned here because the LEARN tab's badge counts what the LEARN panel marks —
+  // two copies of the read set would drift apart (same reason as pins).
+  const [lessonsRead, setLessonsRead] = useStickySet(READ_KEY);
+  const [lessonKeys, setLessonKeys] = useState<string[]>([]);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
   // The open session's own working tree (its worktree when it has one), which
   // gitBadges can't answer — those are keyed by project, one badge per repo.
@@ -218,7 +222,6 @@ export function App() {
   const [manageOpen, setManageOpen] = useState(false);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [previewProject, setPreviewProject] = useState<string | null>(null);
   // Manage-projects bookkeeping. TODO(phase2-data): the bridge has no
   // remove/import endpoints, so those two persist client-side.
   const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>(() => loadManage().hidden);
@@ -309,7 +312,7 @@ export function App() {
   const radio = useRadio(settings.radioVolume);
   // Server-side per-session prompt queue: lets a new prompt be queued while a
   // turn is in flight (runs after it) instead of forcing a STOP first.
-  const queue = usePreviewQueue(sessionId);
+  const queue = useSessionQueue(sessionId);
 
   const active = activeOf(turns);
   const running = active !== null;
@@ -591,7 +594,10 @@ export function App() {
   // Closing the tab costs the server nothing — runs are local processes, not
   // browser ones — but it takes away the only place their questions can be
   // answered. Ask first, for any session on the machine, not just the open one.
-  const busy = [...statusMap.values()].some((st) => st.state === "working" || st.state === "awaiting");
+  // `kind` separates a live card from a turn that merely ended on a question:
+  // only the first is answerable here, and only it is worth a close prompt.
+  const busy = [...statusMap.values()].some((st) => st.state === "working"
+    || (st.state === "awaiting" && st.kind));
   useEffect(() => {
     if (!busy) return;
     const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
@@ -643,7 +649,6 @@ export function App() {
         setPaletteOpen((v) => !v);
       } else if (e.key === "Escape") {
         if (ctxMenu) closeCtx();
-        else if (previewProject) setPreviewProject(null);
         else if (inspectorOpen) setInspectorOpen(false);
         else if (toolsFor) setToolsFor(null);
         else if (manageOpen) setManageOpen(false);
@@ -655,7 +660,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, previewProject, toolsFor, inspectorOpen, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
+  }, [ctxMenu, toolsFor, inspectorOpen, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
@@ -806,9 +811,19 @@ export function App() {
    *  call the file browser uses, so it lands on the session's own branch.
    *  ponytail: the `:42` in a reference is parsed and then dropped — jumping to
    *  the line means threading it through AnalyzeModal into the CM6 view. */
-  function openFileRef(path: string) {
+  async function openFileRef(path: string) {
     if (!sessionProject) { notify("info", "No project open for this session."); return; }
-    openAnalyze(sessionProject, { path, branch: sessionBranch });
+    // The path came out of prose, so check it against the tree we're about to
+    // open it in — a file the model invented, or named from another directory,
+    // would otherwise open an empty editor.
+    let target = path;
+    try {
+      const { files } = await api.filesTree(sessionProject, sessionBranch);
+      const hit = resolveFileRef(files, path);
+      if (!hit) { notify("info", `No such file in this branch — ${path}`); return; }
+      target = hit;
+    } catch { /* tree unreachable: open anyway, the editor reports its own error */ }
+    openAnalyze(sessionProject, { path: target, branch: sessionBranch });
   }
 
   /** A line of the model's prose → a markdown blockquote in the prompt box, the
@@ -1027,6 +1042,21 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [sessionProject, sessionBranch]);
 
+  // Unread lessons, for the LEARN tab's badge — the whole reason to open a tab
+  // you are not already looking at. Every repo's, because the panel reads that
+  // way too. One listdir per repo, so a slow tick is plenty.
+  useEffect(() => {
+    if (!ai.learn) return;
+    let live = true;
+    const tick = () => api.lessons("*")
+      .then((r) => { if (live) setLessonKeys(r.lessons.map((l) => `${l.project ?? ""}::${l.file}`)); })
+      .catch(() => { /* ignore */ });
+    void tick();
+    const id = setInterval(tick, 60000);
+    return () => { live = false; clearInterval(id); };
+  }, [ai.learn]);
+  const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
+
   const rightTabs: PanelTab[] = [
     {
       id: "projects", label: "Projects", icon: "⊞",
@@ -1035,7 +1065,6 @@ export function App() {
           groups={visibleGroups} activeProject={activeProject}
           onSelectProject={(rel) => void selectProject(rel)}
           onAnalyze={(rel) => openAnalyze(rel)}
-          onPreview={(rel) => setPreviewProject(rel)}
           onManage={() => setManageOpen(true)}
           onCreateProject={(name, prompt) => void createProject(name, prompt)}
         />
@@ -1071,7 +1100,11 @@ export function App() {
     },
     {
       id: "learn", label: "Learn", icon: "◎", ownScroll: true,
-      render: () => <LearnPanel project={sessionProject} />,
+      badge: unreadLessons ? String(unreadLessons) : null,
+      render: () => (
+        <LearnPanel project={sessionProject} read={lessonsRead}
+          onRead={(k) => setLessonsRead((r) => new Set(r).add(k))} />
+      ),
     },
     { id: "queue", label: "Queue", icon: "≡", render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];
@@ -1520,12 +1553,6 @@ export function App() {
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
-            {previewProject && (
-              <ProjectPreviewModal
-                project={previewProject}
-                onClose={() => setPreviewProject(null)}
-              />
-            )}
             {manageOpen && (
               <ManageProjectsModal
                 groups={projectGroups.filter((g) => !removedProjects[g.rel])}
@@ -1534,7 +1561,6 @@ export function App() {
                 onSetHidden={setHidden}
                 onRemove={(rel) => {
                   setRemovedProjects((p) => ({ ...p, [rel]: true }));
-                  setPreviewProject((cur) => (cur === rel ? null : cur));
                 }}
                 onImport={importProject}
                 onClose={() => setManageOpen(false)}

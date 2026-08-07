@@ -19,7 +19,7 @@ const LEDGER = [
   { n: "0", unit: "deps", what: "on the server. Python standard library, end to end." },
   { n: "1", unit: "page", what: "for every session, wherever you started it." },
   { n: "3", unit: "ways on", what: "when a limit lands, before the work is lost." },
-  { n: "14", unit: "panes", what: "editor, git, terminal, issues, map, preview." },
+  { n: "12", unit: "panes", what: "editor, git, terminal, issues, map, skills." },
 ];
 
 const PROOF = ["MIT licensed", "No API key", "No account", "No telemetry", "macOS · Linux · WSL"];

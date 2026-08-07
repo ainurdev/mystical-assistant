@@ -16,8 +16,8 @@ const PILLARS = [
 
 /**
  * Everything the workspace actually opens: the three main views, the four
- * sidebar panels, the seven tabs in a project's analyze modal (SKILLS is in
- * both), and the preview window. Every name here is reachable today — nothing
+ * sidebar panels and the seven tabs in a project's analyze modal (SKILLS is in
+ * both). Every name here is reachable today — nothing
  * aspirational goes in this list, and the count is quoted in the hero ledger.
  */
 const PANES = [
@@ -33,7 +33,6 @@ const PANES = [
   "ISSUES",
   "SKILLS",
   "MAP",
-  "PREVIEW",
 ];
 
 /** All four share one SQLite store, which is the only reason the claim holds. */

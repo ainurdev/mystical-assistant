@@ -13,19 +13,35 @@ export function useStickyFlag(key: string): [boolean, Dispatch<SetStateAction<bo
   return [on, setOn];
 }
 
-const PINS_KEY = "hud-session-pins";
+/** A string the browser remembers — which lesson you were reading, and whatever
+ *  the next panel needs to survive being unmounted. */
+export function useStickyStr(key: string, initial = ""): [string, Dispatch<SetStateAction<string>>] {
+  const [s, setS] = useState(() => {
+    try { return localStorage.getItem(key) ?? initial; } catch { return initial; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(key, s); } catch { /* ignore */ }
+  }, [key, s]);
+  return [s, setS];
+}
+
+/** A set of ids the browser remembers — pinned sessions, lessons already read. */
+export function useStickySet(key: string): [Set<string>, Dispatch<SetStateAction<Set<string>>>] {
+  const [set, setSet] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(key) || "[]") as string[]); }
+    catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify([...set])); } catch { /* ignore */ }
+  }, [key, set]);
+  return [set, setSet];
+}
 
 /** Sessions you pinned to the top of the lists. Call it once (App owns it) and
  *  hand the pair down — the sessions panel and the context menu have to toggle
  *  the same set, so two copies of this state would drift. */
 export function useSessionPins(): [Set<string>, (id: string) => void] {
-  const [pins, setPins] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(PINS_KEY) || "[]") as string[]); }
-    catch { return new Set(); }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(PINS_KEY, JSON.stringify([...pins])); } catch { /* ignore */ }
-  }, [pins]);
+  const [pins, setPins] = useStickySet("hud-session-pins");
   const toggle = (id: string) => setPins((p) => {
     const next = new Set(p);
     if (!next.delete(id)) next.add(id);

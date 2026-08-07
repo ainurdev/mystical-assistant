@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoute } from "@tanstack/react-router";
+import { ChevronDown } from "lucide-react";
 import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import type { PendingRequest } from "../lib/api";
@@ -23,7 +24,17 @@ function RunPage() {
   } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  const [parked, setParked] = useState(true);
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
+
+  // Scroll <main> itself rather than scrollIntoView-ing the end marker: that
+  // parks the marker at the scrollport's bottom edge — which is *behind* the
+  // fixed composer and tab bar — and stops with the reserved padding still
+  // scrollable, which also reads as "scrolled up" to stickToBottom.
+  const toBottom = useCallback((behavior?: ScrollBehavior) => {
+    const el = bottomRef.current?.closest("main");
+    el?.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
 
   // The transcript scrolls inside <main>, so that's who we watch.
   useEffect(() => {
@@ -32,6 +43,7 @@ function RunPage() {
     let prev = el.scrollTop;
     const sync = () => {
       stick.current = stickToBottom(el, prev);
+      setParked(stick.current);
       prev = el.scrollTop;
     };
     el.addEventListener("scroll", sync, { passive: true });
@@ -41,11 +53,11 @@ function RunPage() {
   // Follow the latest message as the transcript grows, but only while parked.
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
   useEffect(() => {
-    if (stick.current) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [eventCount, turns.length]);
+    if (stick.current) toBottom();
+  }, [eventCount, turns.length, toBottom]);
 
   return (
-    <div className="space-y-3 pb-[13rem]">
+    <div className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
       {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
 
       {/* What this session is for, and what a usage limit does to it. */}
@@ -165,6 +177,28 @@ function RunPage() {
 
       <AgentsPill sessionId={sessionId} running={isRunning} />
       <div ref={bottomRef} />
+
+      {/* Scrolled up mid-run: one tap back to the latest, and following resumes. */}
+      {!parked && (
+        <div
+          className="pointer-events-none fixed inset-x-0 z-20 mx-auto flex max-w-screen-sm justify-end px-4"
+          style={{ bottom: "calc(var(--tabbar-h) + var(--composer-h, 13rem) + 0.5rem)" }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              stick.current = true;
+              setParked(true);
+              toBottom("smooth");
+            }}
+            aria-label="Scroll to latest"
+            className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-border bg-[var(--tg-bg)] text-[var(--tg-hint)] shadow-lg active:opacity-70"
+          >
+            <ChevronDown size={18} aria-hidden />
+          </button>
+        </div>
+      )}
+
       <Composer />
     </div>
   );

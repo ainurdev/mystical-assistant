@@ -765,7 +765,7 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
   useEffect(() => {
     let live = true;
     setRunCmd(""); setRunSource(""); setDetected(false);
-    void api.detectPreview({ project })
+    void api.detectRunCommand({ project })
       .then((r) => { if (live) { setRunCmd(r.command || ""); setRunSource(r.source || ""); setDetected(true); } })
       .catch(() => { if (live) setDetected(true); });
     return () => { live = false; };
@@ -829,7 +829,7 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
     if (genBusy) return;
     setGenBusy(true);
     try {
-      const r = await api.detectPreview({ project });
+      const r = await api.detectRunCommand({ project });
       setRunCmd(r.command || "");
       setRunSource(r.source || "");
     } catch { /* ignore */ }
