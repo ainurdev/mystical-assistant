@@ -1,6 +1,5 @@
 """Telegram message and callback dispatch (slash commands + plain-text prompts)."""
 
-import json
 import os
 import sys
 import threading
@@ -9,7 +8,7 @@ from bridge import accounts, config, graphmap, ladder, state, store
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
-from bridge.telegram import answer_cb, edit, send, tg
+from bridge.telegram import answer_cb, edit, panel_kb, send
 
 HELP = (
     "Claude Code remote bridge.\n\n"
@@ -32,10 +31,12 @@ HELP = (
 def _open_app(chat_id: int):
     if not config.MINIAPP_ENABLE:
         send(chat_id, "Mini App is disabled (set MINIAPP_ENABLE=1 to enable).")
-    elif state.miniapp_url:
-        tg("sendMessage", chat_id=chat_id, text="🛠 Open the control panel:",
-           reply_markup=json.dumps({"inline_keyboard": [[
-               {"text": "🛠 Open Panel", "web_app": {"url": state.miniapp_url}}]]}))
+        return
+    key = state.project_key(chat_id)
+    s = store.latest_session(chat_id, key)
+    kb = panel_kb(chat_id, s["id"] if s else None, key)
+    if kb:
+        send(chat_id, "🛠 Open the control panel:", kb)
     else:
         send(chat_id, "Mini App URL not ready yet — try again in a moment.")
 
@@ -160,8 +161,9 @@ def on_message(msg: dict):
         _open_app(chat_id)
         return
     if text == "/new":
-        store.create_session(chat_id, state.project_key(chat_id))
-        send(chat_id, "🆕 Fresh Claude session.")
+        key = state.project_key(chat_id)
+        s = store.create_session(chat_id, key)
+        send(chat_id, "🆕 Fresh Claude session.", panel_kb(chat_id, s["id"], key))
         return
     if cmd0 == "/server":
         threading.Thread(target=handle_server,
@@ -190,12 +192,14 @@ def on_message(msg: dict):
     if text == "/status":
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
-        s = store.latest_session(chat_id, state.project_key(chat_id))
+        key = state.project_key(chat_id)
+        s = store.latest_session(chat_id, key)
         sid = (s["title"] or s["id"][:8]) if s else "none yet"
-        app = state.miniapp_url or "off"
         send(chat_id, f"Project: {rel(state.project_dir(chat_id))}\nClaude: {st}\n"
                       f"Server: {server_status()}\n"
-                      f"Mini App: {app}\nSession: {sid}")
+                      f"Mini App: {'live' if state.miniapp_url else 'off'}\n"
+                      f"Session: {sid}",
+             panel_kb(chat_id, s["id"] if s else None, key))
         return
 
     # Plain text -> prompt to Claude in the active project. Claim this session's

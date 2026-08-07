@@ -40,8 +40,8 @@ import os
 import signal
 import sys
 
-from bridge import (config, devserver, limits, native_activity, pubsub, recovery,
-                    selfupdate, state, store, tunnel)
+from bridge import (config, devserver, limits, native_activity, onboard, pubsub,
+                    recovery, selfupdate, state, store, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -117,6 +117,7 @@ def main():
     if not me:
         sys.exit("Could not reach Telegram. Check the token / network.")
     print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
+    onboard.ensure_profile(config.TOKEN)   # picture + description, if still blank
     signal.signal(signal.SIGINT, _on_stop_signal)
     signal.signal(signal.SIGTERM, _on_stop_signal)   # bare `kill` now shuts down cleanly too
     store.init()

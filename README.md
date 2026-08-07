@@ -279,6 +279,7 @@ before it changes anything, and a second pass only asks for what's still missing
 1. **Bot token.** It walks you through [@BotFather](https://t.me/BotFather) →
    `/newbot` → paste the token. Setup checks the token against Telegram and
    prints your bot's `t.me` link, so a typo fails here instead of at first run.
+   A new token also gets the mystical logo set as the bot's profile picture.
 2. **Projects root.** The folder your repos live in (default `~/projects`).
 3. **Permission posture.** Whether sessions you start from the dashboard or phone
    ask before running commands (default) or run with full autonomy. There is no

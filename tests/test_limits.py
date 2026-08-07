@@ -364,7 +364,7 @@ def test_runner_defers_limit_killed_streaming_turn():
     saved_defer, saved_notify = limits.defer, runner._notify
     saved_auto = config.AUTO_RESUME
     limits.defer = lambda *a, **kw: deferred.append((a, kw)) or (time.time() + 60, True)
-    runner._notify = lambda chat, text: notes.append(text)
+    runner._notify = lambda chat, text, kb=None: notes.append(text)
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/lim", "opus", None) is True
@@ -389,7 +389,7 @@ def test_runner_stderr_limit_death_also_defers():
     saved_defer, saved_notify = limits.defer, runner._notify
     saved_auto = config.AUTO_RESUME
     limits.defer = lambda *a, **kw: deferred.append(a) or (time.time() + 60, False)
-    runner._notify = lambda chat, text: None
+    runner._notify = lambda chat, text, kb=None: None
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/lim2", None, None) is True
@@ -412,7 +412,7 @@ def test_runner_backs_off_server_error_turn():
     saved_auto = config.AUTO_RESUME
     limits.defer_server = lambda *a, **kw: (deferred.append((a, kw))
                                             or (time.time() + 300, 3))
-    runner._notify = lambda chat, text: notes.append(text)
+    runner._notify = lambda chat, text, kb=None: notes.append(text)
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/srv", "opus", None) is True
@@ -436,7 +436,7 @@ def test_runner_gives_up_after_backoff_ladder():
     saved_defer, saved_notify = limits.defer_server, runner._notify
     saved_auto = config.AUTO_RESUME
     limits.defer_server = lambda *a, **kw: None
-    runner._notify = lambda chat, text: None
+    runner._notify = lambda chat, text, kb=None: None
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/srv2", None, None) is False
@@ -559,7 +559,7 @@ def test_limit_death_parks_first_then_consults_the_ladder():
     saved_defer, saved_notify = limits.defer, runner._notify
     saved_auto = config.AUTO_RESUME
     limits.defer = lambda *a, **kw: order.append("park") or (time.time() + 60, True)
-    runner._notify = lambda chat, text: None
+    runner._notify = lambda chat, text, kb=None: None
     config.AUTO_RESUME = True
     try:
         runner._maybe_auto_resume(job, "/tmp/lad1", "opus", None)
@@ -587,7 +587,7 @@ def test_a_taken_rung_suppresses_the_wait_for_reset_message():
     saved_defer, saved_notify = limits.defer, runner._notify
     saved_auto = config.AUTO_RESUME
     limits.defer = lambda *a, **kw: (time.time() + 60, True)
-    runner._notify = lambda chat, text: notes.append(text)
+    runner._notify = lambda chat, text, kb=None: notes.append(text)
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/lad2", None, None) is True
@@ -610,7 +610,7 @@ def test_a_server_error_never_reaches_the_ladder():
     saved_defer, saved_notify = limits.defer_server, runner._notify
     saved_auto = config.AUTO_RESUME
     limits.defer_server = lambda *a, **kw: (time.time(), 1)
-    runner._notify = lambda chat, text: None
+    runner._notify = lambda chat, text, kb=None: None
     config.AUTO_RESUME = True
     try:
         runner._maybe_auto_resume(job, "/tmp/lad3", None, None)

@@ -110,6 +110,8 @@ while [ -z "$botname" ]; do
 done
 if [ "$token" != "$(get_env TELEGRAM_BOT_TOKEN)" ]; then
   "${ONBOARD[@]}" set-env "$ENV_FILE" TELEGRAM_BOT_TOKEN "$token"
+  # Only on a new/changed token, so a re-run never clobbers a picture you chose.
+  "${ONBOARD[@]}" set-avatar "$token" >/dev/null 2>&1 || true
 fi
 ok "bot @$botname — https://t.me/$botname"
 

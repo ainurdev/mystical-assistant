@@ -114,6 +114,37 @@ def test_send_falls_back_to_plain_text_when_telegram_rejects_html():
     assert sent[-1]["text"] == "**hi**"
 
 
+def test_panel_kb_deep_links_to_the_session(monkeypatch):
+    monkeypatch.setattr(telegram.state, "miniapp_url", "https://x.example")
+    kb = telegram.panel_kb(42, "sess1", "/org/repo", "open")
+    btn = kb["inline_keyboard"][0][0]
+    assert btn["text"] == "open"
+    assert btn["web_app"]["url"] == "https://x.example?s=sess1&p=%2Forg%2Frepo"
+    assert telegram.panel_kb(42)["inline_keyboard"][0][0]["web_app"]["url"] \
+        == "https://x.example"       # no session -> plain panel, no stray "?"
+
+
+def test_panel_kb_is_none_where_telegram_would_reject_it(monkeypatch):
+    """A rejected markup drops the whole message — so no button in groups, and
+    none before the tunnel is up."""
+    monkeypatch.setattr(telegram.state, "miniapp_url", "https://x.example")
+    assert telegram.panel_kb(-100123, "sess1") is None
+    monkeypatch.setattr(telegram.state, "miniapp_url", None)
+    assert telegram.panel_kb(42, "sess1") is None
+
+
+def test_button_rides_the_last_chunk():
+    """Split a long answer and the way out has to be under the end of it."""
+    sent = []
+    telegram.tg, real = (lambda method, **p: sent.append(p) or {"ok": True}), telegram.tg
+    try:
+        telegram.send(1, "\n".join(f"line {i}" for i in range(2000)), {"inline_keyboard": []})
+    finally:
+        telegram.tg = real
+    assert len(sent) > 1
+    assert "reply_markup" not in sent[0] and "reply_markup" in sent[-1]
+
+
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))

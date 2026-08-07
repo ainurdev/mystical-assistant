@@ -219,6 +219,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null); // current session, for stale-free reads
+  // A notification's panel button opens "?s=<session>&p=<repo>" (bridge/telegram.py
+  // panel_kb). Held until the project switch lands, so the auto-resolver below
+  // can't race it and drop us on the repo's latest session instead.
+  const pinnedRef = useRef<string | null>(null);
 
   const stateQuery = useQuery({
     queryKey: ["state"],
@@ -254,6 +258,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   function openSession(id: string) {
     seqRef.current = 0;
     sessionIdRef.current = id;
+    pinnedRef.current = null;   // an explicit pick outranks the deep link
     setTurns([]);
     setSessionId(id);
     setHeld(null);          // a card about the session we're leaving
@@ -276,6 +281,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
   }
 
+  // Cold open from a Telegram notification: land on the session it was about.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    const [s, p] = [q.get("s"), q.get("p")];
+    if (!s) return;
+    if (p) void openSessionInProject(p, s);
+    else openSession(s);
+    pinnedRef.current = s;             // set last: openSession clears the pin
+  }, []);
+
   // Resolve the current session for the active project (latest, or create one).
   useEffect(() => {
     if (!project) return;
@@ -285,6 +300,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const { sessions: list } = await api.listSessions(project);
         if (cancelled) return;
         setSessions(list);
+        if (pinnedRef.current) {
+          // Deep-linked session: hold the view until its repo is the active one.
+          if (list.some((s) => s.id === pinnedRef.current)) pinnedRef.current = null;
+          return;
+        }
         // Keep an explicitly-opened session (e.g. from History) when the active
         // project changes; only auto-resolve when the current one isn't here.
         if (sessionIdRef.current && list.some((s) => s.id === sessionIdRef.current))

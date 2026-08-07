@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from bridge import config
+from bridge import config, state
 
 
 def _api(url: str, params: dict | None = None, timeout: int = 30):
@@ -107,14 +107,32 @@ def _chunks(text: str, limit: int) -> list[str]:
     return [c for c in out if c.strip()]
 
 
+def panel_kb(chat_id: int, session_id: str | None = None,
+             project: str | None = None, label: str = "🛠 Open Panel"):
+    """Keyboard that opens the Mini App — right at `session_id` when given.
+
+    A button beats pasting the tunnel URL into the text: the URL is ephemeral,
+    unreadable on a lock screen, and lands you on whatever session the panel
+    happened to be showing. Returns None when there's nothing to open, or in a
+    group — Telegram only accepts web_app buttons in private chats, and a
+    rejected markup would drop the whole message, notification and all."""
+    if not state.miniapp_url or chat_id <= 0:
+        return None
+    q = urlencode([(k, v) for k, v in (("s", session_id), ("p", project)) if v])
+    return {"inline_keyboard": [[
+        {"text": label, "web_app": {"url": state.miniapp_url + (f"?{q}" if q else "")}}]]}
+
+
 def send(chat_id: int, text: str, reply_markup: dict | None = None):
     text = text or "(empty)"
     extra = {"reply_markup": json.dumps(reply_markup)} if reply_markup else {}
     # Margin under TG_MAX: escaping and tags only ever grow the text.
-    for i, raw in enumerate(_chunks(text, config.TG_MAX - 512) or [text]):
+    chunks = _chunks(text, config.TG_MAX - 512) or [text]
+    for i, raw in enumerate(chunks):
         html = _md_to_html(raw)
         params = dict(chat_id=chat_id, disable_web_page_preview="true",
-                      **(extra if i == 0 else {}))
+                      # Buttons ride the LAST chunk: that's where reading ends.
+                      **(extra if i == len(chunks) - 1 else {}))
         # Whatever outgrew the hard limit, or that Telegram rejects as malformed
         # HTML, goes as the plain markdown it sent before parse_mode existed:
         # unformatted is a worse message, dropped is a lost one.

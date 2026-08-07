@@ -26,7 +26,7 @@ from bridge import (accounts, agents, config, devserver, git, inspector, ladder,
                     limits, machine, native_activity,
                     pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
-from bridge.telegram import send, typing
+from bridge.telegram import panel_kb, send, typing
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +384,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                                    chat_id):
                     return
                 send(chat_id, "⏳ Claude usage limit hit — this session will auto-"
-                              f"resume when the limit resets (~{limits.when_str(d[0])}).")
+                              f"resume when the limit resets (~{limits.when_str(d[0])}).",
+                     _session_kb(chat_id, session["id"]))
                 return
         if (is_error and config.AUTO_RESUME and limits.is_server_error(result)
                 and (sid or session["claude_session_id"])):
@@ -396,7 +397,12 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         if not is_error:
             _graph_refresh_after_turn(chat_id, None)
         footer = f"\n\n— {int(time.time() - started)}s"
-        send(chat_id, ("⚠️ " if is_error else "") + (result or "(no result)") + footer)
+        answer = ("⚠️ " if is_error else "") + (result or "(no result)") + footer
+        # A button under every reply would be noise; under one that errored or is
+        # too long to read in a chat bubble, it's the way out.
+        kb = (_session_kb(chat_id, session["id"], "🛠 Open session")
+              if is_error or len(answer) > config.TG_MAX - 512 else None)
+        send(chat_id, answer, kb)
         if not is_error:
             titler.kick(chat_id, session, job_id)   # retry if the start call missed
             from bridge import learn  # local import: runner<->* cycle
@@ -766,12 +772,12 @@ def running_snapshot(chat_id: int) -> dict:
             "jobs": jobs, "awaiting": awaiting, "status": status}
 
 
-def _notify(chat_id: int | None, text: str) -> None:
+def _notify(chat_id: int | None, text: str, kb: dict | None = None) -> None:
     """Best-effort Telegram push (never raises into the run loop)."""
     if not config.NOTIFY_ENABLE or not chat_id:
         return
     try:
-        send(chat_id, text)
+        send(chat_id, text, kb)
     except Exception:  # noqa: BLE001
         pass
 
@@ -785,25 +791,35 @@ def _session_label(session_id: str | None) -> str:
     return f"{title}{f' · {proj}' if proj else ''}"
 
 
+def _session_kb(chat_id: int | None, session_id: str | None,
+                label: str = "🛠 Open Panel") -> dict | None:
+    """Panel button pointing at the session this message is about."""
+    if not chat_id:
+        return None
+    sess = store.get_session(session_id) if session_id else None
+    return panel_kb(chat_id, session_id, sess.get("project") if sess else None, label)
+
+
 def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> None:
     """Ping when a streaming run blocks on you (a question or an approval)."""
     what = "a question" if kind == "question" else "your approval"
-    link = f"\n{state.miniapp_url}" if state.miniapp_url else ""
-    _notify(chat_id, f"❓ Claude needs {what} — {_session_label(session_id)}{link}")
+    _notify(chat_id, f"❓ Claude needs {what} — {_session_label(session_id)}",
+            _session_kb(chat_id, session_id, "❓ Answer in Panel"))
 
 
 def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool) -> None:
     """Ping when a streaming run finishes (or errors), so you can step away."""
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
-    _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}")
+    _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}",
+            _session_kb(chat_id, session_id, "🛠 Open session"))
 
 
 def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) -> None:
     """Ping when a turn *ended* on something only you can answer. Carries the ask
     itself: it's read off a lock screen, and acting on it shouldn't cost opening
     the transcript to find out what was asked (bridge/tailstate.py)."""
-    link = f"\n{state.miniapp_url}" if state.miniapp_url else ""
-    _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}{link}")
+    _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}",
+            _session_kb(chat_id, session_id, "❓ Answer in Panel"))
 
 
 # ---------------------------------------------------------------------------
@@ -891,7 +907,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         if first:
             _notify(job.chat_id,
                     f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
-                    f"will auto-resume when the limit resets (~{limits.when_str(when)}).")
+                    f"will auto-resume when the limit resets (~{limits.when_str(when)}).",
+                    _session_kb(job.chat_id, sid))
         return True
     if limits.is_server_error(job.result or job.error_msg):
         # Anthropic's side blew up: retry, but spaced out along the ladder.
@@ -914,7 +931,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         # price. Stop and hand it back.
         _notify(job.chat_id,
                 f"🧱 {_session_label(sid)} ran out of context window. "
-                f"Run /compact in it, or start a fresh session.")
+                f"Run /compact in it, or start a fresh session.",
+                _session_kb(job.chat_id, sid, "🛠 Open session"))
         return False
     fails = _resume_fails.get(sid, 0) + 1
     _resume_fails[sid] = fails

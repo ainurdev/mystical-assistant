@@ -1150,7 +1150,7 @@ def test_timeout_auto_resumes_capped(monkeypatch):
     started, notes = [], []
     monkeypatch.setattr(runner, "start_streaming_job",
                         lambda *a, **kw: (started.append((a, kw)), object())[1])
-    monkeypatch.setattr(runner, "_notify", lambda cid, m: notes.append(m))
+    monkeypatch.setattr(runner, "_notify", lambda cid, m, kb=None: notes.append(m))
 
     def timed_out_turn():
         job = runner.Job(f"jt{len(started)}", 555, s["id"])
