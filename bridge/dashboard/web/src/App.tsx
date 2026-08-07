@@ -1625,7 +1625,7 @@ export function App() {
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"}
                 settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
-                models={modelOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
+                models={modelOpts} agents={agentOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
                 sessionTools={selected?.disabled_tools ?? []}
                 onSessionTools={setSessionTools}

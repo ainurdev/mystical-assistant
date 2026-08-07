@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   api,
   type AccountInfo,
@@ -15,6 +15,7 @@ import {
   BASE_FONTS,
   CLAUDE_KEYS,
   FONTS,
+  fontStack,
   isLight,
   THEME_DEFS,
   themeCompensator,
@@ -58,6 +59,10 @@ export interface SettingsModalProps {
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
+  // Who runs the turn. A profile already saves it and every run already sends
+  // it, so leaving it out of RUN DEFAULTS made it a knob you could only reach
+  // from the composer — and could restore from a profile without ever seeing.
+  agents: { id: string; label: string }[];
   weather: Weather;
   onSetCity: (city: string) => Promise<string | null>;
   onSetUnit: (unit: string) => Promise<string | null>;
@@ -112,12 +117,13 @@ const INDICATOR_TABS: { key: Indicator; label: string; blurb: string }[] = [
 ];
 
 // 0 = AUTO (viewport-derived); the rest are the base the type scale hangs off.
-const BASE_FONT_OPTS: { label: string; value: string }[] = BASE_FONTS.map((n) => ({
+// Each step is drawn at the size it sets — a size list rendered all at one size
+// is a list of numbers, not a choice you can see.
+const BASE_FONT_OPTS = BASE_FONTS.map((n) => ({
   label: n === 0 ? "AUTO" : `${n}PX`,
   value: String(n),
+  size: n ? `${n}px` : undefined,
 }));
-
-const FONT_OPTS = FONTS.map((f) => ({ label: f.label, value: f.key }));
 
 const TONE_OPTS = (Object.keys(TONES) as ToneKey[]).map((k) => ({ label: TONES[k].label, value: k }));
 
@@ -204,35 +210,47 @@ function Volume({ value, disabled, onChange }: { value: number; disabled?: boole
   );
 }
 
-/** Segmented picker — one button per option, active one filled. */
+/** Segmented picker — one button per option, active one filled. A grid, not a
+ *  wrapping flex row: flex stretches whatever lands on the last line, so ten
+ *  fonts read as six even cells and then four oversized ones. Every cell is the
+ *  same width here, however the list divides.
+ *
+ *  An option may carry its own `font`/`size` — a picker whose options are type
+ *  faces or type sizes should show you the thing, not a label for it. */
 function Segmented<T extends string>({
   options,
   value,
   onPick,
   size = "var(--t10)",
+  min = 72,
 }: {
-  options: { label: string; value: T }[];
+  options: { label: string; value: T; font?: string; size?: string }[];
   value: T;
   onPick: (v: T) => void;
   size?: string;
+  min?: number;
 }) {
+  const [hover, setHover] = useState<T | null>(null);
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(${min}px,1fr))`, gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
       {options.map((o) => {
         const active = value === o.value;
         return (
           <button
             key={o.value}
             onClick={() => onPick(o.value)}
+            onMouseEnter={() => setHover(o.value)}
+            onMouseLeave={() => setHover(null)}
             style={{
-              flex: "1 1 72px",
               appearance: "none",
               cursor: "pointer",
               border: 0,
-              background: active ? "var(--acc)" : "transparent",
+              background: active ? "var(--acc)"
+                : hover === o.value ? "color-mix(in srgb, var(--acc) 12%, transparent)"
+                : "transparent",
               color: active ? "var(--acc-on)" : "var(--txd)",
-              fontFamily: "inherit",
-              fontSize: size,
+              fontFamily: o.font ?? "inherit",
+              fontSize: o.size ?? size,
               letterSpacing: 1,
               padding: "6px 4px",
             }}
@@ -409,27 +427,42 @@ function SoundBoard({ settings, onPatch }: {
   onPatch: (patch: Partial<HudSettings>) => void;
 }) {
   const [open, setOpen] = useState<PushEvent | null>(null);
+  // The browser is a tall thing that unfolds under whichever row you tapped, so
+  // opening one on LIMIT — the last row — otherwise puts the search box and the
+  // whole pack list below the fold, with no hint that anything happened.
+  const picker = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) picker.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [open]);
   const set = (ev: PushEvent, c: SoundChoice | undefined) => {
     const next = { ...settings.pushSounds };
     if (c) next[ev] = c; else delete next[ev];
     onPatch({ pushSounds: next });
   };
   return (
-    <div style={{ marginTop: 11 }}>
-      {PUSH_EVENT_KEYS.map((ev) => {
+    <div>
+      {PUSH_EVENT_KEYS.map((ev, i) => {
         const meta = PUSH_EVENTS[ev];
         const cur = settings.pushSounds[ev];
         const on = open === ev;
         return (
-          <div key={ev} style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", padding: "9px 0" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
+          <div key={ev} style={{
+            // A rule between rows, not above the first one — the card already
+            // draws that edge.
+            borderTop: i ? "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" : 0,
+            padding: i ? "9px 0" : "0 0 9px",
+          }}>
+            {/* Wraps rather than crushes: on a phone panel the assigned sound
+                drops onto its own line under the event name instead of
+                squeezing the name down to two characters. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 150px", minWidth: 0 }}>
                 <div style={KEY_TX}>{meta.label}</div>
                 <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 3 }}>{meta.hint}</div>
               </div>
-              <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ flex: "0 1 auto", display: "flex", alignItems: "center", gap: 6, minWidth: 0, marginLeft: "auto" }}>
                 <span style={{
-                  fontSize: "var(--t9)", letterSpacing: .5, maxWidth: 150, overflow: "hidden",
+                  fontSize: "var(--t9)", letterSpacing: .5, minWidth: 0, overflow: "hidden",
                   textOverflow: "ellipsis", whiteSpace: "nowrap",
                   color: cur ? "var(--acc)" : "var(--txl)",
                 }}>
@@ -440,7 +473,7 @@ function SoundBoard({ settings, onPatch }: {
               </div>
             </div>
             {on && (
-              <div style={{ marginTop: 9 }}>
+              <div ref={picker} style={{ marginTop: 9 }}>
                 <Segmented
                   size="var(--t9)"
                   options={[
@@ -1641,6 +1674,7 @@ export function SettingsModal(props: SettingsModalProps) {
     onToggle,
     onPatch,
     models,
+    agents,
     weather,
     onSetCity,
     onSetUnit,
@@ -1655,6 +1689,13 @@ export function SettingsModal(props: SettingsModalProps) {
   } = props;
 
   const [tab, setTab] = useState<Tab>("appearance");
+  // As a top strip the rail scrolls, and the browser's own scroll-on-click only
+  // brings the tab just inside the edge — enough to leave the category you are
+  // reading half off-screen. Centre it instead.
+  const rail = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rail.current?.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [tab]);
   const autoBase = autoBaseFont(window.innerWidth, window.innerHeight);
   const [escHover, setEscHover] = useState(false);
   const [replayHover, setReplayHover] = useState(false);
@@ -1750,7 +1791,7 @@ export function SettingsModal(props: SettingsModalProps) {
             layout and its selected-tab marker live in index.css, which is what
             lets it turn from a side rail into a top strip on a phone. */}
         <div className="setbody">
-          <div className="setrail">
+          <div className="setrail" ref={rail}>
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -1787,8 +1828,15 @@ export function SettingsModal(props: SettingsModalProps) {
                 )}
 
                 <Label top>FONT</Label>
+                {/* Each name is set in the face it names — THEME included, which
+                    is how you see what the palette brought without applying it. */}
                 <Segmented
-                  options={FONT_OPTS}
+                  min={96}
+                  options={FONTS.map((f) => ({
+                    label: f.label,
+                    value: f.key,
+                    font: fontStack(f.key, settings.theme) || "inherit",
+                  }))}
                   value={settings.font}
                   onPick={(v) => onPatch({ font: v })}
                 />
@@ -1899,16 +1947,24 @@ export function SettingsModal(props: SettingsModalProps) {
                     onPick={(model) => onPatch({ model })}
                   />
                   <div style={LINE}>
+                    <PickCell
+                      label="AGENT"
+                      value={settings.agent}
+                      options={[{ id: "", label: "DEFAULT LOGIN" }, ...agents]}
+                      onPick={(agent) => onPatch({ agent })}
+                    />
                     <PickCell label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
                     <PickCell label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
                     <PickCell label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
                   </div>
                 </div>
                 <div style={NOTE}>
-                  The composer&apos;s four dropdowns are these same knobs — set them here and they
+                  The composer&apos;s dropdowns are these same knobs — set them here and they
                   stick across reloads. MODE ·{" "}
                   <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
-                  session was started with.
+                  session was started with. AGENT ·{" "}
+                  <span style={{ color: "var(--txd)" }}>Default login</span> is whichever account
+                  the ACCOUNTS tab marks default.
                 </div>
 
                 <Label top>PROFILES</Label>
@@ -1919,18 +1975,153 @@ export function SettingsModal(props: SettingsModalProps) {
                   onSessionTools={onSessionTools}
                 />
 
-                <Label top>GUARDRAIL</Label>
-                <div style={NOTE}>
-                  Kept by the bridge for every surface — turning it off here silences the check
-                  in the Mini App too.
-                </div>
-
                 <Label top>TAGS</Label>
                 <TagsPanel />
                 <div style={NOTE}>
                   Tags come from the model when it names a session. Renaming one onto another
                   merges them; every session wearing the old name follows.
                 </div>
+              </>
+            )}
+
+            {/* What the HUD shows you, as opposed to what a run does — these
+                two sat under SESSION next to model/mode/effort, which is a
+                different question entirely. */}
+            {tab === "interface" && (
+              <>
+                <Label>PROMPT BOX</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div>
+                      <div style={KEY_TX}>PONYTAIL</div>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
+                        The level picker and its REVIEW / AUDIT buttons. Off, they leave the prompt
+                        box — the level set in SESSION still applies to every run.
+                      </div>
+                    </div>
+                    <Switch on={settings.ponytailUi} onClick={() => onPatch({ ponytailUi: !settings.ponytailUi })} />
+                  </div>
+                  <div style={{ ...KV, marginTop: 12 }}>
+                    <div>
+                      <div style={KEY_TX}>GRAPH</div>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
+                        The MAP chip and its freshness. Off, the map still builds itself and still
+                        opens from ANALYZE — the prompt box just stops asking about it.
+                      </div>
+                    </div>
+                    <Switch on={settings.graphUi} onClick={() => onPatch({ graphUi: !settings.graphUi })} />
+                  </div>
+                </div>
+
+                <Label top>TRANSCRIPT</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div>
+                      <div style={KEY_TX}>AUTO-OPEN RESULTS</div>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
+                        Bash output and edit diffs draw themselves open. Off, a turn reads as the
+                        list of commands and files it touched — click one to see its result.
+                      </div>
+                    </div>
+                    <Switch
+                      on={settings.openResults}
+                      onClick={() => onPatch({ openResults: !settings.openResults })}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {tab === "notifications" && (
+              <>
+                <Label>DESKTOP</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={KEY_TX}>OS NOTIFICATIONS</div>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
+                        {pushSupported()
+                          ? "A banner when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
+                          : "This browser has no Notification API — Telegram remains the only push path."}
+                      </div>
+                    </div>
+                    <Switch
+                      on={settings.push}
+                      onClick={() => {
+                        if (settings.push) { onPatch({ push: false }); return; }
+                        // Ask only on switch-on; a denial can't be re-asked, so the
+                        // switch goes back off rather than sitting on and silent.
+                        void requestPush().then((ok) => onPatch({ push: ok }));
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Sound is its own switch, not a rider on DESKTOP: the failure
+                    sound belongs to an in-app toast, which fires whether or not
+                    the OS is showing banners. */}
+                <Label top>SOUND</Label>
+                <div style={CARD}>
+                  <div style={KV}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={KEY_TX}>PLAY A SOUND</div>
+                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
+                        For when the news lands on a screen you aren&apos;t looking at. One per
+                        event per batch, not per session.
+                      </div>
+                    </div>
+                    <Switch
+                      on={settings.pushSound}
+                      onClick={() => {
+                        // Switching it on plays it once — otherwise you find out how
+                        // loud it is at the wrong moment.
+                        if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
+                        onPatch({ pushSound: !settings.pushSound });
+                      }}
+                    />
+                  </div>
+                  {settings.pushSound && (
+                    // Every change plays itself: picking a notification sound you
+                    // can't hear until the next notification is guesswork.
+                    <div style={{ ...ROW, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <Cell label="DEFAULT TONE" grow="3 1 260px">
+                        <Segmented
+                          options={TONE_OPTS}
+                          value={settings.pushTone}
+                          onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
+                        />
+                      </Cell>
+                      <Cell label="VOLUME" grow="1 1 150px">
+                        {/* Preview when the drag ends, not on every step — a chime
+                            per pixel of travel is a swarm, not a sample. */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                          onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+                          onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+                          <Volume
+                            value={settings.pushVolume}
+                            onChange={(pushVolume) => onPatch({ pushVolume })}
+                          />
+                        </div>
+                      </Cell>
+                    </div>
+                  )}
+                </div>
+
+                {settings.pushSound && (
+                  <>
+                    <Label top>PER EVENT</Label>
+                    <div style={CARD}>
+                      <SoundBoard settings={settings} onPatch={onPatch} />
+                    </div>
+                    <div style={NOTE}>
+                      Pack sounds come from{" "}
+                      <a href="https://www.peonping.com/" target="_blank" rel="noreferrer"
+                        style={{ color: "var(--acc)" }}>peonping.com</a>
+                      {" "}and stream from the pack&apos;s own repo — nothing is installed here.
+                      An event left on DEFAULT rings the tone above.
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -1970,85 +2161,6 @@ export function SettingsModal(props: SettingsModalProps) {
                       OPEN
                     </button>
                   </div>
-                </div>
-
-                <Label top>NOTIFICATIONS</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={KEY_TX}>DESKTOP</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        {pushSupported()
-                          ? "An OS notification when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
-                          : "This browser has no Notification API — Telegram remains the only push path."}
-                      </div>
-                    </div>
-                    <Switch
-                      on={settings.push}
-                      onClick={() => {
-                        if (settings.push) { onPatch({ push: false }); return; }
-                        // Ask only on switch-on; a denial can't be re-asked, so the
-                        // switch goes back off rather than sitting on and silent.
-                        void requestPush().then((ok) => onPatch({ push: ok }));
-                      }}
-                    />
-                  </div>
-                  {/* Sound is its own switch, not a rider on DESKTOP: the failure
-                      sound belongs to an in-app toast, which fires whether or not
-                      the OS is showing banners. */}
-                  <div style={{ ...KV, marginTop: 11 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={KEY_TX}>SOUND</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        A sound per event, for when the news lands on a screen you aren&apos;t
-                        looking at. One per event per batch, not per session.
-                      </div>
-                    </div>
-                    <Switch
-                      on={settings.pushSound}
-                      onClick={() => {
-                        // Switching it on plays it once — otherwise you find out how
-                        // loud it is at the wrong moment.
-                        if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
-                        onPatch({ pushSound: !settings.pushSound });
-                      }}
-                    />
-                  </div>
-                  {settings.pushSound && (
-                    <>
-                      <SoundBoard settings={settings} onPatch={onPatch} />
-                      {/* Every change plays itself: picking a notification sound you
-                          can't hear until the next notification is guesswork. */}
-                      <div style={{ ...ROW, alignItems: "flex-end", flexWrap: "wrap" }}>
-                        <Cell label="DEFAULT" grow="2 1 200px">
-                          <Segmented
-                            options={TONE_OPTS}
-                            value={settings.pushTone}
-                            onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
-                          />
-                        </Cell>
-                        <Cell label="VOLUME" grow="1 1 150px">
-                          {/* Preview when the drag ends, not on every step — a chime
-                              per pixel of travel is a swarm, not a sample. */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                            onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
-                            onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
-                            <Volume
-                              value={settings.pushVolume}
-                              onChange={(pushVolume) => onPatch({ pushVolume })}
-                            />
-                          </div>
-                        </Cell>
-                      </div>
-                      <div style={NOTE}>
-                        Pack sounds come from{" "}
-                        <a href="https://www.peonping.com/" target="_blank" rel="noreferrer"
-                          style={{ color: "var(--acc)" }}>peonping.com</a>
-                        {" "}and stream from the pack&apos;s own repo — nothing is installed here.
-                        Events left on DEFAULT ring the tone above.
-                      </div>
-                    </>
-                  )}
                 </div>
 
                 <Label top>PLATFORM</Label>
