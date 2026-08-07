@@ -249,9 +249,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   // One entry per open tab: the load result, the buffer text as it was when we
-  // switched away, and the on-disk content. Switching tabs tears the CodeMirror
-  // view down, so without this every switch would lose unsaved edits.
-  const bufs = useRef(new Map<string, { meta: FileContent; text: string; base: string }>());
+  // switched away, the on-disk content, and the full CodeMirror state. Switching
+  // tabs tears the view down, so without `state` every switch would lose the
+  // undo history, the folds and the cursor along with any unsaved edits.
+  const bufs = useRef(new Map<string, { meta: FileContent; text: string; base: string; state?: EditorState }>());
   const baseRef = useRef("");                     // last-saved content, for the dirty check
   const saveRef = useRef<() => void>(() => {});   // latest save fn, for the Ctrl-S keymap
   const fmtRef = useRef<() => void>(() => {});    // ditto for Shift-Alt-F
@@ -335,7 +336,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       if (meta && !editable) jumpRef.current = 0;   // binary/too large: no line to jump to
       return;
     }
-    const state = EditorState.create({
+    const fresh = EditorState.create({
       doc: bufs.current.get(open)?.text ?? meta.content ?? "",
       extensions: [
         // Ours before basicSetup — earlier extensions take precedence, so the
@@ -364,6 +365,11 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         }),
       ],
     });
+    // A tab we've been in before comes back with its history, folds and cursor —
+    // and with whatever its compartments already held, which is why Tasks 5 and 6
+    // check `cachedState` before configuring one again.
+    const cachedState = bufs.current.get(open)?.state;
+    const state = cachedState ?? fresh;
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
     view.focus();
@@ -384,9 +390,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     });
     if (jumpRef.current) { gotoLine(view, jumpRef.current); jumpRef.current = 0; }
     return () => {
-      // Stash the buffer on the way out so switching tabs keeps unsaved edits.
+      // Stash the buffer on the way out so switching tabs keeps unsaved edits,
+      // the undo history and the cursor.
       const b = bufs.current.get(open);
-      if (b) b.text = view.state.doc.toString();
+      if (b) { b.text = view.state.doc.toString(); b.state = view.state; }
       view.destroy(); viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -420,7 +427,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       if (r.ok) {
         baseRef.current = content;
         const b = bufs.current.get(open);
-        if (b) { b.text = content; b.base = content; }
+        if (b) { b.text = content; b.base = content; b.state = v.state; }
         setDirty(false); flash(`wrote ${open}`);
       }
       else flash(`E212: ${r.error || "write failed"}`);
