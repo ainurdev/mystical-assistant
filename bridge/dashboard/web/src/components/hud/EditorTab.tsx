@@ -140,6 +140,8 @@ const langComp = new Compartment();
 // Reconfigured live when the prefs change, so a toggle doesn't rebuild the buffer.
 const wrapComp = new Compartment();
 const fontComp = new Compartment();
+const wrapExt = (on: boolean) => (on ? EditorView.lineWrapping : []);
+const fontExt = (px: number) => EditorView.theme({ "&": { fontSize: `${px}px` } });
 
 /* Put line `n` in the middle of the viewport with the cursor on it. */
 function gotoLine(view: EditorView, n: number) {
@@ -363,8 +365,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         indentUnit.of(meta.indent ?? "  "),
         EditorState.tabSize.of(meta.tab_size ?? 2),
         crtTheme,
-        wrapComp.of(prefs.wordWrap ? EditorView.lineWrapping : []),
-        fontComp.of(EditorView.theme({ "&": { fontSize: `${prefs.fontSize}px` } })),
+        wrapComp.of(wrapExt(prefs.wordWrap)),
+        fontComp.of(fontExt(prefs.fontSize)),
         langComp.of([]),   // filled in below, once the language chunk lands
         EditorView.updateListener.of((u) => {
           if (!u.docChanged) return;
@@ -381,6 +383,13 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
     view.focus();
+    // A restored tab carries the compartments from its last mount, so a pref
+    // toggled while another tab was focused never reached it. Re-sync on mount —
+    // same reason langComp is dispatched here rather than baked into `fresh`.
+    view.dispatch({ effects: [
+      wrapComp.reconfigure(wrapExt(prefs.wordWrap)),
+      fontComp.reconfigure(fontExt(prefs.fontSize)),
+    ] });
     // Highlighting arrives a tick later: the language is a lazy chunk, so the
     // buffer renders plain and repaints when it loads (guard = view still live).
     const desc = langFor(open);
@@ -411,8 +420,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   // rebuilding the buffer, which would drop the cursor.
   useEffect(() => {
     viewRef.current?.dispatch({ effects: [
-      wrapComp.reconfigure(prefs.wordWrap ? EditorView.lineWrapping : []),
-      fontComp.reconfigure(EditorView.theme({ "&": { fontSize: `${prefs.fontSize}px` } })),
+      wrapComp.reconfigure(wrapExt(prefs.wordWrap)),
+      fontComp.reconfigure(fontExt(prefs.fontSize)),
     ] });
   }, [prefs.wordWrap, prefs.fontSize]);
 
@@ -435,13 +444,17 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   async function save() {
     const v = viewRef.current;
     if (!v || !open || saving) return;
+    // Claim the guard before the first await, not after: `format()` is a round
+    // trip to the bridge, and a second Ctrl-S during it would sail past a guard
+    // that hasn't been set yet, no-op inside format()'s own `fmting` guard, then
+    // write the *unformatted* buffer in a race with this call's write.
+    setSaving(true);
     // Format first when asked — format() swaps the buffer, and the read below
     // picks the result up. A formatter failure only flashes; the save still runs.
     if (prefs.formatOnSave && meta?.formatter !== false) await format();
     const raw = v.state.doc.toString();
     const content = tidy(raw);
     if (content !== raw) replaceDoc(v, content);   // keep the buffer equal to disk
-    setSaving(true);
     try {
       const r = await api.fileWrite(project, open, content, branch || undefined);
       if (r.ok) {
