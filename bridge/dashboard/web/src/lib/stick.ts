@@ -24,3 +24,19 @@ export function stickToBottom(
   if (el.scrollTop < prev - 1) return false;
   return dist < 80;
 }
+
+/** Should follow resume when the *content* resized rather than the user moving?
+ *
+ * Only landing exactly on the end counts — a shrink can clamp us there with no
+ * gesture involved. The near-bottom band must not re-arm follow here, because
+ * stickToBottom's "did you scroll up" guard compares against the last scroll
+ * position, and a resize tick happens with no scroll in between: the guard is
+ * inert and the band alone would answer yes. That's what made a small nudge up
+ * mid-turn snap back to the bottom on the next streamed chunk.
+ */
+export function stickOnResize(
+  el: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  stuck: boolean,
+): boolean {
+  return stuck || el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
+}

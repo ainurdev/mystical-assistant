@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../api";
 import type { Turn } from "../../chat";
 import { fmtCost, fmtElapsed, marksOf, nearestTick, toneOf, type Mark } from "../../lib/checkpoints";
@@ -40,7 +40,7 @@ export function Checkpoints({
   const [drift, setDrift] = useState<Map<string, { add: number; del: number }>>(new Map());
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const items = marksOf(turns);
+  const items = useMemo(() => marksOf(turns), [turns]);
   const shown = q ? items.filter((m) => m.label.toLowerCase().includes(q.toLowerCase())) : items;
 
   useEffect(() => {
@@ -229,6 +229,35 @@ export function Checkpoints({
  *  there" rather than "scroll here". Ticks are 2px tall — this is the real one. */
 const SNAP = 7;
 
+/** One tick per checkpoint, its own memo'd component: the rail re-renders on
+ *  every scroll event to move the thumb, and reconciling a div per mark at scroll
+ *  cadence was the jank in long sessions. Ticks only move when the transcript does. */
+const Ticks = memo(function Ticks(
+  { marks, pos, near }: { marks: Mark[]; pos: number[]; near: number },
+) {
+  return (
+    <>
+      {marks.map((m, i) => {
+        const tone = toneOf(m);
+        const sub = m.kind !== "prompt";
+        const on = i === near;
+        return (
+          <div
+            key={m.id}
+            style={{
+              position: "absolute", top: `${(pos[i] ?? 0) * 100}%`,
+              left: sub && !on ? 5 : 1, right: 0, height: on ? 3 : 2,
+              background: tone, pointerEvents: "none",
+              opacity: on || m.waiting || m.failed ? 1 : sub ? 0.5 : 0.75,
+              boxShadow: on || m.waiting ? `0 0 6px ${tone}` : "none",
+            }}
+          />
+        );
+      })}
+    </>
+  );
+});
+
 /** The transcript's scrollbar (the native one is hidden under it): a draggable
  *  viewport thumb, plus one tick per checkpoint at its real position, coloured
  *  by outcome. Click a tick to jump, drag the thumb or click the track to scroll. */
@@ -239,7 +268,7 @@ export function CheckpointRail({
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
 }) {
-  const marks = marksOf(turns);
+  const marks = useMemo(() => marksOf(turns), [turns]);
   const [pos, setPos] = useState<number[]>([]);
   const [win, setWin] = useState({ top: 0, h: 1 });
   const [near, setNear] = useState(-1);
@@ -337,23 +366,7 @@ export function CheckpointRail({
     >
       <div style={{ position: "absolute", inset: 0, borderLeft: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }} />
       <div style={{ position: "absolute", left: 1, right: 0, top: `${win.top * 100}%`, height: `${win.h * 100}%`, minHeight: 18, background: "color-mix(in srgb, var(--acc) 11%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", transition: grab.current == null ? "top .1s linear" : "none" }} />
-      {marks.map((m, i) => {
-        const tone = toneOf(m);
-        const sub = m.kind !== "prompt";
-        const on = i === near;
-        return (
-          <div
-            key={m.id}
-            style={{
-              position: "absolute", top: `${(pos[i] ?? 0) * 100}%`,
-              left: sub && !on ? 5 : 1, right: 0, height: on ? 3 : 2,
-              background: tone, pointerEvents: "none",
-              opacity: on || m.waiting || m.failed ? 1 : sub ? 0.5 : 0.75,
-              boxShadow: on || m.waiting ? `0 0 6px ${tone}` : "none",
-            }}
-          />
-        );
-      })}
+      <Ticks marks={marks} pos={pos} near={near} />
       {hovered && (
         <div style={{
           position: "absolute", right: 16, top: `${(pos[near] ?? 0) * 100}%`,

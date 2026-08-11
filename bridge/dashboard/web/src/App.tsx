@@ -41,7 +41,7 @@ import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins, useStickySet } from "./lib/prefs";
-import { nearBottom, stickToBottom } from "./lib/stick";
+import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -531,7 +531,16 @@ export function App() {
     // Content grew/shrank: pull to the bottom if we were parked there, otherwise
     // re-check (a shrink can land us back at the bottom on its own).
     const ro = new ResizeObserver(() => {
-      if (!stickRef.current) sync();
+      if (!stickRef.current) {
+        // Content moved, not you — so this can only re-arm follow by landing
+        // exactly on the end (see stickOnResize). Running the gesture test here
+        // let a nudge up inside the 80px band re-stick, and the next streamed
+        // chunk yanked the view back to the bottom.
+        const stick = stickOnResize(el, stickRef.current);
+        prev = el.scrollTop;
+        stickRef.current = stick;
+        setAtBottom(stick);
+      }
       else if (glideRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
       else el.scrollTop = el.scrollHeight;
     });
