@@ -1133,6 +1133,37 @@ def _ctx_of(usage: dict) -> "int | None":
     return n or None
 
 
+# Longest log line kept — a debugging window rather than an archive (see
+# inspector.MAX_ENTRIES).
+_LOG_MAX = 4000
+# Hooks get a tighter cap than that: a SessionStart hook injects kilobytes of
+# preamble, identically, on every turn — the row exists to say what fired and
+# roughly what it said, and the injected text is already in the model's context.
+# ponytail: one flat cap. If a blocking hook's reason ever gets cut, give the
+# failures _LOG_MAX and keep this for the ones that succeeded.
+_HOOK_MAX = 800
+# Stderr lines journalled per turn. A child that spews would otherwise put one
+# store row and one SSE frame on the wire per line; the fatal-error path still
+# reads its own 50-line tail regardless.
+_STDERR_LOG_MAX = 40
+
+
+def _hook_log(job: Job, d: dict):
+    """A hook that said something or failed. Hooks fire on nearly every tool, so
+    one that ran clean and silent is noise — what's worth a row is the context it
+    injected, the reason it blocked, or the way it broke."""
+    out = (d.get("stdout") or d.get("output") or "").strip()
+    err = (d.get("stderr") or "").strip()
+    code = d.get("exit_code") or 0
+    bad = bool(code) or d.get("outcome") not in (None, "success")
+    if not (out or err or bad):
+        return
+    body = "\n".join(x for x in (out, err) if x) or f"exit {code}"
+    job.add({"type": "log", "src": "hook",
+             "label": d.get("hook_name") or d.get("hook_event") or "hook",
+             "text": body[:_HOOK_MAX], "error": bad})
+
+
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
     sid = d.get("session_id")
@@ -1157,17 +1188,19 @@ def _handle_event(job: Job, d: dict):
                     job.texts.append(txt)
                     job.add({"type": "text", "text": txt})
             elif b.get("type") == "thinking":
-                # Claude Code strips the reasoning text from every surface it
-                # exposes — on the stream and on disk a thinking block is
-                # thinking:"" plus a signature — so the only honest thing to show
-                # is that it stopped to think, and for how long: the wall-clock
-                # gap since the last thing it did.
-                # ponytail: --include-partial-messages would add an estimated
-                # token count, at the cost of streaming every text delta of every
-                # turn. Add it if "how much" ever matters more than "how long".
+                # The reasoning text rides the stream in full (and lands on disk
+                # the same way) — Claude Code just never prints it. Carry it, shut
+                # by default in both frontends, alongside the wall-clock gap since
+                # the last thing it did. A redacted block (text stripped, only a
+                # signature) still earns the bare marker it always got, provided
+                # the pause was long enough to have been sat through.
                 gap = int((time.time() - job.last_at) * 1000)
-                if gap >= transcript_jsonl.THINK_MIN_MS:
-                    job.add({"type": "thinking", "ms": gap})
+                txt = (b.get("thinking") or "").strip()
+                if txt or gap >= transcript_jsonl.THINK_MIN_MS:
+                    ev = {"type": "thinking", "ms": gap}
+                    if txt:
+                        ev["text"] = txt
+                    job.add(ev)
             elif b.get("type") == "tool_use":
                 name = b.get("name", "tool")
                 inp = b.get("input", {})
@@ -1186,6 +1219,8 @@ def _handle_event(job: Job, d: dict):
                 if imgs:
                     ev["images"] = imgs
                 job.add(ev)
+    elif t == "system" and d.get("subtype") == "hook_response":
+        _hook_log(job, d)
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")
@@ -1352,15 +1387,24 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
 
         # Drain stderr continuously: a child that writes more than the OS pipe
         # buffer mid-run would otherwise block against our unread pipe while we
-        # block on stdout — deadlock. Keep only a tail for error reporting.
+        # block on stdout — deadlock. Keep a tail for error reporting, and put the
+        # first lines in the transcript: normally the child says nothing here, so
+        # anything it does say (a dying MCP server, --debug output) is the reason
+        # a turn went strange, and it used to be visible only if the run died.
         stderr_tail: list[str] = []
+        stderr_logged = 0
 
         def _drain_stderr():
+            nonlocal stderr_logged
             try:
                 for eline in proc.stderr:
                     stderr_tail.append(eline)
                     if len(stderr_tail) > 50:
                         del stderr_tail[:-50]
+                    if stderr_logged < _STDERR_LOG_MAX and eline.strip():
+                        stderr_logged += 1
+                        job.add({"type": "log", "src": "stderr",
+                                 "text": eline.rstrip()[:_LOG_MAX]})
             except (ValueError, OSError):
                 pass
 

@@ -77,7 +77,7 @@ def test_events_grouped_and_ordered_under_turns():
     by_turn = {}
     for e in out["events"]:
         by_turn.setdefault(e["turn_id"], []).append(e["type"])
-    assert by_turn["t1"] == ["text", "tool", "tool_done", "text"]
+    assert by_turn["t1"] == ["thinking", "text", "tool", "tool_done", "text"]
     assert by_turn["t2"] == ["text"]
     # seqs are globally ascending and unique
     seqs = [e["seq"] for e in out["events"]]
@@ -91,14 +91,16 @@ def test_tool_event_carries_name_and_summary():
     assert tool["name"] == "Bash" and tool["summary"] == "ls -la"
 
 
-def test_thinking_text_never_surfaces_and_sidechain_skipped():
+def test_reasoning_text_surfaces_on_its_own_event_and_sidechain_skipped():
     out = T.parse_jsonl(_write(FIXTURE))
     texts = [e.get("text") for e in out["events"] if e["type"] == "text"]
-    assert "hmm" not in texts                       # reasoning text is never shown
+    assert "hmm" not in texts                       # reasoning is not a text block
     assert "sidechain noise" not in texts           # isSidechain record dropped
     assert texts == ["hi back", "done listing", "final answer"]
-    # 1s between the prompt and the reply is not a pause worth a marker
-    assert not any(e["type"] == "thinking" for e in out["events"])
+    think = [e for e in out["events"] if e["type"] == "thinking"]
+    # 1s is under the bare-marker floor, but there is reasoning text to show
+    assert [e["text"] for e in think] == ["hmm"]
+    assert think[0]["ms"] == 1000
 
 
 def test_thinking_marker_carries_the_pause_it_replaces():

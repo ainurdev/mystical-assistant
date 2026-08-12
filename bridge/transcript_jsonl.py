@@ -7,11 +7,11 @@ filename is the globally-unique session UUID, a transcript is located by globbin
 on the UUID — we never reverse Claude's lossy directory encoding.
 
 The emitted event vocabulary matches the runner's (text / thinking / tool /
-tool_done), so both frontends render it unchanged. A `thinking` block becomes a
-bare marker with the length of the pause: Claude Code strips the reasoning text
-from every output surface it has (on disk and on the stream, a thinking block
-carries thinking:"" and a signature), so how long it thought is all there is to
-show. Subagent `isSidechain` records are dropped — the bridge never surfaces
+tool_done), so both frontends render it unchanged. A `thinking` block carries the
+reasoning text as it was recorded (Claude Code keeps it on disk, it just never
+prints it) plus the length of the pause; a block whose text was stripped, leaving
+only a signature, falls back to the bare marker it always was — how long it
+thought. Subagent `isSidechain` records are dropped — the bridge never surfaces
 those (the runner doesn't either). Stdlib only; no bridge.config dependency.
 """
 
@@ -47,7 +47,8 @@ _SUMMARY_KEYS = ("command", "file_path", "path", "pattern", "url", "query", "pro
 
 # Max chars of Bash output kept per tool call (see bash_output).
 _OUT_MAX = 2000
-# Shortest pause that earns a "thought for …" marker. Extended thinking fires on
+# Shortest pause that earns a bare "thought for …" marker — one with no reasoning
+# text behind it, which is the only kind this gates. Extended thinking fires on
 # nearly every step, so a low floor would put a marker between every two tool
 # cards — the wall of rows the chip folding exists to prevent. Four seconds is
 # about where a pause stops being latency and starts being deliberation.
@@ -464,13 +465,16 @@ def _parse_full(path: str) -> dict:
                         if txt:
                             emit({"type": "text", "text": txt})
                     elif bt == "thinking":
-                        # No text to show (see the module docstring), so the
-                        # marker carries the gap since the previous record — the
-                        # pause a human sitting there actually saw.
+                        # The reasoning text, plus the gap since the previous
+                        # record — the pause a human sitting there actually saw.
                         prev = state["turn"].get("_last_ts") or state["turn"]["started"]
-                        gap = int(max(0.0, _ts(rec) - (prev or 0)) * 1000)
-                        if prev and gap >= THINK_MIN_MS:
-                            emit({"type": "thinking", "ms": gap})
+                        gap = int(max(0.0, _ts(rec) - prev) * 1000) if prev else 0
+                        txt = (b.get("thinking") or "").strip()
+                        if txt or gap >= THINK_MIN_MS:
+                            ev = {"type": "thinking", "ms": gap}
+                            if txt:
+                                ev["text"] = txt
+                            emit(ev)
                     elif bt == "tool_use":
                         name = b.get("name", "tool")
                         if name == "AskUserQuestion":

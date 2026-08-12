@@ -16,6 +16,7 @@ import {
   Layers,
   GitCompare,
   Brain,
+  ChevronDown,
 } from "lucide-react";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
@@ -64,17 +65,72 @@ function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean
   );
 }
 
-/** A pause where the model reasoned. There is no reasoning to print — Claude Code
- *  strips it from every surface — so the marker is the pause itself, which is the
- *  one thing a list of tool cards can never explain: the gap between them. */
-function ThinkingRow({ ms }: { ms?: number }) {
-  return (
-    <div className="flex items-center gap-2 py-0.5 text-[var(--muted-2)]">
+/** A pause where the model reasoned, opening onto the reasoning itself — Claude
+ *  Code records it and simply never prints it. Shut by default: a turn holds
+ *  dozens, and the row alone already explains the one thing a list of tool cards
+ *  can't, the gap between them. */
+function ThinkingRow({ ms, text }: { ms?: number; text?: string }) {
+  const [open, setOpen] = useState(false);
+  const head = (
+    <>
       <Brain size={12} className="flex-none" aria-hidden />
       <span className="flex-none text-[10px] tracking-[1px]">THOUGHT</span>
       <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
       <span className="flex-none text-[9.5px] tracking-[1px]">{dur(ms)}</span>
+      {text ? (
+        <ChevronDown
+          size={12}
+          aria-hidden
+          className={`flex-none transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
+        />
+      ) : null}
+    </>
+  );
+  return (
+    <div className="text-[var(--muted-2)]">
+      {text ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full items-center gap-2 py-0.5 text-left"
+        >
+          {head}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 py-0.5">{head}</div>
+      )}
+      {open && text ? (
+        <div className="mt-1 whitespace-pre-wrap border-l border-[var(--muted-2)]/25 pl-2 text-[12px] leading-relaxed">
+          {text}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** A hook's output, or a line the child wrote to stderr — the work either side of
+ *  the conversation, which used to be visible only when a run died. */
+function LogRow({ src, label, text, error }:
+  { src: string; label?: string; text: string; error?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const lines = text.split("\n");
+  const more = lines.length - 1;
+  return (
+    <button
+      type="button"
+      onClick={() => more && setOpen((o) => !o)}
+      className="flex w-full items-start gap-1.5 py-0.5 text-left font-mono text-[12px] leading-relaxed"
+      style={{ color: error ? "var(--err)" : "var(--muted-2)" }}
+    >
+      <Terminal size={11} aria-hidden className="mt-1 flex-none" />
+      <span className="flex-none tracking-[1px] opacity-70">
+        {(label ? `${src}:${label}` : src).toUpperCase()}
+      </span>
+      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+        {open ? text : lines[0]}
+      </span>
+      {more && !open ? <span className="flex-none opacity-70">+{more}</span> : null}
+    </button>
   );
 }
 
@@ -667,7 +723,7 @@ export const RunStream = memo(function RunStream({
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking") continue;
+          || t === "thinking" || t === "log") continue;
       return t === "question";
     }
     return false;
@@ -744,7 +800,12 @@ export const RunStream = memo(function RunStream({
             );
           }
           case "thinking":
-            return <ThinkingRow key={i} ms={event.ms} />;
+            return <ThinkingRow key={i} ms={event.ms} text={event.text} />;
+          case "log":
+            return (
+              <LogRow key={i} src={event.src} label={event.label}
+                      text={event.text} error={event.error} />
+            );
           case "tool_done":
             return null;
           case "result":

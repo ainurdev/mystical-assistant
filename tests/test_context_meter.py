@@ -114,3 +114,40 @@ def test_session_round_trips_both_columns():
     assert store.get_autocompact(s["id"]) == "150000"
     row = store.get_session(s["id"])
     assert row["ctx_tokens"] == 77398
+
+
+def _events(job, kind):
+    return [e for e in job.events if e["type"] == kind]
+
+
+def test_reasoning_text_rides_the_thinking_event():
+    job = runner.Job("j3", 555)
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "thinking", "thinking": " weighing it up ", "signature": "s"}]}})
+    ev = _events(job, "thinking")
+    assert [e["text"] for e in ev] == ["weighing it up"]
+
+
+def test_a_redacted_thinking_block_still_needs_a_long_pause():
+    # No text and a sub-floor gap: the old bare marker would be noise.
+    job = runner.Job("j4", 555)
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "thinking", "thinking": "", "signature": "s"}]}})
+    assert _events(job, "thinking") == []
+
+
+def test_only_hooks_with_something_to_say_reach_the_transcript():
+    job = runner.Job("j5", 555)
+    quiet = {"type": "system", "subtype": "hook_response", "hook_name": "PreToolUse:Bash",
+             "stdout": "", "stderr": "", "exit_code": 0, "outcome": "success"}
+    runner._handle_event(job, quiet)
+    assert _events(job, "log") == []
+
+    runner._handle_event(job, {**quiet, "stdout": "injected context"})
+    runner._handle_event(job, {**quiet, "hook_name": "PreToolUse:Write",
+                               "stderr": "blocked", "exit_code": 2})
+    logs = _events(job, "log")
+    assert [(e["src"], e["label"], e["text"], e["error"]) for e in logs] == [
+        ("hook", "PreToolUse:Bash", "injected context", False),
+        ("hook", "PreToolUse:Write", "blocked", True),
+    ]

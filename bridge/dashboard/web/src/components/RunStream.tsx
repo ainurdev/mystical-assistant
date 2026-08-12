@@ -395,21 +395,85 @@ function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean
   );
 }
 
-/** A pause where the model reasoned. There is no reasoning to print — Claude Code
- *  strips it from every surface — so the marker is the pause itself, which is the
- *  one thing a list of tool cards can never explain: the gap between them. */
-function ThinkingRow({ ms, animate }: { ms?: number; animate: boolean }) {
-  return (
-    <div
-      className="my-1.5 ml-[18px] flex items-center gap-2.5 py-0.5 text-muted-2"
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
-    >
+/** A pause where the model reasoned, opening onto the reasoning itself — Claude
+ *  Code records it and simply never prints it. Shut by default: a turn holds
+ *  dozens, and the row alone already explains the one thing a list of tool cards
+ *  can't, the gap between them. */
+function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animate: boolean }) {
+  const [open, setOpen] = useState(false);
+  const head = (
+    <>
       <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[2px]">
         <Brain size={11} aria-hidden />
         THOUGHT
       </span>
       <span aria-hidden className="h-px flex-1 bg-border" />
       <span className="flex-none text-[length:var(--t95)] tracking-[1px]">{dur(ms)}</span>
+      {text ? (
+        <ChevronDown
+          size={12}
+          aria-hidden
+          className={`flex-none transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
+        />
+      ) : null}
+    </>
+  );
+  return (
+    <div
+      className="my-1.5 ml-[18px] text-muted-2"
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+    >
+      {text ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          title={open ? "hide the reasoning" : "show the reasoning"}
+          className="flex w-full items-center gap-2.5 py-0.5 text-left"
+        >
+          {head}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2.5 py-0.5">{head}</div>
+      )}
+      {open && text ? (
+        <div className="mt-1 whitespace-pre-wrap border-l border-border pl-2.5 text-[length:var(--t11)] leading-relaxed">
+          {text}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A hook's output, or a line the child wrote to stderr: the work either side of
+ *  the conversation, which used to be visible only when a run died. Shut by
+ *  default past the first line — most of it is one line and says everything. */
+function LogRow({ src, label, text, error, animate }:
+  { src: string; label?: string; text: string; error?: boolean; animate: boolean }) {
+  const [open, setOpen] = useState(false);
+  const lines = text.split("\n");
+  const more = lines.length - 1;
+  const color = error ? "var(--err)" : undefined;
+  return (
+    <div
+      className="my-1.5 ml-[18px] text-muted-2"
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+    >
+      <button
+        type="button"
+        onClick={() => more && setOpen((o) => !o)}
+        className="flex w-full items-start gap-2 py-0.5 text-left font-mono text-[length:var(--t11)] leading-relaxed"
+        style={{ color }}
+        title={more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
+      >
+        <Terminal size={11} aria-hidden className="mt-1 flex-none" />
+        <span className="flex-none tracking-[1px] opacity-70">
+          {(label ? `${src}:${label}` : src).toUpperCase()}
+        </span>
+        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+          {open ? text : lines[0]}
+        </span>
+        {more && !open ? <span className="flex-none opacity-70">+{more}</span> : null}
+      </button>
     </div>
   );
 }
@@ -999,7 +1063,7 @@ export const RunStream = memo(function RunStream({
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking") continue;
+          || t === "thinking" || t === "log") continue;
       return t === "question";
     }
     return false;
@@ -1126,7 +1190,18 @@ export const RunStream = memo(function RunStream({
             );
           }
           case "thinking":
-            return <ThinkingRow key={i} ms={event.ms} animate={animate} />;
+            return <ThinkingRow key={i} ms={event.ms} text={event.text} animate={animate} />;
+          case "log":
+            return (
+              <LogRow
+                key={i}
+                src={event.src}
+                label={event.label}
+                text={event.text}
+                error={event.error}
+                animate={animate}
+              />
+            );
           case "tool_done":
             return null;
           case "steer":

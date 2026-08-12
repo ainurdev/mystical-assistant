@@ -105,12 +105,16 @@ export interface AnswerSelection {
 
 export type RunEvent =
   | { type: "text"; text: string }
-  // A pause where the model reasoned, and only that: Claude Code strips the
-  // reasoning text from every surface it exposes (both the live stream and the
-  // on-disk JSONL carry an empty thinking block plus a signature), so `ms` — how
-  // long the pause was — is the whole event. Short pauses aren't recorded
-  // (bridge/transcript_jsonl.py THINK_MIN_MS).
-  | { type: "thinking"; ms?: number }
+  // A pause where the model reasoned: `text` is the reasoning as recorded (Claude
+  // Code keeps it on the stream and on disk, it just never prints it) and `ms` is
+  // how long the pause ran. A block whose text was stripped, leaving a signature,
+  // carries `ms` alone — and only when the pause was long enough to have been sat
+  // through (bridge/transcript_jsonl.py THINK_MIN_MS).
+  | { type: "thinking"; ms?: number; text?: string }
+  // The working output either side of the conversation: a hook that injected
+  // context, blocked a tool or crashed, and whatever the claude child wrote to
+  // stderr (normally nothing — a dying MCP server, or --debug).
+  | { type: "log"; src: "hook" | "stderr"; label?: string; text: string; error?: boolean }
   | { type: "tool"; name: string; summary: string; id?: string }
   // `output` is Bash-only, `patch` edit-only, `stat` for everything else (see
   // transcript_jsonl.tool_done); turns recorded before this landed carry no `id`.
