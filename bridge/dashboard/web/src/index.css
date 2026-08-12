@@ -941,3 +941,60 @@ input {
      horizontal strip has width to spend, not height. */
   .setrail .hint { display: none; }
 }
+
+/* Session swap, slow case: the transcript you are leaving holds its place and
+   recedes while the next one loads, with a hairline sweeping the top edge to say
+   the load is still alive. Both are delayed, so a fast open clears
+   `data-swapping` before either becomes visible and the switch stays a soft cut.
+   Everything animated here is opacity/transform: the wait is not the fetch (120ms
+   at worst) but React committing a large transcript, which blocks the main thread
+   — only compositor-driven properties keep moving through that. A JS timer gate
+   would fire after the freeze it was meant to cover. See hud/Terminal.tsx. */
+.swapwrap > .mscroll {
+  transition: opacity 0.22s ease 0.14s;
+}
+.swapwrap[data-swapping] > .mscroll {
+  opacity: 0.38;
+  pointer-events: none;
+}
+/* Above the sticky LAST peek (z-index 5), which shares this top edge. */
+.swapline {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  z-index: 6;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease 0.14s;
+}
+.swapwrap[data-swapping] .swapline {
+  opacity: 1;
+}
+.swapline::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, var(--acc), transparent);
+  box-shadow: 0 0 8px var(--acc);
+  transform: translateX(-100%);
+}
+.swapwrap[data-swapping] .swapline::after {
+  animation: swapsweep 1.05s cubic-bezier(0.5, 0, 0.5, 1) 0.14s infinite;
+}
+/* -100% clears the left edge; 360% carries a 28%-wide gleam past the right one. */
+@keyframes swapsweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(360%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .swapwrap > .mscroll,
+  .swapline { transition-delay: 0s; }
+  .swapwrap[data-swapping] .swapline::after {
+    animation: none;
+    transform: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}

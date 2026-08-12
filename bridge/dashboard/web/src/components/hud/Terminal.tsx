@@ -197,6 +197,19 @@ export function Terminal({
     return () => io.disconnect();
   }, [scrollRef, view, empty, lastTurnId]);
 
+  // A session that takes a while to open would otherwise sit as the new header
+  // over the old chat with nothing to say it is loading. Mark the swap on the
+  // click commit and CSS dims the outgoing transcript and sweeps a hairline —
+  // both on a delay, so an open that lands first is still the plain soft cut
+  // below. `!loading` is what makes this order-independent with the release
+  // effect: on the landing commit this one bails whichever runs first.
+  const swapRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (view !== "chat" || !loading || empty) return; // empty: nothing worth holding
+    const wrap = swapRef.current;
+    if (wrap) wrap.dataset.swapping = "1";
+  }, [sessionId, view, loading, empty]);
+
   // Session swap: the session you left stays on screen until the new transcript
   // lands (App holds its turns), then the new one fades up in its place. Fires on
   // content-land (loading→false), NOT on the click, so it's one soft cut instead of
@@ -206,6 +219,10 @@ export function Terminal({
   const firstTune = useRef(true);
   useLayoutEffect(() => {
     if (view !== "chat" || loading) return; // wait until the new transcript has landed
+    // Release the hold in the same commit the new turns render in, so the dim
+    // lifting and the fade-up below read as one motion.
+    const wrap = swapRef.current;
+    if (wrap) delete wrap.dataset.swapping;
     if (tunedFor.current === (sessionId ?? null)) return; // already retuned this session
     const el = scrollRef.current;
     if (!el) return;
@@ -266,7 +283,8 @@ export function Terminal({
         </div>
       ) : (
         <>
-          <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <div aria-hidden className="swapline" />
             <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
               <div ref={contentRef} style={{ padding: "16px 0" }}>
                 {empty && loading ? (
