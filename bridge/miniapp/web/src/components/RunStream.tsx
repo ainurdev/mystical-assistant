@@ -572,6 +572,18 @@ function FinalResult({
                 Write answer…
               </button>
             )}
+            {/* No "No" chip on two alternatives or an open question, so there was
+                no way to close the ask without answering. Drops it, runs nothing. */}
+            {!ask.options.includes("No") && (
+              <button
+                type="button"
+                disabled={sent !== null}
+                onClick={() => { setSent("No"); onAnswer!("No"); }}
+                className="rounded-lg px-3 py-1.5 text-sm text-[var(--tg-hint)] active:opacity-70 disabled:opacity-40"
+              >
+                Dismiss
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -1271,6 +1271,20 @@ function AskBackBar({
             WRITE ANSWER
           </button>
         )}
+        {/* Two named alternatives, or an open question, carry no "No" chip — so
+            the only way out was answering, and the session sat in ASK until you
+            did. Same drop-it path the "No" chip takes: nothing runs. */}
+        {!ask.options.includes("No") && (
+          <button
+            type="button"
+            disabled={sent !== null}
+            onClick={() => { setSent("No"); onAnswer("No"); }}
+            title="Drop the question — nothing runs"
+            className={`${chip} border-border bg-[var(--panel3)] tracking-[1px] text-muted-2 hover:text-[var(--acc)]`}
+          >
+            DISMISS
+          </button>
+        )}
       </div>
     </div>
   );
