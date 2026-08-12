@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronsDownUp, ChevronsUpDown, FilePlus, Files, FolderPlus, RefreshCw, Search,
+  AlignLeft, ChevronsDownUp, ChevronsUpDown, Eye, FilePlus, Files, FolderPlus, Pencil,
+  RefreshCw, Save, Search,
 } from "lucide-react";
 import { basicSetup } from "codemirror";
 import { EditorView, keymap } from "@codemirror/view";
@@ -1160,18 +1161,18 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           </div>
           <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", padding: "6px 10px", fontFamily: "'JetBrains Mono',monospace" }}>
             <button onClick={() => void save()} disabled={!editable || saving || !dirty} title="save (Ctrl-S / :w)" {...hp("save")}
-              style={{ appearance: "none", cursor: editable && dirty && !saving ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: hov === "save" && editable && dirty ? "color-mix(in srgb, var(--ok) 14%, transparent)" : "transparent", color: "var(--ok)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", opacity: editable && dirty && !saving ? 1 : 0.45 }}>▸ SAVE</button>
+              style={{ appearance: "none", cursor: editable && dirty && !saving ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: hov === "save" && editable && dirty ? "color-mix(in srgb, var(--ok) 14%, transparent)" : "transparent", color: "var(--ok)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", opacity: editable && dirty && !saving ? 1 : 0.45, display: "flex", alignItems: "center", gap: 5 }}><Save size={12} strokeWidth={1.9} />SAVE</button>
             {editable && (
               <button onClick={() => void format()} disabled={fmting || meta?.formatter === false}
                 title={meta?.formatter === false ? "no formatter installed for this file type" : "format (Shift-Alt-F)"} {...hp("fmt")}
-                style={{ appearance: "none", cursor: fmting || meta?.formatter === false ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "fmt" && !fmting && meta?.formatter !== false ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", opacity: fmting || meta?.formatter === false ? 0.45 : 1 }}>
-                {fmting ? "⋯ FORMATTING" : "⌘ FORMAT"}</button>
+                style={{ appearance: "none", cursor: fmting || meta?.formatter === false ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "fmt" && !fmting && meta?.formatter !== false ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", opacity: fmting || meta?.formatter === false ? 0.45 : 1, display: "flex", alignItems: "center", gap: 5 }}>
+                <AlignLeft size={12} strokeWidth={1.9} />{fmting ? "FORMATTING" : "FORMAT"}</button>
             )}
             {editable && canPreview && (
               <button onClick={() => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null))}
                 title={preview === null ? (isSvg ? "preview the rendered svg" : "preview rendered markdown") : "back to the editor"} {...hp("mdv")}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: hov === "mdv" || preview !== null ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px" }}>
-                {preview === null ? "◧ VIEW" : "✎ EDIT"}</button>
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: hov === "mdv" || preview !== null ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", display: "flex", alignItems: "center", gap: 5 }}>
+                {preview === null ? <><Eye size={12} strokeWidth={1.9} />VIEW</> : <><Pencil size={12} strokeWidth={1.9} />EDIT</>}</button>
             )}
           </div>
         </div>

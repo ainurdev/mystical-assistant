@@ -3,7 +3,7 @@ import { useRef, type ReactNode } from "react";
 export interface PanelTab {
   id: string;
   label: string;
-  icon: string;
+  icon: ReactNode;
   badge?: string | null;
   // Panel owns its scroller — the wrapper must not add a second one.
   ownScroll?: boolean;

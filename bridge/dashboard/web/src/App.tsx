@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  FileDiff, FolderGit2, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
+} from "lucide-react";
+import {
   api,
   AUTH_REQUIRED,
   TOKEN,
@@ -86,6 +89,9 @@ function fmtReset(iso: string | null | undefined): string {
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return `${h}H${String(m).padStart(2, "0")}M`;
 }
+
+// One size for every right-rail icon — the rail's buttons are 30px.
+const RAIL = { size: 15, strokeWidth: 1.6 } as const;
 
 // Manage-projects choices survive a reload / bridge restart. HIDE is owned by
 // the bridge (project_config.json, GET/POST /local/project*), so it syncs across
@@ -1197,7 +1203,7 @@ export function App() {
 
   const rightTabs: PanelTab[] = [
     {
-      id: "projects", label: "Projects", icon: "⊞",
+      id: "projects", label: "Projects", icon: <FolderGit2 {...RAIL} />,
       render: () => (
         <ProjectsPanel
           groups={visibleGroups} activeProject={activeProject} booting={!booted}
@@ -1209,7 +1215,7 @@ export function App() {
       ),
     },
     {
-      id: "files", label: "Files", icon: "▤", ownScroll: true, scope: "worktree",
+      id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree",
       render: () => (
         <FilesPanel
           project={sessionProject} branch={sessionBranch}
@@ -1218,7 +1224,7 @@ export function App() {
       ),
     },
     {
-      id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: "◈", ownScroll: true, scope: "worktree",
+      id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: <FileDiff {...RAIL} />, ownScroll: true, scope: "worktree",
       badge: dirtyFiles ? String(dirtyFiles) : null,
       render: () => (
         <FilesPanel
@@ -1228,23 +1234,23 @@ export function App() {
       ),
     },
     {
-      id: "git", label: "Source Control", icon: "⎇", scope: "project",
+      id: "git", label: "Source Control", icon: <GitBranch {...RAIL} />, scope: "project",
       badge: dirtyFiles ? "●" : null,
       render: () => <GitTab project={sessionProject} />,
     },
     {
-      id: "skills", label: "Skills", icon: "✦",
+      id: "skills", label: "Skills", icon: <Sparkles {...RAIL} />,
       render: () => <SkillsPanel project={sessionProject} />,
     },
     {
-      id: "learn", label: "Learn", icon: "◎", ownScroll: true,
+      id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true,
       badge: unreadLessons ? String(unreadLessons) : null,
       render: () => (
         <LearnPanel project={sessionProject} read={lessonsRead}
           onRead={(k) => setLessonsRead((r) => new Set(r).add(k))} />
       ),
     },
-    { id: "queue", label: "Queue", icon: "≡", render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
+    { id: "queue", label: "Queue", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];
 
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
@@ -1702,6 +1708,7 @@ export function App() {
               changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
               ctxTokens={selected?.ctx_tokens ?? null}
               ctxWindow={selected?.ctx_window ?? null}
+              sessionId={sessionId}
               onPalette={() => setPaletteOpen(true)}
               agents={agentOpts} onPickAgent={setAgent}
             />
