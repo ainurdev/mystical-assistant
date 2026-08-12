@@ -68,3 +68,29 @@ def test_prompt_only_turns_do_not_count_toward_n():
     out = tail_slice(_data(evs, turns=["t1", "t2", "t3"]), tail=1)
     assert [e["seq"] for e in out["events"]] == [2]
     assert out["has_older"] is True
+
+
+def test_transcript_for_applies_tail(monkeypatch):
+    from bridge.miniapp import server as mini
+    canned = _data(THREE_TURNS)
+    monkeypatch.setattr(mini.store, "transcript", lambda sid, cursor=0: dict(canned))
+    out = mini.transcript_for({"id": "s", "origin": "miniapp"}, tail=2)
+    assert out["has_older"] is True and [e["seq"] for e in out["events"]] == [3, 4, 5]
+
+
+def test_transcript_for_without_tail_is_unchanged(monkeypatch):
+    from bridge.miniapp import server as mini
+    canned = _data(THREE_TURNS)
+    monkeypatch.setattr(mini.store, "transcript", lambda sid, cursor=0: dict(canned))
+    out = mini.transcript_for({"id": "s", "origin": "miniapp"})
+    assert "has_older" not in out and len(out["events"]) == 5
+
+
+def test_transcript_for_tails_native_jsonl(monkeypatch):
+    from bridge.miniapp import server as mini
+    canned = _data(THREE_TURNS)
+    monkeypatch.setattr(mini.transcript_jsonl, "find_transcript", lambda sid: "/tmp/x.jsonl")
+    monkeypatch.setattr(mini.transcript_jsonl, "parse_jsonl",
+                        lambda path, cursor=0: {k: canned[k] for k in ("turns", "events", "next_cursor")})
+    out = mini.transcript_for({"id": "s", "origin": "vscode", "claude_session_id": "u"}, tail=2)
+    assert out["has_older"] is True

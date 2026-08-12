@@ -33,7 +33,7 @@ from bridge import (agents, browser, config, devserver, fmt, git, github, graphm
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, usage,
                     weather, wsutil)
-from bridge.miniapp.server import (_pre_title, _save_images, _session_brief,
+from bridge.miniapp.server import (_pre_title, _qs_int, _save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
 
@@ -331,7 +331,9 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = int(qs.get("cursor", ["0"])[0])
             except ValueError:
                 cursor = 0
-            return self._json(transcript_for(s, cursor))
+            return self._json(transcript_for(s, cursor,
+                                             tail=_qs_int(qs, "tail"),
+                                             before=_qs_int(qs, "before")))
         if path == "/local/attachment":
             return self._attachment(qs.get("path", [""])[0])
         if path.startswith("/local/run/"):
