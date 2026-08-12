@@ -42,6 +42,9 @@ export interface StatusBarProps {
   // until a turn has run under the meter, and then the chip stays hidden.
   ctxTokens?: number | null;
   ctxWindow?: number | null;
+  // Swap key for the CTX chip only — a new session is a new measurement even
+  // when the percent happens to match.
+  sessionId?: string | null;
   onPalette: () => void;
   // Same action as the composer's AGENT picker, so the footer switches who runs
   // the turn rather than only reporting it. Takes an agent option id.
@@ -50,7 +53,7 @@ export interface StatusBarProps {
 
 export function StatusBar(props: StatusBarProps) {
   const { mount, usedPct, resetLabel, accounts = [], agent, agents = [], repo, changes,
-          git, ctxTokens, ctxWindow, onPalette, onPickAgent } = props;
+          git, ctxTokens, ctxWindow, sessionId, onPalette, onPickAgent } = props;
   // Window fill of the open session. Unmeasured (no turn yet under the meter)
   // shows nothing rather than 0%, which would read as "plenty of room".
   const ctxPct = ctxTokens && ctxWindow ? Math.round((ctxTokens / ctxWindow) * 100) : null;
@@ -60,6 +63,17 @@ export function StatusBar(props: StatusBarProps) {
   // A picker over one option is just a label with extra clicks, so the plain
   // read-only chip stays until there is somewhere else to land.
   const canPick = Boolean(onPickAgent) && agents.length > 1;
+
+  // A switch settles the session-scoped chips in the way the right panel's
+  // .swapin regions do. Keyed on their VALUE, not the session — a chip whose
+  // text survives the switch (same repo, same count) has nothing new to show
+  // and must not replay. Branch and sync animate on their own mount when the
+  // git fetch lands. mfadeup carries no opacity, so nothing blinks out.
+  const swap = { animation: "mfadeup .32s cubic-bezier(.2,.8,.2,1) both" };
+  // Branch and sync arrive with that fetch, well after the switch — dim
+  // stand-ins hold their slots so the right cluster doesn't collapse and then
+  // shove everything left of ⌘K around when they land.
+  const gitPending = git == null && repo !== "—";
 
   // The meter has to belong to whoever is actually running the turns. usedPct
   // is the *ambient* login's 5-hour window (from /local/usage), so it only
@@ -176,8 +190,9 @@ export function StatusBar(props: StatusBarProps) {
       </span>
       {ctxPct !== null && (
         <span
+          key={`ctx:${sessionId}`}
           title={`This session's last request filled ${ctxTokens?.toLocaleString()} of ${ctxWindow?.toLocaleString()} context tokens. Right-click the session to change when it compacts.`}
-          style={{ color: ctxPct >= 90 ? "var(--warn)" : "var(--txd)" }}
+          style={{ ...swap, color: ctxPct >= 90 ? "var(--warn)" : "var(--txd)" }}
         >
           CTX <span style={{ color: ctxPct >= 75 ? "var(--warn)" : "var(--tx)" }}>{ctxPct}%</span>
         </span>
@@ -216,20 +231,26 @@ export function StatusBar(props: StatusBarProps) {
         </span>
       )}
       <span style={{ flex: 1 }} />
-      <span>
+      <span key={`repo:${repo}`} style={swap}>
         REPO <span style={{ color: "var(--tx)" }}>{repo}</span>
       </span>
+      {gitPending && (
+        <>
+          <span aria-hidden style={{ color: "var(--txd)", opacity: 0.4, display: "inline-block", minWidth: "60px" }}>⎇ ···</span>
+          <span aria-hidden style={{ color: "var(--txd)", opacity: 0.4, display: "inline-block", minWidth: "70px" }}>···</span>
+        </>
+      )}
       {git?.branch && (
-        <span title={`Branch checked out in the open session's working tree`}>
+        <span title={`Branch checked out in the open session's working tree`} style={swap}>
           ⎇ <span style={{ color: "var(--tx)" }}>{git.branch}</span>
         </span>
       )}
       {sync && (
-        <span title={sync.title} style={{ color: sync.warn ? "var(--warn)" : "var(--txd)" }}>
+        <span title={sync.title} style={{ ...swap, color: sync.warn ? "var(--warn)" : "var(--txd)" }}>
           {sync.text}
         </span>
       )}
-      <span style={{ color: "var(--warn)" }}>{changes} CHANGES</span>
+      <span key={`chg:${changes}`} style={{ ...swap, color: "var(--warn)" }}>{changes} CHANGES</span>
       <button
         onClick={onPalette}
         onMouseEnter={() => setHovered(true)}

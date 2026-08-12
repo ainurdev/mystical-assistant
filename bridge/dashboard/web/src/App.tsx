@@ -1177,7 +1177,11 @@ export function App() {
       try {
         const g = await api.git(sessionProject, sessionBranch || undefined);
         if (live) setSessionGit(g);
-      } catch { /* ignore */ }
+      } catch {
+        // Not a repo / fetch failed — resolve to "no git" so the footer's
+        // loading stand-ins clear instead of holding their slots forever.
+        if (live) setSessionGit((prev) => prev ?? { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] });
+      }
     };
     void tick();
     const id = setInterval(tick, 10000);
