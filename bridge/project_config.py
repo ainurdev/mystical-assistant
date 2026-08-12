@@ -87,6 +87,18 @@ def set_prod_url(project: str, url: str, branch: "str | None" = None) -> "str | 
     return _set_field(project, branch, "prod_url", url)
 
 
+def design_project(project: str, branch: "str | None" = None) -> "str | None":
+    """The Claude Design project id this repo is linked to, or None. The id and
+    not the name: a renamed design project keeps working."""
+    return _get_field(project, branch, "design_project")
+
+
+def set_design_project(project: str, project_id: str,
+                       branch: "str | None" = None) -> "str | None":
+    """Link (or, when blank, unlink) a project to a Claude Design project."""
+    return _set_field(project, branch, "design_project", project_id)
+
+
 def set_hidden(project: str, on: bool) -> bool:
     """Keep a project out of the sidebar (projects + session list). Project-wide;
     returns the effective value."""
