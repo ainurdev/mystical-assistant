@@ -74,11 +74,11 @@ def test_the_registry_covers_every_model_call_the_bridge_makes():
     here is spend they can't see or stop. If a new one is added, register it —
     don't delete this line."""
     assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg",
-                         "learn", "tailstate", "ponytail", "graph"}
+                         "learn", "tailstate", "ponytail", "graph", "design"}
 
 
 def test_shipped_defaults_are_off_for_anything_automatic():
-    """Automatic features ship off; the press-to-run one ships on, and so do the
+    """Automatic features ship off; the press-to-run ones ship on, and so do the
     two that shaped every run before this tab existed (ponytail, the project
     map) — listing them is about making that spend visible and stoppable, not
     about changing what a fresh install does.
@@ -90,7 +90,15 @@ def test_shipped_defaults_are_off_for_anything_automatic():
         src = f.read()
     shipped = {"TITLE_ENABLE": "0", "RELEVANCE_CHECK": "0", "NEXTUP_ENABLE": "0",
                "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0",
-               "TAIL_STATE_AI": "0", "PONYTAIL_ENABLE": "1", "GRAPH_ENABLE": "1"}
+               "TAIL_STATE_AI": "0", "PONYTAIL_ENABLE": "1", "GRAPH_ENABLE": "1",
+               "DESIGN_SYNC_ENABLE": "1"}
     assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
     for var, default in shipped.items():
         assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"
+
+
+def test_design_switch_reads_its_env_setting(monkeypatch):
+    monkeypatch.setattr(config, "DESIGN_SYNC_ENABLE", False)
+    assert aifeatures.enabled("design") is False
+    monkeypatch.setattr(config, "DESIGN_SYNC_ENABLE", True)
+    assert aifeatures.enabled("design") is True

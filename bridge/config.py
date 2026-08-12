@@ -204,6 +204,15 @@ GRAPH_ENABLE = os.environ.get("GRAPH_ENABLE", "1").lower() \
 COMMIT_MSG_AI = os.environ.get("COMMIT_MSG_AI", "1").lower() \
     not in ("0", "false", "no", "")
 
+# --- Claude Design link -------------------------------------------------------
+# A repo linked to a Claude Design project can pull that design system down as a
+# project skill and push finished components back up. Nothing here fires on its
+# own — linking, pulling and syncing are all presses — so it defaults ON, like
+# the other press-to-run entries; the switch is there to make an outward-facing
+# integration visible and stoppable.
+DESIGN_SYNC_ENABLE = os.environ.get("DESIGN_SYNC_ENABLE", "1").lower() \
+    not in ("0", "false", "no", "")
+
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")
