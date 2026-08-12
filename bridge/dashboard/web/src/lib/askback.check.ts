@@ -21,6 +21,11 @@ console.assert(askBack("Done. Should I commit this?")!.options.join() === "Yes,N
 console.assert(askBack("Is that what you meant?")!.options.join() === "Yes,No", "bare yes/no");
 console.assert(askBack("Want me to do it?")!.body === "", "question-only result has no body");
 
+// A bare imperative — no auxiliary leads it, so it used to get no chips and had
+// to be typed out on a phone. This is the shape that stranded sessions in ASK.
+console.assert(askBack("Still uncommitted. Commit it now?")!.options.join() === "Yes,No", "imperative ask");
+console.assert(askBack("Ship it?")!.options.join() === "Yes,No", "two-word imperative");
+
 // Open-ended: highlight it, but don't invent Yes/No for it.
 console.assert(askBack("What should I name the flag?")!.options.length === 0, "open question");
 

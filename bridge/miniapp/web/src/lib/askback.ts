@@ -1,3 +1,5 @@
+// Copy of the dashboard's src/lib/askback.ts — same two-app duplication as the
+// RunStream/Composer pair. Checked there: dashboard/web/src/lib/askback.check.ts.
 /** The model ended its answer with a question in prose instead of an
  *  AskUserQuestion card. Split that question off so the transcript can highlight
  *  it, and guess the replies it was waiting for so answering is one tap. */
