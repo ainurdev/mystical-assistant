@@ -45,7 +45,7 @@ import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
-import { resolveFileRef } from "./lib/filepath";
+import { fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -64,6 +64,9 @@ import type { View } from "./components/hud/ViewTabs";
 import { notify, setNoticeSound } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
 import { SettingsModal } from "./components/hud/SettingsModal";
+import { AskDialog, askPrompt } from "./components/ui/Ask";
+import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
+import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
 import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
@@ -182,6 +185,12 @@ export function App() {
   const [sessions, setSessions] = useState<SessionBrief[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false); // true from select until its transcript first resolves
+  // Latest transcript fetcher, so answering a permission/question can pull the
+  // resolved card in immediately instead of waiting for the next poll tick.
+  const refetchTurns = useRef<() => Promise<void>>(async () => {});
+  // First list + first state have landed. Until then an empty sessions panel is
+  // "still loading", not "you have no projects".
+  const [booted, setBooted] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [view, setView] = useState<View>("chat");
   // Which model-spending extras are on: each one owns a tab and a palette entry
@@ -259,6 +268,10 @@ export function App() {
   const ctxTimer = useRef<number | null>(null);
 
   const seqRef = useRef(0);
+  // The turns on screen belong to the session we just left — held there so a
+  // switch doesn't blank the chat. Whatever writes the new session's first
+  // turns drops them.
+  const staleTurns = useRef(false);
   // The open session, readable from async work that outlives a session switch:
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
@@ -411,10 +424,13 @@ export function App() {
   }
 
   function openSession(id: string) {
+    // Already the open one: re-opening would re-fetch and re-animate the chat
+    // to land on what's already on screen.
+    if (id === sessionIdRef.current) return;
     seqRef.current = 0;
     stickRef.current = true;
     setAtBottom(true);
-    setTurns([]);
+    staleTurns.current = true;
     setLoadingSession(true);
     setSessionId(id);
     setDoneIds((d) => { if (!d.has(id)) return d; const n = new Set(d); n.delete(id); return n; });
@@ -475,6 +491,7 @@ export function App() {
       });
       return list;
     } catch { return [] as SessionBrief[]; }
+    finally { setBooted(true); }
   }, []);
 
   const projectRel = state?.project?.rel ?? null;
@@ -498,11 +515,18 @@ export function App() {
       try {
         const t = await api.transcript(sessionId, seqRef.current);
         if (!live) return;
-        setTurns((prev) => mergeDelta(prev, t));
+        const held = staleTurns.current;
+        staleTurns.current = false;
+        setTurns((prev) => mergeDelta(held ? [] : prev, t));
         seqRef.current = t.next_cursor;
-      } catch { /* ignore */ }
+      } catch {
+        // Never landed: drop the previous session's turns rather than pass them
+        // off as this one's.
+        if (live && staleTurns.current) { staleTurns.current = false; setTurns([]); }
+      }
       finally { if (live) setLoadingSession(false); }
     };
+    refetchTurns.current = fetchOnce;
     void fetchOnce();                                   // always load once on open
     // Then poll only while the session is actually producing output; an idle
     // session doesn't change, so re-effect on the running/working transitions
@@ -518,13 +542,35 @@ export function App() {
     const content = contentRef.current;
     if (!el || !content) return;
     let prev = el.scrollTop;
+    // Scroll anchoring, by hand. Event cards carry `content-visibility: auto`
+    // (.vskip-card), so one that has never been on screen is only the 60px
+    // `contain-intrinsic-size` guess — when it finally renders at its real
+    // height (measured p25 21px, median 117px, max 372px) everything below it
+    // moves, and a scroll up lands somewhere the gesture didn't ask for.
+    // Measured: 425px of drift on the first trip up a 17k transcript, exactly 0
+    // on the second — `auto` remembers real heights, so each guess is only wrong
+    // once, which is why it read as intermittent. The browser's own anchoring
+    // can't cover this: content-visibility applies `contain: layout paint`, and
+    // contained elements are excluded from being anchor nodes.
+    // Whatever sits at the top edge stays at the top edge. Tracked in viewport
+    // coords on purpose — where the browser DID anchor, the rect hasn't moved
+    // and we correct nothing, instead of doubling its correction.
+    let anchor: Element | null = null;
+    let anchorTop = 0;
+    const markAnchor = () => {
+      const box = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 1);
+      anchor = hit && el.contains(hit) ? hit : null;
+      anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
+    };
     const sync = () => {
       // Keep `prev` fresh through a glide, or the first flick up afterwards
       // still reads as "scrolled down" against a stale mark.
       if (glideRef.current) { prev = el.scrollTop; return; }
-      const stick = stickToBottom(el, prev);
+      const stick = stickToBottom(el, prev, stickRef.current);
       prev = el.scrollTop;
       stickRef.current = stick;
+      markAnchor();                 // you moved: whatever is at the edge now is the anchor
       setAtBottom(stick);           // no-op re-render-wise unless it flipped
     };
     el.addEventListener("scroll", sync, { passive: true });
@@ -532,6 +578,13 @@ export function App() {
     // re-check (a shrink can land us back at the bottom on its own).
     const ro = new ResizeObserver(() => {
       if (!stickRef.current) {
+        // Put the anchor back where it was before this resize. A card resolving
+        // above you is the whole reason the view slid; one below you leaves the
+        // rect where it is and this corrects nothing.
+        if (anchor?.isConnected) {
+          const top = anchor.getBoundingClientRect().top;
+          if (top !== anchorTop) el.scrollTop += top - anchorTop;
+        }
         // Content moved, not you — so this can only re-arm follow by landing
         // exactly on the end (see stickOnResize). Running the gesture test here
         // let a nudge up inside the 80px band re-stick, and the next streamed
@@ -545,6 +598,7 @@ export function App() {
       else el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
+    markAnchor();                   // a view you come back to unstuck resizes before you scroll
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
   }, [view, showDashboard]);
@@ -647,18 +701,23 @@ export function App() {
   }, [settings.pushSounds]);
 
   // Closing the tab costs the server nothing — runs are local processes, not
-  // browser ones — but it takes away the only place their questions can be
-  // answered. Ask first, for any session on the machine, not just the open one.
-  // `kind` separates a live card from a turn that merely ended on a question:
-  // only the first is answerable here, and only it is worth a close prompt.
-  const busy = [...statusMap.values()].some((st) => st.state === "working"
-    || (st.state === "awaiting" && st.kind));
+  // browser ones, and a working session keeps working. Only a live card is
+  // worth stopping for: it takes away the only place it can be answered. Ask
+  // for any session on the machine, not just the open one. `kind` separates a
+  // live card from a turn that merely ended on a question — only the first is
+  // answerable here. The prompt itself lives in lib/leaveGuard.
+  const pendingAsk = [...statusMap.values()].some((st) => st.state === "awaiting" && st.kind);
   useEffect(() => {
-    if (!busy) return;
-    const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    setLeavePending(pendingAsk);
+    if (!pendingAsk) return;
+    const guard = (e: BeforeUnloadEvent) => {
+      if (leavingOnPurpose()) return; // already asked, in our own dialog
+      e.preventDefault();
+      e.returnValue = "";
+    };
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
-  }, [busy]);
+  }, [pendingAsk]);
 
   useEffect(() => {
     try { localStorage.setItem(DONE_KEY, JSON.stringify([...doneIds])); } catch { /* ignore */ }
@@ -702,6 +761,12 @@ export function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      } else if (((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "r") || e.key === "F5") {
+        // Worth stealing the browser's reload only when there's something to
+        // lose — then it's our dialog asking, in the theme, instead of Chrome's.
+        if (!leavePending()) return;
+        e.preventDefault();
+        void confirmLeave().then((ok) => ok && location.reload());
       } else if (e.key === "Escape") {
         if (ctxMenu) closeCtx();
         else if (inspectorOpen) setInspectorOpen(false);
@@ -821,8 +886,10 @@ export function App() {
         setAtBottom(true);
         glideToBottom();
       }
+      const held = staleTurns.current;
+      staleTurns.current = false;
       setTurns((prev) => [
-        ...prev,
+        ...(held ? [] : prev),
         { id: res.job_id, prompt: text, events: [], status: "running", pending: [], attachments: images },
       ]);
     } catch (e) {
@@ -874,8 +941,18 @@ export function App() {
     let target = path;
     try {
       const { files } = await api.filesTree(sessionProject, sessionBranch);
-      const hit = resolveFileRef(files, path);
-      if (!hit) { notify("info", `No such file in this branch — ${path}`); return; }
+      // A bare `App.tsx` matches one per package, so break the tie with the
+      // files this session's tools have touched (their summary is the path).
+      const touched = turns.flatMap((t) =>
+        t.events.flatMap((e) => (e.type === "tool" ? [e.summary] : []))).reverse();
+      const hit = resolveFileRef(files, path, touched);
+      if (!hit) {
+        const many = fileRefCandidates(files, path);
+        notify("info", many.length > 1
+          ? `Several files named ${path} — ${many.join("  ·  ")}`
+          : `No such file in this branch — ${path}`);
+        return;
+      }
       target = hit;
     } catch { /* tree unreachable: open anyway, the editor reports its own error */ }
     openAnalyze(sessionProject, { path: target, branch: sessionBranch });
@@ -891,8 +968,12 @@ export function App() {
   }
 
   async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) {
-    if (!active) return;
-    try { await api.respond(active.id, { request_id: requestId, ...opts }); } catch { /* poll reconciles */ }
+    if (!active) return false;
+    try { await api.respond(active.id, { request_id: requestId, ...opts }); } catch { return false; }
+    // Don't wait out the 1.5s poll to retire the card — the bridge has already
+    // written the resolved event by the time the POST returns.
+    void refetchTurns.current();
+    return true;
   }
   async function stop() {
     if (!active) return;
@@ -1119,7 +1200,7 @@ export function App() {
       id: "projects", label: "Projects", icon: "⊞",
       render: () => (
         <ProjectsPanel
-          groups={visibleGroups} activeProject={activeProject}
+          groups={visibleGroups} activeProject={activeProject} booting={!booted}
           onSelectProject={(rel) => void selectProject(rel)}
           onAnalyze={(rel) => openAnalyze(rel)}
           onManage={() => setManageOpen(true)}
@@ -1128,7 +1209,7 @@ export function App() {
       ),
     },
     {
-      id: "files", label: "Files", icon: "▤", ownScroll: true,
+      id: "files", label: "Files", icon: "▤", ownScroll: true, scope: "worktree",
       render: () => (
         <FilesPanel
           project={sessionProject} branch={sessionBranch}
@@ -1137,7 +1218,7 @@ export function App() {
       ),
     },
     {
-      id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: "◈", ownScroll: true,
+      id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: "◈", ownScroll: true, scope: "worktree",
       badge: dirtyFiles ? String(dirtyFiles) : null,
       render: () => (
         <FilesPanel
@@ -1147,7 +1228,7 @@ export function App() {
       ),
     },
     {
-      id: "git", label: "Source Control", icon: "⎇",
+      id: "git", label: "Source Control", icon: "⎇", scope: "project",
       badge: dirtyFiles ? "●" : null,
       render: () => <GitTab project={sessionProject} />,
     },
@@ -1291,6 +1372,25 @@ export function App() {
         hint: "take the best fallback silently", onClick: () => setPol("auto") });
       items.push({ icon: pol === "wait" ? "●" : "○", label: "On limit: wait",
         hint: "only wait for the reset", onClick: () => setPol("wait") });
+      // How full this session's window is, and when claude compacts it. The
+      // reading is written at the end of each turn, so it's the fill the next
+      // turn resumes into.
+      const ctxPct = s?.ctx_tokens && s?.ctx_window
+        ? Math.round((s.ctx_tokens / s.ctx_window) * 100) : null;
+      const at = s?.autocompact ?? "auto";
+      const setAt = (v: string) => {
+        void api.setAutocompact(ctxMenu.id, v).then(() => void loadSessions());
+      };
+      items.push({ divider: true });
+      items.push({ icon: "◫", label: `Context: ${ctxPct === null ? "not measured yet" : `${ctxPct}% full`}`,
+        hint: s?.ctx_tokens ? `${s.ctx_tokens.toLocaleString()} tokens on the last request` : "runs a turn to measure",
+        onClick: () => { /* a reading, not an action */ } });
+      items.push({ icon: at === "auto" ? "●" : "○", label: "Compact: auto",
+        hint: "claude decides when", onClick: () => setAt("auto") });
+      items.push({ icon: at === "100000" ? "●" : "○", label: "Compact at 100k",
+        hint: "earlier, shorter context", onClick: () => setAt("100000") });
+      items.push({ icon: at === "150000" ? "●" : "○", label: "Compact at 150k",
+        hint: "later, more room before it summarises", onClick: () => setAt("150000") });
       const nOff = s?.disabled_tools?.length ?? 0;
       items.push({ icon: "⚒", label: "Tools & MCP…",
         hint: nOff ? `${nOff} switched off` : "all on",
@@ -1360,10 +1460,9 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxMenu, nativeCtx, sessions, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets]);
 
-  /** Your own name for a session. ponytail: the browser's own prompt — a modal
-   *  for one line of text is a component, a state and a focus trap to maintain. */
+  /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
-    const next = window.prompt("Name this session", current)?.trim();
+    const next = (await askPrompt("Name this session", current))?.trim();
     if (!next || next === current) return;
     try {
       await api.retitle(id, next);
@@ -1506,7 +1605,7 @@ export function App() {
                 <SessionsPanel
                   sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
-                  selectedSessionId={sessionId} loadingSessionId={loadingSession ? sessionId : null}
+                  selectedSessionId={sessionId} booting={!booted}
                   activeProject={activeProject}
                   onTogglePin={togglePin}
                   onSelectSession={(s) => void selectSession(s)}
@@ -1520,16 +1619,26 @@ export function App() {
               <Terminal
                 view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
-                activeId={active?.id ?? null} onRespond={(rid, o) => void respond(rid, o)}
+                activeId={active?.id ?? null} onRespond={respond}
                 scrollRef={scrollRef} contentRef={contentRef}
                 atBottom={atBottom} onJumpBottom={jumpToBottom}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}
                 liveTurns={liveTurns.current}
-                trailingWorking={openWorking && !running} loading={loadingSession} hud={settings}
+                trailingWorking={openWorking && !running} loading={loadingSession || !booted} hud={settings}
                 onRunCommand={runCommand}
                 onQuote={quote}
+                // Tapping a suggested reply to a question the model asked in prose
+                // sends it as the next prompt — same path as typing it yourself.
+                // Except "No": there's nothing to do, so it just drops the ASK
+                // state instead of paying for a turn that answers nobody.
+                onAnswer={(text) => {
+                  if (text === "No" && sessionId) {
+                    setStatusMap((m) => { const n = new Map(m); n.delete(sessionId); return n; });
+                    void api.dismissAsk(sessionId);
+                  } else void send(text, []);
+                }}
                 onOpenFile={openFileRef}
                 composer={
                   <>
@@ -1580,6 +1689,7 @@ export function App() {
               <RightPanel
                 tabs={rightTabs} activeId={settings.rightTab}
                 open={settings.rightOpen} onTab={pickRightTab}
+                project={sessionProject} branch={sessionBranch}
               />
             </div>
 
@@ -1590,6 +1700,8 @@ export function App() {
               // active project — those differ while you read another session.
               repo={sessionProject ?? "—"} git={sessionGit}
               changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
+              ctxTokens={selected?.ctx_tokens ?? null}
+              ctxWindow={selected?.ctx_window ?? null}
               onPalette={() => setPaletteOpen(true)}
               agents={agentOpts} onPickAgent={setAgent}
             />
@@ -1642,6 +1754,9 @@ export function App() {
                 onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
+            {/* every plain title="" in here, drawn in the HUD's own type */}
+            <NativeTips />
+            <AskDialog />
         </div>
       )}
 

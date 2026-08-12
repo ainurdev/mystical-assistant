@@ -3,15 +3,15 @@ import { createRoute } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
-import type { PendingRequest } from "../lib/api";
+import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
 import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
-import { Banner } from "../components/ui";
+import { Banner, Spinner } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox } from "../components/ImageLightbox";
-import { GoalPill, PolicyChip } from "../components/GoalPill";
+import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
 
 // Shared empty list — a fresh `[]` per render would defeat RunStream's memo.
@@ -19,10 +19,12 @@ const NO_PENDING: PendingRequest[] = [];
 
 function RunPage() {
   const {
-    turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning,
+    turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession,
+    runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
   } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [parked, setParked] = useState(true);
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
@@ -39,15 +41,42 @@ function RunPage() {
   // The transcript scrolls inside <main>, so that's who we watch.
   useEffect(() => {
     const el = bottomRef.current?.closest("main");
-    if (!el) return;
+    const content = contentRef.current;
+    if (!el || !content) return;
     let prev = el.scrollTop;
+    // Scroll anchoring, by hand. Event cards carry `content-visibility: auto`
+    // (.vskip-card), so one that has never been on screen is only the 60px
+    // `contain-intrinsic-size` guess — when it renders at its real height on the
+    // way past, everything below it moves and a scroll up lands somewhere the
+    // gesture didn't ask for. The browser won't anchor it for us:
+    // content-visibility applies `contain: layout paint`, and contained
+    // elements are excluded from being anchor nodes. So whatever sits at the
+    // top edge stays at the top edge. Viewport coords on purpose — where the
+    // browser DID anchor, the rect hasn't moved and we correct nothing.
+    let anchor: Element | null = null;
+    let anchorTop = 0;
+    const markAnchor = () => {
+      const box = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 1);
+      anchor = hit && el.contains(hit) ? hit : null;
+      anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
+    };
     const sync = () => {
       stick.current = stickToBottom(el, prev);
       setParked(stick.current);
       prev = el.scrollTop;
+      markAnchor();               // you moved: whatever is at the edge now is the anchor
     };
     el.addEventListener("scroll", sync, { passive: true });
-    return () => el.removeEventListener("scroll", sync);
+    // Parked at the end, the effect below is already pulling us down — leave it.
+    const ro = new ResizeObserver(() => {
+      if (stick.current || !anchor?.isConnected) return;
+      const top = anchor.getBoundingClientRect().top;
+      if (top !== anchorTop) el.scrollTop += top - anchorTop;
+    });
+    ro.observe(content);
+    markAnchor();
+    return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
   }, []);
 
   // Follow the latest message as the transcript grows, but only while parked.
@@ -57,7 +86,7 @@ function RunPage() {
   }, [eventCount, turns.length, toBottom]);
 
   return (
-    <div className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
+    <div ref={contentRef} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
       {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
 
       {/* What this session is for, and what a usage limit does to it. */}
@@ -67,17 +96,29 @@ function RunPage() {
           sessionId={sessionId}
           stored={sessions.find((s) => s.id === sessionId)?.fallback_policy ?? null}
         />
+        <ContextChip
+          sessionId={sessionId}
+          tokens={sessions.find((s) => s.id === sessionId)?.ctx_tokens}
+          window={sessions.find((s) => s.id === sessionId)?.ctx_window}
+          autocompact={sessions.find((s) => s.id === sessionId)?.autocompact}
+        />
       </div>
 
       <RunMonitor />
 
       {turns.length === 0 && (
-        <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">
-          Start a conversation with Claude.
+        <div className="flex items-center justify-center gap-2 pt-10 text-center text-sm text-[var(--tg-hint)]">
+          {loadingSession ? (
+            <>
+              <Spinner className="h-3.5 w-3.5 border" /> Loading conversation…
+            </>
+          ) : (
+            "Start a conversation with Claude."
+          )}
         </div>
       )}
 
-      {turns.map((turn) => {
+      {turns.map((turn, i) => {
         const isActive = turn.jobId === activeTurn?.jobId;
         const working = isActive && turn.status === "running" && activeTurn.pending.length === 0;
         return (
@@ -120,20 +161,46 @@ function RunPage() {
               </div>
             </div>
 
-            {/* assistant turn */}
-            {turn.runtime && (
-              <div className="text-[11px] text-[var(--tg-hint)]">
-                {turn.runtime.startsWith("opencode:")
-                  ? `⚡ free agent · ${turn.runtime.split(":")[1]}`
-                  : `⇄ account ${turn.runtime.split(":")[1]}`}
-              </div>
-            )}
-            {(turn.events.length > 0 || turn.status === "running") && (
-              <div className="space-y-2">
+            {/* assistant turn — everything it did hangs off one rail, so the
+                turn reads as a single reply opposite your bubble instead of a
+                flat column of unrelated cards. Flat, not a gradient: a turn runs
+                to thousands of pixels, so anything that fades is invisible for
+                most of its own length. */}
+            {(turn.events.length > 0 || turn.status === "running" || turn.runtime) && (
+              <div className="relative space-y-2 pl-3">
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute bottom-0 left-[2px] top-[11px] w-px"
+                  style={{ background: "color-mix(in srgb, var(--brand-soft) 22%, transparent)" }}
+                />
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute left-0 top-[3px] h-[6px] w-[6px] rotate-45 border"
+                  style={{ borderColor: "var(--brand-soft)", background: "var(--tg-bg)" }}
+                />
+                {turn.runtime && (
+                  <div className="text-[11px] text-[var(--tg-hint)]">
+                    {turn.runtime.startsWith("opencode:")
+                      ? `⚡ free agent · ${turn.runtime.split(":")[1]}`
+                      : `⇄ account ${turn.runtime.split(":")[1]}`}
+                  </div>
+                )}
                 <RunStream
                   events={turn.events}
                   pending={isActive ? activeTurn.pending : NO_PENDING}
                   onRespond={isActive ? respond : undefined}
+                  // Only the last finished turn can be replied to — a chip on an
+                  // older answer would send its question back out of order.
+                  // "No" is the exception: nothing to do, so it drops the
+                  // session's ASK state instead of paying for a turn.
+                  onAnswer={
+                    i === turns.length - 1 && turn.status === "done"
+                      ? (text) => void (text === "No" && sessionId
+                          ? api.dismissAsk(sessionId)
+                          : runPrompt(text, []))
+                      : undefined
+                  }
+                  onWrite={setDraft}
                   ended={turn.status !== "running"}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
