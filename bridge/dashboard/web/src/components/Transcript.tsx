@@ -130,6 +130,10 @@ export function Transcript({
   onQuote,
   onOpenFile,
   onAnswer,
+  hasOlder,
+  olderLoading,
+  onLoadOlder,
+  renderFrom,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -142,7 +146,16 @@ export function Transcript({
   onQuote?: (text: string) => void;
   onOpenFile?: (path: string, line?: number) => void;
   onAnswer?: (text: string) => void;
+  hasOlder?: boolean;
+  olderLoading?: boolean;
+  onLoadOlder?: () => void;
+  renderFrom?: string | null;
 }) {
+  // Tail loading: turns always ship whole but only the last few carry events.
+  // Turns before the cut would render as prompt bubbles with missing bodies —
+  // worse than absent — so they hide behind the "load older" control.
+  const cut = renderFrom ? turns.findIndex((t) => t.id === renderFrom) : 0;
+  const visible = cut > 0 ? turns.slice(cut) : turns;
   if (!turns.length) {
     return <RuneSpirit variant="block" />;
   }
@@ -154,9 +167,21 @@ export function Transcript({
     // The turn wrapper itself must stay uncontained — Attachments renders the
     // position:fixed ImageLightbox inside it.
     <div className="flex flex-col gap-3">
-      {turns.map((turn, i) => {
+      {hasOlder && (
+        <div className="flex justify-center pb-1">
+          <button
+            type="button"
+            onClick={onLoadOlder}
+            disabled={olderLoading}
+            className="border border-border px-3 py-1 text-[length:var(--t11)] tracking-[1px] text-muted-2 hover:text-foreground-bright disabled:opacity-50"
+          >
+            {olderLoading ? "LOADING OLDER…" : "▲ LOAD OLDER TURNS"}
+          </button>
+        </div>
+      )}
+      {visible.map((turn, i) => {
         const isActive = turn.id === activeId;
-        const isLast = i === turns.length - 1;
+        const isLast = i === visible.length - 1;
         const working = isActive && turn.status === "running" && turn.pending.length === 0;
         const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
         return (

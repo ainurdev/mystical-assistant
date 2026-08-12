@@ -274,6 +274,18 @@ export function App() {
   const ctxTimer = useRef<number | null>(null);
 
   const seqRef = useRef(0);
+  // First load asks for the last N event-bearing turns only; the rest stays
+  // server-side behind a "load older" control. 3 keeps the worst measured
+  // session's first payload at ~53KB gzipped (10 still shipped 81% of it —
+  // megaturns cluster at the end).
+  const TAIL_TURNS = 3;
+  // Older turns exist beyond what's loaded. `from` = first loaded turn (the
+  // render cut), `seq` = oldest loaded event seq (the next page's `before` key).
+  // A server without tail support never sends the fields, so this stays inert.
+  const [older, setOlder] = useState<{ has: boolean; seq: number | null; from: string | null; loading: boolean }>(
+    { has: false, seq: null, from: null, loading: false });
+  const olderRef = useRef(older);
+  olderRef.current = older;
   // The turns on screen belong to the session we just left — held there so a
   // switch doesn't blank the chat. Whatever writes the new session's first
   // turns drops them.
@@ -434,6 +446,7 @@ export function App() {
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
     seqRef.current = 0;
+    setOlder({ has: false, seq: null, from: null, loading: false });
     stickRef.current = true;
     setAtBottom(true);
     staleTurns.current = true;
@@ -519,12 +532,15 @@ export function App() {
     let live = true;
     const fetchOnce = async () => {
       try {
-        const t = await api.transcript(sessionId, seqRef.current);
+        const first = seqRef.current === 0;
+        const t = await api.transcript(sessionId, seqRef.current, first ? { tail: TAIL_TURNS } : undefined);
         if (!live) return;
         const held = staleTurns.current;
         staleTurns.current = false;
         setTurns((prev) => mergeDelta(held ? [] : prev, t));
         seqRef.current = t.next_cursor;
+        if (first && t.has_older !== undefined)
+          setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
       } catch {
         // Never landed: drop the previous session's turns rather than pass them
         // off as this one's.
@@ -542,6 +558,24 @@ export function App() {
     }, 1500);
     return () => { live = false; clearInterval(id); };
   }, [sessionId, running, openWorking]);
+
+  // Fetch the page of turns before the oldest loaded one and prepend it.
+  // mergeDelta does the prepending for free: older turns already exist in the
+  // full turns list (empty), their events just fill in, and turn order comes
+  // from store seq. seqRef is untouched on purpose — this response's
+  // next_cursor is the live head, not a forward delta marker.
+  const loadOlder = useCallback(async () => {
+    const o = olderRef.current;
+    if (!sessionId || !o.has || o.loading || o.seq == null) return;
+    setOlder({ ...o, loading: true });
+    try {
+      const t = await api.transcript(sessionId, 0, { tail: TAIL_TURNS, before: o.seq });
+      if (sessionIdRef.current !== sessionId) return;   // switched away mid-flight
+      setTurns((prev) => mergeDelta(prev, t));
+      setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
+                 from: t.tail_from ?? null, loading: false });
+    } catch { setOlder({ ...olderRef.current, loading: false }); }
+  }, [sessionId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1637,6 +1671,8 @@ export function App() {
                   { title: it.title, cwd: it.cwd, force: true })}
                 liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession || !booted} hud={settings}
+                hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
+                renderFrom={older.from}
                 onRunCommand={runCommand}
                 onQuote={quote}
                 // Tapping a suggested reply to a question the model asked in prose

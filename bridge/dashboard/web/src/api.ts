@@ -117,6 +117,13 @@ export interface Transcript {
   turns: StoreTurn[];
   events: StoreEvent[];
   next_cursor: number;
+  // Present only when the request carried ?tail= (and the server is new enough
+  // to window) — older turns exist beyond the first loaded one.
+  has_older?: boolean;
+  /** Oldest loaded event seq — the `before` key for the next older page. */
+  oldest_seq?: number | null;
+  /** First turn whose events are loaded — where rendering should start. */
+  tail_from?: string | null;
 }
 
 export interface ServerInfo {
@@ -752,8 +759,10 @@ export const api = {
     req<{ sessions: SessionBrief[] }>(
       `/local/sessions${project !== undefined ? `?project=${encodeURIComponent(project)}` : ""}`,
     ),
-  transcript: (id: string, cursor: number) =>
-    req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+  transcript: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
+    req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
+      (opts?.tail ? `&tail=${opts.tail}` : "") +
+      (opts?.before ? `&before=${opts.before}` : "")),
   // A rehydrated turn's attachments are server paths, not blobs — load them back
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>

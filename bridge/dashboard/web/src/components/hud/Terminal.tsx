@@ -138,6 +138,7 @@ export function Terminal({
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
+  hasOlder, olderLoading, onLoadOlder, renderFrom,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -161,6 +162,12 @@ export function Terminal({
   loading?: boolean;
   sessionId?: string | null;
   hud?: HudSettings;
+  /** Older turns exist server-side; render the "load older" control. */
+  hasOlder?: boolean;
+  olderLoading?: boolean;
+  onLoadOlder?: () => void;
+  /** First turn whose events are loaded — turns before it stay hidden. */
+  renderFrom?: string | null;
   /** Re-run a transcript command in this project's TERMINAL tab. */
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
@@ -292,7 +299,7 @@ export function Terminal({
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} />
                 )}
               </div>
             </div>
