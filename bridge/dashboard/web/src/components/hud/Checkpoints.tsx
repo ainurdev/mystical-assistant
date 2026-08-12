@@ -1,15 +1,26 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { api } from "../../api";
 import type { Turn } from "../../chat";
 import { fmtElapsed, marksOf, toneOf, type Mark } from "../../lib/checkpoints";
+import type { TranscriptNav } from "../Transcript";
 import { SteerIcon } from "../Composer";
 
-/** Index of the last checkpoint scrolled past — "where am I" in the transcript. */
-function activeIndex(marks: Mark[], root: HTMLElement | null): number {
+/** Index of the last checkpoint scrolled past — "where am I" in the transcript.
+ *  Prefers the virtualizer's row offsets (an unmounted mark has no DOM rect);
+ *  falls back to DOM rects per mark — full-mount mode, or the mark's turn not
+ *  in the rendered list at all. */
+function activeIndex(marks: Mark[], root: HTMLElement | null,
+                     nav?: TranscriptNav | null): number {
   if (!root) return 0;
+  const scrollTop = root.scrollTop + 8;
   const top = root.getBoundingClientRect().top + 8;
   let idx = 0;
   marks.forEach((m, i) => {
+    const rowTop = nav?.turnTop(m.turnId);
+    if (rowTop != null) {
+      if (rowTop <= scrollTop) idx = i;
+      return;
+    }
     const el = document.getElementById(m.id);
     if (el && el.getBoundingClientRect().top <= top) idx = i;
   });
@@ -24,10 +35,14 @@ function jump(id: string) {
  *  question asked and each steer sent mid-turn), so a long session can be
  *  navigated without scrolling. Type to filter, ↑↓ to move, Enter to jump. */
 export function Checkpoints({
-  turns, scrollRef, project, branch,
+  turns, scrollRef, project, branch, nav, onJump,
 }: {
   turns: Turn[];
   scrollRef?: RefObject<HTMLDivElement | null>;
+  /** Virtualized-transcript navigation; absent -> plain getElementById jumps. */
+  nav?: MutableRefObject<TranscriptNav | null>;
+  /** Jump handler that can auto-load turns hidden behind the tail cut. */
+  onJump?: (m: Mark) => void;
   /** Project + branch for the "since this checkpoint" git lookup. */
   project?: string | null;
   branch?: string | null;
@@ -56,7 +71,7 @@ export function Checkpoints({
   useLayoutEffect(() => {
     if (!open) return;
     setQ("");
-    setSel(activeIndex(items, scrollRef?.current ?? null));
+    setSel(activeIndex(items, scrollRef?.current ?? null, nav?.current));
   }, [open]);
 
   // Keep the selected row in view (opening deep in a long session, or arrowing).
@@ -86,7 +101,8 @@ export function Checkpoints({
   const pick = (i: number) => {
     const m = shown[i];
     if (!m) return;
-    jump(m.id);
+    if (onJump) onJump(m);
+    else jump(m.id);
     setOpen(false);
   };
 

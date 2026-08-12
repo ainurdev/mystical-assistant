@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api, type AnswerSelection } from "../api";
@@ -183,6 +183,17 @@ function TurnBlock({
 
 type Row = { kind: "turn"; turn: Turn } | { kind: "working" };
 
+/** Imperative surface for checkpoint navigation — the virtualized list can't
+ *  be driven by getElementById, because the target usually isn't mounted. */
+export interface TranscriptNav {
+  /** Scroll a turn's row into view (then the sub-anchor inside it once
+   *  mounted). false = the turn isn't in the rendered list — unloaded behind
+   *  the tail cut, or unknown. */
+  jumpToTurn: (turnId: string, subAnchorId?: string) => boolean;
+  /** Row start offset in scroll coordinates; null when not in the list. */
+  turnTop: (turnId: string) => number | null;
+}
+
 export function Transcript({
   turns,
   activeId,
@@ -201,6 +212,7 @@ export function Transcript({
   renderFrom,
   scrollRef,
   sessionKey,
+  navRef,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -221,6 +233,8 @@ export function Transcript({
   scrollRef?: RefObject<HTMLDivElement | null>;
   /** Session identity — resets the ctrl-F full mount on switch. */
   sessionKey?: string | null;
+  /** Filled with the checkpoint-navigation surface while mounted. */
+  navRef?: MutableRefObject<TranscriptNav | null>;
 }) {
   // Tail loading: turns always ship whole but only the last few carry events.
   // Turns before the cut would render as prompt bubbles with missing bodies —
@@ -286,6 +300,40 @@ export function Transcript({
   // @tanstack/virtual-core 3.14, not a constructor option.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     item.start < (instance.scrollOffset ?? 0);
+
+  // Checkpoint navigation. In full-mount mode everything is in the DOM, so the
+  // plain scrollIntoView path is both available and exact; windowed, the row is
+  // scrolled to by index and the sub-anchor refined once it has mounted.
+  useEffect(() => {
+    if (!navRef) return;
+    const rowIndex = (turnId: string) =>
+      rows.findIndex((r) => r.kind === "turn" && r.turn.id === turnId);
+    navRef.current = {
+      jumpToTurn: (turnId, subAnchorId) => {
+        if (fullRef.current) {
+          const el = document.getElementById(subAnchorId ?? ckId(turnId));
+          el?.scrollIntoView({ behavior: "smooth", block: "start" });
+          return !!el;
+        }
+        const i = rowIndex(turnId);
+        if (i < 0) return false;
+        virtualizer.scrollToIndex(i, { align: "start" });
+        if (subAnchorId)
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            document.getElementById(subAnchorId)?.scrollIntoView({ block: "start" });
+          }));
+        return true;
+      },
+      turnTop: (turnId) => {
+        if (fullRef.current) return null;     // caller falls back to DOM rects
+        const i = rowIndex(turnId);
+        if (i < 0) return null;
+        const off = virtualizer.getOffsetForIndex(i, "start");
+        return off ? off[0] : null;
+      },
+    };
+    return () => { navRef.current = null; };
+  }, [navRef, rows, virtualizer]);
 
   if (!turns.length) {
     return <RuneSpirit variant="block" />;

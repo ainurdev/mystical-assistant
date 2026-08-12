@@ -22,6 +22,8 @@ import {
 } from "./api";
 import { modelOptions, latestPerFamily, type AgentOption } from "./models";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
+import { ckId, type Mark } from "./lib/checkpoints";
+import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { ago, useProjectTints } from "./lib/surfaces";
 import {
@@ -576,6 +578,22 @@ export function App() {
                  from: t.tail_from ?? null, loading: false });
     } catch { setOlder({ ...olderRef.current, loading: false }); }
   }, [sessionId]);
+
+  // Checkpoint navigation into the virtualized transcript. A jump to a turn
+  // hidden behind the tail cut loads older pages until its row exists, then
+  // scrolls to it — so the checkpoint list keeps covering the whole session
+  // even though only its tail is loaded.
+  const transcriptNav = useRef<TranscriptNav | null>(null);
+  const jumpToMark = useCallback(async (m: Mark) => {
+    const sub = m.subKey ? ckId(m.turnId, m.subKey) : undefined;
+    for (let i = 0; i < 200; i++) {              // pages ≫ max observed 34 turns
+      if (transcriptNav.current?.jumpToTurn(m.turnId, sub)) return;
+      if (!olderRef.current.has || olderRef.current.loading) return;
+      await loadOlder();
+      // A prepend re-renders the transcript; give the nav a frame to rebuild.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+  }, [loadOlder]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1647,6 +1665,7 @@ export function App() {
                 trailingWorking={openWorking && !running} loading={loadingSession || !booted} hud={settings}
                 hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
                 renderFrom={older.from}
+                navRef={transcriptNav} onJumpMark={(m) => void jumpToMark(m)}
                 onRunCommand={runCommand}
                 onQuote={quote}
                 // Tapping a suggested reply to a question the model asked in prose

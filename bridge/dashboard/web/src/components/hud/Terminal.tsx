@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import type { AnswerSelection, EnrichedSession, NextItem, SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
+import type { Mark } from "../../lib/checkpoints";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import type { HudSettings } from "../../lib/theme";
-import { Transcript } from "../Transcript";
+import { Transcript, type TranscriptNav } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
@@ -138,7 +139,7 @@ export function Terminal({
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
-  hasOlder, olderLoading, onLoadOlder, renderFrom,
+  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, onJumpMark,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -168,6 +169,10 @@ export function Terminal({
   onLoadOlder?: () => void;
   /** First turn whose events are loaded — turns before it stay hidden. */
   renderFrom?: string | null;
+  /** Checkpoint navigation surface, filled by the Transcript while mounted. */
+  navRef?: MutableRefObject<TranscriptNav | null>;
+  /** Jump to a checkpoint, auto-loading older pages when it isn't loaded. */
+  onJumpMark?: (m: Mark) => void;
   /** Re-run a transcript command in this project's TERMINAL tab. */
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
@@ -270,7 +275,7 @@ export function Terminal({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
           {view === "chat" && (
-            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} />
+            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
           )}
           <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
@@ -299,7 +304,7 @@ export function Terminal({
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} />
                 )}
               </div>
             </div>
