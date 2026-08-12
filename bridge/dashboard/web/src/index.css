@@ -950,12 +950,29 @@ input {
    at worst) but React committing a large transcript, which blocks the main thread
    — only compositor-driven properties keep moving through that. A JS timer gate
    would fire after the freeze it was meant to cover. See hud/Terminal.tsx. */
-.swapwrap > .mscroll {
+.swapwrap[data-swapping] > .mscroll {
+  pointer-events: none;
+}
+/* The dim is a scrim over the scroller, never opacity on the scroller itself:
+   Terminal.tsx animates that element's opacity with WAAPI in the same commit
+   this releases in, and per CSS Transitions a property under a running
+   higher-priority animation has its transitions left alone — not reversed, not
+   cancelled. The dim then survives hidden beneath the fade-up and drags the
+   chat back down to .38 the moment WAAPI hands back (measured: up to 1 by
+   231ms, dip from 263ms, snap at 410ms). A separate layer cannot contend for
+   the property at all. Last child, so everything belonging to the outgoing
+   session recedes together; .swapline sits above it and stays lit. */
+.swapscrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--panel2);
+  opacity: 0;
+  pointer-events: none;
   transition: opacity 0.22s ease 0.14s;
 }
-.swapwrap[data-swapping] > .mscroll {
-  opacity: 0.38;
-  pointer-events: none;
+.swapwrap[data-swapping] .swapscrim {
+  opacity: 0.62;
 }
 /* Above the sticky LAST peek (z-index 5), which shares this top edge. */
 .swapline {
@@ -988,9 +1005,12 @@ input {
   from { transform: translateX(-100%); }
   to { transform: translateX(360%); }
 }
+/* The 0.14s delay is the threshold that keeps a fast open invisible, not
+   motion — dropping it here would flicker the scrim on every switch. Only the
+   fade and the sweep go. */
 @media (prefers-reduced-motion: reduce) {
-  .swapwrap > .mscroll,
-  .swapline { transition-delay: 0s; }
+  .swapscrim,
+  .swapline { transition-duration: 0s; }
   .swapwrap[data-swapping] .swapline::after {
     animation: none;
     transform: none;

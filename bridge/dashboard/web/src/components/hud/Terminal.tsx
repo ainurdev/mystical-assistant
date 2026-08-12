@@ -334,6 +334,9 @@ export function Terminal({
                 <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST
               </button>
             )}
+            {/* Last, so the whole outgoing session recedes behind it — transcript,
+                LAST peek and rail alike. Only .swapline sits above. */}
+            <div aria-hidden className="swapscrim" />
           </div>
           {composer}
         </>
