@@ -23,28 +23,25 @@ export interface Mark {
   failed?: boolean;
   stopped?: boolean;
   tools?: number;
-  cost?: number | null;
   elapsed?: number | null;
   sha?: string | null;
 }
 
 /** Every checkpoint in a session, in transcript order: each prompt, plus the
  *  questions asked and steers sent inside it. Prompt marks carry the turn's
- *  outcome (tools/cost/time/failure) so a jump list doubles as a run map. */
+ *  outcome (tools/time/failure) so a jump list doubles as a run map. */
 export function marksOf(turns: Turn[]): Mark[] {
   const out: Mark[] = [];
   let n = 0;
   for (const t of turns) {
     const prompt = (t.prompt || "").replace(/\s+/g, " ").trim();
     let tools = 0;
-    let cost: number | null = null;
     let elapsed: number | null = null;
     let failed = t.status === "error";
     let stopped = false;
     for (const e of t.events) {
       if (e.type === "tool") tools++;
       else if (e.type === "result") {
-        cost = e.cost;
         elapsed = e.elapsed;
         if (e.is_error) failed = true;
       } else if (e.type === "error") failed = true;
@@ -58,7 +55,7 @@ export function marksOf(turns: Turn[]): Mark[] {
       out.push({
         id: ckId(t.id), label: prompt, kind: "prompt", n,
         waiting: t.pending.length > 0,
-        status: t.status, failed, stopped, tools, cost, elapsed, sha: t.sha ?? null,
+        status: t.status, failed, stopped, tools, elapsed, sha: t.sha ?? null,
       });
     }
     t.events.forEach((e, i) => {
@@ -82,10 +79,6 @@ export function toneOf(m: Mark): string {
   if (m.status === "running") return "var(--warn)";
   if (m.stopped) return "var(--txd)";
   return m.kind === "steer" ? "var(--violet)" : "var(--acc)";
-}
-
-export function fmtCost(c: number): string {
-  return `$${c < 1 ? c.toFixed(4) : c.toFixed(2)}`;
 }
 
 export function fmtElapsed(s: number): string {

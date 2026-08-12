@@ -26,7 +26,6 @@ function turnMarks(turn: Turn, n: number): Mark[] {
   if (tools) bits.push(`${tools} TOOL${tools === 1 ? "" : "S"}`);
   if (result && result.type === "result") {
     if (result.elapsed) bits.push(`${result.elapsed.toFixed(0)}S`);
-    if (result.cost) bits.push(`$${result.cost.toFixed(2)}`);
   }
   const marks: Mark[] = [
     {

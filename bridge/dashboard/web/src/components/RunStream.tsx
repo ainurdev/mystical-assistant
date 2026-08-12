@@ -1225,7 +1225,6 @@ export const RunStream = memo(function RunStream({
                 key={i}
                 result={event.result}
                 elapsed={event.elapsed}
-                cost={event.cost}
                 isError={event.is_error}
                 animate={animate}
                 idKey={`${turnId}:${i}`}
@@ -1378,7 +1377,6 @@ const RESULT_FOLD_LINES = 30;
 function FinalResult({
   result,
   elapsed,
-  cost,
   isError,
   animate,
   idKey,
@@ -1388,7 +1386,6 @@ function FinalResult({
 }: {
   result: string;
   elapsed?: number;
-  cost?: number | null;
   isError?: boolean;
   animate: boolean;
   idKey: string;
@@ -1425,7 +1422,6 @@ function FinalResult({
           {typeof elapsed === "number" && elapsed > 0 && (
             <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
           )}
-          {cost ? <span title="cost of this turn">${cost < 1 ? cost.toFixed(4) : cost.toFixed(2)}</span> : null}
         </span>
         <span className="flex-none opacity-0 transition-opacity group-focus-within/res:opacity-100 group-hover/res:opacity-100">
           <CopyBtn text={result} title="copy result" />

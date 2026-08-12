@@ -588,13 +588,11 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
 function FinalResult({
   result,
   elapsed,
-  cost,
   onAnswer,
   onWrite,
 }: {
   result: string;
   elapsed?: number;
-  cost?: number;
   onAnswer?: (text: string) => void;
   onWrite?: (question: string) => void;
 }) {
@@ -647,12 +645,8 @@ function FinalResult({
           </div>
         </div>
       )}
-      {(typeof elapsed === "number" || typeof cost === "number") && (
-        <div className="text-xs text-[var(--tg-hint)]">
-          {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
-          {typeof elapsed === "number" && typeof cost === "number" ? " · " : ""}
-          {typeof cost === "number" ? `$${cost.toFixed(4)}` : ""}
-        </div>
+      {typeof elapsed === "number" && (
+        <div className="text-xs text-[var(--tg-hint)]">{elapsed.toFixed(1)}s</div>
       )}
     </Card>
   );
@@ -818,7 +812,6 @@ export const RunStream = memo(function RunStream({
                 key={i}
                 result={event.result}
                 elapsed={event.elapsed}
-                cost={event.cost}
                 onAnswer={onAnswer}
                 onWrite={onWrite}
               />

@@ -152,8 +152,7 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                   {s.project}
                 </span>
                 <span className="truncate">
-                  · {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"} · $
-                  {s.total_cost.toFixed(2)}
+                  · {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"}
                   {s.models.length ? ` · ${s.models.join(", ")}` : ""} · {ago(s.last_activity)}
                 </span>
               </div>

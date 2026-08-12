@@ -174,8 +174,7 @@ function ChatsPage() {
                     {s.project}
                   </span>
                   <span className="truncate">
-                    · {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"} · $
-                    {s.total_cost.toFixed(2)} ·{" "}
+                    · {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"} ·{" "}
                     {isWaiting ? "needs an answer" : st === "working" ? "running" : ago(s.last_activity)}
                   </span>
                 </div>

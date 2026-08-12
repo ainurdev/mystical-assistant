@@ -32,7 +32,7 @@ const turn = (id: string, prompt: string, events: unknown[], extra = {}) =>
     ], { sha: "abc1234" }),
   ]);
   ok(m.label === "ship it now", "whitespace collapses so the 2-line clamp holds real text");
-  ok(m.tools === 2 && m.cost === 0.12 && m.elapsed === 41, "tools/cost/elapsed come off the events");
+  ok(m.tools === 2 && m.elapsed === 41, "tools/elapsed come off the events");
   ok(m.sha === "abc1234" && !m.failed && !m.waiting, "clean turn carries its checkpoint commit");
 }
 

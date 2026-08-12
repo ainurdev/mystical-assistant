@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../api";
 import type { Turn } from "../../chat";
-import { fmtCost, fmtElapsed, marksOf, toneOf, type Mark } from "../../lib/checkpoints";
+import { fmtElapsed, marksOf, toneOf, type Mark } from "../../lib/checkpoints";
 import { SteerIcon } from "../Composer";
 
 /** Index of the last checkpoint scrolled past — "where am I" in the transcript. */
@@ -202,7 +202,6 @@ export function Checkpoints({
                         {m.status === "running" && !m.waiting && <span style={{ color: "var(--warn)" }}>RUNNING</span>}
                         {!!m.tools && <span>{m.tools} tools</span>}
                         {m.elapsed != null && <span>{fmtElapsed(m.elapsed)}</span>}
-                        {m.cost != null && m.cost > 0 && <span>{fmtCost(m.cost)}</span>}
                         {d && (d.add || d.del) ? (
                           <span title={`working tree vs ${m.sha?.slice(0, 7)} — this checkpoint's commit`}>
                             <span style={{ color: "var(--ok)" }}>+{d.add}</span>{" "}
