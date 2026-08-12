@@ -19,8 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, git, github,
-                    models, native, project_config, relevance, runner, state,
-                    store, transcript_jsonl, usage)
+                    httpgz, models, native, project_config, relevance, runner,
+                    state, store, transcript_jsonl, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -197,7 +197,21 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _json(self, obj: dict, code: int = 200):
-        self._send_bytes(json.dumps(obj).encode(), code, "application/json")
+        raw, zipped = httpgz.maybe_gzip(
+            json.dumps(obj).encode(), self.headers.get("Accept-Encoding", ""))
+        if not zipped:
+            return self._send_bytes(raw, code, "application/json")
+        # Inlined _send_bytes plus the one extra header (it has no header hook).
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            self.wfile.write(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _read_json(self):
         try:

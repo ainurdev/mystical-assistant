@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, urlparse
 import re
 
 from bridge import (agents, browser, config, devserver, fmt, git, github, graphmap,
-                    models, native, preview_detect, project_config,
+                    httpgz, models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, usage,
@@ -190,7 +190,21 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _json(self, obj, code: int = 200):
-        self._send(json.dumps(obj).encode(), code, "application/json")
+        raw, zipped = httpgz.maybe_gzip(
+            json.dumps(obj).encode(), self.headers.get("Accept-Encoding", ""))
+        if not zipped:
+            return self._send(raw, code, "application/json")
+        # Inlined _send plus the one extra header (_send has no header hook).
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            self.wfile.write(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _read_json(self):
         try:
