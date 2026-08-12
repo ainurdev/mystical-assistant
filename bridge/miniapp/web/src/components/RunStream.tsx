@@ -221,8 +221,9 @@ function WebCard({ name, summary, ms, stat, error }: Res & { name: string; summa
 }
 
 /** A call out of this process and into another one: no side edges, a patch cable
- *  running from the server's tag across to the tool it reached. */
-function McpCard({ name, ms, stat, error }: Res & { name: string }) {
+ *  running from the server's tag across to the tool it reached, then what it was
+ *  called with — "get task" alone never said which task. */
+function McpCard({ name, summary, ms, stat, error }: Res & { name: string; summary: string }) {
   const accent = toolAccent(name);
   const { server, tool } = mcpParts(name);
   return (
@@ -236,7 +237,8 @@ function McpCard({ name, ms, stat, error }: Res & { name: string }) {
         className="h-px w-4 flex-none"
         style={{ backgroundImage: `repeating-linear-gradient(90deg, ${accent} 0 2px, transparent 2px 5px)` }}
       />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--foreground-bright)]">{tool}</span>
+      <span className="flex-none font-mono text-[11px] text-[var(--foreground-bright)]">{tool}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--muted-2)]">{summary}</span>
       <Took ms={ms} stat={stat} error={error} />
     </div>
   );
@@ -289,7 +291,7 @@ function ToolCard({ name, summary, ms, stat, error }: Res & { name: string; summ
   if (kind === "read" && summary) return <ReadCard path={summary} {...res} />;
   if (kind === "write" && summary) return <WriteCard name={name} path={summary} {...res} />;
   if (kind === "agent") return <AgentCard name={name} summary={summary} {...res} />;
-  if (kind === "mcp") return <McpCard name={name} {...res} />;
+  if (kind === "mcp") return <McpCard name={name} summary={summary} {...res} />;
   if (kind === "web") return <WebCard name={name} summary={summary} {...res} />;
   if (kind === "search") return <SearchCard name={name} summary={summary} {...res} />;
   if (kind === "plan")
@@ -331,7 +333,9 @@ function CallGroup({ name, calls }: {
       {calls.map((c, k) => (
         <div key={k} className="flex items-center gap-2 border-t border-[var(--border)] px-2 py-1 first:border-t-0">
           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--foreground-bright)]">
-            {kind === "mcp" ? mcpParts(c.name).tool : hostOf(c.summary) || c.summary}
+            {kind === "mcp"
+              ? [mcpParts(c.name).tool, c.summary].filter(Boolean).join(" · ")
+              : hostOf(c.summary) || c.summary}
           </span>
           <Took ms={c.ms} stat={c.stat} error={c.error} />
         </div>

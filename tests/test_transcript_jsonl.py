@@ -292,6 +292,27 @@ def test_todowrite_summary_names_the_item_it_just_started():
     assert T._summarize_tool("TodoWrite", {"todos": []}) == ""
 
 
+def test_skill_summary_names_the_skill_and_its_argument():
+    assert T._summarize_tool("Skill", {"skill": "graphify"}) == "graphify"
+    assert (T._summarize_tool("Skill", {"skill": "code-review", "args": "ultra"})
+            == "code-review ultra")
+
+
+def test_unknown_tools_summarize_from_whatever_arguments_they_took():
+    # No key the summariser knows -> the arguments themselves, so the card says
+    # more than its own name. Booleans are modifiers, not subjects.
+    assert (T._summarize_tool("TaskUpdate", {"taskId": "1", "status": "in_progress"})
+            == "taskId=1 · status=in_progress")
+    assert (T._summarize_tool("mcp__x__get_task", {"id": 50180163, "fields": ["id", "name"]})
+            == "id=50180163 · fields=id, name")
+    assert T._summarize_tool("mcp__x__audit", {"deep": True}) == ""
+    assert T._summarize_tool("mcp__x__list", {}) == ""
+    # three arguments is the whole line; each is trimmed to stay one
+    assert (T._summarize_tool("W", {"a": "1", "b": "2", "c": "3", "d": "4"})
+            == "a=1 · b=2 · c=3")
+    assert T._summarize_tool("W", {"a": "x" * 60}) == "a=" + "x" * 40
+
+
 def _done(name, block, result=None):
     return T.tool_done("tu1", name, 5, block, result or {})
 

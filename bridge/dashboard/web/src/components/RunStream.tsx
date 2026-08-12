@@ -692,15 +692,18 @@ function WebCard({
 }
 
 /** A call out of this process and into another one: no side edges, a patch cable
- *  running from the server's tag across to the tool it reached. */
+ *  running from the server's tag across to the tool it reached, then what it was
+ *  called with — "get task" alone never said which task. */
 function McpCard({
   name,
+  summary,
   ms,
   stat,
   error,
   animate,
 }: {
   name: string;
+  summary: string;
   ms?: number;
   stat?: string;
   error?: boolean;
@@ -728,7 +731,8 @@ function McpCard({
         className="h-px w-5 flex-none"
         style={{ backgroundImage: `repeating-linear-gradient(90deg, ${accent} 0 2px, transparent 2px 5px)` }}
       />
-      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">{tool}</span>
+      <span className="flex-none font-mono text-[length:var(--t12)] text-foreground-bright">{tool}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-muted-2">{summary}</span>
       <Took ms={ms} stat={stat} error={error} />
     </div>
   );
@@ -766,7 +770,9 @@ function ToolImages({ paths }: { paths: string[] }) {
 /** What one call says inside a CallGroup — the header already carries the server
  *  or the kind, so the row is only what this call reached for. */
 function callLine(name: string, summary: string): string {
-  return toolKind(name) === "mcp" ? mcpParts(name).tool : hostOf(summary) || summary;
+  if (toolKind(name) !== "mcp") return hostOf(summary) || summary;
+  const { tool } = mcpParts(name);
+  return summary ? `${tool} · ${summary}` : tool;
 }
 
 /** A run of back-to-back calls of one kind drawn as one card, the way Bash calls
@@ -878,7 +884,7 @@ function ToolCard({
   const rest = { ms, stat, error, animate };
 
   if (kind === "agent") return <AgentCard name={name} summary={summary} {...rest} />;
-  if (kind === "mcp") return <McpCard name={name} {...rest} />;
+  if (kind === "mcp") return <McpCard name={name} summary={summary} {...rest} />;
   if (kind === "web") return <WebCard name={name} summary={summary} {...rest} />;
   if (kind === "search") return <SearchCard name={name} summary={summary} {...rest} />;
   if (kind === "plan")

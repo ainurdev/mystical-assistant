@@ -43,7 +43,8 @@ _LEADING_TAGS = re.compile(r"^(?:\s*<[^>]+>.*?</[^>]+>\s*|\s*<[^>]+/>\s*)+", re.
 
 # Mirrors bridge.runner._summarize_tool (kept inline to keep this module free of
 # the runner's heavy imports / env requirements).
-_SUMMARY_KEYS = ("command", "file_path", "path", "pattern", "url", "query", "prompt")
+_SUMMARY_KEYS = ("command", "file_path", "path", "pattern", "url", "query", "prompt",
+                 "plan")
 
 # Max chars of Bash output kept per tool call (see bash_output).
 _OUT_MAX = 2000
@@ -118,10 +119,40 @@ def _summarize_tool(name: str, inp) -> str:
         return str(inp.get("command") or "")[:120]
     if name == "TodoWrite":
         return _todo_summary(inp.get("todos"))
+    if name == "Skill":
+        return " ".join(str(inp.get(k) or "") for k in ("skill", "args")).strip()[:120]
     for key in _SUMMARY_KEYS:
         if inp.get(key):
             return str(inp[key])[:120]
-    return ""
+    return _arg_summary(inp)
+
+
+def _arg_summary(inp: dict) -> str:
+    """What the call was about, for every tool whose arguments we don't know by
+    name — MCP tools, the task tools, whatever Claude Code adds next. Those cards
+    used to render as a bare tag ("SKILL", "TASKUPDATE") saying only that
+    *something* ran. Booleans are skipped: a flag modifies a call, it isn't the
+    subject of one."""
+    parts = []
+    for k, v in inp.items():
+        s = _arg_value(v)
+        if s:
+            parts.append(f"{k}={s[:40]}")
+        if len(parts) == 3:
+            break
+    return " · ".join(parts)
+
+
+def _arg_value(v) -> str:
+    if isinstance(v, bool) or v is None:
+        return ""
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, str):
+        return " ".join(v.split())
+    if isinstance(v, list):
+        return ", ".join(x for x in (_arg_value(i) for i in v[:3]) if x)
+    return ""     # a nested object is structure, not a subject
 
 
 def _todo_summary(todos) -> str:
