@@ -1,12 +1,14 @@
 """Which AI-powered extras are on, and where that answer lives.
 
-Everything registered here spends a model call: a title, a relevance verdict, a
-repo scout, a commit message. Anything that runs on its own — nobody pressed
-anything — is a power-user feature rather than a default and ships OFF; the few
-that only fire on a press ship ON, and are listed anyway so that every model call
+Everything registered here spends model budget: a call of its own — a title, a
+relevance verdict, a repo scout, a commit message — or the prompt tokens and
+behaviour a run inherits (ponytail, the project map). Anything that runs on its
+own — nobody pressed anything — is a power-user feature rather than a default and
+ships OFF; the ones that only fire on a press, or that shaped every run long
+before this tab existed, ship ON and are listed anyway so that every model call
 in the bridge is visible and stoppable from one place. Either way the switch is
 in the dashboard's AI tab instead of an env var only whoever deployed the bridge
-can reach.
+can reach. A feature's own UI is hidden while its switch is off.
 
 Precedence is `ladder.default_policy`'s: the persisted setting wins; with none,
 the environment setting (config.*) decides; with neither, off. Persisting next to
@@ -82,6 +84,27 @@ FEATURES = (
               "that tells a real gate from a passing offer to do more. Off, only "
               "the free markers count.",
      },
+    {"key": "ponytail", "env": "PONYTAIL_ENABLE", "label": "PONYTAIL",
+     "hint": "answers as a lazy senior dev — least code that works",
+     "cost": "no extra call, a system prompt per run",
+     "about": "The ponytail plugin's ladder rides every run: reuse what the repo "
+              "already has, stdlib and native platform before a dependency, "
+              "shortest diff that works. On, the prompt box gets the level "
+              "picker with its REVIEW and AUDIT buttons and SESSION gets the "
+              "default level. Off, the plugin is told `off` for every run — "
+              "leaving it unset would mean its own default, full — and both "
+              "controls are hidden."},
+    {"key": "graph", "env": "GRAPH_ENABLE", "label": "PROJECT MAP",
+     "hint": "a code graph of each repo, summarised into the system prompt",
+     "cost": "no extra call, ~400 tokens per session",
+     "about": "graphify reads a repo into a knowledge graph (tree-sitter, no "
+              "model call), which the first turn of every session carries as a "
+              "~400-token structure summary — subsystems, hub files — so Claude "
+              "starts oriented. The map builds itself after a turn and refreshes "
+              "as the code moves. On, the prompt box gets the MAP chip and "
+              "ANALYZE gets the MAP tab. Off, nothing is built, refreshed or "
+              "injected, /map answers that the switch is off, and both leave the "
+              "dashboard. An existing graphify-out/ is left on disk."},
     {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
      "hint": "writes a commit message from the diff you selected",
      "cost": "1 haiku call per press",

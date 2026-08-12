@@ -27,11 +27,18 @@ def test_map_no_graph_hints_build(monkeypatch):
 
 def test_map_not_installed(monkeypatch):
     sent = _msgs(monkeypatch)
-    monkeypatch.setattr(graphmap, "graph_state", lambda _c: {
-        "available": False, "exists": False, "built_commit": None,
-        "head": None, "stale": False, "building": False})
+    monkeypatch.setattr(graphmap, "blocked_reason",
+                        lambda: "graphify is not installed (pipx install graphifyy).")
     dispatch._handle_map(555, "")
     assert "not installed" in sent[0]
+
+
+def test_map_says_so_when_the_switch_is_off(monkeypatch):
+    """Off is not the same as missing — /map shouldn't send them hunting for pipx."""
+    sent = _msgs(monkeypatch)
+    monkeypatch.setattr(graphmap, "blocked_reason", lambda: graphmap.OFF_MSG)
+    dispatch._handle_map(555, "")
+    assert sent[0] == graphmap.OFF_MSG
 
 
 def test_map_summary(monkeypatch):

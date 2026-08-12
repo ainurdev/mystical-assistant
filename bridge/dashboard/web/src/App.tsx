@@ -1669,7 +1669,7 @@ export function App() {
                       draft={draft} onDraft={setDraft}
                       contextTokens={contextTokens} onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
-                      showPonytail={settings.ponytailUi}
+                      showPonytail={ai.ponytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
                       onSteer={(t) => void queue.steer(t).then((ok) => { if (!ok) void send(t, []); })}
                       onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
@@ -1678,7 +1678,7 @@ export function App() {
                       onCancelQueued={(id) => queue.remove(id)}
                       onEjectQueued={(id) => void ejectQueued(id)}
                       project={sessionProject}
-                      onOpenMap={settings.graphUi && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
+                      onOpenMap={ai.graph && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                     />
                   </>
                 }

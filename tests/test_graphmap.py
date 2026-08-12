@@ -8,7 +8,17 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import config, graphmap  # noqa: E402
+import pytest  # noqa: E402
+
+from bridge import aifeatures, config, graphmap  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _graph_on(monkeypatch):
+    """Everything below is about the graphify integration, not the AI-tab switch
+    that gates it — pin it on so a bridge with the map switched off doesn't turn
+    the suite red. The switch itself has its own tests at the bottom."""
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
 
 
 def _git(cwd, *args):
@@ -424,4 +434,48 @@ def test_pack_string_node_is_empty(tmp_path):
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "graph.json"), "w") as f:
         json.dump({"nodes": ["just-a-string"], "links": []}, f)
+    assert graphmap.graph_pack(d) == ""
+
+
+# --- the AI-tab switch --------------------------------------------------------
+# Off means off, not just hidden: nothing builds, refreshes, explains or lands in
+# a system prompt.
+
+def _off(monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k != "graph")
+
+
+def test_switched_off_reports_unavailable(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "_graphify_bin", "/usr/bin/graphify")
+    _off(monkeypatch)
+    assert graphmap.graph_state(d)["available"] is False
+
+
+def test_switched_off_refuses_to_build(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "_graphify_bin", "/usr/bin/graphify")
+    monkeypatch.setattr(graphmap.subprocess, "run",
+                        lambda *a, **k: pytest.fail("graphify ran while switched off"))
+    _off(monkeypatch)
+    ok, msg = graphmap.update(d)
+    assert ok is False and msg == graphmap.OFF_MSG
+    assert graphmap.explain(d, "anything") == graphmap.OFF_MSG
+
+
+def test_switched_off_skips_the_post_turn_refresh(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    monkeypatch.setattr(graphmap, "_graphify_bin", "/usr/bin/graphify")
+    monkeypatch.setattr(graphmap.threading, "Thread",
+                        lambda *a, **k: pytest.fail("refresh spawned while switched off"))
+    _off(monkeypatch)
+    graphmap.refresh_async(d)
+
+
+def test_switched_off_injects_nothing(tmp_path, monkeypatch):
+    d = _mkrepo(tmp_path)
+    _write_rich_graph(d)
+    assert graphmap.graph_pack(d)          # sanity: on, there is something to inject
+    _off(monkeypatch)
+    graphmap._pack_cache.clear()           # the on-answer was just memoized
     assert graphmap.graph_pack(d) == ""

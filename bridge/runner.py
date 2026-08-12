@@ -23,8 +23,8 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, agents, config, devserver, git, inspector, ladder,
-                    limits, machine, native_activity,
+from bridge import (accounts, agents, aifeatures, config, devserver, git,
+                    inspector, ladder, limits, machine, native_activity,
                     pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
@@ -139,7 +139,12 @@ def _run_env(ponytail: "str | None",
     CLAUDE_CONFIG_DIR, which is the whole multi-account mechanism -- every turn
     is still the official binary, just pointed at one login's profile."""
     over = accounts.env_for(account_slot)
-    if ponytail:
+    # Switched off in the AI tab, the level is not just skipped but overridden:
+    # an absent PONYTAIL_DEFAULT_MODE means the plugin's own default (full), so
+    # "off" is the only way to actually not get ponytail.
+    if not aifeatures.enabled("ponytail"):
+        over["PONYTAIL_DEFAULT_MODE"] = "off"
+    elif ponytail:
         over["PONYTAIL_DEFAULT_MODE"] = ponytail
     base = inspector.base_url()
     if base:

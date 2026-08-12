@@ -6,7 +6,16 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import runner  # noqa: E402
+import pytest  # noqa: E402
+
+from bridge import aifeatures, runner  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _ponytail_on(monkeypatch):
+    """These are about the level plumbing, not the AI-tab switch — pin it on so
+    a bridge with ponytail switched off doesn't turn the suite red."""
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
 
 
 def test_normalize_valid_levels():
@@ -48,6 +57,14 @@ def test_run_env_combines_an_account_with_a_ponytail_mode():
     env = runner._run_env("ultra", account_slot=3)
     assert env["PONYTAIL_DEFAULT_MODE"] == "ultra"
     assert "CLAUDE_CONFIG_DIR" in env
+
+
+def test_switched_off_forces_the_plugin_off(monkeypatch):
+    """Absent means the plugin's own default (full), so off has to be said out
+    loud — and it beats whatever level the run asked for."""
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k != "ponytail")
+    assert runner._run_env(None)["PONYTAIL_DEFAULT_MODE"] == "off"
+    assert runner._run_env("ultra")["PONYTAIL_DEFAULT_MODE"] == "off"
 
 
 def test_run_blocking_passes_env(monkeypatch):

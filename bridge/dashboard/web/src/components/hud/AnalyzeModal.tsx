@@ -75,7 +75,7 @@ export function AnalyzeModal(props: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const aiFeatures = useAiFeatures();   // LEARN is hidden while lessons are off
+  const aiFeatures = useAiFeatures();   // MAP and LEARN hide with their switches
   const [tab, setTab] = useState<Tab>(props.initialTab ?? "editor");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [issues, setIssues] = useState<IssuesInfo | null>(null);
@@ -154,8 +154,8 @@ export function AnalyzeModal(props: Props) {
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
     { k: "skills", l: "SKILLS" },
-    { k: "map", l: "MAP" },
-    // hidden while the LESSONS switch is off — nothing is being written
+    // both hidden while their AI switch is off — nothing is being built or written
+    ...(aiFeatures.graph ? [{ k: "map" as Tab, l: "MAP" }] : []),
     ...(aiFeatures.learn ? [{ k: "learn" as Tab, l: "LEARN" }] : []),
   ];
 

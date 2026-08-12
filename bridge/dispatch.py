@@ -44,6 +44,11 @@ def _open_app(chat_id: int):
 def _handle_map(chat_id: int, arg: str):
     """Runs in a thread — graphify build/explain shell out for seconds."""
     cwd = state.project_dir(chat_id)
+    # Switched off or not installed — say so once, before promising a build.
+    blocked = graphmap.blocked_reason()
+    if blocked:
+        send(chat_id, blocked)
+        return
     if arg == "build":
         send(chat_id, "🗺 Learning your project — better and faster responses…")
         ok, msg = graphmap.update(cwd)
@@ -52,9 +57,6 @@ def _handle_map(chat_id: int, arg: str):
         send(chat_id, ("✅ " if ok else "⚠️ ") + msg + tag)
         return
     st = graphmap.graph_state(cwd)
-    if not st["available"]:
-        send(chat_id, "graphify is not installed (pipx install graphifyy).")
-        return
     if not st["exists"]:
         send(chat_id, "No project map yet — /map build to create one.")
         return

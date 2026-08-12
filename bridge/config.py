@@ -183,6 +183,19 @@ TAIL_STATE_AI = os.environ.get("TAIL_STATE_AI", "0").lower() \
 PREVIEW_DETECT_AI = os.environ.get("PREVIEW_DETECT_AI", "0").lower() \
     not in ("0", "false", "no", "")
 
+# --- Ponytail (code-minimalism level for every run) --------------------------
+# Off, the plugin is told `off` for every run (absent would mean its own default,
+# full) and its prompt-box cluster and level pickers leave the dashboard.
+PONYTAIL_ENABLE = os.environ.get("PONYTAIL_ENABLE", "1").lower() \
+    not in ("0", "false", "no", "")
+
+# --- Project map (graphify) ---------------------------------------------------
+# The per-project code graph: built after a turn, ~400 tokens of structure in
+# every session's system prompt. Off, nothing is built or injected and the MAP
+# chip and tab leave the dashboard.
+GRAPH_ENABLE = os.environ.get("GRAPH_ENABLE", "1").lower() \
+    not in ("0", "false", "no", "")
+
 # --- Generated commit messages -----------------------------------------------
 # The GIT tab's "generate" button and the header's SHIP button describe a diff
 # with a one-shot haiku call. Unlike the extras above this only runs when you

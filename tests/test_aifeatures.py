@@ -70,15 +70,18 @@ def test_every_feature_names_a_real_config_setting():
 
 
 def test_the_registry_covers_every_model_call_the_bridge_makes():
-    """A model call with no entry here is spend the user can't see or stop. If a
-    new one is added, register it — don't delete this line."""
+    """A model call — or a per-run prompt the user is paying for — with no entry
+    here is spend they can't see or stop. If a new one is added, register it —
+    don't delete this line."""
     assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg",
-                         "learn", "tailstate"}
+                         "learn", "tailstate", "ponytail", "graph"}
 
 
 def test_shipped_defaults_are_off_for_anything_automatic():
-    """Automatic features ship off; the press-to-run one ships on, and is listed
-    only so the spend stays visible.
+    """Automatic features ship off; the press-to-run one ships on, and so do the
+    two that shaped every run before this tab existed (ponytail, the project
+    map) — listing them is about making that spend visible and stoppable, not
+    about changing what a fresh install does.
 
     Read out of the source rather than from config's attributes: those reflect
     whatever .env this machine has, and reloading the module to clear that takes
@@ -87,7 +90,7 @@ def test_shipped_defaults_are_off_for_anything_automatic():
         src = f.read()
     shipped = {"TITLE_ENABLE": "0", "RELEVANCE_CHECK": "0", "NEXTUP_ENABLE": "0",
                "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0",
-               "TAIL_STATE_AI": "0"}
+               "TAIL_STATE_AI": "0", "PONYTAIL_ENABLE": "1", "GRAPH_ENABLE": "1"}
     assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
     for var, default in shipped.items():
         assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"

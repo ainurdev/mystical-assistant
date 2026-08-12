@@ -14,6 +14,8 @@ import shutil
 import subprocess
 import threading
 
+from bridge import aifeatures
+
 log = logging.getLogger("bridge.graphmap")
 
 OUT_DIR = "graphify-out"
@@ -43,6 +45,20 @@ def graphify_bin() -> "str | None":
                 break
     _graphify_bin = found
     return _graphify_bin
+
+
+OFF_MSG = "The PROJECT MAP switch is off (SETTINGS ▸ AI)."
+
+
+def blocked_reason() -> "str | None":
+    """Why graphify can't run right now — the AI switch, or a missing binary.
+    Every entry point below asks here, so switching the feature off stops the
+    build, the refresh, the injection and the explain in one place."""
+    if not aifeatures.enabled("graph"):
+        return OFF_MSG
+    if not graphify_bin():
+        return "graphify is not installed (pipx install graphifyy)."
+    return None
 
 
 def _graph_json(cwd: str) -> str:
@@ -99,7 +115,7 @@ def graph_state(cwd: str) -> dict:
     built = _built_commit(cwd)
     head = _head_commit(cwd)
     return {
-        "available": graphify_bin() is not None,
+        "available": blocked_reason() is None,
         "exists": has_graph(cwd),
         "built_commit": built,
         "built_at": _built_at(cwd),
@@ -113,9 +129,10 @@ def graph_state(cwd: str) -> dict:
 
 def explain(cwd: str, query: str) -> str:
     """`graphify explain "<query>"` in the project root, truncated for chat."""
+    blocked = blocked_reason()
+    if blocked:
+        return blocked
     bin_ = graphify_bin()
-    if not bin_:
-        return "graphify is not installed (pipx install graphifyy)."
     if not has_graph(cwd):
         return "No graph yet — build one first (MAP tab / /map build)."
     try:
@@ -172,9 +189,10 @@ def _ensure_viz(cwd: str, bin_: str) -> None:
 def update(cwd: str, timeout: int = BUILD_TIMEOUT) -> "tuple[bool, str]":
     """Build or refresh a project's graph (`graphify update .`). Serialized per
     project; a concurrent caller returns immediately instead of stacking."""
+    blocked = blocked_reason()
+    if blocked:
+        return False, blocked
     bin_ = graphify_bin()
-    if not bin_:
-        return False, "graphify is not installed (pipx install graphifyy)."
     lock = _lock_for(cwd)
     if not lock.acquire(blocking=False):
         return False, "already building"
@@ -217,7 +235,7 @@ def refresh_async(cwd: "str | None") -> None:
     """Post-turn build-or-refresh: the first turn in a project maps it, every
     later turn keeps that map current as the code grows. Fire-and-forget; the
     per-project lock drops overlapping runs. Never blocks a turn."""
-    if not cwd or not graphify_bin():
+    if not cwd or blocked_reason():
         return
     mapped = has_graph(cwd)
     # A first build is a full AST pass, so only real repos get one — with no
@@ -286,7 +304,7 @@ def graph_pack(cwd: "str | None") -> str:
     """≤~400-token structure summary for the system prompt; "" when the project
     has no graph. Memoized by graph.json mtime so repeat turns get the exact
     same string (cache-eligible) without re-parsing megabytes of JSON."""
-    if not cwd:
+    if not cwd or not aifeatures.enabled("graph"):
         return ""
     path = _graph_json(cwd)
     try:

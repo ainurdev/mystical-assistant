@@ -31,7 +31,7 @@ import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
-import { setAiFeatures } from "../../lib/ai";
+import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import {
   loadPackSounds,
@@ -95,7 +95,7 @@ type Tab = "appearance" | "indicator" | "interface" | "ambient" | "notifications
 const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot" },
   { key: "indicator", label: "INDICATOR", hint: "what plays while working" },
-  { key: "interface", label: "INTERFACE", hint: "prompt box · transcript" },
+  { key: "interface", label: "INTERFACE", hint: "transcript" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM" },
   { key: "notifications", label: "NOTIFY", hint: "desktop · a sound per event" },
   { key: "session", label: "SESSION", hint: "model · mode · effort" },
@@ -1756,6 +1756,7 @@ export function SettingsModal(props: SettingsModalProps) {
   } = props;
 
   const [tab, setTab] = useState<Tab>("appearance");
+  const aiFeatures = useAiFeatures();   // the PONYTAIL level hides with its switch
   // As a top strip the rail scrolls, and the browser's own scroll-on-click only
   // brings the tab just inside the edge — enough to leave the category you are
   // reading half off-screen. Centre it instead.
@@ -2048,7 +2049,9 @@ export function SettingsModal(props: SettingsModalProps) {
                       />
                       <PickCell label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
                       <PickCell label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
-                      <PickCell label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
+                      {aiFeatures.ponytail && (
+                        <PickCell label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
+                      )}
                     </div>
                   </div>
                 </Section>
@@ -2076,30 +2079,13 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {/* What the HUD shows you, as opposed to what a run does — these
-                two sat under SESSION next to model/mode/effort, which is a
-                different question entirely. */}
+            {/* What the HUD shows you, as opposed to what a run does. The
+                PONYTAIL and GRAPH switches that used to sit here only hid their
+                chips while the features kept running; they are AI-tab switches
+                now, where off means off and the UI follows. */}
             {tab === "interface" && (
               <>
-                <Section title="PROMPT BOX">
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="PONYTAIL"
-                      info="The level picker and its REVIEW / AUDIT buttons. Off, they leave the prompt box — the level set in SESSION still applies to every run."
-                    >
-                      <Switch on={settings.ponytailUi} onClick={() => onPatch({ ponytailUi: !settings.ponytailUi })} />
-                    </Row>
-                    <Row
-                      label="GRAPH"
-                      info="The MAP chip and its freshness. Off, the map still builds itself and still opens from ANALYZE — the prompt box just stops asking about it."
-                    >
-                      <Switch on={settings.graphUi} onClick={() => onPatch({ graphUi: !settings.graphUi })} />
-                    </Row>
-                  </div>
-                </Section>
-
-                <Section title="TRANSCRIPT" top>
+                <Section title="TRANSCRIPT">
                   <div style={CARD}>
                     <Row
                       first

@@ -351,11 +351,6 @@ export interface HudSettings {
   effort: string; // "" = auto
   perm: string; // "" = the session's own mode
   ponytail: string; // "" = default
-  // Which composer clusters are worth their width. Off hides the cluster from
-  // the prompt box only — the PONYTAIL level above still applies to runs, and
-  // the map still builds and opens from ANALYZE.
-  ponytailUi: boolean;
-  graphUi: boolean;
   // Who runs the turn: 'claude:<slot>' (a login) or 'opencode:<provider>' (a
   // free agent). "" = the ambient login, same as claude:1.
   agent: string;
@@ -379,7 +374,7 @@ const DEFAULTS: HudSettings = {
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6,
   font: "", baseFont: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
-  ponytailUi: true, graphUi: true, agent: "", push: false, pushSound: true,
+  agent: "", push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, pushSounds: {},
 };
 
@@ -480,8 +475,6 @@ export function loadSettings(): HudSettings {
         effort: str(p.effort, ""),
         perm: str(p.perm, ""),
         ponytail: str(p.ponytail, ""),
-        ponytailUi: p.ponytailUi !== false,
-        graphUi: p.graphUi !== false,
         // Like model: an agent that has gone away (account removed, key
         // cleared) is snapped back to the default login by App's agentOpts effect.
         agent: str(p.agent, ""),
