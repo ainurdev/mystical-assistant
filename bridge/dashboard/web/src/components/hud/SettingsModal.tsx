@@ -109,11 +109,53 @@ const TABS: { key: Tab; label: string; hint: string }[] = [
 // equalizer, a nyan.cat ride, a playable piano, and piano tiles. Picking a tab
 // IS picking the form — `settings.indicator` is the tab state.
 
-const INDICATOR_TABS: { key: Indicator; label: string; blurb: string }[] = [
+// `help` is the long "how to play it" — folded behind the ⓘ beside the blurb,
+// since it's a paragraph you read once and then never again.
+const INDICATOR_TABS: { key: Indicator; label: string; blurb: string; help?: ReactNode }[] = [
   { key: "bar", label: "EQUALIZER", blurb: "the stock braille spinner, phrase ticker and level bars" },
   { key: "nyan", label: "NYAN CAT", blurb: "a nyan.cat ride — 36 cats, their trails, their music" },
-  { key: "piano", label: "PIANO", blurb: "two octaves to play with mouse or keyboard while you wait" },
-  { key: "tiles", label: "TILES", blurb: "piano tiles — clear each falling note on the key that plays it" },
+  {
+    key: "piano",
+    label: "PIANO",
+    blurb: "two octaves to play with mouse or keyboard while you wait",
+    help: (
+      <>
+        Click the board to arm the computer keys — unfocused, they stay yours for typing.
+        <br />
+        <span style={{ color: "var(--txd)" }}>SAMPLES</span> are real recordings, one MP3 per note,
+        fetched on first use (~600&nbsp;KB a voice, then browser-cached); the synth covers until they
+        land. <span style={{ color: "var(--txd)" }}>SYNTH</span> voices are generated locally and
+        need no network.
+        <br />
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
+          Z S X D C V G B H N J M
+        </span>{" "}
+        plays C3–B3 ·{" "}
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
+          Q 2 W 3 E R 5 T 6 Y 7 U I
+        </span>{" "}
+        plays C4–C5.
+      </>
+    ),
+  },
+  {
+    key: "tiles",
+    label: "TILES",
+    blurb: "piano tiles — clear each falling note on the key that plays it",
+    help: (
+      <>
+        Notes fall down the lane of the key that plays them — hit that key as the tile lands. Mouse
+        or computer keys, same as the piano, and it uses the VOICE picked on the PIANO tab.
+        <br />
+        Every melody is public domain; a modern chart hit&apos;s tune is a copyrighted composition,
+        so the directory sticks to the canon. Add your own in{" "}
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
+          src/lib/songs.ts
+        </span>
+        .
+      </>
+    ),
+  },
 ];
 
 // 0 = AUTO (viewport-derived); the rest are the base the type scale hangs off.
@@ -148,16 +190,94 @@ const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 10, mar
 // Several controls abreast, wrapping onto a second line when the panel narrows.
 const LINE: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 12, marginTop: 11 };
 const CAPTION: CSSProperties = { fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txd)", flex: "none", width: 62 };
-const CARD: CSSProperties = { border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "12px 13px" };
+const RULE = "1px solid color-mix(in srgb, var(--acc) 10%, transparent)";
+// A card is a raised surface, not just an outline — --panel over the modal's
+// own --panel2 is what separates "a block of settings" from "the panel".
+const CARD: CSSProperties = {
+  border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
+  background: "color-mix(in srgb, var(--panel) 55%, transparent)",
+  padding: "12px 13px",
+};
 const KV: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between" };
 const KEY_TX: CSSProperties = { fontSize: "var(--t10)", letterSpacing: 1, color: "var(--txd)" };
 const NOTE: CSSProperties = { fontSize: "var(--t95)", color: "var(--txl)", marginTop: 11, lineHeight: 1.7 };
+// What an ⓘ unfolds. Ruled off on the left so it reads as an aside about the
+// row above it, not as another line of the panel.
+const ASIDE: CSSProperties = {
+  fontSize: "var(--t95)", color: "var(--txl)", lineHeight: 1.75, marginTop: 9,
+  borderLeft: "1px solid color-mix(in srgb, var(--acc) 32%, transparent)", paddingLeft: 10,
+};
 
-/** Section caption above a settings block. */
-function Label({ children, top }: { children: ReactNode; top?: boolean }) {
+/** ⓘ — unfolds the long-form "why" behind a setting. The disc is 15px; the
+ *  .infodot class in index.css is what makes it a thumb-sized target. */
+function InfoDot({ on, about, onClick }: { on: boolean; about?: string; onClick: () => void }) {
   return (
-    <div style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", margin: top ? "20px 0 11px" : "0 0 11px" }}>
+    <button
+      className="infodot"
+      onClick={onClick}
+      aria-expanded={on}
+      aria-label={about ? `about ${about}` : "what this does"}
+      style={{
+        appearance: "none", cursor: "pointer", flex: "none", padding: 0,
+        width: 15, height: 15, lineHeight: "13px", borderRadius: "50%",
+        border: `1px solid color-mix(in srgb, var(--acc) ${on ? 65 : 28}%, transparent)`,
+        background: on ? "color-mix(in srgb, var(--acc) 18%, transparent)" : "transparent",
+        color: on ? "var(--txb)" : "var(--txl)",
+        fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t8)",
+      }}
+    >
+      i
+    </button>
+  );
+}
+
+/** A titled block. The explanation that used to stand under every block as a
+ *  paragraph folds behind the ⓘ beside the title instead — nine tabs of prose
+ *  at rest is what made these panels read as a wall of text. */
+function Section({ title, info, top, children }: {
+  title: ReactNode;
+  info?: ReactNode;
+  top?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: top ? 22 : 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>
+          {title}
+        </span>
+        {info && <InfoDot on={open} about={typeof title === "string" ? title : undefined} onClick={() => setOpen(!open)} />}
+        <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 12%, transparent)" }} />
+      </div>
+      {info && open && <div style={{ ...ASIDE, marginTop: 0, marginBottom: 12 }}>{info}</div>}
       {children}
+    </div>
+  );
+}
+
+/** One setting inside a card: its name, its control on the right, a one-line
+ *  `desc` if the name isn't self-evident, and everything longer behind the ⓘ.
+ *  Rows are ruled apart rather than spaced apart, so a card of five settings
+ *  stays one object. */
+function Row({ label, desc, info, first, children }: {
+  label: ReactNode;
+  desc?: ReactNode;
+  info?: ReactNode;
+  first?: boolean;
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: first ? 0 : 11, paddingTop: first ? 0 : 11, borderTop: first ? undefined : RULE }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={KEY_TX}>{label}</span>
+        {info && <InfoDot on={open} about={typeof label === "string" ? label : undefined} onClick={() => setOpen(!open)} />}
+        <span style={{ flex: 1, minWidth: 8 }} />
+        {children}
+      </div>
+      {desc && <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>{desc}</div>}
+      {info && open && <div style={ASIDE}>{info}</div>}
     </div>
   );
 }
@@ -691,32 +811,11 @@ function CrtToggles({
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 1,
-        border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
-        background: "color-mix(in srgb, var(--acc) 8%, transparent)",
-      }}
-    >
-      {CRT_TOGGLES.map((g) => (
-        <div
-          key={g.key}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "12px 14px",
-            background: "color-mix(in srgb, var(--panel) 92%, transparent)",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "var(--t12)", color: "var(--txh)", letterSpacing: 0.5 }}>{g.label}</div>
-            <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 2 }}>{g.desc}</div>
-          </div>
+    <div style={CARD}>
+      {CRT_TOGGLES.map((g, i) => (
+        <Row key={g.key} first={!i} label={g.label} desc={g.desc}>
           <Switch on={settings[g.key]} onClick={() => onToggle(g.key)} />
-        </div>
+        </Row>
       ))}
     </div>
   );
@@ -731,6 +830,7 @@ function IndicatorPicker({
 }) {
   const unfilter = themeUnfilter(settings.theme);
   const active = INDICATOR_TABS.find((t) => t.key === settings.indicator) ?? INDICATOR_TABS[0];
+  const [help, setHelp] = useState(false);
 
   return (
     <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel) 92%, transparent)" }}>
@@ -762,7 +862,11 @@ function IndicatorPicker({
       </div>
 
       <div style={{ padding: "12px 13px" }}>
-        <div style={{ fontSize: "var(--t95)", color: "var(--txl)" }}>{active.blurb}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: "var(--t95)", color: "var(--txl)" }}>{active.blurb}</div>
+          {active.help && <InfoDot on={help} about={active.label} onClick={() => setHelp(!help)} />}
+        </div>
+        {active.help && help && <div style={ASIDE}>{active.help}</div>}
 
         {settings.indicator === "nyan" && (
           <>
@@ -853,18 +957,6 @@ function IndicatorPicker({
                 ))}
               </select>
             </div>
-            <div style={NOTE}>
-              Notes fall down the lane of the key that plays them — hit that key as the tile lands.
-              Mouse or computer keys, same as the piano, and it uses the VOICE picked on the PIANO
-              tab.
-              <br />
-              Every melody is public domain; a modern chart hit&apos;s tune is a copyrighted
-              composition, so the directory sticks to the canon. Add your own in{" "}
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
-                src/lib/songs.ts
-              </span>
-              .
-            </div>
           </>
         )}
 
@@ -888,24 +980,6 @@ function IndicatorPicker({
                 ))}
               </select>
               <Volume value={settings.pianoVolume} onChange={(pianoVolume) => onPatch({ pianoVolume })} />
-            </div>
-            <div style={NOTE}>
-              Click the board to arm the computer keys — unfocused, they stay yours for typing.
-              <br />
-              <span style={{ color: "var(--txd)" }}>SAMPLES</span> are real recordings, one MP3 per
-              note, fetched on first use (~600&nbsp;KB a voice, then browser-cached); the synth
-              covers until they land.{" "}
-              <span style={{ color: "var(--txd)" }}>SYNTH</span> voices are generated locally and
-              need no network.
-              <br />
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
-                Z S X D C V G B H N J M
-              </span>{" "}
-              plays C3–B3 ·{" "}
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
-                Q 2 W 3 E R 5 T 6 Y 7 U I
-              </span>{" "}
-              plays C4–C5.
             </div>
           </>
         )}
@@ -1007,23 +1081,20 @@ function UpdatePanel({ onFeed }: { onFeed: (texts: string[]) => void }) {
 
   return (
     <div style={CARD}>
-      <div style={KV}>
-        <span style={KEY_TX}>BRANCH</span>
+      <Row first label="BRANCH">
         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
           {info ? `⎇ ${info.branch || "—"}` : "…"}
         </span>
-      </div>
-      <div style={{ ...KV, marginTop: 10 }}>
-        <span style={KEY_TX}>UPSTREAM</span>
+      </Row>
+      <Row label="UPSTREAM">
         <span style={{ fontSize: "var(--t105)", color: info && info.behind > 0 ? "var(--warn)" : "var(--ok)" }}>
           {!info ? "…" : info.behind > 0 ? `${info.behind} COMMIT${info.behind === 1 ? "" : "S"} BEHIND` : "UP TO DATE"}
         </span>
-      </div>
+      </Row>
       {info && info.dirty > 0 && (
-        <div style={{ ...KV, marginTop: 10 }}>
-          <span style={KEY_TX}>WORKING TREE</span>
+        <Row label="WORKING TREE">
           <span style={{ fontSize: "var(--t105)", color: "var(--warn)" }}>{info.dirty} UNCOMMITTED</span>
-        </div>
+        </Row>
       )}
       {info && info.behind > 0 && (
         <div style={{ marginTop: 12, display: "flex" }}>
@@ -1164,38 +1235,27 @@ function AiPanel() {
     return <div style={NOTE}>This bridge is running a build without the AI tab. Restart it.</div>;
 
   return (
-    <>
-      <Label>MODEL-SPENDING EXTRAS</Label>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {rows.map((f) => (
-          <div key={f.key} style={CARD}>
-            <div style={KV}>
-              <span style={{ fontSize: "var(--t11)", letterSpacing: 1, color: "var(--txb)" }}>{f.label}</span>
-              <Switch on={f.enabled} onClick={() => void (busy ? null : toggle(f))} />
-            </div>
-            <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 7, lineHeight: 1.7 }}>
-              {f.hint}
-            </div>
-            {f.about && (
-              <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 6, lineHeight: 1.8 }}>
-                {f.about}
-              </div>
-            )}
-            <div style={{ fontSize: "var(--t9)", color: "var(--txd)", marginTop: 6, letterSpacing: 0.5 }}>
-              costs {f.cost}
-            </div>
-          </div>
+    <Section
+      title="MODEL-SPENDING EXTRAS"
+      info="Anything that runs without you pressing something is off by default. A switch here beats the matching environment setting and applies to the next turn — nothing to restart. Everything a feature adds to the dashboard is hidden again the moment you switch it off. The next-up board also prefers a free provider (ACCOUNTS tab) over spending Claude quota."
+    >
+      <div style={CARD}>
+        {/* One line each: what it is, what it costs, its switch. The paragraph
+            about how it works is `about`, which is what the ⓘ holds. */}
+        {rows.map((f, i) => (
+          <Row
+            key={f.key}
+            first={!i}
+            label={f.label}
+            desc={<>{f.hint} <span style={{ color: "var(--txd)" }}>· costs {f.cost}</span></>}
+            info={f.about || undefined}
+          >
+            <Switch on={f.enabled} onClick={() => void (busy ? null : toggle(f))} />
+          </Row>
         ))}
       </div>
-      {err && <div style={{ ...NOTE, color: "var(--bad, #f66)" }}>{err}</div>}
-      <div style={NOTE}>
-        Anything that runs without you pressing something is off by default. A switch
-        here beats the matching environment setting and applies to the next turn —
-        nothing to restart. Everything a feature adds to the dashboard is hidden again
-        the moment you switch it off. The next-up board also prefers a free provider
-        (ACCOUNTS tab) over spending Claude quota.
-      </div>
-    </>
+      {err && <div style={{ ...NOTE, color: "var(--err)" }}>{err}</div>}
+    </Section>
   );
 }
 
@@ -1258,24 +1318,39 @@ function AccountsPanel() {
 
   return (
     <>
-      <Label top>ON USAGE LIMIT</Label>
-      <div style={CARD}>
-        <Segmented
-          options={POLICY_OPTS}
-          value={policy}
-          onPick={(v) => {
-            setPolicy(v);
-            void api.setDefaultPolicy(v).catch(() => void load());
-          }}
-        />
-        <div style={{ ...NOTE, marginTop: 9 }}>{POLICY_BLURB[policy]}</div>
-      </div>
-      <div style={NOTE}>
-        The default for new chats. Any one chat can override it — right-click it in the
-        sessions list.
-      </div>
+      <Section
+        title="ON USAGE LIMIT"
+        info="The default for new chats. Any one chat can override it — right-click it in the sessions list."
+      >
+        <div style={CARD}>
+          <Segmented
+            options={POLICY_OPTS}
+            value={policy}
+            onPick={(v) => {
+              setPolicy(v);
+              void api.setDefaultPolicy(v).catch(() => void load());
+            }}
+          />
+          {/* Stays visible: it changes with the choice, so it's feedback on what
+              you just picked rather than prose about the panel. */}
+          <div style={{ ...NOTE, marginTop: 9 }}>{POLICY_BLURB[policy]}</div>
+        </div>
+      </Section>
 
-      <Label>CLAUDE LOGINS</Label>
+      <Section
+        title="CLAUDE LOGINS"
+        top
+        info={
+          <>
+            ADD ANOTHER ACCOUNT signs in right here: a link opens, you log in as the other account,
+            and you paste the code back. Your current login is never touched — the new one gets its
+            own profile. COPY CURRENT LOGIN is the old way in: it snapshots whoever is logged in at{" "}
+            <span style={{ color: "var(--txd)" }}>~/.claude</span> right now, which only helps if you
+            already switched accounts in a terminal. Accounts share transcripts and skills; only the
+            credentials differ.
+          </>
+        }
+      >
       <div style={CARD}>
         {rows === null && <div style={{ ...KEY_TX }}>LOADING…</div>}
         {rows?.length === 0 && (
@@ -1349,41 +1424,40 @@ function AccountsPanel() {
           </div>
         )}
       </div>
-      <div style={NOTE}>
-        ADD ANOTHER ACCOUNT signs in right here: a link opens, you log in as the other account, and
-        you paste the code back. Your current login is never touched — the new one gets its own
-        profile. COPY CURRENT LOGIN is the old way in: it snapshots whoever is logged in at{" "}
-        <span style={{ color: "var(--txd)" }}>~/.claude</span> right now, which only helps if you
-        already switched accounts in a terminal. Accounts share transcripts and skills; only the
-        credentials differ.
-      </div>
+      </Section>
 
-      <Label>FREE AGENTS</Label>
-      <div style={CARD}>
-        {!free.installed && (
-          <div style={{ fontSize: "var(--t105)", color: "var(--txl)", marginBottom: 13 }}>
-            <span style={{ color: "var(--warn)" }}>opencode is not installed</span> — the rungs below
-            stay unusable until it is. Install it with{" "}
-            <code style={CODE}>curl -fsSL https://opencode.ai/install | bash</code>
-          </div>
-        )}
-        {free.providers.map((p, i) => (
-          <FreeAgentRow
-            key={p.provider}
-            p={p}
-            first={i === 0}
-            installed={free.installed}
-            onSave={(v) => api.setFreeAgent(p.env, v).then((r) => setFree(r.free_agents))}
-          />
-        ))}
-      </div>
-      <div style={NOTE}>
-        A free agent takes the turn when every Claude account is spent — a different provider on a
-        fresh session, briefed with the task so far. Keys are saved to{" "}
-        <span style={{ color: "var(--txd)" }}>~/.mystical/freeagents.json</span> and take effect on
-        the next handover; no restart. A key already in the bridge's environment wins and shows as
-        FROM ENV.
-      </div>
+      <Section
+        title="FREE AGENTS"
+        top
+        info={
+          <>
+            A free agent takes the turn when every Claude account is spent — a different provider on
+            a fresh session, briefed with the task so far. Keys are saved to{" "}
+            <span style={{ color: "var(--txd)" }}>~/.mystical/freeagents.json</span> and take effect
+            on the next handover; no restart. A key already in the bridge&apos;s environment wins and
+            shows as FROM ENV.
+          </>
+        }
+      >
+        <div style={CARD}>
+          {!free.installed && (
+            <div style={{ fontSize: "var(--t105)", color: "var(--txl)", marginBottom: 13 }}>
+              <span style={{ color: "var(--warn)" }}>opencode is not installed</span> — the rungs
+              below stay unusable until it is. Install it with{" "}
+              <code style={CODE}>curl -fsSL https://opencode.ai/install | bash</code>
+            </div>
+          )}
+          {free.providers.map((p, i) => (
+            <FreeAgentRow
+              key={p.provider}
+              p={p}
+              first={i === 0}
+              installed={free.installed}
+              onSave={(v) => api.setFreeAgent(p.env, v).then((r) => setFree(r.free_agents))}
+            />
+          ))}
+        </div>
+      </Section>
     </>
   );
 }
@@ -1625,43 +1699,36 @@ function ProfilesPanel({
   });
 
   return (
-    <>
-      <div style={CARD}>
-        {profiles.length === 0 && (
-          <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
-            No profiles yet — set the knobs above and this session&apos;s tools, then save them under a name.
-          </div>
-        )}
-        {profiles.map((p, i) => (
-          <div key={p.id}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? "1px solid color-mix(in srgb, var(--acc) 8%, transparent)" : undefined }}>
-            <span style={{ fontSize: "var(--t12)", color: "var(--txb)", flex: "none" }}>{p.name}</span>
-            <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {describe(p)}
-            </span>
-            <span style={{ flex: 1 }} />
-            <button onClick={() => apply(p)} style={btn("var(--ok)")}>APPLY</button>
-            <button onClick={() => write(profiles.filter((x) => x.id !== p.id))}
-              style={btn("var(--err)")} title="delete profile">✕</button>
-          </div>
-        ))}
-        <div style={{ ...ROW, marginTop: profiles.length ? 12 : 11 }}>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-            placeholder="name this setup"
-            style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }}
-          />
-          <button onClick={save} style={btn("var(--acc)")}>SAVE CURRENT</button>
+    <div style={CARD}>
+      {profiles.length === 0 && (
+        <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
+          No profiles yet — set the knobs above and this session&apos;s tools, then save them under a name.
         </div>
+      )}
+      {profiles.map((p, i) => (
+        <div key={p.id}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? RULE : undefined }}>
+          <span style={{ fontSize: "var(--t12)", color: "var(--txb)", flex: "none" }}>{p.name}</span>
+          <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {describe(p)}
+          </span>
+          <span style={{ flex: 1 }} />
+          <button onClick={() => apply(p)} style={btn("var(--ok)")}>APPLY</button>
+          <button onClick={() => write(profiles.filter((x) => x.id !== p.id))}
+            style={btn("var(--err)")} title="delete profile">✕</button>
+        </div>
+      ))}
+      <div style={{ ...ROW, marginTop: profiles.length ? 12 : 11 }}>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+          placeholder="name this setup"
+          style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }}
+        />
+        <button onClick={save} style={btn("var(--acc)")}>SAVE CURRENT</button>
       </div>
-      <div style={NOTE}>
-        A profile carries the four knobs above, the runtime, and the tools this session has
-        switched off. APPLY writes all of them — the knobs globally, the tools onto the open
-        session.
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -1811,176 +1878,201 @@ export function SettingsModal(props: SettingsModalProps) {
           <div className="mscroll" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
             {tab === "appearance" && (
               <>
-                <Label>THEME · DARK</Label>
-                <ThemeCardGrid cards={DARK_CARDS} settings={settings} onTheme={onTheme} />
-                <Label top>THEME · LIGHT</Label>
-                <ThemeCardGrid cards={LIGHT_CARDS} settings={settings} onTheme={onTheme} />
+                <Section title="THEME · DARK">
+                  <ThemeCardGrid cards={DARK_CARDS} settings={settings} onTheme={onTheme} />
+                </Section>
+                <Section title="THEME · LIGHT" top>
+                  <ThemeCardGrid cards={LIGHT_CARDS} settings={settings} onTheme={onTheme} />
+                </Section>
 
                 {themeHasCrt(settings.theme) && (
-                  <>
-                    <Label top>CRT EFFECTS</Label>
+                  <Section
+                    title="CRT EFFECTS"
+                    top
+                    info="Kept when you recolour AURORA; reset when you switch profile. The paper and daylight themes have no CRT layer at all."
+                  >
                     <CrtToggles settings={settings} onToggle={onToggle} />
-                    <div style={NOTE}>
-                      Kept when you recolour AURORA; reset when you switch profile. The paper
-                      and daylight themes have no CRT layer at all.
-                    </div>
-                  </>
+                  </Section>
                 )}
 
-                <Label top>FONT</Label>
-                {/* Each name is set in the face it names — THEME included, which
-                    is how you see what the palette brought without applying it. */}
-                <Segmented
-                  min={96}
-                  options={FONTS.map((f) => ({
-                    label: f.label,
-                    value: f.key,
-                    font: fontStack(f.key, settings.theme) || "inherit",
-                  }))}
-                  value={settings.font}
-                  onPick={(v) => onPatch({ font: v })}
-                />
-                <div style={NOTE}>
-                  A theme is a palette; the type voice is yours.{" "}
-                  <span style={{ color: "var(--txd)" }}>THEME</span> follows whichever one the
-                  palette brought — anything else stays put when you switch palettes. Code and
-                  logs keep their monospace either way.
-                </div>
+                <Section
+                  title="FONT"
+                  top
+                  info={
+                    <>
+                      A theme is a palette; the type voice is yours.{" "}
+                      <span style={{ color: "var(--txd)" }}>THEME</span> follows whichever one the
+                      palette brought — anything else stays put when you switch palettes. Code and
+                      logs keep their monospace either way.
+                    </>
+                  }
+                >
+                  {/* Each name is set in the face it names — THEME included, which
+                      is how you see what the palette brought without applying it. */}
+                  <Segmented
+                    min={96}
+                    options={FONTS.map((f) => ({
+                      label: f.label,
+                      value: f.key,
+                      font: fontStack(f.key, settings.theme) || "inherit",
+                    }))}
+                    value={settings.font}
+                    onPick={(v) => onPatch({ font: v })}
+                  />
+                </Section>
 
-                <Label top>BASE FONT SIZE</Label>
-                <Segmented
-                  options={BASE_FONT_OPTS}
-                  value={String(settings.baseFont)}
-                  onPick={(v) => onPatch({ baseFont: Number(v) })}
-                />
-                <div style={NOTE}>
-                  Every size in the HUD is derived from this one — captions, body and headings
-                  move together, spacing stays put.{" "}
-                  <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window: {autoBase}px
-                  on this one.
-                </div>
+                <Section
+                  title="BASE FONT SIZE"
+                  top
+                  info={
+                    <>
+                      Every size in the HUD is derived from this one — captions, body and headings
+                      move together, spacing stays put.{" "}
+                      <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window: {autoBase}px
+                      on this one.
+                    </>
+                  }
+                >
+                  <Segmented
+                    options={BASE_FONT_OPTS}
+                    value={String(settings.baseFont)}
+                    onPick={(v) => onPatch({ baseFont: Number(v) })}
+                  />
+                </Section>
 
-                <Label top>BOOT SEQUENCE</Label>
-                <div style={{ ...CARD, display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0, fontSize: "var(--t95)", color: "var(--txl)" }}>
-                    Replay the intro this dashboard boots with.
+                <Section title="BOOT SEQUENCE" top>
+                  <div style={CARD}>
+                    <Row first label="INTRO" desc="Replay the intro this dashboard boots with.">
+                      <button
+                        onClick={onReplayBoot}
+                        onMouseEnter={() => setReplayHover(true)}
+                        onMouseLeave={() => setReplayHover(false)}
+                        style={{
+                          appearance: "none",
+                          cursor: "pointer",
+                          border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+                          background: replayHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+                          color: "var(--tx)",
+                          fontFamily: "inherit",
+                          fontSize: "var(--t10)",
+                          letterSpacing: 1.5,
+                          padding: "6px 12px",
+                          flex: "none",
+                        }}
+                      >
+                        ▸ REPLAY
+                      </button>
+                    </Row>
                   </div>
-                  <button
-                    onClick={onReplayBoot}
-                    onMouseEnter={() => setReplayHover(true)}
-                    onMouseLeave={() => setReplayHover(false)}
-                    style={{
-                      appearance: "none",
-                      cursor: "pointer",
-                      border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
-                      background: replayHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-                      color: "var(--tx)",
-                      fontFamily: "inherit",
-                      fontSize: "var(--t10)",
-                      letterSpacing: 1.5,
-                      padding: "8px 13px",
-                      flex: "none",
-                    }}
-                  >
-                    ▸ REPLAY
-                  </button>
-                </div>
+                </Section>
               </>
             )}
 
             {tab === "indicator" && (
-              <>
-                <Label>WORKING INDICATOR</Label>
+              <Section title="WORKING INDICATOR">
                 <IndicatorPicker settings={settings} onPatch={onPatch} />
-              </>
+              </Section>
             )}
 
             {tab === "ambient" && (
               <>
-                <Label>WEATHER · header clock</Label>
-                <WeatherCard weather={weather} onSetCity={onSetCity} onSetUnit={onSetUnit} />
+                <Section title="WEATHER · header clock">
+                  <WeatherCard weather={weather} onSetCity={onSetCity} onSetUnit={onSetUnit} />
+                </Section>
 
-                <Label top>CLAUDE·FM</Label>
-                <div style={CARD}>
-                  <div style={{ ...LINE, marginTop: 0 }}>
-                    <Cell label="STATION" grow="1 1 220px">
-                      <select
-                        value={station}
-                        onChange={(e) => onStation(Number(e.target.value))}
-                        style={{ ...field, width: "100%" }}
-                      >
-                        {RADIO_STATIONS.map((s, i) => (
-                          <option key={s.title} value={i}>
-                            {s.title} — {s.artist}
-                          </option>
-                        ))}
-                      </select>
-                    </Cell>
-                    <Cell label="VOLUME" grow="none">
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 26 }}>
-                        <Volume value={settings.radioVolume} onChange={(radioVolume) => onPatch({ radioVolume })} />
-                      </div>
-                    </Cell>
+                <Section
+                  title="CLAUDE·FM"
+                  top
+                  info="Play/pause and skip live on the header pill. Station resets to the first one on reload; volume is remembered."
+                >
+                  <div style={CARD}>
+                    <div style={{ ...LINE, marginTop: 0 }}>
+                      <Cell label="STATION" grow="1 1 220px">
+                        <select
+                          value={station}
+                          onChange={(e) => onStation(Number(e.target.value))}
+                          style={{ ...field, width: "100%" }}
+                        >
+                          {RADIO_STATIONS.map((s, i) => (
+                            <option key={s.title} value={i}>
+                              {s.title} — {s.artist}
+                            </option>
+                          ))}
+                        </select>
+                      </Cell>
+                      <Cell label="VOLUME" grow="none">
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 26 }}>
+                          <Volume value={settings.radioVolume} onChange={(radioVolume) => onPatch({ radioVolume })} />
+                        </div>
+                      </Cell>
+                    </div>
                   </div>
-                </div>
-                <div style={NOTE}>
-                  Play/pause and skip live on the header pill. Station resets to the first one on
-                  reload; volume is remembered.
-                </div>
+                </Section>
               </>
             )}
 
             {tab === "session" && (
               <>
-                <Label>RUN DEFAULTS</Label>
-                <div style={CARD}>
-                  <div style={{ ...ROW, marginTop: 0, marginBottom: 6 }}>
-                    <span style={KEY_TX}>MODEL</span>
-                    <span style={{ flex: 1 }} />
-                    <span style={{ ...CAPTION, flex: "none" }}>SHOW ALL</span>
-                    <Switch on={settings.allModels} onClick={() => onPatch({ allModels: !settings.allModels })} />
-                  </div>
-                  <Segmented
-                    options={(settings.allModels ? models : latestPerFamily(models, settings.model))
-                      .map((m) => ({ label: m.label.toUpperCase(), value: m.id }))}
-                    value={settings.model}
-                    onPick={(model) => onPatch({ model })}
-                  />
-                  <div style={LINE}>
-                    <PickCell
-                      label="AGENT"
-                      value={settings.agent}
-                      options={[{ id: "", label: "DEFAULT LOGIN" }, ...agents]}
-                      onPick={(agent) => onPatch({ agent })}
+                <Section
+                  title="RUN DEFAULTS"
+                  info={
+                    <>
+                      The composer&apos;s dropdowns are these same knobs — set them here and they
+                      stick across reloads. MODE ·{" "}
+                      <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
+                      session was started with. AGENT ·{" "}
+                      <span style={{ color: "var(--txd)" }}>Default login</span> is whichever account
+                      the ACCOUNTS tab marks default.
+                    </>
+                  }
+                >
+                  <div style={CARD}>
+                    <div style={{ ...ROW, marginTop: 0, marginBottom: 6 }}>
+                      <span style={KEY_TX}>MODEL</span>
+                      <span style={{ flex: 1 }} />
+                      <span style={{ ...CAPTION, flex: "none" }}>SHOW ALL</span>
+                      <Switch on={settings.allModels} onClick={() => onPatch({ allModels: !settings.allModels })} />
+                    </div>
+                    <Segmented
+                      options={(settings.allModels ? models : latestPerFamily(models, settings.model))
+                        .map((m) => ({ label: m.label.toUpperCase(), value: m.id }))}
+                      value={settings.model}
+                      onPick={(model) => onPatch({ model })}
                     />
-                    <PickCell label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
-                    <PickCell label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
-                    <PickCell label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
+                    <div style={LINE}>
+                      <PickCell
+                        label="AGENT"
+                        value={settings.agent}
+                        options={[{ id: "", label: "DEFAULT LOGIN" }, ...agents]}
+                        onPick={(agent) => onPatch({ agent })}
+                      />
+                      <PickCell label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
+                      <PickCell label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
+                      <PickCell label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
+                    </div>
                   </div>
-                </div>
-                <div style={NOTE}>
-                  The composer&apos;s dropdowns are these same knobs — set them here and they
-                  stick across reloads. MODE ·{" "}
-                  <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
-                  session was started with. AGENT ·{" "}
-                  <span style={{ color: "var(--txd)" }}>Default login</span> is whichever account
-                  the ACCOUNTS tab marks default.
-                </div>
+                </Section>
 
-                <Label top>PROFILES</Label>
-                <ProfilesPanel
-                  settings={settings}
-                  sessionTools={sessionTools}
-                  onPatch={onPatch}
-                  onSessionTools={onSessionTools}
-                />
+                <Section
+                  title="PROFILES"
+                  top
+                  info="A profile carries the four knobs above, the runtime, and the tools this session has switched off. APPLY writes all of them — the knobs globally, the tools onto the open session."
+                >
+                  <ProfilesPanel
+                    settings={settings}
+                    sessionTools={sessionTools}
+                    onPatch={onPatch}
+                    onSessionTools={onSessionTools}
+                  />
+                </Section>
 
-                <Label top>TAGS</Label>
-                <TagsPanel />
-                <div style={NOTE}>
-                  Tags come from the model when it names a session. Renaming one onto another
-                  merges them; every session wearing the old name follows.
-                </div>
+                <Section
+                  title="TAGS"
+                  top
+                  info="Tags come from the model when it names a session. Renaming one onto another merges them; every session wearing the old name follows."
+                >
+                  <TagsPanel />
+                </Section>
               </>
             )}
 
@@ -1989,138 +2081,131 @@ export function SettingsModal(props: SettingsModalProps) {
                 different question entirely. */}
             {tab === "interface" && (
               <>
-                <Label>PROMPT BOX</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div>
-                      <div style={KEY_TX}>PONYTAIL</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        The level picker and its REVIEW / AUDIT buttons. Off, they leave the prompt
-                        box — the level set in SESSION still applies to every run.
-                      </div>
-                    </div>
-                    <Switch on={settings.ponytailUi} onClick={() => onPatch({ ponytailUi: !settings.ponytailUi })} />
+                <Section title="PROMPT BOX">
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="PONYTAIL"
+                      info="The level picker and its REVIEW / AUDIT buttons. Off, they leave the prompt box — the level set in SESSION still applies to every run."
+                    >
+                      <Switch on={settings.ponytailUi} onClick={() => onPatch({ ponytailUi: !settings.ponytailUi })} />
+                    </Row>
+                    <Row
+                      label="GRAPH"
+                      info="The MAP chip and its freshness. Off, the map still builds itself and still opens from ANALYZE — the prompt box just stops asking about it."
+                    >
+                      <Switch on={settings.graphUi} onClick={() => onPatch({ graphUi: !settings.graphUi })} />
+                    </Row>
                   </div>
-                  <div style={{ ...KV, marginTop: 12 }}>
-                    <div>
-                      <div style={KEY_TX}>GRAPH</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        The MAP chip and its freshness. Off, the map still builds itself and still
-                        opens from ANALYZE — the prompt box just stops asking about it.
-                      </div>
-                    </div>
-                    <Switch on={settings.graphUi} onClick={() => onPatch({ graphUi: !settings.graphUi })} />
-                  </div>
-                </div>
+                </Section>
 
-                <Label top>TRANSCRIPT</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div>
-                      <div style={KEY_TX}>AUTO-OPEN RESULTS</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        Bash output and edit diffs draw themselves open. Off, a turn reads as the
-                        list of commands and files it touched — click one to see its result.
-                      </div>
-                    </div>
-                    <Switch
-                      on={settings.openResults}
-                      onClick={() => onPatch({ openResults: !settings.openResults })}
-                    />
+                <Section title="TRANSCRIPT" top>
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="AUTO-OPEN RESULTS"
+                      info="Bash output and edit diffs draw themselves open. Off, a turn reads as the list of commands and files it touched — click one to see its result."
+                    >
+                      <Switch
+                        on={settings.openResults}
+                        onClick={() => onPatch({ openResults: !settings.openResults })}
+                      />
+                    </Row>
                   </div>
-                </div>
+                </Section>
               </>
             )}
 
             {tab === "notifications" && (
               <>
-                <Label>DESKTOP</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={KEY_TX}>OS NOTIFICATIONS</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        {pushSupported()
-                          ? "A banner when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
-                          : "This browser has no Notification API — Telegram remains the only push path."}
-                      </div>
-                    </div>
-                    <Switch
-                      on={settings.push}
-                      onClick={() => {
-                        if (settings.push) { onPatch({ push: false }); return; }
-                        // Ask only on switch-on; a denial can't be re-asked, so the
-                        // switch goes back off rather than sitting on and silent.
-                        void requestPush().then((ok) => onPatch({ push: ok }));
-                      }}
-                    />
+                <Section title="DESKTOP">
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="OS NOTIFICATIONS"
+                      info={pushSupported()
+                        ? "A banner when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
+                        : "This browser has no Notification API — Telegram remains the only push path."}
+                    >
+                      <Switch
+                        on={settings.push}
+                        onClick={() => {
+                          if (settings.push) { onPatch({ push: false }); return; }
+                          // Ask only on switch-on; a denial can't be re-asked, so the
+                          // switch goes back off rather than sitting on and silent.
+                          void requestPush().then((ok) => onPatch({ push: ok }));
+                        }}
+                      />
+                    </Row>
                   </div>
-                </div>
+                </Section>
 
                 {/* Sound is its own switch, not a rider on DESKTOP: the failure
                     sound belongs to an in-app toast, which fires whether or not
                     the OS is showing banners. */}
-                <Label top>SOUND</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={KEY_TX}>PLAY A SOUND</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        For when the news lands on a screen you aren&apos;t looking at. One per
-                        event per batch, not per session.
-                      </div>
-                    </div>
-                    <Switch
-                      on={settings.pushSound}
-                      onClick={() => {
-                        // Switching it on plays it once — otherwise you find out how
-                        // loud it is at the wrong moment.
-                        if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
-                        onPatch({ pushSound: !settings.pushSound });
-                      }}
-                    />
-                  </div>
-                  {settings.pushSound && (
-                    // Every change plays itself: picking a notification sound you
-                    // can't hear until the next notification is guesswork.
-                    <div style={{ ...ROW, alignItems: "flex-end", flexWrap: "wrap" }}>
-                      <Cell label="DEFAULT TONE" grow="3 1 260px">
-                        <Segmented
-                          options={TONE_OPTS}
-                          value={settings.pushTone}
-                          onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
-                        />
-                      </Cell>
-                      <Cell label="VOLUME" grow="1 1 150px">
-                        {/* Preview when the drag ends, not on every step — a chime
-                            per pixel of travel is a swarm, not a sample. */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                          onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
-                          onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
-                          <Volume
-                            value={settings.pushVolume}
-                            onChange={(pushVolume) => onPatch({ pushVolume })}
+                <Section title="SOUND" top>
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="PLAY A SOUND"
+                      info="For when the news lands on a screen you aren't looking at. One per event per batch, not per session."
+                    >
+                      <Switch
+                        on={settings.pushSound}
+                        onClick={() => {
+                          // Switching it on plays it once — otherwise you find out how
+                          // loud it is at the wrong moment.
+                          if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
+                          onPatch({ pushSound: !settings.pushSound });
+                        }}
+                      />
+                    </Row>
+                    {settings.pushSound && (
+                      // Every change plays itself: picking a notification sound you
+                      // can't hear until the next notification is guesswork.
+                      <div style={{ ...ROW, marginTop: 12, paddingTop: 12, borderTop: RULE, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <Cell label="DEFAULT TONE" grow="3 1 260px">
+                          <Segmented
+                            options={TONE_OPTS}
+                            value={settings.pushTone}
+                            onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
                           />
-                        </div>
-                      </Cell>
-                    </div>
-                  )}
-                </div>
+                        </Cell>
+                        <Cell label="VOLUME" grow="1 1 150px">
+                          {/* Preview when the drag ends, not on every step — a chime
+                              per pixel of travel is a swarm, not a sample. */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                            onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+                            onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+                            <Volume
+                              value={settings.pushVolume}
+                              onChange={(pushVolume) => onPatch({ pushVolume })}
+                            />
+                          </div>
+                        </Cell>
+                      </div>
+                    )}
+                  </div>
+                </Section>
 
                 {settings.pushSound && (
-                  <>
-                    <Label top>PER EVENT</Label>
+                  <Section
+                    title="PER EVENT"
+                    top
+                    info={
+                      <>
+                        Pack sounds come from{" "}
+                        <a href="https://www.peonping.com/" target="_blank" rel="noreferrer"
+                          style={{ color: "var(--acc)" }}>peonping.com</a>
+                        {" "}and stream from the pack&apos;s own repo — nothing is installed here.
+                        An event left on DEFAULT rings the tone above.
+                      </>
+                    }
+                  >
                     <div style={CARD}>
                       <SoundBoard settings={settings} onPatch={onPatch} />
                     </div>
-                    <div style={NOTE}>
-                      Pack sounds come from{" "}
-                      <a href="https://www.peonping.com/" target="_blank" rel="noreferrer"
-                        style={{ color: "var(--acc)" }}>peonping.com</a>
-                      {" "}and stream from the pack&apos;s own repo — nothing is installed here.
-                      An event left on DEFAULT rings the tone above.
-                    </div>
-                  </>
+                  </Section>
                 )}
               </>
             )}
@@ -2131,44 +2216,41 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {tab === "system" && (
               <>
-                <Label>BRIDGE</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <span style={KEY_TX}>HOST</span>
-                    <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>
+                <Section title="BRIDGE">
+                  <div style={CARD}>
+                    <Row first label="HOST">
+                      <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>
+                    </Row>
+                    <Row label="PORT">
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
+                        {port}
+                      </span>
+                    </Row>
                   </div>
-                  <div style={{ ...KV, marginTop: 10 }}>
-                    <span style={KEY_TX}>PORT</span>
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
-                      {port}
-                    </span>
-                  </div>
-                </div>
+                </Section>
 
-                <Label top>HTTP INSPECTOR</Label>
-                <div style={CARD}>
-                  <div style={KV}>
-                    <div>
-                      <div style={KEY_TX}>API TRAFFIC</div>
-                      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>
-                        Every request a run makes to the Anthropic API — its token accounting,
-                        its SSE frames, its timings — through a local pass-through proxy.
-                        Off by default: it sits on the critical path of the turns it watches.
-                      </div>
-                    </div>
-                    <button onClick={onOpenInspector}
-                      style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none", marginLeft: 12 }}>
-                      OPEN
-                    </button>
+                <Section title="HTTP INSPECTOR" top>
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="API TRAFFIC"
+                      info="Every request a run makes to the Anthropic API — its token accounting, its SSE frames, its timings — through a local pass-through proxy. Off by default: it sits on the critical path of the turns it watches."
+                    >
+                      <button onClick={onOpenInspector}
+                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none" }}>
+                        OPEN
+                      </button>
+                    </Row>
                   </div>
-                </div>
+                </Section>
 
-                <Label top>PLATFORM</Label>
-                <UpdatePanel onFeed={onFeed} />
-                <div style={NOTE}>
-                  Updating pulls the bridge&apos;s own checkout, rebuilds this dashboard and
-                  restarts the bridge; running turns resume on their own.
-                </div>
+                <Section
+                  title="PLATFORM"
+                  top
+                  info="Updating pulls the bridge's own checkout, rebuilds this dashboard and restarts the bridge; running turns resume on their own."
+                >
+                  <UpdatePanel onFeed={onFeed} />
+                </Section>
               </>
             )}
           </div>

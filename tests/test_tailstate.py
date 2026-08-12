@@ -110,6 +110,23 @@ class TestWiring(unittest.TestCase):
             with runner._jobs_lock:
                 runner._jobs.pop(job.id, None)
 
+    def test_no_to_a_closing_question_drops_the_ask_without_a_turn(self):
+        from bridge import runner
+        job = self._job("Committed on master. Want me to push it now?")
+        with runner._jobs_lock:
+            runner._jobs[job.id] = job
+        try:
+            self.assertEqual(runner.asked_sessions(),
+                             {"sess-tail": "Want me to push it now?"})
+            self.assertEqual(runner._build_status([], [], [], [], {})
+                             ["sess-tail"]["state"], "asking")
+            self.assertTrue(runner.dismiss_ask("sess-tail"))
+            self.assertEqual(runner.asked_sessions(), {})
+            self.assertNotIn("sess-tail", runner._build_status([], [], [], [], {}))
+        finally:
+            with runner._jobs_lock:
+                runner._jobs.pop(job.id, None)
+
     def test_an_ordinary_ending_still_pings_finished(self):
         from bridge import runner
         job = self._job("Fixed the regex; tests pass.")

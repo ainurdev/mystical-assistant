@@ -211,7 +211,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               effort: str | None = None, permission_mode: str | None = None,
               claude_session_id: str | None = None, cwd: str | None = None,
               skip_pack: bool = False, new_session: bool = False,
-              fork: bool = False, disabled_tools: list[str] | None = None) -> list[str]:
+              fork: bool = False, disabled_tools: list[str] | None = None,
+              autocompact: str | None = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -248,6 +249,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--model", model]
     if effort:
         cmd += ["--effort", effort]
+    if autocompact and not skip_pack:
+        # Window size at which claude compacts itself. Internal one-shots skip it:
+        # a titler call is one turn and never near the window.
+        cmd += ["--autocompact", autocompact]
     if claude_session_id:
         cmd += (["--session-id", claude_session_id] if new_session
                 else ["--resume", claude_session_id])
@@ -434,6 +439,7 @@ class Job:
         self.cost: float | None = None
         self.session_id: str | None = None
         self.started = time.time()
+        self.last_at = self.started      # when the last event landed (thinking gap)
         self.elapsed: int | None = None
         self.proc = None                 # subprocess.Popen, for control responses
         self.pending: list[dict] = []    # unresolved can_use_tool requests
@@ -441,9 +447,11 @@ class Job:
         self.timed_out = False           # watchdog killed the run
         self.error_msg: str | None = None  # stderr/exit error when no result event came
         self.tail_needs: str | None = None  # set when the closing ended needing the user
+        self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
         self.texts: list[str] = []       # assistant text this turn
+        self.ctx_tokens: int | None = None  # window fill on the last request (see _ctx_of)
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
         self.open_tools: dict[str, tuple[str, float]] = {}
         self._interrupt_timer: threading.Timer | None = None
@@ -453,6 +461,7 @@ class Job:
     def add(self, ev: dict):
         with self._lock:
             self.events.append(ev)
+            self.last_at = time.time()
         if self.store_session_id:
             _journal_q.put((self.store_session_id, self.id, ev))
 
@@ -664,6 +673,11 @@ def blocked_sessions() -> dict[str, str]:
 _ASK_SPLIT = re.compile(r"(?:[.!?][\"'`)\]]*\s+|\n)")
 _ASK_MAX = 240
 _ASK_TAIL = 1200      # the question is at the end; no need to scan a 300-line report
+# How long an unanswered closing question keeps a session in the WAITING lists.
+# The card stays in the transcript and you can still answer it — but nobody is
+# blocked on a question you walked away from hours ago, and without a cap it sits
+# in the count forever.
+_ASK_TTL = 2 * 3600
 
 
 def _closing_question(text: str) -> str | None:
@@ -680,12 +694,26 @@ def asked_sessions() -> dict[str, str]:
     what you asked for, this one did and then asked a follow-up. It's still your
     move, and only you can make it."""
     out: dict[str, str] = {}
+    now = time.time()
     for sid, j in _latest_jobs().items():
-        if j.status != "done" or j.tail_needs:
+        if j.status != "done" or j.tail_needs or j.ask_dismissed:
+            continue
+        if now - j.last_at > _ASK_TTL:
             continue
         if q := _closing_question(j.result or (j.texts[-1] if j.texts else "")):
             out[sid] = q
     return out
+
+
+def dismiss_ask(session_id: str) -> bool:
+    """You answered the closing question with "No" — the session is done, not
+    waiting on you, and saying so isn't worth a whole turn. Drops the ASK state
+    without running anything."""
+    j = _latest_jobs().get(session_id)
+    if not j or j.status == "running":
+        return False
+    j.ask_dismissed = True
+    return True
 
 
 def running_jobs(chat_id: int) -> list[dict]:
@@ -813,6 +841,18 @@ def running_snapshot(chat_id: int) -> dict:
     jobs = running_jobs(chat_id)
     status = _build_status(bridge_running, awaiting, jobs, external,
                            native_activity.snapshot())
+    # Same blind spot as the native branch of _build_status, one layer over: a
+    # bridge session whose turn ended while background agents keep running holds
+    # no job and appends nothing to its transcript, so the agents in flight are
+    # its only liveness signal. Only sessions whose process is still up can have
+    # any (bridge.agents gates on that), so the live registry bounds the scan.
+    for csid in machine.live_session_ids():
+        sess = store.get_by_claude_session_id(csid)
+        if not sess or sess["id"] in status or sess.get("chat_id") != chat_id:
+            continue
+        if n := _running_agents(csid):
+            status[sess["id"]] = {"state": "working", "kind": None, "source": "bridge",
+                                  "label": f"{n} agent{'s' if n > 1 else ''} working"}
     return {"external": external, "bridge_running": bridge_running,
             "jobs": jobs, "awaiting": awaiting, "status": status}
 
@@ -1070,6 +1110,21 @@ def _handle_control_request(job: Job, obj: dict):
                     "question" if tool == "AskUserQuestion" else "permission")
 
 
+def _ctx_of(usage: dict) -> "int | None":
+    """How full the context window was for the request that produced this message:
+    fresh input + what was read from cache + what was just written to it.
+
+    The *last* assistant message's figure is the window fill. Summing this across
+    a turn's messages (as transcript_jsonl does, deliberately) measures spend
+    instead, and reads an order of magnitude high as a meter."""
+    if not isinstance(usage, dict):
+        return None
+    n = ((usage.get("input_tokens") or 0)
+         + (usage.get("cache_read_input_tokens") or 0)
+         + (usage.get("cache_creation_input_tokens") or 0))
+    return n or None
+
+
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
     sid = d.get("session_id")
@@ -1082,6 +1137,9 @@ def _handle_event(job: Job, d: dict):
         if job.store_session_id:
             store.set_claude_session_id(job.store_session_id, sid)
     if t == "assistant":
+        ctx = _ctx_of(d.get("message", {}).get("usage") or {})
+        if ctx:
+            job.ctx_tokens = ctx      # last one wins; persisted at turn end
         for b in d.get("message", {}).get("content", []):
             if not isinstance(b, dict):
                 continue
@@ -1090,6 +1148,18 @@ def _handle_event(job: Job, d: dict):
                 if txt:
                     job.texts.append(txt)
                     job.add({"type": "text", "text": txt})
+            elif b.get("type") == "thinking":
+                # Claude Code strips the reasoning text from every surface it
+                # exposes — on the stream and on disk a thinking block is
+                # thinking:"" plus a signature — so the only honest thing to show
+                # is that it stopped to think, and for how long: the wall-clock
+                # gap since the last thing it did.
+                # ponytail: --include-partial-messages would add an estimated
+                # token count, at the cost of streaming every text delta of every
+                # turn. Add it if "how much" ever matters more than "how long".
+                gap = int((time.time() - job.last_at) * 1000)
+                if gap >= transcript_jsonl.THINK_MIN_MS:
+                    job.add({"type": "thinking", "ms": gap})
             elif b.get("type") == "tool_use":
                 name = b.get("name", "tool")
                 inp = b.get("input", {})
@@ -1258,6 +1328,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         claude_session_id=job.resume_id, cwd=cwd,
                         new_session=job.new_session,
                         disabled_tools=store.get_disabled_tools(job.store_session_id)
+                        if job.store_session_id else None,
+                        autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
@@ -1354,6 +1426,10 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if job.store_session_id:
             if job.session_id:
                 store.set_claude_session_id(job.store_session_id, job.session_id)
+            if job.ctx_tokens:
+                # Also on a killed/timed-out turn: the last request's fill is still
+                # what the next one resumes into.
+                store.set_ctx_tokens(job.store_session_id, job.ctx_tokens)
             if not restart_killed:   # else leave 'running' for boot recovery to resume
                 store.finish_turn(job.id, job.status, job.cost, job.elapsed)
         job.clear_pending()

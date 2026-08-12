@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown,
   Search, Globe, Bot, ListChecks, Plug, Quote,
+  BookOpen, PenLine, GitCompare, Terminal, Wrench, Layers, Brain,
 } from "lucide-react";
 import { api, type AnswerSelection, type RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
@@ -10,7 +11,7 @@ import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
-import { askBack } from "../lib/askback";
+import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf } from "../lib/toolfold";
 import { hostOf, mcpParts, toolAccent, toolKind } from "../lib/tools";
@@ -73,7 +74,7 @@ const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
 const edge = (accent: string) => `color-mix(in srgb, ${accent} 24%, transparent)`;
 const tagEdge = (accent: string) => `color-mix(in srgb, ${accent} 35%, transparent)`;
 
-type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]; images?: string[] };
+type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]; stat?: string; images?: string[] };
 
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
@@ -261,7 +262,8 @@ function TerminalGroup({
           <i className="block h-[5px] w-[5px] bg-[var(--txl)]" />
           <i className="block h-[5px] w-[5px] bg-[var(--txg)]" />
         </span>
-        <span className="flex-none text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
+        <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
+          <Terminal size={11} aria-hidden />
           BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
         </span>
         {cmds.length > 1 && (
@@ -328,7 +330,8 @@ function DiffBlock({
           title={shownMax ? "hide the diff" : "show the diff"}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <span className="flex-none text-[length:var(--t95)] tracking-[2px] text-success">
+          <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px] text-success">
+            <GitCompare size={11} aria-hidden />
             {name.toUpperCase()} //
           </span>
           <span className="min-w-0 truncate font-mono text-[length:var(--t11)] text-foreground-bright">{path}</span>
@@ -375,15 +378,47 @@ function FilePath({ path }: { path: string }) {
   );
 }
 
-function Took({ ms }: { ms?: number }) {
-  if (!ms) return null;
-  return <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">{dur(ms)}</span>;
+/** The right-hand end of a tool card: what came back, then how long it took.
+ *  Both are optional — an unfinished call has neither. */
+function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean }) {
+  if (!ms && !stat) return null;
+  return (
+    <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px]">
+      {stat && (
+        <span className="max-w-[220px] truncate" style={error ? { color: "var(--err)" } : undefined} title={stat}>
+          {stat}
+        </span>
+      )}
+      {stat && ms ? <span className="text-muted-2" aria-hidden>·</span> : null}
+      {ms ? <span className="text-muted-2">{dur(ms)}</span> : null}
+    </span>
+  );
+}
+
+/** A pause where the model reasoned. There is no reasoning to print — Claude Code
+ *  strips it from every surface — so the marker is the pause itself, which is the
+ *  one thing a list of tool cards can never explain: the gap between them. */
+function ThinkingRow({ ms, animate }: { ms?: number; animate: boolean }) {
+  return (
+    <div
+      className="my-1.5 ml-[18px] flex items-center gap-2.5 py-0.5 text-muted-2"
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+    >
+      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[2px]">
+        <Brain size={11} aria-hidden />
+        THOUGHT
+      </span>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+      <span className="flex-none text-[length:var(--t95)] tracking-[1px]">{dur(ms)}</span>
+    </div>
+  );
 }
 
 /** A read is a page glanced at: no box at all — a hairline gutter, the path, and
  *  the page's own ruled lines at the end, with a scanline crossing it once. The
  *  quietest card in a turn, because looking at a file changed nothing. */
-function ReadCard({ path, ms, animate }: { path: string; ms?: number; animate: boolean }) {
+function ReadCard({ path, ms, stat, error, animate }:
+  { path: string; ms?: number; stat?: string; error?: boolean; animate: boolean }) {
   const accent = toolAccent("Read");
   return (
     <div
@@ -393,7 +428,8 @@ function ReadCard({ path, ms, animate }: { path: string; ms?: number; animate: b
         ...(animate ? { animation: "readIn .3s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <span className="flex-none text-[length:var(--t10)] tracking-[2px]" style={{ color: accent }}>
+      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[2px]" style={{ color: accent }}>
+        <BookOpen size={11} aria-hidden />
         READ
       </span>
       <span aria-hidden className="h-3 w-px flex-none" style={{ background: tagEdge(accent) }} />
@@ -404,7 +440,7 @@ function ReadCard({ path, ms, animate }: { path: string; ms?: number; animate: b
           <i key={w} className="block h-px" style={{ width: w, background: accent }} />
         ))}
       </span>
-      <Took ms={ms} />
+      <Took ms={ms} stat={stat} error={error} />
       {animate && (
         <span
           aria-hidden
@@ -423,11 +459,15 @@ function WriteCard({
   name,
   path,
   ms,
+  stat,
+  error,
   animate,
 }: {
   name: string;
   path: string;
   ms?: number;
+  stat?: string;
+  error?: boolean;
   animate: boolean;
 }) {
   const accent = toolAccent(name);
@@ -441,13 +481,14 @@ function WriteCard({
       }}
     >
       <span
-        className="flex-none px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
+        className="flex flex-none items-center gap-1.5 px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
         style={{ background: accent, color: "var(--acc-on)" }}
       >
+        <PenLine size={11} aria-hidden />
         {name.toUpperCase()}
       </span>
       <FilePath path={path} />
-      <Took ms={ms} />
+      <Took ms={ms} stat={stat} error={error} />
     </div>
   );
 }
@@ -459,6 +500,8 @@ function ToolBox({
   tag,
   icon,
   ms,
+  stat,
+  error,
   animate,
   children,
 }: {
@@ -466,6 +509,8 @@ function ToolBox({
   tag: string;
   icon: React.ReactNode;
   ms?: number;
+  stat?: string;
+  error?: boolean;
   animate: boolean;
   children: React.ReactNode;
 }) {
@@ -487,7 +532,7 @@ function ToolBox({
       <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-muted-foreground">
         {children}
       </span>
-      <Took ms={ms} />
+      <Took ms={ms} stat={stat} error={error} />
     </div>
   );
 }
@@ -498,11 +543,15 @@ function SearchCard({
   name,
   summary,
   ms,
+  stat,
+  error,
   animate,
 }: {
   name: string;
   summary: string;
   ms?: number;
+  stat?: string;
+  error?: boolean;
   animate: boolean;
 }) {
   const accent = toolAccent(name);
@@ -524,7 +573,7 @@ function SearchCard({
       >
         {summary}
       </span>
-      <Took ms={ms} />
+      <Took ms={ms} stat={stat} error={error} />
     </div>
   );
 }
@@ -535,11 +584,15 @@ function WebCard({
   name,
   summary,
   ms,
+  stat,
+  error,
   animate,
 }: {
   name: string;
   summary: string;
   ms?: number;
+  stat?: string;
+  error?: boolean;
   animate: boolean;
 }) {
   const accent = toolAccent(name);
@@ -569,7 +622,7 @@ function WebCard({
           `“${summary}”`
         )}
       </span>
-      <Took ms={ms} />
+      <Took ms={ms} stat={stat} error={error} />
     </div>
   );
 }
@@ -579,10 +632,14 @@ function WebCard({
 function McpCard({
   name,
   ms,
+  stat,
+  error,
   animate,
 }: {
   name: string;
   ms?: number;
+  stat?: string;
+  error?: boolean;
   animate: boolean;
 }) {
   const accent = toolAccent(name);
@@ -608,7 +665,7 @@ function McpCard({
         style={{ backgroundImage: `repeating-linear-gradient(90deg, ${accent} 0 2px, transparent 2px 5px)` }}
       />
       <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">{tool}</span>
-      <Took ms={ms} />
+      <Took ms={ms} stat={stat} error={error} />
     </div>
   );
 }
@@ -657,7 +714,7 @@ function CallGroup({
   animate,
 }: {
   name: string;
-  calls: { name: string; summary: string; ms?: number }[];
+  calls: { name: string; summary: string; ms?: number; stat?: string; error?: boolean }[];
   animate: boolean;
 }) {
   const kind = toolKind(name);
@@ -687,7 +744,7 @@ function CallGroup({
           <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">
             {callLine(c.name, c.summary)}
           </span>
-          <Took ms={c.ms} />
+          <Took ms={c.ms} stat={c.stat} error={c.error} />
         </div>
       ))}
     </div>
@@ -700,11 +757,15 @@ function AgentCard({
   name,
   summary,
   ms,
+  stat,
+  error,
   animate,
 }: {
   name: string;
   summary: string;
   ms?: number;
+  stat?: string;
+  error?: boolean;
   animate: boolean;
 }) {
   const accent = toolAccent(name);
@@ -727,7 +788,7 @@ function AgentCard({
       <span className="min-w-0 flex-1 line-clamp-2 text-[length:var(--t12)] leading-relaxed text-muted-foreground">
         {summary}
       </span>
-      {ms ? <span className="mt-[3px] flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">{dur(ms)}</span> : null}
+      <span className="mt-[3px]"><Took ms={ms} stat={stat} error={error} /></span>
     </div>
   );
 }
@@ -738,34 +799,43 @@ function ToolCard({
   name,
   summary,
   ms,
+  stat,
+  error,
   animate,
 }: {
   name: string;
   summary: string;
   ms?: number;
+  stat?: string;
+  error?: boolean;
   animate: boolean;
 }) {
   const kind = toolKind(name);
+  const rest = { ms, stat, error, animate };
 
-  if (kind === "agent") return <AgentCard name={name} summary={summary} ms={ms} animate={animate} />;
-  if (kind === "mcp") return <McpCard name={name} ms={ms} animate={animate} />;
-  if (kind === "web") return <WebCard name={name} summary={summary} ms={ms} animate={animate} />;
-  if (kind === "search") return <SearchCard name={name} summary={summary} ms={ms} animate={animate} />;
+  if (kind === "agent") return <AgentCard name={name} summary={summary} {...rest} />;
+  if (kind === "mcp") return <McpCard name={name} {...rest} />;
+  if (kind === "web") return <WebCard name={name} summary={summary} {...rest} />;
+  if (kind === "search") return <SearchCard name={name} summary={summary} {...rest} />;
   if (kind === "plan")
     return (
       <ToolBox
         accent={toolAccent(name)}
         tag="PLAN"
         icon={<ListChecks size={11} aria-hidden />}
-        ms={ms}
-        animate={animate}
+        {...rest}
       >
         {summary || "checklist updated"}
       </ToolBox>
     );
 
   return (
-    <ToolBox accent={toolAccent(name)} tag={name.toUpperCase()} icon={null} ms={ms} animate={animate}>
+    <ToolBox
+      accent={toolAccent(name)}
+      tag={name.toUpperCase()}
+      icon={<Wrench size={11} aria-hidden />}
+      {...rest}
+    >
       {summary}
     </ToolBox>
   );
@@ -837,7 +907,8 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
       title="show these steps"
       className="my-1.5 ml-[18px] flex w-[calc(100%-18px)] items-center gap-2.5 border border-border bg-[var(--ac-03)] px-2.5 py-1.5 text-left hover:border-[var(--border-bright)]"
     >
-      <span className="flex-none border border-border px-1.5 py-px text-[length:var(--t10)] tracking-[1px] text-muted-foreground">
+      <span className="flex flex-none items-center gap-1.5 border border-border px-1.5 py-px text-[length:var(--t10)] tracking-[1px] text-muted-foreground">
+        <Layers size={11} aria-hidden />
         {names.length} STEPS
       </span>
       <span className="min-w-0 truncate text-[length:var(--t12)] text-muted-2">{label}</span>
@@ -849,7 +920,7 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
 type RespondFn = (
   requestId: string,
   opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
-) => void;
+) => void | Promise<boolean | void>;
 
 // Memoized: a long session's past turns keep the same `events`/`pending` arrays
 // across polls (see mergeDelta), so only the live turn re-renders.
@@ -927,7 +998,8 @@ export const RunStream = memo(function RunStream({
   const asksNext = (i: number): boolean => {
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
-      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered") continue;
+      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
+          || t === "thinking") continue;
       return t === "question";
     }
     return false;
@@ -993,7 +1065,9 @@ export const RunStream = memo(function RunStream({
                   name={event.name}
                   calls={run.map((j) => {
                     const e = events[j] as { name: string; summary: string };
-                    return { name: e.name, summary: e.summary, ms: doneOf(events[j])?.ms };
+                    const d = doneOf(events[j]);
+                    return { name: e.name, summary: e.summary, ms: d?.ms, stat: d?.stat,
+                             error: d?.is_error };
                   })}
                   animate={animate}
                 />
@@ -1012,7 +1086,16 @@ export const RunStream = memo(function RunStream({
               );
             const kind = toolKind(event.name);
             if (kind === "read" && event.summary)
-              return <ReadCard key={i} path={event.summary} ms={done?.ms} animate={animate} />;
+              return (
+                <ReadCard
+                  key={i}
+                  path={event.summary}
+                  ms={done?.ms}
+                  stat={done?.stat}
+                  error={done?.is_error}
+                  animate={animate}
+                />
+              );
             if (kind === "write" && event.summary)
               return (
                 <WriteCard
@@ -1020,6 +1103,8 @@ export const RunStream = memo(function RunStream({
                   name={event.name}
                   path={event.summary}
                   ms={done?.ms}
+                  stat={done?.stat}
+                  error={done?.is_error}
                   animate={animate}
                 />
               );
@@ -1029,6 +1114,8 @@ export const RunStream = memo(function RunStream({
                   name={event.name}
                   summary={event.summary}
                   ms={done?.ms}
+                  stat={done?.stat}
+                  error={done?.is_error}
                   animate={animate}
                 />
                 {/* Screenshots the tool handed back — Playwright, chrome-devtools,
@@ -1038,6 +1125,8 @@ export const RunStream = memo(function RunStream({
               </div>
             );
           }
+          case "thinking":
+            return <ThinkingRow key={i} ms={event.ms} animate={animate} />;
           case "tool_done":
             return null;
           case "steer":
@@ -1067,7 +1156,7 @@ export const RunStream = memo(function RunStream({
             return (
               <div
                 key={i}
-                className="flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
+                className="ml-[18px] flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
                 style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
               >
                 <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
@@ -1076,22 +1165,23 @@ export const RunStream = memo(function RunStream({
             );
           case "permission":
             return (
-              <PermissionCard
-                key={i}
-                toolName={event.tool_name}
-                summary={event.summary}
-                active={!!onRespond && pendingIds.has(event.request_id)}
-                resolved={permResolved.get(event.request_id)}
-                // The run this belonged to is gone (restart, Stop, crash), so
-                // nothing is listening for an answer any more.
-                stale={ended && !permResolved.has(event.request_id)}
-                onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
-                onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
-              />
+              <div key={i} className="ml-[18px]">
+                <PermissionCard
+                  toolName={event.tool_name}
+                  summary={event.summary}
+                  active={!!onRespond && pendingIds.has(event.request_id)}
+                  resolved={permResolved.get(event.request_id)}
+                  // The run this belonged to is gone (restart, Stop, crash), so
+                  // nothing is listening for an answer any more.
+                  stale={ended && !permResolved.has(event.request_id)}
+                  onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
+                  onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
+                />
+              </div>
             );
           case "question":
             return (
-              <div key={i} id={ckId(turnId, event.request_id)} className="scroll-mt-2">
+              <div key={i} id={ckId(turnId, event.request_id)} className="ml-[18px] scroll-mt-2">
                 <QuestionCard
                   questions={event.questions}
                   requestId={event.request_id}
@@ -1106,7 +1196,7 @@ export const RunStream = memo(function RunStream({
             return (
               <div
                 key={i}
-                className="flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
+                className="ml-[18px] flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
               >
                 <CircleStop
                   size={14}
@@ -1161,7 +1251,7 @@ function AskBackBar({
             type="button"
             disabled={sent !== null}
             onClick={() => { setSent(o); onAnswer(o); }}
-            title={`Reply "${o}"`}
+            title={o === "No" ? "Drop the question — nothing runs" : `Reply "${o}"`}
             className={`${chip} border-[var(--ac-22)] bg-[var(--ac-08)] text-foreground-bright hover:border-[var(--acc)] ${
               sent === o ? "border-[var(--acc)]" : ""
             }`}
@@ -1260,7 +1350,7 @@ function FinalResult({
           )}
         </div>
       )}
-      {ask && <AskBack ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
+      {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
       {lines > RESULT_FOLD_LINES && (
         <button
           type="button"

@@ -18,12 +18,10 @@ function Attachments({ items }: { items: string[] }) {
     a.startsWith("data:") || a.startsWith("http") ? a : api.attachmentUrl(a));
   const missing = srcs.filter((s) => gone.has(s)).length;
   return (
-    <div className="flex gap-[9px]">
+    // Yours, so they hang off the right edge under your bubble.
+    <div className="flex justify-end">
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
-      <span className="flex-none select-none text-violet opacity-0" aria-hidden>
-        ~ ❯
-      </span>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex max-w-[78%] flex-wrap items-center justify-end gap-2">
         {srcs.map((src, i) =>
           gone.has(src) ? null : (
             <ZoomButton key={i} onOpen={() => setZoom(src)}>
@@ -53,7 +51,7 @@ function RuntimeBadge({ runtime }: { runtime: string }) {
   const free = kind === "opencode";
   const label = free ? `FREE AGENT · ${(arg || "?").toUpperCase()}` : `ACCOUNT ${arg}`;
   return (
-    <div className="ml-[27px] flex">
+    <div className="ml-[18px] flex">
       <span
         className="border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{
@@ -67,6 +65,51 @@ function RuntimeBadge({ runtime }: { runtime: string }) {
         {free ? "⚡ " : "⇄ "}{label}
       </span>
     </div>
+  );
+}
+
+/** What you said, drawn as the one thing in the transcript that comes from your
+ *  side: right-aligned, violet, with the solid bar on the right edge — the mirror
+ *  of the bar a WRITE card wears on its left. No speaker label: the side is the
+ *  label, the way it is in every chat. */
+function PromptBubble({ text }: { text: string }) {
+  return (
+    <div className="flex justify-end">
+      <div
+        className="max-w-[78%] border border-r-[3px] px-3 py-1.5"
+        style={{
+          borderColor: "color-mix(in srgb, var(--purple) 26%, transparent)",
+          borderRightColor: "var(--purple)",
+          background: "color-mix(in srgb, var(--purple) 7%, transparent)",
+        }}
+      >
+        <span className="block whitespace-pre-wrap break-words leading-relaxed text-foreground-bright">
+          {text}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** The agent's side of the chat: a hairline down the 18px gutter every card in a
+ *  turn already indents past, capped by a diamond where the turn starts. One line
+ *  instead of a bubble per card — the cards are the message. */
+function AgentRail() {
+  return (
+    <>
+      {/* Flat, not a gradient: a turn runs to thousands of pixels, so anything
+          that fades out is invisible for most of its own length. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute bottom-1 left-[6px] top-[14px] w-px"
+        style={{ background: "var(--ac-12)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-[3px] top-[6px] h-[7px] w-[7px] rotate-45 border"
+        style={{ borderColor: "var(--acc)", background: "var(--panel3)" }}
+      />
+    </>
   );
 }
 
@@ -86,6 +129,7 @@ export function Transcript({
   onRunCommand,
   onQuote,
   onOpenFile,
+  onAnswer,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -97,6 +141,7 @@ export function Transcript({
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
   onOpenFile?: (path: string, line?: number) => void;
+  onAnswer?: (text: string) => void;
 }) {
   if (!turns.length) {
     return <RuneSpirit variant="block" />;
@@ -113,35 +158,44 @@ export function Transcript({
         const isActive = turn.id === activeId;
         const isLast = i === turns.length - 1;
         const working = isActive && turn.status === "running" && turn.pending.length === 0;
+        const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
         return (
-          <div key={turn.id} id={ckId(turn.id)} className="flex flex-col gap-1.5 scroll-mt-2">
+          <div key={turn.id} id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-2">
             {turn.prompt && (
-              <div ref={isLast ? lastPromptRef : undefined} className="flex gap-[9px]">
-                <span className="flex-none text-violet">~ ❯</span>
-                <span className="min-w-0 whitespace-pre-wrap break-words text-foreground-bright">
-                  {turn.prompt}
-                </span>
+              <div ref={isLast ? lastPromptRef : undefined}>
+                <PromptBubble text={turn.prompt} />
               </div>
             )}
-            {turn.runtime && <RuntimeBadge runtime={turn.runtime} />}
             {turn.attachments && turn.attachments.length > 0 && (
               <Attachments items={turn.attachments} />
             )}
-            {(turn.events.length > 0 || turn.status === "running") && (
-              <RunStream
-                events={turn.events}
-                pending={turn.pending as PendingRequest[]}
-                onRespond={isActive ? onRespond : undefined}
-                animate={liveTurns?.has(turn.id) ?? false}
-                turnId={turn.id}
-                openResults={hud?.openResults ?? false}
-                onRunCommand={onRunCommand}
-                onQuote={onQuote}
-                onOpenFile={onOpenFile}
-                ended={turn.status !== "running"}
-              />
+            {/* Everything the agent did, hung off one rail. position:relative is
+                safe here — the ImageLightbox inside is fixed, and only transform
+                or filter on an ancestor would reparent that. */}
+            {replied && (
+              <div className="relative space-y-1.5">
+                <AgentRail />
+                {turn.runtime && <RuntimeBadge runtime={turn.runtime} />}
+                {(turn.events.length > 0 || turn.status === "running") && (
+                  <RunStream
+                    events={turn.events}
+                    pending={turn.pending as PendingRequest[]}
+                    onRespond={isActive ? onRespond : undefined}
+                    animate={liveTurns?.has(turn.id) ?? false}
+                    turnId={turn.id}
+                    openResults={hud?.openResults ?? false}
+                    onRunCommand={onRunCommand}
+                    onQuote={onQuote}
+                    onOpenFile={onOpenFile}
+                    // Only the last finished turn can be replied to — a chip on an
+                    // older answer would send its question back out of order.
+                    onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
+                    ended={turn.status !== "running"}
+                  />
+                )}
+                {working && <WorkingIndicator hud={hud} />}
+              </div>
             )}
-            {working && <WorkingIndicator hud={hud} />}
           </div>
         );
       })}

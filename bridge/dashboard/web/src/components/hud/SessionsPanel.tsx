@@ -5,7 +5,6 @@ import { api } from "../../api";
 import { ago, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
 import { Rows2, Rows4, Tag, TagX } from "lucide-react";
-import { Spinner } from "../ui";
 import type { ProjectGroup } from "./ProjectsPanel";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
@@ -27,7 +26,8 @@ interface Props {
   flags: Map<string, PromptFlag>; // prompts of yours that haven't run yet
   pins: Set<string>; // sessions you pinned — ranked first here and in the context menu
   selectedSessionId: string | null;
-  loadingSessionId: string | null;
+  /** First session list hasn't landed yet — the empty list means nothing yet. */
+  booting?: boolean;
   activeProject: string | null;
   onTogglePin: (id: string) => void;
   onSelectSession: (s: SessionBrief) => void;
@@ -83,12 +83,11 @@ function statusView(s: SessionStatus | undefined, done = false) {
 }
 
 function SessionRow({
-  s, i, on, loading, sv, flag, branch, pinned, showProj, showTags, compact, onPin, onAttach, onAnalyzeProj, animate = true,
+  s, i, on, sv, flag, branch, pinned, showProj, showTags, compact, onPin, onAttach, onAnalyzeProj, animate = true,
 }: {
   s: SessionBrief;
   i: number;
   on: boolean;
-  loading: boolean;
   sv: { c: string; l: string };
   flag?: PromptFlag;
   branch: string;
@@ -109,28 +108,28 @@ function SessionRow({
   return (
     <div
       onClick={onAttach}
+      className="sessrow" data-on={on}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
       style={{
         display: "flex", gap: 11, padding: compact ? "5px 12px" : "9px 12px", marginBottom: 2, cursor: "pointer",
-        borderRadius: 10,
+        borderRadius: 10, position: "relative",
         // Flat by default: a quiet row is just text. Only the open one — and the
         // one under the cursor — gets a card, so the list reads as a list.
         border: `1px solid ${on ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "transparent"}`,
-        borderLeft: `2px solid ${on ? "var(--purple)" : "transparent"}`,
+        borderLeft: "2px solid transparent", // the .sessrow bar paints this strip
+
         background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : hov ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent",
-        transition: "background .18s ease",
+        transition: "background .18s ease, border-color .18s ease",
         animation: animate ? "mfadeup .4s ease both" : "none",
         animationDelay: animate ? `${Math.min(i, 10) * 35}ms` : undefined,
       }}
     >
-      {loading ? (
-        <span style={{ color: "var(--acc)", flex: "none", marginTop: 4, display: "flex" }}><Spinner className="h-[9px] w-[9px] border" /></span>
-      ) : (
-        // The status word is gone from the row, so the dot carries it: filled +
-        // glowing when the session is doing something, a hollow ring when idle.
-        <span title={sv.l.toLowerCase()} style={{ width: 9, height: 9, borderRadius: "50%", flex: "none", marginTop: 5, boxSizing: "border-box", background: idle ? "transparent" : sv.c, border: idle ? `1.5px solid ${sv.c}` : 0, boxShadow: `0 0 8px ${idle ? "transparent" : sv.c}` }} />
-      )}
+      {/* The status word is gone from the row, so the dot carries it: filled +
+          glowing when the session is doing something, a hollow ring when idle.
+          Opening a session doesn't swap it for a spinner — the row you tapped
+          shouldn't flicker to say something you already know. */}
+      <span title={sv.l.toLowerCase()} style={{ width: 9, height: 9, borderRadius: "50%", flex: "none", marginTop: 5, boxSizing: "border-box", background: idle ? "transparent" : sv.c, border: idle ? `1.5px solid ${sv.c}` : 0, boxShadow: `0 0 8px ${idle ? "transparent" : sv.c}` }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "var(--t12)", lineHeight: 1.35, color: on ? "var(--txb)" : "var(--txh)", fontWeight: on ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {s.title || "untitled session"}
@@ -192,7 +191,7 @@ function SessionRow({
               }}
             >{fv.l}</span>
           )}
-          <span style={{ fontSize: "var(--t95)", color: loading ? sv.c : "var(--txl)", flex: "none" }}>{loading ? "LOADING…" : ago(s.updated)}</span>
+          <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none" }}>{ago(s.updated)}</span>
         </div>
         )}
       </div>
@@ -224,24 +223,35 @@ function PlusBtn({ on, onClick }: { on: boolean; onClick: () => void }) {
   const [hov, setHov] = useState(false);
   return (
     <button
-      onClick={onClick} title="new session in this project"
+      onClick={onClick} title={on ? "close" : "new session in this project"}
+      aria-label={on ? "close new session form" : "new session in this project"}
+      aria-expanded={on}
       // The project header is the drag handle in CUSTOM order — this button is
       // not, or reaching for "+" would drag the project instead.
       draggable={false} onDragStart={(e) => e.preventDefault()}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
-        appearance: "none", cursor: "pointer", flex: "none", lineHeight: 0, padding: "5px 9px 6px", borderRadius: 8,
+        appearance: "none", cursor: "pointer", flex: "none", width: 26, height: 26, padding: 0, borderRadius: 8,
+        display: "grid", placeItems: "center",
         border: `1px solid ${on || hov ? "var(--purple)" : "color-mix(in srgb, var(--purple) 28%, transparent)"}`,
         background: on || hov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
-        color: on || hov ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t13)",
+        color: on || hov ? "var(--purple-b)" : "var(--purple-h)",
+        transition: "border-color .15s ease, background .15s ease, color .15s ease",
       }}
-    >{on ? "✕" : "+"}</button>
+    >
+      {/* ponytail: one glyph rotated 45° instead of swapping + for ✕ — nothing
+          to re-align between the two states, and the turn reads as a toggle. */}
+      <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"
+           style={{ transform: on ? "rotate(45deg)" : "none", transition: "transform .18s ease" }}>
+        <path d="M6 1.5v9M1.5 6h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    </button>
   );
 }
 
 export function SessionsPanel(props: Props) {
   const {
-    sessions, groups, status, done, flags, pins, selectedSessionId, loadingSessionId, activeProject,
+    sessions, groups, status, done, flags, pins, selectedSessionId, activeProject, booting,
     onTogglePin, onSelectSession, onAnalyze, onNewSession, onWorktreeSession,
   } = props;
 
@@ -466,7 +476,7 @@ export function SessionsPanel(props: Props) {
   const rowFor = (s: SessionBrief, i: number, animate = true, showProj = true) => (
     <SessionRow
       key={s.id} s={s} i={i} animate={animate} showProj={showProj} showTags={!noTags} compact={compact}
-      on={s.id === selectedSessionId} loading={s.id === loadingSessionId}
+      on={s.id === selectedSessionId}
       sv={statusView(status.get(s.id), done.has(s.id))} flag={flags.get(s.id)}
       branch={branchFor(s)}
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
@@ -506,8 +516,16 @@ export function SessionsPanel(props: Props) {
         <button
           onClick={() => setNsOpen(false)} title="close"
           onMouseEnter={() => setCloseHov(true)} onMouseLeave={() => setCloseHov(false)}
-          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: closeHov ? "var(--purple-h)" : "var(--purple-g)", fontFamily: "inherit", fontSize: "var(--t13)", lineHeight: 1, padding: "2px 4px" }}
-        >✕</button>
+          aria-label="close"
+          style={{ appearance: "none", cursor: "pointer", flex: "none", width: 24, height: 24, padding: 0, borderRadius: 7,
+                   display: "grid", placeItems: "center", border: 0,
+                   background: closeHov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
+                   color: closeHov ? "var(--purple-b)" : "var(--purple-g)", transition: "background .15s ease, color .15s ease" }}
+        >
+          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
       {!nsScoped && (<>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
@@ -660,14 +678,18 @@ export function SessionsPanel(props: Props) {
           project's own header instead. */}
       <div style={{ flex: "none", padding: "10px 10px 2px" }}>
         {!drill && (
-        <div style={{ display: "flex", gap: 4, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", borderRadius: 12, background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 4 }}>
+        <div style={{ position: "relative", display: "flex", gap: 0, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", borderRadius: 10, background: "color-mix(in srgb, var(--panel2) 30%, transparent)", padding: 3 }}>
+          {/* One pill that slides, instead of two backgrounds cross-fading —
+              the move reads the same in both directions. Halves are exactly
+              50% (gap 0), so translateX(100%) lands on the other button. */}
+          <span aria-hidden style={{ position: "absolute", top: 3, bottom: 3, left: 3, width: "calc(50% - 3px)", borderRadius: 8, border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", background: "color-mix(in srgb, var(--acc) 12%, transparent)", transform: `translateX(${tab === "recent" ? "0%" : "100%"})`, transition: "transform .22s cubic-bezier(.2,.8,.2,1)", pointerEvents: "none" }} />
           <button
             onClick={() => { setTab("recent"); setNsOpen(false); }}
-            style={{ flex: 1, appearance: "none", cursor: "pointer", borderRadius: 9, border: `1px solid ${tab === "recent" ? "color-mix(in srgb, var(--acc) 18%, transparent)" : "transparent"}`, background: tab === "recent" ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: tab === "recent" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 2, padding: "8px 7px", transition: "all .15s ease" }}
+            style={{ position: "relative", flex: 1, appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: tab === "recent" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 2, padding: "6px 7px", transition: "color .22s cubic-bezier(.2,.8,.2,1)" }}
           >RECENT</button>
           <button
             onClick={() => { setTab("grouped"); setNsOpen(false); }}
-            style={{ flex: 1, appearance: "none", cursor: "pointer", borderRadius: 9, border: `1px solid ${tab === "grouped" ? "color-mix(in srgb, var(--acc) 18%, transparent)" : "transparent"}`, background: tab === "grouped" ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 2, padding: "8px 7px", transition: "all .15s ease" }}
+            style={{ position: "relative", flex: 1, appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: tab === "grouped" ? "var(--txb)" : "var(--txf)", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 2, padding: "6px 7px", transition: "color .22s cubic-bezier(.2,.8,.2,1)" }}
           >BY PROJECT</button>
         </div>
         )}
@@ -774,7 +796,10 @@ export function SessionsPanel(props: Props) {
             <div className="vskip-card">{drillSessions.map((s, i) => rowFor(s, i, true, false))}</div>
           </>
         ) : (
-          <>
+          // Keyed on the tab so the swap replays an enter animation instead of
+          // hard-cutting — same duration and curve as the pill, and it enters
+          // from the side the pill just slid toward.
+          <div key={tab} style={{ animation: `${tab === "recent" ? "enterLeft" : "enterRight"} .22s cubic-bezier(.2,.8,.2,1) both` }}>
             {tab === "recent" ? (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 7px" }}>
@@ -870,7 +895,6 @@ export function SessionsPanel(props: Props) {
                             {activeBy.get(g.rel)} active
                           </span>
                         )}
-                        <span style={{ fontSize: "var(--t10)", color: "var(--txf)", flex: "none" }}>{g.sessionCount} sess</span>
                         <PlusBtn on={nsOpen && nsScoped && nsProject === g.rel} onClick={() => openFor(g.rel)} />
                       </div>
                       {nsOpen && nsScoped && nsProject === g.rel && nsForm}
@@ -892,10 +916,12 @@ export function SessionsPanel(props: Props) {
                 })}
               </>
             )}
-          </>
+          </div>
         )}
         {groups.length === 0 && (
-          <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: "10px 4px" }}>No projects with sessions yet.</div>
+          <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: "10px 4px" }}>
+            {booting ? "LOADING SESSIONS…" : "No projects with sessions yet."}
+          </div>
         )}
         {groups.length > 0 && (sq || tagFilter) && sorted.length === 0 && (
           <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "10px 4px" }}>

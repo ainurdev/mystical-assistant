@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   goal              TEXT,
   lifecycle         TEXT,
   tags              TEXT,
-  fork_from         TEXT
+  fork_from         TEXT,
+  ctx_tokens        INTEGER,
+  autocompact       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -146,6 +148,14 @@ def init() -> None:
         # claude deny rules ("Bash", "mcp__playwright"). NULL/[] = everything on.
         if "disabled_tools" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN disabled_tools TEXT")
+        # How full the context window was at the end of the last turn, so the
+        # meter has a number before anything runs. NULL = never measured.
+        if "ctx_tokens" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN ctx_tokens INTEGER")
+        # Window size at which claude auto-compacts this session ('auto' or a
+        # token count); NULL = don't pass --autocompact, i.e. the CLI default.
+        if "autocompact" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN autocompact TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -320,6 +330,29 @@ def set_fallback_policy(session_id: str, policy: str | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET fallback_policy=? WHERE id=?",
                   (policy, session_id))
+
+
+def set_ctx_tokens(session_id: str, tokens: "int | None") -> None:
+    """How full the window was on this session's last measured request. Written
+    once per turn, not once per message — see runner._run_streaming."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET ctx_tokens=? WHERE id=?",
+                  (tokens, session_id))
+
+
+def get_autocompact(session_id: str) -> "str | None":
+    """This session's auto-compact window, or None to leave the CLI's default."""
+    with closing(_connect()) as c:
+        row = c.execute("SELECT autocompact FROM sessions WHERE id=?",
+                        (session_id,)).fetchone()
+    return (row["autocompact"] or None) if row else None
+
+
+def set_autocompact(session_id: str, value: "str | None") -> None:
+    """Validated by the servers' normalize_autocompact, not here."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET autocompact=? WHERE id=?",
+                  (value, session_id))
 
 
 def parse_goal(raw: "str | None") -> dict | None:

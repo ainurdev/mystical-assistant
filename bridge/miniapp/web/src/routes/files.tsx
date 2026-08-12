@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { createRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, Search, FileCode } from "lucide-react";
@@ -7,6 +7,37 @@ import { api, ApiError } from "../lib/api";
 import { Banner, Button, Skeleton } from "../components/ui";
 
 const CodeEditor = lazy(() => import("../components/CodeEditor"));
+
+/* Whatever the browser can display on its own — image, PDF, video, audio.
+   PDFs need a blob URL (WebViews won't paint a `data:` PDF in a frame), and on
+   iOS they often won't paint an iframed PDF at all, so the Open link is the
+   real fallback rather than a nicety. */
+function MediaView({ src, mime, name }: { src: string; mime: string; name: string }) {
+  const pdf = mime === "application/pdf";
+  const [blob, setBlob] = useState("");
+  useEffect(() => {
+    if (!pdf) return;
+    const bytes = Uint8Array.from(atob(src.slice(src.indexOf(",") + 1)), (c) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    setBlob(url);
+    return () => URL.revokeObjectURL(url);
+  }, [src, mime, pdf]);
+
+  if (pdf) {
+    return (
+      <div className="flex flex-col gap-2">
+        <a href={blob || src} target="_blank" rel="noreferrer" download={name.split("/").pop()}
+          className="self-start rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs active:opacity-70">
+          Open PDF
+        </a>
+        {blob && <iframe src={blob} title={name} className="h-[70vh] w-full rounded-xl border border-[var(--border)]" />}
+      </div>
+    );
+  }
+  if (mime.startsWith("video/")) return <video src={src} controls className="max-h-[70vh] w-full rounded-xl" />;
+  if (mime.startsWith("audio/")) return <audio src={src} controls className="w-full" />;
+  return <img src={src} alt={name} className="max-h-[70vh] w-full rounded-xl object-contain" />;
+}
 
 // A tree is fiddly to tap through on a phone, so this is a flat path list with
 // a filter box — the same thing Ctrl-P does on the dashboard.
@@ -145,12 +176,12 @@ function FileView({ path, onBack }: { path: string; onBack: () => void }) {
       {isError && <Banner tone="error">Could not open that file.</Banner>}
       {data && !data.ok && <Banner tone="error">{data.error || "Could not open that file."}</Banner>}
 
-      {data?.image && (
-        <img src={data.image} alt={path} className="max-h-[70vh] w-full rounded-xl object-contain" />
-      )}
-      {data?.ok && !data.image && !editable && (
+      {data?.media && <MediaView src={data.media} mime={data.mime ?? ""} name={path} />}
+      {data?.ok && !data.media && !editable && (
         <div className="pt-10 text-center text-sm text-[var(--tg-hint)]">
-          {data.too_large ? "Over 1 MB — too large to edit here." : "Binary file."}
+          {data.too_large
+            ? `Too large to open here — ${Math.round((data.size ?? 0) / 1024 / 1024 * 10) / 10} MB.`
+            : "Binary file."}
         </div>
       )}
 

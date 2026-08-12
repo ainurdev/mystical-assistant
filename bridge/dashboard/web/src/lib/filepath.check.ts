@@ -54,4 +54,17 @@ for (const [input, want] of resolved) {
   console.assert(got === want, `resolve ${input} → ${got}, wanted ${want}`);
 }
 
+// Ambiguity broken by what the session touched (tool summaries, newest first).
+const hinted: [string, string[], string | null][] = [
+  ["api.ts", ["/home/me/proj/bridge/miniapp/web/src/lib/api.ts"], "bridge/miniapp/web/src/lib/api.ts"],
+  ["api.ts", ["/home/me/proj/bridge/dashboard/web/src/api.ts"], "bridge/dashboard/web/src/api.ts"],
+  ["api.ts", ["bridge/dashboard/web/src/api.ts"], "bridge/dashboard/web/src/api.ts"], // relative hint
+  ["api.ts", ["/home/me/proj/bridge/git.py"], null],                      // hint is another file
+  ["api.ts", [], null],                                                   // nothing touched yet
+];
+for (const [input, hints, want] of hinted) {
+  const got = resolveFileRef(tree, input, hints);
+  console.assert(got === want, `resolve ${input} +hints → ${got}, wanted ${want}`);
+}
+
 console.log("filepath ok");

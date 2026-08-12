@@ -6,10 +6,13 @@ Native transcripts live at ~/.claude/projects/<enc-cwd>/<uuid>.jsonl. Because th
 filename is the globally-unique session UUID, a transcript is located by globbing
 on the UUID — we never reverse Claude's lossy directory encoding.
 
-The emitted event vocabulary matches the runner's (text / tool / tool_done), so
-both frontends render it unchanged. Internal `thinking` blocks and subagent
-`isSidechain` records are dropped — the bridge never surfaces those (the runner
-doesn't either). Stdlib only; no bridge.config dependency.
+The emitted event vocabulary matches the runner's (text / thinking / tool /
+tool_done), so both frontends render it unchanged. A `thinking` block becomes a
+bare marker with the length of the pause: Claude Code strips the reasoning text
+from every output surface it has (on disk and on the stream, a thinking block
+carries thinking:"" and a signature), so how long it thought is all there is to
+show. Subagent `isSidechain` records are dropped — the bridge never surfaces
+those (the runner doesn't either). Stdlib only; no bridge.config dependency.
 """
 
 import glob
@@ -44,10 +47,18 @@ _SUMMARY_KEYS = ("command", "file_path", "path", "pattern", "url", "query", "pro
 
 # Max chars of Bash output kept per tool call (see bash_output).
 _OUT_MAX = 2000
+# Shortest pause that earns a "thought for …" marker. Extended thinking fires on
+# nearly every step, so a low floor would put a marker between every two tool
+# cards — the wall of rows the chip folding exists to prevent. Four seconds is
+# about where a pause stops being latency and starts being deliberation.
+THINK_MIN_MS = 4000
 # Max diff lines kept per edit (see patch_lines).
 _PATCH_MAX = 120
 # Tools whose result carries a structuredPatch we can render as a diff.
 PATCH_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+# Tools whose result is a fixed confirmation ("Todos have been modified
+# successfully…") — measuring it would dress up boilerplate as information.
+_NO_STAT = ("TodoWrite", "ExitPlanMode", "EnterPlanMode", "Skill", "AskUserQuestion")
 
 # Estimated Claude list prices, $ per million tokens, so an adopted native session
 # reports a cost instead of $0 (native JSONL records token usage, not a dollar
@@ -104,10 +115,74 @@ def _summarize_tool(name: str, inp) -> str:
         return ""
     if name == "Bash":
         return str(inp.get("command") or "")[:120]
+    if name == "TodoWrite":
+        return _todo_summary(inp.get("todos"))
     for key in _SUMMARY_KEYS:
         if inp.get(key):
             return str(inp[key])[:120]
     return ""
+
+
+def _todo_summary(todos) -> str:
+    """The checklist itself is the plainest statement of what the model is doing,
+    and none of _SUMMARY_KEYS appear in a TodoWrite — so the card used to read
+    "checklist updated" and nothing else. Show the item it just started
+    (`activeForm` is written for exactly this) and how far down the list it is."""
+    items = [t for t in todos if isinstance(t, dict)] if isinstance(todos, list) else []
+    if not items:
+        return ""
+    done = sum(1 for t in items if t.get("status") == "completed")
+    cur = next((t for t in items if t.get("status") == "in_progress"), None)
+    if cur is None:
+        return f"{done}/{len(items)} done"
+    label = str(cur.get("activeForm") or cur.get("content") or "")[:100]
+    return f"{label} · {done}/{len(items)}" if label else f"{done}/{len(items)} done"
+
+
+def _kilo(n) -> str:
+    """1234 -> "1.2k"; anything smaller stays as it is."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return ""
+    return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
+
+
+def result_stat(name: str, block: dict, result) -> str:
+    """One line of what a tool handed back, for the tools whose output we don't
+    store — the size of the answer, so a lookup that found nothing reads
+    differently from one that found plenty, and a failure says why. Bash and
+    edits show their real output, so they never get here.
+    ponytail: counted off the result text, with the three results that carry real
+    numbers special-cased (a read's line count, an agent's tool count, a fetch's
+    size). A parser per tool would be a lot of code for the same one line."""
+    r = result if isinstance(result, dict) else {}
+    text = _text_of(block.get("content")).strip()
+    if block.get("is_error"):
+        # The first line of a tool error is the whole story ("File does not
+        # exist", "No such file or directory") — the rest is a stack or a hint.
+        return text.splitlines()[0][:90] if text else "failed"
+    if name in _NO_STAT:
+        return ""
+    if name == "Read":
+        f = r.get("file") if isinstance(r.get("file"), dict) else {}
+        if r.get("type") == "image" or f.get("base64"):
+            return "image"      # counting base64 chars would be a lie about size
+        n = f.get("numLines") or f.get("totalLines")
+        if n:
+            return f"{n} lines"
+    elif name in ("Task", "Agent"):
+        bits = [f"{r['totalToolUseCount']} tools" if r.get("totalToolUseCount") else "",
+                f"{_kilo(r.get('totalTokens'))} tokens" if r.get("totalTokens") else ""]
+        joined = " · ".join(b for b in bits if b)
+        if joined:
+            return joined
+    elif name == "WebFetch" and r.get("bytes"):
+        return f"{_kilo(r['bytes'])} bytes"
+    if not text:
+        return ""
+    lines = text.count("\n") + 1
+    return f"{lines} lines" if lines > 1 else f"{len(text)} chars"
 
 
 def _ts(rec) -> float:
@@ -178,10 +253,19 @@ def tool_done(rid, name, ms: int, block: dict, result) -> dict:
     if name == "Bash":
         ev["output"] = bash_output(block.get("content"))
         ev["is_error"] = bool(block.get("is_error"))
-    elif name in PATCH_TOOLS:
+        return ev
+    if block.get("is_error"):
+        ev["is_error"] = True
+    if name in PATCH_TOOLS:
         lines = patch_lines(result)
         if lines:
             ev["patch"] = lines
+    if not ev.get("patch"):
+        # No diff and no terminal to show: say how big the answer was instead of
+        # leaving the card as a bare "it ran".
+        stat = result_stat(name, block, result)
+        if stat:
+            ev["stat"] = stat
     return ev
 
 
@@ -379,6 +463,14 @@ def _parse_full(path: str) -> dict:
                         txt = (b.get("text") or "").strip()
                         if txt:
                             emit({"type": "text", "text": txt})
+                    elif bt == "thinking":
+                        # No text to show (see the module docstring), so the
+                        # marker carries the gap since the previous record — the
+                        # pause a human sitting there actually saw.
+                        prev = state["turn"].get("_last_ts") or state["turn"]["started"]
+                        gap = int(max(0.0, _ts(rec) - (prev or 0)) * 1000)
+                        if prev and gap >= THINK_MIN_MS:
+                            emit({"type": "thinking", "ms": gap})
                     elif bt == "tool_use":
                         name = b.get("name", "tool")
                         if name == "AskUserQuestion":

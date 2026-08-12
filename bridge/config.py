@@ -63,6 +63,11 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
 
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
 
+# Denominator for the context meter: how big the window a session is filling is.
+# The Models API doesn't report per-model windows and 1M-context runs are the
+# exception, so one overridable number is the whole mechanism.
+CONTEXT_WINDOW = int(os.environ.get("CONTEXT_WINDOW", "200000"))
+
 # MCP servers a *new* session starts with, comma-separated, by their
 # `claude mcp list` name (e.g. "playwright,chrome-devtools"). The rest start
 # denied by name, so their tool schemas stay out of the context window: all
@@ -213,6 +218,10 @@ _dash_token = os.environ.get("DASH_TOKEN")
 DASH_TOKEN = secrets.token_urlsafe(24) if _dash_token is None else _dash_token
 DASH_CHAT_ID = int(os.environ.get("DASH_CHAT_ID", "0")) or (
     min(ALLOWED_CHAT_IDS) if ALLOWED_CHAT_IDS else 0)
+
+# --- Landing page (localhost-only) -------------------------------------------
+# site/dist on its own port, so the marketing page can be looked at locally.
+LANDING_PORT = int(os.environ.get("LANDING_PORT", "8791"))
 
 
 def is_owner(chat_id) -> bool:

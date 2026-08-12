@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/checkpoints.check.ts
 import type { Turn } from "../chat.ts";
-import { marksOf, nearestTick, toneOf } from "./checkpoints.ts";
+import { marksOf, toneOf } from "./checkpoints.ts";
 
 const ok = (cond: boolean | undefined, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -54,15 +54,9 @@ const turn = (id: string, prompt: string, events: unknown[], extra = {}) =>
   ok(marks[1].waiting && marks[1].label === "Scope", "the question mark labels off its header");
   const answered = marksOf([turn("t1", "p", [q, { type: "question_answered", request_id: "r1", answers: [] }])]);
   ok(!answered[1].waiting, "answered questions stop asking for attention");
-}
-
-// Rail hit-testing: a tick is clickable well beyond its 2px of paint.
-{
-  const pos = [0.1, 0.5, 0.52, 0.9];
-  ok(nearestTick(pos, 0.106, 0.01) === 0, "a click a few px off a tick still hits it");
-  ok(nearestTick(pos, 0.3, 0.01) === -1, "empty track is a scroll, not a jump");
-  ok(nearestTick(pos, 0.508, 0.01) === 1, "the nearer of two crowded ticks wins");
-  ok(nearestTick([], 0.4, 0.01) === -1, "no ticks, no hit");
+  // Skipped/abandoned: the turn ended without an answer, so nothing is listening.
+  const dead = marksOf([turn("t1", "p", [q], { status: "error" })]);
+  ok(!dead[0].waiting && !dead[1].waiting, "a question whose turn ended stops waiting");
 }
 
 console.log("checkpoints ok");

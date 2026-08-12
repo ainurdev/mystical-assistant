@@ -54,6 +54,24 @@ def test_tree_endpoint_lists_files():
     assert "a.txt" in box["obj"]["files"]
 
 
+def test_tree_lists_ignored_files_and_flags_them():
+    """.gitignore'd paths stay in the tree — they come back tagged so the editor
+    can dim them, VS Code style, instead of hiding them."""
+    name, d = _mkproject("proj_ignored")
+    with open(os.path.join(d, ".gitignore"), "w") as f:
+        f.write("secret.txt\nbuild/\n")
+    os.makedirs(os.path.join(d, "build"), exist_ok=True)
+    for rel in ("secret.txt", "build/out.js"):
+        with open(os.path.join(d, rel), "w") as f:
+            f.write("x\n")
+    h, box = _handler()
+    h._get_api("/local/files/tree", {"project": [name], "branch": [""]})
+    files, ignored = box["obj"]["files"], box["obj"]["ignored"]
+    assert "secret.txt" in files and "build/out.js" in files, files
+    # the whole ignored dir collapses to one prefix; a.txt is not ignored
+    assert set(ignored) == {"build/", "secret.txt"}, ignored
+
+
 def test_read_endpoint_returns_content():
     name, _ = _mkproject("proj_read")
     h, box = _handler()
@@ -141,6 +159,32 @@ def test_op_endpoint_guards():
     assert box["code"] == 400
     h._post_api("/local/files/op", {"project": name, "op": "delete", "path": ""})
     assert box["code"] == 400
+
+
+def test_read_endpoint_hands_back_media_but_not_svg():
+    name, d = _mkproject("proj_media")
+    # A PDF past the 1 MB text cap: still media, because it's never parsed here.
+    with open(os.path.join(d, "big.pdf"), "wb") as f:
+        f.write(b"%PDF-1.4\n" + b"\x00" * 1_200_000)
+    with open(os.path.join(d, "logo.svg"), "w") as f:
+        f.write("<svg/>\n")
+    h, box = _handler()
+    h._get_api("/local/files/read", {"project": [name], "path": ["big.pdf"], "branch": [""]})
+    assert box["obj"]["mime"] == "application/pdf", box["obj"]
+    assert box["obj"]["media"].startswith("data:application/pdf;base64,")
+    assert box["obj"]["too_large"] is False
+    # svg is markup — it stays an editable buffer rather than becoming an image
+    h._get_api("/local/files/read", {"project": [name], "path": ["logo.svg"], "branch": [""]})
+    assert "media" not in box["obj"] and box["obj"]["content"] == "<svg/>\n", box["obj"]
+
+
+def test_read_endpoint_caps_oversized_media():
+    name, d = _mkproject("proj_media_cap")
+    with open(os.path.join(d, "huge.pdf"), "wb") as f:
+        f.write(b"\x00" * 9_000_000)
+    h, box = _handler()
+    h._get_api("/local/files/read", {"project": [name], "path": ["huge.pdf"], "branch": [""]})
+    assert box["obj"]["too_large"] is True and "media" not in box["obj"], box["obj"]
 
 
 def test_tree_endpoint_invalid_project():

@@ -15,14 +15,21 @@ export function nearBottom(
   return el.scrollHeight - el.scrollTop - el.clientHeight <= el.clientHeight;
 }
 
+// Direction decides, with hysteresis: any upward move unsticks, a downward move
+// inside the 80px band re-arms, no movement keeps the last answer. The old form
+// (`scrollTop < prev - 1`, else `dist < 80`) flickered on a slow scroll: smooth
+// wheels/touchpads move under 1px per event, so "up" was never detected and the
+// band re-stuck between events — the LATEST button strobed on and off.
 export function stickToBottom(
   el: { scrollTop: number; scrollHeight: number; clientHeight: number },
   prev: number,
+  stuck: boolean,
 ): boolean {
   const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
   if (dist <= 1) return true;
-  if (el.scrollTop < prev - 1) return false;
-  return dist < 80;
+  if (el.scrollTop < prev) return false;
+  if (el.scrollTop > prev && dist < 80) return true;
+  return stuck;
 }
 
 /** Should follow resume when the *content* resized rather than the user moving?

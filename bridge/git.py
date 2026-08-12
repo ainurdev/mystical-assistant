@@ -184,6 +184,10 @@ def commit_paths(cwd: str, message: str, paths: list[str]) -> tuple[bool, str]:
 # Backs the EDITOR tab. Every path is confined to cwd by _safe_path; the caller
 # resolves cwd to a project/worktree already inside BASE_PATH.
 _MAX_FILE = 1_000_000  # 1 MB — above this the editor won't load/edit the file
+# Types the browser renders on its own — handed over as-is, never parsed here,
+# so they get a looser cap than text (a 3 MB PDF is an ordinary PDF).
+_MAX_MEDIA = 8_000_000
+_VIEWABLE = ("image/", "application/pdf", "video/", "audio/")
 
 
 # ponytail: name-matched skip list, not configurable — these are what turn a
@@ -208,11 +212,30 @@ def list_tree(cwd: str) -> list[str]:
                   if _TREE_SKIP.isdisjoint(p.split("/")[:-1]))
 
 
+def ignored_paths(cwd: str) -> list[str]:
+    """Which of `list_tree`'s paths .gitignore covers — the editor dims those rows
+    the way VS Code does, it never drops them. `--directory` collapses a wholly
+    ignored dir to one `dir/` entry, and anything under an entry we already kept is
+    redundant, so a 25k-file tree comes back as a handful of prefixes."""
+    if not is_repo(cwd):
+        return []
+    rc, out, _ = _run(cwd, "-c", "core.quotePath=false", "ls-files", "-z",
+                      "--others", "--ignored", "--exclude-standard", "--directory")
+    if rc != 0:
+        return []
+    kept: list[str] = []
+    for p in sorted(set(_ztokens(out))):
+        if not any(p.startswith(d) for d in kept if d.endswith("/")):
+            kept.append(p)
+    return kept
+
+
 def read_file(cwd: str, path: str) -> dict:
     """Load a working-tree file for the editor. Returns {ok, path, content,
     binary, too_large, size}; content is "" when binary or too_large. Binary is
-    detected by a NUL byte, so genuine source (UTF-8) always loads. Raster
-    images also carry `image`, a data URL the editor renders instead of the
+    detected by a NUL byte, so genuine source (UTF-8) always loads. Anything the
+    browser can display itself — images, PDFs, video, audio — instead carries
+    `media` (a data URL) and `mime`, which the editor renders in place of the
     binary placeholder."""
     safe = _safe_path(cwd, path)
     if safe is None:
@@ -220,21 +243,24 @@ def read_file(cwd: str, path: str) -> dict:
     full = os.path.join(os.path.realpath(cwd), safe)
     if not os.path.isfile(full):
         return {"ok": False, "error": "not a file"}
+    ctype = mimetypes.guess_type(full)[0] or ""
+    # svg is text the editor should keep editing, not media to hand off
+    media = ctype.startswith(_VIEWABLE) and ctype != "image/svg+xml"
     try:
         size = os.path.getsize(full)
-        if size > _MAX_FILE:
+        if size > (_MAX_MEDIA if media else _MAX_FILE):
             return {"ok": True, "path": safe, "content": "", "binary": False,
                     "too_large": True, "size": size}
         with open(full, "rb") as f:
             raw = f.read()
     except OSError as e:
         return {"ok": False, "error": str(e)}
-    # ponytail: data URL rather than a raw-bytes route — fine under the 1 MB cap
-    ctype = mimetypes.guess_type(full)[0] or ""
-    if ctype.startswith("image/") and ctype != "image/svg+xml":  # svg stays editable text
+    # ponytail: data URL rather than a raw-bytes route — no second authed
+    # endpoint to gate, and the cap keeps the JSON payload bounded
+    if media:
         return {"ok": True, "path": safe, "content": "", "binary": True,
-                "too_large": False, "size": size,
-                "image": f"data:{ctype};base64,{base64.b64encode(raw).decode()}"}
+                "too_large": False, "size": size, "mime": ctype,
+                "media": f"data:{ctype};base64,{base64.b64encode(raw).decode()}"}
     if b"\x00" in raw:
         return {"ok": True, "path": safe, "content": "", "binary": True,
                 "too_large": False, "size": size}

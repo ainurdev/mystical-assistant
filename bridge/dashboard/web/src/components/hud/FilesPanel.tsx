@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { buildRows, dirsOf } from "./EditorTab";
 import { FileIcon } from "../../lib/fileicon";
+import { ignoredMatcher } from "../../lib/gitignored";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
    (project + its branch's worktree). Git-changed files carry their status
@@ -37,6 +38,8 @@ function ancestorsOf(paths: Iterable<string>): Set<string> {
 
 export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
+  // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
+  const [ignored, setIgnored] = useState<string[]>([]);
   const [changed, setChanged] = useState<Map<string, string>>(new Map());
   // Folders start closed — a repo tree is thousands of rows in a 358px column.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -57,8 +60,9 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
     try {
       const r = await api.filesTree(project, branch || undefined);
       setPaths(r.files);
+      setIgnored(r.ignored ?? []);
       setCollapsed(new Set(dirsOf(r.files)));
-    } catch { setPaths([]); }
+    } catch { setPaths([]); setIgnored([]); }
     finally { setLoading(false); }
   }, [project, branch, changedOnly]);
 
@@ -89,6 +93,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
         : buildRows(paths, collapsed),
     [changedOnly, changed, paths, collapsed],
   );
+  const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
   const changedDirs = useMemo(() => ancestorsOf(changed.keys()), [changed]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);
   const allCollapsed = dirs.length > 0 && collapsed.size >= dirs.length;
@@ -148,7 +153,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
 
       {branch && (
-        <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px 0", fontSize: "var(--t9)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", minWidth: 0 }}>
+        <div className="swapin" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px 0", fontSize: "var(--t9)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", minWidth: 0 }}>
           <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
         </div>
@@ -179,20 +184,20 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
         )}
         {!project && <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>No session selected.</div>}
         {project && !rows.length && (
-          <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>
+          <div className="swapin" style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>
             {changedOnly ? "Working tree clean." : loading ? "Reading tree…" : "No files — not a git repo?"}
           </div>
         )}
         {/* vskip-row: a repo tree is thousands of rows once expanded — off-screen
             ones skip layout and paint (see index.css). */}
-        <div className="vskip-row">
+        <div className="vskip-row swapin">
         {rows.map((r) => {
           const st = r.dir ? undefined : changed.get(r.path);
           const marked = r.dir ? changedDirs.has(r.path) : !!st;
           return (
             <button key={r.key} className="trow" onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path, !!st))}
-              title={r.path}
-              style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", padding: "3px 7px", paddingLeft: 7 + r.depth * 11 }}>
+              title={isIgnored(r.path) ? `${r.path} — git-ignored` : r.path}
+              style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", opacity: isIgnored(r.path) ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6, textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", padding: "3px 7px", paddingLeft: 7 + r.depth * 11 }}>
               {r.dir ? (
                 <>
                   <span style={{ fontSize: "var(--t8)", color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>

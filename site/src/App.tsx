@@ -1,48 +1,46 @@
-import { Nav } from "@/sections/Nav";
-import { Hero } from "@/sections/Hero";
-import { Dashboard } from "@/sections/Dashboard";
-import { Underneath } from "@/sections/Underneath";
-import { HowItWorks } from "@/sections/HowItWorks";
-import { Features } from "@/sections/Features";
-import { Security } from "@/sections/Security";
-import { Faq } from "@/sections/Faq";
-import { FinalCta } from "@/sections/FinalCta";
-import { Footer } from "@/sections/Footer";
+import { Faq } from "@/term/Faq";
+import { Features } from "@/term/Features";
+import { FinalCta } from "@/term/FinalCta";
+import { Footer } from "@/term/Footer";
+import { Hero } from "@/term/Hero";
+import { Ladder } from "@/term/Ladder";
+import { Nav } from "@/term/Nav";
+import { Rail, useActiveSection } from "@/term/Rail";
+import { Setup } from "@/term/Setup";
+import { Underneath } from "@/term/Underneath";
 
 export default function App() {
+  // Read once here and handed down, so the fixed rail and the hero's inline
+  // copy of it agree without each running its own observer over the page.
+  const { active, progress } = useActiveSection();
+
   return (
     <>
-      {/* Fine vertical grid traces behind everything, aligned to the same shell
-          the content sits in. The old page's aurora blooms are gone with it —
-          a glow behind the type is the opposite of an editorial surface. */}
-      <div className="field" aria-hidden>
-        <div className="field-traces" />
+      <div className="atmos" aria-hidden>
+        <div className="atmos-grid" />
+        <div className="atmos-scan" />
       </div>
 
       <a
         href="#top"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:bg-[var(--accent)] focus:px-3 focus:py-2 focus:text-[var(--accent-ink)]"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:bg-[var(--live)] focus:px-3 focus:py-2 focus:text-[#02120f]"
       >
         Skip to content
       </a>
 
       <Nav />
+      <Rail active={active} progress={progress} />
 
-      {/* Features runs first: the hero band lands on a picture, so the next
-          thing should be more pictures, not four paragraphs about the problem.
-          The hero states the problem once; there is no section restating it. */}
-      <main className="relative z-10">
-        <Hero />
-        <Features />
-        <Dashboard />
-        <Underneath />
-        <HowItWorks />
-        <Security />
-        <Faq />
-        <FinalCta />
-      </main>
-
-      <div className="relative z-10">
+      <div className="page">
+        <main>
+          <Hero active={active} />
+          <Features />
+          <Ladder />
+          <Underneath />
+          <Setup />
+          <Faq />
+          <FinalCta />
+        </main>
         <Footer />
       </div>
     </>

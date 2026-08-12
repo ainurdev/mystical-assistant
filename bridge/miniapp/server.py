@@ -85,12 +85,38 @@ def normalize_permission_mode(mode) -> str | None:
     return m
 
 
+AUTOCOMPACT_MIN, AUTOCOMPACT_MAX = 100_000, 1_000_000
+
+
+def normalize_autocompact(value) -> "tuple[bool, str | None]":
+    """Validate a session's auto-compact window: "auto", a token count inside the
+    100k–1M range `claude --autocompact` accepts, or None to pass no flag at all.
+
+    Returns (ok, value). A bad value is rejected rather than coerced — a typo that
+    silently moved the compaction point would be invisible until a session
+    compacted at the wrong time. Counts are normalized to digits so the CLI never
+    has to parse "150k"."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return True, None
+    v = str(value).strip().lower()
+    if v == "auto":
+        return True, "auto"
+    if v.endswith("k") and v[:-1].isdigit():
+        v = str(int(v[:-1]) * 1000)
+    if not v.isdigit() or not AUTOCOMPACT_MIN <= int(v) <= AUTOCOMPACT_MAX:
+        return False, None
+    return True, str(int(v))
+
+
 def _session_brief(s: dict) -> dict:
     cwd = s.get("cwd")
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
             "fallback_policy": s.get("fallback_policy"),
+            "ctx_tokens": s.get("ctx_tokens"),
+            "ctx_window": config.CONTEXT_WINDOW,
+            "autocompact": s.get("autocompact"),
             "disabled_tools": store.parse_disabled_tools(s.get("disabled_tools")),
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
@@ -225,6 +251,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/files/read":
                     return self._json(git.read_file(state.project_dir(chat_id),
                                                     qs.get("path", [""])[0]))
+                if path == "/api/attachment":
+                    return self._api_attachment(qs.get("path", [""])[0])
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
                 if path.startswith("/api/sessions/"):
@@ -255,9 +283,16 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/sessions/") and path.endswith("/archive"):
                 return self._api_session_archive(
                     chat_id, path[len("/api/sessions/"):-len("/archive")], body)
+            # "No" to a closing question: nothing to run, just stop the row asking.
+            if path.startswith("/api/sessions/") and path.endswith("/dismiss-ask"):
+                return self._json({"ok": runner.dismiss_ask(
+                    path[len("/api/sessions/"):-len("/dismiss-ask")])})
             if path.startswith("/api/sessions/") and path.endswith("/policy"):
                 return self._api_session_policy(
                     chat_id, path[len("/api/sessions/"):-len("/policy")], body)
+            if path.startswith("/api/sessions/") and path.endswith("/autocompact"):
+                return self._api_session_autocompact(
+                    chat_id, path[len("/api/sessions/"):-len("/autocompact")], body)
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
                     chat_id, path[len("/api/run/"):-len("/respond")], body)
@@ -465,6 +500,18 @@ class Handler(BaseHTTPRequestHandler):
         store.set_fallback_policy(sid, policy)
         self._json({"ok": True, "fallback_policy": policy})
 
+    def _api_session_autocompact(self, chat_id: int, sid: str, body: dict):
+        """Set the window size at which this session auto-compacts; null leaves
+        claude's own default. Takes effect on the next turn."""
+        s = store.get_session(sid)
+        if not s or s["chat_id"] != chat_id:
+            return self._json({"error": "not found"}, 404)
+        ok, value = normalize_autocompact(body.get("autocompact"))
+        if not ok:
+            return self._json({"error": "autocompact must be 'auto' or 100000-1000000"}, 400)
+        store.set_autocompact(sid, value)
+        self._json({"ok": True, "autocompact": value})
+
     def _api_run_respond(self, chat_id: int, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""
         job = self._owned_job(chat_id, job_id)
@@ -523,6 +570,22 @@ class Handler(BaseHTTPRequestHandler):
     def _owned_session(self, chat_id: int, sid: str):
         s = store.get_session(sid) if sid else None
         return s if s and s["chat_id"] == chat_id else None
+
+    def _api_attachment(self, p: str):
+        """Serve one screenshot a tool handed back, so the phone shows the image
+        instead of nothing (the dashboard has served these from /local/attachment
+        for a while). Confined to UPLOAD_DIR — the only paths _save_result_images
+        writes — so nothing else on disk is readable through it. A run deletes its
+        uploads when it ends, so a miss is normal and the card just drops the
+        image."""
+        up = os.path.realpath(config.UPLOAD_DIR)
+        fp = os.path.realpath(p or "")
+        ctype = mimetypes.guess_type(fp)[0] or ""
+        if (not fp.startswith(up + os.sep) or not os.path.isfile(fp)
+                or not ctype.startswith("image/")):
+            return self._json({"error": "not found"}, 404)
+        with open(fp, "rb") as f:
+            self._send_bytes(f.read(), 200, ctype, cache="private, max-age=300")
 
     def _api_queue_get(self, chat_id: int):
         """Every queue of this chat that still holds something. The phone's WORK

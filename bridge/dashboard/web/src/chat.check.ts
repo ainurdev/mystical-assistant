@@ -45,4 +45,12 @@ const flipped = mergeDelta(grown, tx([storeTurn("a", 0), running], []));
 ok(flipped[1] !== grown[1] && flipped[1].status === "running", "status change repaints");
 ok(flipped[0] === grown[0], "sibling turn still untouched by a status change");
 
+// A question nobody answered: pending while the turn runs, gone once it ends.
+const ask = (turn_id: string, seq: number): StoreEvent =>
+  ({ type: "question", request_id: "r1", questions: [], seq, turn_id });
+const asked = mergeDelta([], tx([{ ...storeTurn("a", 0), status: "running" }], [ask("a", 0)]));
+ok(asked[0].pending.length === 1, "an unanswered question blocks while the turn runs");
+const over = mergeDelta(asked, tx([{ ...storeTurn("a", 0), status: "error" }], []));
+ok(over[0].pending.length === 0, "the turn ending clears the unanswered question");
+
 console.log("all mergeDelta identity checks passed");

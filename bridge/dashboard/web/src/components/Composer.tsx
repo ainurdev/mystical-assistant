@@ -6,6 +6,7 @@ import { ago } from "../lib/surfaces";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
 import { applyMention, mentionAt, rankPaths } from "../lib/mention";
+import { Tip } from "./ui/Tip";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -115,51 +116,6 @@ const chip: CSSProperties = {
   background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)",
   letterSpacing: 1, padding: "3px 8px",
 };
-
-// The row's explanations, in the HUD's own type instead of the browser's yellow
-// box: hover settles for a beat before it opens (so sweeping across the row
-// doesn't strobe), click pins it open, Escape and blur close it. Touch has no
-// hover at all, which is the other half of why `title` had to go.
-// ponytail: one absolutely-positioned span, no floating-ui, no portal.
-function Tip({ text, anchor = "center", pin = true, children }: {
-  text: string;
-  anchor?: "center" | "right"; // "right" for the last cluster — a centred box would hang off the edge
-  pin?: boolean; // off when the trigger does something of its own — the click closes the tip instead
-  children: ReactNode;
-}) {
-  const [hover, setHover] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const timer = useRef(0);
-  const open = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setHover(true), 400); };
-  const close = () => { window.clearTimeout(timer.current); setHover(false); };
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  return (
-    <span
-      style={{ position: "relative", display: "inline-flex", flex: "none" }}
-      onMouseEnter={open}
-      onMouseLeave={close}
-      onFocus={() => setHover(true)}
-      onBlur={() => { close(); setPinned(false); }}
-      onClick={() => { close(); setPinned((p) => pin && !p); }}
-      onKeyDown={(e) => { if (e.key === "Escape") { close(); setPinned(false); } }}
-    >
-      {children}
-      {(hover || pinned) && (
-        <span role="tooltip"
-          style={{ position: "absolute", bottom: "100%", paddingBottom: 7, zIndex: 40, pointerEvents: "none",
-                   ...(anchor === "right" ? { right: 0 } : { left: "50%", transform: "translateX(-50%)" }) }}>
-          <span style={{ display: "block", width: "max-content", maxWidth: 300, whiteSpace: "pre-line",
-                         border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
-                         background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
-                         boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
-                         color: "var(--txm)", fontSize: "var(--t105)", lineHeight: 1.65, letterSpacing: ".2px", padding: "9px 11px" }}>
-            {text}
-          </span>
-        </span>
-      )}
-    </span>
-  );
-}
 
 // Shared look for the command-line action buttons (STOP / STEER / QUEUE / SEND).
 const actBtn: CSSProperties = {

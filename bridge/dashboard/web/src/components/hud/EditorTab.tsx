@@ -17,14 +17,17 @@ import { cmpTreePath } from "../../lib/pathsort";
 import { nextFocus, previewTabs, remapPaths, tabLabels, underPath } from "../../lib/tabs";
 import { langFor } from "../../lib/langfor";
 import { FileIcon } from "../../lib/fileicon";
+import { ignoredMatcher } from "../../lib/gitignored";
 import { symbolsIn } from "../../lib/symbols";
 import { clampFont, loadPrefs, savePrefs, type EditorPrefs } from "../../lib/editorprefs";
+import { askConfirm } from "../ui/Ask";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
    the whole working tree of the selected branch/worktree, opens any file into an
    editable CodeMirror 6 buffer with syntax highlighting, and saves to disk via
-   Ctrl-S / :w (POST /local/files/write). Binary/oversized files load read-only
-   with a placeholder.
+   Ctrl-S / :w (POST /local/files/write). Files the browser can display itself —
+   images, PDFs, video, audio — open in a viewer instead (see MediaView); other
+   binary and oversized files load read-only with a placeholder.
 
    VS Code-ish extras: the activity bar picks the side view (EXPLORER tree ·
    SEARCH in files), a quick-open palette (Ctrl-P files · Ctrl-Shift-O symbols ·
@@ -153,6 +156,39 @@ const vimFmtRef = { current: () => {} };
 Vim.defineEx("write", "w", () => vimSaveRef.current());
 Vim.defineEx("fmt", "fmt", () => vimFmtRef.current());
 
+/* Anything the browser renders itself — image, PDF, video, audio — shown in
+   place of the buffer. Chrome and Safari both refuse to paint a `data:` PDF in
+   an iframe, so PDFs get a blob URL; the rest read the data URL directly. */
+function MediaView({ src, mime, name }: { src: string; mime: string; name: string }) {
+  const pdf = mime === "application/pdf";
+  const [blob, setBlob] = useState("");
+  useEffect(() => {
+    if (!pdf) return;
+    const bytes = Uint8Array.from(atob(src.slice(src.indexOf(",") + 1)), (c) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    setBlob(url);
+    return () => URL.revokeObjectURL(url);
+  }, [src, mime, pdf]);
+
+  const box: React.CSSProperties = { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: pdf ? 0 : 18 };
+  if (pdf) {
+    return (
+      <div style={box}>
+        {/* iOS WebViews ignore iframed PDFs entirely — the link below is the way
+            out on a phone, so it isn't only a convenience. */}
+        {blob && <iframe src={blob} title={name} style={{ width: "100%", height: "100%", border: 0, background: "var(--panel3)" }} />}
+        <a href={blob || src} download={name.split("/").pop()} target="_blank" rel="noreferrer"
+          style={{ position: "absolute", right: 12, bottom: 12, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px", color: "var(--acc)", background: "color-mix(in srgb, var(--panel2) 92%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", textDecoration: "none" }}>
+          ↓ OPEN
+        </a>
+      </div>
+    );
+  }
+  if (mime.startsWith("video/")) return <div style={box}><video src={src} controls style={{ maxWidth: "100%", maxHeight: "100%" }} /></div>;
+  if (mime.startsWith("audio/")) return <div style={box}><audio src={src} controls style={{ width: "min(420px, 100%)" }} /></div>;
+  return <div className="mscroll" style={{ ...box, overflow: "auto" }}><img src={src} alt={name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>;
+}
+
 /* Put line `n` in the middle of the viewport with the cursor on it. */
 function gotoLine(view: EditorView, n: number) {
   const line = view.state.doc.line(Math.min(Math.max(1, n), view.state.doc.lines));
@@ -228,6 +264,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const [paths, setPaths] = useState<string[]>([]);
+  // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
+  const [ignored, setIgnored] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [tabs, setTabs] = useState<string[]>([]);             // open buffers, left to right
   const [peek, setPeek] = useState<string | null>(null);      // the preview tab, if any (see peekTab)
@@ -287,8 +325,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   const loadTree = () =>
     api.filesTree(project, branch || undefined)
-      .then((r) => setPaths(r.files))
-      .catch(() => setPaths([]));
+      .then((r) => { setPaths(r.files); setIgnored(r.ignored ?? []); })
+      .catch(() => { setPaths([]); setIgnored([]); });
 
   // Load the file list whenever the project/branch changes. An `initialFile`
   // (opened from the sidebar explorer) starts open — its ancestors are the one
@@ -305,14 +343,16 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       .then((r) => {
         if (!live) return;
         setPaths(r.files);
+        setIgnored(r.ignored ?? []);
         // Closed by default — a repo tree fully expanded is thousands of rows
         // to scroll past before reaching anything.
         setCollapsed(new Set(dirsOf(r.files).filter((d) => !initialFile || !underPath(d, initialFile))));
       })
-      .catch(() => { if (live) setPaths([]); });
+      .catch(() => { if (live) { setPaths([]); setIgnored([]); } });
     return () => { live = false; };
   }, [project, branch, initialFile]);
 
+  const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
   const labels = useMemo(() => tabLabels(tabs), [tabs]);
   const rows = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);
@@ -346,6 +386,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   const editable = !!meta && meta.ok && !meta.binary && !meta.too_large;
   const isMd = !!open && /\.(md|markdown)$/i.test(open);
+  // SVG stays an editable text buffer (it is markup), but shares markdown's
+  // VIEW toggle so you can see what you just edited.
+  const isSvg = !!open && /\.svg$/i.test(open);
+  const canPreview = isMd || isSvg;
 
   // (Re)build the CodeMirror view when an editable file's contents arrive.
   useEffect(() => {
@@ -544,8 +588,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     return !!b && b.text !== b.base;
   }
 
-  function closeTab(path: string) {
-    if (isDirty(path) && !window.confirm(`${path} has unsaved changes — close it anyway?`)) return;
+  async function closeTab(path: string) {
+    if (isDirty(path) && !(await askConfirm(`${path} has unsaved changes — close it anyway?`))) return;
     bufs.current.delete(path);
     const rest = tabs.filter((p) => p !== path);
     setTabs(rest);
@@ -553,9 +597,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     if (path === open) setOpen(nextFocus(tabs, path, rest));
   }
 
-  function closeAll() {
+  async function closeAll() {
     const unsaved = tabs.filter(isDirty).length;
-    if (unsaved && !window.confirm(`${unsaved} open file${unsaved === 1 ? " has" : "s have"} unsaved changes — close anyway?`)) return;
+    if (unsaved && !(await askConfirm(`${unsaved} open file${unsaved === 1 ? " has" : "s have"} unsaved changes — close anyway?`))) return;
     bufs.current.clear();
     setTabs([]); setPeek(null); setOpen(null);
   }
@@ -679,15 +723,16 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       run: () => { if (open) beginEdit({ mode: "rename", path: open, value: open }); } },
     { label: "Save", key: "Ctrl+S", run: () => void save(), off: !editable },
     { label: "Format Document", key: "Shift+Alt+F", run: () => void format(), off: !editable || meta?.formatter === false },
-    { label: "Close Editor", key: "Ctrl+F4", alt: "Alt+W", off: !open, run: () => { if (open) closeTab(open); } },
-    { label: "Close All Editors", off: !tabs.length, run: closeAll },
+    { label: "Close Editor", key: "Ctrl+F4", alt: "Alt+W", off: !open, run: () => { if (open) void closeTab(open); } },
+    { label: "Close All Editors", off: !tabs.length, run: () => void closeAll() },
     { label: "Show Explorer", key: "Ctrl+Shift+E", run: () => { showView("explorer"); if (open) reveal(open); } },
     { label: "Find in Files", key: "Ctrl+Shift+F", run: () => showView("search") },
     { label: "Toggle Side Bar", key: "Ctrl+B", run: () => setSideOpen((o) => !o) },
     { label: allCollapsed ? "Expand Folders in Explorer" : "Collapse Folders in Explorer",
       run: () => { showView("explorer"); setCollapsed(allCollapsed ? new Set() : new Set(dirs)); } },
     { label: "Refresh Explorer", run: () => void loadTree() },
-    { label: preview === null ? "Open Markdown Preview" : "Back to the Editor", off: !editable || !isMd,
+    { label: preview !== null ? "Back to the Editor" : isSvg ? "Open SVG Preview" : "Open Markdown Preview",
+      off: !editable || !canPreview,
       run: () => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null)) },
     { label: `Format on Save — ${prefs.formatOnSave ? "on" : "off"}`,
       run: () => setPrefs((p) => ({ ...p, formatOnSave: !p.formatOnSave })) },
@@ -824,9 +869,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       { divider: true },
       {
         icon: "✕", label: "Delete", danger: true, hint: target.dir ? "DIR" : undefined,
-        onClick: () => {
-          if (window.confirm(`Delete ${target.path}${target.dir ? " and everything in it" : ""}?`)) void runOp("delete", target.path);
-        },
+        onClick: () => void askConfirm(`Delete ${target.path}${target.dir ? " and everything in it" : ""}?`)
+          .then((yes) => { if (yes) void runOp("delete", target.path); }),
       },
     ];
   }
@@ -879,8 +923,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   const indentLabel = meta?.indent === "\t" ? "tab" : `${meta?.tab_size ?? 2} spaces`;
   const statusRight = note
     || (meta && !meta.ok ? (meta.error || "can't open") : "")
-    || (meta?.image ? `image · ${Math.round((meta.size ?? 0) / 1024)} KB`
-      : meta?.binary ? "binary file" : meta?.too_large ? "too large to edit"
+    || (meta?.media ? `${meta.mime} · ${Math.round((meta.size ?? 0) / 1024)} KB`
+      : meta?.binary ? "binary file" : meta?.too_large ? `too large · ${Math.round((meta.size ?? 0) / 1024)} KB`
       : editable ? `${lang || "…"} · ${indentLabel} · utf-8 · ${lineCount}L` : "");
 
   return (
@@ -1023,9 +1067,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             <div className="vskip-row">
             {rows.map((r) => r.dir ? (
               <button key={r.key} className="trow" onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(r.path)) n.delete(r.path); else n.add(r.path); return n; })}
-                onContextMenu={(e) => onRowCtx(e, r.path, true)} title={r.path}
+                onContextMenu={(e) => onRowCtx(e, r.path, true)} title={isIgnored(r.path) ? `${r.path} — git-ignored` : r.path}
                 {...dragSourceProps(r.path)} {...dragTargetProps(r.path)}
-                style={{ width: "100%", appearance: "none", border: 0, background: dropDir === r.path ? "color-mix(in srgb, var(--acc) 16%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
+                style={{ width: "100%", appearance: "none", border: 0, background: dropDir === r.path ? "color-mix(in srgb, var(--acc) 16%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : isIgnored(r.path) ? 0.5 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
                 <span style={{ fontSize: "var(--t8)", color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#7fa8a0" strokeWidth="1.7" style={{ flex: "none" }}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
                 <span style={{ fontSize: "var(--t11)", color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.name}</span>
@@ -1033,9 +1077,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             ) : (
               <button key={r.key} className="trow" onClick={() => peekTab(r.path)} onDoubleClick={() => openTab(r.path)}
                 ref={r.path === open ? rowRef : undefined}
-                onContextMenu={(e) => onRowCtx(e, r.path, false)} title={r.path}
+                onContextMenu={(e) => onRowCtx(e, r.path, false)} title={isIgnored(r.path) ? `${r.path} — git-ignored` : r.path}
                 {...dragSourceProps(r.path)} {...dragTargetProps(parentOf(r.path))}
-                style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === open ? "var(--acc)" : "transparent"}`, background: r.path === open ? "color-mix(in srgb, var(--acc) 8%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
+                style={{ width: "100%", appearance: "none", border: 0, borderLeft: `2px solid ${r.path === open ? "var(--acc)" : "transparent"}`, background: r.path === open ? "color-mix(in srgb, var(--acc) 8%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : isIgnored(r.path) && r.path !== open ? 0.5 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 7, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
                 <FileIcon name={r.name} />
                 <span style={{ fontSize: "var(--t11)", color: r.path === open ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>{r.name}</span>
                 {r.path === open && dirty && <span style={{ fontSize: "var(--t12)", color: "var(--warn)", flex: "none", lineHeight: 1 }}>●</span>}
@@ -1060,14 +1104,14 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 const name = labels[ti];
                 return (
                   <div key={p} title={p} {...hp(`tab:${p}`)} onDoubleClick={() => openTab(p)}
-                    onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(p); } }}
+                    onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); void closeTab(p); } }}
                     style={{ display: "flex", alignItems: "center", gap: 6, flex: "none", maxWidth: 190, padding: "5px 8px 5px 10px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderTop: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--panel3) 70%, transparent)" : hov === `tab:${p}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent" }}>
                     <span onClick={() => setOpen(p)} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                       <FileIcon name={name} size={13} />
                       {/* italic = the preview tab, the one the next single click replaces */}
                       <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", fontStyle: p === peek ? "italic" : "normal", color: on ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
                     </span>
-                    <button onClick={() => closeTab(p)} title="close" {...hp(`tabx:${p}`)}
+                    <button onClick={() => void closeTab(p)} title="close" {...hp(`tabx:${p}`)}
                       style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", flex: "none", lineHeight: 1, padding: "1px 2px", fontFamily: "'JetBrains Mono',monospace", fontSize: mod ? "var(--t12)" : "var(--t10)", color: mod ? "var(--warn)" : hov === `tabx:${p}` ? "var(--txb)" : "var(--txd)" }}>
                       {mod && hov !== `tabx:${p}` ? "●" : "✕"}
                     </button>
@@ -1083,21 +1127,23 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 <div ref={hostRef} className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", visibility: preview === null ? "visible" : "hidden" }} />
                 {preview !== null && (
                   <div className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", padding: "14px 18px", fontSize: "var(--t125)", lineHeight: 1.65, color: "var(--tx)" }}>
-                    <Markdown>{preview}</Markdown>
+                    {/* encodeURIComponent, not base64: the buffer can hold any
+                        UTF-8 and btoa only takes latin-1 */}
+                    {isSvg
+                      ? <img src={`data:image/svg+xml,${encodeURIComponent(preview)}`} alt={open ?? ""} style={{ display: "block", maxWidth: "100%", margin: "0 auto" }} />
+                      : <Markdown>{preview}</Markdown>}
                   </div>
                 )}
               </>
-            ) : meta?.image ? (
-              <div className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-                <img src={meta.image} alt={open ?? ""} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-              </div>
+            ) : meta?.media ? (
+              <MediaView src={meta.media} mime={meta.mime ?? ""} name={open ?? ""} />
             ) : (
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txd)" }}>
                 {!open ? "Select a file to edit."
                   : !meta ? "Loading…"
                   : !meta.ok ? (meta.error || "Can't open this file.")
                   : meta.binary ? "Binary file — not editable here."
-                  : meta.too_large ? "File is over 1 MB — too large to edit here."
+                  : meta.too_large ? `Too large to open here — ${Math.round((meta.size ?? 0) / 1024 / 1024 * 10) / 10} MB.`
                   : ""}
               </div>
             )}
@@ -1121,9 +1167,9 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 style={{ appearance: "none", cursor: fmting || meta?.formatter === false ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "fmt" && !fmting && meta?.formatter !== false ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", opacity: fmting || meta?.formatter === false ? 0.45 : 1 }}>
                 {fmting ? "⋯ FORMATTING" : "⌘ FORMAT"}</button>
             )}
-            {editable && isMd && (
+            {editable && canPreview && (
               <button onClick={() => setPreview((p) => (p === null ? viewRef.current?.state.doc.toString() ?? meta?.content ?? "" : null))}
-                title={preview === null ? "preview rendered markdown" : "back to the editor"} {...hp("mdv")}
+                title={preview === null ? (isSvg ? "preview the rendered svg" : "preview rendered markdown") : "back to the editor"} {...hp("mdv")}
                 style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: hov === "mdv" || preview !== null ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px" }}>
                 {preview === null ? "◧ VIEW" : "✎ EDIT"}</button>
             )}

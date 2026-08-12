@@ -61,11 +61,27 @@ compaction; this only chooses when.
 
 ## UI
 
-- Mini App: one more segment in `UsageStrip.tsx:17` — `5h 31% · Wk 52% · ctx 39%`.
-  Amber past 75%, red past 90%, matching `sevColor`'s existing thresholds.
-- Dashboard: a pill in `StatusBar.tsx` next to the per-account usage pills.
-- The autocompact picker sits wherever the session's permission mode is chosen,
-  as a peer of the other per-session postures.
+The reading and the knob ship as one control: the number is only worth showing
+next to the thing that acts on it.
+
+- Mini App: `ContextChip` in `GoalPill.tsx`, mounted next to `PolicyChip` in the
+  chat header — `CTX 39% · ⇲auto`, tapped to cycle auto → 100k → 150k, optimistic
+  like `PolicyChip`. Amber past 75%, red past 90%.
+- Dashboard: its per-session postures live in the session context menu, so the
+  compaction choices go there next to the on-limit policy, with the reading as a
+  non-acting row above them. The always-visible half is a `CTX n%` reading in the
+  `StatusBar` footer for the open session.
+
+Both hide entirely while `ctx_tokens` is null — showing `0%` for "never measured"
+would read as plenty of room.
+
+## Known limitation
+
+Only the streaming path measures. A turn driven by plain Telegram text goes
+through `run_blocking`, whose `--output-format json` reports usage aggregated
+across the turn rather than the last request's fill — the same overcount the
+meter exists to avoid. Those turns leave the reading at its previous value until
+the next panel turn corrects it, which is stale-low rather than wrong-high.
 
 ## Verification
 

@@ -38,6 +38,10 @@ export interface StatusBarProps {
   repo: string;
   changes: number;
   git?: GitStatus | null;      // open session's working tree; null while loading
+  // Open session's context-window fill, measured on its last request. Both null
+  // until a turn has run under the meter, and then the chip stays hidden.
+  ctxTokens?: number | null;
+  ctxWindow?: number | null;
   onPalette: () => void;
   // Same action as the composer's AGENT picker, so the footer switches who runs
   // the turn rather than only reporting it. Takes an agent option id.
@@ -46,7 +50,10 @@ export interface StatusBarProps {
 
 export function StatusBar(props: StatusBarProps) {
   const { mount, usedPct, resetLabel, accounts = [], agent, agents = [], repo, changes,
-          git, onPalette, onPickAgent } = props;
+          git, ctxTokens, ctxWindow, onPalette, onPickAgent } = props;
+  // Window fill of the open session. Unmeasured (no turn yet under the meter)
+  // shows nothing rather than 0%, which would read as "plenty of room".
+  const ctxPct = ctxTokens && ctxWindow ? Math.round((ctxTokens / ctxWindow) * 100) : null;
   const [hovered, setHovered] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
 
@@ -167,6 +174,14 @@ export function StatusBar(props: StatusBarProps) {
           </span>
         )}
       </span>
+      {ctxPct !== null && (
+        <span
+          title={`This session's last request filled ${ctxTokens?.toLocaleString()} of ${ctxWindow?.toLocaleString()} context tokens. Right-click the session to change when it compacts.`}
+          style={{ color: ctxPct >= 90 ? "var(--warn)" : "var(--txd)" }}
+        >
+          CTX <span style={{ color: ctxPct >= 75 ? "var(--warn)" : "var(--tx)" }}>{ctxPct}%</span>
+        </span>
+      )}
       {accounts.length > 1 && (
         <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {accounts.map((a) => {

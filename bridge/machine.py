@@ -131,3 +131,25 @@ def list_running() -> list[dict]:
             out.append(row)
     out.sort(key=lambda r: r["started"] or 0, reverse=True)
     return out
+
+
+def live_session_ids() -> set[str]:
+    """Session ids whose Claude process is still alive — including the bridge's own
+    sdk-cli children that list_running() drops. Nothing can still be running in a
+    session whose process is gone (see agents.session_agents)."""
+    out: set[str] = set()
+    try:
+        names = os.listdir(SESSIONS_DIR)
+    except OSError:
+        return out
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(SESSIONS_DIR, name)) as f:
+                raw = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if raw.get("sessionId") and _alive(raw.get("pid")):
+            out.add(raw["sessionId"])
+    return out

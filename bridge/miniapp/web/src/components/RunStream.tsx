@@ -1,6 +1,6 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import {
-  Pencil,
+  PenLine,
   BookOpen,
   Terminal,
   Search,
@@ -9,39 +9,324 @@ import {
   CircleStop,
   Copy,
   Check,
+  Globe,
+  Bot,
+  ListChecks,
+  Plug,
+  Layers,
+  GitCompare,
+  Brain,
 } from "lucide-react";
-import type { AnswerSelection, PendingRequest, RunEvent } from "../lib/api";
+import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
-import { foldChips } from "../lib/toolfold";
+import { foldChips, runsOf } from "../lib/toolfold";
+import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+import { askBack } from "../lib/askback";
+import { hostOf, mcpParts, toolAccent, toolKind } from "../lib/tools";
 
-// Map a few common tool names to icons; default to a wrench.
-function ToolIcon({ name }: { name: string }) {
-  const props = {
-    size: 13,
-    className: "shrink-0 text-[var(--brand-soft)]",
-    "aria-hidden": true,
-  } as const;
-  switch (name) {
-    case "Edit":
-    case "Write":
-    case "MultiEdit":
-      return <Pencil {...props} />;
-    case "Read":
-      return <BookOpen {...props} />;
-    case "Bash":
-      return <Terminal {...props} />;
-    case "Grep":
-    case "Glob":
-      return <Search {...props} />;
-    default:
-      return <Wrench {...props} />;
-  }
+/** The two edges a tool's accent draws: the card's hairline and the tag's box. */
+const edge = (accent: string) => `color-mix(in srgb, ${accent} 24%, transparent)`;
+const tagEdge = (accent: string) => `color-mix(in srgb, ${accent} 35%, transparent)`;
+
+/** The directory takes the truncation, the filename never gets cut — on a phone
+ *  a middle-truncated path is the difference between useful and noise. */
+function FilePath({ path }: { path: string }) {
+  const cut = path.lastIndexOf("/");
+  return (
+    <span className="flex min-w-0 flex-1 font-mono text-[11px]" title={path}>
+      <span className="truncate text-[var(--muted-2)]">{cut >= 0 ? path.slice(0, cut + 1) : ""}</span>
+      <span className="flex-none text-[var(--foreground-bright)]">{path.slice(cut + 1)}</span>
+    </span>
+  );
 }
 
-type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[] };
+/** The right-hand end of a tool card: what came back, then how long it took.
+ *  Both are optional — an unfinished call has neither. */
+/** What a finished call left behind: how long it took, how big the answer was,
+ *  and whether it failed. Every card ends with these three. */
+type Res = { ms?: number; stat?: string; error?: boolean };
+
+function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean }) {
+  if (!ms && !stat) return null;
+  return (
+    <span className="flex flex-none items-center gap-1 text-[9.5px] tracking-[1px] text-[var(--muted-2)]">
+      {stat && (
+        <span className="max-w-[120px] truncate" style={error ? { color: "var(--danger)" } : undefined}>
+          {stat}
+        </span>
+      )}
+      {stat && ms ? <span aria-hidden>·</span> : null}
+      {ms ? <span>{dur(ms)}</span> : null}
+    </span>
+  );
+}
+
+/** A pause where the model reasoned. There is no reasoning to print — Claude Code
+ *  strips it from every surface — so the marker is the pause itself, which is the
+ *  one thing a list of tool cards can never explain: the gap between them. */
+function ThinkingRow({ ms }: { ms?: number }) {
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[var(--muted-2)]">
+      <Brain size={12} className="flex-none" aria-hidden />
+      <span className="flex-none text-[10px] tracking-[1px]">THOUGHT</span>
+      <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
+      <span className="flex-none text-[9.5px] tracking-[1px]">{dur(ms)}</span>
+    </div>
+  );
+}
+
+/** A read is a page glanced at: no box, just a tinted wash fading out to the
+ *  right. The quietest row in a turn, because looking at a file changed nothing. */
+function ReadCard({ path, ms, stat, error }: Res & { path: string }) {
+  const accent = toolAccent("Read");
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg py-1 pl-2 pr-2"
+      style={{ background: `linear-gradient(90deg, color-mix(in srgb, ${accent} 10%, transparent), transparent 70%)` }}
+    >
+      <BookOpen size={12} className="flex-none" style={{ color: accent }} aria-hidden />
+      <FilePath path={path} />
+      <Took ms={ms} stat={stat} error={error} />
+    </div>
+  );
+}
+
+/** A write is a file changed: boxed, with a solid bar down the side and the tag
+ *  filled in rather than outlined — the loudest one-line card, because it did
+ *  something. */
+function WriteCard({ name, path, ms, stat, error }: Res & { name: string; path: string }) {
+  const accent = toolAccent(name);
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg border border-l-[3px] bg-[var(--ac-03)] py-1.5 pl-2 pr-2"
+      style={{ borderColor: edge(accent), borderLeftColor: accent }}
+    >
+      <span
+        className="flex flex-none items-center gap-1 rounded px-1.5 py-px text-[9.5px] tracking-[1px]"
+        style={{ background: accent, color: "var(--tg-button-text)" }}
+      >
+        <PenLine size={10} aria-hidden />
+        {name.toUpperCase()}
+      </span>
+      <FilePath path={path} />
+      <Took ms={ms} stat={stat} error={error} />
+    </div>
+  );
+}
+
+/** A lookup is a query typed into a field: everything dashed, because nothing
+ *  here is committed yet — the pattern sits in its own inset box, as entered. */
+function SearchCard({ name, summary, ms, stat, error }: Res & { name: string; summary: string }) {
+  const accent = toolAccent(name);
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg border border-dashed px-2 py-1.5"
+      style={{ borderColor: tagEdge(accent) }}
+    >
+      <Search size={12} className="flex-none" style={{ color: accent }} aria-hidden />
+      <span
+        className="min-w-0 flex-1 truncate rounded border border-dashed px-1.5 py-px font-mono text-[11px] text-[var(--foreground-bright)]"
+        style={{ borderColor: edge(accent) }}
+      >
+        {summary}
+      </span>
+      <Took ms={ms} stat={stat} error={error} />
+    </div>
+  );
+}
+
+/** The web is not this machine: a browser's address bar, fully round, host first
+ *  with the rest of the URL dimmed behind it. */
+function WebCard({ name, summary, ms, stat, error }: Res & { name: string; summary: string }) {
+  const accent = toolAccent(name);
+  const host = hostOf(summary);
+  return (
+    <div
+      className="flex items-center gap-2 rounded-full border bg-[var(--ac-03)] py-1 pl-2 pr-3"
+      style={{ borderColor: edge(accent) }}
+    >
+      <Globe size={12} className="flex-none" style={{ color: accent }} aria-hidden />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--tg-hint)]">
+        {host ? (
+          <>
+            <span className="text-[var(--foreground-bright)]">{host}</span>
+            <span className="text-[var(--muted-2)]">{summary.slice(summary.indexOf(host) + host.length)}</span>
+          </>
+        ) : (
+          `“${summary}”`
+        )}
+      </span>
+      <Took ms={ms} stat={stat} error={error} />
+    </div>
+  );
+}
+
+/** A call out of this process and into another one: no side edges, a patch cable
+ *  running from the server's tag across to the tool it reached. */
+function McpCard({ name, ms, stat, error }: Res & { name: string }) {
+  const accent = toolAccent(name);
+  const { server, tool } = mcpParts(name);
+  return (
+    <div className="flex items-center gap-2 border-y bg-[var(--ac-03)] px-2 py-1.5" style={{ borderColor: edge(accent) }}>
+      <Plug size={12} className="flex-none" style={{ color: accent }} aria-hidden />
+      <span className="flex-none text-[9.5px] tracking-[1px]" style={{ color: accent }}>
+        {server.toUpperCase()}
+      </span>
+      <span
+        aria-hidden
+        className="h-px w-4 flex-none"
+        style={{ backgroundImage: `repeating-linear-gradient(90deg, ${accent} 0 2px, transparent 2px 5px)` }}
+      />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--foreground-bright)]">{tool}</span>
+      <Took ms={ms} stat={stat} error={error} />
+    </div>
+  );
+}
+
+/** A delegated run (Task / Skill): a rail down the side and the brief it was
+ *  handed, which is a paragraph, not a path — so it wraps instead of truncating. */
+function AgentCard({ name, summary, ms, stat, error }: Res & { name: string; summary: string }) {
+  const accent = toolAccent(name);
+  return (
+    <div
+      className="flex items-start gap-2 rounded-lg border border-l-2 bg-[var(--ac-03)] px-2 py-1.5"
+      style={{ borderColor: edge(accent), borderLeftColor: accent }}
+    >
+      <Bot size={12} className="mt-px flex-none" style={{ color: accent }} aria-hidden />
+      <span className="min-w-0 flex-1 line-clamp-2 text-[11px] leading-relaxed text-[var(--tg-hint)]">{summary}</span>
+      <span className="mt-px"><Took ms={ms} stat={stat} error={error} /></span>
+    </div>
+  );
+}
+
+/** The shell the remaining one-line cards share: a hairline box in the tool's
+ *  accent, an icon, that tool's own line, then how long it took. */
+function ToolBox({
+  accent, icon, ms, stat, error, children,
+}: Res & {
+  accent: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg border bg-[var(--ac-03)] px-2 py-1.5"
+      style={{ borderColor: edge(accent) }}
+    >
+      <span className="flex-none" style={{ color: accent }}>{icon}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--tg-hint)]">{children}</span>
+      <Took ms={ms} stat={stat} error={error} />
+    </div>
+  );
+}
+
+/** Everything that isn't a terminal or a diff, drawn as what it actually did. */
+function ToolCard({ name, summary, ms, stat, error }: Res & { name: string; summary: string }) {
+  const kind = toolKind(name);
+  const accent = toolAccent(name);
+
+  const res = { ms, stat, error };
+
+  if (kind === "read" && summary) return <ReadCard path={summary} {...res} />;
+  if (kind === "write" && summary) return <WriteCard name={name} path={summary} {...res} />;
+  if (kind === "agent") return <AgentCard name={name} summary={summary} {...res} />;
+  if (kind === "mcp") return <McpCard name={name} {...res} />;
+  if (kind === "web") return <WebCard name={name} summary={summary} {...res} />;
+  if (kind === "search") return <SearchCard name={name} summary={summary} {...res} />;
+  if (kind === "plan")
+    return (
+      <ToolBox accent={accent} icon={<ListChecks size={12} aria-hidden />} {...res}>
+        {summary || "checklist updated"}
+      </ToolBox>
+    );
+  return (
+    <ToolBox accent={accent} icon={<Wrench size={12} aria-hidden />} {...res}>
+      {name}
+      {summary ? `: ${summary}` : ""}
+    </ToolBox>
+  );
+}
+
+/** A run of back-to-back calls of one kind drawn as one card, the way Bash calls
+ *  share a terminal: the tag once in the header, a row per call. Eight MCP calls
+ *  said the server's name eight times. */
+function CallGroup({ name, calls }: {
+  name: string;
+  calls: { name: string; summary: string; ms?: number; stat?: string; error?: boolean }[];
+}) {
+  const kind = toolKind(name);
+  const accent = toolAccent(name);
+  const tag = kind === "mcp" ? mcpParts(name).server : kind;
+  const total = calls.reduce((t, c) => t + (c.ms ?? 0), 0);
+  return (
+    <div className="rounded-lg border bg-[var(--ac-03)]" style={{ borderColor: edge(accent) }}>
+      <div
+        className="flex items-center gap-2 border-b px-2 py-1 text-[9.5px] tracking-[1.5px]"
+        style={{ borderColor: edge(accent), color: accent }}
+      >
+        {kind === "mcp" ? <Plug size={11} aria-hidden /> : kind === "web" ? <Globe size={11} aria-hidden /> : <Bot size={11} aria-hidden />}
+        <span className="truncate">{tag.toUpperCase()}</span>
+        <span className="flex-none text-[var(--muted-2)]">· {calls.length} CALLS</span>
+        {total > 0 && <span className="flex-none text-[var(--muted-2)]">· {dur(total)}</span>}
+      </div>
+      {calls.map((c, k) => (
+        <div key={k} className="flex items-center gap-2 border-t border-[var(--border)] px-2 py-1 first:border-t-0">
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--foreground-bright)]">
+            {kind === "mcp" ? mcpParts(c.name).tool : hostOf(c.summary) || c.summary}
+          </span>
+          <Took ms={c.ms} stat={c.stat} error={c.error} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One screenshot a tool handed back. The bytes come through the API instead of a
+ *  plain <img src> because the Mini App's auth lives in a header (see
+ *  api.attachmentUrl). The upload dir is pruned by age, so an old turn's image is
+ *  gone — that thumbnail just doesn't appear. */
+function ToolImage({ path, onZoom }: { path: string; onZoom: (src: string) => void }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    let dead = false;
+    api.attachmentUrl(path).then((u) => {
+      url = u;
+      if (dead) URL.revokeObjectURL(u);
+      else setSrc(u);
+    }).catch(() => {});
+    return () => {
+      dead = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [path]);
+  if (!src) return null;
+  return (
+    <button type="button" onClick={() => onZoom(src)} aria-label="Open screenshot" className="block">
+      <img src={src} alt="tool output" className="h-20 w-auto max-w-[160px] rounded-lg object-cover" />
+    </button>
+  );
+}
+
+function ToolImages({ paths }: { paths: string[] }) {
+  const [zoom, setZoom] = useState<string | null>(null);
+  return (
+    <div className="flex flex-wrap gap-2">
+      {zoom && <ImageLightbox src={zoom} alt="tool output" onClose={() => setZoom(null)} />}
+      {paths.map((p) => <ToolImage key={p} path={p} onZoom={setZoom} />)}
+    </div>
+  );
+}
+
+/** Tool kinds that draw a block of their own, so they never fold into a
+ *  "N steps" chip with the quiet lookups. */
+const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
+
+type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[];
+               stat?: string; images?: string[] };
 
 // Output/diff lines shown before a block folds — a turn can hold dozens.
 const OUT_PREVIEW = 6;
@@ -96,7 +381,8 @@ function TerminalBlock({
           <i className="block h-[5px] w-[5px] rounded-full bg-[var(--muted-2)]" />
           <i className="block h-[5px] w-[5px] rounded-full bg-[var(--muted-2)]" />
         </span>
-        <span className="flex-none text-[9.5px] tracking-[2px]" style={{ color: accent }}>
+        <span className="flex flex-none items-center gap-1 text-[9.5px] tracking-[2px]" style={{ color: accent }}>
+          <Terminal size={11} aria-hidden />
           BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
         </span>
         {done?.ms ? (
@@ -187,7 +473,8 @@ function DiffBlock({
   return (
     <div className="overflow-hidden rounded-lg border border-[color-mix(in_srgb,var(--success)_24%,transparent)] bg-black/25">
       <div className="flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--success)_16%,transparent)] bg-[var(--ac-03)] px-2.5 py-1.5">
-        <span className="flex-none text-[9.5px] tracking-[2px] text-[var(--success)]">
+        <span className="flex flex-none items-center gap-1 text-[9.5px] tracking-[2px] text-[var(--success)]">
+          <GitCompare size={11} aria-hidden />
           {name.toUpperCase()} //
         </span>
         <span className="min-w-0 truncate font-mono text-[11px] text-[var(--foreground-bright)]">{path}</span>
@@ -229,7 +516,7 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
       onClick={onOpen}
       className="flex w-full items-center gap-1.5 font-mono text-xs text-[var(--tg-hint)]"
     >
-      <Wrench size={13} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
+      <Layers size={13} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
       <span className="min-w-0 truncate text-left">
         {names.length} steps — {label}
       </span>
@@ -242,14 +529,52 @@ function FinalResult({
   result,
   elapsed,
   cost,
+  onAnswer,
+  onWrite,
 }: {
   result: string;
   elapsed?: number;
   cost?: number;
+  onAnswer?: (text: string) => void;
+  onWrite?: (question: string) => void;
 }) {
+  const [sent, setSent] = useState<string | null>(null);
+  // The model asked in prose instead of using a question card: lift the question
+  // out of the body so it reads as an ask, and offer the answers it expected.
+  const ask = onAnswer ? askBack(result) : null;
   return (
     <Card className="space-y-2 border border-[var(--tg-button)]/30">
-      <Markdown className="text-sm leading-normal">{result}</Markdown>
+      {(ask ? ask.body : result) && (
+        <Markdown className="text-sm leading-normal">{ask ? ask.body : result}</Markdown>
+      )}
+      {ask && (
+        <div className="space-y-2 rounded-lg border border-[var(--tg-button)]/40 bg-[var(--tg-bg)] p-2.5">
+          <Markdown className="text-sm font-medium leading-normal">{ask.question}</Markdown>
+          <div className="flex flex-wrap gap-1.5">
+            {ask.options.map((o) => (
+              <button
+                key={o}
+                type="button"
+                disabled={sent !== null}
+                onClick={() => { setSent(o); onAnswer!(o); }}
+                className="rounded-lg bg-[var(--tg-button)] px-3 py-1.5 text-sm text-[var(--tg-button-text)] active:opacity-70 disabled:opacity-40"
+              >
+                {o}
+              </button>
+            ))}
+            {onWrite && (
+              <button
+                type="button"
+                disabled={sent !== null}
+                onClick={() => onWrite(ask.question)}
+                className="rounded-lg px-3 py-1.5 text-sm text-[var(--tg-hint)] active:opacity-70 disabled:opacity-40"
+              >
+                Write answer…
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {(typeof elapsed === "number" || typeof cost === "number") && (
         <div className="text-xs text-[var(--tg-hint)]">
           {typeof elapsed === "number" ? `${elapsed.toFixed(1)}s` : ""}
@@ -264,7 +589,7 @@ function FinalResult({
 type RespondFn = (
   requestId: string,
   opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
-) => void;
+) => void | Promise<boolean | void>;
 
 // Memoized: a long session's past turns keep the same `events`/`pending` arrays
 // across polls (see mergeDelta), so only the live turn re-renders.
@@ -272,11 +597,17 @@ export const RunStream = memo(function RunStream({
   events,
   pending = [],
   onRespond,
+  onAnswer,
+  onWrite,
   ended = false,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
+  /** Send a reply to a question the model asked in prose. Only the last, finished
+   *  turn gets one — an old question is history, not something to answer. */
+  onAnswer?: (text: string) => void;
+  onWrite?: (question: string) => void;
   ended?: boolean;
 }) {
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
@@ -294,16 +625,41 @@ export const RunStream = memo(function RunStream({
   const doneOf = (e: RunEvent): Done | undefined =>
     e.type === "tool" ? (e.id ? toolDone.get(e.id) : {}) : undefined;
 
+  // Only the quiet steps fold away. A terminal, a diff, a delegated run, a fetch
+  // or an MCP call each carry their own block and break the run instead —
+  // otherwise the cards they just earned never get drawn.
   const { folds, headOf } = foldChips(events, (i) => {
     const e = events[i];
     if (e.type !== "tool") return false;
-    return e.name === "Bash" || !!doneOf(e)?.patch;
+    return BLOCK_KINDS.has(toolKind(e.name)) || !!doneOf(e)?.patch;
   });
+  // Back-to-back calls of one kind share a card, so six MCP calls read as one
+  // block with six rows instead of six cards. MCP groups by server.
+  const groupKey = (i: number): string | null => {
+    const e = events[i];
+    if (e.type !== "tool" || doneOf(e)?.patch) return null;
+    if (e.name === "Bash") return null;      // a terminal per command, as before
+    const kind = toolKind(e.name);
+    if (kind === "mcp") return `mcp:${mcpParts(e.name).server}`;
+    return BLOCK_KINDS.has(kind) ? kind : null;   // the quiet ones fold into chips
+  };
+  const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
 
   // The turn's closing text arrives twice — streamed as a text block, then again
   // as the run's result — so only the result card draws it. A native session
   // emits no result event, so its final text keeps rendering as text.
   const resultText = events.find((e) => e.type === "result")?.result?.trim();
+
+  // Is the next thing the model does asking a question card?
+  const asksNext = (i: number): boolean => {
+    for (let j = i + 1; j < events.length; j++) {
+      const t = events[j].type;
+      if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
+          || t === "thinking") continue;
+      return t === "question";
+    }
+    return false;
+  };
 
   return (
     // vskip-card: off-screen event cards skip layout/paint (see index.css).
@@ -312,6 +668,15 @@ export const RunStream = memo(function RunStream({
         switch (event.type) {
           case "text":
             if (resultText && event.text.trim() === resultText) return null;
+            // A turn ending on an AskUserQuestion emits no result event, so the
+            // prose explaining the card used to render bare while every other
+            // answer got a card. Box it like one.
+            if (asksNext(i))
+              return (
+                <Card key={i} className="border border-[var(--tg-button)]/30">
+                  <Markdown className="text-sm leading-normal">{event.text}</Markdown>
+                </Card>
+              );
             return (
               <Markdown key={i} className="text-sm leading-normal">
                 {event.text}
@@ -336,19 +701,38 @@ export const RunStream = memo(function RunStream({
               return (
                 <DiffBlock key={i} name={event.name} path={event.summary} patch={done.patch} ms={done.ms} />
               );
+            if (groupOf.has(i)) return null;   // drawn by the run's head
+            const run = groups.get(i);
+            if (run)
+              return (
+                <CallGroup
+                  key={i}
+                  name={event.name}
+                  calls={run.map((j) => {
+                    const e = events[j] as { name: string; summary: string };
+                    const d = doneOf(events[j]);
+                    return { name: e.name, summary: e.summary, ms: d?.ms, stat: d?.stat,
+                             error: d?.is_error };
+                  })}
+                />
+              );
             return (
-              <div
-                key={i}
-                className="flex items-center gap-1.5 font-mono text-xs text-[var(--tg-hint)]"
-              >
-                <ToolIcon name={event.name} />
-                <span className="min-w-0 break-all">
-                  {event.name}
-                  {event.summary ? `: ${event.summary}` : ""}
-                </span>
+              <div key={i} className="space-y-2">
+                <ToolCard
+                  name={event.name}
+                  summary={event.summary}
+                  ms={done?.ms}
+                  stat={done?.stat}
+                  error={done?.is_error}
+                />
+                {/* Screenshots the tool handed back — drawn under whatever card it
+                    got, so every kind gets them without each card knowing. */}
+                {done?.images?.length ? <ToolImages paths={done.images} /> : null}
               </div>
             );
           }
+          case "thinking":
+            return <ThinkingRow key={i} ms={event.ms} />;
           case "tool_done":
             return null;
           case "result":
@@ -358,6 +742,8 @@ export const RunStream = memo(function RunStream({
                 result={event.result}
                 elapsed={event.elapsed}
                 cost={event.cost}
+                onAnswer={onAnswer}
+                onWrite={onWrite}
               />
             );
           case "error":

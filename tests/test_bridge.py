@@ -383,8 +383,11 @@ def test_session_brief_shape(monkeypatch):
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "updated", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal",
-                      "lifecycle", "tags", "disabled_tools"}
+                      "lifecycle", "tags", "disabled_tools",
+                      "ctx_tokens", "ctx_window", "autocompact"}
     assert b["id"] == s["id"] and b["project"] == "p6"
+    assert b["ctx_tokens"] is None        # nothing measured until a turn runs
+    assert b["autocompact"] is None       # claude's own default until chosen
     assert b["disabled_tools"] == ["mcp__github"]   # servers off until switched on
     assert isinstance(b["branch"], str)   # "" when cwd has no repo
     assert b["goal"] is None              # parsed from the column, not the raw JSON

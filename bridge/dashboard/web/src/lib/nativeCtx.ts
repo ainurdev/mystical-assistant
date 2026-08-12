@@ -1,4 +1,5 @@
 import type { CtxItem } from "../components/hud/ContextMenu";
+import { confirmLeave } from "./leaveGuard";
 
 /* The browser's own context-menu entries, rebuilt for the custom HUD menu —
    preventDefault() takes the native one away, so anything it offered has to be
@@ -66,7 +67,7 @@ export function nativeCtxItems(e: MouseEvent): { top: CtxItem[]; page: CtxItem[]
     { icon: "☰", label: "Select all", hint: "⌘A", onClick: selectAll },
     { icon: "←", label: "Back", onClick: () => history.back() },
     { icon: "→", label: "Forward", onClick: () => history.forward() },
-    { icon: "↻", label: "Reload", hint: "⌘R", onClick: () => location.reload() },
+    { icon: "↻", label: "Reload", hint: "⌘R", onClick: () => void confirmLeave().then((ok) => ok && location.reload()) },
     { icon: "⎙", label: "Print…", hint: "⌘P", onClick: () => window.print() },
   ];
   return { top, page };

@@ -40,8 +40,8 @@ import os
 import signal
 import sys
 
-from bridge import (config, devserver, limits, native_activity, onboard, pubsub,
-                    recovery, selfupdate, state, store, tunnel)
+from bridge import (config, devserver, landing, limits, native_activity, onboard,
+                    pubsub, recovery, selfupdate, state, store, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -85,6 +85,14 @@ def _setup_dashboard():
     print(f"Dashboard (localhost only): {url}")
 
 
+def _setup_landing():
+    if not landing.built():
+        print("Landing page not built (npm --prefix site run build) — not served.")
+        return
+    landing.start(config.LANDING_PORT)
+    print(f"Landing page (localhost only): http://127.0.0.1:{config.LANDING_PORT}/")
+
+
 def _on_stop_signal(signum, frame):
     # Flag first, then unwind: runner threads watching their Claude child die must
     # already see shutting_down, or they'd record the killed turn as an error and
@@ -103,6 +111,7 @@ def _shutdown():
     if config.DASH_ENABLE:
         from bridge.dashboard import server as dash
         dash.stop()
+    landing.stop()
     pubsub.shutdown()
     if state.miniapp_tunnel_proc and state.miniapp_tunnel_proc.poll() is None:
         state.miniapp_tunnel_proc.terminate()
@@ -127,6 +136,7 @@ def main():
     else:
         _setup_miniapp()
         _setup_dashboard()
+        _setup_landing()
         native_activity.start()        # tail live VS Code/terminal sessions
         resumed = recovery.recover()   # resume turns a restart interrupted (--resume + nudge)
         if resumed:

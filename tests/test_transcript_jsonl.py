@@ -48,7 +48,7 @@ FIXTURE = [
          {"type": "text", "text": "final answer"}]}},
 ]
 
-RECOGNIZED = {"text", "tool", "tool_done", "result", "error", "stopped",
+RECOGNIZED = {"text", "thinking", "tool", "tool_done", "result", "error", "stopped",
               "permission", "question", "permission_resolved", "question_answered"}
 
 
@@ -91,12 +91,29 @@ def test_tool_event_carries_name_and_summary():
     assert tool["name"] == "Bash" and tool["summary"] == "ls -la"
 
 
-def test_thinking_and_sidechain_skipped():
+def test_thinking_text_never_surfaces_and_sidechain_skipped():
     out = T.parse_jsonl(_write(FIXTURE))
     texts = [e.get("text") for e in out["events"] if e["type"] == "text"]
-    assert "hmm" not in texts                       # thinking block dropped
+    assert "hmm" not in texts                       # reasoning text is never shown
     assert "sidechain noise" not in texts           # isSidechain record dropped
     assert texts == ["hi back", "done listing", "final answer"]
+    # 1s between the prompt and the reply is not a pause worth a marker
+    assert not any(e["type"] == "thinking" for e in out["events"])
+
+
+def test_thinking_marker_carries_the_pause_it_replaces():
+    recs = [
+        {"type": "user", "uuid": "t1", "timestamp": "2026-01-01T00:00:00Z",
+         "message": {"role": "user", "content": "think hard"}},
+        {"type": "assistant", "uuid": "a1", "timestamp": "2026-01-01T00:00:09Z",
+         "message": {"role": "assistant", "content": [
+             {"type": "thinking", "thinking": "", "signature": "abc"},
+             {"type": "text", "text": "answer"}]}},
+    ]
+    out = T.parse_jsonl(_write(recs))
+    assert [e["type"] for e in out["events"]] == ["thinking", "text"]
+    assert out["events"][0]["ms"] == 9000           # the gap a human sat through
+    assert "thinking" not in out["events"][0]       # no text: there is none to show
 
 
 def test_only_recognized_event_types_emitted():
@@ -260,6 +277,62 @@ def test_bash_output_is_head_capped():
     out = T.parse_jsonl(_write(recs))
     got = next(e for e in out["events"] if e["type"] == "tool_done")["output"]
     assert got == "x" * T._OUT_MAX + "\n…"
+
+
+def test_todowrite_summary_names_the_item_it_just_started():
+    todos = [{"content": "a", "status": "completed", "activeForm": "Aing"},
+             {"content": "b", "status": "in_progress", "activeForm": "Wiring the card"},
+             {"content": "c", "status": "pending", "activeForm": "Cing"}]
+    assert T._summarize_tool("TodoWrite", {"todos": todos}) == "Wiring the card · 1/3"
+    # nothing in progress -> just how far down the list it is
+    done = [dict(t, status="completed") for t in todos]
+    assert T._summarize_tool("TodoWrite", {"todos": done}) == "3/3 done"
+    assert T._summarize_tool("TodoWrite", {"todos": []}) == ""
+
+
+def _done(name, block, result=None):
+    return T.tool_done("tu1", name, 5, block, result or {})
+
+
+def _text_block(text, is_error=False):
+    return {"content": [{"type": "text", "text": text}], "is_error": is_error}
+
+
+def test_result_stat_measures_what_came_back():
+    # a read reports its own line count, not the size of the text we were handed
+    assert _done("Read", _text_block("1\tx"),
+                 {"type": "text", "file": {"numLines": 512}})["stat"] == "512 lines"
+    # an image read never gets counted in base64 chars
+    assert _done("Read", _text_block("q"),
+                 {"type": "image", "file": {"base64": "AAAA"}})["stat"] == "image"
+    assert _done("Grep", _text_block("a\nb\nc"))["stat"] == "3 lines"
+    assert _done("Glob", _text_block("only.py"))["stat"] == "7 chars"
+    assert _done("Agent", _text_block("ok"),
+                 {"totalToolUseCount": 14, "totalTokens": 32100})["stat"] == "14 tools · 32.1k tokens"
+    assert _done("WebFetch", _text_block("page"), {"bytes": 13674})["stat"] == "13.7k bytes"
+
+
+def test_result_stat_says_why_a_tool_failed():
+    ev = _done("Read", _text_block("File does not exist.\nDid you mean…", is_error=True))
+    assert ev["is_error"] is True and ev["stat"] == "File does not exist."
+
+
+def test_no_stat_for_a_fixed_confirmation_or_a_diff():
+    # "Todos have been modified successfully" measured in chars is not information
+    assert "stat" not in _done("TodoWrite", _text_block("Todos have been modified…"))
+    assert "stat" not in _done("Skill", _text_block("ok"), {"success": True})
+    # an edit shows its diff; a char count next to it would be noise
+    patched = _done("Edit", _text_block("done"), {"structuredPatch": [
+        {"oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1, "lines": ["-a", "+b"]}]})
+    assert patched["patch"] and "stat" not in patched
+    # …but a failed edit has no diff, so the error still gets through
+    failed = _done("Edit", _text_block("String not found", is_error=True), {})
+    assert failed["stat"] == "String not found"
+
+
+def test_bash_keeps_output_and_gets_no_stat():
+    ev = _done("Bash", _text_block("hi"))
+    assert ev["output"] == "hi" and ev["is_error"] is False and "stat" not in ev
 
 
 if __name__ == "__main__":

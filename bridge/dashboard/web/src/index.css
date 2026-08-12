@@ -320,6 +320,14 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* Switching to a session in another project (or another worktree) rebuilds the
+   right panel's body — that is what drops the previous session's rows. The
+   frame did not go anywhere, though, so it must not move: only the regions a
+   panel marks .swapin settle back in. mfadeup carries no opacity, so nothing
+   blinks out. See components/RightPanel.tsx. */
+[data-swap] .swapin {
+  animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
 /* The transcript draws its own bar (CheckpointRail) over this edge — one rail,
    not two. Everything else keeps the native scrollbar. */
 .mscroll-bare {
@@ -353,6 +361,25 @@ body {
    which outranks this rule — so those keep reading as selected while hovered. */
 .trow:hover {
   background: color-mix(in srgb, var(--acc) 6%, transparent);
+}
+/* The open session's left bar grows out of the row instead of fading in — a
+   colour fade from transparent goes through washed-out purple and reads as lag
+   at any duration. A composited scaleY snaps. Sits over the row's own 2px
+   transparent border-left, so nothing shifts when it appears. */
+.sessrow::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--purple);
+  transform: scaleY(0);
+  transition: transform 0.18s var(--ease-hud);
+}
+.sessrow[data-on="true"]::before {
+  transform: scaleY(1);
 }
 .panel {
   position: relative;
@@ -851,6 +878,13 @@ input {
    width depends on which sidebars are open, this modal is min(720px, 94vw), so
    its width IS the viewport. 94vw drops under 560px at a 600px viewport. */
 .setbody { flex: 1; display: flex; min-height: 0; }
+
+/* The ⓘ that unfolds a setting's explanation is a 15px disc — small enough to
+   sit inside a caption, too small to hit with a thumb. The pseudo-element is
+   the tap target; it costs the layout nothing. */
+.infodot { position: relative; }
+.infodot::after { content: ""; position: absolute; inset: -14px; }
+.setrail button:hover:not(.on) { background: color-mix(in srgb, var(--acc) 6%, transparent); }
 
 .setrail {
   width: 158px;

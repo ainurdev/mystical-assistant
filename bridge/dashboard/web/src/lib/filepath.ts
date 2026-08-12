@@ -40,19 +40,29 @@ export function parseFileRef(raw: string): FileRef | null {
   return line ? { path, line } : { path };
 }
 
+/** Every tree entry the prose path could mean: the exact file, else everything
+ *  ending in it (`src/App.tsx` for `bridge/dashboard/web/src/App.tsx`). */
+export function fileRefCandidates(files: string[], path: string): string[] {
+  if (files.includes(path)) return [path];
+  return files.filter((f) => f.endsWith(`/${path}`));
+}
+
 /** The parsed path, matched against the working tree it will be opened in.
  *
  *  A path in prose is a claim, not a fact: the model names files it has not
  *  created yet, and it writes them relative to whatever directory it was
- *  thinking in (`src/App.tsx` for `bridge/dashboard/web/src/App.tsx`). Both
- *  land the editor on nothing. Exact hit wins; otherwise a single tree entry
- *  ending in the path is the file that was meant. Ambiguous or absent → null,
- *  and the click says so instead of opening an empty buffer.
- *  ponytail: no fuzzy/basename fallback — a wrong file opened silently is
- *  worse than a message. Add one if real misses turn out to be near-misses.
+ *  thinking in. Both land the editor on nothing. One candidate → that's it.
+ *  Several (`App.tsx` lives in three packages here) → the one this session has
+ *  actually been in, which is what the sentence meant: `hints` are the paths
+ *  its tools touched, newest first. Still undecidable → null, and the click
+ *  says so instead of opening an empty or wrong buffer.
  */
-export function resolveFileRef(files: string[], path: string): string | null {
-  if (files.includes(path)) return path;
-  const hits = files.filter((f) => f.endsWith(`/${path}`));
-  return hits.length === 1 ? hits[0] : null;
+export function resolveFileRef(files: string[], path: string, hints: string[] = []): string | null {
+  const hits = fileRefCandidates(files, path);
+  if (hits.length <= 1) return hits[0] ?? null;
+  for (const h of hints) {
+    const hit = hits.find((f) => h === f || h.endsWith(`/${f}`));
+    if (hit) return hit;
+  }
+  return null;
 }

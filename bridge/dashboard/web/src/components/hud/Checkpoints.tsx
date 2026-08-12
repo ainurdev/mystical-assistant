@@ -1,7 +1,7 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../api";
 import type { Turn } from "../../chat";
-import { fmtCost, fmtElapsed, marksOf, nearestTick, toneOf, type Mark } from "../../lib/checkpoints";
+import { fmtCost, fmtElapsed, marksOf, toneOf, type Mark } from "../../lib/checkpoints";
 import { SteerIcon } from "../Composer";
 
 /** Index of the last checkpoint scrolled past — "where am I" in the transcript. */
@@ -225,79 +225,21 @@ export function Checkpoints({
   );
 }
 
-/** How close (px) the pointer has to be to a tick for a click to mean "jump
- *  there" rather than "scroll here". Ticks are 2px tall — this is the real one. */
-const SNAP = 7;
-
-/** One tick per checkpoint, its own memo'd component: the rail re-renders on
- *  every scroll event to move the thumb, and reconciling a div per mark at scroll
- *  cadence was the jank in long sessions. Ticks only move when the transcript does. */
-const Ticks = memo(function Ticks(
-  { marks, pos, near }: { marks: Mark[]; pos: number[]; near: number },
-) {
-  return (
-    <>
-      {marks.map((m, i) => {
-        const tone = toneOf(m);
-        const sub = m.kind !== "prompt";
-        const on = i === near;
-        return (
-          <div
-            key={m.id}
-            style={{
-              position: "absolute", top: `${(pos[i] ?? 0) * 100}%`,
-              left: sub && !on ? 5 : 1, right: 0, height: on ? 3 : 2,
-              background: tone, pointerEvents: "none",
-              opacity: on || m.waiting || m.failed ? 1 : sub ? 0.5 : 0.75,
-              boxShadow: on || m.waiting ? `0 0 6px ${tone}` : "none",
-            }}
-          />
-        );
-      })}
-    </>
-  );
-});
-
 /** The transcript's scrollbar (the native one is hidden under it): a draggable
- *  viewport thumb, plus one tick per checkpoint at its real position, coloured
- *  by outcome. Click a tick to jump, drag the thumb or click the track to scroll. */
-export function CheckpointRail({
-  turns, scrollRef, contentRef,
+ *  viewport thumb. Drag it or click the track to scroll. Checkpoint ticks used
+ *  to live here too — a rect read per mark on every content resize, which is
+ *  every frame while streaming or scrolling through unseen history. The header
+ *  Checkpoints dropdown is the jump list now. */
+export function ScrollRail({
+  turns, scrollRef,
 }: {
   turns: Turn[];
   scrollRef: RefObject<HTMLDivElement | null>;
-  contentRef: RefObject<HTMLDivElement | null>;
 }) {
-  const marks = useMemo(() => marksOf(turns), [turns]);
-  const [pos, setPos] = useState<number[]>([]);
   const [win, setWin] = useState({ top: 0, h: 1 });
-  const [near, setNear] = useState(-1);
   const railRef = useRef<HTMLDivElement | null>(null);
   // Offset from the thumb's top to where it was grabbed; null when not dragging.
   const grab = useRef<number | null>(null);
-
-  // Tick positions are rect-based (scroll-invariant) so they survive whatever
-  // the anchors' offsetParent happens to be, and are measured against the scroll
-  // range — the same units as the thumb, so the two can't drift apart. Remeasured
-  // when the transcript grows: streaming text moves every anchor below it.
-  useLayoutEffect(() => {
-    const content = contentRef.current;
-    const el = scrollRef.current;
-    if (!content || !el) return;
-    const measure = () => {
-      const h = el.scrollHeight;
-      if (!h) return;
-      const origin = el.getBoundingClientRect().top - el.scrollTop;
-      setPos(marks.map((m) => {
-        const a = document.getElementById(m.id);
-        return a ? (a.getBoundingClientRect().top - origin) / h : 0;
-      }));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(content);
-    return () => ro.disconnect();
-  }, [contentRef, scrollRef, turns]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -311,12 +253,11 @@ export function CheckpointRail({
     return () => el.removeEventListener("scroll", onScroll);
   }, [scrollRef, turns.length]);
 
-  /** Where on the rail the pointer is (0..1) and the tick it's within SNAP of. */
+  /** Where on the rail the pointer is (0..1). */
   const at = (e: React.PointerEvent) => {
     const r = railRef.current?.getBoundingClientRect();
-    if (!r?.height) return { f: 0, hit: -1 };
-    const f = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
-    return { f, hit: nearestTick(pos, f, SNAP / r.height) };
+    if (!r?.height) return 0;
+    return Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
   };
 
   const scrollTo = (f: number) => {
@@ -325,9 +266,8 @@ export function CheckpointRail({
   };
 
   const onDown = (e: React.PointerEvent) => {
-    const { f, hit } = at(e);
+    const f = at(e);
     const onThumb = f >= win.top && f <= win.top + win.h;
-    if (!onThumb && hit >= 0) { jump(marks[hit].id); return; }
     grab.current = onThumb ? f - win.top : win.h / 2;
     e.currentTarget.setPointerCapture(e.pointerId);
     if (!onThumb) scrollTo(f);
@@ -335,15 +275,10 @@ export function CheckpointRail({
   };
 
   const onMove = (e: React.PointerEvent) => {
-    const { f, hit } = at(e);
-    if (grab.current != null) scrollTo(f);
-    else setNear(hit);
+    if (grab.current != null) scrollTo(at(e));
   };
 
-  // Clearing the hover too: without it the tooltip from before the drag pops
-  // back on release, pointing at wherever the thumb no longer is.
-  const end = () => { grab.current = null; setNear(-1); };
-  const hovered = near >= 0 && grab.current == null ? marks[near] : null;
+  const end = () => { grab.current = null; };
 
   if (win.h >= 1) return null; // nothing to scroll
 
@@ -355,7 +290,6 @@ export function CheckpointRail({
       onPointerMove={onMove}
       onPointerUp={end}
       onPointerCancel={end}
-      onPointerLeave={() => { setNear(-1); }}
       style={{
         position: "absolute", right: 2, top: 8, bottom: 8, width: 12,
         // Above the sticky LAST peek (5) — it spans the full width and was
@@ -366,19 +300,6 @@ export function CheckpointRail({
     >
       <div style={{ position: "absolute", inset: 0, borderLeft: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }} />
       <div style={{ position: "absolute", left: 1, right: 0, top: `${win.top * 100}%`, height: `${win.h * 100}%`, minHeight: 18, background: "color-mix(in srgb, var(--acc) 11%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", transition: grab.current == null ? "top .1s linear" : "none" }} />
-      <Ticks marks={marks} pos={pos} near={near} />
-      {hovered && (
-        <div style={{
-          position: "absolute", right: 16, top: `${(pos[near] ?? 0) * 100}%`,
-          transform: "translateY(-50%)", pointerEvents: "none", maxWidth: 300,
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          padding: "3px 8px", fontSize: "var(--t105)", color: "var(--tx)",
-          background: "color-mix(in srgb, var(--panel2) 97%, transparent)",
-          border: `1px solid ${toneOf(hovered)}`, boxShadow: "0 8px 22px var(--shadow-pop)",
-        }}>
-          {hovered.n ? `${hovered.n}  ` : ""}{hovered.label}
-        </div>
-      )}
     </div>
   );
 }

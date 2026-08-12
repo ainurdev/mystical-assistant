@@ -59,3 +59,45 @@ export function PolicyChip({
     </button>
   );
 }
+
+/* How full this session's context window is, and when claude should compact it.
+   One chip for both: the number is only worth showing next to the knob that acts
+   on it. The reading lands at the end of each turn (runner persists it), which is
+   also when you can do something about it. */
+const COMPACT_AT = ["auto", "100000", "150000"] as const;
+const COMPACT_LABEL: Record<string, string> = {
+  auto: "auto", "100000": "100k", "150000": "150k",
+};
+
+export function ContextChip({
+  sessionId,
+  tokens,
+  window: win,
+  autocompact,
+}: {
+  sessionId: string | null;
+  tokens: number | null | undefined;
+  window: number | undefined;
+  autocompact: string | null | undefined;
+}) {
+  const [local, setLocal] = useState<{ id: string; v: string } | null>(null);
+  if (!sessionId || !tokens || !win) return null; // nothing measured yet
+  const pct = Math.round((tokens / win) * 100);
+  const at = (local?.id === sessionId ? local.v : autocompact) ?? "auto";
+  const next = COMPACT_AT[(COMPACT_AT.indexOf(at as (typeof COMPACT_AT)[number]) + 1) % COMPACT_AT.length];
+  const tone =
+    pct >= 90 ? "text-red-400" : pct >= 75 ? "text-amber-400" : "text-[var(--tg-hint)]";
+  return (
+    <button
+      onClick={() => {
+        setLocal({ id: sessionId, v: next });
+        void api.setAutocompact(sessionId, next).catch(() => setLocal(null));
+      }}
+      title={`${tokens.toLocaleString()} of ${win.toLocaleString()} tokens. Compacts at ${COMPACT_LABEL[at]}; tap for ${COMPACT_LABEL[next]}.`}
+      aria-label={`Context ${pct}% full, compacts at ${COMPACT_LABEL[at]}`}
+      className={`flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[10px] tracking-wider active:opacity-70 ${tone}`}
+    >
+      CTX {pct}% · ⇲{COMPACT_LABEL[at]}
+    </button>
+  );
+}

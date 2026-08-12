@@ -7,7 +7,7 @@ import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
-import { Checkpoints, CheckpointRail } from "./Checkpoints";
+import { Checkpoints, ScrollRail } from "./Checkpoints";
 
 const FRESH_QUOTES = [
   "the prompt is blank, the potential is not.",
@@ -137,7 +137,7 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
-  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile,
+  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -165,6 +165,7 @@ export function Terminal({
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
   onOpenFile?: (path: string, line?: number) => void;
+  onAnswer?: (text: string) => void;
 }) {
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
@@ -196,16 +197,15 @@ export function Terminal({
     return () => io.disconnect();
   }, [scrollRef, view, empty, lastTurnId]);
 
-  // CRT channel-change: when a switched-to session's content lands, "retune" the
-  // viewport — collapse to a bright scanline, then bloom open with a glitch. Driven
-  // on the scroll container (fixed viewport height) so the line sits on screen even
-  // when a long transcript is scrolled to the bottom. Crucially fires on content-land
-  // (loading→false), NOT on the click, so it plays over the real transcript instead
-  // of the loading spinner.
+  // Session swap: the session you left stays on screen until the new transcript
+  // lands (App holds its turns), then the new one fades up in its place. Fires on
+  // content-land (loading→false), NOT on the click, so it's one soft cut instead of
+  // a blank and a pop. Was a CRT retune — collapse to a scanline, bloom open with a
+  // glitch — which read as a fault rather than a transition.
   const tunedFor = useRef<string | null>(null);
   const firstTune = useRef(true);
   useLayoutEffect(() => {
-    if (view !== "chat" || loading) return; // wait until content replaces the spinner
+    if (view !== "chat" || loading) return; // wait until the new transcript has landed
     if (tunedFor.current === (sessionId ?? null)) return; // already retuned this session
     const el = scrollRef.current;
     if (!el) return;
@@ -214,13 +214,10 @@ export function Terminal({
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     el.animate(
       [
-        { clipPath: "inset(50% 0 50% 0)", filter: "brightness(3) saturate(.4)", opacity: 0.5 },
-        { clipPath: "inset(48.4% 0 48.4% 0)", filter: "brightness(2.8) drop-shadow(0 0 14px color-mix(in srgb, var(--acc) 90%, transparent))", opacity: 1, offset: 0.15 },
-        { clipPath: "inset(0 0 0 0)", transform: "translateX(2px) skewX(-1.2deg)", filter: "brightness(1.75) drop-shadow(0 0 8px color-mix(in srgb, var(--acc) 40%, transparent))", offset: 0.42 },
-        { transform: "translateX(-1px) skewX(.4deg)", filter: "brightness(1.18)", offset: 0.62 },
-        { clipPath: "inset(0 0 0 0)", transform: "none", filter: "none", opacity: 1 },
+        { opacity: 0, transform: "translateY(6px)" },
+        { opacity: 1, transform: "none" },
       ],
-      { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)" },
+      { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" },
     );
   }, [sessionId, loading, view, scrollRef]);
 
@@ -277,7 +274,7 @@ export function Terminal({
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} />
                 )}
               </div>
             </div>
@@ -292,10 +289,13 @@ export function Terminal({
                 <span style={{ color: "var(--txh)", fontSize: "var(--t12)", lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
               </div>
             )}
-            {!empty && <CheckpointRail turns={turns} scrollRef={scrollRef} contentRef={contentRef} />}
+            {!empty && <ScrollRail turns={turns} scrollRef={scrollRef} />}
             {/* Scrolled off the tail — the way back down. Hidden while parked at
-                the bottom, where new output already follows on its own. */}
-            {!atBottom && !empty && (
+                the bottom, where new output already follows on its own. Stays
+                mounted and fades, so a toggle mid-scroll never pops or replays
+                the mount animation. visibility drops it from the tab order and
+                hit-testing while hidden. */}
+            {!empty && (
               <button
                 type="button" onClick={onJumpBottom} title="jump to latest"
                 style={{
@@ -306,7 +306,11 @@ export function Terminal({
                   background: "color-mix(in srgb, var(--panel2) 92%, transparent)",
                   border: "1px solid color-mix(in srgb, var(--acc) 34%, transparent)",
                   boxShadow: "0 6px 20px rgba(0,0,0,.45), 0 0 14px color-mix(in srgb, var(--acc) 14%, transparent)",
-                  backdropFilter: "blur(6px)", animation: "mfadeup .25s ease both",
+                  backdropFilter: "blur(6px)",
+                  opacity: atBottom ? 0 : 1,
+                  transform: atBottom ? "translateY(5px)" : "none",
+                  visibility: atBottom ? "hidden" : "visible",
+                  transition: "opacity .22s ease, transform .22s ease, visibility .22s",
                 }}
               >
                 <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST

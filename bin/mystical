@@ -175,14 +175,19 @@ cmd_status() {
   fi
   say ""
   say "  ${c_g}●${c_0} ${c_b}running${c_0} ${c_d}(pid $pid)${c_0}"
-  local d m dport mport
+  local d m l dport mport lport
   dport="$(env_port DASH_PORT 8790)"; mport="$(env_port MINIAPP_PORT 8787)"
-  d="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dport/" 2>/dev/null || echo 000)"
-  m="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$mport/" 2>/dev/null || echo 000)"
+  lport="$(env_port LANDING_PORT 8791)"
+  # curl already prints 000 when nothing answers; `|| true` is only to keep its
+  # non-zero exit from tripping `set -e` (an `|| echo 000` would print it twice).
+  d="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dport/" 2>/dev/null || true)"
+  m="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$mport/" 2>/dev/null || true)"
+  l="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$lport/" 2>/dev/null || true)"
   row 🌐 dashboard "$c_d:$dport$c_0  $(health "$d")  $(dash_url)"
   local purl; purl="$(panel_url)"
   if [ -n "$purl" ]; then row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  $purl"
   else row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  ${c_d}localhost only — no tunnel this run${c_0}"; fi
+  row 🛬 landing "$c_d:$lport$c_0  $(health "$l")  http://127.0.0.1:$lport/"
   row 📜 logs "$LOG"
 }
 

@@ -1,60 +1,75 @@
-/* Geist sets the display and the prose; JetBrains Mono carries every piece of
-   machinery — chapter numbers, labels, captions, metadata. That split is the
-   editorial system: the mono is the magazine's furniture, the sans is the
-   article. No third face, and no serif — a serif display would read as a
-   lifestyle brand rather than a tool that runs commands on your machine. */
-@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* ── Faces ───────────────────────────────────────────────────────────────────
+   Three roles, and the unusual one is the display: Martian Mono, run at its
+   narrowest width axis (75%) and heaviest weight, set at headline scale. A
+   condensed monospace as the display face is the type decision this page is
+   remembered by — mechanical and tall, the way a session list is, and nothing
+   like the geometric sans every other dev-tool page reaches for.
+
+   JetBrains Mono carries the machinery, because it is a real terminal font and
+   this page is pretending to be a terminal. Geist carries prose only: a page
+   set entirely in mono is a stunt you stop reading after two paragraphs. */
+@import url("https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@75..112.5,300..800&family=JetBrains+Mono:wght@400;500;700&family=Geist:wght@400;500&display=swap");
 @import "tailwindcss";
 
 :root {
   color-scheme: dark;
 
-  /* A neutral near-black with warm paper ink — deliberately NOT the dashboard's
-     teal-tinted black. The page is the editorial about the product, not a
-     screenshot of it. The one thing carried over is the aqua accent, and it is
-     rationed: active state, one focal figure, primary CTA. Nowhere else. */
-  --bg: #0b0b0c;
-  --bg-sunk: #08080a;
-  --surface: #121213;
-  --surface-raised: #191919;
+  /* Cool CRT glass, not the warm near-black of the old page and not the single
+     acid accent every dark dev page lands on. There are three lit hues and each
+     one is a session state the product actually has — colour is the state
+     machine, so it is never decorative. Anything not in a state is grey. */
+  --void: #04070a;
+  --panel: #080d12;
+  --panel-hi: #0d151b;
 
-  --ink: #f5f4f1;
-  --ink-2: #c9c7c1;
-  --ink-muted: #8f8d87; /* 6.1:1 on --bg — the contrast floor, do not go dimmer */
-  --ink-faint: #6b6862; /* 3.7:1 — large decorative text only (counters), never body */
+  --ink: #d8e6e2;
+  --ink-2: #93a5a3; /* 7.8:1 on --void — prose floor */
+  /* 5.2:1 on --void and 4.9:1 on --panel-hi. It has to clear 4.5:1 on the
+     lighter of the two, because the window title bars are --panel-hi and the
+     route text in them is 10.5px. Do not go dimmer. */
+  --ink-dim: #758683;
+  --ink-ghost: #3c4a48; /* decorative only: rules, ticks, dead glyphs */
 
-  --line: rgb(245 244 241 / 0.11);
-  --line-strong: rgb(245 244 241 / 0.26);
-  --trace: rgb(245 244 241 / 0.045);
+  --live: #7fe9d8; /* LIVE  — primary, and the only CTA colour */
+  --wait: #ffb454; /* WAIT  — stopped on a question. The one that needs you. */
+  --work: #b9a6ff; /* WORK  — a turn is running */
 
-  --accent: #7fe9d8;
-  --accent-ink: #06100e;
-  --accent-rgb: 127 233 216;
-  --warn: #e3c279; /* second hue, semantic only — the caution section */
+  --live-rgb: 127 233 216;
+  --wait-rgb: 255 180 84;
+  --work-rgb: 185 166 255;
 
+  --rule: rgb(127 233 216 / 0.11);
+  --rule-hi: rgb(127 233 216 / 0.26);
+  --grid: rgb(127 233 216 / 0.035);
+
+  --display: "Martian Mono", ui-monospace, monospace;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
-  --shell: 82rem;
-  --gutter: clamp(1.25rem, 4.5vw, 4rem);
-  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --shell: 76rem;
+  --gutter: clamp(1.15rem, 4vw, 3rem);
+  --rail-w: 14.5rem;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 @theme inline {
-  --color-bg: var(--bg);
-  --color-surface: var(--surface);
-  --color-accent: var(--accent);
-  --color-warn: var(--warn);
+  --color-void: var(--void);
+  --color-panel: var(--panel);
+  --color-live: var(--live);
+  --color-wait: var(--wait);
+  --color-work: var(--work);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
-  --color-ink-muted: var(--ink-muted);
-  --color-ink-faint: var(--ink-faint);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-ghost: var(--ink-ghost);
+  --font-display: var(--display);
   --font-mono: var(--mono);
   --font-sans: var(--sans);
 }
 
 * {
-  border-color: var(--line);
+  border-color: var(--rule);
+  min-width: 0;
 }
 
 html {
@@ -63,7 +78,7 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--void);
   color: var(--ink-2);
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -71,14 +86,14 @@ body {
 }
 
 ::selection {
-  background: rgb(var(--accent-rgb) / 0.24);
-  color: var(--ink);
+  background: rgb(var(--live-rgb) / 0.26);
+  color: #fff;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--live);
   outline-offset: 3px;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -94,37 +109,52 @@ body {
   }
 }
 
-/* Everything below sits in the `components` layer so Tailwind utilities (a later
-   layer) still win. Unlayered, `.panel`-style rules beat every utility. */
 @layer components {
-  /* ── The field ─────────────────────────────────────────────────────────────
-     Fine vertical grid traces, aligned to the same shell the content uses, so
-     the page reads as a composed page rather than stacked boxes. Six traces,
-     not twelve: at twelve it stops being a trace and starts being a table. */
-  .field {
+  /* ── Atmosphere ────────────────────────────────────────────────────────────
+     A phosphor grid and a scanline veil, both fixed and both nearly invisible.
+     The product ships CRT themes, so this is the subject's own material rather
+     than an effect bolted on. If you can consciously see it, it is too strong. */
+  .atmos {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
   }
 
-  .field-traces {
+  .atmos-grid {
     position: absolute;
     inset: 0;
-    max-width: var(--shell);
-    margin-inline: auto;
-    padding-inline: var(--gutter);
-    background-image: repeating-linear-gradient(
-      90deg,
-      var(--trace) 0 1px,
-      transparent 1px calc(100% / 6)
-    );
-    background-origin: content-box;
-    background-clip: content-box;
-    mask-image: linear-gradient(180deg, transparent, #000 10%, #000 86%, transparent);
+    background-image:
+      repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 7.5rem),
+      repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 7.5rem);
+    mask-image: radial-gradient(120% 80% at 50% 0%, #000 20%, transparent 78%);
   }
 
-  /* ── Shell + grid ────────────────────────────────────────────────────────── */
+  .atmos-scan {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgb(0 0 0 / 0.22) 0 1px,
+      transparent 1px 3px
+    );
+    opacity: 0.5;
+  }
+
+  /* ── Shell ─────────────────────────────────────────────────────────────────
+     The rail is fixed at the viewport's left edge and the whole page is inset
+     past it, so the rail never scrolls out of the argument it is illustrating. */
+  .page {
+    position: relative;
+    z-index: 10;
+  }
+
+  @media (min-width: 1120px) {
+    .page {
+      padding-left: var(--rail-w);
+    }
+  }
+
   .shell {
     max-width: var(--shell);
     margin-inline: auto;
@@ -134,83 +164,68 @@ body {
   .g12 {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    column-gap: clamp(1rem, 2.5vw, 2rem);
-  }
-
-  /* ── Chapter markers ───────────────────────────────────────────────────────
-     The counter is the editorial tell. It sits in a left rail, in mono, with a
-     rule running out of it across the measure. */
-  .chapter {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    font-weight: 500;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-  }
-
-  .chapter::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(90deg, var(--line-strong), transparent);
-  }
-
-  .chapter-n {
-    color: var(--accent);
-    font-weight: 600;
-  }
-
-  .counter {
-    font-family: var(--mono);
-    font-size: clamp(2.5rem, 6vw, 4.5rem);
-    font-weight: 600;
-    line-height: 0.8;
-    letter-spacing: -0.04em;
-    color: transparent;
-    -webkit-text-stroke: 1px var(--ink-faint);
+    column-gap: clamp(0.9rem, 2vw, 1.75rem);
   }
 
   /* ── Type ──────────────────────────────────────────────────────────────────
-     Set larger and tighter than a centred layout could carry. The measure is
-     narrow because the headline is offset, not centred, so it never has to
-     stretch the full shell. */
-  /* Sized so the longest hero line ("Claude Code sessions.", 21 characters)
-     clears eight columns without re-wrapping — the <br />s in the headline set
-     the rhythm, and anything larger silently overrides them into a ragged
-     five-line stack that swallows the fold. Re-measure if the copy changes. */
+     Everything structural is uppercase condensed mono. The width axis does the
+     work: at 75% the display face is narrow enough to set a 21-character line
+     at 4.6rem inside the shell without wrapping. Widening the axis re-wraps
+     every headline on the page, so change the sizes, not the stretch. */
+  /* The cap is measured, not chosen: Martian Mono at 75% stretch advances
+     ~0.557em per character, the headline's longest line is 21 characters, and
+     the eight columns it sits in are ~730px at the shell's max width. Anything
+     above 3.8rem re-wraps "Claude Code sessions." and leaves a widow. Re-measure
+     if the headline copy or the column span changes. */
   .display {
-    font-size: clamp(2.15rem, 5.4vw, 4.6rem);
-    font-weight: 600;
-    line-height: 0.96;
-    letter-spacing: -0.042em;
+    font-family: var(--display);
+    font-stretch: 75%;
+    font-weight: 800;
+    font-size: clamp(1.72rem, 4.6vw, 3.8rem);
+    line-height: 1.02;
+    letter-spacing: -0.045em;
+    text-transform: uppercase;
     color: var(--ink);
   }
 
   .h2 {
-    font-size: clamp(1.9rem, 4.4vw, 3.4rem);
-    font-weight: 600;
-    line-height: 1.02;
-    letter-spacing: -0.035em;
+    font-family: var(--display);
+    font-stretch: 75%;
+    font-weight: 800;
+    font-size: clamp(1.5rem, 3.9vw, 2.9rem);
+    line-height: 1.04;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
     color: var(--ink);
   }
 
-  /* Feature titles are the thing that gets read on a scroll-past, so they're set
-     as a small display face — bold and near the h2 scale — and the sentence
-     under them is allowed to be short. */
+  /* The feature titles. These are the wall of type the page is loud with — set
+     nearly at h2 scale, one per row, so a scroll-past still reads as a list of
+     eight claims rather than a paragraph of grey. */
   .h3 {
-    font-size: clamp(1.5rem, 2.7vw, 2.1rem);
+    font-family: var(--display);
+    font-stretch: 75%;
     font-weight: 700;
-    line-height: 1.08;
-    letter-spacing: -0.03em;
+    font-size: clamp(1.22rem, 2.9vw, 2.15rem);
+    line-height: 1.06;
+    letter-spacing: -0.035em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .h4 {
+    font-family: var(--display);
+    font-stretch: 75%;
+    font-weight: 700;
+    font-size: clamp(0.95rem, 1.5vw, 1.12rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
     color: var(--ink);
   }
 
   .deck {
-    font-size: clamp(1rem, 1.25vw, 1.12rem);
+    font-size: clamp(0.98rem, 1.2vw, 1.09rem);
     line-height: 1.62;
     color: var(--ink-2);
     text-wrap: pretty;
@@ -218,180 +233,338 @@ body {
 
   .body {
     font-size: 0.9rem;
-    line-height: 1.68;
-    color: var(--ink-muted);
+    line-height: 1.66;
+    color: var(--ink-2);
     text-wrap: pretty;
-  }
-
-  /* Captions read twice as often as body copy, so each one is written to work
-     alone. Mono, because it is furniture. */
-  .caption {
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    line-height: 1.6;
-    letter-spacing: 0.005em;
-    color: var(--ink-muted);
   }
 
   .label {
     font-family: var(--mono);
     font-size: 0.62rem;
     font-weight: 500;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
-    color: var(--ink-muted);
+    color: var(--ink-dim);
   }
 
-  .accent {
-    color: var(--accent);
+  .term {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    line-height: 1.7;
+    color: var(--ink-dim);
   }
 
-  /* ── Media bands ───────────────────────────────────────────────────────────
-     The signature motif: a full-bleed horizontal band that cuts across the
-     column grid, with its caption block overlapping the lower edge and pulled
-     back into the grid. Nothing else on the page breaks the shell. */
-  .band {
+  .lit {
+    color: var(--live);
+  }
+
+  /* ── Session states ────────────────────────────────────────────────────────
+     The page's whole colour system. Each tag is the product's own state, and a
+     hue only ever appears where that state does. */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .tag::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    background: currentColor;
+    flex: none;
+  }
+
+  .st-live {
+    color: var(--live);
+  }
+  .st-wait {
+    color: var(--wait);
+  }
+  .st-work {
+    color: var(--work);
+  }
+  .st-idle,
+  .st-done {
+    color: var(--ink-dim);
+  }
+
+  .st-live::before,
+  .st-work::before {
+    animation: blip 1.6s steps(1, end) infinite;
+  }
+
+  .st-wait::before {
+    animation: blip 0.9s steps(1, end) infinite;
+  }
+
+  @keyframes blip {
+    0%,
+    64% {
+      opacity: 1;
+    }
+    65%,
+    100% {
+      opacity: 0.15;
+    }
+  }
+
+  /* ── The rail ──────────────────────────────────────────────────────────────
+     The signature. Six sessions, one lit, exactly as the headline claims — and
+     it is the page's navigation, so the argument and the nav are the same
+     object. States are derived from scroll position: passed is DONE, current is
+     LIVE, ahead is IDLE. Below 1120px it disappears and the hero shows a static
+     copy of it instead; a fixed rail on a phone is a tax on every section. */
+  .rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    width: var(--rail-w);
+    display: none;
+    flex-direction: column;
+    border-right: 1px solid var(--rule);
+    background: linear-gradient(180deg, var(--panel), var(--void));
+  }
+
+  @media (min-width: 1120px) {
+    .rail {
+      display: flex;
+    }
+  }
+
+  .rail-row {
     position: relative;
-    width: 100vw;
-    margin-inline: calc(50% - 50vw);
-    border-block: 1px solid var(--line);
-    background: var(--bg-sunk);
-  }
-
-  .band-media {
     display: block;
     width: 100%;
-    height: clamp(13rem, 46vw, 38rem);
-    object-fit: cover;
-    object-position: top center;
+    padding: 0.62rem 0.9rem 0.62rem 1.35rem;
+    text-align: left;
+    transition:
+      background 0.25s var(--ease),
+      opacity 0.25s var(--ease);
+    /* Dim enough that one row is obviously the live one, not so dim that the
+       other five stop being readable — they are the navigation as well. */
+    opacity: 0.58;
   }
 
-  /* The lower fade has to reach solid --bg before the caption starts, or the
-     caption sits on live screenshot text and neither is readable. The caption
-     overlaps the last 5rem of the band, so the gradient is fully opaque well
-     above that; the top fade only softens the seam and stays light, because
-     the top of each shot is where the content is. */
-  .band-veil {
+  .rail-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: transparent;
+    transition: background 0.25s var(--ease);
+  }
+
+  .rail-row:hover {
+    opacity: 0.8;
+    background: rgb(var(--live-rgb) / 0.03);
+  }
+
+  .rail-row[data-active="true"] {
+    opacity: 1;
+    background: rgb(var(--live-rgb) / 0.055);
+  }
+
+  .rail-row[data-active="true"]::before {
+    background: var(--live);
+  }
+
+  .rail-path {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The context meter, filled by page scroll. The product puts a live context
+     percentage under every session; here the page itself is the session and how
+     far you have read is how full it is. Read-progress that is also product. */
+  .meter {
+    height: 3px;
+    background: rgb(var(--live-rgb) / 0.12);
+    overflow: hidden;
+  }
+
+  .meter-fill {
+    height: 100%;
+    background: var(--live);
+    box-shadow: 0 0 10px rgb(var(--live-rgb) / 0.7);
+  }
+
+  /* ── Windows ───────────────────────────────────────────────────────────────
+     Every screenshot arrives inside the same chrome: a mono title bar with the
+     pane's real route and state, corner ticks instead of a radius, and a slow
+     sweep across the glass. Zero border-radius everywhere on this page — a
+     rounded corner is the one thing a terminal never has. */
+  .win {
+    position: relative;
+    border: 1px solid var(--rule-hi);
+    background: var(--panel);
+  }
+
+  .win::before,
+  .win::after {
+    content: "";
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--live);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  .win::before {
+    top: -1px;
+    left: -1px;
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .win::after {
+    bottom: -1px;
+    right: -1px;
+    border-left: 0;
+    border-top: 0;
+  }
+
+  .win-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.8rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--panel-hi);
+  }
+
+  .win-glass {
+    position: relative;
+    overflow: hidden;
+    background: var(--void);
+  }
+
+  .win-media {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  /* Sweeps once every 7s, at 6% — enough to make the glass feel powered, not
+     enough to notice while reading the shot underneath it. */
+  .win-glass::after {
+    content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
     background: linear-gradient(
       180deg,
-      rgb(11 11 12 / 0.32) 0%,
-      transparent 13%,
-      transparent 44%,
-      rgb(11 11 12 / 0.62) 66%,
-      rgb(11 11 12 / 0.97) 82%,
-      #0b0b0c 90%
+      transparent 42%,
+      rgb(var(--live-rgb) / 0.06) 50%,
+      transparent 58%
     );
+    transform: translateY(-100%);
+    animation: sweep 7s linear infinite;
   }
 
-  .band-cap {
-    position: relative;
-    margin-top: -5rem;
-    padding-bottom: 1rem;
-  }
-
-  @media (max-width: 767px) {
-    .band-cap {
-      margin-top: -3.5rem;
+  @keyframes sweep {
+    0% {
+      transform: translateY(-100%);
+    }
+    55%,
+    100% {
+      transform: translateY(100%);
     }
   }
 
   /* ── Rows ──────────────────────────────────────────────────────────────────
-     Hairline dividers instead of cards. A card is a decision to isolate; this
-     page wants the entries to read as one continuous document. */
+     Hairlines, not cards. The feature list should read as one long manifest. */
   .row {
-    border-top: 1px solid var(--line);
-    transition: background 0.24s var(--ease);
+    border-top: 1px solid var(--rule);
+    transition: background 0.2s var(--ease);
   }
 
   .row:hover {
-    background: rgb(245 244 241 / 0.02);
-  }
-
-  .row-last {
-    border-bottom: 1px solid var(--line);
-  }
-
-  /* ── Frame ─────────────────────────────────────────────────────────────────
-     The only boxed treatment on the page, kept for the two places that are
-     genuinely an aside: the install block and the caution panel. */
-  .frame {
-    position: relative;
-    border: 1px solid var(--line);
-    background: var(--surface);
-  }
-
-  .frame-accent {
-    border-color: rgb(var(--accent-rgb) / 0.22);
-    background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.05), transparent 60%), var(--surface);
+    background: rgb(var(--live-rgb) / 0.022);
   }
 
   /* ── Controls ──────────────────────────────────────────────────────────────
-     Two only. Anything that isn't the install command is a ghost. */
+     One filled button on the page and it is the install command. */
   .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
-    padding: 0.72rem 1.15rem;
+    padding: 0.68rem 1.05rem;
     border: 1px solid transparent;
     font-family: var(--mono);
-    font-size: 0.76rem;
-    font-weight: 500;
-    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
     white-space: nowrap;
     cursor: pointer;
     transition:
-      background 0.2s var(--ease),
-      border-color 0.2s var(--ease),
-      color 0.2s var(--ease);
+      background 0.18s var(--ease),
+      border-color 0.18s var(--ease),
+      color 0.18s var(--ease);
   }
 
   .btn-primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-ink);
+    background: var(--live);
+    border-color: var(--live);
+    color: #02120f;
   }
 
   .btn-primary:hover {
-    background: #9df0e2;
-    border-color: #9df0e2;
+    background: #a4f2e5;
+    border-color: #a4f2e5;
   }
 
   .btn-ghost {
-    border-color: var(--line-strong);
+    border-color: var(--rule-hi);
     color: var(--ink-2);
   }
 
   .btn-ghost:hover {
-    border-color: var(--ink-muted);
-    background: rgb(245 244 241 / 0.04);
+    border-color: var(--live);
     color: var(--ink);
+    background: rgb(var(--live-rgb) / 0.05);
   }
 
   .link {
     color: var(--ink-2);
     text-decoration: underline;
     text-underline-offset: 4px;
-    text-decoration-color: var(--line-strong);
-    transition: color 0.2s var(--ease);
+    text-decoration-color: var(--rule-hi);
+    transition: color 0.18s var(--ease);
   }
 
   .link:hover {
-    color: var(--ink);
-    text-decoration-color: var(--accent);
+    color: var(--live);
+    text-decoration-color: var(--live);
   }
 
   /* ── Motion ────────────────────────────────────────────────────────────────
-     Masked reveals, calm and one-way. Re-animating on scroll-back reads as a
-     demo reel; this is a page. */
+     One-way reveals. Re-animating on scroll-back reads as a showreel. */
   .reveal {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(14px);
     transition:
-      opacity 0.62s var(--ease),
-      transform 0.62s var(--ease);
+      opacity 0.55s var(--ease),
+      transform 0.55s var(--ease);
   }
 
   .reveal.shown {
@@ -404,19 +577,187 @@ body {
       opacity: 1;
       transform: none;
     }
+    .win-glass::after {
+      display: none;
+    }
   }
 
-  .pulse {
-    animation: pulse 2s ease-in-out infinite;
+  /* The block cursor. Steps, not ease — a cursor does not fade. */
+  .caret::after {
+    content: "";
+    display: inline-block;
+    width: 0.52em;
+    height: 1.05em;
+    margin-left: 0.14em;
+    vertical-align: -0.16em;
+    background: var(--live);
+    animation: caret 1.06s steps(1, end) infinite;
   }
 
-  @keyframes pulse {
+  @keyframes caret {
     0%,
-    100% {
+    50% {
       opacity: 1;
     }
-    50% {
-      opacity: 0.3;
+    51%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* ── The boot log ──────────────────────────────────────────────────────────
+     Typed by clipping the line's own width. Exact rather than approximate
+     because the face is monospaced: `1ch` is the glyph advance, so `steps(n)`
+     lands one whole character at a time with no sub-pixel drift. `--n` is the
+     character count, set from JS where the string is. */
+  .type {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: bottom;
+    width: 0;
+    animation: type calc(var(--n) * 18ms) steps(var(--n)) var(--d, 0ms) forwards;
+  }
+
+  @keyframes type {
+    to {
+      width: calc(var(--n) * 1ch);
+    }
+  }
+
+  /* Reduced motion gets the finished log, not a log that never types. Without
+     this the lines stay clipped to width:0 and the boot sequence is invisible. */
+  @media (prefers-reduced-motion: reduce) {
+    .type {
+      width: auto;
+      animation: none;
+    }
+  }
+
+  /* ── The ladder ────────────────────────────────────────────────────────────
+     A pulse falls down the spine and each rung lights as it passes, on a fixed
+     9s cycle. The order is the content — this is the order bridge/ladder.py
+     walks — so the sequence is information, not decoration. Staggered
+     animation-delays rather than JS: there is nothing here for a timer to
+     decide. */
+  .ladder-head,
+  .ladder-foot {
+    display: inline-flex;
+  }
+
+  .ladder-spine {
+    position: relative;
+    margin: 1rem 0;
+    padding-left: 1.75rem;
+    border-left: 1px solid var(--rule-hi);
+  }
+
+  .ladder-spine::after {
+    content: "";
+    position: absolute;
+    left: -3px;
+    width: 5px;
+    height: 2.5rem;
+    background: linear-gradient(180deg, transparent, var(--live));
+    box-shadow: 0 0 12px rgb(var(--live-rgb) / 0.8);
+    animation: fall 9s linear infinite;
+  }
+
+  @keyframes fall {
+    0% {
+      top: 0;
+      opacity: 0;
+    }
+    6% {
+      opacity: 1;
+    }
+    52% {
+      top: calc(100% - 2.5rem);
+      opacity: 1;
+    }
+    60%,
+    100% {
+      top: calc(100% - 2.5rem);
+      opacity: 0;
+    }
+  }
+
+  .rung {
+    position: relative;
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 0;
+    opacity: 0.42;
+    animation: rung 9s var(--ease) var(--rd, 0s) infinite;
+  }
+
+  .rung + .rung {
+    border-top: 1px solid var(--rule);
+  }
+
+  .rung-dot {
+    position: absolute;
+    left: calc(-1.75rem - 4px);
+    top: 1.5rem;
+    width: 7px;
+    height: 7px;
+    background: var(--void);
+    border: 1px solid var(--rule-hi);
+  }
+
+  @keyframes rung {
+    0%,
+    8% {
+      opacity: 0.42;
+    }
+    14%,
+    46% {
+      opacity: 1;
+    }
+    58%,
+    100% {
+      opacity: 0.42;
+    }
+  }
+
+  /* The dot fills as its rung lights, so the pulse reads as landing on it. */
+  .rung-dot {
+    animation: dot 9s var(--ease) var(--rd, 0s) infinite;
+  }
+
+  @keyframes dot {
+    0%,
+    8% {
+      background: var(--void);
+      border-color: var(--rule-hi);
+    }
+    14%,
+    46% {
+      background: var(--live);
+      border-color: var(--live);
+      box-shadow: 0 0 10px rgb(var(--live-rgb) / 0.7);
+    }
+    58%,
+    100% {
+      background: var(--void);
+      border-color: var(--rule-hi);
+    }
+  }
+
+  /* Static and fully legible when motion is off: every rung lit, no pulse. */
+  @media (prefers-reduced-motion: reduce) {
+    .ladder-spine::after {
+      display: none;
+    }
+    .rung {
+      opacity: 1;
+      animation: none;
+    }
+    .rung-dot {
+      animation: none;
+      background: var(--live);
+      border-color: var(--live);
     }
   }
 }

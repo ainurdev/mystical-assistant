@@ -88,3 +88,30 @@ def test_worktree_cwd_finds_worktree_outside_the_convention():
     native = os.path.join(d, ".claude", "worktrees", "feat+y")
     _git(d, "worktree", "add", native, "feat/y")
     assert dash._worktree_cwd(name, "feat/y") == os.path.realpath(native)
+
+
+def test_switched_worktree_is_not_reused_for_the_branch_it_is_named_after():
+    """The dir at the managed path is named after a branch, not bound to it — a
+    session can `git checkout` it onto another one. Reusing it then opens the new
+    session on the wrong branch, so both the create call and the per-branch cwd
+    must ignore it."""
+    name, d = _mkproject("wtreuse_switched")
+    _git(d, "branch", "staging")
+    wt = dash._worktree_path(name, "staging")
+    os.makedirs(os.path.dirname(wt), exist_ok=True)
+    _git(d, "worktree", "add", wt, "staging")
+    _git(wt, "checkout", "-q", "-b", "feat/other")   # session moved it off staging
+
+    h, box = _handler()
+    h._worktree({"project": name, "branch": "staging", "create": False})
+    assert box["obj"]["ok"] is True, box["obj"]
+    got = os.path.realpath(box["obj"]["path"])
+    assert got != os.path.realpath(wt), "handed back the tree on feat/other"
+    assert _branch_of(got) == "staging"
+    # ...and status/diff/commit for staging must not target the switched tree.
+    assert dash._worktree_cwd(name, "staging") != os.path.realpath(wt)
+
+
+def _branch_of(cwd):
+    return subprocess.run(["git", "-C", cwd, "branch", "--show-current"],
+                          capture_output=True, text=True).stdout.strip()

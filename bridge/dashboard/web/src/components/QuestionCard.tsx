@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Card } from "./ui";
+import { Button, Card, Spinner } from "./ui";
 import type { AnswerSelection, Question } from "../api";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 
@@ -19,11 +19,16 @@ export function QuestionCard({
   answered?: AnswerSelection[];
   /** Asked, never answered, and the run has since ended (see PermissionCard). */
   stale?: boolean;
-  onSubmit: (answers: AnswerSelection[]) => void;
+  /** Resolves when the answer has reached the bridge; `false` means it didn't. */
+  onSubmit: (answers: AnswerSelection[]) => void | Promise<boolean | void>;
 }) {
   const [restored] = useState(() => readDraft(requestId));
   const [sel, setSel] = useState<Record<string, string[]>>(restored.sel);
   const [notes, setNotes] = useState<Record<string, string>>(restored.notes);
+  // The answer travels to the bridge and only comes back on the next transcript
+  // poll, so without this the card sits there looking untouched — the click
+  // reads as dropped and people press it again.
+  const [sending, setSending] = useState(false);
 
   // Hold the draft while the question is still open, so leaving the session (or
   // closing the tab) doesn't cost the answers already picked. Cleared on
@@ -103,14 +108,19 @@ export function QuestionCard({
   );
   const multi = questions.some((q) => q.multiSelect);
 
-  function submit() {
-    onSubmit(
+  async function submit() {
+    if (sending) return;
+    setSending(true);
+    const ok = await onSubmit(
       questions.map((q) => ({
         header: q.header,
         labels: sel[q.header] ?? [],
         notes: (notes[q.header] ?? "").trim() || undefined,
       })),
     );
+    // Delivered: stay disabled until the poll swaps in the answered card. Failed:
+    // hand the button back rather than stranding them on a dead spinner.
+    if (ok === false) setSending(false);
   }
 
   return (
@@ -125,6 +135,7 @@ export function QuestionCard({
                 <button
                   key={o.label}
                   onClick={() => toggle(q, o.label)}
+                  disabled={sending}
                   className={`rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
                     picked
                       ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
@@ -154,15 +165,19 @@ export function QuestionCard({
               value={notes[q.header] ?? ""}
               onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
               // Enter sends (same as the composer); shift+Enter for a newline.
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready) { e.preventDefault(); submit(); } }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready && !sending) { e.preventDefault(); void submit(); } }}
               placeholder="Your own answer, or extra context for this question"
               className="mt-1.5 w-full resize-y rounded-lg bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none"
             />
           </details>
         </div>
       ))}
-      <Button className="w-full" disabled={!ready} onClick={submit}>
-        {multi ? "Submit" : "Send answer"}
+      <Button className="w-full" disabled={!ready || sending} onClick={() => void submit()}>
+        {sending ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner className="h-3 w-3 border" /> Sending…
+          </span>
+        ) : multi ? "Submit" : "Send answer"}
       </Button>
     </Card>
   );

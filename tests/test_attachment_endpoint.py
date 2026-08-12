@@ -1,6 +1,6 @@
-"""The dashboard serves a turn's uploaded screenshots back to the transcript,
-and serves nothing else: only image files inside UPLOAD_DIR. Plus the retention
-that keeps those files viewable — a finished run prunes by age, not on the spot.
+"""Both surfaces serve a turn's uploaded screenshots back to the transcript, and
+serve nothing else: only image files inside UPLOAD_DIR. Plus the retention that
+keeps those files viewable — a finished run prunes by age, not on the spot.
 Run: python tests/test_attachment_endpoint.py"""
 
 import os
@@ -17,6 +17,7 @@ os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 from bridge import config, runner  # noqa: E402
 from bridge.dashboard import server as dash  # noqa: E402
+from bridge.miniapp import server as mini  # noqa: E402
 
 PNG = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89")
@@ -85,6 +86,40 @@ def test_rejects_blank_path():
     h, box = _handler()
     h._get_api("/local/attachment", {})
     assert box["code"] == 404
+
+
+def _mini_handler():
+    h = mini.Handler.__new__(mini.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._send_bytes = lambda data, code, ctype, cache="no-cache": box.update(
+        data=data, code=code, ctype=ctype)
+    return h, box
+
+
+def test_miniapp_serves_uploaded_image():
+    p = _upload("job_mini", "shot1.png")
+    h, box = _mini_handler()
+    h._api_attachment(p)
+    assert box["code"] == 200 and box["data"] == PNG
+    assert box["ctype"] == "image/png"
+
+
+def test_miniapp_serves_nothing_but_images_under_upload_dir():
+    outside = os.path.join(config.BASE_PATH, "mini-private.png")
+    with open(outside, "wb") as f:
+        f.write(PNG)
+    cases = {
+        "outside the upload dir": outside,
+        "traversal back out of it": os.path.join(config.UPLOAD_DIR, "..", "mini-private.png"),
+        "a non-image inside it": _upload("job_mini_txt", "notes.txt", b"secret"),
+        "an upload already cleaned up": os.path.join(config.UPLOAD_DIR, "gone", "shot1.png"),
+        "no path at all": "",
+    }
+    for what, path in cases.items():
+        h, box = _mini_handler()
+        h._api_attachment(path)
+        assert box["code"] == 404, what
 
 
 def test_prune_keeps_recent_and_drops_expired():

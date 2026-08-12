@@ -7,7 +7,7 @@ import os
 import re
 import threading
 
-from bridge import transcript_jsonl
+from bridge import machine, transcript_jsonl
 
 _AGENT_ID_RE = re.compile(r"^agent-[A-Za-z0-9_]+$")
 _RUN_ID_RE = re.compile(r"^wf_[A-Za-z0-9_-]+$")
@@ -17,6 +17,15 @@ _RUN_ID_RE = re.compile(r"^wf_[A-Za-z0-9_-]+$")
 # unchanged transcript is a stat, not a full read.
 _completed_cache: "dict[str, tuple]" = {}   # main_path -> ((mtime, size), set)
 _completed_lock = threading.Lock()
+
+
+def _session_alive(session: dict) -> bool:
+    """Is the Claude process that owns this session still up? A subagent is only
+    'running' while its parent is: a killed / exited parent never writes the
+    tool_result that would mark its agents done, so without this every abandoned
+    fan-out reads "N agents working" forever."""
+    sid = session.get("claude_session_id")
+    return bool(sid) and sid in machine.live_session_ids()
 
 
 def _subagents_dir(session: dict) -> str | None:
@@ -92,14 +101,15 @@ def _workflow_records(subagents_dir: str) -> dict:
     return out
 
 
-def _run_status(rec: dict) -> str:
+def _run_status(rec: dict, alive: bool = True) -> str:
     """A workflow is done once its record carries a terminal status; a missing
-    record or an explicit "running" means it is still in flight."""
+    record or an explicit "running" means it is still in flight — unless the
+    session that hosts it is gone, in which case nothing is in flight."""
     raw = rec.get("status")
-    return "done" if raw and raw != "running" else "running"
+    return "done" if (raw and raw != "running") or not alive else "running"
 
 
-def _session_workflows(subagents_dir: str) -> list[dict]:
+def _session_workflows(subagents_dir: str, alive: bool = True) -> list[dict]:
     """Group Workflow-spawned sub-agents (subagents/workflows/<run>/) by run,
     enriched with the run record. Ordered by first sub-agent start."""
     wf_root = os.path.join(subagents_dir, "workflows")
@@ -112,7 +122,7 @@ def _session_workflows(subagents_dir: str) -> list[dict]:
         if not (_RUN_ID_RE.match(run_id) and os.path.isdir(run_dir)):
             continue
         rec = records.get(run_id, {})
-        status = _run_status(rec)
+        status = _run_status(rec, alive)
         sub: list[dict] = []
         for meta_path in glob.glob(os.path.join(run_dir, "*.meta.json")):
             agent_id = os.path.basename(meta_path)[:-len(".meta.json")]
@@ -151,6 +161,7 @@ def session_agents(session: dict) -> dict:
     if not d:
         return {"running": 0, "total": 0, "agents": [], "workflows": []}
     done_ids = _completed_tool_use_ids(session)
+    alive = _session_alive(session)
     out: list[dict] = []
     for meta_path in glob.glob(os.path.join(d, "*.meta.json")):
         try:
@@ -160,7 +171,8 @@ def session_agents(session: dict) -> dict:
             continue
         agent_id = os.path.basename(meta_path)[:-len(".meta.json")]
         tool_use_id = meta.get("toolUseId") or ""
-        status = "done" if tool_use_id and tool_use_id in done_ids else "running"
+        status = ("done" if (tool_use_id and tool_use_id in done_ids) or not alive
+                  else "running")
         try:
             st = os.stat(os.path.join(d, agent_id + ".jsonl"))
             started, updated = st.st_ctime, st.st_mtime
@@ -174,7 +186,7 @@ def session_agents(session: dict) -> dict:
                     "status": status,
                     "started_at": started, "updated_at": updated})
     out.sort(key=lambda a: a["started_at"])
-    workflows = _session_workflows(d)
+    workflows = _session_workflows(d, alive)
     wf_agents = [a for w in workflows for a in w["agents"]]
     return {"running": sum(1 for a in out if a["status"] == "running")
                        + sum(1 for a in wf_agents if a["status"] == "running"),
@@ -239,12 +251,13 @@ def agent_activity(session: dict, agent_id: str, cursor: int = 0,
                                            name, b.get("input", {}))})
     except OSError:
         return empty
+    alive = _session_alive(session)
     if workflow_id:                                       # status follows the run
-        status = _run_status(_workflow_records(d).get(workflow_id, {}))
+        status = _run_status(_workflow_records(d).get(workflow_id, {}), alive)
     else:
         tool_use_id = meta.get("toolUseId") or ""
-        status = ("done" if tool_use_id and tool_use_id in _completed_tool_use_ids(session)
-                  else "running")
+        status = ("done" if (tool_use_id and tool_use_id in _completed_tool_use_ids(session))
+                  or not alive else "running")
     return {"events": events, "next_cursor": idx, "status": status,
             "description": meta.get("description") or "",
             "agent_type": meta.get("agentType") or "agent"}

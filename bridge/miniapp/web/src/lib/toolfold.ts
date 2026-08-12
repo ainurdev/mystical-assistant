@@ -1,11 +1,52 @@
-// Folding runs of plain tool chips in a transcript turn. Pure — the renderer
-// decides what a "block" is, this only groups.
+// Grouping runs of consecutive tool events in a transcript turn. Pure — the
+// renderer decides what a "block" is, this only groups.
+//
+// The dashboard carries its own copy (bridge/dashboard/web/src/lib/toolfold.ts)
+// for the reason lib/tools.ts is duplicated: two separate Vite builds.
 
 /** Events that render nothing, so they can't break a run of chips. */
 const INVISIBLE = new Set(["tool_done", "permission_resolved", "question_answered"]);
 
 /** Shortest run worth folding — two chips is not yet noise. */
 export const MIN_RUN = 3;
+
+/**
+ * Runs of `min`+ consecutive tool events sharing a key, ignoring events that
+ * render nothing. `keyOf` returns null for events that group with nothing; a
+ * different key starts a new run, so two MCP servers never share one card.
+ */
+export function runsOf(
+  events: { type: string }[],
+  keyOf: (i: number) => string | null,
+  min: number,
+): { folds: Map<number, number[]>; headOf: Map<number, number> } {
+  const folds = new Map<number, number[]>();
+  const headOf = new Map<number, number>();
+  let run: number[] = [];
+  let key: string | null = null;
+
+  const flush = () => {
+    if (run.length >= min) {
+      folds.set(run[0], run);
+      for (const i of run.slice(1)) headOf.set(i, run[0]);
+    }
+    run = [];
+    key = null;
+  };
+
+  events.forEach((e, i) => {
+    const k = e.type === "tool" ? keyOf(i) : null;
+    if (k !== null) {
+      if (k !== key) flush();
+      key = k;
+      run.push(i);
+    } else if (!INVISIBLE.has(e.type)) {
+      flush();
+    }
+  });
+  flush();
+  return { folds, headOf };
+}
 
 /**
  * Group consecutive plain tool chips so a turn reads as commands and prose
@@ -22,25 +63,5 @@ export function foldChips(
   events: { type: string }[],
   blocky: (i: number) => boolean,
 ): { folds: Map<number, number[]>; headOf: Map<number, number> } {
-  const folds = new Map<number, number[]>();
-  const headOf = new Map<number, number>();
-  let run: number[] = [];
-
-  const flush = () => {
-    if (run.length >= MIN_RUN) {
-      folds.set(run[0], run);
-      for (const i of run.slice(1)) headOf.set(i, run[0]);
-    }
-    run = [];
-  };
-
-  events.forEach((e, i) => {
-    if (e.type === "tool" && !blocky(i)) {
-      run.push(i);
-    } else if (!INVISIBLE.has(e.type)) {
-      flush();
-    }
-  });
-  flush();
-  return { folds, headOf };
+  return runsOf(events, (i) => (blocky(i) ? null : "chip"), MIN_RUN);
 }

@@ -87,6 +87,7 @@ function seqOf(e: RunEvent): number | undefined {
 function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
   const map = new Map<string, Turn>(prev.map((x) => [x.id, x]));
   const storeSeq = new Map<string, number>();
+  const touched = new Set<string>();
 
   for (const st of t.turns) {
     storeSeq.set(st.id, st.seq);
@@ -106,6 +107,7 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
           || ex.runtime !== st.runtime) {
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime });
       }
+      if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else {
       map.set(st.id, {
         id: st.id,
@@ -121,7 +123,6 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
     }
   }
 
-  const touched = new Set<string>();
   for (const ev of t.events) {
     const turn = map.get(ev.turn_id);
     if (!turn) continue;
@@ -132,7 +133,10 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
 
   for (const id of touched) {
     const turn = map.get(id)!;
-    map.set(id, { ...turn, pending: derivePending(turn.events) });
+    // Only a live turn can be blocked on you: once it ends nothing is listening
+    // for the answer (the respond endpoint 409s), so it is history, not a card.
+    const pending = turn.status === "running" ? derivePending(turn.events) : [];
+    if (pending.length || turn.pending.length) map.set(id, { ...turn, pending });
   }
 
   const out = [...map.values()];
@@ -185,7 +189,9 @@ export interface ChatContextValue {
   respond: (
     requestId: string,
     opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
-  ) => Promise<void>;
+  ) => Promise<boolean>;
+  /** The open session's transcript hasn't arrived yet (first load or a switch). */
+  loadingSession: boolean;
   newChat: () => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
@@ -211,6 +217,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [checking, setChecking] = useState(false);
   const [sessions, setSessions] = useState<SessionBrief[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // The session resolver below hasn't settled yet, so "no turns" means "not
+  // fetched", not "empty chat". Flips on failure too — never spin forever.
+  const [resolving, setResolving] = useState(true);
   const [model, setModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
   const [effort, setEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
   // Per-message permission override ("" = use the session's mode). Lets you flip a
@@ -319,6 +328,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         /* leave current state */
+      } finally {
+        if (!cancelled) setResolving(false);
       }
     })();
     return () => {
@@ -327,7 +338,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [project]);
 
   // Load + live-poll the current session's transcript (session-seq cursor).
-  useQuery({
+  const transcriptQ = useQuery({
     queryKey: ["transcript", sessionId],
     enabled: sessionId !== null,
     queryFn: async () => {
@@ -343,6 +354,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     },
     refetchInterval: isRunning || sessionWorking ? 1500 : false,
   });
+  // The very first fetch for this session — a poll refetch keeps the transcript
+  // on screen, so only the load with nothing to show yet counts as loading. Each
+  // term can end: no project (the resolver never runs) falls through to the
+  // empty state rather than spinning forever.
+  const loadingSession =
+    stateQuery.isLoading || (project !== null && resolving) || transcriptQ.isLoading;
 
   async function addAttachments(files: FileList | null) {
     if (!files) return;
@@ -460,8 +477,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   async function respond(
     requestId: string,
     opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
-  ) {
-    if (!activeTurn) return;
+  ): Promise<boolean> {
+    if (!activeTurn) return false;
     try {
       await api.respond(activeTurn.id, {
         request_id: requestId,
@@ -469,9 +486,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         answers: opts.answers,
       });
     } catch {
-      /* the poll reconciles */
+      return false; // the card hands the button back instead of spinning forever
     }
     refresh();
+    return true;
   }
 
   useEffect(() => {
@@ -536,6 +554,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     compact,
     stop,
     respond,
+    loadingSession,
     newChat,
     held,
     heldBusy,

@@ -11,14 +11,27 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
 os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
-from bridge import agents, transcript_jsonl  # noqa: E402
+from bridge import agents, machine, transcript_jsonl  # noqa: E402
 
 
-def _fixture():
+def _register(sid, alive=True):
+    """Write a Claude session-registry entry for `sid` (conftest points
+    machine.SESSIONS_DIR at an empty temp dir). Agents only count as running while
+    their parent process does, so a live pid is part of the fixture. Fresh dir per
+    fixture so one test's live entry can't leak into the next test's dead one."""
+    machine.SESSIONS_DIR = tempfile.mkdtemp()
+    pid = os.getpid() if alive else 2 ** 22   # >/proc/sys/kernel/pid_max → dead
+    with open(os.path.join(machine.SESSIONS_DIR, f"{pid}.json"), "w") as f:
+        json.dump({"pid": pid, "sessionId": sid, "cwd": "/tmp/proj",
+                   "entrypoint": "sdk-cli"}, f)
+
+
+def _fixture(alive=True):
     """Build ~/.claude/projects-style tree: main transcript + 2 subagents.
     agent a1's Task (T1) has a tool_result in main → done; a2 (T2) → running."""
     root = tempfile.mkdtemp()
     sid = "11111111-2222-3333-4444-555555555555"
+    _register(sid, alive)
     proj = os.path.join(root, "-tmp-proj")
     sub = os.path.join(proj, sid, "subagents")
     os.makedirs(sub, exist_ok=True)
@@ -210,3 +223,22 @@ if __name__ == "__main__":
             fn()
             print(f"ok {name}")
     print("all passed")
+
+
+def test_agents_are_done_when_the_session_process_is_gone():
+    """The bug behind "N agents working" on a finished session: a killed parent
+    never writes the tool_result that marks its agents done, so without a
+    liveness check the pill claims work that stopped hours ago."""
+    root, sid = _fixture(alive=False)
+    _add_workflow(root, sid, run_id="wf_dead", status=None)
+    orig = transcript_jsonl.PROJECTS_DIR
+    transcript_jsonl.PROJECTS_DIR = root
+    try:
+        out = agents.session_agents({"claude_session_id": sid})
+        assert out["running"] == 0
+        assert {a["status"] for a in out["agents"]} == {"done"}
+        assert out["workflows"][0]["status"] == "done"   # no record status, dead host
+        act = agents.agent_activity({"claude_session_id": sid}, "agent-a2")
+        assert act["status"] == "done"
+    finally:
+        transcript_jsonl.PROJECTS_DIR = orig

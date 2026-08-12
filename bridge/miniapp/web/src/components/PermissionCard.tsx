@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Wrench, Check, X, CircleSlash } from "lucide-react";
-import { Button, Card } from "./ui";
+import { Button, Card, Spinner } from "./ui";
 
 export function PermissionCard({
   toolName,
@@ -17,9 +18,18 @@ export function PermissionCard({
   /** Asked, never answered, and the run has since ended — the process that would
    *  receive the answer is gone, so the buttons would do nothing. */
   stale?: boolean;
-  onAllow: () => void;
-  onDeny: () => void;
+  /** Resolve when the answer has reached the bridge; `false` means it didn't. */
+  onAllow: () => void | Promise<boolean | void>;
+  onDeny: () => void | Promise<boolean | void>;
 }) {
+  // The card only flips to Allowed/Denied on the next transcript poll — without
+  // this the click looks like it did nothing. See QuestionCard.
+  const [sending, setSending] = useState<"allow" | "deny" | null>(null);
+  async function answer(which: "allow" | "deny", fn: () => void | Promise<boolean | void>) {
+    if (sending) return;
+    setSending(which);
+    if ((await fn()) === false) setSending(null);
+  }
   return (
     <Card className="space-y-2 border border-[var(--tg-button)]/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
@@ -37,11 +47,11 @@ export function PermissionCard({
       )}
       {active ? (
         <div className="flex gap-2">
-          <Button className="flex-1" onClick={onAllow}>
-            Allow
+          <Button className="flex-1" disabled={!!sending} onClick={() => void answer("allow", onAllow)}>
+            {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : "Allow"}
           </Button>
-          <Button variant="secondary" className="flex-1" onClick={onDeny}>
-            Deny
+          <Button variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer("deny", onDeny)}>
+            {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : "Deny"}
           </Button>
         </div>
       ) : (

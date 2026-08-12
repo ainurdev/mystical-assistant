@@ -15,7 +15,7 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
-from bridge import runner, transcript_jsonl  # noqa: E402
+from bridge import machine, runner, transcript_jsonl  # noqa: E402
 
 
 def test_bridge_running_session_is_working():
@@ -38,11 +38,13 @@ def test_bridge_awaiting_takes_precedence_over_running():
 
 
 def _finished_job(sid: str, result: str, *, needs: str | None = None,
-                  status: str = "done"):
-    """A finished job in the registry, as _build_status sees it."""
+                  status: str = "done", ago: float = 0.0):
+    """A finished job in the registry, as _build_status sees it. `ago` backdates
+    when the turn ended, for the ASK time-out."""
     job = runner.Job.__new__(runner.Job)
     job.store_session_id, job.result, job.texts = sid, result, []
-    job.status, job.started, job.tail_needs = status, time.time(), needs
+    job.status, job.started, job.tail_needs = status, time.time() - ago, needs
+    job.last_at, job.ask_dismissed = time.time() - ago, False
     runner._jobs[sid + "-job"] = job
 
 
@@ -64,6 +66,18 @@ def test_asking_never_outranks_a_live_turn_or_a_real_block():
                                   external=[], native_snap={})
     assert status["q2"]["state"] == "working"     # a new turn is already going
     assert status["q3"]["state"] == "awaiting"    # blocked beats merely asking
+    runner._jobs.clear()
+
+
+def test_asking_ages_out_instead_of_waiting_forever():
+    """An unanswered question you walked away from stops counting as WAITING."""
+    runner._jobs.clear()
+    _finished_job("q7", "Written and tested. Commit it now?", ago=runner._ASK_TTL + 60)
+    _finished_job("q8", "Written and tested. Commit it now?")
+    status = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                  external=[], native_snap={})
+    assert "q7" not in status
+    assert status["q8"]["state"] == "asking"
     runner._jobs.clear()
 
 
@@ -142,6 +156,12 @@ def _agents_fixture(sid: str, *, finished: bool) -> str:
     proj = os.path.join(root, "-tmp-proj")
     sub = os.path.join(proj, sid, "subagents")
     os.makedirs(sub, exist_ok=True)
+    # A session listed by machine.list_running() is alive by construction; these
+    # rows are injected straight into _build_status, so register the pid the
+    # agent liveness check looks for.
+    machine.SESSIONS_DIR = tempfile.mkdtemp()
+    with open(os.path.join(machine.SESSIONS_DIR, f"{os.getpid()}.json"), "w") as f:
+        json.dump({"pid": os.getpid(), "sessionId": sid, "cwd": "/tmp/proj"}, f)
     with open(os.path.join(proj, sid + ".jsonl"), "w") as f:
         f.write(json.dumps({"type": "assistant", "message": {"role": "assistant",
                 "content": [{"type": "tool_use", "id": "T1", "name": "Task",

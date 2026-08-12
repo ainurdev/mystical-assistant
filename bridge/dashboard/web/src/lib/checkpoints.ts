@@ -50,9 +50,9 @@ export function marksOf(turns: Turn[]): Mark[] {
       } else if (e.type === "error") failed = true;
       else if (e.type === "stopped") stopped = true;
     }
-    const answered = new Set(
-      t.events.filter((e) => e.type === "question_answered").map((e) => e.request_id),
-    );
+    // Still blocked on you — answered, skipped and abandoned questions all drop
+    // out of `pending`, since only a live turn is listening for an answer.
+    const open = new Set(t.pending.filter((p) => p.kind === "question").map((p) => p.request_id));
     if (prompt) {
       n++;
       out.push({
@@ -66,26 +66,13 @@ export function marksOf(turns: Turn[]): Mark[] {
         out.push({
           id: ckId(t.id, e.request_id),
           label: e.questions[0]?.header || e.questions[0]?.question || "question",
-          kind: "question", n: 0, waiting: !answered.has(e.request_id),
+          kind: "question", n: 0, waiting: open.has(e.request_id),
         });
       else if (e.type === "steer")
         out.push({ id: ckId(t.id, steerKey(i)), label: e.text, kind: "steer", n: 0, waiting: false });
     });
   }
   return out;
-}
-
-/** Index of the tick nearest position `f` on the rail, or -1 if none is within
- *  `snap`. All three are fractions of the rail's height. Ties go to the lower
- *  tick, so a click in a cluster always lands somewhere. */
-export function nearestTick(pos: number[], f: number, snap: number): number {
-  let hit = -1;
-  let best = snap;
-  pos.forEach((p, i) => {
-    const d = Math.abs(p - f);
-    if (d <= best) { best = d; hit = i; }
-  });
-  return hit;
 }
 
 /** The colour a checkpoint reads as — what needs you first, then what broke. */

@@ -17,6 +17,8 @@ interface Props {
   onAnalyze: (rel: string) => void;
   onManage: () => void;
   onCreateProject: (name: string, prompt: string) => void;
+  /** First load hasn't landed — an empty list isn't "you have no projects". */
+  booting?: boolean;
 }
 
 /** Owning folder of a repo path: "ainurhq/efas/app" → "ainurhq/efas",
@@ -101,7 +103,7 @@ function ProjectRow({
 }
 
 export function ProjectsPanel(props: Props) {
-  const { groups, activeProject, onSelectProject, onAnalyze, onManage, onCreateProject } = props;
+  const { groups, activeProject, onSelectProject, onAnalyze, onManage, onCreateProject, booting } = props;
   const [newOpen, setNewOpen] = useState(false);
   const [npName, setNpName] = useState("");
   const [npPrompt, setNpPrompt] = useState("");
@@ -193,7 +195,8 @@ export function ProjectsPanel(props: Props) {
         })}
         {shown.length === 0 && (
           <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: "10px 4px" }}>
-            {needle ? `No projects match "${q.trim()}".` : "No projects with sessions yet."}
+            {needle ? `No projects match "${q.trim()}".`
+              : booting ? "LOADING PROJECTS…" : "No projects with sessions yet."}
           </div>
         )}
       </div>

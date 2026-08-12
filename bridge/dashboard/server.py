@@ -139,11 +139,13 @@ def _worktree_cwd(project, branch) -> "str | None":
         return None
     b = (branch or "").strip()
     if b:
-        wt = _abs_within(_worktree_path(str(project), b))
+        wt = _worktree_for_branch(abs_p, b)          # git first
         if wt is not None:
             return wt
-        wt = _worktree_for_branch(abs_p, b)
-        if wt is not None:
+        # Only then the naming convention, and only if the dir agrees it's on that
+        # branch: a session can `git checkout` a managed worktree onto another one.
+        wt = _abs_within(_worktree_path(str(project), b))
+        if wt is not None and git.current_branch_cached(wt) in (b, ""):
             return wt
     return abs_p
 
@@ -397,7 +399,8 @@ class Handler(BaseHTTPRequestHandler):
                                 (qs.get("branch", [""])[0] or "").strip())
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
-            return self._json({"files": git.list_tree(cwd)})
+            return self._json({"files": git.list_tree(cwd),
+                               "ignored": git.ignored_paths(cwd)})
         if path == "/local/files/read":
             cwd = _worktree_cwd(qs.get("project", [None])[0],
                                 (qs.get("branch", [""])[0] or "").strip())
@@ -631,6 +634,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "not found"}, 404)
             store.archive(sid)
             return self._json({"ok": True})
+        # "No" to a closing question: nothing to run, just stop the row asking.
+        if path.startswith("/local/sessions/") and path.endswith("/dismiss-ask"):
+            sid = path[len("/local/sessions/"):-len("/dismiss-ask")]
+            return self._json({"ok": runner.dismiss_ask(sid)})
         if path == "/local/policy/default":
             from bridge import ladder
             try:
@@ -708,6 +715,18 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": f"policy must be one of {ladder.POLICIES}"}, 400)
             store.set_fallback_policy(sid, policy)
             return self._json({"ok": True, "fallback_policy": policy})
+        if path.startswith("/local/sessions/") and path.endswith("/autocompact"):
+            from bridge.miniapp.server import normalize_autocompact
+            sid = path[len("/local/sessions/"):-len("/autocompact")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            ok, value = normalize_autocompact(body.get("autocompact"))
+            if not ok:
+                return self._json(
+                    {"error": "autocompact must be 'auto' or 100000-1000000"}, 400)
+            store.set_autocompact(sid, value)
+            return self._json({"ok": True, "autocompact": value})
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")
@@ -1027,18 +1046,21 @@ class Handler(BaseHTTPRequestHandler):
         branch = (body.get("branch") or "").strip()
         if not branch or branch in (".", ".."):
             return self._json({"error": "invalid branch"}, 400)
-        wt = _worktree_path(project, branch)
-        rel = browser.rel(wt)
-        if os.path.isdir(wt):                      # already opened — reuse it
-            return self._json({"ok": True, "path": wt, "rel": rel, "branch": branch,
-                               "output": "worktree exists"})
-        # The branch may already be checked out somewhere that isn't our path —
-        # git would refuse a second worktree for it, so reuse the one that exists.
+        # Ask git where the branch lives before trusting our own naming: the branch
+        # may be checked out somewhere else entirely (git would refuse a second
+        # worktree for it), and the dir named after it may have been switched to
+        # another branch from inside a session — reusing that hands back the wrong
+        # tree, which is how a session opens on a branch you didn't pick.
         existing = _worktree_for_branch(abs_p, branch)
         if existing is not None:
             return self._json({"ok": True, "path": existing,
                                "rel": browser.rel(existing), "branch": branch,
                                "output": f"branch already checked out at {existing}"})
+        wt = base = _worktree_path(project, branch)
+        n = 2
+        while os.path.isdir(wt):     # taken by another branch — pick a free path
+            wt, n = f"{base}-{n}", n + 1
+        rel = browser.rel(wt)
         os.makedirs(os.path.dirname(wt), exist_ok=True)
         parent = (body.get("parent") or git.current_branch(abs_p) or "main").strip()
         create = body.get("create", True)

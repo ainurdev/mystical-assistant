@@ -53,6 +53,7 @@ function seqOf(e: RunEvent): number | undefined {
 export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
   const map = new Map<string, Turn>(prev.map((x) => [x.id, x]));
   const storeSeq = new Map<string, number>();
+  const touched = new Set<string>();
   for (const st of t.turns) {
     storeSeq.set(st.id, st.seq);
     const ex = map.get(st.id);
@@ -67,6 +68,7 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
           || ex.runtime !== st.runtime || ex.sha !== st.sha)
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
                          sha: st.sha });
+      if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else
       map.set(st.id, {
         id: st.id,
@@ -79,7 +81,6 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         sha: st.sha,
       });
   }
-  const touched = new Set<string>();
   for (const ev of t.events) {
     const turn = map.get(ev.turn_id);
     if (!turn) continue;
@@ -89,7 +90,10 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
   }
   for (const id of touched) {
     const turn = map.get(id)!;
-    map.set(id, { ...turn, pending: derivePending(turn.events) });
+    // Only a live turn can be blocked on you: once it ends nothing is listening
+    // for the answer (the respond endpoint 409s), so it is history, not a card.
+    const pending = turn.status === "running" ? derivePending(turn.events) : [];
+    if (pending.length || turn.pending.length) map.set(id, { ...turn, pending });
   }
   const out = [...map.values()];
   out.sort(

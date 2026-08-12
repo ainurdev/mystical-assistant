@@ -58,6 +58,9 @@ export interface SessionBrief {
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
+  ctx_tokens?: number | null; // window fill at the end of the last turn (null = unmeasured)
+  ctx_window?: number; // what ctx_tokens is a fraction of (config.CONTEXT_WINDOW)
+  autocompact?: string | null; // compact at: "auto" | token count | null (claude's default)
   branch?: string; // the checkout this session runs in ("" when unknown)
 }
 
@@ -102,8 +105,14 @@ export interface AnswerSelection {
 
 export type RunEvent =
   | { type: "text"; text: string }
+  // A pause where the model reasoned, and only that: Claude Code strips the
+  // reasoning text from every surface it exposes (both the live stream and the
+  // on-disk JSONL carry an empty thinking block plus a signature), so `ms` — how
+  // long the pause was — is the whole event. Short pauses aren't recorded
+  // (bridge/transcript_jsonl.py THINK_MIN_MS).
+  | { type: "thinking"; ms?: number }
   | { type: "tool"; name: string; summary: string; id?: string }
-  // `output`/`is_error` are Bash-only, `patch` edit-only (see
+  // `output` is Bash-only, `patch` edit-only, `stat` for everything else (see
   // transcript_jsonl.tool_done); turns recorded before this landed carry no `id`.
   | {
       type: "tool_done";
@@ -112,6 +121,11 @@ export type RunEvent =
       output?: string;
       is_error?: boolean;
       patch?: string[];
+      // How big the answer was ("512 lines", "14 tools · 32.1k tokens"), or the
+      // first line of the error when the call failed.
+      stat?: string;
+      // Screenshots a tool returned, as upload-dir paths (see /api/attachment).
+      images?: string[];
     }
   | { type: "result"; result: string; cost: number; elapsed: number }
   | { type: "error"; message: string }
@@ -268,8 +282,9 @@ export interface Issue {
   body: string;
   labels: GitHubLabel[];
 }
-// One file loaded into the editor. `content` is "" for binary/too_large; raster
-// images come back as a data URL in `image`. Mirrors bridge/git.py read_file.
+// One file loaded into the editor. `content` is "" for binary/too_large;
+// images, PDFs, video and audio come back as a data URL in `media` with their
+// `mime`. Mirrors bridge/git.py read_file.
 export interface FileContent {
   ok: boolean;
   error?: string;
@@ -278,7 +293,8 @@ export interface FileContent {
   binary?: boolean;
   too_large?: boolean;
   size?: number;
-  image?: string;
+  media?: string;
+  mime?: string;
 }
 
 export interface IssuesInfo {
@@ -431,6 +447,17 @@ async function request<T>(
 export const api = {
   getState: () => request<AppState>("/api/state"),
 
+  /** One screenshot a tool returned, as an object URL. Fetched rather than linked
+   *  because an <img src> can't carry the X-Telegram-Init-Data header the API
+   *  gates on; the caller revokes the URL when the image unmounts. */
+  attachmentUrl: async (path: string) => {
+    const res = await fetch(`/api/attachment?path=${encodeURIComponent(path)}`, {
+      headers: { "X-Telegram-Init-Data": getInitData() },
+    });
+    if (!res.ok) throw new ApiError(res.status, "attachment gone");
+    return URL.createObjectURL(await res.blob());
+  },
+
   getProjects: (dir?: string) => {
     const qs = dir ? `?dir=${encodeURIComponent(dir)}` : "";
     return request<ProjectsListing>(`/api/projects${qs}`);
@@ -491,6 +518,13 @@ export const api = {
   getSession: (id: string, cursor: number) =>
     request<Transcript>(`/api/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
 
+  // "No" to a question the last turn ended on: drops the session's ASK state
+  // without spending a turn saying so.
+  dismissAsk: (id: string) =>
+    request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/dismiss-ask`, {
+      method: "POST",
+      body: {},
+    }),
   archiveSession: (id: string) =>
     request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/archive`, {
       method: "POST",
@@ -500,6 +534,11 @@ export const api = {
     request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/policy`, {
       method: "POST",
       body: { policy },
+    }),
+  setAutocompact: (id: string, autocompact: string | null) =>
+    request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}/autocompact`, {
+      method: "POST",
+      body: { autocompact },
     }),
 
   runStatus: (jobId: string, cursor: number) =>
