@@ -86,6 +86,7 @@ export function CheckpointsButton() {
 }
 
 function CheckpointsSheet({ turns, onClose }: { turns: Turn[]; onClose: () => void }) {
+  const { jumpToTurn } = useChat();
   const [filter, setFilter] = useState("");
   const marks = useMemo(
     () => turns.flatMap((t, i) => turnMarks(t, i + 1)),
@@ -97,7 +98,10 @@ function CheckpointsSheet({ turns, onClose }: { turns: Turn[]; onClose: () => vo
 
   function jump(m: Mark) {
     onClose();
-    document.getElementById(`turn-${m.turnId}`)?.scrollIntoView({ block: "start" });
+    // Through the chat context: the row may be unmounted (virtualized) or its
+    // turn not even loaded yet (tail cut) — jumpToTurn pages older turns in
+    // until it exists, then scrolls its row into view.
+    void jumpToTurn(m.turnId);
   }
 
   return (

@@ -83,6 +83,13 @@ export interface Transcript {
   turns: StoreTurn[];
   events: StoreEvent[];
   next_cursor: number;
+  // Present only when the request carried ?tail= (and the server is new enough
+  // to window) — older turns exist beyond the first loaded one.
+  has_older?: boolean;
+  /** Oldest loaded event seq — the `before` key for the next older page. */
+  oldest_seq?: number | null;
+  /** First turn whose events are loaded — where rendering should start. */
+  tail_from?: string | null;
 }
 
 export interface QuestionOption {
@@ -519,8 +526,10 @@ export const api = {
       body: { project, ...(title ? { title } : {}) },
     }),
 
-  getSession: (id: string, cursor: number) =>
-    request<Transcript>(`/api/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+  getSession: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
+    request<Transcript>(`/api/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
+      (opts?.tail ? `&tail=${opts.tail}` : "") +
+      (opts?.before ? `&before=${opts.before}` : "")),
 
   // "No" to a question the last turn ended on: drops the session's ASK state
   // without spending a turn saying so.

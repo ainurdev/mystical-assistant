@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -192,6 +193,16 @@ export interface ChatContextValue {
   ) => Promise<boolean>;
   /** The open session's transcript hasn't arrived yet (first load or a switch). */
   loadingSession: boolean;
+  /** Older turns exist server-side beyond the loaded tail. */
+  hasOlder: boolean;
+  olderLoading: boolean;
+  loadOlder: () => Promise<void>;
+  /** First turn whose events are loaded — turns before it stay hidden. */
+  renderFrom: string | null;
+  /** Filled by the run route's virtualized transcript; used by jumpToTurn. */
+  transcriptNav: MutableRefObject<{ jumpToTurn: (turnId: string) => boolean } | null>;
+  /** Jump to a turn, auto-loading older pages until it exists. */
+  jumpToTurn: (turnId: string) => Promise<void>;
   newChat: () => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
@@ -228,6 +239,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null); // current session, for stale-free reads
+  // Older turns exist beyond what's loaded (tail loading). `from` = first loaded
+  // turn (the render cut), `seq` = oldest loaded event seq (next page's `before`).
+  // A server without tail support never sends the fields, so this stays inert.
+  const [older, setOlder] = useState<{ has: boolean; seq: number | null; from: string | null; loading: boolean }>(
+    { has: false, seq: null, from: null, loading: false });
+  const olderRef = useRef(older);
+  olderRef.current = older;
+  // The run route's virtualized transcript registers its jump surface here so
+  // the checkpoints sheet (rendered from the root layout) can navigate it.
+  const transcriptNav = useRef<{ jumpToTurn: (turnId: string) => boolean } | null>(null);
   // A notification's panel button opens "?s=<session>&p=<repo>" (bridge/telegram.py
   // panel_kb). Held until the project switch lands, so the auto-resolver below
   // can't race it and drop us on the repo's latest session instead.
@@ -269,6 +290,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sessionIdRef.current = id;
     pinnedRef.current = null;   // an explicit pick outranks the deep link
     setTurns([]);
+    setOlder({ has: false, seq: null, from: null, loading: false });
     setSessionId(id);
     setHeld(null);          // a card about the session we're leaving
   }
@@ -288,6 +310,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   function refresh() {
     if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
+  }
+
+  // Fetch the page of turns before the oldest loaded one and prepend it.
+  // mergeDelta does the prepending for free: older turns already exist (empty)
+  // and their events fill in. seqRef is untouched on purpose — an older page's
+  // next_cursor is the live head, not a forward delta marker.
+  async function loadOlder() {
+    const o = olderRef.current;
+    const forId = sessionId;
+    if (!forId || !o.has || o.loading || o.seq == null) return;
+    setOlder({ ...o, loading: true });
+    try {
+      const t = await api.getSession(forId, 0, { tail: 3, before: o.seq });
+      if (sessionIdRef.current !== forId) return;   // switched away mid-flight
+      setTurns((prev) => mergeDelta(prev, t));
+      setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
+                 from: t.tail_from ?? null, loading: false });
+    } catch { setOlder({ ...olderRef.current, loading: false }); }
+  }
+
+  // Jump the transcript to a turn, loading older pages until its row exists —
+  // the checkpoints sheet lists every turn while only the tail is loaded.
+  async function jumpToTurn(turnId: string) {
+    for (let i = 0; i < 200; i++) {               // pages ≫ max observed 34 turns
+      if (transcriptNav.current?.jumpToTurn(turnId)) return;
+      if (!olderRef.current.has || olderRef.current.loading) return;
+      await loadOlder();
+      // A prepend re-renders the transcript; give the nav a frame to rebuild.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
   }
 
   // Cold open from a Telegram notification: land on the session it was about.
@@ -343,13 +395,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     enabled: sessionId !== null,
     queryFn: async () => {
       const forId = sessionId as string;
-      const t = await api.getSession(forId, seqRef.current);
+      // First load asks for the tail only (3 event-bearing turns keeps the
+      // worst measured session's payload ~53KB gzipped); polls stay unwindowed
+      // forward deltas.
+      const first = seqRef.current === 0;
+      const t = await api.getSession(forId, seqRef.current, first ? { tail: 3 } : undefined);
       // A session switch (openSession) resets seqRef/turns and changes the key,
       // but this in-flight fetch for the OLD session must not merge into the new
       // one's list or clobber its cursor. Bail if we've since switched away.
       if (sessionIdRef.current !== forId) return t;
       setTurns((prev) => mergeDelta(prev, t));
       seqRef.current = t.next_cursor;
+      if (first && t.has_older !== undefined)
+        setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
       return t;
     },
     refetchInterval: isRunning || sessionWorking ? 1500 : false,
@@ -528,6 +586,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value: ChatContextValue = {
     turns,
+    hasOlder: older.has,
+    olderLoading: older.loading,
+    loadOlder,
+    renderFrom: older.from,
+    transcriptNav,
+    jumpToTurn,
     draft,
     setDraft,
     draftAttachments,
