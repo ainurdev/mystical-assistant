@@ -299,7 +299,7 @@ export function Terminal({
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} />
                 )}
               </div>
             </div>

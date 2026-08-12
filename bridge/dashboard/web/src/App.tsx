@@ -582,27 +582,10 @@ export function App() {
     const content = contentRef.current;
     if (!el || !content) return;
     let prev = el.scrollTop;
-    // Scroll anchoring, by hand. Event cards carry `content-visibility: auto`
-    // (.vskip-card), so one that has never been on screen is only the 60px
-    // `contain-intrinsic-size` guess — when it finally renders at its real
-    // height (measured p25 21px, median 117px, max 372px) everything below it
-    // moves, and a scroll up lands somewhere the gesture didn't ask for.
-    // Measured: 425px of drift on the first trip up a 17k transcript, exactly 0
-    // on the second — `auto` remembers real heights, so each guess is only wrong
-    // once, which is why it read as intermittent. The browser's own anchoring
-    // can't cover this: content-visibility applies `contain: layout paint`, and
-    // contained elements are excluded from being anchor nodes.
-    // Whatever sits at the top edge stays at the top edge. Tracked in viewport
-    // coords on purpose — where the browser DID anchor, the rect hasn't moved
-    // and we correct nothing, instead of doubling its correction.
-    let anchor: Element | null = null;
-    let anchorTop = 0;
-    const markAnchor = () => {
-      const box = el.getBoundingClientRect();
-      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 1);
-      anchor = hit && el.contains(hit) ? hit : null;
-      anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
-    };
+    // Anchoring against content shifting above the viewport now lives in the
+    // transcript virtualizer (shouldAdjustScrollPositionOnItemSizeChange in
+    // Transcript.tsx) — a row above you re-measuring adjusts scroll there.
+    // What remains here is the follow policy: when to stick to the bottom.
     const sync = () => {
       // Keep `prev` fresh through a glide, or the first flick up afterwards
       // still reads as "scrolled down" against a stale mark.
@@ -610,7 +593,6 @@ export function App() {
       const stick = stickToBottom(el, prev, stickRef.current);
       prev = el.scrollTop;
       stickRef.current = stick;
-      markAnchor();                 // you moved: whatever is at the edge now is the anchor
       setAtBottom(stick);           // no-op re-render-wise unless it flipped
     };
     el.addEventListener("scroll", sync, { passive: true });
@@ -618,13 +600,6 @@ export function App() {
     // re-check (a shrink can land us back at the bottom on its own).
     const ro = new ResizeObserver(() => {
       if (!stickRef.current) {
-        // Put the anchor back where it was before this resize. A card resolving
-        // above you is the whole reason the view slid; one below you leaves the
-        // rect where it is and this corrects nothing.
-        if (anchor?.isConnected) {
-          const top = anchor.getBoundingClientRect().top;
-          if (top !== anchorTop) el.scrollTop += top - anchorTop;
-        }
         // Content moved, not you — so this can only re-arm follow by landing
         // exactly on the end (see stickOnResize). Running the gesture test here
         // let a nudge up inside the 80px band re-stick, and the next streamed
@@ -638,7 +613,6 @@ export function App() {
       else el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
-    markAnchor();                   // a view you come back to unstuck resizes before you scroll
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
   }, [view, showDashboard]);

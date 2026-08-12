@@ -167,6 +167,33 @@ have them fight. It is deleted. Stick-to-bottom becomes
 new content, which is still the right policy, and `stick.check.ts` keeps testing
 it. Only the correction mechanism goes.
 
+### Implemented: turn granularity (deviation, 2026-08-13)
+
+Rows are **turns, not events**. Decided during planning: `mergeDelta` prepends
+whole turns for free, RunStream's 1458 lines of folding/pending logic stay
+untouched inside a row, and the cards' own `content-visibility` keeps
+within-turn cost flat while a turn is mounted. The cost is a chunky mount when
+a megaturn crosses the overscan edge (~200ms hitches at 4x, visible in scroll
+p95); event-level rows via extracting RunStream's card pipeline remain the
+escalation if that ever hurts. Heights are cached per turn id, so a size
+estimate (~20px/event — chip folding compresses far below one card per event)
+is wrong at most once. Ctrl-F synchronously mounts the full list before the
+find bar opens; Escape re-windows.
+
+Measured (2608-event session, dashboard, full 1.7MB payload — no tail):
+
+|                    | before @4x | after @4x | target  |
+| ------------------ | ---------- | --------- | ------- |
+| open -> settled    | 3.9 s      | **0.9 s** | <1 s    |
+| scroll p50         | 382 ms     | **30 ms** | <50 ms  |
+| frames over 50 ms  | 65 of 77   | 39 of 152 | —       |
+| transcript heap    | +57 MB     | **+5.5 MB** | (<30 absolute — met as delta; absolute is GC-noisy) |
+| DOM nodes at rest  | ~49k       | 12–26k    | <8k missed when trailing megaturns sit in view; flat in session length, which was the point |
+
+Median session @4x: settle 753 -> 522 ms, zero long frames. Scroll-up drift
+after the anchoring handoff to `shouldAdjustScrollPositionOnItemSizeChange`:
+0 px over 2.5 s parked 4000 px up.
+
 ## Order
 
 Dashboard first, then the Mini App. The dashboard is what the CDP probe can
