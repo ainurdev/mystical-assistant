@@ -194,6 +194,11 @@ Median session @4x: settle 753 -> 522 ms, zero long frames. Scroll-up drift
 after the anchoring handoff to `shouldAdjustScrollPositionOnItemSizeChange`:
 0 px over 2.5 s parked 4000 px up.
 
+Full stack (gzip + tail=3 + virtualizer, new Python on a throwaway 8795),
+worst session @4x: **open 854 ms, scroll p50 16.9 ms, +4 MB heap, 53 KB
+transferred** (from 3.9 s / 382 ms / +57 MB / 1.7 MB). The live bridge runs
+the frontend half of this today; gzip and tail activate at its next restart.
+
 ## Order
 
 Dashboard first, then the Mini App. The dashboard is what the CDP probe can
