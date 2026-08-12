@@ -127,6 +127,32 @@ class TestWiring(unittest.TestCase):
             with runner._jobs_lock:
                 runner._jobs.pop(job.id, None)
 
+    def test_no_also_drops_a_blocked_closing(self):
+        # tailstate read the closing as blocked (WAIT), not a passing offer — the
+        # transcript still shows the same Yes/No chips, so "No" must clear it too.
+        from bridge import runner
+        job = self._job("CI is green. Reply `go` to merge.")
+        self._run(job)
+        with runner._jobs_lock:
+            runner._jobs[job.id] = job
+        try:
+            self.assertEqual(runner._build_status([], [], [], [], {})
+                             ["sess-tail"]["state"], "awaiting")
+            self.assertTrue(runner.dismiss_ask("sess-tail"))
+            self.assertEqual(runner.blocked_sessions(), {})
+            self.assertNotIn("sess-tail", runner._build_status([], [], [], [], {}))
+        finally:
+            with runner._jobs_lock:
+                runner._jobs.pop(job.id, None)
+
+    def test_a_late_classifier_cannot_undo_a_dismissal(self):
+        # The haiku call outlives the tap: the row must stay dropped.
+        from bridge import runner
+        job = self._job("CI is green. Reply `go` to merge.")
+        job.ask_dismissed = True
+        self.assertEqual(self._run(job), [("done", None)])
+        self.assertIsNone(job.tail_needs)
+
     def test_an_ordinary_ending_still_pings_finished(self):
         from bridge import runner
         job = self._job("Fixed the regex; tests pass.")

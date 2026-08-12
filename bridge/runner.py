@@ -713,6 +713,9 @@ def dismiss_ask(session_id: str) -> bool:
     if not j or j.status == "running":
         return False
     j.ask_dismissed = True
+    # A closing tailstate read as *blocked* (WAIT) shows the same chips and is
+    # waved off the same way — without this the row stayed amber after "No".
+    j.tail_needs = None
     return True
 
 

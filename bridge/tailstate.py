@@ -151,7 +151,9 @@ def _run(job, cwd: "str | None") -> None:
     try:
         tail = job.result or (job.texts[-1] if job.texts else "")
         ask = needs_you(job.chat_id, cwd, tail) if job.status == "done" else None
-        if ask:
+        # You waved the question off (runner.dismiss_ask) while the classifier
+        # was still thinking — don't flag the row back to WAIT behind you.
+        if ask and not job.ask_dismissed:
             job.tail_needs = ask      # read by runner._build_status for the session row
             runner.notify_needs_you(job.chat_id, job.store_session_id, ask)
             return
