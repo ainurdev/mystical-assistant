@@ -47,6 +47,7 @@ import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
+import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -68,6 +69,7 @@ import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { notify, setNoticeSound } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
+import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { AskDialog, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
@@ -237,6 +239,12 @@ export function App() {
   const skipBoot = new URLSearchParams(location.search).has("skipboot");
   const [booting, setBooting] = useState(!skipBoot);
   const [showDashboard, setShowDashboard] = useState(skipBoot);
+  // The intro's boot log. Each of the five startup fetches below reports into
+  // it as it lands, so the lines and the bar are the real load, not a timer.
+  const [bootSteps, setBootSteps] = useState(initialBootSteps);
+  const markBoot = useCallback((key: BootKey, phase: "ok" | "fail", detail: string) => {
+    setBootSteps((prev) => markStep(prev, key, phase, detail));
+  }, []);
   const [manageOpen, setManageOpen] = useState(false);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -300,6 +308,12 @@ export function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  // Where the session we're opening was left, held until its turns are on
+  // screen — there's nothing to scroll to before then. It stays armed while the
+  // transcript settles: rows measure and images load for a beat after the turns
+  // land, so the pixel the anchor points at keeps moving.
+  const restoreTo = useRef<Anchor | null>(null);
+  const restoreT = useRef(0);
   // A smooth scroll of ours is in flight — the scroll listener must not read its
   // downward travel as a gesture (mid-glide we're still far from the bottom,
   // which would drop stick and flash the jump button).
@@ -449,8 +463,14 @@ export function App() {
     if (id === sessionIdRef.current) return;
     seqRef.current = 0;
     setOlder({ has: false, seq: null, from: null, loading: false });
-    stickRef.current = true;
-    setAtBottom(true);
+    // Back to where you were reading this session, if we know — otherwise the
+    // bottom, which is where a session you've never opened starts.
+    const was = recall(id);
+    restoreTo.current = was && was !== "bottom" ? was : null;
+    window.clearTimeout(restoreT.current);
+    restoreT.current = 0;
+    stickRef.current = !restoreTo.current;
+    setAtBottom(stickRef.current);
     staleTurns.current = true;
     setLoadingSession(true);
     setSessionId(id);
@@ -468,12 +488,16 @@ export function App() {
   useEffect(() => {
     let live = true;
     const tick = async () => {
-      try { const s = await api.state(); if (live) setState(s); } catch { /* ignore */ }
+      try {
+        const s = await api.state();
+        if (live) setState(s);
+        markBoot("bridge", "ok", "LINKED");
+      } catch { markBoot("bridge", "fail", "OFFLINE"); }
     };
     void tick();
     const id = setInterval(tick, 3000);
     return () => { live = false; clearInterval(id); };
-  }, []);
+  }, [markBoot]);
 
   useEffect(() => {
     try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects, removed: removedProjects, imported: importedProjects })); }
@@ -489,8 +513,9 @@ export function App() {
       // The bridge is the source of truth for HIDE; an older backend omits the
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
-    } catch { /* old backend without discovery — panel stays session-derived */ }
-  }, []);
+      markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
+    } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
+  }, [markBoot]);
   useEffect(() => {
     void refreshProjects();
     const id = setInterval(refreshProjects, 10000);
@@ -510,10 +535,11 @@ export function App() {
           ? prev.find((s) => s.id === sid) : undefined;
         return open ? [open, ...list] : list;
       });
+      markBoot("sessions", "ok", bootCount(list.length, "CHAT"));
       return list;
-    } catch { return [] as SessionBrief[]; }
+    } catch { markBoot("sessions", "fail", "UNREADABLE"); return [] as SessionBrief[]; }
     finally { setBooted(true); }
-  }, []);
+  }, [markBoot]);
 
   const projectRel = state?.project?.rel ?? null;
   useEffect(() => {
@@ -595,6 +621,35 @@ export function App() {
     }
   }, [loadOlder]);
 
+  // Remember the place in the open session on every scroll, so leaving it keeps
+  // it. Parked at the bottom is a place too — it's what brings you back to the
+  // latest instead of to wherever you last read. Mid-restore the scrolling is
+  // ours, not yours, so it isn't recorded.
+  const keepPlace = useCallback((stick: boolean) => {
+    const sid = sessionIdRef.current;
+    if (!sid || restoreTo.current) return;
+    const a = stick ? "bottom" : transcriptNav.current?.anchor();
+    if (a) remember(sid, a);
+  }, []);
+
+  // Aim at the remembered turn. Called again on every content resize until we
+  // actually land on it: a freshly opened transcript is mostly estimated, so the
+  // first attempt scrolls past the end and clamps — and a clamp to the bottom is
+  // exactly what re-arms follow and drags you back down.
+  const applyRestore = useCallback(() => {
+    const a = restoreTo.current;
+    const el = scrollRef.current;
+    if (!a || a === "bottom" || !el) return;
+    const top = transcriptNav.current?.turnTop(a.turn);
+    if (top != null) el.scrollTop = top + a.off;
+  }, []);
+
+  const endRestore = useCallback(() => {
+    restoreTo.current = null;
+    window.clearTimeout(restoreT.current);
+    restoreT.current = 0;
+  }, []);
+
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
@@ -605,18 +660,22 @@ export function App() {
     // Transcript.tsx) — a row above you re-measuring adjusts scroll there.
     // What remains here is the follow policy: when to stick to the bottom.
     const sync = () => {
-      // Keep `prev` fresh through a glide, or the first flick up afterwards
-      // still reads as "scrolled down" against a stale mark.
-      if (glideRef.current) { prev = el.scrollTop; return; }
+      // Keep `prev` fresh through a glide or a restore, or the first flick up
+      // afterwards still reads as "scrolled down" against a stale mark.
+      if (glideRef.current || restoreTo.current) { prev = el.scrollTop; return; }
       const stick = stickToBottom(el, prev, stickRef.current);
       prev = el.scrollTop;
       stickRef.current = stick;
       setAtBottom(stick);           // no-op re-render-wise unless it flipped
+      keepPlace(stick);
     };
     el.addEventListener("scroll", sync, { passive: true });
     // Content grew/shrank: pull to the bottom if we were parked there, otherwise
     // re-check (a shrink can land us back at the bottom on its own).
     const ro = new ResizeObserver(() => {
+      // Still on our way back to where you were reading: re-aim, and let none of
+      // the follow policy below see the half-settled positions on the way.
+      if (restoreTo.current) { applyRestore(); prev = el.scrollTop; return; }
       if (!stickRef.current) {
         // Content moved, not you — so this can only re-arm follow by landing
         // exactly on the end (see stickOnResize). Running the gesture test here
@@ -626,14 +685,43 @@ export function App() {
         prev = el.scrollTop;
         stickRef.current = stick;
         setAtBottom(stick);
+        keepPlace(stick);
       }
       else if (glideRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
       else el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
+    // Touch the scroller mid-restore and it's yours again — 2s of re-aiming
+    // would otherwise fight you.
+    const giveUp = () => endRestore();
+    el.addEventListener("wheel", giveUp, { passive: true });
+    el.addEventListener("touchstart", giveUp, { passive: true });
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-    return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
-  }, [view, showDashboard]);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      el.removeEventListener("wheel", giveUp);
+      el.removeEventListener("touchstart", giveUp);
+      ro.disconnect();
+    };
+  }, [view, showDashboard, keepPlace, applyRestore, endRestore]);
+
+  // The other half of keepPlace: once the opened session's turns are on screen,
+  // put you back where you left it. A turn we can't find didn't come with the
+  // tail (you'd loaded older ones before leaving), and the bottom is the honest
+  // answer to "that place is gone".
+  useEffect(() => {
+    const a = restoreTo.current;
+    if (!a || a === "bottom" || loadingSession || !turns.length) return;
+    if (transcriptNav.current?.turnTop(a.turn) == null) {
+      endRestore();
+      jumpToBottom();               // that place didn't come back with the tail
+      return;
+    }
+    // Pinned for a beat, not aimed once: the turns keep measuring after they
+    // land, and every measurement moves the pixel the anchor points at.
+    if (!restoreT.current) restoreT.current = window.setTimeout(endRestore, 2000);
+    applyRestore();
+  }, [turns, loadingSession, jumpToBottom, applyRestore, endRestore]);
 
   useEffect(() => {
     let live = true;
@@ -762,13 +850,18 @@ export function App() {
   useEffect(() => {
     let live = true;
     const tick = async () => {
-      try { const { repos } = await api.gitAll(); if (live) setGitBadges(new Map(Object.entries(repos))); }
-      catch { /* ignore */ }
+      try {
+        const { repos } = await api.gitAll();
+        if (live) setGitBadges(new Map(Object.entries(repos)));
+        const dirty = Object.values(repos).filter((r) => r.dirty > 0).length;
+        markBoot("git", "ok", dirty ? `${bootCount(Object.keys(repos).length, "REPO")} · ${dirty} DIRTY`
+          : bootCount(Object.keys(repos).length, "REPO"));
+      } catch { markBoot("git", "fail", "NO STATUS"); }
     };
     void tick();
     const id = setInterval(tick, 10000);
     return () => { live = false; clearInterval(id); };
-  }, []);
+  }, [markBoot]);
 
   useEffect(() => {
     let live = true;
@@ -780,12 +873,13 @@ export function App() {
         if (!live) return;
         setAccounts(a.accounts);
         setFreeAgents((a.free_agents?.providers ?? []).filter((p) => p.ready));
-      } catch { /* ignore */ }
+        markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
+      } catch { markBoot("auth", "fail", "NO LOGIN"); }
     };
     void tick();
     const id = setInterval(tick, 60000);
     return () => { live = false; clearInterval(id); };
-  }, []);
+  }, [markBoot]);
 
   // ⌘K palette + Escape closes the topmost overlay.
   useEffect(() => {
@@ -1665,7 +1759,7 @@ export function App() {
                 trailingWorking={openWorking && !running} loading={loadingSession || !booted} hud={settings}
                 hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
                 renderFrom={older.from}
-                navRef={transcriptNav} onJumpMark={(m) => void jumpToMark(m)}
+                navRef={transcriptNav} restoringRef={restoreTo} onJumpMark={(m) => void jumpToMark(m)}
                 onRunCommand={runCommand}
                 onQuote={quote}
                 // Tapping a suggested reply to a question the model asked in prose
@@ -1801,7 +1895,7 @@ export function App() {
       )}
 
       {booting && (
-        <BootIntro theme={settings.theme} scanlines={settings.scanlines} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
+        <BootIntro theme={settings.theme} scanlines={settings.scanlines} steps={bootSteps} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
     </div>
   );

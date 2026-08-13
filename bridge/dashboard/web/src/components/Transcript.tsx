@@ -7,6 +7,7 @@ import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
+import { anchorAt, type Anchor } from "../lib/scrollmem";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
 
@@ -195,6 +196,9 @@ export interface TranscriptNav {
   jumpToTurn: (turnId: string, subAnchorId?: string) => boolean;
   /** Row start offset in scroll coordinates; null when not in the list. */
   turnTop: (turnId: string) => number | null;
+  /** Where the reader is right now, as something that survives a re-render of
+   *  the whole list: null when there's nothing on screen to name. */
+  anchor: () => Anchor | null;
 }
 
 export function Transcript({
@@ -216,6 +220,7 @@ export function Transcript({
   scrollRef,
   sessionKey,
   navRef,
+  restoringRef,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -238,6 +243,8 @@ export function Transcript({
   sessionKey?: string | null;
   /** Filled with the checkpoint-navigation surface while mounted. */
   navRef?: MutableRefObject<TranscriptNav | null>;
+  /** Non-null while the caller is scrolling back to a remembered place. */
+  restoringRef?: RefObject<Anchor | null>;
 }) {
   // Tail loading: turns always ship whole but only the last few carry events.
   // Turns before the cut would render as prompt bubbles with missing bodies —
@@ -304,8 +311,14 @@ export function Transcript({
   // loading) must not slide what you're reading — this is the replacement for
   // the hand-rolled scroll anchoring App.tsx used to do. An instance field in
   // @tanstack/virtual-core 3.14, not a constructor option.
+  //
+  // Except while we're scrolling back to a remembered place: the row you land
+  // *inside* measures right after, and this correction reads that growth as
+  // "content above you got taller" and pushes you the whole height of the turn —
+  // to the bottom of a one-megaturn session. During a restore the anchor owns
+  // the scroll position.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.start < (instance.scrollOffset ?? 0);
+    !restoringRef?.current && item.start < (instance.scrollOffset ?? 0);
 
   // Checkpoint navigation. In full-mount mode everything is in the DOM, so the
   // plain scrollIntoView path is both available and exact; windowed, the row is
@@ -336,6 +349,14 @@ export function Transcript({
         if (i < 0) return null;
         const off = virtualizer.getOffsetForIndex(i, "start");
         return off ? off[0] : null;
+      },
+      anchor: () => {
+        const el = scrollRef?.current;
+        if (!el || fullRef.current) return null;
+        return anchorAt(
+          virtualizer.getVirtualItems()
+            .map((v) => ({ key: String(v.key), start: v.start, end: v.end })),
+          el.scrollTop);
       },
     };
     return () => { navRef.current = null; };

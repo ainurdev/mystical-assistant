@@ -6,6 +6,7 @@ import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
+import { anchorAt, recall, remember, type Anchor } from "../lib/scrollmem";
 import { RunStream, TURN_TAIL } from "../components/RunStream";
 import { Composer } from "../components/Composer";
 import { Banner, Spinner } from "../components/ui";
@@ -30,6 +31,19 @@ function RunPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [parked, setParked] = useState(true);
+  // Where the open session was left, held until its turns are on screen — and
+  // then a beat longer, because the rows keep measuring after they land and
+  // every measurement moves the pixel the anchor points at.
+  const restoreTo = useRef<Anchor | null>(null);
+  const restoreT = useRef(0);
+  const endRestore = useCallback(() => {
+    restoreTo.current = null;
+    window.clearTimeout(restoreT.current);
+    restoreT.current = 0;
+  }, []);
+  // Reassigned every render: the scroll listener mounts once, but has to save
+  // against the session and the rows that are on screen *now*.
+  const keepPlace = useRef<() => void>(() => {});
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
   // The scroller is <main> from the root layout — captured once mounted so the
   // virtualizer (which reads it lazily) sees a real element, not null.
@@ -45,6 +59,18 @@ function RunPage() {
     el?.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
+  // Opening a session goes back to where you were reading it; one you've never
+  // opened (or left parked on the latest) starts at the bottom, as before.
+  // Runs on mount too, which is what makes the CHATS/WORK round trip keep the
+  // place as well — this page unmounts with the tab.
+  useEffect(() => {
+    const was = sessionId ? recall(sessionId) : undefined;
+    endRestore();
+    restoreTo.current = was && was !== "bottom" ? was : null;
+    stick.current = !restoreTo.current;
+    setParked(stick.current);
+  }, [sessionId, endRestore]);
+
   // The transcript scrolls inside <main>, so that's who we watch. Anchoring
   // against content shifting above the viewport now lives in the virtualizer
   // (shouldAdjustScrollPositionOnItemSizeChange below) — what remains here is
@@ -54,13 +80,24 @@ function RunPage() {
     if (!el) return;
     let prev = el.scrollTop;
     const sync = () => {
+      // Mid-restore the scrolling is ours, and the half-settled positions on
+      // the way must not be read as you parking somewhere.
+      if (restoreTo.current) { prev = el.scrollTop; return; }
       stick.current = stickToBottom(el, prev);
       setParked(stick.current);
       prev = el.scrollTop;
+      keepPlace.current();
     };
     el.addEventListener("scroll", sync, { passive: true });
-    return () => el.removeEventListener("scroll", sync);
-  }, []);
+    // Touch the transcript mid-restore and it's yours again.
+    el.addEventListener("touchstart", endRestore, { passive: true });
+    el.addEventListener("wheel", endRestore, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", sync);
+      el.removeEventListener("touchstart", endRestore);
+      el.removeEventListener("wheel", endRestore);
+    };
+  }, [endRestore]);
 
   // Follow the latest message as the transcript grows, but only while parked.
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
@@ -108,8 +145,56 @@ function RunPage() {
   });
   // A row above the viewport re-measuring must not slide what you're reading —
   // the replacement for the hand-rolled anchor correction this file used to do.
+  // Except while we're scrolling back to a remembered place: the row you land
+  // *inside* measures right after, and this correction reads that growth as
+  // "content above you got taller" and pushes you the whole height of the turn.
+  // During a restore the anchor owns the scroll position.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.start < (instance.scrollOffset ?? 0);
+    !restoreTo.current && item.start < (instance.scrollOffset ?? 0);
+
+  keepPlace.current = () => {
+    // Mid-restore the scrolling is ours, not yours — recording it would
+    // overwrite the place we're on the way back to.
+    if (!sessionId || !scrollEl || restoreTo.current) return;
+    const a: Anchor | null = stick.current ? "bottom" : anchorAt(
+      virtualizer.getVirtualItems()
+        .map((v) => ({ key: String(v.key), start: v.start, end: v.end })),
+      scrollEl.scrollTop);
+    if (a) remember(sessionId, a);
+  };
+
+  const applyRestore = () => {
+    const a = restoreTo.current;
+    if (!a || a === "bottom" || !scrollEl) return;
+    const i = visibleTurns.findIndex((t) => t.id === a.turn);
+    if (i < 0) return;
+    const top = virtualizer.getOffsetForIndex(i, "start");
+    if (top) scrollEl.scrollTop = top[0] + a.off;
+  };
+
+  // The other half: once the turns are on screen and the list has been measured
+  // against the scroller (listOffset — row coordinates are wrong without it),
+  // scroll back to the turn you were on. A turn we can't find didn't come with
+  // the tail, and the bottom is the honest answer to "that place is gone".
+  useEffect(() => {
+    const a = restoreTo.current;
+    if (!a || a === "bottom" || loadingSession || !scrollEl || !listOffset
+        || !visibleTurns.length) return;
+    if (!visibleTurns.some((t) => t.id === a.turn)) {
+      endRestore();
+      stick.current = true;
+      setParked(true);
+      toBottom();
+      return;
+    }
+    if (!restoreT.current) restoreT.current = window.setTimeout(endRestore, 2000);
+    applyRestore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyRestore reads refs + this render's rows
+  }, [visibleTurns, loadingSession, scrollEl, listOffset, virtualizer, toBottom, endRestore]);
+
+  // Rows measure after they mount, which re-renders this page and moves the
+  // anchor's pixel — so re-aim on every render until the window closes.
+  useEffect(() => { if (restoreTo.current) applyRestore(); });
 
   // Let the checkpoints sheet (rendered from the root layout) navigate us.
   useEffect(() => {

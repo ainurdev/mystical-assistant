@@ -554,7 +554,6 @@ body {
 @keyframes introdiamond { 0% { transform: rotate(45deg) scale(0); opacity: 0; } 100% { transform: rotate(45deg) scale(1); opacity: 1; } }
 @keyframes wordflick { 0% { filter: brightness(0.15); } 7% { filter: brightness(2.6); } 11% { filter: brightness(0.4); } 19% { filter: brightness(1.9); } 28% { filter: brightness(0.7); } 36% { filter: none; } 100% { filter: none; } }
 @keyframes bootline { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-@keyframes barfill { from { width: 0; } to { width: 100%; } }
 @keyframes tickfade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 /* nyan.cat, plain: two parallax star layers scrolling past a static cat. */

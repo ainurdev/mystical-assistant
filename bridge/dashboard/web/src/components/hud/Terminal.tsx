@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, ty
 import type { AnswerSelection, EnrichedSession, NextItem, SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
+import type { Anchor } from "../../lib/scrollmem";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
@@ -139,7 +140,7 @@ export function Terminal({
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
-  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, onJumpMark,
+  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -171,6 +172,7 @@ export function Terminal({
   renderFrom?: string | null;
   /** Checkpoint navigation surface, filled by the Transcript while mounted. */
   navRef?: MutableRefObject<TranscriptNav | null>;
+  restoringRef?: RefObject<Anchor | null>;
   /** Jump to a checkpoint, auto-loading older pages when it isn't loaded. */
   onJumpMark?: (m: Mark) => void;
   /** Re-run a transcript command in this project's TERMINAL tab. */
@@ -304,7 +306,7 @@ export function Terminal({
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
                 )}
               </div>
             </div>
