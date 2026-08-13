@@ -877,7 +877,7 @@ input {
 
 /* --- SETTINGS MODAL --------------------------------------------------------
    The category rail runs down the side of the panel, and across the top of it
-   once the modal is phone-narrow: 158px of rail out of a 350px modal leaves
+   once the modal is phone-narrow: 180px of rail out of a 350px modal leaves
    less room for a setting than for the name of its category.
 
    A media query rather than a container query — unlike the composer, whose
@@ -893,7 +893,9 @@ input {
 .setrail button:hover:not(.on) { background: color-mix(in srgb, var(--acc) 6%, transparent); }
 
 .setrail {
-  width: 158px;
+  /* 180 not 158: the category icon takes 22px off the text column, and the
+     one-line hints wrap onto two without it back. */
+  width: 180px;
   flex: none;
   display: flex;
   flex-direction: column;

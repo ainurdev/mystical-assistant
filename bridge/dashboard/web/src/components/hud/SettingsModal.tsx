@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
+  AudioLines, Bell, CloudSun, KeyRound, LayoutTemplate, Palette, Server,
+  SlidersHorizontal, Sparkles, type LucideIcon,
+} from "lucide-react";
+import {
   api,
   type AccountInfo,
   type AiFeature,
+  type EnvSetting,
   type FreeAgentInfo,
   type FreeAgents,
   type TagCount,
@@ -92,16 +97,16 @@ export interface SettingsModalProps {
 type Tab = "appearance" | "indicator" | "interface" | "ambient" | "notifications"
   | "session" | "ai" | "accounts" | "system";
 
-const TABS: { key: Tab; label: string; hint: string }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot" },
-  { key: "indicator", label: "INDICATOR", hint: "what plays while working" },
-  { key: "interface", label: "INTERFACE", hint: "transcript" },
-  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM" },
-  { key: "notifications", label: "NOTIFY", hint: "desktop · a sound per event" },
-  { key: "session", label: "SESSION", hint: "model · mode · effort" },
-  { key: "ai", label: "AI", hint: "extras that spend model calls" },
-  { key: "accounts", label: "ACCOUNTS", hint: "logins · usage-limit fallback" },
-  { key: "system", label: "SYSTEM", hint: "bridge · updates" },
+const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon }[] = [
+  { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot", icon: Palette },
+  { key: "indicator", label: "INDICATOR", hint: "what plays while working", icon: AudioLines },
+  { key: "interface", label: "INTERFACE", hint: "transcript", icon: LayoutTemplate },
+  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun },
+  { key: "notifications", label: "NOTIFY", hint: "desktop · a sound per event", icon: Bell },
+  { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal },
+  { key: "ai", label: "AI", hint: "extras that spend model calls", icon: Sparkles },
+  { key: "accounts", label: "ACCOUNTS", hint: "logins · usage-limit fallback", icon: KeyRound },
+  { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server },
 ];
 
 // ---- WORKING INDICATOR ------------------------------------------------------
@@ -1237,17 +1242,19 @@ function AiPanel() {
   return (
     <Section
       title="MODEL-SPENDING EXTRAS"
-      info="Anything that runs without you pressing something is off by default. A switch here beats the matching environment setting and applies to the next turn — nothing to restart. Everything a feature adds to the dashboard is hidden again the moment you switch it off. The next-up board also prefers a free provider (ACCOUNTS tab) over spending Claude quota."
+      info="Anything that runs without you pressing something is off by default. A switch here beats the matching environment setting and applies to the next turn — nothing to restart. Everything a feature adds to the dashboard is hidden again the moment you switch it off. The next-up board also prefers a free provider (ACCOUNTS tab) over spending Claude quota. The token figure is what one unit burns, in and out together, as a median of real runs. Even the smallest one-shot costs tens of thousands: every headless run carries the CLI's own system prompt and tool schemas before it reads a word of yours. Most of that is read from cache, so it is cheaper than the number looks — but it is not free, and the ones that fire on their own are the ones that add up."
     >
       <div style={CARD}>
-        {/* One line each: what it is, what it costs, its switch. The paragraph
-            about how it works is `about`, which is what the ⓘ holds. */}
+        {/* One line each: what it is, what it costs in calls and in tokens, its
+            switch. The paragraph about how it works is `about`, the ⓘ's job. */}
         {rows.map((f, i) => (
           <Row
             key={f.key}
             first={!i}
             label={f.label}
-            desc={<>{f.hint} <span style={{ color: "var(--txd)" }}>· costs {f.cost}</span></>}
+            desc={<>{f.hint} <span style={{ color: "var(--txd)" }}>· costs {f.cost}</span>
+              {f.tokens && <><span style={{ color: "var(--txd)" }}> · </span>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txm)" }}>{f.tokens}</span></>}</>}
             info={f.about || undefined}
           >
             <Switch on={f.enabled} onClick={() => void (busy ? null : toggle(f))} />
@@ -1256,6 +1263,177 @@ function AiPanel() {
       </div>
       {err && <div style={{ ...NOTE, color: "var(--err)" }}>{err}</div>}
     </Section>
+  );
+}
+
+/** One setting's control, picked by its type. Text fields commit on blur or
+ *  Enter rather than per keystroke, so a half-typed port never reaches the
+ *  bridge. A secret shows its mask as the placeholder and only submits what you
+ *  actually type — clearing it is what RESET is for. */
+function EnvField({ s, busy, onSave }: {
+  s: EnvSetting;
+  busy: boolean;
+  onSave: (v: string | number | boolean) => void;
+}) {
+  const secret = s.type === "secret";
+  const [draft, setDraft] = useState(secret ? "" : String(s.value ?? ""));
+  // The server answers with the whole list after every save, so a row can change
+  // under a field that isn't being edited — follow it.
+  useEffect(() => setDraft(secret ? "" : String(s.value ?? "")), [s.value, secret]);
+
+  if (s.type === "bool")
+    return <Switch on={!!s.value} onClick={() => (busy ? null : onSave(!s.value))} />;
+
+  if (s.type === "enum")
+    return (
+      <select
+        value={String(s.value ?? "")}
+        disabled={busy}
+        onChange={(e) => onSave(e.target.value)}
+        style={{ ...field, maxWidth: 190 }}
+      >
+        {(s.choices ?? []).map((c) => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+    );
+
+  const commit = () => {
+    if (secret ? !draft : draft === String(s.value ?? "")) return;
+    onSave(draft);
+  };
+  return (
+    <input
+      value={draft}
+      disabled={busy}
+      spellCheck={false}
+      inputMode={s.type === "int" ? "numeric" : undefined}
+      placeholder={secret ? String(s.value || "not set") : s.placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setDraft(secret ? "" : String(s.value ?? ""));
+      }}
+      style={{
+        ...field,
+        width: s.type === "int" ? 96 : 210,
+        fontFamily: "'JetBrains Mono',monospace",
+        textAlign: s.type === "int" ? "right" : "left",
+      }}
+    />
+  );
+}
+
+/** The rest of bridge/config.py, which until now needed a text editor and a
+ *  restart to reach. Same precedence as the AI tab: what you set here beats
+ *  .env, and RESET puts a row back to whatever .env said rather than to a
+ *  hardcoded default — so the file stays the floor under all of this. */
+function EnvPanel() {
+  const [rows, setRows] = useState<EnvSetting[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  // Which row was refused, and why. A rejection belongs beside the field that
+  // caused it — at the foot of eight scrolling blocks nobody sees it.
+  const [err, setErr] = useState<{ key: string; message: string } | null>(null);
+
+  useEffect(() => {
+    void api.envSettings().then((r) => setRows(r.settings)).catch(() => setRows([]));
+  }, []);
+
+  async function save(key: string, value: string | number | boolean | null) {
+    setBusy(key);
+    setErr(null);
+    try {
+      setRows((await api.setEnvSetting(key, value)).settings);
+    } catch (e) {
+      setErr({ key, message: e instanceof Error ? e.message : "could not save" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (rows === null) return <div style={NOTE}>Reading…</div>;
+  if (!rows.length)
+    return <div style={NOTE}>This bridge is running a build without the settings registry. Restart it.</div>;
+
+  const groups = [...new Set(rows.map((r) => r.group))];
+  const pending = rows.some((r) => r.source === "saved" && !r.live);
+
+  return (
+    <>
+      {groups.map((g, gi) => (
+        <Section
+          key={g}
+          title={g}
+          top
+          info={
+            gi === 0
+              ? "Everything here used to live only in .env, where only whoever deployed this bridge could reach it. A value set here is written beside the session store and layered over that file — it never rewrites it — so RESET always has somewhere to fall back to. Most apply to the next turn; the ones that bind a port, open the database or authenticate the bot say so and wait for a restart."
+              : undefined
+          }
+        >
+          <div style={CARD}>
+            {rows.filter((r) => r.group === g).map((s, i) => {
+              const desc = (
+                <>
+                  {s.hint}
+                  {s.unit && <span style={{ color: "var(--txd)" }}> · {s.unit}</span>}
+                  {!s.live && <span style={{ color: "var(--txd)" }}> · next start</span>}
+                  {s.source === "saved" && (
+                    <>
+                      {" · "}
+                      <button
+                        onClick={() => void (busy ? null : save(s.key, null))}
+                        style={{
+                          appearance: "none", cursor: "pointer", border: 0, background: "transparent",
+                          color: "var(--acc)", font: "inherit", fontSize: "var(--t95)", padding: 0,
+                        }}
+                      >
+                        RESET TO .ENV
+                      </button>
+                    </>
+                  )}
+                  {err?.key === s.key && (
+                    <div style={{ color: "var(--err)", marginTop: 4 }}>{err.message}</div>
+                  )}
+                </>
+              );
+              // A long prompt needs the width of the card, so it drops under its
+              // own label instead of sharing the line.
+              if (s.type === "text")
+                return (
+                  <div
+                    key={s.key}
+                    style={{ marginTop: i ? 11 : 0, paddingTop: i ? 11 : 0, borderTop: i ? RULE : undefined }}
+                  >
+                    <Row first label={s.label} desc={desc} info={s.about} />
+                    <textarea
+                      defaultValue={String(s.value ?? "")}
+                      key={String(s.value ?? "")}
+                      disabled={busy === s.key}
+                      spellCheck={false}
+                      rows={5}
+                      onBlur={(e) => e.target.value !== String(s.value ?? "") && void save(s.key, e.target.value)}
+                      style={{ ...field, width: "100%", marginTop: 8, resize: "vertical", lineHeight: 1.6, letterSpacing: 0 }}
+                    />
+                  </div>
+                );
+              return (
+                <Row key={s.key} first={!i} label={s.label} desc={desc} info={s.about}>
+                  <EnvField s={s} busy={busy === s.key} onSave={(v) => void save(s.key, v)} />
+                </Row>
+              );
+            })}
+          </div>
+        </Section>
+      ))}
+      {pending && (
+        <div style={NOTE}>
+          Something saved here binds a port, opens the database or authenticates the bot — it is
+          stored, and the next start picks it up. PLATFORM below restarts the bridge.
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1866,11 +2044,15 @@ export function SettingsModal(props: SettingsModalProps) {
                 className={tab === t.key ? "on" : undefined}
                 aria-current={tab === t.key ? "page" : undefined}
                 onClick={() => setTab(t.key)}
+                style={{ display: "flex", alignItems: "center", gap: 8 }}
               >
-                <div style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{t.label}</div>
-                <div className="hint"
-                  style={{ fontSize: "var(--t85)", letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
-                  {t.hint}
+                <t.icon size={14} strokeWidth={1.7} aria-hidden style={{ flex: "none" }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{t.label}</div>
+                  <div className="hint"
+                    style={{ fontSize: "var(--t85)", letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
+                    {t.hint}
+                  </div>
                 </div>
               </button>
             ))}
@@ -2237,6 +2419,10 @@ export function SettingsModal(props: SettingsModalProps) {
                 >
                   <UpdatePanel onFeed={onFeed} />
                 </Section>
+
+                {/* Everything config.py reads from the environment, which until
+                    now meant a text editor and a restart to change. */}
+                <EnvPanel />
               </>
             )}
           </div>

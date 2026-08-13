@@ -40,8 +40,9 @@ import os
 import signal
 import sys
 
-from bridge import (config, devserver, landing, limits, native_activity, onboard,
-                    pubsub, recovery, selfupdate, state, store, tunnel)
+from bridge import (config, devserver, envsettings, landing, limits,
+                    native_activity, onboard, pubsub, recovery, selfupdate,
+                    state, store, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -118,6 +119,9 @@ def _shutdown():
 
 
 def main():
+    # Before anything reads config: the SYSTEM tab's saved settings go on top of
+    # what .env said, so the checks below and every server started here see them.
+    envsettings.apply()
     if not config.TOKEN:
         sys.exit("Set TELEGRAM_BOT_TOKEN.")
     if not os.path.isdir(config.BASE_PATH):

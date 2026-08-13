@@ -581,8 +581,27 @@ export interface AiFeature {
   label: string;
   hint: string;
   cost: string;
+  tokens?: string; // what one unit burns, in + out — absent on a bridge older than the figure
   about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
+}
+/** One environment setting, lifted out of .env so it has a switch here. The
+ *  value shown is the effective one: a saved override, else what .env said, else
+ *  the code default — `source` says which. A secret is returned masked. */
+export interface EnvSetting {
+  key: string;
+  label: string;
+  group: string;
+  type: "bool" | "int" | "str" | "text" | "path" | "enum" | "csvint" | "secret";
+  live: boolean; // false → persists now, takes effect on the next bridge start
+  hint: string;
+  about: string;
+  value: string | number | boolean;
+  source: "saved" | "env" | "default";
+  default: string | number | boolean;
+  choices?: string[];
+  unit?: string;
+  placeholder?: string;
 }
 export interface NextItem {
   id: string;
@@ -909,6 +928,14 @@ export const api = {
     req<{ ok: boolean; features: AiFeature[] }>("/local/aifeatures", {
       method: "POST",
       body: { key, enabled },
+    }),
+  /** Everything else that used to be reachable only by editing .env. */
+  envSettings: () => req<{ settings: EnvSetting[] }>("/local/envsettings"),
+  /** `value: null` clears the override, falling back to what .env said. */
+  setEnvSetting: (key: string, value: string | number | boolean | null) =>
+    req<{ ok: boolean; settings: EnvSetting[] }>("/local/envsettings", {
+      method: "POST",
+      body: { key, value },
     }),
   /** Cached board — never spawns anything. */
   nextBoard: () => req<NextBoard>("/local/next"),

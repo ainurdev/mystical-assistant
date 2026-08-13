@@ -297,6 +297,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
+        if path == "/local/envsettings":
+            from bridge import envsettings
+            return self._json({"settings": envsettings.state()})
         if path == "/local/next":
             from bridge import nextup
             return self._json(nextup.board(chat))
@@ -698,6 +701,14 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/envsettings":
+            from bridge import envsettings
+            try:
+                # A missing "value" clears the override; an explicit null does too.
+                envsettings.set_value(str(body.get("key") or ""), body.get("value"))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"ok": True, "settings": envsettings.state()})
         if path == "/local/next":
             # Scouts take a minute; answer now with the cached board and let the
             # client's poll pick up the new one. Concurrent refreshes collapse.
