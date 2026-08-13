@@ -452,9 +452,33 @@ class Handler(BaseHTTPRequestHandler):
                 "scripts": project_config.package_scripts(abs_p),
                 "run_cmd": project_config.run_cmd(rel, branch),
                 "prod_url": project_config.prod_url(rel, branch),
+                "design_project": project_config.design_project(rel, branch),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
+        if path == "/local/design/prompt":
+            from bridge import aifeatures, designsync
+            if not aifeatures.enabled("design"):
+                return self._json({"error": "design system switch is off"}, 400)
+            abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
+                     or _abs_project(qs.get("cwd_rel", [None])[0]
+                                     or qs.get("project", [None])[0])
+                     or state.project_dir(chat))
+            rel = browser.rel(abs_p)
+            branch = (qs.get("branch", [""])[0] or "").strip() or None
+            kind = (qs.get("kind", [""])[0] or "").strip()
+            if kind == "link":
+                return self._json({"prompt": designsync.link_prompt(rel)})
+            pid = project_config.design_project(rel, branch)
+            if not pid:
+                return self._json({"error": "no design project linked"}, 400)
+            if kind == "pull":
+                name = (qs.get("name", [""])[0] or "").strip()
+                return self._json({"prompt": designsync.pull_prompt(
+                    pid, rel, designsync.slug(name))})
+            if kind == "push":
+                return self._json({"prompt": designsync.push_prompt(pid, rel)})
+            return self._json({"error": "unknown kind"}, 400)
         if path == "/local/shell":
             try:
                 cursor = int(qs.get("cursor", ["0"])[0])
@@ -959,6 +983,9 @@ class Handler(BaseHTTPRequestHandler):
                 out["run_cmd"] = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000], branch)
             if "prod_url" in body:
                 out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000], branch)
+            if "design_project" in body:
+                out["design_project"] = project_config.set_design_project(
+                    rel, (body.get("design_project") or "")[:200], branch)
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
             return self._json(out)

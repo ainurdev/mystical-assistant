@@ -262,6 +262,7 @@ export interface ProjectSettings {
   scripts: Record<string, string>;
   run_cmd: string | null;
   prod_url: string | null;
+  design_project: string | null;
   default_cmd: string;
   log_path: string;
 }
@@ -1037,11 +1038,23 @@ export const api = {
     }),
   projectSettings: (ctx: RunCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
-  setProjectSettings: (ctx: RunCtx, patch: { run_cmd?: string; prod_url?: string; hidden?: boolean }) =>
-    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; hidden?: boolean }>("/local/project/settings", {
+  setProjectSettings: (
+    ctx: RunCtx,
+    patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean },
+  ) =>
+    req<{
+      ok: boolean;
+      run_cmd?: string | null;
+      prod_url?: string | null;
+      design_project?: string | null;
+      hidden?: boolean;
+    }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
+  designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
+    req<{ prompt?: string; error?: string }>(
+      `/local/design/prompt?kind=${kind}&${ctxQuery(ctx)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
   issues: (project: string) =>
     req<IssuesInfo>(`/local/github/issues?project=${encodeURIComponent(project)}`),
   createIssue: (project: string, title: string, body: string) =>
