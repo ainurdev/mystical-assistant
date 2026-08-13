@@ -153,10 +153,66 @@ def test_scan_lists_hand_written_skills(tmp_path):
     (d / "SKILL.md").write_text('---\nname: custom\ndescription: "does a thing"\n---\n')
     assert skills.installed(str(tmp_path))["project"] == [
         {"id": "custom", "name": "custom", "description": "does a thing",
-         "scope": "project", "category": "other", "from_catalog": False}]
+         "scope": "project", "category": "other", "from_catalog": False,
+         "from_design": False, "design_project": None}]
 
 
 def test_bad_scope_and_unknown_id(tmp_path):
     assert skills.install("readme", "nope", str(tmp_path))[0] is False
     assert skills.install("no-such-skill", "project", str(tmp_path))[0] is False
     assert skills.install("readme", "project", None)[0] is False
+
+
+def test_a_design_sourced_skill_is_labelled_as_one(tmp_path):
+    d = tmp_path / "mystical-assistant-design-system"
+    d.mkdir()
+    (d / "SKILL.md").write_text(
+        "---\nname: mystical-assistant-design\ndescription: phosphor CRT HUD\n---\nbody\n")
+    (d / skills.DESIGN_MARKER).write_text("24409d88-c74d-4d26-becb-69672612173f\ntokens/colors.css\n")
+    found = skills._scan(str(tmp_path), "project")
+    assert len(found) == 1
+    assert found[0]["from_design"] is True
+    assert found[0]["design_project"] == "24409d88-c74d-4d26-becb-69672612173f"
+    assert found[0]["from_catalog"] is False
+
+
+def test_a_hand_written_skill_is_neither(tmp_path):
+    d = tmp_path / "mine"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: mine\ndescription: mine\n---\n")
+    found = skills._scan(str(tmp_path), "project")
+    assert found[0]["from_design"] is False
+    assert found[0]["design_project"] is None
+    assert found[0]["from_catalog"] is False
+
+
+def test_a_design_marker_with_no_id_does_not_crash(tmp_path):
+    """A truncated write, or a marker someone emptied by hand."""
+    d = tmp_path / "ds"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("")
+    found = skills._scan(str(tmp_path), "project")
+    assert found[0]["from_design"] is True
+    assert found[0]["design_project"] is None
+
+
+def test_remove_accepts_a_design_sourced_skill(tmp_path):
+    """Provenance is the whole point of the marker: bridge-installed directories
+    may be removed from the UI, hand-written ones may not."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\n")
+    assert skills.remove("ds", "project", str(tmp_path))[0] is True
+    assert not d.exists()
+
+
+def test_remove_still_refuses_a_hand_written_skill_with_neither_marker(tmp_path):
+    """Widening remove() to also accept DESIGN_MARKER must not loosen the
+    refusal for a plain hand-written skill carrying no marker at all."""
+    d = tmp_path / ".claude" / "skills" / "mine"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: mine\ndescription: mine\n---\n")
+    assert skills.remove("mine", "project", str(tmp_path))[0] is False
+    assert (d / "SKILL.md").exists()

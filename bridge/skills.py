@@ -23,6 +23,10 @@ from bridge.skills_catalog import CATALOG, skill_md
 
 SYSTEM_ROOT = os.path.expanduser("~/.claude/skills")
 MARKER = ".installed-from-catalog"
+# A pulled design system is neither a catalog skill (no upstream URL to diff
+# against) nor hand-written (a re-pull may overwrite it). Its own marker keeps
+# the three apart; line 1 is the design project id, the rest are pulled paths.
+DESIGN_MARKER = ".synced-from-design"
 _MAX_BYTES = 512_000
 _TIMEOUT = 20
 
@@ -55,6 +59,17 @@ def _front_matter(text: str) -> dict:
         if sep and not key.startswith((" ", "\t")):
             out[key.strip()] = val.strip().strip('"').strip("'")
     return out
+
+
+def _design_id(d: str) -> "tuple[bool, str | None]":
+    """(is a pulled design system, which project). Best-effort: a truncated or
+    hand-emptied marker still means the directory is ours."""
+    try:
+        with open(os.path.join(d, DESIGN_MARKER), encoding="utf-8") as f:
+            first = f.readline().strip()
+    except OSError:
+        return False, None
+    return True, first or None
 
 
 def _fetch(url: str) -> "tuple[str, str]":
@@ -94,6 +109,7 @@ def _scan(root: "str | None", scope: str) -> list:
             fm = {}
         entry = _BY_ID.get(n)
         ours = os.path.isfile(os.path.join(d, MARKER))
+        from_design, design_id = _design_id(d)
         out.append({
             "id": n,
             "name": entry["name"] if (entry and ours) else (fm.get("name") or n),
@@ -101,6 +117,8 @@ def _scan(root: "str | None", scope: str) -> list:
             "scope": scope,
             "category": entry["category"] if (entry and ours) else "other",
             "from_catalog": ours,
+            "from_design": from_design,
+            "design_project": design_id,
         })
     return out
 
@@ -195,22 +213,28 @@ def check_updates(abs_project: "str | None" = None) -> dict:
 
 
 def remove(skill_id: str, scope: str, abs_project: "str | None" = None) -> "tuple[bool, str]":
-    """Uninstall a catalog skill. Refuses anything we did not install: the
-    directory must carry the provenance MARKER and hold nothing else, so an
-    edited or hand-written skill is never deleted from the UI."""
+    """Uninstall a skill the bridge itself put there: one pulled from the
+    catalog (MARKER) or pulled from a design project (DESIGN_MARKER). Refuses
+    anything else: the directory must carry one of those two provenance
+    markers and hold nothing else, so an edited or hand-written skill is never
+    deleted from the UI."""
     root = _root(scope, abs_project)
-    if skill_id not in _BY_ID:
-        return False, "not a catalog skill"
     if root is None:
         return False, "invalid scope"
     d = os.path.join(root, skill_id)
-    if not os.path.isfile(os.path.join(d, MARKER)):
+    if os.path.isfile(os.path.join(d, MARKER)):
+        if skill_id not in _BY_ID:
+            return False, "not a catalog skill"
+        marker = MARKER
+    elif os.path.isfile(os.path.join(d, DESIGN_MARKER)):
+        marker = DESIGN_MARKER
+    else:
         return False, "not installed from the catalog"
     try:
-        if set(os.listdir(d)) != {"SKILL.md", MARKER}:
+        if set(os.listdir(d)) != {"SKILL.md", marker}:
             return False, "directory has other files"
         os.remove(os.path.join(d, "SKILL.md"))
-        os.remove(os.path.join(d, MARKER))
+        os.remove(os.path.join(d, marker))
         os.rmdir(d)
     except OSError as e:
         return False, str(e)
