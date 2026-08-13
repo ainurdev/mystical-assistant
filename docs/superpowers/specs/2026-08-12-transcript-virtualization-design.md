@@ -214,6 +214,47 @@ the transcript renderer to the surface that matters most is the worse trade.
 
 - **Event-level pagination.** The worst turn is 335 events, which mounts within
   the node budget on its own. Turn granularity is enough.
+  **Reversed 2026-08-13 — see below.**
 - **Backfilling anything.** No migration, no re-parse of stored transcripts.
 - **Touching the runner's event vocabulary.** `text` / `thinking` / `tool` /
   `tool_done` stay exactly as they are; this is a rendering change.
+
+## Amendment: per-turn tail cap (2026-08-13)
+
+"Turn granularity is enough" held only for the session it was measured on, whose
+median turn is 54 events. It fails on a session of *megaturns*: `225934b8…` is
+**14 turns of ~305 events each** (worst 429). Rows are turns, so that session is
+a handful of rows — there is nothing to window, and `tail=3` still mounts 832
+events at ~70 DOM nodes each.
+
+Measured live @4x (gzip + tail=3 + virtualizer all on), before the cap:
+
+| | before | after |
+| --- | --- | --- |
+| open -> settled | 2833 ms | **637-880 ms** |
+| DOM nodes at rest | 63357 | **8.2k-11.5k** |
+| script | 2733 ms | **322-563 ms** |
+| scroll p50 | 458 ms | **38-51 ms** |
+| scroll p95 | 884 ms | **69-95 ms** |
+| frames over 50 ms | 221 of 277 | 8-14 of ~30 |
+
+The cheap half of the documented escalation, not the full one: a turn mounts its
+last `TURN_TAIL` (60) events and puts the rest behind an "N EARLIER STEPS"
+button. No nested virtualizer, no extraction of RunStream's card pipeline.
+
+Two constraints this has to respect, both learned the hard way:
+
+- **The cut cannot orphan a folded run.** A run is drawn entirely by its head
+  and its members draw nothing, so cutting between them renders *neither* and
+  those events silently vanish. `headSafeCut` (toolfold.ts) pulls the cut back
+  to the earliest head owning anything visible. Checking only `events[cut]` is
+  insufficient — an INVISIBLE event joins no run but doesn't break one, so a run
+  can straddle the cut without the cut belonging to it. Covered in
+  `toolfold.check.ts`.
+- **`estimateSize` must cap the same way**, or the virtualizer guesses a
+  400-event turn ~7x too tall.
+
+Ctrl-F's `fullMount` lifts the cap too (`showAll`), so browser find still sees
+the whole transcript. Known, accepted: `wholeTurn` is component state, so a turn
+re-collapses if its row is unmounted and scrolled back to — the same lifetime
+`openFolds` and result fold state already have.

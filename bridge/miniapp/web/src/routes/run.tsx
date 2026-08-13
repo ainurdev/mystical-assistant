@@ -6,7 +6,7 @@ import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
-import { RunStream } from "../components/RunStream";
+import { RunStream, TURN_TAIL } from "../components/RunStream";
 import { Composer } from "../components/Composer";
 import { Banner, Spinner } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
@@ -93,8 +93,10 @@ function RunPage() {
     getItemKey: (i) => visibleTurns[i].id,
     // ~20px/event: chip folding compresses far below one card per event; the
     // cache replaces the guess with truth after first mount.
+    // Capped the same way the row renders — a 400-event turn mounts its last
+    // TURN_TAIL, so estimating off the full length would guess ~7x too tall.
     estimateSize: (i) => sizesRef.current.get(visibleTurns[i].id)
-      ?? Math.min(20000, 80 + visibleTurns[i].events.length * 20),
+      ?? Math.min(20000, 80 + Math.min(visibleTurns[i].events.length, TURN_TAIL) * 20),
     overscan: 2,
     scrollMargin: listOffset,
     measureElement: (el) => {

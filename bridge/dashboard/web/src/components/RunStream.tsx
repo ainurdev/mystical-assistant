@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown,
+  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
   Search, Globe, Bot, ListChecks, Plug, Quote,
   BookOpen, PenLine, GitCompare, Terminal, Wrench, Layers, Brain,
 } from "lucide-react";
@@ -13,7 +13,7 @@ import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
-import { foldChips, runsOf } from "../lib/toolfold";
+import { foldChips, runsOf, headSafeCut } from "../lib/toolfold";
 import { hostOf, mcpParts, toolAccent, toolKind } from "../lib/tools";
 
 // Result blocks already "printed" this session — guards against re-typing when a
@@ -78,6 +78,18 @@ type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]
 
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
+
+/** Events of a turn that mount before the rest waits behind a button. Turn
+ *  granularity is what the virtualizer windows on, so a session whose turns run
+ *  to hundreds of events is three rows and nothing to window — the spec called
+ *  this out ("<8k missed when trailing megaturns sit in view") and left
+ *  event-level rows as the escalation. This is the cheap half of that: the tail
+ *  is what you opened the turn to read, and the churn above it costs ~70 DOM
+ *  nodes an event to mount. */
+export const TURN_TAIL = 60;
+
+/** Below this, hiding events isn't worth the button that reveals them. */
+const TURN_TAIL_MIN = 10;
 
 /** A failed Bash result opens with the shell's status line ("Exit code 2\n…").
  *  It belongs in the header as a badge, not in the body. */
@@ -1006,6 +1018,7 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   ended = false,
+  showAll = false,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
@@ -1020,8 +1033,15 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   ended?: boolean;
+  /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
+   *  browser's find is about to look for. */
+  showAll?: boolean;
 }) {
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
+  // Derived from the length rather than stored as an index, so a running turn's
+  // window slides with its tail instead of freezing where it was opened.
+  const [wholeTurn, setWholeTurn] = useState(false);
+  const tailFrom = wholeTurn || showAll ? 0 : Math.max(0, events.length - TURN_TAIL);
   const pendingIds = new Set(pending.map((p) => p.request_id));
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
@@ -1056,6 +1076,12 @@ export const RunStream = memo(function RunStream({
   };
   const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
 
+  // Never cut a folded run away from the head that draws it. A cut that ends up
+  // hiding only a handful buys nothing and reads as a button in front of
+  // nothing, so it collapses to showing the lot.
+  const cut = headSafeCut(events.length, tailFrom, headOf, groupOf);
+  const from = cut < TURN_TAIL_MIN ? 0 : cut;
+
   // The turn's closing text arrives twice — once streamed as a text block, once
   // as the run's result — so the same words used to print twice, the second time
   // in the RESULT box. Only the box is drawn. A native session emits no result
@@ -1079,7 +1105,20 @@ export const RunStream = memo(function RunStream({
     // vskip-card: a turn runs to hundreds of events, so each card skips layout
     // and paint while it's off-screen (see .vskip-card in index.css).
     <div className="space-y-2 vskip-card">
-      {events.map((event, i) => {
+      {from > 0 && (
+        <button
+          type="button"
+          onClick={() => setWholeTurn(true)}
+          className="ml-[18px] flex items-center gap-1.5 border border-border px-2.5 py-1 text-[length:var(--t95)] tracking-[1px] text-muted-2 hover:text-foreground-bright"
+        >
+          <ChevronsUp size={11} aria-hidden />
+          {from} EARLIER STEP{from === 1 ? "" : "S"}
+        </button>
+      )}
+      {/* Indices stay absolute: foldChips, runsOf and the tool_done pairing all
+          key off position in the full array. */}
+      {events.slice(from).map((event, k) => {
+        const i = k + from;
         switch (event.type) {
           case "text":
             if (resultText && event.text.trim() === resultText) return null;

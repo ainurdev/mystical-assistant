@@ -65,3 +65,26 @@ export function foldChips(
 ): { folds: Map<number, number[]>; headOf: Map<number, number> } {
   return runsOf(events, (i) => (blocky(i) ? null : "chip"), MIN_RUN);
 }
+
+
+/**
+ * Pull a render cut back so no visible event is orphaned. A folded run is drawn
+ * entirely by its head, and its other members draw nothing — so cutting between
+ * a head and its members would render neither, and those events would silently
+ * vanish. Returns the earliest head owning anything at or after `cut`.
+ *
+ * Checking only `events[cut]` is not enough: an INVISIBLE event joins no run but
+ * doesn't break one either, so a run can straddle the cut without `cut` itself
+ * belonging to it.
+ */
+export function headSafeCut(
+  count: number,
+  cut: number,
+  ...heads: Map<number, number>[]
+): number {
+  if (cut <= 0) return 0;
+  let from = cut;
+  for (let i = cut; i < count; i++)
+    for (const h of heads) from = Math.min(from, h.get(i) ?? i);
+  return from;
+}

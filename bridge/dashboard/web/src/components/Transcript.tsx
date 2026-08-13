@@ -4,7 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { api, type AnswerSelection } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
-import { RunStream } from "./RunStream";
+import { RunStream, TURN_TAIL } from "./RunStream";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
@@ -125,12 +125,14 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, isActive, isLast, lastPromptRef, hud, liveTurns,
+  turn, isActive, isLast, lastPromptRef, hud, liveTurns, showAll,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer,
 }: {
   turn: Turn;
   isActive: boolean;
   isLast: boolean;
+  /** Ctrl-F is mounting everything, so the turn's tail cap lifts too. */
+  showAll?: boolean;
   lastPromptRef?: RefObject<HTMLDivElement | null>;
   hud?: HudSettings;
   liveTurns?: Set<string>;
@@ -172,6 +174,7 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               ended={turn.status !== "running"}
+              showAll={showAll}
             />
           )}
           {working && <WorkingIndicator hud={hud} />}
@@ -285,7 +288,10 @@ export function Transcript({
     // compresses a turn to well under one card per event. The cache replaces
     // the guess with truth after first mount.
     estimateSize: (i) => sizesRef.current.get(keyOf(rows[i]))
-      ?? Math.min(20000, 80 + (rows[i].kind === "turn" ? rows[i].turn.events.length * 20 : 0)),
+      // Capped the same way the row renders — a 400-event turn mounts its last
+      // TURN_TAIL, so estimating off the full length would guess ~7x too tall.
+      ?? Math.min(20000, 80 + (rows[i].kind === "turn"
+        ? Math.min(rows[i].turn.events.length, TURN_TAIL) * 20 : 0)),
     overscan: 2,
     measureElement: (el) => {
       const h = el.getBoundingClientRect().height;
@@ -346,6 +352,7 @@ export function Transcript({
         isActive={row.turn.id === activeId}
         isLast={index === visible.length - 1}
         lastPromptRef={lastPromptRef}
+        showAll={fullMount}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}

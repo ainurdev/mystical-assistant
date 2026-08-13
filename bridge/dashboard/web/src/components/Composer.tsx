@@ -407,7 +407,12 @@ export function Composer({
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--t10)", letterSpacing: 1, color: "var(--txl)", marginBottom: 10 }}>
         CONTEXT
         <span style={{ flex: 1, height: 4, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
-          <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${ctxPct}%`, background: "linear-gradient(90deg,var(--acc),var(--purple))", transition: "width .4s ease" }} />
+          {/* scaleX, not width: a width transition relayouts the composer on
+              every frame of the .4s, which is exactly when the main thread is
+              busiest (a session open, a turn streaming). The gradient paints
+              across the full track and is squashed with it, so it looks the
+              same. */}
+          <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "100%", transform: `scaleX(${ctxPct / 100})`, transformOrigin: "left", willChange: "transform", background: "linear-gradient(90deg,var(--acc),var(--purple))", transition: "transform .4s ease" }} />
         </span>
         <span style={{ color: suggest ? "var(--warn)" : "var(--acc)", flex: "none" }}>{ctxPct}%</span>
         {ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
