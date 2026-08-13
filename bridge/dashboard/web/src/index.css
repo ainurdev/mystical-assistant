@@ -833,6 +833,12 @@ input {
 .md tbody tr:nth-child(even) { background: var(--ac-03); }
 .md img { max-width: 100%; border-radius: 8px; }
 
+/* Session readouts above the composer (agents, goal) — one row, aligned to the
+   composer's own padding. Both pills render nothing when there is nothing to
+   say, so the strip collapses rather than leaving a gap where a pill was. */
+.pillstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 16px 0; }
+.pillstrip:empty { display: none; }
+
 /* Composer control row — three fenced clusters: AI · PONYTAIL · GRAPH. The row
    keys off its own wrapper's width, not the viewport's: the composer narrows
    when the sidebars and floating windows open, so a media query would collapse

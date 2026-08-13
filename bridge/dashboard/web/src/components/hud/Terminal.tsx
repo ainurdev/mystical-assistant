@@ -183,34 +183,41 @@ export function Terminal({
   // Scrolling back through an old turn peeks that turn's prompt, so the bar is a
   // section header rather than a permanent footnote about the tail. And at the
   // top of the transcript nothing has passed yet, so there is no bar to bury the
-  // first message under. The observer's top margin is the bar's own height, so a
-  // prompt counts as passed exactly when the bar starts covering it.
+  // first message under. The cut-off is the bar's own bottom edge, so a prompt
+  // counts as passed exactly when the bar starts covering it.
   const [peekIdx, setPeekIdx] = useState<number | null>(null);
   useEffect(() => {
     const root = scrollRef.current;
     if (view !== "chat" || empty || !root) { setPeekIdx(null); return; }
-    const els = Array.from(root.querySelectorAll<HTMLElement>("[data-prompt-idx]"));
-    if (!els.length) { setPeekIdx(null); return; }
-    // Deliberately not cleared up front: the observer reports every element on
-    // its first callback, so re-observing after a new turn re-derives the same
-    // answer without blinking the bar off and on in between.
-    const passed = new Set<number>();
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const idx = Number((e.target as HTMLElement).dataset.promptIdx);
-          const rootTop = e.rootBounds?.top ?? root.getBoundingClientRect().top;
-          // Out of the (inset) view AND above it → gone under the bar.
-          if (!e.isIntersecting && e.boundingClientRect.top < rootTop) passed.add(idx);
-          else passed.delete(idx);
-        }
-        setPeekIdx(passed.size ? Math.max(...passed) : null);
-      },
-      { root, rootMargin: `-${PEEK_H}px 0px 0px 0px`, threshold: 0 },
-    );
-    els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [scrollRef, view, empty, turns.length]);
+    let raf = 0;
+    // Re-queried every measure rather than observed once: with the transcript
+    // virtualized, prompts mount and unmount under you, and an observer bound to
+    // one element goes stale the moment its row is recycled — which is exactly
+    // how the old peek got stuck showing the tail at the top of the scroll.
+    const measure = () => {
+      raf = 0;
+      const edge = root.getBoundingClientRect().top + PEEK_H;
+      let best: number | null = null;
+      for (const el of root.querySelectorAll<HTMLElement>("[data-prompt-idx]")) {
+        if (el.getBoundingClientRect().top >= edge) continue;
+        const i = Number(el.dataset.promptIdx);
+        if (best === null || i > best) best = i;
+      }
+      setPeekIdx(best);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    measure();
+    root.addEventListener("scroll", onScroll, { passive: true });
+    // Streaming output grows the content under a pinned scroll position, which
+    // moves prompts across the edge without a scroll event.
+    const ro = new ResizeObserver(onScroll);
+    if (contentRef.current) ro.observe(contentRef.current);
+    return () => {
+      root.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [scrollRef, contentRef, view, empty, turns.length]);
 
   // What the bar says. Held past the point the bar hides so leaving the top of a
   // turn is a fade-out, not a blank bar sliding away.
@@ -275,6 +282,9 @@ export function Terminal({
           {view === "chat" && (
             <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} />
           )}
+          {view === "chat" && (
+            <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
+          )}
           <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
           </span>
@@ -282,9 +292,6 @@ export function Terminal({
         </div>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
-          {view === "chat" && (
-            <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
-          )}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
@@ -298,7 +305,11 @@ export function Terminal({
         <>
           <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
             <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
-              <div ref={contentRef} style={{ padding: "16px 0" }}>
+              {/* Top padding clears the bar so the first prompt starts below
+                  it: parked at the top there is nothing under the bar, so no
+                  bar — the transcript opens on its first message, not on a
+                  header repeating it. */}
+              <div ref={contentRef} style={{ padding: `${PEEK_H + 8}px 0 16px` }}>
                 {empty && loading ? (
                   <ChannelTuning />
                 ) : empty ? (
