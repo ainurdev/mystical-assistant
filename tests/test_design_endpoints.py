@@ -102,3 +102,13 @@ def test_unknown_kind_is_rejected(client, tmp_repo, monkeypatch):
     project_config.set_design_project(browser.rel(tmp_repo), "aaaa-1")
     body = client.get(f"/local/design/prompt?kind=teleport&cwd={tmp_repo}")
     assert body["error"] == "unknown kind"
+
+
+def test_push_prompt_carries_the_linked_id(client, tmp_repo, monkeypatch):
+    """The push branch is structurally a twin of pull's gate-then-compose, and
+    was the one arm of the route nothing exercised."""
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
+    project_config.set_design_project(browser.rel(tmp_repo), "aaaa-1")
+    body = client.get(f"/local/design/prompt?kind=push&cwd={tmp_repo}")
+    assert "aaaa-1" in body["prompt"]
+    assert "finalize_plan" in body["prompt"]   # the push prompt, not the pull's

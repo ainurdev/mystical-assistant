@@ -3,7 +3,7 @@ its Claude Design project. Pure text: the tool that does the work is only
 reachable from inside a run, so what this module owns is *what* crosses, not the
 crossing. Run: python -m pytest tests/test_designsync.py -v"""
 
-from bridge import designsync
+from bridge import designsync, skills
 
 PID = "24409d88-c74d-4d26-becb-69672612173f"
 
@@ -32,6 +32,14 @@ def test_pull_prompt_states_what_is_excluded():
     p = designsync.pull_prompt(PID, "myrepo", "ds")
     for skip in ("_ds_bundle.js", "ui_kits/", "templates/", "uploads/"):
         assert skip in p
+
+
+def test_pull_prompt_writes_the_marker_the_skills_panel_reads():
+    """The seam nothing else guards: the pull is a prompt, so if this filename
+    and skills.DESIGN_MARKER ever drift apart the pull still succeeds and the
+    panel just never sees a design skill."""
+    p = designsync.pull_prompt(PID, "myrepo", "ds")
+    assert skills.DESIGN_MARKER in p
 
 
 def test_push_prompt_requires_a_confirmed_plan():

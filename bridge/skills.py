@@ -242,9 +242,31 @@ def _remove_design_sourced(d: str) -> "tuple[bool, str]":
     recorded, reason = _design_paths(d)
     if reason:
         return False, reason
+    # Every directory a recorded path passes through, at every depth — the
+    # only directories this delete is allowed to find on disk. Built from
+    # `recorded` rather than from what currently exists, so a dir emptied by
+    # an earlier, partially-failed sweep still counts as ours on retry.
+    recorded_dirs = set()
+    for p in recorded:
+        parts = p.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            recorded_dirs.add("/".join(parts[:i]))
     try:
         actual = set()
-        for dirpath, _dirnames, filenames in os.walk(d):
+        for dirpath, dirnames, filenames in os.walk(d):
+            for dn in dirnames:
+                # followlinks=False means a symlinked directory is never
+                # descended into, so anything inside it can never land in
+                # `actual` no matter what it is — refuse before looking, not
+                # after failing to notice.
+                if os.path.islink(os.path.join(dirpath, dn)):
+                    return False, "directory has other files"
+            rel_dir = os.path.relpath(dirpath, d)
+            if rel_dir != "." and rel_dir not in recorded_dirs:
+                # a directory no recorded path ever routed a pull through —
+                # the user's own, empty or not. Same back-off as an
+                # unrecorded file: refuse rather than silently rmdir it.
+                return False, "directory has other files"
             for fn in filenames:
                 actual.add(os.path.relpath(os.path.join(dirpath, fn), d))
         if actual - recorded - {"SKILL.md", DESIGN_MARKER}:
@@ -280,6 +302,11 @@ def remove(skill_id: str, scope: str, abs_project: "str | None" = None) -> "tupl
     root = _root(scope, abs_project)
     if root is None:
         return False, "invalid scope"
+    if os.path.basename(skill_id) != skill_id:
+        # defense-in-depth: the marker gate below already requires disk
+        # state matching the id, but a bare id (no separators) is one less
+        # thing that gate has to be trusted alone to catch.
+        return False, "bad id"
     d = os.path.join(root, skill_id)
     if os.path.isfile(os.path.join(d, MARKER)):
         if skill_id not in _BY_ID:

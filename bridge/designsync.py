@@ -57,8 +57,9 @@ def pull_prompt(project_id: str, rel: str, skill_slug: str) -> str:
         f"templates are recreations of surfaces this repo already has for real — "
         f"the code is the truth here, and a second copy of it only drifts.\n\n"
         f"Then write {dest}.synced-from-design with the project id on the first "
-        f"line and one pulled path per line after it, so the SKILLS panel can "
-        f"tell this apart from a catalog skill and from one the user wrote.\n\n"
+        f"line and one pulled path per line after it, each relative to {dest}, "
+        f"so the SKILLS panel can tell this apart from a catalog skill and "
+        f"from one the user wrote.\n\n"
         f"{_UNTRUSTED}"
     )
 
@@ -86,7 +87,7 @@ def link_prompt(rel: str) -> str:
         f"Run DesignSync list_projects, then ask the user which one with "
         f"AskUserQuestion — offer the name-matched project first if one obviously "
         f"fits this repo, but do not pick for them.\n\n"
-        f"Persist their answer with: mystical design-link {rel} <projectId>\n\n"
+        f"Persist their answer with: mystical design-link \"{rel}\" <projectId>\n\n"
         f"Then offer to pull it down as a project skill.\n\n"
         f"{_UNTRUSTED}"
     )

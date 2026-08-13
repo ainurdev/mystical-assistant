@@ -255,6 +255,57 @@ def test_remove_refuses_a_design_sourced_skill_with_an_unrecorded_file(tmp_path)
     assert (d / skills.DESIGN_MARKER).exists()
 
 
+def test_remove_refuses_a_design_sourced_skill_containing_a_symlinked_dir(tmp_path):
+    """os.walk never descends a symlinked directory, so nothing inside one can
+    ever appear in the recorded-content check — the delete would sail past it,
+    strip SKILL.md and the marker, then fail to rmdir a directory that still
+    holds the link. Refuse on sight instead: an orphan that no longer reads as
+    design-sourced cannot be retried or re-pulled over."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "keepme.txt").write_text("not part of any pull\n")
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "linked").symlink_to(outside, target_is_directory=True)
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\ntokens/colors.css\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (False, "directory has other files")
+    assert (d / "SKILL.md").exists()
+    assert (d / "tokens" / "colors.css").exists()
+    assert (d / skills.DESIGN_MARKER).exists()   # still design-sourced, still retryable
+    assert (outside / "keepme.txt").exists()     # and the link's target is untouched
+
+
+def test_remove_refuses_a_design_sourced_skill_with_an_unrecorded_empty_dir(tmp_path):
+    """An empty directory holds no file, so the unrecorded-*file* check can't
+    see it — but the prune pass at the end would happily rmdir it. A directory
+    the marker never routed a pull through is the user's, empty or not."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "scratch").mkdir()
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\ntokens/colors.css\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (False, "directory has other files")
+    assert (d / "scratch").is_dir()
+    assert (d / "SKILL.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_remove_refuses_an_id_that_is_a_path(tmp_path):
+    """The marker gates the delete, so a traversing id already dead-ends on a
+    directory carrying no marker. Refusing a non-bare id first means that gate
+    is not the only thing standing between the UI and an arbitrary path."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\n")
+    assert skills.remove("../skills/ds", "project", str(tmp_path)) == (False, "bad id")
+    assert skills.remove("nested/ds", "project", str(tmp_path)) == (False, "bad id")
+    assert (d / "SKILL.md").exists()
+
+
 def test_remove_refuses_a_design_sourced_skill_with_a_truncated_marker(tmp_path):
     """A truncated write or a hand-emptied marker carries no trustworthy
     delete list — remove() must refuse rather than guess, and never raise."""
