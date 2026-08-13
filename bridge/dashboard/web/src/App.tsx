@@ -48,6 +48,7 @@ import { useAiFeatures } from "./lib/ai";
 import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { recall, remember, type Anchor } from "./lib/scrollmem";
+import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -547,13 +548,24 @@ export function App() {
     void loadSessions().then((ss) => {
       if (!live) return;
       if (!sessionId) {
-        const cur = ss.find((s) => s.project === projectRel) ?? ss[0];
-        if (cur) openSession(cur.id);
+        // Back to the chat you had open, wherever it lives; one that's gone
+        // falls through to the newest here, as before. Opening it is all this
+        // takes — every panel reads the *session's* repo, and a run carries it
+        // in the request — so a page load leaves the bridge's own selection
+        // (which Telegram shares) alone.
+        const was = ss.find((s) => s.id === lastOpen())
+          ?? ss.find((s) => s.project === projectRel) ?? ss[0];
+        if (was) openSession(was.id);
       }
     });
     const id = setInterval(loadSessions, 5000);
     return () => { live = false; clearInterval(id); };
   }, [loadSessions, projectRel, sessionId]);
+
+  // The other half: the chat on screen is the one to come back to next time.
+  useEffect(() => {
+    if (sessionId) rememberOpen(sessionId);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;

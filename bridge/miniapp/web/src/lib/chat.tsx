@@ -19,6 +19,7 @@ import type {
   Transcript,
 } from "./api";
 import { usePersistentState } from "./persistentState";
+import { lastOpen, rememberOpen } from "./lastopen";
 import { modelOptions } from "./models";
 
 export interface Attachment {
@@ -352,9 +353,38 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     pinnedRef.current = s;             // set last: openSession clears the pin
   }, []);
 
+  // Cold open with no notification to follow: back to the chat you were last in,
+  // its repo included. The resolver below can't do this — it only ever sees the
+  // active project, and the bridge forgets that on restart (see lib/lastopen), so
+  // it would start you somewhere else entirely. Checked against that repo's list
+  // first: a chat deleted since must fall through to the default, not strand us
+  // on a dead id.
+  const [restoring, setRestoring] = useState(() => lastOpen() !== null);
+  useEffect(() => {
+    const was = lastOpen();
+    if (!was || pinnedRef.current) { setRestoring(false); return; }  // a deep link outranks it
+    void (async () => {
+      try {
+        const { sessions: list } = await api.listSessions(was.project);
+        if (list.some((s) => s.id === was.id)) {
+          await openSessionInProject(was.project, was.id);
+          pinnedRef.current = was.id;   // hold the resolver until the repo switch lands
+        }
+      } catch { /* repo gone — the resolver's default stands */ }
+      setRestoring(false);
+    })();
+  }, []);
+
+  // Remember it for that: the brief's repo, not the active one, which lags a
+  // beat behind the session during a switch.
+  useEffect(() => {
+    const proj = sessions.find((s) => s.id === sessionId)?.project ?? project;
+    if (sessionId && proj) rememberOpen(sessionId, proj);
+  }, [sessionId, sessions, project]);
+
   // Resolve the current session for the active project (latest, or create one).
   useEffect(() => {
-    if (!project) return;
+    if (!project || restoring) return;
     let cancelled = false;
     (async () => {
       try {
@@ -387,7 +417,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [project]);
+  }, [project, restoring]);
 
   // Load + live-poll the current session's transcript (session-seq cursor).
   const transcriptQ = useQuery({
