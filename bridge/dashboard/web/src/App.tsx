@@ -94,6 +94,10 @@ function fmtReset(iso: string | null | undefined): string {
 // One size for every right-rail icon — the rail's buttons are 30px.
 const RAIL = { size: 15, strokeWidth: 1.6 } as const;
 
+/** Sessions kept in the switch-back cache. Small on purpose: a heavy transcript
+ *  parses to megabytes, and only the handful you're moving between matter. */
+const TURN_CACHE_MAX = 6;
+
 // Manage-projects choices survive a reload / bridge restart. HIDE is owned by
 // the bridge (project_config.json, GET/POST /local/project*), so it syncs across
 // browsers; the localStorage copy is only a cache for the pre-first-poll paint.
@@ -275,10 +279,14 @@ export function App() {
   const ctxTimer = useRef<number | null>(null);
 
   const seqRef = useRef(0);
-  // The turns on screen belong to the session we just left — held there so a
-  // switch doesn't blank the chat. Whatever writes the new session's first
-  // turns drops them.
+  // Nothing on screen belongs to the open session yet, so whatever writes its
+  // first turns must drop what's there rather than merge into it. Set by a
+  // switch to a session we have no cached turns for.
   const staleTurns = useRef(false);
+  // Turns of the last few sessions, so switching back to one is a paint rather
+  // than a round trip. Bounded because a single heavy transcript is megabytes;
+  // least-recently-opened is what falls off.
+  const turnCache = useRef(new Map<string, { turns: Turn[]; seq: number }>());
   // The open session, readable from async work that outlives a session switch:
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
@@ -306,6 +314,7 @@ export function App() {
   const jumpToBottom = useCallback(() => {
     stickRef.current = true;
     setAtBottom(true);
+    pendingPark.current = null;   // asking for the end outranks a park still waiting on its turn
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, []);
@@ -443,15 +452,24 @@ export function App() {
     // Already the open one: re-opening would re-fetch and re-animate the chat
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
-    seqRef.current = 0;
+    // A session you've already opened comes back from memory, on this frame: its
+    // turns and its park land together, and the fetch behind them is a delta
+    // (the endpoint always returns the turn rows — only events are
+    // cursor-filtered) rather than the whole transcript again.
+    const cached = turnCache.current.get(id);
+    seqRef.current = cached?.seq ?? 0;
     // Back to where you left this one, if you left it somewhere: only a session
     // parked at the bottom (or never opened) starts out following the latest.
     const park = parks.current.get(id) ?? null;
     pendingPark.current = park;
     stickRef.current = !park;
     setAtBottom(!park);
-    staleTurns.current = true;
-    setLoadingSession(true);
+    staleTurns.current = !cached;
+    // Uncached: clear rather than hold the session you're leaving on screen —
+    // reading the wrong conversation for the length of a load is worse than the
+    // gap, which the delayed loading state covers anyway.
+    setTurns(cached?.turns ?? []);
+    setLoadingSession(!cached);
     setSessionId(id);
     setDoneIds((d) => { if (!d.has(id)) return d; const n = new Set(d); n.delete(id); return n; });
   }
@@ -467,6 +485,18 @@ export function App() {
   // The transcript just rendered: if it's one we're switching back to, put the
   // view where it was left before anything gets a chance to paint the bottom.
   useLayoutEffect(() => { applyParkRef.current(); }, [turns]);
+
+  // Write the open session through to the cache as it grows, so switching away
+  // mid-run and back lands on everything that had arrived. Skipped while
+  // staleTurns is set: those turns aren't this session's yet.
+  useEffect(() => {
+    const id = sessionIdRef.current;
+    if (!id || staleTurns.current || !turns.length) return;
+    const c = turnCache.current;
+    c.delete(id);                               // re-insert: Map order is the LRU
+    c.set(id, { turns, seq: seqRef.current });
+    for (const k of [...c.keys()].slice(0, c.size - TURN_CACHE_MAX)) c.delete(k);
+  }, [turns, sessionId]);
 
   useEffect(() => {
     let live = true;
@@ -587,8 +617,8 @@ export function App() {
       anchor = hit && el.contains(hit) ? hit : null;
       anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
       // The same anchor, kept per session: where you leave one is where you come
-      // back to it. While staleTurns is set the turns on screen still belong to
-      // the session you left, so there's nothing here to record yet.
+      // back to it. While staleTurns is set the open session's transcript hasn't
+      // landed, so there's nothing here worth recording over its park.
       const sid = staleTurns.current ? null : sessionIdRef.current;
       if (!sid) return;
       const park = stickRef.current ? null : parkAt(el, anchor);
@@ -598,12 +628,19 @@ export function App() {
     // A session you're coming back to lands on its park the moment its turns
     // render — from the layout effect below, so it happens in the same pass the
     // DOM changed in, before a clamp or a resize can move us somewhere else.
+    let tries = 0;
     const applyPark = () => {
       const park = pendingPark.current;
-      if (!park || !restorePark(el, park)) return;   // its turn hasn't rendered yet
-      pendingPark.current = null;
+      if (!park) return;
+      const moved = restorePark(el, park);
+      if (moved === null) return;                    // its turn hasn't rendered yet
       markAnchor();
       prev = el.scrollTop;
+      // Landing rendered the cards around us, so what we measured against was
+      // the guess. Measure again until the answer stops moving.
+      if (Math.abs(moved) >= 1 && tries++ < 3) { requestAnimationFrame(applyPark); return; }
+      pendingPark.current = null;
+      tries = 0;
     };
     applyParkRef.current = applyPark;
     const sync = () => {

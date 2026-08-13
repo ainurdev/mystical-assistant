@@ -5,10 +5,11 @@ import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
+import { useLoadingPhase } from "../lib/loadingPhase";
 import { parkAt, restorePark, type Park } from "../lib/park";
 import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
-import { Banner, Spinner } from "../components/ui";
+import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox } from "../components/ImageLightbox";
@@ -18,12 +19,51 @@ import { RunMonitor } from "../components/RunMonitor";
 // Shared empty list — a fresh `[]` per render would defeat RunStream's memo.
 const NO_PENDING: PendingRequest[] = [];
 
+const SKELETON_TURNS = [{ width: "70%", cards: 3 }, { width: "45%", cards: 2 }];
+
+/** What a transcript looks like before it arrives: your bubble on the right, the
+ *  reply hanging off its rail on the left. Shaped like the real thing so the
+ *  turns that replace it don't reflow the page, and so a heavy session reads as
+ *  "this one is big" rather than "this one is stuck". Widths are fixed per row —
+ *  randomising them makes it shimmer differently on every poll-driven render. */
+function TranscriptSkeleton() {
+  return (
+    <div aria-hidden className="space-y-3 pt-2">
+      {SKELETON_TURNS.map(({ width, cards }, t) => (
+        <div key={t} className="space-y-2">
+          <div className="flex justify-end">
+            <Skeleton className="h-8 rounded-2xl rounded-br-sm" style={{ width }} />
+          </div>
+          <div className="relative space-y-2 pl-3">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute bottom-0 left-[2px] top-[11px] w-px"
+              style={{ background: "color-mix(in srgb, var(--brand-soft) 22%, transparent)" }}
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-0 top-[3px] h-[6px] w-[6px] rotate-45 border"
+              style={{ borderColor: "var(--brand-soft)", background: "var(--tg-bg)" }}
+            />
+            {Array.from({ length: cards }, (_, i) => (
+              <Skeleton key={i} className="h-11" style={{ width: `${92 - i * 14}%` }} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function RunPage() {
   const {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession,
     runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
   } = useChat();
+  // A cached session has its turns already, so this never fires for one; only a
+  // transcript that is genuinely still coming gets a skeleton.
+  const slowLoad = useLoadingPhase(loadingSession);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -83,12 +123,19 @@ function RunPage() {
     // Land on the park of the session we've switched to, the moment its turns
     // render (the layout effect below) — same pass the DOM changed in, so
     // nothing paints the bottom of a transcript you weren't reading.
+    let tries = 0;
     const applyPark = () => {
       const park = pendingPark.current;
-      if (!park || !restorePark(el, park)) return;   // its turn hasn't rendered yet
-      pendingPark.current = null;
+      if (!park) return;
+      const moved = restorePark(el, park);
+      if (moved === null) return;                    // its turn hasn't rendered yet
       markAnchor();
       prev = el.scrollTop;
+      // Landing rendered the cards around us, so what we measured against was
+      // the guess. Measure again until the answer stops moving.
+      if (Math.abs(moved) >= 1 && tries++ < 3) { requestAnimationFrame(applyPark); return; }
+      pendingPark.current = null;
+      tries = 0;
     };
     applyParkRef.current = applyPark;
     const sync = () => {
@@ -147,17 +194,16 @@ function RunPage() {
 
       <RunMonitor />
 
-      {turns.length === 0 && (
+      {/* Nothing to show yet. A switch that lands inside the delay renders
+          neither branch — no skeleton, and no "start a conversation" flashing
+          in front of a transcript that is about to arrive. */}
+      {turns.length === 0 && (slowLoad ? (
+        <TranscriptSkeleton />
+      ) : loadingSession ? null : (
         <div className="flex items-center justify-center gap-2 pt-10 text-center text-sm text-[var(--tg-hint)]">
-          {loadingSession ? (
-            <>
-              <Spinner className="h-3.5 w-3.5 border" /> Loading conversation…
-            </>
-          ) : (
-            "Start a conversation with Claude."
-          )}
+          Start a conversation with Claude.
         </div>
-      )}
+      ))}
 
       {turns.map((turn, i) => {
         const isActive = turn.jobId === activeTurn?.jobId;

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import type { AnswerSelection, EnrichedSession, NextItem, SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
+import { useLoadingPhase } from "../../lib/loadingPhase";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript } from "../Transcript";
 import { HistoryView } from "../HistoryView";
@@ -231,8 +232,12 @@ export function Terminal({
   }
   const showPeek = !empty && peekIdx !== null && !!held.current;
 
-  // Session swap: the session you left stays on screen until the new transcript
-  // lands (App holds its turns), then the new one fades up in its place. Fires on
+  // Presentation only: whether the load has run long enough to be worth showing.
+  // The retune below still gates on the raw `loading`, which is what actually
+  // says the new transcript has landed.
+  const slowLoad = useLoadingPhase(loading ?? false);
+
+  // Session swap: the new transcript fades up in place of the loading state. Fires on
   // content-land (loading→false), NOT on the click, so it's one soft cut instead of
   // a blank and a pop. Was a CRT retune — collapse to a scanline, bloom open with a
   // glitch — which read as a fault rather than a transition.
@@ -310,9 +315,12 @@ export function Terminal({
                   bar — the transcript opens on its first message, not on a
                   header repeating it. */}
               <div ref={contentRef} style={{ padding: `${PEEK_H + 8}px 0 16px` }}>
-                {empty && loading ? (
+                {/* A switch that lands inside the delay renders neither: no
+                    scanline for a load that's already over, and no FreshState
+                    flashing in front of a transcript that's about to arrive. */}
+                {empty && slowLoad ? (
                   <ChannelTuning />
-                ) : empty ? (
+                ) : empty && loading ? null : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
                   <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} />

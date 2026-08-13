@@ -91,6 +91,10 @@ function seqOf(e: RunEvent): number | undefined {
   return (e as { seq?: number }).seq;
 }
 
+/** Sessions kept in the switch-back cache. Small on purpose: a heavy transcript
+ *  parses to megabytes and the Mini App runs inside Telegram on a phone. */
+const CACHE_MAX = 6;
+
 /** Merge a transcript (full turn list + event delta) into the current turns,
  *  upserting turns by id and appending events by session-level seq. Everything
  *  is seq-keyed, so the active turn never mixes cursor spaces (and an optimistic
@@ -240,6 +244,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [perm, setPerm] = usePersistentState<string>("miniapp:perm:v1", "");
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
+  // Turns of the last few sessions, so switching back to one is a paint rather
+  // than a round trip. Bounded because a single heavy transcript is megabytes
+  // and this runs on a phone; least-recently-opened is what falls off.
+  const cache = useRef(new Map<string, { turns: Turn[]; seq: number }>());
   const sessionIdRef = useRef<string | null>(null); // current session, for stale-free reads
   // A notification's panel button opens "?s=<session>&p=<repo>" (bridge/telegram.py
   // panel_kb). Held until the project switch lands, so the auto-resolver below
@@ -278,10 +286,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (sessionId ? runningQuery.data?.status?.[sessionId]?.state : undefined) === "working";
 
   function openSession(id: string) {
-    seqRef.current = 0;
+    // A session you've already opened comes back from memory, on this frame:
+    // its turns paint before the fetch is even sent, and the cursor rides along
+    // so that fetch is a delta (the endpoint always returns the turn rows, only
+    // events are cursor-filtered) instead of the whole transcript again.
+    const cached = cache.current.get(id);
+    seqRef.current = cached?.seq ?? 0;
     sessionIdRef.current = id;
     pinnedRef.current = null;   // an explicit pick outranks the deep link
-    setTurns([]);
+    setTurns(cached?.turns ?? []);
     setSessionId(id);
     setHeld(null);          // a card about the session we're leaving
   }
@@ -373,6 +386,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // empty state rather than spinning forever.
   const loadingSession =
     stateQuery.isLoading || (project !== null && resolving) || transcriptQ.isLoading;
+
+  // Write the open session through to the cache as it grows, so switching away
+  // mid-run and back lands on everything that had arrived. Keyed on the ref, not
+  // the state, so a poll that resolves during a switch can't file the old
+  // session's turns under the new one's id.
+  useEffect(() => {
+    const id = sessionIdRef.current;
+    if (!id || !turns.length) return;
+    const c = cache.current;
+    c.delete(id);                               // re-insert: Map order is the LRU
+    c.set(id, { turns, seq: seqRef.current });
+    for (const k of [...c.keys()].slice(0, c.size - CACHE_MAX)) c.delete(k);
+  }, [turns, sessionId]);
 
   async function addAttachments(files: FileList | null) {
     if (!files) return;
