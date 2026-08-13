@@ -69,6 +69,10 @@ export function SpendPanel({ sessionId, running }: {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState(false);
   const [b, setB] = useState<SessionBreakdown | null>(null);
+  // A bridge still running pre-restart code has no breakdown route; the path
+  // falls through to the transcript one, which answers 200 with a different
+  // shape entirely. Recognise that instead of destructuring our way into a crash.
+  const [stale, setStale] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -85,7 +89,12 @@ export function SpendPanel({ sessionId, running }: {
     let live = true;
     const load = () => {
       void api.sessionBreakdown(sessionId)
-        .then((r) => { if (live) setB(r); })
+        .then((r) => {
+          if (!live) return;
+          if (!r || typeof r.wall !== "number" || !r.tools) { setStale(true); return; }
+          setStale(false);
+          setB(r);
+        })
         .catch(() => {});
     };
     load();
@@ -139,7 +148,11 @@ export function SpendPanel({ sessionId, running }: {
             {b && <span style={{ color: "var(--txl)" }}>{b.turns} TURNS · {secs(b.wall)}</span>}
           </div>
 
-          {!b ? (
+          {stale ? (
+            <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>
+              the bridge needs a restart before it can answer this
+            </div>
+          ) : !b ? (
             <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>reading…</div>
           ) : (
             <>

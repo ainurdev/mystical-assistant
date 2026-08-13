@@ -79,12 +79,19 @@ function SpendSheet({ sessionId, running, onClose }: {
   onClose: () => void;
 }) {
   const [b, setB] = useState<SessionBreakdown | null>(null);
+  // Pre-restart bridges answer this path with a transcript, not a breakdown.
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     let live = true;
     const load = () => {
       void api.sessionBreakdown(sessionId)
-        .then((r) => { if (live) setB(r); })
+        .then((r) => {
+          if (!live) return;
+          if (!r || typeof r.wall !== "number" || !r.tools) { setStale(true); return; }
+          setStale(false);
+          setB(r);
+        })
         .catch(() => {});
     };
     load();
@@ -119,7 +126,11 @@ function SpendSheet({ sessionId, running, onClose }: {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-border">
-          {!b ? (
+          {stale ? (
+            <div className="p-6 text-center text-xs text-[var(--tg-hint)]">
+              the bridge needs a restart before it can answer this
+            </div>
+          ) : !b ? (
             <div className="p-6 text-center text-xs text-[var(--tg-hint)]">reading…</div>
           ) : (
             <>
