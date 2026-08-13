@@ -216,3 +216,54 @@ def test_remove_still_refuses_a_hand_written_skill_with_neither_marker(tmp_path)
     (d / "SKILL.md").write_text("---\nname: mine\ndescription: mine\n---\n")
     assert skills.remove("mine", "project", str(tmp_path))[0] is False
     assert (d / "SKILL.md").exists()
+
+
+def test_remove_deletes_a_design_sourced_skill_with_nested_content(tmp_path):
+    """A real pull is more than two files — tokens/, guidelines/, and friends.
+    remove() must walk the tree, not require an exact SKILL.md+marker match."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "guidelines").mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "guidelines" / "type.html").write_text("<p>type</p>\n")
+    (d / skills.DESIGN_MARKER).write_text(
+        "aaaa-1\ntokens/colors.css\nguidelines/type.html\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (True, "")
+    assert not d.exists()
+
+
+def test_remove_refuses_a_design_sourced_skill_with_an_unrecorded_file(tmp_path):
+    """Anything on disk the marker didn't record pulling is a file the user
+    added since — remove() must refuse the whole directory, and touch nothing
+    in it, rather than delete around the extra file."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "guidelines").mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "guidelines" / "type.html").write_text("<p>type</p>\n")
+    (d / "guidelines" / "notes.md").write_text("mine, not part of the pull\n")
+    (d / skills.DESIGN_MARKER).write_text(
+        "aaaa-1\ntokens/colors.css\nguidelines/type.html\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (False, "directory has other files")
+    assert d.exists()
+    assert (d / "SKILL.md").exists()
+    assert (d / "tokens" / "colors.css").exists()
+    assert (d / "guidelines" / "type.html").exists()
+    assert (d / "guidelines" / "notes.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_remove_refuses_a_design_sourced_skill_with_a_truncated_marker(tmp_path):
+    """A truncated write or a hand-emptied marker carries no trustworthy
+    delete list — remove() must refuse rather than guess, and never raise."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("")
+    ok, err = skills.remove("ds", "project", str(tmp_path))
+    assert ok is False
+    assert err
+    assert (d / "SKILL.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
