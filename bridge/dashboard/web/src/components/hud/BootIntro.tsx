@@ -1,43 +1,63 @@
 import { useState, useEffect, useRef } from "react";
 import { themeCanvas, themeFilter, type ThemeKey } from "../../lib/theme";
+import { bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
 
-const bootLines: { label: string; status: string; statusColor: string }[] = [
-  { label: "ESTABLISHING BRIDGE", status: "OK", statusColor: "var(--ok)" },
-  { label: "CLAUDE CODE RUNTIME", status: "OK", statusColor: "var(--ok)" },
-  { label: "SURFACES · TG / MA / VSCODE", status: "OK", statusColor: "var(--ok)" },
-  { label: "CONVERSATION STORE", status: "SYNCED", statusColor: "var(--acc)" },
-  { label: "AUTH · REUSE CLAUDE LOGIN", status: "OK", statusColor: "var(--ok)" },
-];
+const FADE_MS = 650; // the crtoff wipe, after which the dashboard owns the screen
 
-export function BootIntro(props: { onReveal: () => void; onDone: () => void; theme: ThemeKey; scanlines: boolean }) {
-  const { onReveal, onDone, theme, scanlines } = props;
+/** A line that hasn't answered yet. Three dots, so waiting reads as waiting. */
+function Ellipsis() {
+  return (
+    <>
+      {[0, 1, 2].map((i) => (
+        <span key={i} style={{ animation: `twinkle 1.1s ease-in-out infinite ${i * 0.18}s` }}>
+          ·
+        </span>
+      ))}
+    </>
+  );
+}
+
+export function BootIntro(props: {
+  onReveal: () => void;
+  onDone: () => void;
+  theme: ThemeKey;
+  scanlines: boolean;
+  steps: BootStep[];
+}) {
+  const { onReveal, onDone, theme, scanlines, steps } = props;
   const [fade, setFade] = useState(false);
+  const progress = bootProgress(steps);
 
-  // Keep the latest callbacks in a ref so the auto-exit timers below can run
+  // Keep the latest callbacks + steps in a ref so the exit poll below can run
   // once on mount. App re-renders every second (the telemetry clock), handing
   // BootIntro fresh callback identities each time — depending on them here would
-  // clear+reset the timers before they ever fire, so the intro never auto-exits.
-  const cb = useRef({ onReveal, onDone });
-  cb.current = { onReveal, onDone };
+  // clear+reset the timer before it fires, so the intro never auto-exits.
+  const cb = useRef({ onReveal, onDone, steps });
+  cb.current = { onReveal, onDone, steps };
 
   useEffect(() => {
-    const t1 = window.setTimeout(() => {
+    const started = Date.now();
+    let done = 0;
+    // Polled rather than driven off `steps`, because the exit also depends on
+    // elapsed time — the last fetch can land before the floor, and a bridge
+    // that never answers has to hit the ceiling with no step change at all.
+    const id = window.setInterval(() => {
+      if (!bootReady(cb.current.steps, Date.now() - started)) return;
+      window.clearInterval(id);
       setFade(true);
       cb.current.onReveal();
-    }, 3600);
-    const t2 = window.setTimeout(() => {
-      cb.current.onDone();
-    }, 4250);
+      done = window.setTimeout(() => cb.current.onDone(), FADE_MS);
+    }, 100);
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
+      window.clearInterval(id);
+      window.clearTimeout(done);
     };
   }, []);
 
   const dismissBoot = () => {
     setFade(true);
     onReveal();
-    window.setTimeout(() => onDone(), 650);
+    window.setTimeout(() => onDone(), FADE_MS);
   };
 
   return (
@@ -354,20 +374,33 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void; the
           color: "var(--txd)",
         }}
       >
-        {bootLines.map((b, i) => (
+        {steps.map((b, i) => (
           <div
-            key={b.label}
+            key={b.key}
             style={{
               display: "flex",
               justifyContent: "space-between",
+              gap: "12px",
               animation: "bootline .4s ease both",
-              animationDelay: `${700 + i * 360}ms`,
+              animationDelay: `${700 + i * 90}ms`,
+              opacity: b.phase === "wait" ? 0.7 : 1,
+              transition: "opacity .3s ease",
             }}
           >
-            <span>
-              <span style={{ color: "var(--acc)" }}>›</span> {b.label}
+            <span style={{ whiteSpace: "nowrap" }}>
+              <span style={{ color: b.phase === "wait" ? "var(--txl)" : "var(--acc)" }}>›</span> {b.label}
             </span>
-            <span style={{ color: b.statusColor, letterSpacing: "1px" }}>{b.status}</span>
+            <span
+              style={{
+                color: b.phase === "fail" ? "var(--err)" : b.phase === "ok" ? "var(--ok)" : "var(--txd)",
+                letterSpacing: "1px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {b.phase === "wait" ? <Ellipsis /> : b.detail}
+            </span>
           </div>
         ))}
         <div
@@ -378,12 +411,14 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void; the
             overflow: "hidden",
           }}
         >
+          {/* Width is answered-fetches / total. The transition is only there so
+              a step landing doesn't teleport the bar — nothing here is a timer. */}
           <div
             style={{
               height: "100%",
               background: "linear-gradient(90deg,var(--acc),var(--purple))",
-              width: 0,
-              animation: "barfill 2.4s cubic-bezier(.4,0,.2,1) both .6s",
+              width: `${Math.round(progress * 100)}%`,
+              transition: "width .45s cubic-bezier(.4,0,.2,1)",
             }}
           ></div>
         </div>
@@ -399,7 +434,7 @@ export function BootIntro(props: { onReveal: () => void; onDone: () => void; the
           }}
         >
           <span>
-            INITIALIZING WORKSPACE
+            {steps.find((s) => s.phase === "wait")?.label ?? "WORKSPACE READY"}
             <span style={{ animation: "caret 1s steps(1) infinite" }}>_</span>
           </span>
           <span>CLICK TO SKIP</span>

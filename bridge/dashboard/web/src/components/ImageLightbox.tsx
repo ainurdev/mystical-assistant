@@ -1,6 +1,10 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
-/** Full-size view of one attachment. Click the backdrop or press Esc to close. */
+/** Full-size view of one attachment. Click the backdrop or press Esc to close.
+ *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
+ *  (virtualized rows are translateY'd), which would make position:fixed resolve
+ *  against that ancestor instead of the viewport. */
 export function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -8,7 +12,7 @@ export function ImageLightbox({ src, onClose }: { src: string; onClose: () => vo
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
       role="dialog"
@@ -17,7 +21,8 @@ export function ImageLightbox({ src, onClose }: { src: string; onClose: () => vo
       style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "color-mix(in srgb, var(--panel3) 82%, transparent)", cursor: "zoom-out", animation: "backdropIn .18s ease both" }}
     >
       <img src={src} alt="" style={{ maxWidth: "92vw", maxHeight: "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)" }} />
-    </div>
+    </div>,
+    document.body,
   );
 }
 

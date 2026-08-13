@@ -22,6 +22,8 @@ import {
 } from "./api";
 import { modelOptions, latestPerFamily, type AgentOption } from "./models";
 import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
+import { ckId, type Mark } from "./lib/checkpoints";
+import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { ago, useProjectTints } from "./lib/surfaces";
 import {
@@ -45,7 +47,8 @@ import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
-import { parkAt, restorePark, type Park } from "./lib/park";
+import { recall, remember, type Anchor } from "./lib/scrollmem";
+import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -67,6 +70,7 @@ import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { notify, setNoticeSound } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
+import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { AskDialog, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
@@ -93,10 +97,6 @@ function fmtReset(iso: string | null | undefined): string {
 
 // One size for every right-rail icon — the rail's buttons are 30px.
 const RAIL = { size: 15, strokeWidth: 1.6 } as const;
-
-/** Sessions kept in the switch-back cache. Small on purpose: a heavy transcript
- *  parses to megabytes, and only the handful you're moving between matter. */
-const TURN_CACHE_MAX = 6;
 
 // Manage-projects choices survive a reload / bridge restart. HIDE is owned by
 // the bridge (project_config.json, GET/POST /local/project*), so it syncs across
@@ -240,6 +240,12 @@ export function App() {
   const skipBoot = new URLSearchParams(location.search).has("skipboot");
   const [booting, setBooting] = useState(!skipBoot);
   const [showDashboard, setShowDashboard] = useState(skipBoot);
+  // The intro's boot log. Each of the five startup fetches below reports into
+  // it as it lands, so the lines and the bar are the real load, not a timer.
+  const [bootSteps, setBootSteps] = useState(initialBootSteps);
+  const markBoot = useCallback((key: BootKey, phase: "ok" | "fail", detail: string) => {
+    setBootSteps((prev) => markStep(prev, key, phase, detail));
+  }, []);
   const [manageOpen, setManageOpen] = useState(false);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -279,14 +285,22 @@ export function App() {
   const ctxTimer = useRef<number | null>(null);
 
   const seqRef = useRef(0);
-  // Nothing on screen belongs to the open session yet, so whatever writes its
-  // first turns must drop what's there rather than merge into it. Set by a
-  // switch to a session we have no cached turns for.
+  // First load asks for the last N event-bearing turns only; the rest stays
+  // server-side behind a "load older" control. 3 keeps the worst measured
+  // session's first payload at ~53KB gzipped (10 still shipped 81% of it —
+  // megaturns cluster at the end).
+  const TAIL_TURNS = 3;
+  // Older turns exist beyond what's loaded. `from` = first loaded turn (the
+  // render cut), `seq` = oldest loaded event seq (the next page's `before` key).
+  // A server without tail support never sends the fields, so this stays inert.
+  const [older, setOlder] = useState<{ has: boolean; seq: number | null; from: string | null; loading: boolean }>(
+    { has: false, seq: null, from: null, loading: false });
+  const olderRef = useRef(older);
+  olderRef.current = older;
+  // The turns on screen belong to the session we just left — held there so a
+  // switch doesn't blank the chat. Whatever writes the new session's first
+  // turns drops them.
   const staleTurns = useRef(false);
-  // Turns of the last few sessions, so switching back to one is a paint rather
-  // than a round trip. Bounded because a single heavy transcript is megabytes;
-  // least-recently-opened is what falls off.
-  const turnCache = useRef(new Map<string, { turns: Turn[]; seq: number }>());
   // The open session, readable from async work that outlives a session switch:
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
@@ -295,15 +309,12 @@ export function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
-  // Where each session was last left. Switching away and back used to dump you
-  // at the end of a transcript you were reading the middle of; now every scroll
-  // records the turn at the top edge, and reopening lands back on it. No entry
-  // means it was parked at the bottom — that one still follows the latest.
-  const parks = useRef(new Map<string, Park>());
-  // The park to land on once the session we're switching to has rendered.
-  const pendingPark = useRef<Park | null>(null);
-  // Set by the scroll effect, which owns the scrollport and its anchor.
-  const applyParkRef = useRef<() => void>(() => {});
+  // Where the session we're opening was left, held until its turns are on
+  // screen — there's nothing to scroll to before then. It stays armed while the
+  // transcript settles: rows measure and images load for a beat after the turns
+  // land, so the pixel the anchor points at keeps moving.
+  const restoreTo = useRef<Anchor | null>(null);
+  const restoreT = useRef(0);
   // A smooth scroll of ours is in flight — the scroll listener must not read its
   // downward travel as a gesture (mid-glide we're still far from the bottom,
   // which would drop stick and flash the jump button).
@@ -314,7 +325,6 @@ export function App() {
   const jumpToBottom = useCallback(() => {
     stickRef.current = true;
     setAtBottom(true);
-    pendingPark.current = null;   // asking for the end outranks a park still waiting on its turn
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, []);
@@ -452,24 +462,18 @@ export function App() {
     // Already the open one: re-opening would re-fetch and re-animate the chat
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
-    // A session you've already opened comes back from memory, on this frame: its
-    // turns and its park land together, and the fetch behind them is a delta
-    // (the endpoint always returns the turn rows — only events are
-    // cursor-filtered) rather than the whole transcript again.
-    const cached = turnCache.current.get(id);
-    seqRef.current = cached?.seq ?? 0;
-    // Back to where you left this one, if you left it somewhere: only a session
-    // parked at the bottom (or never opened) starts out following the latest.
-    const park = parks.current.get(id) ?? null;
-    pendingPark.current = park;
-    stickRef.current = !park;
-    setAtBottom(!park);
-    staleTurns.current = !cached;
-    // Uncached: clear rather than hold the session you're leaving on screen —
-    // reading the wrong conversation for the length of a load is worse than the
-    // gap, which the delayed loading state covers anyway.
-    setTurns(cached?.turns ?? []);
-    setLoadingSession(!cached);
+    seqRef.current = 0;
+    setOlder({ has: false, seq: null, from: null, loading: false });
+    // Back to where you were reading this session, if we know — otherwise the
+    // bottom, which is where a session you've never opened starts.
+    const was = recall(id);
+    restoreTo.current = was && was !== "bottom" ? was : null;
+    window.clearTimeout(restoreT.current);
+    restoreT.current = 0;
+    stickRef.current = !restoreTo.current;
+    setAtBottom(stickRef.current);
+    staleTurns.current = true;
+    setLoadingSession(true);
     setSessionId(id);
     setDoneIds((d) => { if (!d.has(id)) return d; const n = new Set(d); n.delete(id); return n; });
   }
@@ -482,31 +486,19 @@ export function App() {
   }
 
   // --- polls (unchanged data flow) ---
-  // The transcript just rendered: if it's one we're switching back to, put the
-  // view where it was left before anything gets a chance to paint the bottom.
-  useLayoutEffect(() => { applyParkRef.current(); }, [turns]);
-
-  // Write the open session through to the cache as it grows, so switching away
-  // mid-run and back lands on everything that had arrived. Skipped while
-  // staleTurns is set: those turns aren't this session's yet.
-  useEffect(() => {
-    const id = sessionIdRef.current;
-    if (!id || staleTurns.current || !turns.length) return;
-    const c = turnCache.current;
-    c.delete(id);                               // re-insert: Map order is the LRU
-    c.set(id, { turns, seq: seqRef.current });
-    for (const k of [...c.keys()].slice(0, c.size - TURN_CACHE_MAX)) c.delete(k);
-  }, [turns, sessionId]);
-
   useEffect(() => {
     let live = true;
     const tick = async () => {
-      try { const s = await api.state(); if (live) setState(s); } catch { /* ignore */ }
+      try {
+        const s = await api.state();
+        if (live) setState(s);
+        markBoot("bridge", "ok", "LINKED");
+      } catch { markBoot("bridge", "fail", "OFFLINE"); }
     };
     void tick();
     const id = setInterval(tick, 3000);
     return () => { live = false; clearInterval(id); };
-  }, []);
+  }, [markBoot]);
 
   useEffect(() => {
     try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects, removed: removedProjects, imported: importedProjects })); }
@@ -522,8 +514,9 @@ export function App() {
       // The bridge is the source of truth for HIDE; an older backend omits the
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
-    } catch { /* old backend without discovery — panel stays session-derived */ }
-  }, []);
+      markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
+    } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
+  }, [markBoot]);
   useEffect(() => {
     void refreshProjects();
     const id = setInterval(refreshProjects, 10000);
@@ -543,10 +536,11 @@ export function App() {
           ? prev.find((s) => s.id === sid) : undefined;
         return open ? [open, ...list] : list;
       });
+      markBoot("sessions", "ok", bootCount(list.length, "CHAT"));
       return list;
-    } catch { return [] as SessionBrief[]; }
+    } catch { markBoot("sessions", "fail", "UNREADABLE"); return [] as SessionBrief[]; }
     finally { setBooted(true); }
-  }, []);
+  }, [markBoot]);
 
   const projectRel = state?.project?.rel ?? null;
   useEffect(() => {
@@ -554,25 +548,39 @@ export function App() {
     void loadSessions().then((ss) => {
       if (!live) return;
       if (!sessionId) {
-        const cur = ss.find((s) => s.project === projectRel) ?? ss[0];
-        if (cur) openSession(cur.id);
+        // Back to the chat you had open, wherever it lives; one that's gone
+        // falls through to the newest here, as before. Opening it is all this
+        // takes — every panel reads the *session's* repo, and a run carries it
+        // in the request — so a page load leaves the bridge's own selection
+        // (which Telegram shares) alone.
+        const was = ss.find((s) => s.id === lastOpen())
+          ?? ss.find((s) => s.project === projectRel) ?? ss[0];
+        if (was) openSession(was.id);
       }
     });
     const id = setInterval(loadSessions, 5000);
     return () => { live = false; clearInterval(id); };
   }, [loadSessions, projectRel, sessionId]);
 
+  // The other half: the chat on screen is the one to come back to next time.
+  useEffect(() => {
+    if (sessionId) rememberOpen(sessionId);
+  }, [sessionId]);
+
   useEffect(() => {
     if (!sessionId) return;
     let live = true;
     const fetchOnce = async () => {
       try {
-        const t = await api.transcript(sessionId, seqRef.current);
+        const first = seqRef.current === 0;
+        const t = await api.transcript(sessionId, seqRef.current, first ? { tail: TAIL_TURNS } : undefined);
         if (!live) return;
         const held = staleTurns.current;
         staleTurns.current = false;
         setTurns((prev) => mergeDelta(held ? [] : prev, t));
         seqRef.current = t.next_cursor;
+        if (first && t.has_older !== undefined)
+          setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
       } catch {
         // Never landed: drop the previous session's turns rather than pass them
         // off as this one's.
@@ -591,80 +599,96 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [sessionId, running, openWorking]);
 
+  // Fetch the page of turns before the oldest loaded one and prepend it.
+  // mergeDelta does the prepending for free: older turns already exist in the
+  // full turns list (empty), their events just fill in, and turn order comes
+  // from store seq. seqRef is untouched on purpose — this response's
+  // next_cursor is the live head, not a forward delta marker.
+  const loadOlder = useCallback(async () => {
+    const o = olderRef.current;
+    if (!sessionId || !o.has || o.loading || o.seq == null) return;
+    setOlder({ ...o, loading: true });
+    try {
+      const t = await api.transcript(sessionId, 0, { tail: TAIL_TURNS, before: o.seq });
+      if (sessionIdRef.current !== sessionId) return;   // switched away mid-flight
+      setTurns((prev) => mergeDelta(prev, t));
+      setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
+                 from: t.tail_from ?? null, loading: false });
+    } catch { setOlder({ ...olderRef.current, loading: false }); }
+  }, [sessionId]);
+
+  // Checkpoint navigation into the virtualized transcript. A jump to a turn
+  // hidden behind the tail cut loads older pages until its row exists, then
+  // scrolls to it — so the checkpoint list keeps covering the whole session
+  // even though only its tail is loaded.
+  const transcriptNav = useRef<TranscriptNav | null>(null);
+  const jumpToMark = useCallback(async (m: Mark) => {
+    const sub = m.subKey ? ckId(m.turnId, m.subKey) : undefined;
+    for (let i = 0; i < 200; i++) {              // pages ≫ max observed 34 turns
+      if (transcriptNav.current?.jumpToTurn(m.turnId, sub)) return;
+      if (!olderRef.current.has || olderRef.current.loading) return;
+      await loadOlder();
+      // A prepend re-renders the transcript; give the nav a frame to rebuild.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+  }, [loadOlder]);
+
+  // Remember the place in the open session on every scroll, so leaving it keeps
+  // it. Parked at the bottom is a place too — it's what brings you back to the
+  // latest instead of to wherever you last read. Mid-restore the scrolling is
+  // ours, not yours, so it isn't recorded.
+  const keepPlace = useCallback((stick: boolean) => {
+    const sid = sessionIdRef.current;
+    if (!sid || restoreTo.current) return;
+    const a = stick ? "bottom" : transcriptNav.current?.anchor();
+    if (a) remember(sid, a);
+  }, []);
+
+  // Aim at the remembered turn. Called again on every content resize until we
+  // actually land on it: a freshly opened transcript is mostly estimated, so the
+  // first attempt scrolls past the end and clamps — and a clamp to the bottom is
+  // exactly what re-arms follow and drags you back down.
+  const applyRestore = useCallback(() => {
+    const a = restoreTo.current;
+    const el = scrollRef.current;
+    if (!a || a === "bottom" || !el) return;
+    const top = transcriptNav.current?.turnTop(a.turn);
+    if (top != null) el.scrollTop = top + a.off;
+  }, []);
+
+  const endRestore = useCallback(() => {
+    restoreTo.current = null;
+    window.clearTimeout(restoreT.current);
+    restoreT.current = 0;
+  }, []);
+
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
     let prev = el.scrollTop;
-    // Scroll anchoring, by hand. Event cards carry `content-visibility: auto`
-    // (.vskip-card), so one that has never been on screen is only the 60px
-    // `contain-intrinsic-size` guess — when it finally renders at its real
-    // height (measured p25 21px, median 117px, max 372px) everything below it
-    // moves, and a scroll up lands somewhere the gesture didn't ask for.
-    // Measured: 425px of drift on the first trip up a 17k transcript, exactly 0
-    // on the second — `auto` remembers real heights, so each guess is only wrong
-    // once, which is why it read as intermittent. The browser's own anchoring
-    // can't cover this: content-visibility applies `contain: layout paint`, and
-    // contained elements are excluded from being anchor nodes.
-    // Whatever sits at the top edge stays at the top edge. Tracked in viewport
-    // coords on purpose — where the browser DID anchor, the rect hasn't moved
-    // and we correct nothing, instead of doubling its correction.
-    let anchor: Element | null = null;
-    let anchorTop = 0;
-    const markAnchor = () => {
-      const box = el.getBoundingClientRect();
-      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 1);
-      anchor = hit && el.contains(hit) ? hit : null;
-      anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
-      // The same anchor, kept per session: where you leave one is where you come
-      // back to it. While staleTurns is set the open session's transcript hasn't
-      // landed, so there's nothing here worth recording over its park.
-      const sid = staleTurns.current ? null : sessionIdRef.current;
-      if (!sid) return;
-      const park = stickRef.current ? null : parkAt(el, anchor);
-      if (park) parks.current.set(sid, park);
-      else parks.current.delete(sid);
-    };
-    // A session you're coming back to lands on its park the moment its turns
-    // render — from the layout effect below, so it happens in the same pass the
-    // DOM changed in, before a clamp or a resize can move us somewhere else.
-    let tries = 0;
-    const applyPark = () => {
-      const park = pendingPark.current;
-      if (!park) return;
-      const moved = restorePark(el, park);
-      if (moved === null) return;                    // its turn hasn't rendered yet
-      markAnchor();
-      prev = el.scrollTop;
-      // Landing rendered the cards around us, so what we measured against was
-      // the guess. Measure again until the answer stops moving.
-      if (Math.abs(moved) >= 1 && tries++ < 3) { requestAnimationFrame(applyPark); return; }
-      pendingPark.current = null;
-      tries = 0;
-    };
-    applyParkRef.current = applyPark;
+    // Anchoring against content shifting above the viewport now lives in the
+    // transcript virtualizer (shouldAdjustScrollPositionOnItemSizeChange in
+    // Transcript.tsx) — a row above you re-measuring adjusts scroll there.
+    // What remains here is the follow policy: when to stick to the bottom.
     const sync = () => {
-      // Keep `prev` fresh through a glide, or the first flick up afterwards
-      // still reads as "scrolled down" against a stale mark.
-      if (glideRef.current) { prev = el.scrollTop; return; }
+      // Keep `prev` fresh through a glide or a restore, or the first flick up
+      // afterwards still reads as "scrolled down" against a stale mark.
+      if (glideRef.current || restoreTo.current) { prev = el.scrollTop; return; }
       const stick = stickToBottom(el, prev, stickRef.current);
       prev = el.scrollTop;
       stickRef.current = stick;
-      markAnchor();                 // you moved: whatever is at the edge now is the anchor
       setAtBottom(stick);           // no-op re-render-wise unless it flipped
+      keepPlace(stick);
     };
     el.addEventListener("scroll", sync, { passive: true });
     // Content grew/shrank: pull to the bottom if we were parked there, otherwise
     // re-check (a shrink can land us back at the bottom on its own).
     const ro = new ResizeObserver(() => {
+      // Still on our way back to where you were reading: re-aim, and let none of
+      // the follow policy below see the half-settled positions on the way.
+      if (restoreTo.current) { applyRestore(); prev = el.scrollTop; return; }
       if (!stickRef.current) {
-        // Put the anchor back where it was before this resize. A card resolving
-        // above you is the whole reason the view slid; one below you leaves the
-        // rect where it is and this corrects nothing.
-        if (anchor?.isConnected) {
-          const top = anchor.getBoundingClientRect().top;
-          if (top !== anchorTop) el.scrollTop += top - anchorTop;
-        }
         // Content moved, not you — so this can only re-arm follow by landing
         // exactly on the end (see stickOnResize). Running the gesture test here
         // let a nudge up inside the 80px band re-stick, and the next streamed
@@ -673,16 +697,43 @@ export function App() {
         prev = el.scrollTop;
         stickRef.current = stick;
         setAtBottom(stick);
+        keepPlace(stick);
       }
       else if (glideRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
       else el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
-    markAnchor();                   // a view you come back to unstuck resizes before you scroll
-    applyPark();                    // ...and the transcript may already be rendered
+    // Touch the scroller mid-restore and it's yours again — 2s of re-aiming
+    // would otherwise fight you.
+    const giveUp = () => endRestore();
+    el.addEventListener("wheel", giveUp, { passive: true });
+    el.addEventListener("touchstart", giveUp, { passive: true });
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-    return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
-  }, [view, showDashboard]);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      el.removeEventListener("wheel", giveUp);
+      el.removeEventListener("touchstart", giveUp);
+      ro.disconnect();
+    };
+  }, [view, showDashboard, keepPlace, applyRestore, endRestore]);
+
+  // The other half of keepPlace: once the opened session's turns are on screen,
+  // put you back where you left it. A turn we can't find didn't come with the
+  // tail (you'd loaded older ones before leaving), and the bottom is the honest
+  // answer to "that place is gone".
+  useEffect(() => {
+    const a = restoreTo.current;
+    if (!a || a === "bottom" || loadingSession || !turns.length) return;
+    if (transcriptNav.current?.turnTop(a.turn) == null) {
+      endRestore();
+      jumpToBottom();               // that place didn't come back with the tail
+      return;
+    }
+    // Pinned for a beat, not aimed once: the turns keep measuring after they
+    // land, and every measurement moves the pixel the anchor points at.
+    if (!restoreT.current) restoreT.current = window.setTimeout(endRestore, 2000);
+    applyRestore();
+  }, [turns, loadingSession, jumpToBottom, applyRestore, endRestore]);
 
   useEffect(() => {
     let live = true;
@@ -811,13 +862,18 @@ export function App() {
   useEffect(() => {
     let live = true;
     const tick = async () => {
-      try { const { repos } = await api.gitAll(); if (live) setGitBadges(new Map(Object.entries(repos))); }
-      catch { /* ignore */ }
+      try {
+        const { repos } = await api.gitAll();
+        if (live) setGitBadges(new Map(Object.entries(repos)));
+        const dirty = Object.values(repos).filter((r) => r.dirty > 0).length;
+        markBoot("git", "ok", dirty ? `${bootCount(Object.keys(repos).length, "REPO")} · ${dirty} DIRTY`
+          : bootCount(Object.keys(repos).length, "REPO"));
+      } catch { markBoot("git", "fail", "NO STATUS"); }
     };
     void tick();
     const id = setInterval(tick, 10000);
     return () => { live = false; clearInterval(id); };
-  }, []);
+  }, [markBoot]);
 
   useEffect(() => {
     let live = true;
@@ -829,12 +885,13 @@ export function App() {
         if (!live) return;
         setAccounts(a.accounts);
         setFreeAgents((a.free_agents?.providers ?? []).filter((p) => p.ready));
-      } catch { /* ignore */ }
+        markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
+      } catch { markBoot("auth", "fail", "NO LOGIN"); }
     };
     void tick();
     const id = setInterval(tick, 60000);
     return () => { live = false; clearInterval(id); };
-  }, []);
+  }, [markBoot]);
 
   // ⌘K palette + Escape closes the topmost overlay.
   useEffect(() => {
@@ -1712,6 +1769,9 @@ export function App() {
                   { title: it.title, cwd: it.cwd, force: true })}
                 liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession || !booted} hud={settings}
+                hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
+                renderFrom={older.from}
+                navRef={transcriptNav} restoringRef={restoreTo} onJumpMark={(m) => void jumpToMark(m)}
                 onRunCommand={runCommand}
                 onQuote={quote}
                 // Tapping a suggested reply to a question the model asked in prose
@@ -1852,7 +1912,7 @@ export function App() {
       )}
 
       {booting && (
-        <BootIntro theme={settings.theme} scanlines={settings.scanlines} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
+        <BootIntro theme={settings.theme} scanlines={settings.scanlines} steps={bootSteps} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
     </div>
   );

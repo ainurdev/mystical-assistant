@@ -51,11 +51,12 @@ ${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the brid
   ${c_b}🩺${c_0} mystical ${c_c}doctor${c_0}    check prerequisites, and what each missing one costs you
   ${c_b}📜${c_0} mystical ${c_c}logs${c_0}      follow the log (Ctrl-C to stop following)
   ${c_b}⚡${c_0} mystical ${c_c}run${c_0}       run in the foreground (live logs, Ctrl-C to quit)
+  ${c_b}🔗${c_0} mystical ${c_c}design-link${c_0} <rel> <id>  link a repo to a Claude Design project
 EOF
 }
 
 case "${1:-start}" in
-  build|doctor|-h|--help|help) : ;;   # build/diagnostics/help need no .env
+  build|doctor|-h|--help|help|design-link) : ;;   # build/diagnostics/help/design-link need no .env
   *) [ -f "$ENV_FILE" ] || die ".env not found at $ENV_FILE — run ./setup.sh to create it." ;;
 esac
 
@@ -204,6 +205,20 @@ case "${1:-start}" in
   logs)             cmd_logs ;;
   run|fg)           cmd_run ;;
   doctor)           cmd_doctor ;;
+  design-link)
+    # Persist a repo -> Claude Design project link. Called by a Claude session
+    # doing the linking, which may be running in any repo — the bridge package
+    # is only importable from the checkout this script already knows.
+    if [ "$#" -ne 3 ]; then
+      echo "usage: mystical design-link <project-rel> <design-project-id>" >&2
+      exit 2
+    fi
+    PYTHONPATH="$REPO" python3 -c '
+import sys
+from bridge import project_config
+project_config.set_design_project(sys.argv[1], sys.argv[2])
+' "$2" "$3"
+    ;;
   -h|--help|help)   usage ;;
   *)                die "unknown command: $1"$'\n'"$(usage)" ;;
 esac

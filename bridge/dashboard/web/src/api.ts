@@ -122,6 +122,13 @@ export interface Transcript {
   turns: StoreTurn[];
   events: StoreEvent[];
   next_cursor: number;
+  // Present only when the request carried ?tail= (and the server is new enough
+  // to window) — older turns exist beyond the first loaded one.
+  has_older?: boolean;
+  /** Oldest loaded event seq — the `before` key for the next older page. */
+  oldest_seq?: number | null;
+  /** First turn whose events are loaded — where rendering should start. */
+  tail_from?: string | null;
 }
 
 export interface ServerInfo {
@@ -260,6 +267,7 @@ export interface ProjectSettings {
   scripts: Record<string, string>;
   run_cmd: string | null;
   prod_url: string | null;
+  design_project: string | null;
   default_cmd: string;
   log_path: string;
 }
@@ -801,8 +809,10 @@ export const api = {
     req<{ sessions: SessionBrief[] }>(
       `/local/sessions${project !== undefined ? `?project=${encodeURIComponent(project)}` : ""}`,
     ),
-  transcript: (id: string, cursor: number) =>
-    req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+  transcript: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
+    req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
+      (opts?.tail ? `&tail=${opts.tail}` : "") +
+      (opts?.before ? `&before=${opts.before}` : "")),
   sessionBreakdown: (id: string) =>
     req<SessionBreakdown>(`/local/sessions/${encodeURIComponent(id)}/breakdown`),
   // A rehydrated turn's attachments are server paths, not blobs — load them back
@@ -1087,11 +1097,23 @@ export const api = {
     }),
   projectSettings: (ctx: RunCtx) =>
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
-  setProjectSettings: (ctx: RunCtx, patch: { run_cmd?: string; prod_url?: string; hidden?: boolean }) =>
-    req<{ ok: boolean; run_cmd?: string | null; prod_url?: string | null; hidden?: boolean }>("/local/project/settings", {
+  setProjectSettings: (
+    ctx: RunCtx,
+    patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean },
+  ) =>
+    req<{
+      ok: boolean;
+      run_cmd?: string | null;
+      prod_url?: string | null;
+      design_project?: string | null;
+      hidden?: boolean;
+    }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
+  designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
+    req<{ prompt?: string; error?: string }>(
+      `/local/design/prompt?kind=${kind}&${ctxQuery(ctx)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
   issues: (project: string) =>
     req<IssuesInfo>(`/local/github/issues?project=${encodeURIComponent(project)}`),
   createIssue: (project: string, title: string, body: string) =>

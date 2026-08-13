@@ -17,10 +17,11 @@ import {
   GitCompare,
   Brain,
   ChevronDown,
+  ChevronsUp,
 } from "lucide-react";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
-import { foldChips, runsOf } from "../lib/toolfold";
+import { foldChips, runsOf, headSafeCut } from "../lib/toolfold";
 import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
@@ -392,6 +393,15 @@ type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]
 const OUT_PREVIEW = 6;
 const DIFF_PREVIEW = 20;
 
+/** Events of a turn that mount before the rest waits behind a button. The
+ *  virtualizer windows on turns, so a session whose turns run to hundreds of
+ *  events is a handful of rows and nothing to window — and this is a phone. The
+ *  tail is what you opened the turn to read. */
+export const TURN_TAIL = 60;
+
+/** Below this, hiding events isn't worth the button that reveals them. */
+const TURN_TAIL_MIN = 10;
+
 /** A failed Bash result opens with the shell's status line ("Exit code 2\n…").
  *  It belongs in the header as a badge, not in the body. */
 const EXIT_RE = /^(?:Error: )?Exit code (\d+)\n?/;
@@ -687,6 +697,10 @@ export const RunStream = memo(function RunStream({
   ended?: boolean;
 }) {
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
+  // Derived from the length rather than stored as an index, so a running turn's
+  // window slides with its tail instead of freezing where it was opened.
+  const [wholeTurn, setWholeTurn] = useState(false);
+  const tailFrom = wholeTurn ? 0 : Math.max(0, events.length - TURN_TAIL);
   const pendingIds = new Set(pending.map((p) => p.request_id));
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
@@ -721,6 +735,12 @@ export const RunStream = memo(function RunStream({
   };
   const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
 
+  // Never cut a folded run away from the head that draws it. A cut that ends up
+  // hiding only a handful buys nothing and reads as a button in front of
+  // nothing, so it collapses to showing the lot.
+  const cut = headSafeCut(events.length, tailFrom, headOf, groupOf);
+  const from = cut < TURN_TAIL_MIN ? 0 : cut;
+
   // The turn's closing text arrives twice — streamed as a text block, then again
   // as the run's result — so only the result card draws it. A native session
   // emits no result event, so its final text keeps rendering as text.
@@ -740,7 +760,20 @@ export const RunStream = memo(function RunStream({
   return (
     // vskip-card: off-screen event cards skip layout/paint (see index.css).
     <div className="space-y-2 vskip-card">
-      {events.map((event, i) => {
+      {from > 0 && (
+        <button
+          type="button"
+          onClick={() => setWholeTurn(true)}
+          className="ml-[18px] flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[10px] tracking-wider text-[var(--tg-hint)] active:opacity-70"
+        >
+          <ChevronsUp size={11} aria-hidden />
+          {from} earlier step{from === 1 ? "" : "s"}
+        </button>
+      )}
+      {/* Indices stay absolute: the folding, grouping and tool_done pairing all
+          key off position in the full array. */}
+      {events.slice(from).map((event, k) => {
+        const i = k + from;
         switch (event.type) {
           case "text":
             if (resultText && event.text.trim() === resultText) return null;

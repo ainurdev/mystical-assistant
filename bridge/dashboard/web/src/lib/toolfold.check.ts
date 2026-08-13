@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/toolfold.check.ts
-import { foldChips, runsOf } from "./toolfold.ts";
+import { foldChips, runsOf, headSafeCut } from "./toolfold.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -63,6 +63,33 @@ const none = () => false;
   const { folds } = runsOf(evs, (i) => keys[i], 2);
   ok(folds.get(0)?.join() === "0,1" && folds.get(2)?.join() === "2,3", "each key gets its own run");
   ok(folds.size === 2, "the two servers never share a card");
+}
+
+
+// --- headSafeCut: a cut must never orphan a folded run's members ------------
+{
+  // 6 chips fold into one run headed at 0. Cutting anywhere inside it must pull
+  // back to 0, or the visible members would draw nothing at all.
+  const evs = Array.from({ length: 6 }, () => t("tool"));
+  const { headOf } = foldChips(evs, none);
+  ok(headSafeCut(evs.length, 3, headOf) === 0, "cut inside a run snaps to its head");
+  ok(headSafeCut(evs.length, 0, headOf) === 0, "cut at 0 stays 0");
+}
+
+{
+  // A tool_done sits at the cut: it joins no run, but the run straddles it, so
+  // checking only events[cut] would have missed this.
+  const evs = [t("tool"), t("tool"), t("tool_done"), t("tool"), t("tool")];
+  const { headOf } = foldChips(evs, none);
+  ok(headOf.has(3), "tool_done does not break the run");
+  ok(headSafeCut(evs.length, 2, headOf) === 0, "cut on an invisible event still snaps back");
+}
+
+{
+  // Nothing folded past the cut — it must stay exactly where it was asked for.
+  const evs = [t("tool"), t("text"), t("text"), t("text")];
+  const { headOf } = foldChips(evs, none);
+  ok(headSafeCut(evs.length, 2, headOf) === 2, "an unfolded cut is left alone");
 }
 
 console.log("\nall toolfold checks passed");

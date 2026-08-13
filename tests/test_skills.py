@@ -153,10 +153,240 @@ def test_scan_lists_hand_written_skills(tmp_path):
     (d / "SKILL.md").write_text('---\nname: custom\ndescription: "does a thing"\n---\n')
     assert skills.installed(str(tmp_path))["project"] == [
         {"id": "custom", "name": "custom", "description": "does a thing",
-         "scope": "project", "category": "other", "from_catalog": False}]
+         "scope": "project", "category": "other", "from_catalog": False,
+         "from_design": False, "design_project": None}]
 
 
 def test_bad_scope_and_unknown_id(tmp_path):
     assert skills.install("readme", "nope", str(tmp_path))[0] is False
     assert skills.install("no-such-skill", "project", str(tmp_path))[0] is False
     assert skills.install("readme", "project", None)[0] is False
+
+
+def test_a_design_sourced_skill_is_labelled_as_one(tmp_path):
+    d = tmp_path / "mystical-assistant-design-system"
+    d.mkdir()
+    (d / "SKILL.md").write_text(
+        "---\nname: mystical-assistant-design\ndescription: phosphor CRT HUD\n---\nbody\n")
+    (d / skills.DESIGN_MARKER).write_text("24409d88-c74d-4d26-becb-69672612173f\ntokens/colors.css\n")
+    found = skills._scan(str(tmp_path), "project")
+    assert len(found) == 1
+    assert found[0]["from_design"] is True
+    assert found[0]["design_project"] == "24409d88-c74d-4d26-becb-69672612173f"
+    assert found[0]["from_catalog"] is False
+
+
+def test_a_hand_written_skill_is_neither(tmp_path):
+    d = tmp_path / "mine"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: mine\ndescription: mine\n---\n")
+    found = skills._scan(str(tmp_path), "project")
+    assert found[0]["from_design"] is False
+    assert found[0]["design_project"] is None
+    assert found[0]["from_catalog"] is False
+
+
+def test_a_design_marker_with_no_id_does_not_crash(tmp_path):
+    """A truncated write, or a marker someone emptied by hand."""
+    d = tmp_path / "ds"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("")
+    found = skills._scan(str(tmp_path), "project")
+    assert found[0]["from_design"] is True
+    assert found[0]["design_project"] is None
+
+
+def test_remove_accepts_a_design_sourced_skill(tmp_path):
+    """Provenance is the whole point of the marker: bridge-installed directories
+    may be removed from the UI, hand-written ones may not."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\n")
+    assert skills.remove("ds", "project", str(tmp_path))[0] is True
+    assert not d.exists()
+
+
+def test_remove_still_refuses_a_hand_written_skill_with_neither_marker(tmp_path):
+    """Widening remove() to also accept DESIGN_MARKER must not loosen the
+    refusal for a plain hand-written skill carrying no marker at all."""
+    d = tmp_path / ".claude" / "skills" / "mine"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: mine\ndescription: mine\n---\n")
+    assert skills.remove("mine", "project", str(tmp_path))[0] is False
+    assert (d / "SKILL.md").exists()
+
+
+def test_remove_deletes_a_design_sourced_skill_with_nested_content(tmp_path):
+    """A real pull is more than two files — tokens/, guidelines/, and friends.
+    remove() must walk the tree, not require an exact SKILL.md+marker match."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "guidelines").mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "guidelines" / "type.html").write_text("<p>type</p>\n")
+    (d / skills.DESIGN_MARKER).write_text(
+        "aaaa-1\ntokens/colors.css\nguidelines/type.html\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (True, "")
+    assert not d.exists()
+
+
+def test_remove_refuses_a_design_sourced_skill_with_an_unrecorded_file(tmp_path):
+    """Anything on disk the marker didn't record pulling is a file the user
+    added since — remove() must refuse the whole directory, and touch nothing
+    in it, rather than delete around the extra file."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "guidelines").mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "guidelines" / "type.html").write_text("<p>type</p>\n")
+    (d / "guidelines" / "notes.md").write_text("mine, not part of the pull\n")
+    (d / skills.DESIGN_MARKER).write_text(
+        "aaaa-1\ntokens/colors.css\nguidelines/type.html\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (False, "directory has other files")
+    assert d.exists()
+    assert (d / "SKILL.md").exists()
+    assert (d / "tokens" / "colors.css").exists()
+    assert (d / "guidelines" / "type.html").exists()
+    assert (d / "guidelines" / "notes.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_remove_refuses_a_design_sourced_skill_containing_a_symlinked_dir(tmp_path):
+    """os.walk never descends a symlinked directory, so nothing inside one can
+    ever appear in the recorded-content check — the delete would sail past it,
+    strip SKILL.md and the marker, then fail to rmdir a directory that still
+    holds the link. Refuse on sight instead: an orphan that no longer reads as
+    design-sourced cannot be retried or re-pulled over."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "keepme.txt").write_text("not part of any pull\n")
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "linked").symlink_to(outside, target_is_directory=True)
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\ntokens/colors.css\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (False, "directory has other files")
+    assert (d / "SKILL.md").exists()
+    assert (d / "tokens" / "colors.css").exists()
+    assert (d / skills.DESIGN_MARKER).exists()   # still design-sourced, still retryable
+    assert (outside / "keepme.txt").exists()     # and the link's target is untouched
+
+
+def test_remove_refuses_a_design_sourced_skill_with_an_unrecorded_empty_dir(tmp_path):
+    """An empty directory holds no file, so the unrecorded-*file* check can't
+    see it — but the prune pass at the end would happily rmdir it. A directory
+    the marker never routed a pull through is the user's, empty or not."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "scratch").mkdir()
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\ntokens/colors.css\n")
+    assert skills.remove("ds", "project", str(tmp_path)) == (False, "directory has other files")
+    assert (d / "scratch").is_dir()
+    assert (d / "SKILL.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_remove_refuses_an_id_that_is_a_path(tmp_path):
+    """The marker gates the delete, so a traversing id already dead-ends on a
+    directory carrying no marker. Refusing a non-bare id first means that gate
+    is not the only thing standing between the UI and an arbitrary path."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("aaaa-1\n")
+    assert skills.remove("../skills/ds", "project", str(tmp_path)) == (False, "bad id")
+    assert skills.remove("nested/ds", "project", str(tmp_path)) == (False, "bad id")
+    assert (d / "SKILL.md").exists()
+
+
+def test_remove_refuses_a_design_sourced_skill_with_a_truncated_marker(tmp_path):
+    """A truncated write or a hand-emptied marker carries no trustworthy
+    delete list — remove() must refuse rather than guess, and never raise."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / skills.DESIGN_MARKER).write_text("")
+    ok, err = skills.remove("ds", "project", str(tmp_path))
+    assert ok is False
+    assert err
+    assert (d / "SKILL.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_remove_leaves_identity_intact_when_a_content_delete_fails(tmp_path, monkeypatch):
+    """Deletion order must be content-first, identity-last: when a delete
+    fails partway through the content sweep, SKILL.md and the marker must
+    still be on disk afterwards, so the directory still reads as
+    design-sourced and the exact same remove() call can just be retried.
+    Nothing here depends on hash/set order — a counter forces the failure
+    onto whichever content file the implementation happens to process
+    second, so this is deterministic regardless of iteration order."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "guidelines").mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "guidelines" / "type.html").write_text("<p>type</p>\n")
+    (d / skills.DESIGN_MARKER).write_text(
+        "aaaa-1\ntokens/colors.css\nguidelines/type.html\n")
+
+    real_remove = skills.os.remove
+    calls = []
+
+    def flaky_remove(path, *a, **kw):
+        calls.append(path)
+        if len(calls) == 2:  # let the first content delete succeed, fail the second
+            raise PermissionError(13, "Permission denied")
+        real_remove(path, *a, **kw)
+
+    monkeypatch.setattr(skills.os, "remove", flaky_remove)
+
+    ok, err = skills.remove("ds", "project", str(tmp_path))
+
+    assert ok is False
+    assert err
+    # identity survives: still design-sourced, still retryable
+    assert (d / "SKILL.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+    # exactly one content file got removed before the failure — proves this
+    # is a partial sweep, not an all-or-nothing loop
+    remaining = [(d / "tokens" / "colors.css").exists(),
+                 (d / "guidelines" / "type.html").exists()]
+    assert remaining.count(True) == 1
+
+
+def test_remove_refuses_a_design_sourced_skill_with_a_non_utf8_marker(tmp_path):
+    """Invalid bytes in the marker must never raise UnicodeDecodeError out of
+    remove() — errors="replace" keeps this on the same fail-open path as
+    every other malformed-marker case. The corrupted marker no longer
+    matches what is really on disk, so it refuses rather than mis-deletes."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / skills.DESIGN_MARKER).write_bytes(b"\xff\xfe\xfa\xfb")
+
+    ok, err = skills.remove("ds", "project", str(tmp_path))
+
+    assert ok is False
+    assert err
+    assert (d / "SKILL.md").exists()
+    assert (d / "tokens" / "colors.css").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_design_id_tolerates_a_non_utf8_marker(tmp_path):
+    """_design_id gates a display label, not a delete, but the same
+    UnicodeDecodeError gap applies — it must return, never raise."""
+    d = tmp_path / "ds"
+    d.mkdir()
+    (d / skills.DESIGN_MARKER).write_bytes(b"\xff\xfe not valid utf-8\n")
+    is_design, _design_id = skills._design_id(str(d))
+    assert is_design is True

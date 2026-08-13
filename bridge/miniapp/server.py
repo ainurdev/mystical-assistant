@@ -19,8 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, git, github,
-                    models, native, project_config, relevance, runner, state,
-                    store, transcript_jsonl, usage)
+                    httpgz, models, native, project_config, relevance, runner,
+                    state, store, transcript_jsonl, transcript_page, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -135,15 +135,30 @@ def _pre_title(s: dict, title) -> dict:
     return store.get_session(s["id"])
 
 
-def transcript_for(session: dict, cursor: int = 0) -> dict:
+def _qs_int(qs: dict, name: str) -> int | None:
+    """Optional int query param; absent or malformed -> None."""
+    try:
+        v = qs.get(name, [None])[0]
+        return int(v) if v is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+def transcript_for(session: dict, cursor: int = 0,
+                   tail: int | None = None, before: int | None = None) -> dict:
     """Unified transcript loader. A session that still lives only as native JSONL
     (started in VSCode and not yet continued through the bridge) renders from that
-    JSONL on demand; everything else renders from the store. Same shape either way."""
+    JSONL on demand; everything else renders from the store. Same shape either way.
+    `tail`/`before` window the events to the last N event-bearing turns
+    (transcript_page.tail_slice) — turns and next_cursor always ship whole, so
+    forward polling is unaffected. Without `tail` the shape is unchanged."""
+    def page(d: dict) -> dict:
+        return transcript_page.tail_slice(d, tail, before) if tail is not None else d
     if session.get("origin") in ("vscode", "terminal"):
         path = transcript_jsonl.find_transcript(session.get("claude_session_id"))
         data = (transcript_jsonl.parse_jsonl(path, cursor) if path
                 else {"turns": [], "events": [], "next_cursor": cursor})
-        return {"session": session, **data}
+        return page({"session": session, **data})
     data = store.transcript(session["id"], cursor)
     # Fallback: a bridge row whose conversation actually lives in the native JSONL
     # (shares a claude_session_id but was never journaled) -> render from JSONL.
@@ -152,8 +167,8 @@ def transcript_for(session: dict, cursor: int = 0) -> dict:
         if path:
             jdata = transcript_jsonl.parse_jsonl(path, cursor)
             if jdata["turns"]:
-                return {"session": session, **jdata}
-    return data
+                return page({"session": session, **jdata})
+    return page(data)
 
 
 def _save_images(job_id: str, images: list) -> list[str]:
@@ -197,7 +212,21 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _json(self, obj: dict, code: int = 200):
-        self._send_bytes(json.dumps(obj).encode(), code, "application/json")
+        raw, zipped = httpgz.maybe_gzip(
+            json.dumps(obj).encode(), self.headers.get("Accept-Encoding", ""))
+        if not zipped:
+            return self._send_bytes(raw, code, "application/json")
+        # Inlined _send_bytes plus the one extra header (it has no header hook).
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            self.wfile.write(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _read_json(self):
         try:
@@ -481,7 +510,8 @@ class Handler(BaseHTTPRequestHandler):
             cursor = int(qs.get("cursor", ["0"])[0])
         except ValueError:
             cursor = 0
-        self._json(transcript_for(s, cursor))
+        self._json(transcript_for(s, cursor,
+                                  tail=_qs_int(qs, "tail"), before=_qs_int(qs, "before")))
 
     def _api_session_archive(self, chat_id: int, sid: str, body: dict):
         s = store.get_session(sid)

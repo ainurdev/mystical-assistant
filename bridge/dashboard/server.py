@@ -28,13 +28,13 @@ from urllib.parse import parse_qs, urlparse
 import re
 
 from bridge import (agents, attribution, browser, config, devserver, fmt, git,
-                    github, graphmap,
+                    github, graphmap, httpgz,
                     models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, usage,
                     weather, wsutil)
-from bridge.miniapp.server import (_pre_title, _save_images, _session_brief,
+from bridge.miniapp.server import (_pre_title, _qs_int, _save_images, _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
 
@@ -191,7 +191,21 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _json(self, obj, code: int = 200):
-        self._send(json.dumps(obj).encode(), code, "application/json")
+        raw, zipped = httpgz.maybe_gzip(
+            json.dumps(obj).encode(), self.headers.get("Accept-Encoding", ""))
+        if not zipped:
+            return self._send(raw, code, "application/json")
+        # Inlined _send plus the one extra header (_send has no header hook).
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            self.wfile.write(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _read_json(self):
         try:
@@ -329,7 +343,9 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = int(qs.get("cursor", ["0"])[0])
             except ValueError:
                 cursor = 0
-            return self._json(transcript_for(s, cursor))
+            return self._json(transcript_for(s, cursor,
+                                             tail=_qs_int(qs, "tail"),
+                                             before=_qs_int(qs, "before")))
         if path == "/local/attachment":
             return self._attachment(qs.get("path", [""])[0])
         if path.startswith("/local/run/"):
@@ -448,9 +464,33 @@ class Handler(BaseHTTPRequestHandler):
                 "scripts": project_config.package_scripts(abs_p),
                 "run_cmd": project_config.run_cmd(rel, branch),
                 "prod_url": project_config.prod_url(rel, branch),
+                "design_project": project_config.design_project(rel, branch),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
+        if path == "/local/design/prompt":
+            from bridge import aifeatures, designsync
+            if not aifeatures.enabled("design"):
+                return self._json({"error": "design system switch is off"}, 400)
+            abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
+                     or _abs_project(qs.get("cwd_rel", [None])[0]
+                                     or qs.get("project", [None])[0])
+                     or state.project_dir(chat))
+            rel = browser.rel(abs_p)
+            branch = (qs.get("branch", [""])[0] or "").strip() or None
+            kind = (qs.get("kind", [""])[0] or "").strip()
+            if kind == "link":
+                return self._json({"prompt": designsync.link_prompt(rel)})
+            pid = project_config.design_project(rel, branch)
+            if not pid:
+                return self._json({"error": "no design project linked"}, 400)
+            if kind == "pull":
+                name = (qs.get("name", [""])[0] or "").strip()
+                return self._json({"prompt": designsync.pull_prompt(
+                    pid, rel, designsync.slug(name))})
+            if kind == "push":
+                return self._json({"prompt": designsync.push_prompt(pid, rel)})
+            return self._json({"error": "unknown kind"}, 400)
         if path == "/local/shell":
             try:
                 cursor = int(qs.get("cursor", ["0"])[0])
@@ -963,6 +1003,9 @@ class Handler(BaseHTTPRequestHandler):
                 out["run_cmd"] = project_config.set_run_cmd(rel, (body.get("run_cmd") or "")[:1000], branch)
             if "prod_url" in body:
                 out["prod_url"] = project_config.set_prod_url(rel, (body.get("prod_url") or "")[:1000], branch)
+            if "design_project" in body:
+                out["design_project"] = project_config.set_design_project(
+                    rel, (body.get("design_project") or "")[:200], branch)
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
             return self._json(out)

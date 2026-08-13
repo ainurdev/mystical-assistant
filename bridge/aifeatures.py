@@ -132,6 +132,18 @@ FEATURES = (
               "unlike the extras above it ships ON — the switch is here so the "
               "spend is visible and stoppable. Off, the generate button is hidden "
               "and SHIP commits with a plain list of what changed."},
+    {"key": "design", "env": "DESIGN_SYNC_ENABLE", "label": "DESIGN SYSTEM",
+     "hint": "links a repo to its Claude Design system",
+     "cost": "no extra call, a skill per linked repo",
+     "about": "A repo linked to a Claude Design project can pull that design "
+              "system down into .claude/skills/ — tokens, guidelines and every "
+              "component's spec — so a design prompt reaches the real palette "
+              "and components instead of improvised CSS. Claude Code's own "
+              "skill mechanism decides per prompt whether to load it, so this "
+              "costs no call and nothing is added to the system prompt. "
+              "Finished work syncs back up, one component at a time, on a "
+              "press. Off, the link row and the SYNC action leave the "
+              "dashboard; a skill already pulled stays on disk."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}

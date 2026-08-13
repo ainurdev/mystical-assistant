@@ -12,6 +12,10 @@ export function steerKey(index: number): string {
 
 export interface Mark {
   id: string;
+  /** The turn this mark lives in — how a virtualized list finds its row. */
+  turnId: string;
+  /** Set on question/steer marks: the ckId key of the anchor inside the turn. */
+  subKey?: string;
   label: string;
   kind: "prompt" | "question" | "steer";
   /** 1-based prompt number; 0 for the question/steer marks nested under one. */
@@ -53,7 +57,7 @@ export function marksOf(turns: Turn[]): Mark[] {
     if (prompt) {
       n++;
       out.push({
-        id: ckId(t.id), label: prompt, kind: "prompt", n,
+        id: ckId(t.id), turnId: t.id, label: prompt, kind: "prompt", n,
         waiting: t.pending.length > 0,
         status: t.status, failed, stopped, tools, elapsed, sha: t.sha ?? null,
       });
@@ -61,12 +65,13 @@ export function marksOf(turns: Turn[]): Mark[] {
     t.events.forEach((e, i) => {
       if (e.type === "question")
         out.push({
-          id: ckId(t.id, e.request_id),
+          id: ckId(t.id, e.request_id), turnId: t.id, subKey: e.request_id,
           label: e.questions[0]?.header || e.questions[0]?.question || "question",
           kind: "question", n: 0, waiting: open.has(e.request_id),
         });
       else if (e.type === "steer")
-        out.push({ id: ckId(t.id, steerKey(i)), label: e.text, kind: "steer", n: 0, waiting: false });
+        out.push({ id: ckId(t.id, steerKey(i)), turnId: t.id, subKey: steerKey(i),
+                   label: e.text, kind: "steer", n: 0, waiting: false });
     });
   }
   return out;

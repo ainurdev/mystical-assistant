@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import type { AnswerSelection, EnrichedSession, NextItem, SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
+import type { Mark } from "../../lib/checkpoints";
+import type { Anchor } from "../../lib/scrollmem";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import type { HudSettings } from "../../lib/theme";
-import { Transcript } from "../Transcript";
+import { Transcript, type TranscriptNav } from "../Transcript";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
@@ -144,6 +146,7 @@ export function Terminal({
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
+  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -167,6 +170,17 @@ export function Terminal({
   loading?: boolean;
   sessionId?: string | null;
   hud?: HudSettings;
+  /** Older turns exist server-side; render the "load older" control. */
+  hasOlder?: boolean;
+  olderLoading?: boolean;
+  onLoadOlder?: () => void;
+  /** First turn whose events are loaded — turns before it stay hidden. */
+  renderFrom?: string | null;
+  /** Checkpoint navigation surface, filled by the Transcript while mounted. */
+  navRef?: MutableRefObject<TranscriptNav | null>;
+  restoringRef?: RefObject<Anchor | null>;
+  /** Jump to a checkpoint, auto-loading older pages when it isn't loaded. */
+  onJumpMark?: (m: Mark) => void;
   /** Re-run a transcript command in this project's TERMINAL tab. */
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
@@ -237,7 +251,21 @@ export function Terminal({
   // says the new transcript has landed.
   const slowLoad = useLoadingPhase(loading ?? false);
 
-  // Session swap: the new transcript fades up in place of the loading state. Fires on
+  // A session that takes a while to open would otherwise sit as the new header
+  // over the old chat with nothing to say it is loading. Mark the swap on the
+  // click commit and CSS dims the outgoing transcript and sweeps a hairline —
+  // both on a delay, so an open that lands first is still the plain soft cut
+  // below. `!loading` is what makes this order-independent with the release
+  // effect: on the landing commit this one bails whichever runs first.
+  const swapRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (view !== "chat" || !loading || empty) return; // empty: nothing worth holding
+    const wrap = swapRef.current;
+    if (wrap) wrap.dataset.swapping = "1";
+  }, [sessionId, view, loading, empty]);
+
+  // Session swap: the session you left stays on screen until the new transcript
+  // lands (App holds its turns), then the new one fades up in its place. Fires on
   // content-land (loading→false), NOT on the click, so it's one soft cut instead of
   // a blank and a pop. Was a CRT retune — collapse to a scanline, bloom open with a
   // glitch — which read as a fault rather than a transition.
@@ -245,6 +273,10 @@ export function Terminal({
   const firstTune = useRef(true);
   useLayoutEffect(() => {
     if (view !== "chat" || loading) return; // wait until the new transcript has landed
+    // Release the hold in the same commit the new turns render in, so the dim
+    // lifting and the fade-up below read as one motion.
+    const wrap = swapRef.current;
+    if (wrap) delete wrap.dataset.swapping;
     if (tunedFor.current === (sessionId ?? null)) return; // already retuned this session
     const el = scrollRef.current;
     if (!el) return;
@@ -285,7 +317,7 @@ export function Terminal({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
           {view === "chat" && (
-            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} />
+            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
           )}
           {view === "chat" && (
             <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
@@ -308,7 +340,8 @@ export function Terminal({
         </div>
       ) : (
         <>
-          <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <div aria-hidden className="swapline" />
             <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
               {/* Top padding clears the bar so the first prompt starts below
                   it: parked at the top there is nothing under the bar, so no
@@ -323,7 +356,7 @@ export function Terminal({
                 ) : empty && loading ? null : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
                 )}
               </div>
             </div>
@@ -375,6 +408,9 @@ export function Terminal({
                 <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST
               </button>
             )}
+            {/* Last, so the whole outgoing session recedes behind it — transcript,
+                LAST peek and rail alike. Only .swapline sits above. */}
+            <div aria-hidden className="swapscrim" />
           </div>
           {composer}
         </>

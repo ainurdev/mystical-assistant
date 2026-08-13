@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoute } from "@tanstack/react-router";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
 import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
 import { useLoadingPhase } from "../lib/loadingPhase";
-import { parkAt, restorePark, type Park } from "../lib/park";
-import { RunStream } from "../components/RunStream";
+import { anchorAt, recall, remember, type Anchor } from "../lib/scrollmem";
+import { RunStream, TURN_TAIL } from "../components/RunStream";
 import { Composer } from "../components/Composer";
 import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
@@ -60,26 +61,34 @@ function RunPage() {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession,
     runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
+    hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav,
   } = useChat();
   // A cached session has its turns already, so this never fires for one; only a
   // transcript that is genuinely still coming gets a skeleton.
   const slowLoad = useLoadingPhase(loadingSession);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [parked, setParked] = useState(true);
+  // Where the open session was left, held until its turns are on screen — and
+  // then a beat longer, because the rows keep measuring after they land and
+  // every measurement moves the pixel the anchor points at.
+  const restoreTo = useRef<Anchor | null>(null);
+  const restoreT = useRef(0);
+  const endRestore = useCallback(() => {
+    restoreTo.current = null;
+    window.clearTimeout(restoreT.current);
+    restoreT.current = 0;
+  }, []);
+  // Reassigned every render: the scroll listener mounts once, but has to save
+  // against the session and the rows that are on screen *now*.
+  const keepPlace = useRef<() => void>(() => {});
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
-  // Where each session was last left, so switching chats — or stepping over to
-  // FILES and back — returns you to what you were reading instead of the end of
-  // it. No entry means it was parked at the bottom, which still follows.
-  const parks = useRef(new Map<string, Park>());
-  const pendingPark = useRef<Park | null>(null);
-  const applyParkRef = useRef<() => void>(() => {});
-  // The session whose turns are on screen. The id changes a render before the
-  // transcript does (openSession empties it), and parking that empty gap would
-  // wipe the very park we're about to land on.
-  const shown = useRef<string | null>(null);
-  shown.current = turns.length ? sessionId : null;
+  // The scroller is <main> from the root layout — captured once mounted so the
+  // virtualizer (which reads it lazily) sees a real element, not null.
+  const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
+  useEffect(() => { setScrollEl(bottomRef.current?.closest("main") ?? null); }, []);
 
   // Scroll <main> itself rather than scrollIntoView-ing the end marker: that
   // parks the marker at the scrollport's bottom edge — which is *behind* the
@@ -90,88 +99,157 @@ function RunPage() {
     el?.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
-  // The transcript scrolls inside <main>, so that's who we watch.
+  // Opening a session goes back to where you were reading it; one you've never
+  // opened (or left parked on the latest) starts at the bottom, as before.
+  // Runs on mount too, which is what makes the CHATS/WORK round trip keep the
+  // place as well — this page unmounts with the tab.
+  useEffect(() => {
+    const was = sessionId ? recall(sessionId) : undefined;
+    endRestore();
+    restoreTo.current = was && was !== "bottom" ? was : null;
+    stick.current = !restoreTo.current;
+    setParked(stick.current);
+  }, [sessionId, endRestore]);
+
+  // The transcript scrolls inside <main>, so that's who we watch. Anchoring
+  // against content shifting above the viewport now lives in the virtualizer
+  // (shouldAdjustScrollPositionOnItemSizeChange below) — what remains here is
+  // the follow policy: when to stick to the bottom.
   useEffect(() => {
     const el = bottomRef.current?.closest("main");
-    const content = contentRef.current;
-    if (!el || !content) return;
+    if (!el) return;
     let prev = el.scrollTop;
-    // Scroll anchoring, by hand. Event cards carry `content-visibility: auto`
-    // (.vskip-card), so one that has never been on screen is only the 60px
-    // `contain-intrinsic-size` guess — when it renders at its real height on the
-    // way past, everything below it moves and a scroll up lands somewhere the
-    // gesture didn't ask for. The browser won't anchor it for us:
-    // content-visibility applies `contain: layout paint`, and contained
-    // elements are excluded from being anchor nodes. So whatever sits at the
-    // top edge stays at the top edge. Viewport coords on purpose — where the
-    // browser DID anchor, the rect hasn't moved and we correct nothing.
-    let anchor: Element | null = null;
-    let anchorTop = 0;
-    const markAnchor = () => {
-      const box = el.getBoundingClientRect();
-      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 1);
-      anchor = hit && el.contains(hit) ? hit : null;
-      anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
-      // The same anchor, kept per session: where you leave one is where you come
-      // back to it.
-      const sid = shown.current;
-      if (!sid) return;
-      const park = stick.current ? null : parkAt(el, anchor);
-      if (park) parks.current.set(sid, park);
-      else parks.current.delete(sid);
-    };
-    // Land on the park of the session we've switched to, the moment its turns
-    // render (the layout effect below) — same pass the DOM changed in, so
-    // nothing paints the bottom of a transcript you weren't reading.
-    let tries = 0;
-    const applyPark = () => {
-      const park = pendingPark.current;
-      if (!park) return;
-      const moved = restorePark(el, park);
-      if (moved === null) return;                    // its turn hasn't rendered yet
-      markAnchor();
-      prev = el.scrollTop;
-      // Landing rendered the cards around us, so what we measured against was
-      // the guess. Measure again until the answer stops moving.
-      if (Math.abs(moved) >= 1 && tries++ < 3) { requestAnimationFrame(applyPark); return; }
-      pendingPark.current = null;
-      tries = 0;
-    };
-    applyParkRef.current = applyPark;
     const sync = () => {
+      // Mid-restore the scrolling is ours, and the half-settled positions on
+      // the way must not be read as you parking somewhere.
+      if (restoreTo.current) { prev = el.scrollTop; return; }
       stick.current = stickToBottom(el, prev);
       setParked(stick.current);
       prev = el.scrollTop;
-      markAnchor();               // you moved: whatever is at the edge now is the anchor
+      keepPlace.current();
     };
     el.addEventListener("scroll", sync, { passive: true });
-    // Parked at the end, the effect below is already pulling us down — leave it.
-    const ro = new ResizeObserver(() => {
-      if (stick.current || !anchor?.isConnected) return;
-      const top = anchor.getBoundingClientRect().top;
-      if (top !== anchorTop) el.scrollTop += top - anchorTop;
-    });
-    ro.observe(content);
-    markAnchor();
-    applyPark();                  // coming back to this tab: the turns are already up
-    return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
-  }, []);
-
-  // Switched chats: arm this session's park (or follow the latest if it was left
-  // at the bottom), then land on it as soon as its transcript renders.
-  useLayoutEffect(() => {
-    const park = sessionId ? parks.current.get(sessionId) ?? null : null;
-    pendingPark.current = park;
-    stick.current = !park;
-    setParked(!park);
-  }, [sessionId]);
-  useLayoutEffect(() => { applyParkRef.current(); }, [turns]);
+    // Touch the transcript mid-restore and it's yours again.
+    el.addEventListener("touchstart", endRestore, { passive: true });
+    el.addEventListener("wheel", endRestore, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", sync);
+      el.removeEventListener("touchstart", endRestore);
+      el.removeEventListener("wheel", endRestore);
+    };
+  }, [endRestore]);
 
   // Follow the latest message as the transcript grows, but only while parked.
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
   useEffect(() => {
     if (stick.current) toBottom();
   }, [eventCount, turns.length, toBottom]);
+
+  // Tail loading: turns always ship whole but only the last few carry events.
+  // Turns before the cut hide behind the LOAD OLDER control (they'd render as
+  // bare bubbles with missing bodies otherwise).
+  const cutIdx = renderFrom ? turns.findIndex((t) => t.id === renderFrom) : 0;
+  const visibleTurns = cutIdx > 0 ? turns.slice(cutIdx) : turns;
+
+  // Measured heights survive unmount so a revisited turn is estimated exactly
+  // right — same "wrong only once" property the cards' content-visibility has.
+  const sizesRef = useRef(new Map<string, number>());
+  // The list sits below the chips/monitor block inside <main>; the virtualizer
+  // needs that offset so row coordinates line up with real scroll positions.
+  const [listOffset, setListOffset] = useState(0);
+  useEffect(() => {
+    const list = listRef.current;
+    if (!scrollEl || !list) return;
+    setListOffset(list.getBoundingClientRect().top
+      - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop);
+  }, [scrollEl, hasOlder, turns.length > 0]);
+
+  const virtualizer = useVirtualizer({
+    count: visibleTurns.length,
+    getScrollElement: () => scrollEl,
+    getItemKey: (i) => visibleTurns[i].id,
+    // ~20px/event: chip folding compresses far below one card per event; the
+    // cache replaces the guess with truth after first mount.
+    // Capped the same way the row renders — a 400-event turn mounts its last
+    // TURN_TAIL, so estimating off the full length would guess ~7x too tall.
+    estimateSize: (i) => sizesRef.current.get(visibleTurns[i].id)
+      ?? Math.min(20000, 80 + Math.min(visibleTurns[i].events.length, TURN_TAIL) * 20),
+    overscan: 2,
+    scrollMargin: listOffset,
+    measureElement: (el) => {
+      const h = el.getBoundingClientRect().height;
+      const k = el.getAttribute("data-key");
+      if (k) sizesRef.current.set(k, h);
+      return h;
+    },
+  });
+  // A row above the viewport re-measuring must not slide what you're reading —
+  // the replacement for the hand-rolled anchor correction this file used to do.
+  // Except while we're scrolling back to a remembered place: the row you land
+  // *inside* measures right after, and this correction reads that growth as
+  // "content above you got taller" and pushes you the whole height of the turn.
+  // During a restore the anchor owns the scroll position.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
+    !restoreTo.current && item.start < (instance.scrollOffset ?? 0);
+
+  keepPlace.current = () => {
+    // Mid-restore the scrolling is ours, not yours — recording it would
+    // overwrite the place we're on the way back to.
+    if (!sessionId || !scrollEl || restoreTo.current) return;
+    const a: Anchor | null = stick.current ? "bottom" : anchorAt(
+      virtualizer.getVirtualItems()
+        .map((v) => ({ key: String(v.key), start: v.start, end: v.end })),
+      scrollEl.scrollTop);
+    if (a) remember(sessionId, a);
+  };
+
+  const applyRestore = () => {
+    const a = restoreTo.current;
+    if (!a || a === "bottom" || !scrollEl) return;
+    const i = visibleTurns.findIndex((t) => t.id === a.turn);
+    if (i < 0) return;
+    const top = virtualizer.getOffsetForIndex(i, "start");
+    if (top) scrollEl.scrollTop = top[0] + a.off;
+  };
+
+  // The other half: once the turns are on screen and the list has been measured
+  // against the scroller (listOffset — row coordinates are wrong without it),
+  // scroll back to the turn you were on. A turn we can't find didn't come with
+  // the tail, and the bottom is the honest answer to "that place is gone".
+  useEffect(() => {
+    const a = restoreTo.current;
+    if (!a || a === "bottom" || loadingSession || !scrollEl || !listOffset
+        || !visibleTurns.length) return;
+    if (!visibleTurns.some((t) => t.id === a.turn)) {
+      endRestore();
+      stick.current = true;
+      setParked(true);
+      toBottom();
+      return;
+    }
+    if (!restoreT.current) restoreT.current = window.setTimeout(endRestore, 2000);
+    applyRestore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyRestore reads refs + this render's rows
+  }, [visibleTurns, loadingSession, scrollEl, listOffset, virtualizer, toBottom, endRestore]);
+
+  // Rows measure after they mount, which re-renders this page and moves the
+  // anchor's pixel — so re-aim on every render until the window closes.
+  useEffect(() => { if (restoreTo.current) applyRestore(); });
+
+  // Let the checkpoints sheet (rendered from the root layout) navigate us.
+  useEffect(() => {
+    transcriptNav.current = {
+      jumpToTurn: (turnId: string) => {
+        const i = visibleTurns.findIndex((t) => t.id === turnId);
+        if (i < 0) return false;
+        virtualizer.scrollToIndex(i, { align: "start" });
+        stick.current = false;
+        setParked(false);
+        return true;
+      },
+    };
+    return () => { transcriptNav.current = null; };
+  }, [visibleTurns, virtualizer, transcriptNav]);
 
   return (
     <div ref={contentRef} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
@@ -205,12 +283,40 @@ function RunPage() {
         </div>
       ))}
 
-      {turns.map((turn, i) => {
+      {hasOlder && (
+        <div className="flex justify-center pb-1">
+          <button
+            type="button"
+            onClick={() => void loadOlder()}
+            disabled={olderLoading}
+            className="rounded-full border border-border px-3 py-1 text-[11px] tracking-[1px] text-[var(--tg-hint)] active:opacity-70 disabled:opacity-50"
+          >
+            {olderLoading ? "LOADING OLDER…" : "▲ LOAD OLDER TURNS"}
+          </button>
+        </div>
+      )}
+
+      {/* Virtualized turn list: only rows near the viewport are mounted. Row
+          wrappers are translateY'd (why the lightbox portals to body); pb-3
+          stands in for the list gap so measureElement counts row spacing. */}
+      <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        {virtualizer.getVirtualItems().map((vi) => {
+        const turn = visibleTurns[vi.index];
+        const i = vi.index;
         const isActive = turn.jobId === activeTurn?.jobId;
         const working = isActive && turn.status === "running" && activeTurn.pending.length === 0;
         return (
-          // id: what a checkpoint scrolls to (CheckpointsSheet).
-          <div key={turn.id} id={`turn-${turn.id}`} className="space-y-2">
+          <div
+            key={vi.key}
+            data-index={vi.index}
+            data-key={turn.id}
+            ref={virtualizer.measureElement}
+            className="pb-3"
+            style={{ position: "absolute", top: 0, left: 0, width: "100%",
+                     transform: `translateY(${vi.start - virtualizer.options.scrollMargin}px)` }}
+          >
+          {/* id: what a checkpoint scrolls to (CheckpointsSheet). */}
+          <div id={`turn-${turn.id}`} className="space-y-2">
             {/* user message */}
             <div className="flex justify-end">
               <div className="max-w-[85%] space-y-1">
@@ -282,7 +388,7 @@ function RunPage() {
                   // "No" is the exception: nothing to do, so it drops the
                   // session's ASK state instead of paying for a turn.
                   onAnswer={
-                    i === turns.length - 1 && turn.status === "done"
+                    i === visibleTurns.length - 1 && turn.status === "done"
                       ? (text) => void (text === "No" && sessionId
                           ? api.dismissAsk(sessionId)
                           : runPrompt(text, []))
@@ -295,8 +401,10 @@ function RunPage() {
               </div>
             )}
           </div>
+          </div>
         );
-      })}
+        })}
+      </div>
 
       {/* Native (VS Code) live session: no bridge turn is "running", so the
           working state comes from the unified status map. */}
@@ -344,7 +452,6 @@ function RunPage() {
             onClick={() => {
               stick.current = true;
               setParked(true);
-              pendingPark.current = null;   // asking for the end outranks a park still waiting on its turn
               toBottom("smooth");
             }}
             aria-label="Scroll to latest"

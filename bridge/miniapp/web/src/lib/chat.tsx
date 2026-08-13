@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +20,7 @@ import type {
   Transcript,
 } from "./api";
 import { usePersistentState } from "./persistentState";
+import { lastOpen, rememberOpen } from "./lastopen";
 import { modelOptions } from "./models";
 
 export interface Attachment {
@@ -90,10 +92,6 @@ function derivePending(events: RunEvent[]): PendingRequest[] {
 function seqOf(e: RunEvent): number | undefined {
   return (e as { seq?: number }).seq;
 }
-
-/** Sessions kept in the switch-back cache. Small on purpose: a heavy transcript
- *  parses to megabytes and the Mini App runs inside Telegram on a phone. */
-const CACHE_MAX = 6;
 
 /** Merge a transcript (full turn list + event delta) into the current turns,
  *  upserting turns by id and appending events by session-level seq. Everything
@@ -209,6 +207,16 @@ export interface ChatContextValue {
   ) => Promise<boolean>;
   /** The open session's transcript hasn't arrived yet (first load or a switch). */
   loadingSession: boolean;
+  /** Older turns exist server-side beyond the loaded tail. */
+  hasOlder: boolean;
+  olderLoading: boolean;
+  loadOlder: () => Promise<void>;
+  /** First turn whose events are loaded — turns before it stay hidden. */
+  renderFrom: string | null;
+  /** Filled by the run route's virtualized transcript; used by jumpToTurn. */
+  transcriptNav: MutableRefObject<{ jumpToTurn: (turnId: string) => boolean } | null>;
+  /** Jump to a turn, auto-loading older pages until it exists. */
+  jumpToTurn: (turnId: string) => Promise<void>;
   newChat: () => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
@@ -245,10 +253,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
   // Turns of the last few sessions, so switching back to one is a paint rather
-  // than a round trip. Bounded because a single heavy transcript is megabytes
-  // and this runs on a phone; least-recently-opened is what falls off.
-  const cache = useRef(new Map<string, { turns: Turn[]; seq: number }>());
   const sessionIdRef = useRef<string | null>(null); // current session, for stale-free reads
+  // Older turns exist beyond what's loaded (tail loading). `from` = first loaded
+  // turn (the render cut), `seq` = oldest loaded event seq (next page's `before`).
+  // A server without tail support never sends the fields, so this stays inert.
+  const [older, setOlder] = useState<{ has: boolean; seq: number | null; from: string | null; loading: boolean }>(
+    { has: false, seq: null, from: null, loading: false });
+  const olderRef = useRef(older);
+  olderRef.current = older;
+  // The run route's virtualized transcript registers its jump surface here so
+  // the checkpoints sheet (rendered from the root layout) can navigate it.
+  const transcriptNav = useRef<{ jumpToTurn: (turnId: string) => boolean } | null>(null);
   // A notification's panel button opens "?s=<session>&p=<repo>" (bridge/telegram.py
   // panel_kb). Held until the project switch lands, so the auto-resolver below
   // can't race it and drop us on the repo's latest session instead.
@@ -286,15 +301,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (sessionId ? runningQuery.data?.status?.[sessionId]?.state : undefined) === "working";
 
   function openSession(id: string) {
-    // A session you've already opened comes back from memory, on this frame:
-    // its turns paint before the fetch is even sent, and the cursor rides along
-    // so that fetch is a delta (the endpoint always returns the turn rows, only
-    // events are cursor-filtered) instead of the whole transcript again.
-    const cached = cache.current.get(id);
-    seqRef.current = cached?.seq ?? 0;
+    seqRef.current = 0;
     sessionIdRef.current = id;
     pinnedRef.current = null;   // an explicit pick outranks the deep link
-    setTurns(cached?.turns ?? []);
+    setTurns([]);
+    setOlder({ has: false, seq: null, from: null, loading: false });
     setSessionId(id);
     setHeld(null);          // a card about the session we're leaving
   }
@@ -316,6 +327,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
   }
 
+  // Fetch the page of turns before the oldest loaded one and prepend it.
+  // mergeDelta does the prepending for free: older turns already exist (empty)
+  // and their events fill in. seqRef is untouched on purpose — an older page's
+  // next_cursor is the live head, not a forward delta marker.
+  async function loadOlder() {
+    const o = olderRef.current;
+    const forId = sessionId;
+    if (!forId || !o.has || o.loading || o.seq == null) return;
+    setOlder({ ...o, loading: true });
+    try {
+      const t = await api.getSession(forId, 0, { tail: 3, before: o.seq });
+      if (sessionIdRef.current !== forId) return;   // switched away mid-flight
+      setTurns((prev) => mergeDelta(prev, t));
+      setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
+                 from: t.tail_from ?? null, loading: false });
+    } catch { setOlder({ ...olderRef.current, loading: false }); }
+  }
+
+  // Jump the transcript to a turn, loading older pages until its row exists —
+  // the checkpoints sheet lists every turn while only the tail is loaded.
+  async function jumpToTurn(turnId: string) {
+    for (let i = 0; i < 200; i++) {               // pages ≫ max observed 34 turns
+      if (transcriptNav.current?.jumpToTurn(turnId)) return;
+      if (!olderRef.current.has || olderRef.current.loading) return;
+      await loadOlder();
+      // A prepend re-renders the transcript; give the nav a frame to rebuild.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+  }
+
   // Cold open from a Telegram notification: land on the session it was about.
   useEffect(() => {
     const q = new URLSearchParams(location.search);
@@ -326,9 +367,38 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     pinnedRef.current = s;             // set last: openSession clears the pin
   }, []);
 
+  // Cold open with no notification to follow: back to the chat you were last in,
+  // its repo included. The resolver below can't do this — it only ever sees the
+  // active project, and the bridge forgets that on restart (see lib/lastopen), so
+  // it would start you somewhere else entirely. Checked against that repo's list
+  // first: a chat deleted since must fall through to the default, not strand us
+  // on a dead id.
+  const [restoring, setRestoring] = useState(() => lastOpen() !== null);
+  useEffect(() => {
+    const was = lastOpen();
+    if (!was || pinnedRef.current) { setRestoring(false); return; }  // a deep link outranks it
+    void (async () => {
+      try {
+        const { sessions: list } = await api.listSessions(was.project);
+        if (list.some((s) => s.id === was.id)) {
+          await openSessionInProject(was.project, was.id);
+          pinnedRef.current = was.id;   // hold the resolver until the repo switch lands
+        }
+      } catch { /* repo gone — the resolver's default stands */ }
+      setRestoring(false);
+    })();
+  }, []);
+
+  // Remember it for that: the brief's repo, not the active one, which lags a
+  // beat behind the session during a switch.
+  useEffect(() => {
+    const proj = sessions.find((s) => s.id === sessionId)?.project ?? project;
+    if (sessionId && proj) rememberOpen(sessionId, proj);
+  }, [sessionId, sessions, project]);
+
   // Resolve the current session for the active project (latest, or create one).
   useEffect(() => {
-    if (!project) return;
+    if (!project || restoring) return;
     let cancelled = false;
     (async () => {
       try {
@@ -361,7 +431,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [project]);
+  }, [project, restoring]);
 
   // Load + live-poll the current session's transcript (session-seq cursor).
   const transcriptQ = useQuery({
@@ -369,13 +439,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     enabled: sessionId !== null,
     queryFn: async () => {
       const forId = sessionId as string;
-      const t = await api.getSession(forId, seqRef.current);
+      // First load asks for the tail only (3 event-bearing turns keeps the
+      // worst measured session's payload ~53KB gzipped); polls stay unwindowed
+      // forward deltas.
+      const first = seqRef.current === 0;
+      const t = await api.getSession(forId, seqRef.current, first ? { tail: 3 } : undefined);
       // A session switch (openSession) resets seqRef/turns and changes the key,
       // but this in-flight fetch for the OLD session must not merge into the new
       // one's list or clobber its cursor. Bail if we've since switched away.
       if (sessionIdRef.current !== forId) return t;
       setTurns((prev) => mergeDelta(prev, t));
       seqRef.current = t.next_cursor;
+      if (first && t.has_older !== undefined)
+        setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
       return t;
     },
     refetchInterval: isRunning || sessionWorking ? 1500 : false,
@@ -386,19 +462,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // empty state rather than spinning forever.
   const loadingSession =
     stateQuery.isLoading || (project !== null && resolving) || transcriptQ.isLoading;
-
-  // Write the open session through to the cache as it grows, so switching away
-  // mid-run and back lands on everything that had arrived. Keyed on the ref, not
-  // the state, so a poll that resolves during a switch can't file the old
-  // session's turns under the new one's id.
-  useEffect(() => {
-    const id = sessionIdRef.current;
-    if (!id || !turns.length) return;
-    const c = cache.current;
-    c.delete(id);                               // re-insert: Map order is the LRU
-    c.set(id, { turns, seq: seqRef.current });
-    for (const k of [...c.keys()].slice(0, c.size - CACHE_MAX)) c.delete(k);
-  }, [turns, sessionId]);
 
   async function addAttachments(files: FileList | null) {
     if (!files) return;
@@ -567,6 +630,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const value: ChatContextValue = {
     turns,
+    hasOlder: older.has,
+    olderLoading: older.loading,
+    loadOlder,
+    renderFrom: older.from,
+    transcriptNav,
+    jumpToTurn,
     draft,
     setDraft,
     draftAttachments,

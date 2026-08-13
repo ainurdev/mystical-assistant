@@ -23,6 +23,10 @@ from bridge.skills_catalog import CATALOG, skill_md
 
 SYSTEM_ROOT = os.path.expanduser("~/.claude/skills")
 MARKER = ".installed-from-catalog"
+# A pulled design system is neither a catalog skill (no upstream URL to diff
+# against) nor hand-written (a re-pull may overwrite it). Its own marker keeps
+# the three apart; line 1 is the design project id, the rest are pulled paths.
+DESIGN_MARKER = ".synced-from-design"
 _MAX_BYTES = 512_000
 _TIMEOUT = 20
 
@@ -55,6 +59,36 @@ def _front_matter(text: str) -> dict:
         if sep and not key.startswith((" ", "\t")):
             out[key.strip()] = val.strip().strip('"').strip("'")
     return out
+
+
+def _design_id(d: str) -> "tuple[bool, str | None]":
+    """(is a pulled design system, which project). Best-effort: a truncated or
+    hand-emptied marker still means the directory is ours. errors="replace"
+    so invalid bytes can't raise UnicodeDecodeError out of a function whose
+    whole job is never raising."""
+    try:
+        with open(os.path.join(d, DESIGN_MARKER), encoding="utf-8", errors="replace") as f:
+            first = f.readline().strip()
+    except OSError:
+        return False, None
+    return True, first or None
+
+
+def _design_paths(d: str) -> "tuple[set | None, str | None]":
+    """The pulled paths a .synced-from-design marker recorded — remove()'s
+    delete authority for a design-sourced directory. None + a reason means
+    the marker can't be trusted to say what's safe to delete: unreadable, or
+    truncated/hand-emptied so it never even got past the project id line.
+    Unlike `_design_id` (best-effort, for display), this is conservative on
+    purpose — it gates a delete, not a label."""
+    try:
+        with open(os.path.join(d, DESIGN_MARKER), encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError as e:
+        return None, str(e)
+    if not lines or not lines[0].strip():
+        return None, "design marker has no project id"
+    return {ln.strip() for ln in lines[1:] if ln.strip()}, None
 
 
 def _fetch(url: str) -> "tuple[str, str]":
@@ -94,6 +128,7 @@ def _scan(root: "str | None", scope: str) -> list:
             fm = {}
         entry = _BY_ID.get(n)
         ours = os.path.isfile(os.path.join(d, MARKER))
+        from_design, design_id = _design_id(d)
         out.append({
             "id": n,
             "name": entry["name"] if (entry and ours) else (fm.get("name") or n),
@@ -101,6 +136,8 @@ def _scan(root: "str | None", scope: str) -> list:
             "scope": scope,
             "category": entry["category"] if (entry and ours) else "other",
             "from_catalog": ours,
+            "from_design": from_design,
+            "design_project": design_id,
         })
     return out
 
@@ -194,23 +231,96 @@ def check_updates(abs_project: "str | None" = None) -> dict:
     }
 
 
+def _remove_design_sourced(d: str) -> "tuple[bool, str]":
+    """Delete a .synced-from-design directory: SKILL.md, the marker, and
+    exactly the paths the marker recorded pulling — pruning directories left
+    empty behind them. A real pull is more than two files (tokens/,
+    guidelines/, assets/…), so unlike the catalog branch this walks the tree
+    rather than requiring an exact two-entry match. Anything on disk the
+    marker doesn't account for is a file the user added since the pull, so
+    this backs off entirely rather than take it with the skill."""
+    recorded, reason = _design_paths(d)
+    if reason:
+        return False, reason
+    # Every directory a recorded path passes through, at every depth — the
+    # only directories this delete is allowed to find on disk. Built from
+    # `recorded` rather than from what currently exists, so a dir emptied by
+    # an earlier, partially-failed sweep still counts as ours on retry.
+    recorded_dirs = set()
+    for p in recorded:
+        parts = p.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            recorded_dirs.add("/".join(parts[:i]))
+    try:
+        actual = set()
+        for dirpath, dirnames, filenames in os.walk(d):
+            for dn in dirnames:
+                # followlinks=False means a symlinked directory is never
+                # descended into, so anything inside it can never land in
+                # `actual` no matter what it is — refuse before looking, not
+                # after failing to notice.
+                if os.path.islink(os.path.join(dirpath, dn)):
+                    return False, "directory has other files"
+            rel_dir = os.path.relpath(dirpath, d)
+            if rel_dir != "." and rel_dir not in recorded_dirs:
+                # a directory no recorded path ever routed a pull through —
+                # the user's own, empty or not. Same back-off as an
+                # unrecorded file: refuse rather than silently rmdir it.
+                return False, "directory has other files"
+            for fn in filenames:
+                actual.add(os.path.relpath(os.path.join(dirpath, fn), d))
+        if actual - recorded - {"SKILL.md", DESIGN_MARKER}:
+            return False, "directory has other files"
+        # Nothing about a filesystem delete is atomic, so this chases
+        # retryability instead: pulled content goes first, in a fixed sorted
+        # order (not set-iteration order, which is hash-randomized and would
+        # make a mid-sweep failure untestable); SKILL.md and the marker go
+        # last. If any content delete fails, the identity files are never
+        # even attempted, so the directory still reads as design-sourced and
+        # the same remove() call can just be retried.
+        identity = [p for p in ("SKILL.md", DESIGN_MARKER) if p in actual]
+        for rel in sorted(actual.difference(identity)):
+            os.remove(os.path.join(d, rel))
+        for rel in identity:
+            os.remove(os.path.join(d, rel))
+        for dirpath, _dirnames, _filenames in os.walk(d, topdown=False):
+            if not os.listdir(dirpath):
+                os.rmdir(dirpath)
+    except OSError as e:
+        return False, str(e)
+    return True, ""
+
+
 def remove(skill_id: str, scope: str, abs_project: "str | None" = None) -> "tuple[bool, str]":
-    """Uninstall a catalog skill. Refuses anything we did not install: the
-    directory must carry the provenance MARKER and hold nothing else, so an
-    edited or hand-written skill is never deleted from the UI."""
+    """Uninstall a skill the bridge itself put there: one pulled from the
+    catalog (MARKER) or pulled from a design project (DESIGN_MARKER). Refuses
+    anything else: the directory must carry one of those two provenance
+    markers, so an edited or hand-written skill is never deleted from the UI.
+    A catalog directory must hold nothing but SKILL.md + MARKER; a design
+    directory may hold nested content too, but only exactly what its marker
+    recorded pulling — see `_remove_design_sourced`."""
     root = _root(scope, abs_project)
-    if skill_id not in _BY_ID:
-        return False, "not a catalog skill"
     if root is None:
         return False, "invalid scope"
+    if os.path.basename(skill_id) != skill_id:
+        # defense-in-depth: the marker gate below already requires disk
+        # state matching the id, but a bare id (no separators) is one less
+        # thing that gate has to be trusted alone to catch.
+        return False, "bad id"
     d = os.path.join(root, skill_id)
-    if not os.path.isfile(os.path.join(d, MARKER)):
+    if os.path.isfile(os.path.join(d, MARKER)):
+        if skill_id not in _BY_ID:
+            return False, "not a catalog skill"
+        marker = MARKER
+    elif os.path.isfile(os.path.join(d, DESIGN_MARKER)):
+        return _remove_design_sourced(d)
+    else:
         return False, "not installed from the catalog"
     try:
-        if set(os.listdir(d)) != {"SKILL.md", MARKER}:
+        if set(os.listdir(d)) != {"SKILL.md", marker}:
             return False, "directory has other files"
         os.remove(os.path.join(d, "SKILL.md"))
-        os.remove(os.path.join(d, MARKER))
+        os.remove(os.path.join(d, marker))
         os.rmdir(d)
     except OSError as e:
         return False, str(e)
