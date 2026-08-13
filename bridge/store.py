@@ -743,13 +743,18 @@ def import_transcript(session_id: str, turns: list[dict], events: list[dict]) ->
             c.execute("COMMIT")
             return False
         for t in turns:
+            tok = t.get("tokens") or {}
             c.execute(
                 "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-                "elapsed,started,model) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "elapsed,started,model,tok_in,tok_out,tok_cache_w,tok_cache_r) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (t["id"], session_id, t["seq"], t.get("prompt", ""),
                  json.dumps(t.get("attachments") or []), t.get("status", "done"),
                  t.get("cost"), t.get("elapsed"), t.get("started") or time.time(),
-                 t.get("model")))
+                 t.get("model"),
+                 # NULL, not 0, when the transcript never reported usage.
+                 tok.get("in"), tok.get("out"),
+                 tok.get("cache_w"), tok.get("cache_r")))
         for e in events:
             payload = {k: v for k, v in e.items() if k not in ("seq", "turn_id")}
             c.execute("INSERT INTO events(session_id,turn_id,seq,type,payload,ts) "
@@ -837,12 +842,22 @@ def relocate(session_id: str, new_cwd: str) -> int:
 def history(chat_id: int, include_archived: bool = False,
             max_age_secs: float | None = LIST_MAX_AGE_SECS) -> list[dict]:
     """Per-repo session rollup: one row per session with aggregates joined from
-    its turns — turn_count, total_cost, last_activity, and distinct models used.
-    Newest activity first."""
+    its turns — turn_count, total_elapsed, total_tokens, last_activity, and the
+    distinct models used. Newest activity first.
+
+    Time and tokens rather than dollars: 9f612a4 removed the dollar readouts
+    because the CLI prices these runs off API list rates while they go through a
+    subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
+    a session that predates the columns is unknown, not free."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
          "s.lifecycle, "
          "COUNT(t.id) AS turn_count, "
-         "COALESCE(SUM(t.cost), 0) AS total_cost, "
+         "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
+         "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
+         "  + COALESCE(t.tok_cache_w,0) + COALESCE(t.tok_cache_r,0)) "
+         "  FILTER (WHERE t.tok_in IS NOT NULL OR t.tok_out IS NOT NULL "
+         "     OR t.tok_cache_w IS NOT NULL OR t.tok_cache_r IS NOT NULL) "
+         "  AS total_tokens, "
          "COALESCE(MAX(t.started), s.updated) AS last_activity, "
          "GROUP_CONCAT(DISTINCT t.model) AS models "
          "FROM sessions s LEFT JOIN turns t ON t.session_id = s.id "

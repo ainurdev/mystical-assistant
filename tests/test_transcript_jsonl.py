@@ -371,3 +371,36 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+USAGE_FIXTURE = [
+    {"type": "user", "sessionId": "V", "uuid": "u1",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "message": {"role": "user", "content": "do a thing"}},
+    {"type": "assistant", "sessionId": "V", "uuid": "a1",
+     "timestamp": "2026-01-01T00:00:01Z",
+     "message": {"role": "assistant", "model": "claude-opus-5",
+                 "content": [{"type": "text", "text": "part one"}],
+                 "usage": {"input_tokens": 100, "output_tokens": 10,
+                           "cache_creation_input_tokens": 3,
+                           "cache_read_input_tokens": 4}}},
+    {"type": "assistant", "sessionId": "V", "uuid": "a2",
+     "timestamp": "2026-01-01T00:00:02Z",
+     "message": {"role": "assistant", "model": "claude-opus-5",
+                 "content": [{"type": "text", "text": "part two"}],
+                 "usage": {"input_tokens": 200, "output_tokens": 20,
+                           "cache_creation_input_tokens": 1,
+                           "cache_read_input_tokens": 2}}},
+]
+
+
+def test_turn_carries_its_summed_token_usage():
+    """An adopted session already accumulates these four; they belong on the turn
+    so the store can keep them, not only folded into a dollar estimate."""
+    turn = T.parse_jsonl(_write(USAGE_FIXTURE, "V.jsonl"))["turns"][0]
+    assert turn["tokens"] == {"in": 300, "out": 30, "cache_w": 4, "cache_r": 6}
+
+
+def test_turn_without_usage_reports_no_tokens():
+    turn = T.parse_jsonl(_write(FIXTURE))["turns"][0]
+    assert turn.get("tokens") is None

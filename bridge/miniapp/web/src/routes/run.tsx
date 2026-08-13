@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoute } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 import { rootRoute } from "./root";
 import { useChat } from "../lib/chat";
 import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
+import { parkAt, restorePark, type Park } from "../lib/park";
 import { RunStream } from "../components/RunStream";
 import { Composer } from "../components/Composer";
 import { Banner, Spinner } from "../components/ui";
@@ -28,6 +29,17 @@ function RunPage() {
   const stick = useRef(true);
   const [parked, setParked] = useState(true);
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
+  // Where each session was last left, so switching chats — or stepping over to
+  // FILES and back — returns you to what you were reading instead of the end of
+  // it. No entry means it was parked at the bottom, which still follows.
+  const parks = useRef(new Map<string, Park>());
+  const pendingPark = useRef<Park | null>(null);
+  const applyParkRef = useRef<() => void>(() => {});
+  // The session whose turns are on screen. The id changes a render before the
+  // transcript does (openSession empties it), and parking that empty gap would
+  // wipe the very park we're about to land on.
+  const shown = useRef<string | null>(null);
+  shown.current = turns.length ? sessionId : null;
 
   // Scroll <main> itself rather than scrollIntoView-ing the end marker: that
   // parks the marker at the scrollport's bottom edge — which is *behind* the
@@ -60,7 +72,25 @@ function RunPage() {
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 1);
       anchor = hit && el.contains(hit) ? hit : null;
       anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
+      // The same anchor, kept per session: where you leave one is where you come
+      // back to it.
+      const sid = shown.current;
+      if (!sid) return;
+      const park = stick.current ? null : parkAt(el, anchor);
+      if (park) parks.current.set(sid, park);
+      else parks.current.delete(sid);
     };
+    // Land on the park of the session we've switched to, the moment its turns
+    // render (the layout effect below) — same pass the DOM changed in, so
+    // nothing paints the bottom of a transcript you weren't reading.
+    const applyPark = () => {
+      const park = pendingPark.current;
+      if (!park || !restorePark(el, park)) return;   // its turn hasn't rendered yet
+      pendingPark.current = null;
+      markAnchor();
+      prev = el.scrollTop;
+    };
+    applyParkRef.current = applyPark;
     const sync = () => {
       stick.current = stickToBottom(el, prev);
       setParked(stick.current);
@@ -76,8 +106,19 @@ function RunPage() {
     });
     ro.observe(content);
     markAnchor();
+    applyPark();                  // coming back to this tab: the turns are already up
     return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
   }, []);
+
+  // Switched chats: arm this session's park (or follow the latest if it was left
+  // at the bottom), then land on it as soon as its transcript renders.
+  useLayoutEffect(() => {
+    const park = sessionId ? parks.current.get(sessionId) ?? null : null;
+    pendingPark.current = park;
+    stick.current = !park;
+    setParked(!park);
+  }, [sessionId]);
+  useLayoutEffect(() => { applyParkRef.current(); }, [turns]);
 
   // Follow the latest message as the transcript grows, but only while parked.
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);

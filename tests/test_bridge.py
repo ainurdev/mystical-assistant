@@ -712,7 +712,7 @@ def test_store_history_aggregates():
     store.finish_turn("h2", "done", 0.03, 7)
     row = next(r for r in store.history(557) if r["id"] == s["id"])
     assert row["turn_count"] == 2
-    assert abs(row["total_cost"] - 0.05) < 1e-9
+    assert row["total_elapsed"] == 12                     # time, not a list-price guess
     assert row["models"] == ["opus", "sonnet"]            # sorted, distinct
     assert row["project"] == "hrepo"
     assert row["last_activity"] >= row["created"]
@@ -729,7 +729,7 @@ def test_store_history_excludes_archived_by_default():
 def test_store_history_session_with_no_turns():
     s = store.create_session(560, "empty")
     row = next(r for r in store.history(560) if r["id"] == s["id"])
-    assert row["turn_count"] == 0 and row["total_cost"] == 0 and row["models"] == []
+    assert row["turn_count"] == 0 and row["total_elapsed"] == 0 and row["models"] == []
     assert row["last_activity"] == s["updated"]            # falls back to session.updated
 
 

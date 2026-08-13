@@ -531,6 +531,10 @@ def _parse_full(path: str) -> dict:
         last_ts = cur.pop("_last_ts", None)
         if seen and usage:
             cur["cost"] = _cost_from_usage(cur.get("model"), usage)
+            # Keep the counts themselves, not only the price guessed from them —
+            # an adopted session accounts the same way a bridge-run one does.
+            cur["tokens"] = {"in": usage["in"], "out": usage["out"],
+                             "cache_w": usage["cw"], "cache_r": usage["cr"]}
         if last_ts and cur["started"]:
             cur["elapsed"] = max(0, int(last_ts - cur["started"]))
     return {"turns": turns, "events": events, "next_cursor": state["seq"]}

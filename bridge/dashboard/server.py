@@ -27,7 +27,8 @@ from urllib.parse import parse_qs, urlparse
 
 import re
 
-from bridge import (agents, browser, config, devserver, fmt, git, github, graphmap,
+from bridge import (agents, attribution, browser, config, devserver, fmt, git,
+                    github, graphmap,
                     models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, runner, selfupdate,
                     share,
@@ -308,6 +309,14 @@ class Handler(BaseHTTPRequestHandler):
             # stay out of the lists; their transcripts remain viewable by id.
             rows = [r for r in rows if browser.project_exists(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
+        # Before the transcript route below, which would otherwise swallow this
+        # (it takes the first path segment and ignores the rest).
+        if path.startswith("/local/sessions/") and path.endswith("/breakdown"):
+            sid = path[len("/local/sessions/"):-len("/breakdown")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json(attribution.breakdown(sid))
         if path.startswith("/local/sessions/"):
             sid = path[len("/local/sessions/"):].split("/")[0]
             s = store.get_session(sid)

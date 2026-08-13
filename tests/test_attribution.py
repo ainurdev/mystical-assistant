@@ -251,3 +251,84 @@ def test_tool_done_with_missing_ms_contributes_nothing_but_still_counts():
 
     assert read["calls"] == 1
     assert read["union_s"] == 0
+
+
+# --- capture: the runner keeps what already flows past it --------------------
+# runner._ctx_of reads `usage` on every assistant message and keeps only the
+# window fill. These cover the other half: spend, which is the sum.
+
+def test_runner_sums_usage_across_a_turns_messages():
+    """The _ctx_of docstring draws the distinction: the last message's figure is
+    window fill, the sum across messages is spend. This stores spend."""
+    from bridge import runner
+    job = runner.Job("j-tok", 555, "s-tok")
+
+    for _ in range(2):
+        runner._handle_event(job, {"type": "assistant", "message": {
+            "usage": {"input_tokens": 100, "output_tokens": 10,
+                      "cache_creation_input_tokens": 5,
+                      "cache_read_input_tokens": 7},
+            "content": []}})
+
+    assert job.tokens == {"in": 200, "out": 20, "cache_w": 10, "cache_r": 14}
+
+
+def test_runner_captures_output_tokens_which_the_window_gauge_drops():
+    from bridge import runner
+    job = runner.Job("j-tok2", 555, "s-tok2")
+
+    runner._handle_event(job, {"type": "assistant", "message": {
+        "usage": {"input_tokens": 1, "output_tokens": 999}, "content": []}})
+
+    assert job.tokens["out"] == 999
+
+
+def test_runner_reports_no_tokens_when_the_stream_never_had_usage():
+    """No usage seen must stay None so the turn's columns stay NULL — unknown,
+    not zero."""
+    from bridge import runner
+    job = runner.Job("j-tok3", 555, "s-tok3")
+
+    runner._handle_event(job, {"type": "assistant",
+                               "message": {"content": []}})
+
+    assert job.tokens is None
+
+
+def test_adopted_transcript_tokens_reach_the_breakdown():
+    """An adopted native session must account the same way a bridge-run one does."""
+    sid = _session()
+    store.import_transcript(sid, [{"id": f"{sid}:imported", "seq": 0,
+                                   "prompt": "p", "status": "done", "elapsed": 5,
+                                   "started": 1000.0,
+                                   "tokens": {"in": 11, "out": 22,
+                                              "cache_w": 33, "cache_r": 44}}], [])
+
+    assert attribution.breakdown(sid)["tokens"] == {
+        "in": 11, "out": 22, "cache_w": 33, "cache_r": 44}
+
+
+# --- History rollup ----------------------------------------------------------
+
+def test_history_row_reports_elapsed_and_tokens_instead_of_a_dollar_figure():
+    """9f612a4 removed the dollar readout but left SUM(t.cost) being computed for
+    nobody. The row now carries the two numbers that are real."""
+    sid = _session(chat_id=556)
+    tid = _turn(sid, "t1", elapsed=42)
+    store.set_turn_tokens(tid, {"in": 5, "out": 6, "cache_w": 7, "cache_r": 8})
+
+    row = next(r for r in store.history(556) if r["id"] == sid)
+
+    assert row["total_elapsed"] == 42
+    assert row["total_tokens"] == 26
+    assert "total_cost" not in row
+
+
+def test_history_row_reports_unknown_tokens_as_none():
+    sid = _session(chat_id=557)
+    _turn(sid, "t1", elapsed=9)
+
+    row = next(r for r in store.history(557) if r["id"] == sid)
+
+    assert row["total_elapsed"] == 9
+    assert row["total_tokens"] is None

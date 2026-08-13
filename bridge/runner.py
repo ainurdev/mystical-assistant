@@ -457,6 +457,10 @@ class Job:
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
         self.texts: list[str] = []       # assistant text this turn
         self.ctx_tokens: int | None = None  # window fill on the last request (see _ctx_of)
+        # What the turn spent: the same four counters, summed instead of last-wins.
+        # None until a message actually reports usage, so a stream that never did
+        # leaves the columns NULL — unknown rather than free.
+        self.tokens: dict | None = None
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
         self.open_tools: dict[str, tuple[str, float]] = {}
         self._interrupt_timer: threading.Timer | None = None
@@ -1133,6 +1137,23 @@ def _ctx_of(usage: dict) -> "int | None":
     return n or None
 
 
+_USAGE_KEYS = (("in", "input_tokens"), ("out", "output_tokens"),
+               ("cache_w", "cache_creation_input_tokens"),
+               ("cache_r", "cache_read_input_tokens"))
+
+
+def _add_usage(job: "Job", usage: dict) -> None:
+    """Add one message's usage to the turn's running total. Summed, not
+    last-wins: the last message's figure is how full the window was, the sum is
+    what the turn spent. Both are wanted, for different readouts."""
+    if not isinstance(usage, dict) or not any(usage.get(k) for _, k in _USAGE_KEYS):
+        return
+    acc = job.tokens or {key: 0 for key, _ in _USAGE_KEYS}
+    for key, src in _USAGE_KEYS:
+        acc[key] += usage.get(src) or 0
+    job.tokens = acc
+
+
 # Longest log line kept — a debugging window rather than an archive (see
 # inspector.MAX_ENTRIES).
 _LOG_MAX = 4000
@@ -1176,9 +1197,11 @@ def _handle_event(job: Job, d: dict):
         if job.store_session_id:
             store.set_claude_session_id(job.store_session_id, sid)
     if t == "assistant":
-        ctx = _ctx_of(d.get("message", {}).get("usage") or {})
+        usage = d.get("message", {}).get("usage") or {}
+        ctx = _ctx_of(usage)
         if ctx:
             job.ctx_tokens = ctx      # last one wins; persisted at turn end
+        _add_usage(job, usage)        # and the running total; also at turn end
         for b in d.get("message", {}).get("content", []):
             if not isinstance(b, dict):
                 continue
@@ -1482,6 +1505,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 # Also on a killed/timed-out turn: the last request's fill is still
                 # what the next one resumes into.
                 store.set_ctx_tokens(job.store_session_id, job.ctx_tokens)
+            # Also on a killed turn: what it spent before dying was still spent,
+            # and a capped turn is exactly the one worth accounting for.
+            store.set_turn_tokens(job.id, job.tokens)
             if not restart_killed:   # else leave 'running' for boot recovery to resume
                 store.finish_turn(job.id, job.status, job.cost, job.elapsed)
         job.clear_pending()

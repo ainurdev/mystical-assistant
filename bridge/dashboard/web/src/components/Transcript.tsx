@@ -1,4 +1,4 @@
-import { useState, type RefObject } from "react";
+import { useState } from "react";
 import { api, type AnswerSelection } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
@@ -124,7 +124,6 @@ export function Transcript({
   onRespond,
   liveTurns,
   trailingWorking,
-  lastPromptRef,
   hud,
   onRunCommand,
   onQuote,
@@ -136,7 +135,6 @@ export function Transcript({
   onRespond: Respond;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
-  lastPromptRef?: RefObject<HTMLDivElement | null>;
   hud?: HudSettings;
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
@@ -160,9 +158,9 @@ export function Transcript({
         const working = isActive && turn.status === "running" && turn.pending.length === 0;
         const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
         return (
-          <div key={turn.id} id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-2">
+          <div key={turn.id} id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[44px]">
             {turn.prompt && (
-              <div ref={isLast ? lastPromptRef : undefined}>
+              <div data-prompt-idx={i}>
                 <PromptBubble text={turn.prompt} />
               </div>
             )}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   FileDiff, FolderGit2, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
 } from "lucide-react";
@@ -45,6 +45,7 @@ import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
+import { parkAt, restorePark, type Park } from "./lib/park";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -286,6 +287,15 @@ export function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  // Where each session was last left. Switching away and back used to dump you
+  // at the end of a transcript you were reading the middle of; now every scroll
+  // records the turn at the top edge, and reopening lands back on it. No entry
+  // means it was parked at the bottom — that one still follows the latest.
+  const parks = useRef(new Map<string, Park>());
+  // The park to land on once the session we're switching to has rendered.
+  const pendingPark = useRef<Park | null>(null);
+  // Set by the scroll effect, which owns the scrollport and its anchor.
+  const applyParkRef = useRef<() => void>(() => {});
   // A smooth scroll of ours is in flight — the scroll listener must not read its
   // downward travel as a gesture (mid-glide we're still far from the bottom,
   // which would drop stick and flash the jump button).
@@ -434,8 +444,12 @@ export function App() {
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
     seqRef.current = 0;
-    stickRef.current = true;
-    setAtBottom(true);
+    // Back to where you left this one, if you left it somewhere: only a session
+    // parked at the bottom (or never opened) starts out following the latest.
+    const park = parks.current.get(id) ?? null;
+    pendingPark.current = park;
+    stickRef.current = !park;
+    setAtBottom(!park);
     staleTurns.current = true;
     setLoadingSession(true);
     setSessionId(id);
@@ -450,6 +464,10 @@ export function App() {
   }
 
   // --- polls (unchanged data flow) ---
+  // The transcript just rendered: if it's one we're switching back to, put the
+  // view where it was left before anything gets a chance to paint the bottom.
+  useLayoutEffect(() => { applyParkRef.current(); }, [turns]);
+
   useEffect(() => {
     let live = true;
     const tick = async () => {
@@ -568,7 +586,26 @@ export function App() {
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 1);
       anchor = hit && el.contains(hit) ? hit : null;
       anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
+      // The same anchor, kept per session: where you leave one is where you come
+      // back to it. While staleTurns is set the turns on screen still belong to
+      // the session you left, so there's nothing here to record yet.
+      const sid = staleTurns.current ? null : sessionIdRef.current;
+      if (!sid) return;
+      const park = stickRef.current ? null : parkAt(el, anchor);
+      if (park) parks.current.set(sid, park);
+      else parks.current.delete(sid);
     };
+    // A session you're coming back to lands on its park the moment its turns
+    // render — from the layout effect below, so it happens in the same pass the
+    // DOM changed in, before a clamp or a resize can move us somewhere else.
+    const applyPark = () => {
+      const park = pendingPark.current;
+      if (!park || !restorePark(el, park)) return;   // its turn hasn't rendered yet
+      pendingPark.current = null;
+      markAnchor();
+      prev = el.scrollTop;
+    };
+    applyParkRef.current = applyPark;
     const sync = () => {
       // Keep `prev` fresh through a glide, or the first flick up afterwards
       // still reads as "scrolled down" against a stale mark.
@@ -605,6 +642,7 @@ export function App() {
     });
     ro.observe(content);
     markAnchor();                   // a view you come back to unstuck resizes before you scroll
+    applyPark();                    // ...and the transcript may already be rendered
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     return () => { el.removeEventListener("scroll", sync); ro.disconnect(); };
   }, [view, showDashboard]);

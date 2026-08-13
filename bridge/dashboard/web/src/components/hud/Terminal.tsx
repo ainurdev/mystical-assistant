@@ -9,6 +9,10 @@ import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 
+/** Height of the sticky prompt bar. The observer insets the scroller's top by
+ *  it, and `scroll-mt-[44px]` on the transcript's anchors clears it. */
+const PEEK_H = 36;
+
 const FRESH_QUOTES = [
   "the prompt is blank, the potential is not.",
   "speak, and I shall translate intent into diffs.",
@@ -172,30 +176,52 @@ export function Terminal({
   const tint = projectTint(sessionProject);
   const projectLabel = basename(sessionProject);
   const empty = view === "chat" && turns.length === 0;
-  // The most recent prompt, shown beneath the title in the header (clamped to 2 lines).
-  const lastPrompt = turns.length ? (turns[turns.length - 1].prompt || "").trim() : "";
 
-  // The sticky "LAST" peek surfaces only once the real prompt has scrolled up out
-  // of view — while it's on screen the peek would just duplicate what you can see.
-  const lastPromptRef = useRef<HTMLDivElement | null>(null);
-  const [peek, setPeek] = useState(false);
-  const lastTurnId = turns.length ? turns[turns.length - 1].id : null;
+  // The sticky peek names the turn you are *inside*: the last prompt that has
+  // slid under the bar, not the session's last one. Two things fall out of that.
+  // Scrolling back through an old turn peeks that turn's prompt, so the bar is a
+  // section header rather than a permanent footnote about the tail. And at the
+  // top of the transcript nothing has passed yet, so there is no bar to bury the
+  // first message under. The observer's top margin is the bar's own height, so a
+  // prompt counts as passed exactly when the bar starts covering it.
+  const [peekIdx, setPeekIdx] = useState<number | null>(null);
   useEffect(() => {
-    setPeek(false);
     const root = scrollRef.current;
-    const target = lastPromptRef.current;
-    if (view !== "chat" || empty || !root || !target) return;
+    if (view !== "chat" || empty || !root) { setPeekIdx(null); return; }
+    const els = Array.from(root.querySelectorAll<HTMLElement>("[data-prompt-idx]"));
+    if (!els.length) { setPeekIdx(null); return; }
+    // Deliberately not cleared up front: the observer reports every element on
+    // its first callback, so re-observing after a new turn re-derives the same
+    // answer without blinking the bar off and on in between.
+    const passed = new Set<number>();
     const io = new IntersectionObserver(
-      ([e]) => {
-        const rootTop = e.rootBounds?.top ?? root.getBoundingClientRect().top;
-        // Fully out of view AND above the top edge → scrolled past upward.
-        setPeek(!e.isIntersecting && e.boundingClientRect.top < rootTop);
+      (entries) => {
+        for (const e of entries) {
+          const idx = Number((e.target as HTMLElement).dataset.promptIdx);
+          const rootTop = e.rootBounds?.top ?? root.getBoundingClientRect().top;
+          // Out of the (inset) view AND above it → gone under the bar.
+          if (!e.isIntersecting && e.boundingClientRect.top < rootTop) passed.add(idx);
+          else passed.delete(idx);
+        }
+        setPeekIdx(passed.size ? Math.max(...passed) : null);
       },
-      { root, threshold: 0 },
+      { root, rootMargin: `-${PEEK_H}px 0px 0px 0px`, threshold: 0 },
     );
-    io.observe(target);
+    els.forEach((el) => io.observe(el));
     return () => io.disconnect();
-  }, [scrollRef, view, empty, lastTurnId]);
+  }, [scrollRef, view, empty, turns.length]);
+
+  // What the bar says. Held past the point the bar hides so leaving the top of a
+  // turn is a fade-out, not a blank bar sliding away.
+  const held = useRef<{ text: string; label: string } | null>(null);
+  const peeked = peekIdx !== null ? turns[peekIdx] : null;
+  if (peeked?.prompt?.trim()) {
+    held.current = {
+      text: peeked.prompt.trim(),
+      label: peekIdx === turns.length - 1 ? "LAST" : `${(peekIdx ?? 0) + 1}/${turns.length}`,
+    };
+  }
+  const showPeek = !empty && peekIdx !== null && !!held.current;
 
   // Session swap: the session you left stays on screen until the new transcript
   // lands (App holds its turns), then the new one fades up in its place. Fires on
@@ -274,7 +300,7 @@ export function Terminal({
                 ) : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} lastPromptRef={lastPromptRef} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} />
+                  <Transcript turns={turns} activeId={activeId} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} />
                 )}
               </div>
             </div>
@@ -282,11 +308,21 @@ export function Terminal({
                 to the content the instant it toggled, so the first scroll down from
                 the top lurched everything you were reading (and back up on the way
                 out). An absolute layer costs the scroll range nothing. */}
-            {lastPrompt && !empty && peek && (
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", padding: "9px 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "flex-start", gap: 9 }}>
-                <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", marginTop: 3 }}>LAST</span>
-                <span style={{ color: "var(--purple)", flex: "none", marginTop: 2, fontSize: "var(--t12)" }}>~ ❯</span>
-                <span style={{ color: "var(--txh)", fontSize: "var(--t12)", lineHeight: 1.5, minWidth: 0, flex: 1, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }}>{lastPrompt}</span>
+            {/* Stays mounted and fades: mounting it on the crossing popped a
+                bar into place mid-scroll. One line tall, always — a fixed height
+                is what lets the observer margin and the anchors' scroll-margin
+                agree on where it ends. */}
+            {!empty && (
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", height: PEEK_H, boxSizing: "border-box", padding: "0 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "center", gap: 9, backdropFilter: "blur(3px)", opacity: showPeek ? 1 : 0, transform: showPeek ? "none" : "translateY(-7px)", visibility: showPeek ? "visible" : "hidden", transition: "opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility .26s" }}>
+                {held.current && (
+                  // Keyed on the text so moving to another turn crossfades the
+                  // line instead of swapping it under you.
+                  <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
+                    <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", fontVariantNumeric: "tabular-nums" }}>{held.current.label}</span>
+                    <span style={{ color: "var(--purple)", flex: "none", fontSize: "var(--t12)" }}>~ ❯</span>
+                    <span style={{ color: "var(--txh)", fontSize: "var(--t12)", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{held.current.text}</span>
+                  </div>
+                )}
               </div>
             )}
             {!empty && <ScrollRail turns={turns} scrollRef={scrollRef} />}
