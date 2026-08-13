@@ -3,13 +3,14 @@ import { SquarePen } from "lucide-react";
 import { ChatProvider, useChat } from "../lib/chat";
 import { ChatSwitcher } from "../components/ChatSwitcher";
 import { CheckpointsButton } from "../components/CheckpointsSheet";
+import { SpendButton } from "../components/SpendSheet";
 import { TabBar } from "../components/TabBar";
 
 /** The chat's own header: who you're talking to (ChatSwitcher), the marks in
  *  this conversation (checkpoints), and a fresh start. The other tabs title
  *  themselves — a shared bar would just repeat what the tab already says. */
 function ChatHeader() {
-  const { newChat, isRunning } = useChat();
+  const { newChat, isRunning, sessionId } = useChat();
   return (
     // z-30 beats the fixed composer's z-10: the chat sheet renders inside this
     // header, so its own z-50 is scoped to whatever this row wins.
@@ -17,6 +18,7 @@ function ChatHeader() {
       <div className="flex items-center gap-1">
         <ChatSwitcher />
         <CheckpointsButton />
+        <SpendButton sessionId={sessionId} running={isRunning} />
         <button
           onClick={() => void newChat()}
           disabled={isRunning}

@@ -22,6 +22,19 @@ function originLabel(o?: string | null): string | null {
 /** Full-width history: one flat list of every session, most-recent first, each
  *  row labeled with the project it belongs to. Clicking a session resumes it
  *  (onOpen switches the active project first). */
+/** Wall clock a session spent, compact. Time and tokens replaced the dollar
+ *  figure here in 9f612a4 — the CLI prices runs off API list rates while these
+ *  go through a subscription, so the dollars meant nothing. */
+function dur(s: number): string {
+  if (s < 90) return `${Math.round(s)}s`;
+  if (s < 5400) return `${Math.round(s / 60)}m`;
+  return `${(s / 3600).toFixed(1)}h`;
+}
+
+function tok(n: number): string {
+  return n < 1000 ? `${n} tok` : n < 1_000_000 ? `${(n / 1000).toFixed(0)}k tok` : `${(n / 1_000_000).toFixed(1)}M tok`;
+}
+
 export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }) {
   const [sessions, setSessions] = useState<EnrichedSession[]>([]);
   const [running, setRunning] = useState<Set<string>>(new Set());
@@ -153,6 +166,8 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
                 </span>
                 <span className="truncate">
                   · {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"}
+                  {s.total_elapsed > 0 ? ` · ${dur(s.total_elapsed)}` : ""}
+                  {s.total_tokens ? ` · ${tok(s.total_tokens)}` : ""}
                   {s.models.length ? ` · ${s.models.join(", ")}` : ""} · {ago(s.last_activity)}
                 </span>
               </div>

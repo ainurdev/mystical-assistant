@@ -1000,6 +1000,7 @@ export const RunStream = memo(function RunStream({
   onRespond,
   animate = false,
   turnId = "",
+  tokens = null,
   openResults = false,
   onRunCommand,
   onQuote,
@@ -1012,6 +1013,8 @@ export const RunStream = memo(function RunStream({
   onRespond?: RespondFn;
   animate?: boolean;
   turnId?: string;
+  /** This turn's token spend; null = never reported (unknown, not free). */
+  tokens?: number | null;
   openResults?: boolean;
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
@@ -1225,6 +1228,7 @@ export const RunStream = memo(function RunStream({
                 key={i}
                 result={event.result}
                 elapsed={event.elapsed}
+                tokens={tokens}
                 isError={event.is_error}
                 animate={animate}
                 idKey={`${turnId}:${i}`}
@@ -1377,6 +1381,7 @@ const RESULT_FOLD_LINES = 30;
 function FinalResult({
   result,
   elapsed,
+  tokens,
   isError,
   animate,
   idKey,
@@ -1386,6 +1391,7 @@ function FinalResult({
 }: {
   result: string;
   elapsed?: number;
+  tokens?: number | null;
   isError?: boolean;
   animate: boolean;
   idKey: string;
@@ -1421,6 +1427,11 @@ function FinalResult({
         <span className="ml-auto flex items-center gap-2 tracking-[1px] text-muted-2">
           {typeof elapsed === "number" && elapsed > 0 && (
             <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
+          )}
+          {typeof tokens === "number" && tokens > 0 && (
+            <span title="tokens this turn spent">
+              {tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}K`} TOK
+            </span>
           )}
         </span>
         <span className="flex-none opacity-0 transition-opacity group-focus-within/res:opacity-100 group-hover/res:opacity-100">

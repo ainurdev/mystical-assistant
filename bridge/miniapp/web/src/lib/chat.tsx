@@ -15,6 +15,7 @@ import type {
   PendingRequest,
   RunEvent,
   SessionBrief,
+  StoreTurn,
   Transcript,
 } from "./api";
 import { usePersistentState } from "./persistentState";
@@ -37,6 +38,16 @@ export interface Turn {
   // null/undefined = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
   runtime?: string | null;
   started?: number; // epoch seconds — the run monitor's clock
+  // Total tokens this turn spent; null = never reported (unknown, not free).
+  tokens?: number | null;
+}
+
+/** A store turn's total token spend, or null when nothing was ever reported.
+ *  Null and 0 are different answers: "we don't know" versus "none". */
+function tokensOf(st: StoreTurn): number | null {
+  const parts = [st.tok_in, st.tok_out, st.tok_cache_w, st.tok_cache_r];
+  if (parts.every((n) => n == null)) return null;
+  return parts.reduce((a: number, n) => a + (n ?? 0), 0);
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -105,7 +116,8 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
       const prompt = ex.prompt || st.prompt;
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
           || ex.runtime !== st.runtime) {
-        map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime });
+        map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
+                         tokens: tokensOf(st) });
       }
       if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else {
@@ -119,6 +131,7 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         pending: [],
         runtime: st.runtime,
         started: st.started,
+        tokens: tokensOf(st),
       });
     }
   }

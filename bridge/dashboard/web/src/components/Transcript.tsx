@@ -181,6 +181,7 @@ export function Transcript({
                     onRespond={isActive ? onRespond : undefined}
                     animate={liveTurns?.has(turn.id) ?? false}
                     turnId={turn.id}
+                    tokens={turn.tokens ?? null}
                     openResults={hud?.openResults ?? false}
                     onRunCommand={onRunCommand}
                     onQuote={onQuote}

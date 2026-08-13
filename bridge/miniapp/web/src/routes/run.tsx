@@ -228,6 +228,7 @@ function RunPage() {
                 )}
                 <RunStream
                   events={turn.events}
+                  tokens={turn.tokens ?? null}
                   pending={isActive ? activeTurn.pending : NO_PENDING}
                   onRespond={isActive ? respond : undefined}
                   // Only the last finished turn can be replied to — a chip on an
@@ -297,6 +298,7 @@ function RunPage() {
             onClick={() => {
               stick.current = true;
               setParked(true);
+              pendingPark.current = null;   // asking for the end outranks a park still waiting on its turn
               toBottom("smooth");
             }}
             aria-label="Scroll to latest"

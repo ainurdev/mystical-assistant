@@ -1,4 +1,4 @@
-import type { Question, RunEvent, Transcript } from "./api";
+import type { Question, RunEvent, StoreTurn, Transcript } from "./api";
 
 export interface PendingRequest {
   request_id: string;
@@ -24,6 +24,17 @@ export interface Turn {
   // Commit HEAD was on when the turn started; undefined for client-sent turns
   // until the store echoes it back, null outside a repo.
   sha?: string | null;
+  // Total tokens this turn spent, or null when it never reported usage —
+  // which must read as unknown, not as free.
+  tokens?: number | null;
+}
+
+/** A store turn's total token spend, or null when nothing was ever reported.
+ *  Null and 0 are different answers: one is "we don't know", the other is "none". */
+function tokensOf(st: StoreTurn): number | null {
+  const parts = [st.tok_in, st.tok_out, st.tok_cache_w, st.tok_cache_r];
+  if (parts.every((n) => n == null)) return null;
+  return parts.reduce((a: number, n) => a + (n ?? 0), 0);
 }
 
 export function derivePending(events: RunEvent[]): PendingRequest[] {
@@ -67,7 +78,7 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
           || ex.runtime !== st.runtime || ex.sha !== st.sha)
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
-                         sha: st.sha });
+                         sha: st.sha, tokens: tokensOf(st) });
       if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else
       map.set(st.id, {
@@ -79,6 +90,7 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         attachments: st.attachments,
         runtime: st.runtime,
         sha: st.sha,
+        tokens: tokensOf(st),
       });
   }
   for (const ev of t.events) {

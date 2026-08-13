@@ -74,6 +74,11 @@ export interface StoreTurn {
   elapsed: number | null;
   started: number;
   runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
+  // What the turn spent. All four null = never reported (unknown, not zero).
+  tok_in?: number | null;
+  tok_out?: number | null;
+  tok_cache_w?: number | null;
+  tok_cache_r?: number | null;
 }
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };
@@ -268,9 +273,35 @@ export interface EnrichedSession {
   updated: number;
   archived: number;
   turn_count: number;
-  total_cost: number;
+  total_elapsed: number; // seconds of wall clock across the session's turns
+  total_tokens: number | null; // null = no turn reported usage (unknown, not free)
   last_activity: number;
   models: string[];
+}
+
+/** One tool's share of a session's wall clock. `union_s` counts overlapping calls
+ *  once; `naive_s` just adds durations. Equal values mean the tool never ran
+ *  concurrently with itself — which is what says whether parallelising is on the
+ *  table. */
+export interface ToolSpend {
+  calls: number;
+  union_s: number;
+  naive_s: number;
+  avg_s: number;
+  unfinished: number; // started, never finished — the turn was killed mid-call
+}
+
+/** Where a session's time and tokens went. Dollars are deliberately absent: the
+ *  CLI prices runs off API list rates while these go through a subscription. */
+export interface SessionBreakdown {
+  wall: number; // seconds across the session's turns
+  tools: Record<string, ToolSpend>;
+  thinking_s: number;
+  waiting_s: number; // AskUserQuestion — a human deciding, not the session being slow
+  model_s: number; // the remainder: generating
+  tokens: { in: number; out: number; cache_w: number; cache_r: number } | null;
+  capped: number; // turns the per-turn time cap killed
+  turns: number;
 }
 
 // GitHub issues for the current project (via the user's authed gh CLI).
@@ -521,6 +552,8 @@ export const api = {
 
   getSession: (id: string, cursor: number) =>
     request<Transcript>(`/api/sessions/${encodeURIComponent(id)}?cursor=${cursor}`),
+  sessionBreakdown: (id: string) =>
+    request<SessionBreakdown>(`/api/sessions/${encodeURIComponent(id)}/breakdown`),
 
   // "No" to a question the last turn ended on: drops the session's ASK state
   // without spending a turn saying so.

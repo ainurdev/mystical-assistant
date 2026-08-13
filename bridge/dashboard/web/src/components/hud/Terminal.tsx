@@ -8,6 +8,7 @@ import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
+import { SpendPanel } from "./SpendPanel";
 
 /** Height of the sticky prompt bar. The observer insets the scroller's top by
  *  it, and `scroll-mt-[44px]` on the transcript's anchors clears it. */
@@ -281,6 +282,9 @@ export function Terminal({
         </div>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
+          {view === "chat" && (
+            <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
+          )}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>

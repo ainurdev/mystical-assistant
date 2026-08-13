@@ -588,11 +588,13 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
 function FinalResult({
   result,
   elapsed,
+  tokens,
   onAnswer,
   onWrite,
 }: {
   result: string;
   elapsed?: number;
+  tokens?: number | null;
   onAnswer?: (text: string) => void;
   onWrite?: (question: string) => void;
 }) {
@@ -646,7 +648,12 @@ function FinalResult({
         </div>
       )}
       {typeof elapsed === "number" && (
-        <div className="text-xs text-[var(--tg-hint)]">{elapsed.toFixed(1)}s</div>
+        <div className="text-xs text-[var(--tg-hint)]">
+          {elapsed.toFixed(1)}s
+          {typeof tokens === "number" && tokens > 0
+            ? ` · ${tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`} tok`
+            : ""}
+        </div>
       )}
     </Card>
   );
@@ -665,11 +672,14 @@ export const RunStream = memo(function RunStream({
   onRespond,
   onAnswer,
   onWrite,
+  tokens = null,
   ended = false,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
+  /** This turn's token spend; null = never reported (unknown, not free). */
+  tokens?: number | null;
   /** Send a reply to a question the model asked in prose. Only the last, finished
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
@@ -812,6 +822,7 @@ export const RunStream = memo(function RunStream({
                 key={i}
                 result={event.result}
                 elapsed={event.elapsed}
+                tokens={tokens}
                 onAnswer={onAnswer}
                 onWrite={onWrite}
               />

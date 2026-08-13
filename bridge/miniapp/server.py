@@ -474,6 +474,9 @@ class Handler(BaseHTTPRequestHandler):
         s = store.get_session(sid)
         if not s or s["chat_id"] != chat_id:
             return self._json({"error": "not found"}, 404)
+        if rest.endswith("/breakdown"):
+            from bridge import attribution
+            return self._json(attribution.breakdown(sid))
         try:
             cursor = int(qs.get("cursor", ["0"])[0])
         except ValueError:

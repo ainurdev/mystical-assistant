@@ -24,6 +24,18 @@ function ago(sec: number): string {
 
 type Tab = "all" | "waiting" | "running" | "archived";
 
+/** Wall clock and tokens replaced the dollar figure here in 9f612a4 — the CLI
+ *  prices runs off API list rates while these go through a subscription. */
+function dur(s: number): string {
+  if (s < 90) return `${Math.round(s)}s`;
+  if (s < 5400) return `${Math.round(s / 60)}m`;
+  return `${(s / 3600).toFixed(1)}h`;
+}
+
+function tok(n: number): string {
+  return n < 1000 ? `${n} tok` : n < 1_000_000 ? `${(n / 1000).toFixed(0)}k tok` : `${(n / 1_000_000).toFixed(1)}M tok`;
+}
+
 function ChatsPage() {
   const navigate = useNavigate();
   const { openSessionInProject } = useChat();
@@ -174,7 +186,9 @@ function ChatsPage() {
                     {s.project}
                   </span>
                   <span className="truncate">
-                    · {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"} ·{" "}
+                    · {s.turn_count} {s.turn_count === 1 ? "turn" : "turns"}
+                    {s.total_elapsed > 0 ? ` · ${dur(s.total_elapsed)}` : ""}
+                    {s.total_tokens ? ` · ${tok(s.total_tokens)}` : ""} ·{" "}
                     {isWaiting ? "needs an answer" : st === "working" ? "running" : ago(s.last_activity)}
                   </span>
                 </div>

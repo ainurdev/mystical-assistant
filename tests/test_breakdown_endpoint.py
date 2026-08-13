@@ -51,3 +51,34 @@ def test_breakdown_of_an_unknown_session_is_404():
     h._get_api("/local/sessions/nope/breakdown", {})
 
     assert box["code"] == 404
+
+
+# --- Mini App serves the same breakdown from its own /api surface ------------
+
+def _mini_handler():
+    from bridge.miniapp import server as mini
+    h = mini.Handler.__new__(mini.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    return h, box
+
+
+def test_miniapp_breakdown_endpoint_returns_the_attribution():
+    sid = _session(600)
+    store.start_turn(sid, f"{sid}:m1", "p", None)
+    store.finish_turn(f"{sid}:m1", "done", None, 12)
+    h, box = _mini_handler()
+
+    h._api_session_get(600, f"{sid}/breakdown", {})
+
+    assert box["code"] == 200
+    assert box["obj"]["wall"] == 12
+
+
+def test_miniapp_breakdown_of_another_users_session_is_404():
+    sid = _session(601)
+    h, box = _mini_handler()
+
+    h._api_session_get(602, f"{sid}/breakdown", {})
+
+    assert box["code"] == 404
