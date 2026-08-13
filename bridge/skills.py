@@ -63,9 +63,11 @@ def _front_matter(text: str) -> dict:
 
 def _design_id(d: str) -> "tuple[bool, str | None]":
     """(is a pulled design system, which project). Best-effort: a truncated or
-    hand-emptied marker still means the directory is ours."""
+    hand-emptied marker still means the directory is ours. errors="replace"
+    so invalid bytes can't raise UnicodeDecodeError out of a function whose
+    whole job is never raising."""
     try:
-        with open(os.path.join(d, DESIGN_MARKER), encoding="utf-8") as f:
+        with open(os.path.join(d, DESIGN_MARKER), encoding="utf-8", errors="replace") as f:
             first = f.readline().strip()
     except OSError:
         return False, None
@@ -80,7 +82,7 @@ def _design_paths(d: str) -> "tuple[set | None, str | None]":
     Unlike `_design_id` (best-effort, for display), this is conservative on
     purpose — it gates a delete, not a label."""
     try:
-        with open(os.path.join(d, DESIGN_MARKER), encoding="utf-8") as f:
+        with open(os.path.join(d, DESIGN_MARKER), encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines()
     except OSError as e:
         return None, str(e)
@@ -247,7 +249,17 @@ def _remove_design_sourced(d: str) -> "tuple[bool, str]":
                 actual.add(os.path.relpath(os.path.join(dirpath, fn), d))
         if actual - recorded - {"SKILL.md", DESIGN_MARKER}:
             return False, "directory has other files"
-        for rel in actual:
+        # Nothing about a filesystem delete is atomic, so this chases
+        # retryability instead: pulled content goes first, in a fixed sorted
+        # order (not set-iteration order, which is hash-randomized and would
+        # make a mid-sweep failure untestable); SKILL.md and the marker go
+        # last. If any content delete fails, the identity files are never
+        # even attempted, so the directory still reads as design-sourced and
+        # the same remove() call can just be retried.
+        identity = [p for p in ("SKILL.md", DESIGN_MARKER) if p in actual]
+        for rel in sorted(actual.difference(identity)):
+            os.remove(os.path.join(d, rel))
+        for rel in identity:
             os.remove(os.path.join(d, rel))
         for dirpath, _dirnames, _filenames in os.walk(d, topdown=False):
             if not os.listdir(dirpath):

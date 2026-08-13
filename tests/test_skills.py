@@ -267,3 +267,75 @@ def test_remove_refuses_a_design_sourced_skill_with_a_truncated_marker(tmp_path)
     assert err
     assert (d / "SKILL.md").exists()
     assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_remove_leaves_identity_intact_when_a_content_delete_fails(tmp_path, monkeypatch):
+    """Deletion order must be content-first, identity-last: when a delete
+    fails partway through the content sweep, SKILL.md and the marker must
+    still be on disk afterwards, so the directory still reads as
+    design-sourced and the exact same remove() call can just be retried.
+    Nothing here depends on hash/set order — a counter forces the failure
+    onto whichever content file the implementation happens to process
+    second, so this is deterministic regardless of iteration order."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "guidelines").mkdir()
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / "guidelines" / "type.html").write_text("<p>type</p>\n")
+    (d / skills.DESIGN_MARKER).write_text(
+        "aaaa-1\ntokens/colors.css\nguidelines/type.html\n")
+
+    real_remove = skills.os.remove
+    calls = []
+
+    def flaky_remove(path, *a, **kw):
+        calls.append(path)
+        if len(calls) == 2:  # let the first content delete succeed, fail the second
+            raise PermissionError(13, "Permission denied")
+        real_remove(path, *a, **kw)
+
+    monkeypatch.setattr(skills.os, "remove", flaky_remove)
+
+    ok, err = skills.remove("ds", "project", str(tmp_path))
+
+    assert ok is False
+    assert err
+    # identity survives: still design-sourced, still retryable
+    assert (d / "SKILL.md").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+    # exactly one content file got removed before the failure — proves this
+    # is a partial sweep, not an all-or-nothing loop
+    remaining = [(d / "tokens" / "colors.css").exists(),
+                 (d / "guidelines" / "type.html").exists()]
+    assert remaining.count(True) == 1
+
+
+def test_remove_refuses_a_design_sourced_skill_with_a_non_utf8_marker(tmp_path):
+    """Invalid bytes in the marker must never raise UnicodeDecodeError out of
+    remove() — errors="replace" keeps this on the same fail-open path as
+    every other malformed-marker case. The corrupted marker no longer
+    matches what is really on disk, so it refuses rather than mis-deletes."""
+    d = tmp_path / ".claude" / "skills" / "ds"
+    (d / "tokens").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: ds\ndescription: d\n---\n")
+    (d / "tokens" / "colors.css").write_text(":root { --a: #000; }\n")
+    (d / skills.DESIGN_MARKER).write_bytes(b"\xff\xfe\xfa\xfb")
+
+    ok, err = skills.remove("ds", "project", str(tmp_path))
+
+    assert ok is False
+    assert err
+    assert (d / "SKILL.md").exists()
+    assert (d / "tokens" / "colors.css").exists()
+    assert (d / skills.DESIGN_MARKER).exists()
+
+
+def test_design_id_tolerates_a_non_utf8_marker(tmp_path):
+    """_design_id gates a display label, not a delete, but the same
+    UnicodeDecodeError gap applies — it must return, never raise."""
+    d = tmp_path / "ds"
+    d.mkdir()
+    (d / skills.DESIGN_MARKER).write_bytes(b"\xff\xfe not valid utf-8\n")
+    is_design, _design_id = skills._design_id(str(d))
+    assert is_design is True
