@@ -55,7 +55,11 @@ CREATE TABLE IF NOT EXISTS turns (
   started     REAL NOT NULL,
   model       TEXT,
   runtime     TEXT,
-  sha         TEXT
+  sha         TEXT,
+  tok_in      INTEGER,
+  tok_out     INTEGER,
+  tok_cache_w INTEGER,
+  tok_cache_r INTEGER
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
@@ -164,6 +168,13 @@ def init() -> None:
         # what the tree has drifted since. NULL = not a repo / predates this.
         if "sha" not in cols:
             c.execute("ALTER TABLE turns ADD COLUMN sha TEXT")
+        # What this turn spent, in the only unit that is real on a subscription:
+        # tokens. The four the API reports, summed across the turn's messages —
+        # which is spend, as distinct from sessions.ctx_tokens, which is the last
+        # message's window fill. NULL = the turn predates this / never reported.
+        for col in ("tok_in", "tok_out", "tok_cache_w", "tok_cache_r"):
+            if col not in cols:
+                c.execute(f"ALTER TABLE turns ADD COLUMN {col} INTEGER")
         # (Old DBs may carry a dead last_auto_resume column from the retired
         # auto-resume cooldown — harmless, never read.)
         # Turns left 'running' at startup are orphaned (the bridge restarted). They
@@ -698,6 +709,21 @@ def append_event(session_id: str, turn_id: str, ev: dict) -> int:
     return seq
 
 
+def set_turn_tokens(turn_id: str, tokens: "dict | None") -> None:
+    """What this turn spent: the four API counters, summed over its messages.
+    None (or a call that never happens) leaves the columns NULL, which reads as
+    "unknown" rather than "free" — a turn from before this was recorded must not
+    render as zero."""
+    if not tokens:
+        return
+    with closing(_connect()) as c:
+        c.execute("UPDATE turns SET tok_in=?, tok_out=?, tok_cache_w=?, "
+                  "tok_cache_r=? WHERE id=?",
+                  (int(tokens.get("in") or 0), int(tokens.get("out") or 0),
+                   int(tokens.get("cache_w") or 0), int(tokens.get("cache_r") or 0),
+                   turn_id))
+
+
 def finish_turn(turn_id: str, status: str, cost: float | None, elapsed: int | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE turns SET status=?, cost=?, elapsed=? WHERE id=?",
@@ -835,6 +861,35 @@ def history(chat_id: int, include_archived: bool = False,
             d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
             rows.append(d)
     return rows
+
+
+def turn_metrics(session_id: str) -> list[dict]:
+    """Per-turn status, wall time and token spend — the numbers a breakdown adds
+    up. Ordered by seq so a caller can attribute per turn as well as per session."""
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute(
+            "SELECT seq, status, elapsed, tok_in, tok_out, tok_cache_w, tok_cache_r "
+            "FROM turns WHERE session_id=? ORDER BY seq", (session_id,)).fetchall()]
+
+
+def timed_events(session_id: str) -> list[dict]:
+    """Every event that carries a duration, with the ts it ended at: `tool` (to
+    name a call), `tool_done` (ms) and `thinking` (ms). The rows a wall-clock
+    attribution is reconstructed from."""
+    with closing(_connect()) as c:
+        rows = c.execute(
+            "SELECT type, payload, ts FROM events WHERE session_id=? "
+            "AND type IN ('tool','tool_done','thinking') ORDER BY seq",
+            (session_id,)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            payload = json.loads(r["payload"])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            out.append({"type": r["type"], "ts": r["ts"], **payload})
+    return out
 
 
 def running_session_ids(chat_id: int) -> list[str]:
