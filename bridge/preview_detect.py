@@ -104,7 +104,11 @@ def _claude(cwd: str, chat_id: int) -> "dict | None":
     # first. Off, detect() falls through to its plain guess.
     if not aifeatures.enabled("preview"):
         return None
-    result, _sid, _cost, is_error = runner.run_blocking(chat_id, _PROMPT, cwd=cwd, timeout=150)
+    # haiku, like every other detector here: naming a repo's dev script is a
+    # lockfile read, and inheriting the session's model made this the most
+    # expensive switch on the AI tab by an order of magnitude.
+    result, _sid, _cost, is_error = runner.run_blocking(
+        chat_id, _PROMPT, cwd=cwd, timeout=150, model="haiku")
     if is_error or not result:
         return None
     m = _JSON_RE.search(result)

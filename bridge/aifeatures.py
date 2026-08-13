@@ -24,13 +24,23 @@ from bridge import config
 
 # key   -- stable id used by the API, the UI and enabled()
 # env   -- the config setting that decides when nothing is persisted
-# cost  -- what one unit of this costs, for the UI to show next to the switch
-# about -- the paragraph under the switch: what it does, and what appears in the
-#          dashboard once it is on (each feature's UI is hidden while it is off)
+# cost   -- what one unit of this costs, for the UI to show next to the switch
+# tokens -- what that unit burns, in + out, so the switch is a priced decision.
+#           Medians measured from real runs, not arithmetic on the prompt: a
+#           one-shot costs tens of thousands because every `claude -p` carries
+#           the CLI's own system prompt and tool schemas before it reads a word
+#           of ours. Re-measure by summing `usage` across the assistant messages
+#           of the one-shot transcripts in ~/.claude/projects (they are tagged
+#           native.INTERNAL_ONESHOT_TAG). nextup is the one estimate: its scout
+#           has never fallen through to Claude here, so it is read off preview,
+#           the other tool-using run, scaled down for haiku and a shorter leash.
+# about  -- the paragraph under the switch: what it does, and what appears in the
+#           dashboard once it is on (each feature's UI is hidden while it is off)
 FEATURES = (
     {"key": "title", "env": "TITLE_ENABLE", "label": "AUTO TITLES",
      "hint": "names a session from its first exchange",
      "cost": "1 haiku call per new session",
+     "tokens": "~33k tokens",
      "about": "Replaces the first-prompt placeholder in the sessions list with a "
               "3-6 word subject, the way the Claude app names a chat. Runs once, "
               "after the very first turn, and never touches a session you renamed "
@@ -38,6 +48,7 @@ FEATURES = (
     {"key": "relevance", "env": "RELEVANCE_CHECK", "label": "NEW-SESSION GUARD",
      "hint": "offers a fresh session when a prompt changes the subject",
      "cost": "1 haiku call per long prompt",
+     "tokens": "~36k tokens",
      "about": "Before a long prompt resumes a session that already has history, a "
               "quick check decides whether it continues that work. If it does not, "
               "nothing runs: the prompt is held on a card offering a fresh, "
@@ -47,6 +58,7 @@ FEATURES = (
     {"key": "nextup", "env": "NEXTUP_ENABLE", "label": "NEXT-UP BOARD",
      "hint": "ranked next steps across the repos you touched recently",
      "cost": "1 scout per changed repo, free rung first",
+     "tokens": "~150k tokens",
      "about": "Looks at the repos with recent session activity — dirty worktrees, "
               "unpushed commits, open issues, sessions that stopped mid-task — and "
               "ranks what is worth doing next, one item per click to start a "
@@ -55,16 +67,19 @@ FEATURES = (
               "hidden entirely."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
-     "cost": "1 call per repo the heuristic can't read",
+     "cost": "1 haiku call per repo the heuristic can't read",
+     "tokens": "~300k tokens",
      "about": "Opening a project's TERMINAL tab, or analysing it, fills in the "
               "command that starts its dev server. A free heuristic reads the "
               "lockfile and scripts first and answers for most repos; this decides "
               "whether the rest may fall through to a model call. That fall-through "
-              "is automatic, not a button. Off, an unreadable repo gets a plain "
-              "'run dev' guess you can edit."},
+              "is automatic, not a button. It reads the repo instead of answering "
+              "in one shot, which is why it costs ten times what a title does. "
+              "Off, an unreadable repo gets a plain 'run dev' guess you can edit."},
     {"key": "learn", "env": "LEARN_ENABLE", "label": "LESSONS",
      "hint": "teaches you what each turn just built, shelved by concept",
      "cost": "1 haiku call per finished turn",
+     "tokens": "~40k tokens",
      "about": "After a turn finishes, a short lesson is written about what was "
               "built — the change, the idea behind it, where to look — and saved "
               "in that repo's .mystical/learn/ (git-ignored). The LEARN panel "
@@ -76,6 +91,7 @@ FEATURES = (
     {"key": "tailstate", "env": "TAIL_STATE_AI", "label": "ENDED-ON-A-QUESTION",
      "hint": "flags a turn that finished needing you, instead of calling it done",
      "cost": "1 haiku call per turn ending in a question",
+     "tokens": "~36k tokens",
      "about": "A turn that stops mid-run on a question already says WAIT. One "
               "that ENDS on a question — 'apply this fix or just report it?' — "
               "reads DONE, and the ping says finished. Auth failures, usage "
@@ -87,6 +103,7 @@ FEATURES = (
     {"key": "ponytail", "env": "PONYTAIL_ENABLE", "label": "PONYTAIL",
      "hint": "answers as a lazy senior dev — least code that works",
      "cost": "no extra call, a system prompt per run",
+     "tokens": "~1.3k tokens",
      "about": "The ponytail plugin's ladder rides every run: reuse what the repo "
               "already has, stdlib and native platform before a dependency, "
               "shortest diff that works. On, the prompt box gets the level "
@@ -96,7 +113,8 @@ FEATURES = (
               "controls are hidden."},
     {"key": "graph", "env": "GRAPH_ENABLE", "label": "PROJECT MAP",
      "hint": "a code graph of each repo, summarised into the system prompt",
-     "cost": "no extra call, ~400 tokens per session",
+     "cost": "no extra call, a prompt pack per session",
+     "tokens": "~400 tokens",
      "about": "graphify reads a repo into a knowledge graph (tree-sitter, no "
               "model call), which the first turn of every session carries as a "
               "~400-token structure summary — subsystems, hub files — so Claude "
@@ -108,6 +126,7 @@ FEATURES = (
     {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
      "hint": "writes a commit message from the diff you selected",
      "cost": "1 haiku call per press",
+     "tokens": "~32k tokens",
      "about": "The GIT tab's generate button and the header's SHIP button describe "
               "your staged diff. This one only runs when you press something, so "
               "unlike the extras above it ships ON — the switch is here so the "
