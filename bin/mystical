@@ -56,7 +56,7 @@ EOF
 }
 
 case "${1:-start}" in
-  build|doctor|-h|--help|help) : ;;   # build/diagnostics/help need no .env
+  build|doctor|-h|--help|help|design-link) : ;;   # build/diagnostics/help/design-link need no .env
   *) [ -f "$ENV_FILE" ] || die ".env not found at $ENV_FILE — run ./setup.sh to create it." ;;
 esac
 
