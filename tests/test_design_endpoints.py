@@ -81,13 +81,13 @@ def test_project_settings_sets_the_design_link(client, tmp_repo):
 def test_design_prompt_is_refused_while_the_switch_is_off(client, tmp_repo, monkeypatch):
     monkeypatch.setattr(aifeatures, "enabled", lambda k: k != "design")
     body = client.get(f"/local/design/prompt?kind=link&cwd={tmp_repo}")
-    assert body["error"]
+    assert body["error"] == "design system switch is off"
 
 
 def test_pull_prompt_needs_a_link(client, tmp_repo, monkeypatch):
     monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
     body = client.get(f"/local/design/prompt?kind=pull&cwd={tmp_repo}")
-    assert body["error"]        # nothing linked yet
+    assert body["error"] == "no design project linked"
 
 
 def test_pull_prompt_carries_the_linked_id(client, tmp_repo, monkeypatch):
@@ -99,5 +99,6 @@ def test_pull_prompt_carries_the_linked_id(client, tmp_repo, monkeypatch):
 
 def test_unknown_kind_is_rejected(client, tmp_repo, monkeypatch):
     monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
+    project_config.set_design_project(browser.rel(tmp_repo), "aaaa-1")
     body = client.get(f"/local/design/prompt?kind=teleport&cwd={tmp_repo}")
-    assert body["error"]
+    assert body["error"] == "unknown kind"
