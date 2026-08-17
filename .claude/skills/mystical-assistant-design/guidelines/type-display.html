@@ -1,0 +1,24 @@
+<!-- @dsCard group="Type" viewport="700x170" name="Share Tech Mono — display/UI" subtitle="The label voice: wide, even, retro. The default body font." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+  .row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+
+</style>
+</head>
+<body>
+<div style="font-family:var(--font-display)">
+  <div style="font-size:34px;letter-spacing:2px;color:var(--foreground-bright)" class="glow">Mystical Assistant</div>
+  <div style="font-size:13px;color:var(--foreground);margin-top:8px">ABCDEFGHIJKLM abcdefghijklm 0123456789 ~ ❯ // · ⎇</div>
+  <div style="font-size:11px;letter-spacing:2.5px;color:var(--primary);margin-top:10px;text-transform:uppercase">Panel · Workspace · Telemetry</div>
+</div>
+<div class="scan"></div>
+</body>
+</html>

@@ -1,0 +1,111 @@
+/* ============================================================================
+   COLORS — the "Mystic" phosphor HUD palette
+   ----------------------------------------------------------------------------
+   A CRT terminal identity: near-black voids lit by a single teal phosphor accent,
+   with a small cast of named accents (violet, blue) and semantic signals. The
+   whole UI is authored in the default "aqua" mood; alternate phosphor moods are
+   produced by overriding --accent-rgb / --primary (and, on the dashboard, a
+   hue-rotate filter). Color names are kept stable so reskinned components resolve.
+   ============================================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Phosphor accent (the one hero color) --------------------------------
+     --accent-rgb is the raw triplet so we can build any-alpha fills with
+     rgb(var(--accent-rgb) / <a>). --primary is the same color as a hex. */
+  --accent-rgb: 127 233 216; /* @kind other */
+  --primary: #7fe9d8;            /* teal phosphor — the signal */
+  --primary-foreground: #060a0a; /* text on a filled primary */
+
+  --brand: var(--primary);
+  --brand-soft: var(--primary);
+  --brand-bright: var(--foreground-bright);
+  --brand-glow: rgb(var(--accent-rgb) / 0.25);
+
+  /* Single-token translucent accent fills (class- and style-safe; no rgb math
+     needed at the call site). */
+  --ac-03: rgb(var(--accent-rgb) / 0.03);
+  --ac-06: rgb(var(--accent-rgb) / 0.06);
+  --ac-08: rgb(var(--accent-rgb) / 0.08);
+  --ac-12: rgb(var(--accent-rgb) / 0.12);
+  --ac-16: rgb(var(--accent-rgb) / 0.16);
+  --ac-22: rgb(var(--accent-rgb) / 0.22);
+
+  /* --- Structure / surfaces ------------------------------------------------ */
+  --background: #060a0a;                 /* the void */
+  --panel: rgba(9, 16, 16, 0.5);         /* side panels (translucent over bg) */
+  --card: rgba(7, 13, 13, 0.6);          /* center column, terminal, inputs */
+  --card-foreground: #bfe6de;
+  --popover: rgba(7, 13, 13, 0.97);      /* dropdowns, menus (near-opaque) */
+  --popover-foreground: #dff8f2;
+  --surface-2: var(--panel);
+
+  /* --- Text ramp ----------------------------------------------------------- */
+  --foreground: #bfe6de;          /* body text */
+  --foreground-bright: #dff8f2;   /* glow headings, emphasis, sent prompts */
+  --muted-foreground: #6f938d;    /* dim labels, secondary */
+  --muted-2: #3c544f;             /* dimmest — axis labels, ghosts */
+  --secondary-foreground: #bfe6de;
+  --accent-foreground: #dff8f2;
+
+  /* --- Tonal fills (muted / secondary backgrounds) ------------------------- */
+  --secondary: rgb(var(--accent-rgb) / 0.08);
+  --muted: rgb(var(--accent-rgb) / 0.05);
+  --accent: rgb(var(--accent-rgb) / 0.08);
+
+  /* --- Borders ------------------------------------------------------------- */
+  --border: rgb(var(--accent-rgb) / 0.16);        /* hairlines */
+  --border-bright: rgb(var(--accent-rgb) / 0.4);  /* active / focused edges */
+  --input: rgb(var(--accent-rgb) / 0.2);          /* input borders */
+  --ring: var(--primary);                          /* focus ring */
+
+  /* --- Semantic signals ---------------------------------------------------- */
+  --success: #8fd9a8;   /* online · running · additions */
+  --warning: #e3c279;   /* idle · dirty · mode flag */
+  --danger: #e0897a;    /* deletions · errors · bug · STOP */
+  --destructive: #e0897a;
+  --destructive-foreground: #060a0a;
+
+  /* --- Named accents ------------------------------------------------------- */
+  --violet: #b9a6ff;    /* the model · the `~ ❯` prompt · enhancement · Mini App */
+  --blue: #6fb5ff;      /* Telegram surface · downstream */
+
+  /* --- Surface chips — where a session lives -------------------------------
+     VS Code = teal, Web/Desktop = green, Telegram = blue, Mini App = violet. */
+  --surface-vs: var(--primary);  --surface-vs-bg: rgb(var(--accent-rgb) / 0.08);
+  --surface-web: #8fd9a8;        --surface-web-bg: rgba(143, 217, 168, 0.06);
+  --surface-tg: #6fb5ff;         --surface-tg-bg: rgba(111, 181, 255, 0.06);
+  --surface-ma: #b9a6ff;         --surface-ma-bg: rgba(185, 166, 255, 0.06);
+  --surface-cli: #6f938d;        --surface-cli-bg: rgba(111, 147, 141, 0.10);
+
+  /* --- Project identity palette --------------------------------------------
+     Each repo is hashed to one of these so it looks the same everywhere. */
+  --proj-1: #7fe9d8;
+  --proj-2: #b9a6ff;
+  --proj-3: #8fd9a8;
+  --proj-4: #6fb5ff;
+  --proj-5: #e3c279;
+  --proj-6: #ff7ad9;
+
+  /* --- Legacy tg-* aliases (still referenced by shared mobile components) --- */
+  --tg-bg: var(--background);
+  --tg-text: var(--foreground);
+  --tg-hint: var(--muted-foreground);
+  --tg-secondary-bg: var(--card);
+  --tg-button: var(--primary);
+  --tg-button-text: var(--primary-foreground);
+  --tg-link: var(--primary);
+}
+
+/* ============================================================================
+   PHOSPHOR MOODS
+   Override the accent for an alternate CRT tube. AURORA (aqua) is the default on
+   :root above. Apply a mood by setting [data-phosphor] on a container or <html>.
+   On the dashboard these pair with a hue-rotate+saturate filter (see theme.ts in
+   the source), but the token override alone recolors components that read the
+   accent vars.
+   ============================================================================ */
+[data-phosphor="green"]   { --accent-rgb: 95 221 143; /* @kind other */  --primary: #5fdd8f; --foreground: #aee0bd; --foreground-bright: #d6ffe1; }
+[data-phosphor="amber"]   { --accent-rgb: 232 176 74; /* @kind other */  --primary: #e8b04a; --foreground: #e6cf9c; --foreground-bright: #ffe7b0; }
+[data-phosphor="magenta"] { --accent-rgb: 255 122 217; /* @kind other */ --primary: #ff7ad9; --foreground: #f1c2e6; --foreground-bright: #ffd9f3; }

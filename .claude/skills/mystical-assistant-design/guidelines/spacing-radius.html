@@ -1,0 +1,24 @@
+<!-- @dsCard group="Spacing" viewport="700x150" name="Radius — there is none" subtitle="Hard edges everywhere; only dots + the mobile FAB round" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+  .row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+
+</style>
+</head>
+<body>
+<div style="display:flex;align-items:center;gap:22px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="width:60px;height:46px;border:1px solid var(--primary);background:var(--ac-08)"></div><div class="cap">radius 0 · default</div></div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="width:14px;height:14px;border-radius:50%;background:var(--success)"></div><div class="cap">status dot</div></div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="width:40px;height:40px;border-radius:50%;background:var(--primary);box-shadow:var(--ring-glow)"></div><div class="cap">mobile send</div></div>
+</div>
+<div class="scan"></div>
+</body>
+</html>

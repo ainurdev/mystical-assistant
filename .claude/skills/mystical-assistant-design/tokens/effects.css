@@ -1,0 +1,196 @@
+/* ============================================================================
+   EFFECTS — radius, borders, glow, CRT primitives & the animation library
+   ----------------------------------------------------------------------------
+   This is what makes the surface feel like a phosphor tube: zero radius, hairline
+   teal borders, corner-bracketed panels, a text glow, fixed scanlines + a slow
+   vertical sweep, and a large library of boot / flicker / enter keyframes. Import
+   this after colors/typography so the var() references resolve.
+   ============================================================================ */
+
+:root {
+  /* --- Radius — there is none. The HUD is all hard edges. ------------------- */
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-full: 9999px;   /* the only round things: status dots, mobile FABs */
+
+  /* --- Border widths ------------------------------------------------------- */
+  --border-width: 1px;
+  --border-width-thick: 1.6px;
+
+  /* --- Glow / shadow ------------------------------------------------------- */
+  --glow: 8px;                                            /* text-glow blur (settings can zero this) */
+  --glow-text: 0 0 var(--glow) rgb(var(--accent-rgb) / 0.35);
+  --glow-strong: 0 0 14px rgb(var(--accent-rgb) / 0.55);
+  --shadow-popover: 0 -8px 26px rgba(0, 0, 0, 0.65);     /* dropdowns rising from a command line */
+  --shadow-orb: 0 0 28px rgb(var(--accent-rgb) / 0.18), inset 0 0 22px rgb(var(--accent-rgb) / 0.1);
+  --ring-glow: 0 0 18px var(--brand-glow);               /* mobile send button halo */
+
+  /* --- Motion -------------------------------------------------------------- */
+  --ease-hud: cubic-bezier(0.2, 0.8, 0.2, 1); /* @kind other */   /* the house easing — used everywhere */
+  --ease-pop: cubic-bezier(0.2, 0.85, 0.25, 1); /* @kind other */
+  --dur-fast: 0.12s; /* @kind other */
+  --dur-base: 0.34s; /* @kind other */
+  --dur-slow: 0.55s; /* @kind other */
+  --dur-boot: 0.65s; /* @kind other */
+
+  /* --- Dashed dividers ----------------------------------------------------- */
+  --divider-dashed: 1px dashed rgb(var(--accent-rgb) / 0.14);
+}
+
+/* ============================================================================
+   PRIMITIVES (global utility classes)
+   ============================================================================ */
+
+/* .panel — the framed instrument: a bordered box with two L-shaped corner
+   brackets (top-left + bottom-right). Pair with the Panel component's header. */
+.panel {
+  position: relative;
+}
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.6);
+  pointer-events: none;
+  z-index: 3;
+}
+.panel::before { top: -1px;    left: -1px;  border-right: 0; border-bottom: 0; }
+.panel::after  { right: -1px;  bottom: -1px; border-left: 0;  border-top: 0; }
+
+/* .glow — phosphor text-shadow. */
+.glow { text-shadow: var(--glow-text); }
+
+/* .drawline — the 1px gradient divider under a panel header (animate with
+   `drawline` for the scaleX wipe). */
+.drawline {
+  height: 1px;
+  background: linear-gradient(90deg, var(--primary), rgb(var(--accent-rgb) / 0.05));
+  transform-origin: left;
+}
+
+/* .crt — fixed scanline overlay. Drop one per screen, above content. */
+.crt {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 80;
+  opacity: 0.5;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+}
+
+/* .sweep — a slow bright band travelling down the screen. */
+.sweep {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 180px;
+  pointer-events: none;
+  z-index: 79;
+  background: linear-gradient(180deg, transparent, rgb(var(--accent-rgb) / 0.045), transparent);
+  animation: sweepmove 8s linear infinite;
+}
+
+/* .mscroll — the standard thin-scrollbar scroll area. */
+.mscroll { overflow-y: auto; overflow-x: hidden; }
+
+/* Scrollbars + selection, retuned to the accent. */
+::selection { background: rgb(var(--accent-rgb) / 0.25); color: #eafffb; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--accent-rgb) / 0.22); }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--accent-rgb) / 0.4); }
+::-webkit-scrollbar-track { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--accent-rgb) / 0.22) transparent; }
+
+/* Respect reduced motion: kill the ambient loops + entrances. */
+@media (prefers-reduced-motion: reduce) {
+  .sweep { animation: none; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ============================================================================
+   KEYFRAMES — the HUD motion library
+   ----------------------------------------------------------------------------
+   Grouped: ambient loops · entrances · boot/flicker · terminal/typing ·
+   modals/context · misc. Names match the source app so ported components work.
+   ============================================================================ */
+
+/* --- ambient loops -------------------------------------------------------- */
+@keyframes sweepmove { 0% { transform: translateY(-200px); } 100% { transform: translateY(100vh); } }
+@keyframes twinkle { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes drift { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes auraspin { to { transform: rotate(360deg); } }
+@keyframes introspin { to { transform: rotate(360deg); } }
+@keyframes introspinr { to { transform: rotate(-360deg); } }
+@keyframes radar { 0% { transform: scale(0.28); opacity: 0.85; } 100% { transform: scale(3.4); opacity: 0; } }
+@keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
+@keyframes syncdot { 0% { left: -22%; } 100% { left: 100%; } }
+@keyframes eyeblink { 0%, 90%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.12); } }
+
+/* --- carets & blinks ------------------------------------------------------ */
+@keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes caretbreath { 0%, 100% { opacity: 0.25; box-shadow: 0 0 0 rgb(var(--accent-rgb) / 0); } 50% { opacity: 1; box-shadow: 0 0 9px rgb(var(--accent-rgb) / 0.8); } }
+
+/* --- meters / bars -------------------------------------------------------- */
+@keyframes grow { from { width: 0; } }
+@keyframes barfill { from { width: 0; } to { width: 100%; } }
+@keyframes drawline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* --- boot / flicker ------------------------------------------------------- */
+@keyframes boot { 0% { transform: translateY(10px) scale(0.997); filter: brightness(2.6) saturate(0.5); } 55% { filter: brightness(1.25); } 100% { transform: none; filter: none; } }
+@keyframes flicker { 0% { filter: brightness(0.35); } 9% { filter: brightness(2.2); } 13% { filter: brightness(0.6); } 22% { filter: brightness(1.5); } 100% { filter: none; } }
+@keyframes wordflick { 0% { filter: brightness(0.15); } 7% { filter: brightness(2.6); } 11% { filter: brightness(0.4); } 19% { filter: brightness(1.9); } 28% { filter: brightness(0.7); } 36% { filter: none; } 100% { filter: none; } }
+@keyframes bootline { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@keyframes tickfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes introgrid { from { background-position: 0 0; } to { background-position: 0 46px; } }
+@keyframes introdraw { from { stroke-dashoffset: 280; } to { stroke-dashoffset: 0; } }
+@keyframes intropop { 0% { transform: scale(0.55); filter: brightness(3.4); opacity: 0; } 55% { opacity: 1; } 100% { transform: none; filter: none; opacity: 1; } }
+@keyframes introdiamond { 0% { transform: rotate(45deg) scale(0); opacity: 0; } 100% { transform: rotate(45deg) scale(1); opacity: 1; } }
+@keyframes crtoff { 0% { transform: scaleX(1) scaleY(1); opacity: 1; filter: brightness(1); } 44% { transform: scaleX(1.07) scaleY(0.016); opacity: 1; filter: brightness(2.7); } 62% { transform: scaleX(1.07) scaleY(0.016); opacity: 1; filter: brightness(2.7); } 100% { transform: scaleX(0) scaleY(0.016); opacity: 0; filter: brightness(3.4); } }
+@keyframes digitflip { 0% { transform: translateY(-48%) scale(0.94); opacity: 0; filter: brightness(2.6); } 55% { opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 1; filter: none; } }
+
+/* --- entrances ------------------------------------------------------------ */
+@keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
+@keyframes mslide { from { transform: translateX(10px); filter: brightness(1.5); } to { transform: none; filter: none; } }
+@keyframes mpop { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes mpulse { 0% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0.55); } 70% { box-shadow: 0 0 0 6px rgba(143, 217, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0); } }
+@keyframes enterLeft { 0% { opacity: 0; transform: translateX(-48px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterRight { 0% { opacity: 0; transform: translateX(48px); filter: brightness(1.5); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterDown { 0% { opacity: 0; transform: translateY(-30px); filter: brightness(1.7); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterUp { 0% { opacity: 0; transform: translateY(30px); filter: brightness(1.7); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterZoom { 0% { opacity: 0; transform: scale(0.9); filter: brightness(2.4) saturate(0.4); } 55% { opacity: 1; filter: brightness(1.2); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes enterClip { 0% { opacity: 0; clip-path: inset(0 100% 0 0); filter: brightness(1.7); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
+@keyframes enterBlur { 0% { opacity: 0; transform: scale(1.05); filter: blur(8px) brightness(1.6); } 100% { opacity: 1; transform: none; filter: blur(0) brightness(1); } }
+
+/* --- terminal / typing ---------------------------------------------------- */
+@keyframes streamIn { 0% { opacity: 0; transform: translateY(7px); filter: brightness(1.75); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes resultflash { 0% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45); filter: brightness(1.7); } 100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); filter: none; } }
+@keyframes quotein { 0% { opacity: 0; transform: translateY(9px); filter: blur(7px); } 60% { opacity: 1; } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@keyframes quoteout { from { opacity: 1; filter: none; transform: none; } to { opacity: 0; filter: blur(3px) brightness(1.7); transform: translateX(7px); } }
+@keyframes quoteglow { 0%, 100% { text-shadow: 0 0 0 rgb(var(--accent-rgb) / 0); } 50% { text-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.25); } }
+@keyframes awaitsweep { to { background-position: 200% 0; } }
+@keyframes chanline { 0% { opacity: 0.4; transform: translateY(-50%) scaleX(0.5); } 10% { opacity: 1; transform: translateY(-50%) scaleX(1); } 16% { opacity: 0.45; } 24% { opacity: 1; transform: translateY(calc(-50% + 2px)) scaleX(0.92); } 38% { opacity: 0.7; transform: translateY(-50%) scaleX(1); } 52% { opacity: 1; } 66% { opacity: 0.5; transform: translateY(calc(-50% - 2px)) scaleX(0.82); } 80% { opacity: 1; transform: translateY(-50%) scaleX(1); } 90% { opacity: 0.55; } 100% { opacity: 1; transform: translateY(-50%) scaleX(1); } }
+
+/* --- modals / context ----------------------------------------------------- */
+@keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdropOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modalIn { 0% { opacity: 0; clip-path: inset(49.5% 42% 49.5% 42%); filter: brightness(2.4); } 24% { opacity: 1; clip-path: inset(49% 0 49% 0); filter: brightness(2.2) drop-shadow(0 0 16px rgb(var(--accent-rgb) / 0.9)); } 58% { clip-path: inset(0 0 0 0); filter: brightness(1.22) drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.5)); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }
+@keyframes ctxIn { 0% { opacity: 0; clip-path: inset(0 0 100% 0); filter: brightness(2.2); } 45% { opacity: 1; filter: brightness(1.7) drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.7)); } 100% { opacity: 1; clip-path: inset(0 0 0 0); filter: none; } }

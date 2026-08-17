@@ -1,0 +1,30 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Phosphor moods" subtitle="Override the accent — AURORA · VIRIDIAN · EMBER · NOVA" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .swrow { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw { display: flex; flex-direction: column; gap: 6px; }
+  .chip { width: 96px; height: 46px; border: 1px solid var(--border); }
+  .nm { font-size: 9.5px; letter-spacing: .5px; color: var(--foreground); }
+  .hx { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+
+</style>
+</head>
+<body>
+<div class="swrow">
+  <div class="sw"><div class="chip" style="background:#7fe9d8"></div><div class="nm">AURORA</div><div class="hx">aqua · default</div></div>
+  <div class="sw"><div class="chip" style="background:#5fdd8f"></div><div class="nm">VIRIDIAN</div><div class="hx">green</div></div>
+  <div class="sw"><div class="chip" style="background:#e8b04a"></div><div class="nm">EMBER</div><div class="hx">amber</div></div>
+  <div class="sw"><div class="chip" style="background:#ff7ad9"></div><div class="nm">NOVA</div><div class="hx">magenta</div></div>
+</div>
+<div style="margin-top:12px" class="cap">set [data-phosphor] to retune the tube</div>
+<div class="scan"></div>
+</body>
+</html>

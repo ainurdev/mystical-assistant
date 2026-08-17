@@ -1,0 +1,35 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Text ramp" subtitle="Four cool steps from glow to ghost" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .swrow { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw { display: flex; flex-direction: column; gap: 6px; }
+  .chip { width: 96px; height: 46px; border: 1px solid var(--border); }
+  .nm { font-size: 9.5px; letter-spacing: .5px; color: var(--foreground); }
+  .hx { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+
+</style>
+</head>
+<body>
+<div class="swrow">
+  <div class="sw"><div class="chip" style="background:var(--foreground-bright)"></div><div class="nm">fg-bright</div><div class="hx">#dff8f2</div></div>
+  <div class="sw"><div class="chip" style="background:var(--foreground)"></div><div class="nm">foreground</div><div class="hx">#bfe6de</div></div>
+  <div class="sw"><div class="chip" style="background:var(--muted-foreground)"></div><div class="nm">muted-fg</div><div class="hx">#6f938d</div></div>
+  <div class="sw"><div class="chip" style="background:var(--muted-2)"></div><div class="nm">muted-2</div><div class="hx">#3c544f</div></div>
+</div>
+<div style="margin-top:12px;display:flex;gap:18px;align-items:baseline">
+  <span style="color:var(--foreground-bright)" class="glow">Aa bright</span>
+  <span style="color:var(--foreground)">Aa body</span>
+  <span style="color:var(--muted-foreground)">Aa dim</span>
+  <span style="color:var(--muted-2)">Aa ghost</span>
+</div>
+<div class="scan"></div>
+</body>
+</html>

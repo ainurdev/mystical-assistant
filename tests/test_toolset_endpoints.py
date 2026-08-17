@@ -95,9 +95,11 @@ def test_the_run_does_not_re_deny_what_the_modal_switched_on(monkeypatch):
     monkeypatch.setattr(runner.config, "EXTRA_CLAUDE_ARGS", "")
     on = runner._base_cmd("hi", CHAT, stream=True, interactive=True, disabled_tools=[])
     assert "--disallowedTools" not in on
-    # None means "no choice made" — that one still gets the default.
+    # None means "no choice made", which is now no external MCP server at all —
+    # said as --strict-mcp-config rather than as one deny rule per server, so
+    # nothing has to enumerate them. See tests/test_mcp_startup.py.
     dflt = runner._base_cmd("hi", CHAT, stream=True, interactive=True)
-    assert dflt[dflt.index("--disallowedTools") + 1] == "mcp__github"
+    assert "--strict-mcp-config" in dflt and "--disallowedTools" not in dflt
 
 
 def test_saving_a_default_replaces_the_env_seed(monkeypatch):

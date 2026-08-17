@@ -198,17 +198,81 @@ def claude_bin() -> str:
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _mcp_config(claude_session_id: str) -> str:
-    """Inline --mcp-config JSON for the bridge's own tool servers. PYTHONPATH pins
-    the repo root so `-m bridge.*` imports regardless of the run's cwd."""
+def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
+    """Inline --mcp-config JSON for the bridge's own tool servers, plus any
+    external servers this session left switched on. PYTHONPATH pins the repo root
+    so `-m bridge.*` imports regardless of the run's cwd. Ours go in last: a
+    user server named `goals` must not shadow the goal tools."""
     env = {"PYTHONPATH": _REPO_ROOT,
            "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id}
     return json.dumps({"mcpServers": {
+        **(extra or {}),
         "goals": {"command": sys.executable,
                   "args": ["-m", "bridge.goal_mcp"], "env": env},
         "verify": {"command": sys.executable,
                    "args": ["-m", "bridge.verify_mcp"], "env": env},
     }})
+
+
+def _configured_mcp_servers(cwd: "str | None") -> dict:
+    """Every MCP server definition we can read back out of config, by name —
+    user and local scope from ~/.claude.json, project scope from .mcp.json.
+
+    Best-effort: a file we can't read just means fewer servers we can re-declare,
+    which _external_mcp turns into leaving the ambient config alone."""
+    out: dict = {}
+
+    def merge(d) -> None:
+        if isinstance(d, dict):
+            out.update({k: v for k, v in d.items() if isinstance(v, dict)})
+
+    try:
+        with open(os.path.expanduser("~/.claude.json"), encoding="utf-8") as f:
+            user = json.load(f)
+        merge(user.get("mcpServers"))
+        merge(((user.get("projects") or {}).get(cwd) or {}).get("mcpServers"))
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        with open(os.path.join(cwd or ".", ".mcp.json"), encoding="utf-8") as f:
+            merge(json.load(f).get("mcpServers"))
+    except (OSError, ValueError, AttributeError):
+        pass
+    return out
+
+
+def _external_mcp(disabled_tools: "list[str] | None",
+                  cwd: "str | None") -> "tuple[dict, bool]":
+    """(external server definitions to inline, whether the ambient MCP config can
+    be dropped with --strict-mcp-config).
+
+    A session that never opened the Tools modal gets nothing external — and says
+    so as strict mode rather than as one deny rule per server. That's the whole
+    latency win: building the deny list meant asking `claude mcp list` what's
+    configured, and that health-checks every server (measured 6-9s here) on the
+    very thread that then spawns claude. Not loading them saves ~1.6s more
+    (system/init 3.2s -> 1.5s, first token 5.5s -> 3.6s, measured).
+
+    Once a session HAS configured its tools we do enumerate, so a server left on
+    keeps working: it's re-declared from its own config-file definition, which
+    preserves its OAuth (verified against teamwork/github/notion). A plugin-
+    bundled server has no definition to copy, so one of those left on drops
+    strict mode entirely — a run silently missing a tool the Tools modal shows as
+    ON is the UI lying, and that costs more than the seconds do."""
+    if disabled_tools is None:
+        return {}, True
+    from bridge import toolsets  # local: toolsets imports runner
+    denied = set(disabled_tools)
+    defs = _configured_mcp_servers(cwd)
+    extra, strict = {}, True
+    for s in toolsets.servers():
+        if s["rule"] in denied:
+            continue
+        if s["name"] in defs:
+            extra[s["name"]] = defs[s["name"]]
+        else:
+            strict = False
+    return extra, strict
 
 
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
@@ -245,11 +309,19 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
                 "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
                 "--permission-prompt-tool", "stdio"]
         if claude_session_id:
-            # Goal + verify tools, on interactive runs only. No
-            # --strict-mcp-config here, so this is added to the user's own MCP
-            # servers rather than replacing them. Internal one-shots below still
-            # take MCP off entirely.
-            cmd += ["--mcp-config", _mcp_config(claude_session_id)]
+            # Goal + verify tools, on interactive runs only, alongside whichever
+            # external servers this session left switched on — re-declared here
+            # so --strict-mcp-config can drop everything else. Internal one-shots
+            # below still take MCP off entirely.
+            extra, strict = _external_mcp(disabled_tools, cwd)
+            cmd += ["--mcp-config", _mcp_config(claude_session_id, extra)]
+            if strict:
+                cmd.append("--strict-mcp-config")
+                if disabled_tools is None:
+                    # Nothing external got loaded, so there's nothing left to
+                    # deny — and settling it here is what keeps the fallback
+                    # below (and its `claude mcp list` call) off this path.
+                    disabled_tools = []
     if model:
         cmd += ["--model", model]
     if effort:
@@ -291,11 +363,14 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
     if disabled_tools is None and "--strict-mcp-config" not in cmd:
         # No per-session choice on this run (a Telegram one-shot, a sessionless
-        # job), so fall back to the same default a never-configured session
-        # gets. Only when it's None: an explicit [] is the user switching
-        # everything on from the Tools modal, and that has to win — a run that
-        # silently re-denies what the UI shows as ON is the UI lying.
-        disabled_tools = store.default_disabled_tools()
+        # job): same answer a never-configured session gets above — no external
+        # MCP servers, said as strict mode rather than as a deny list, so this
+        # path never pays for `claude mcp list` either. Only when it's None: an
+        # explicit [] is the user switching everything on from the Tools modal,
+        # and that has to win — a run that silently re-denies what the UI shows
+        # as ON is the UI lying.
+        cmd.append("--strict-mcp-config")
+        disabled_tools = []
     if disabled_tools:
         # Bare tool/server names, so a switched-off tool leaves the model's
         # context entirely rather than being offered and then refused.

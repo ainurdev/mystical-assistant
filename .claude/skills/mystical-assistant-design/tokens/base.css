@@ -1,0 +1,32 @@
+/* ============================================================================
+   BASE — document reset wiring the tokens to the page
+   ----------------------------------------------------------------------------
+   The minimum needed so a bare page already feels like the HUD: the void
+   background, the default monospace voice, and antialiasing. Everything else is
+   opt-in via components and utility classes.
+   ============================================================================ */
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  line-height: var(--leading-snug);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+textarea,
+input,
+button,
+select {
+  font-family: inherit;
+}

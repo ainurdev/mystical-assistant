@@ -1,0 +1,29 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Semantic signals" subtitle="Muted, desaturated — they live inside the phosphor" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .swrow { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw { display: flex; flex-direction: column; gap: 6px; }
+  .chip { width: 96px; height: 46px; border: 1px solid var(--border); }
+  .nm { font-size: 9.5px; letter-spacing: .5px; color: var(--foreground); }
+  .hx { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+
+</style>
+</head>
+<body>
+<div class="swrow">
+  <div class="sw"><div class="chip" style="background:var(--success)"></div><div class="nm">success</div><div class="hx">#8fd9a8</div></div>
+  <div class="sw"><div class="chip" style="background:var(--warning)"></div><div class="nm">warning</div><div class="hx">#e3c279</div></div>
+  <div class="sw"><div class="chip" style="background:var(--danger)"></div><div class="nm">danger</div><div class="hx">#e0897a</div></div>
+</div>
+<div style="margin-top:12px" class="cap">online · running &nbsp;//&nbsp; idle · dirty &nbsp;//&nbsp; error · stop</div>
+<div class="scan"></div>
+</body>
+</html>

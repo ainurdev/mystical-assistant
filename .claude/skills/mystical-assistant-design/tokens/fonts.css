@@ -1,0 +1,14 @@
+/* ============================================================================
+   FONTS — Share Tech Mono (display / UI) + JetBrains Mono (terminal / code)
+   ----------------------------------------------------------------------------
+   The whole product is monospace. Share Tech Mono is the UI/label voice (wide,
+   uppercase, tracked); JetBrains Mono is the terminal/code/chat-body voice.
+
+   Both are loaded from the Google Fonts CDN. The source app self-hosts the same
+   two families via @fontsource (npm). We load them via @import here so the design
+   system has no binary dependencies — swap these for self-hosted @font-face rules
+   (and drop the .woff2 files into assets/fonts/) if you need offline support.
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');

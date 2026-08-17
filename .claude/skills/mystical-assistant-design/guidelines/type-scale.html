@@ -1,0 +1,24 @@
+<!-- @dsCard group="Type" viewport="700x200" name="Type scale" subtitle="Runs small — only readouts go large" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+  .row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+
+</style>
+</head>
+<body>
+<div style="display:flex;flex-direction:column;gap:7px">
+  <div class="row"><span style="font-size:46px;line-height:1;color:var(--foreground-bright)" class="glow">46</span><span class="cap">clock</span></div>
+  <div class="row"><span style="font-size:23px;color:var(--foreground)">23 value</span><span class="cap">readout</span><span style="font-size:16px;color:var(--foreground)">16 lead</span><span class="cap">quote</span></div>
+  <div class="row"><span style="font-size:13px;color:var(--foreground)">13 body</span><span style="font-size:11px;color:var(--muted-foreground)">11 title</span><span style="font-size:10px;letter-spacing:1.5px;color:var(--muted-foreground)">10 LABEL</span><span style="font-size:9px;letter-spacing:1px;color:var(--muted-2)">9 CHIP</span><span style="font-size:8px;letter-spacing:1px;color:var(--muted-2)">8 MICRO</span></div>
+</div>
+<div class="scan"></div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+/* ============================================================================
+   Mystical Assistant — Design System
+   Global stylesheet entry point. Consumers link THIS file.
+
+   Order matters: fonts first, then color/type/spacing tokens, then the effects
+   layer (which references the tokens above) and finally the base document reset.
+   Keep this file as an @import manifest only — author rules in the token files.
+   ============================================================================ */
+
+@import url("./tokens/fonts.css");
+@import url("./tokens/colors.css");
+@import url("./tokens/typography.css");
+@import url("./tokens/spacing.css");
+@import url("./tokens/effects.css");
+@import url("./tokens/base.css");

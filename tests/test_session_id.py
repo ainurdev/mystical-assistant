@@ -93,6 +93,10 @@ def test_internal_oneshots_load_no_mcp_servers():
     assert cmd[cmd.index("--tools") + 1] == ""
 
 
-def test_real_turns_keep_their_mcp_servers():
+def test_real_turns_load_no_mcp_servers_but_keep_their_tools():
+    """External MCP is off until a session switches a server on — see
+    tests/test_mcp_startup.py for what that buys. So a real turn drops the
+    ambient servers too, and differs from an internal one-shot only in keeping
+    its built-in tools: --strict-mcp-config without --tools ""."""
     cmd = runner._base_cmd("hi", 555, stream=False, skip_pack=False)
-    assert "--strict-mcp-config" not in cmd and "--tools" not in cmd
+    assert "--strict-mcp-config" in cmd and "--tools" not in cmd

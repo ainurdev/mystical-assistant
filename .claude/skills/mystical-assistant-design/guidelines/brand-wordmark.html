@@ -1,0 +1,29 @@
+<!-- @dsCard group="Brand" viewport="700x175" name="Wordmark" subtitle="MYSTICAL//ASSISTANT — Share Tech Mono, 10px tracking" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+
+</style>
+</head>
+<body>
+<div style="display:flex;align-items:center;gap:22px">
+  <svg viewBox="0 0 100 100" width="54" height="54" fill="none" style="overflow:visible">
+  <circle cx="50" cy="50" r="40" stroke="#7fe9d8" stroke-width="3" stroke-dasharray="7 11"/>
+  <rect x="30" y="30" width="40" height="40" stroke="#7fe9d8" stroke-width="3" transform="rotate(45 50 50)"/>
+  <rect x="41" y="41" width="18" height="18" fill="#b9a6ff" transform="rotate(45 50 50)"/>
+</svg>
+  <div>
+    <div class="glow" style="font-size:30px;letter-spacing:9px;color:var(--foreground-bright)">MYSTICAL//ASSISTANT</div>
+    <div style="font-size:10px;letter-spacing:6px;color:var(--muted-2);margin-top:9px">REMOTE DEV BRIDGE · CLAUDE CODE</div>
+  </div>
+</div>
+<div class="scan"></div>
+</body>
+</html>

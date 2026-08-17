@@ -1,0 +1,36 @@
+<!-- @dsCard group="Brand" viewport="700x200" name="Motifs" subtitle="Corner brackets · drawline · glow · scanlines" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+
+</style>
+</head>
+<body>
+<div style="display:flex;gap:18px;align-items:stretch">
+  <div class="panel" style="border:1px solid var(--border);background:var(--panel);flex:1;min-width:0">
+    <div style="display:flex;justify-content:space-between;padding:8px 12px">
+      <span style="font-size:10.5px;letter-spacing:2.5px;color:var(--muted-2)">PANEL</span>
+      <span style="font-size:10.5px;letter-spacing:2.5px;color:var(--primary)" class="glow">MOTIF</span>
+    </div>
+    <div class="drawline" style="height:1px"></div>
+    <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+      <span class="glow" style="color:var(--foreground-bright);font-size:13px">phosphor glow text</span>
+      <span style="font-size:10px;letter-spacing:1.5px;color:var(--muted-foreground)">corner brackets frame every instrument</span>
+    </div>
+  </div>
+  <div style="flex:none;width:150px;position:relative;border:1px solid var(--border);background:var(--card)">
+    <div style="position:absolute;inset:0;opacity:.6;background:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,.3) 3px,transparent 4px)"></div>
+    <div style="position:absolute;left:0;right:0;top:0;height:50px;background:linear-gradient(180deg,transparent,rgba(127,233,216,.08),transparent)"></div>
+    <div style="position:absolute;bottom:8px;left:10px;font-size:9px;letter-spacing:1.5px;color:var(--muted-2)">CRT · SCANLINES + SWEEP</div>
+  </div>
+</div>
+<div class="scan"></div>
+</body>
+</html>

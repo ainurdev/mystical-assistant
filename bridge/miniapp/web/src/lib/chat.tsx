@@ -551,7 +551,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setHeld(null);
     setHeldBusy(true);
     try {
-      const { session } = await api.createSession(project, h.title ?? undefined);
+      // Same run dir as the session it split off from: a worktree session's
+      // offshoot belongs on that branch, not in the main checkout.
+      const { session } = await api.createSession(
+        project, h.title ?? undefined,
+        sessions.find((s) => s.id === sessionId)?.cwd ?? undefined);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       await runPrompt(h.text, h.attachments, clearDraft,

@@ -1,0 +1,25 @@
+<!-- @dsCard group="Type" viewport="700x175" name="JetBrains Mono — terminal/code" subtitle="Weights 400/500/700 for transcript, inputs, code" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+  .row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+
+</style>
+</head>
+<body>
+<div style="font-family:var(--font-mono)">
+  <div style="font-size:13px;color:var(--foreground-bright);font-weight:400">const bridge = await connect(); // 400</div>
+  <div style="font-size:13px;color:var(--foreground);font-weight:500;margin-top:5px">git commit -m "channel the change" // 500</div>
+  <div style="font-size:13px;color:var(--primary);font-weight:700;margin-top:5px">RESULT // OK &nbsp; 700</div>
+  <div style="font-size:11px;color:var(--muted-foreground);margin-top:8px">ABCDEFGabcdefg 0123456789 {}[]()=&gt;!&amp;|</div>
+</div>
+<div class="scan"></div>
+</body>
+</html>

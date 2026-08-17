@@ -62,6 +62,7 @@ export interface SessionBrief {
   ctx_window?: number; // what ctx_tokens is a fraction of (config.CONTEXT_WINDOW)
   autocompact?: string | null; // compact at: "auto" | token count | null (claude's default)
   branch?: string; // the checkout this session runs in ("" when unknown)
+  cwd?: string | null; // run dir — a linked worktree differs from the project dir
 }
 
 export interface StoreTurn {
@@ -551,10 +552,10 @@ export const api = {
       `/api/sessions?project=${encodeURIComponent(project)}`,
     ),
 
-  createSession: (project: string, title?: string) =>
+  createSession: (project: string, title?: string, cwd?: string) =>
     request<{ session: SessionBrief }>("/api/sessions", {
       method: "POST",
-      body: { project, ...(title ? { title } : {}) },
+      body: { project, ...(title ? { title } : {}), ...(cwd ? { cwd } : {}) },
     }),
 
   getSession: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>

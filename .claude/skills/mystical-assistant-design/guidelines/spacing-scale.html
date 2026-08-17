@@ -1,0 +1,23 @@
+<!-- @dsCard group="Spacing" viewport="700x150" name="Spacing scale" subtitle="13px is the gutter — grid gap and outer pad" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 18px 20px; position: relative; }
+  .scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; z-index: 9;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,.22) 3px, transparent 4px); }
+  .cap { font-size: 9px; letter-spacing: 1.5px; color: var(--muted-2); text-transform: uppercase; }
+  .row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+
+</style>
+</head>
+<body>
+<div style="display:flex;align-items:flex-end;gap:10px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:4px;height:4px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">4</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:7px;height:7px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">7</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:9px;height:9px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">9</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:11px;height:11px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">11</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:13px;height:13px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">13</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:16px;height:16px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">16</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:18px;height:18px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">18</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:24px;height:24px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">24</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:32px;height:32px;background:var(--ac-22);border:1px solid var(--border-bright)"></div><div style="font-size:8px;color:var(--muted-2)">32</div></div>
+</div>
+<div style="margin-top:12px" class="cap">space-1 → space-9 · px-fixed instrument density</div>
+<div class="scan"></div>
+</body>
+</html>

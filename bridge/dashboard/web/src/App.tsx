@@ -184,6 +184,7 @@ function omit<T>(map: Record<string, T>, key: string): Record<string, T> {
 interface HeldPrompt {
   sid: string;
   project?: string;
+  cwd?: string | null;   // the run dir (worktree) it was held in, not just the repo
   text: string;
   images: string[];
   reason: string;
@@ -1000,7 +1001,8 @@ export function App() {
       if ("suggest_new" in res) {
         setHeldMap((m) => ({
           ...m,
-          [sid]: { sid, project, text, images, reason: res.reason, title: res.suggested_title },
+          [sid]: { sid, project, cwd: sessions.find((s) => s.id === sid)?.cwd,
+                   text, images, reason: res.reason, title: res.suggested_title },
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
@@ -1053,7 +1055,8 @@ export function App() {
     setHeldBusy(true);
     try {
       await startIn(project, h.text,
-                    { images: h.images, title: h.title ?? undefined, force: true });
+                    { images: h.images, title: h.title ?? undefined, force: true,
+                      cwd: h.cwd ?? undefined });
     } finally {
       setHeldBusy(false);
     }

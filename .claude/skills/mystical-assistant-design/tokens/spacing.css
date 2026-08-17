@@ -1,0 +1,46 @@
+/* ============================================================================
+   SPACING & LAYOUT — the HUD grid metrics
+   ----------------------------------------------------------------------------
+   Tight, even rhythm. The dashboard runs on a 13px gutter (the magic number that
+   recurs as grid gap + outer padding). Panels pad ~14px. Inline chrome packs to
+   the pixel. Sizes are kept in px because the HUD is a fixed-density instrument,
+   not a fluid document.
+   ============================================================================ */
+
+:root {
+  /* --- Base scale ---------------------------------------------------------- */
+  --space-0: 0px;
+  --space-px: 1px;
+  --space-1: 4px;
+  --space-2: 7px;
+  --space-3: 9px;
+  --space-4: 11px;
+  --space-5: 13px;    /* the gutter */
+  --space-6: 16px;
+  --space-7: 18px;
+  --space-8: 24px;
+  --space-9: 32px;
+
+  /* --- Semantic ------------------------------------------------------------ */
+  --gutter: 13px;            /* dashboard grid gap + outer pad */
+  --panel-pad-x: 14px;       /* panel body horizontal padding */
+  --panel-pad-y: 12px;       /* panel body vertical padding */
+  --panel-head-x: 12px;      /* panel header padding */
+  --panel-head-y: 8px;
+  --chip-pad-x: 7px;         /* bordered chip padding */
+  --chip-pad-y: 2px;
+  --btn-pad-x: 16px;         /* action button padding */
+  --btn-pad-y: 6px;
+  --input-pad-x: 13px;
+  --input-pad-y: 10px;
+
+  /* --- Dashboard column grid ----------------------------------------------- */
+  --col-left: 344px;
+  --col-right: 368px;
+
+  /* --- Hit targets --------------------------------------------------------- */
+  --tap-min: 44px;           /* mobile (Mini App) minimum touch target */
+
+  /* --- Mini App ------------------------------------------------------------ */
+  --app-max-width: 640px;    /* max-w-screen-sm — the phone column */
+}

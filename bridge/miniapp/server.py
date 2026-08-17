@@ -491,9 +491,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_sessions_create(self, chat_id: int, body: dict):
         project = (body.get("project") or "").strip()
-        cand = os.path.realpath(os.path.join(config.BASE_PATH, project.lstrip("/")))
-        cwd = (cand if browser.within_base(cand) and os.path.isdir(cand)
-               else state.project_dir(chat_id))
+        # An explicit cwd wins over the project dir, so a session split off from a
+        # worktree session runs on that worktree's branch instead of landing in the
+        # main checkout (mirrors the dashboard's /local/sessions).
+        cand = [os.path.realpath(p) for p in
+                ((body.get("cwd") or "").strip(),
+                 os.path.join(config.BASE_PATH, project.lstrip("/"))) if p]
+        cwd = next((p for p in cand if browser.within_base(p) and os.path.isdir(p)),
+                   state.project_dir(chat_id))
         s = store.create_session(chat_id, project, origin="miniapp", cwd=cwd,
                                  permission_mode=config.NEW_SESSION_PERMISSION_MODE)
         self._json({"session": _session_brief(_pre_title(s, body.get("title")))})

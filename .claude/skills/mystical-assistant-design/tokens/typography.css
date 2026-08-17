@@ -1,0 +1,56 @@
+/* ============================================================================
+   TYPOGRAPHY — two monospace voices, tiny sizes, heavy tracking
+   ----------------------------------------------------------------------------
+   Share Tech Mono is the default UI font (labels, chrome, headings, wordmark).
+   JetBrains Mono is reserved for terminal output, code, inputs, and chat body.
+   The HUD runs SMALL: most chrome is 8–11px with wide letter-spacing; only the
+   clock / readouts go large. Everything is uppercase-tracked or terminal-plain —
+   there is no sentence-case "web copy" voice.
+   ============================================================================ */
+
+:root {
+  /* --- Families ------------------------------------------------------------ */
+  --font-display: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: var(--font-display);   /* the default body/UI font */
+  --font-ui: var(--font-display);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-terminal: var(--font-mono);
+
+  /* --- Weights (Share Tech Mono is single-weight; JetBrains carries weight) - */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* --- Size ramp (px — the HUD is deliberately fine) ------------------------ */
+  --text-2xs: 8px;     /* micro stat labels (SESS / CMTS) */
+  --text-xs: 9px;      /* chip labels, surface badges, axis */
+  --text-sm: 10px;     /* HUD labels (PANEL, CONTEXT, MOUNT) */
+  --text-md: 11px;     /* panel titles, secondary rows */
+  --text-base: 13px;   /* terminal / chat body, inputs */
+  --text-lg: 16px;     /* fresh-state quote, lead text */
+  --text-xl: 23px;     /* readout values (temp, focus hours) */
+  --text-2xl: 34px;    /* wordmark */
+  --text-3xl: 46px;    /* the clock */
+
+  /* --- Line heights -------------------------------------------------------- */
+  --leading-none: 1;
+  --leading-tight: 1.3;
+  --leading-snug: 1.5;       /* terminal body */
+  --leading-normal: 1.6;     /* chat transcript */
+  --leading-relaxed: 1.75;
+
+  /* --- Letter-spacing — the signature of every HUD label -------------------- */
+  --tracking-tight: 0.3px;
+  --tracking-label: 1px;     /* small inline labels */
+  --tracking-wide: 1.5px;    /* most uppercase chrome */
+  --tracking-wider: 2.5px;   /* panel labels (PANEL / WORKSPACE) */
+  --tracking-widest: 3px;    /* section dividers (FRESH SESSION) */
+  --tracking-mark: 6px;      /* sub-wordmark */
+  --tracking-logo: 10px;     /* the wordmark itself */
+
+  /* --- Semantic roles ------------------------------------------------------ */
+  --text-body: var(--text-base);        /* terminal/chat body */
+  --text-label: var(--text-sm);         /* uppercase HUD label */
+  --text-title: var(--text-md);         /* panel title */
+}
