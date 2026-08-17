@@ -130,14 +130,20 @@ web_build() {   # $1 = "force" to build even when a bundle looks current
     name="${e%%:*}"; dir="$REPO/${e#*:}"
     dist="$dir/dist/index.html"
     if [ "${1:-}" != force ] && [ -f "$dist" ] && \
-       [ -z "$(find "$dir/src" "$dir/index.html" "$dir/package.json" \
-                    "$dir/vite.config.ts" -newer "$dist" 2>/dev/null | head -n1)" ]; then
+       [ -z "$(find "$dir/src" "$dir/public" "$dir/index.html" "$dir/package.json" \
+                    "$dir/package-lock.json" "$dir/vite.config.ts" \
+                    -newer "$dist" 2>/dev/null | head -n1)" ]; then
       continue
     fi
     command -v npm >/dev/null 2>&1 || { warn "the web UIs need a build but npm isn't installed."; break; }
     mkdir -p "$STATE_DIR"
     say "  ${c_c}🔨${c_0} building the $name… ${c_d}(output: $LOG)${c_0}"
-    if [ ! -d "$dir/node_modules" ]; then
+    # npm writes node_modules/.package-lock.json to record the tree it installed,
+    # so a lockfile newer than it means a pull changed deps. Without this, restart
+    # built against the old node_modules — or failed on a module that was added.
+    if [ ! -d "$dir/node_modules" ] || \
+       [ "$dir/package-lock.json" -nt "$dir/node_modules/.package-lock.json" ]; then
+      say "     ${c_d}installing deps…${c_0}"
       (cd "$dir" && npm install) >>"$LOG" 2>&1 || { warn "$name: npm install failed — see $LOG"; continue; }
     fi
     if (cd "$dir" && npm run build) >>"$LOG" 2>&1; then ok "$name built"
