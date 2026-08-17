@@ -74,6 +74,31 @@ bridge_pid() {
   [ -n "$p" ] && printf '%s' "$p"
 }
 
+# --- systemd handover ---------------------------------------------------------
+# Once the user unit is enabled it is the supervisor: it starts the bridge at boot
+# and restarts it on failure. Launching our own copy alongside would fight it for
+# the dashboard port AND silently drop that supervision until the next reboot, so
+# start/stop/restart hand over whenever the unit is in play. Machines that never
+# installed the unit (or have no systemd) fall through to the setsid path below.
+UNIT="mystical-assistant.service"
+unit_enabled() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  [ "$(systemctl --user is-enabled "$UNIT" 2>/dev/null || true)" = "enabled" ]
+}
+unit_active() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  systemctl --user is-active --quiet "$UNIT" 2>/dev/null
+}
+# systemd owns the pid, so there is no $! to watch die — just wait for the port.
+wait_dash() {
+  local i dport; dport="$(env_port DASH_PORT 8790)"
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    curl -s -o /dev/null "http://127.0.0.1:$dport/" 2>/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
+
 env_port() {   # $1 = var name in .env, $2 = default — mirror dash_url's parsing
   local p
   p="$(grep -oE "$1=\"?[0-9]+" "$ENV_FILE" 2>/dev/null | head -n1 | grep -oE '[0-9]+' || true)"
@@ -126,6 +151,16 @@ cmd_start() {
   if [ -n "$pid" ]; then warn "Already running (pid $pid). Use 'mystical restart' to reload."; return 0; fi
   mkdir -p "$STATE_DIR"
   web_build
+  if unit_enabled; then
+    say "  ${c_c}⚡${c_0} starting via systemd ${c_d}($UNIT — logs: journalctl --user -u $UNIT)${c_0}"
+    systemctl --user start "$UNIT" || die "systemctl --user start $UNIT failed."
+    # A stale pidfile from a pre-systemd launch would make bridge_pid report the
+    # wrong process for the rest of this unit's life.
+    rm -f "$PID_FILE"
+    wait_dash || warn "Started, but the dashboard hasn't answered yet — systemctl --user status $UNIT"
+    cmd_status
+    return 0
+  fi
   say "  ${c_c}⚡${c_0} starting the bridge… ${c_d}(logs: $LOG)${c_0}"
   if command -v setsid >/dev/null 2>&1; then
     setsid env PYTHONUNBUFFERED=1 "$RUN_SH" >>"$LOG" 2>&1 < /dev/null &
@@ -145,6 +180,17 @@ cmd_start() {
 }
 
 cmd_stop() {
+  # Only hand over when systemd is the one actually running it. A bridge launched
+  # by hand before the unit existed is invisible to `systemctl stop`, so that case
+  # still needs the signal path below — which is also what lets `restart` pull a
+  # detached bridge back under supervision.
+  if unit_active; then
+    say "  ${c_y}■${c_0} stopping via systemd ${c_d}($UNIT)${c_0}…"
+    systemctl --user stop "$UNIT" || die "systemctl --user stop $UNIT failed."
+    rm -f "$PID_FILE"
+    ok "Stopped."
+    return 0
+  fi
   local pid; pid="$(bridge_pid || true)"
   if [ -z "$pid" ]; then warn "Not running."; rm -f "$PID_FILE"; return 0; fi
   # When we started it (setsid), the bridge leads its own process group, so its
@@ -189,6 +235,13 @@ cmd_status() {
   if [ -n "$purl" ]; then row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  $purl"
   else row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  ${c_d}localhost only — no tunnel this run${c_0}"; fi
   row 🛬 landing "$c_d:$lport$c_0  $(health "$l")  http://127.0.0.1:$lport/"
+  # Worth a line of its own: a bridge that escaped the unit still looks perfectly
+  # healthy above, but nothing restarts it any more.
+  if unit_active; then
+    row 🛡️ supervised "${c_g}systemd${c_0} $c_d($UNIT)$c_0"
+  elif unit_enabled; then
+    row 🛡️ supervised "${c_y}no${c_0} — hand-launched; the unit is enabled and takes over at next boot"
+  fi
   row 📜 logs "$LOG"
 }
 
