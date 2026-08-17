@@ -15,7 +15,9 @@ venv/
 
 # Build output anywhere — no dist/ is committed; setup.sh (or `mystical build`)
 # builds the dashboard, Mini App and landing page.
-dist/
+# The glob, not a bare dist/: a plain `dist/` rule let dist.bak/ and dist.prev-*/
+# snapshots get committed once (10MB of bundles) before anyone noticed.
+dist*/
 .vite/
 *.tsbuildinfo
 

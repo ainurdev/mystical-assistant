@@ -134,15 +134,26 @@ web_build() {   # $1 = "force" to build even when a bundle looks current
                     "$dir/vite.config.ts" -newer "$dist" 2>/dev/null | head -n1)" ]; then
       continue
     fi
-    command -v npm >/dev/null 2>&1 || { warn "the web UIs need a rebuild but npm isn't installed — using what's on disk."; return 0; }
+    command -v npm >/dev/null 2>&1 || { warn "the web UIs need a build but npm isn't installed."; break; }
     mkdir -p "$STATE_DIR"
     say "  ${c_c}🔨${c_0} building the $name… ${c_d}(output: $LOG)${c_0}"
     if [ ! -d "$dir/node_modules" ]; then
       (cd "$dir" && npm install) >>"$LOG" 2>&1 || { warn "$name: npm install failed — see $LOG"; continue; }
     fi
     if (cd "$dir" && npm run build) >>"$LOG" 2>&1; then ok "$name built"
-    else warn "$name build failed — see $LOG (using the bundle on disk)"; fi
+    else warn "$name build failed — see $LOG"; fi
   done
+  # Nothing is committed under dist/, so a failed build is not "fall back to the
+  # bundle already there" — that surface has nothing at all to serve. Name it,
+  # rather than letting setup print a Ready banner over a dashboard that 404s.
+  local gone=()
+  for e in "${WEB_DIRS[@]}"; do
+    [ -f "$REPO/${e#*:}/dist/index.html" ] || gone+=("${e%%:*}")
+  done
+  if [ "${#gone[@]}" -gt 0 ]; then
+    warn "not built: ${gone[*]} ${c_d}— nothing to serve there until this succeeds${c_0}"
+    warn "fix the errors in $LOG, then:  mystical build"
+  fi
 }
 
 # --- commands ----------------------------------------------------------------
