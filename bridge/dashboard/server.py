@@ -19,11 +19,12 @@ import mimetypes
 import os
 import queue
 import socket
+import subprocess
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import re
 
@@ -237,6 +238,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._stream(path[len("/local/stream/"):], qs)
             if path.startswith("/local/"):
                 return self._get_api(path, qs)
+            if path == "/manifest.webmanifest":
+                return self._manifest()
             return self._static(path)
         except Exception as e:  # noqa: BLE001
             self._safe500(e)
@@ -314,6 +317,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/envsettings":
             from bridge import envsettings
             return self._json({"settings": envsettings.state()})
+        if path == "/local/startup":
+            from bridge import startup
+            return self._json(startup.state())
         if path == "/local/next":
             from bridge import nextup
             return self._json(nextup.board(chat))
@@ -749,6 +755,13 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "settings": envsettings.state()})
+        if path == "/local/startup":
+            from bridge import startup
+            try:
+                st = startup.apply(bool(body.get("login")), bool(body.get("window")))
+            except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"ok": True, "startup": st})
         if path == "/local/next":
             # Scouts take a minute; answer now with the cached board and let the
             # client's poll pick up the new one. Concurrent refreshes collapse.
@@ -1596,6 +1609,35 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         with open(fp, "rb") as f:
             self._send(f.read(), 200, ctype, cache="private, max-age=300")
+
+    def _manifest(self):
+        """The PWA manifest, built here rather than shipped in dist/ so start_url
+        carries the live DASH_TOKEN — an installed app then always launches
+        authenticated, and a rotated token is picked up next load (hence
+        no-cache) instead of going stale in a file on disk.
+
+        Handing out the token is safe exactly where the read GETs above are: the
+        Host allow-list has already run (so DNS-rebinding is out), the bind is
+        loopback, and a cross-origin fetch can't read the response because
+        nothing here sends CORS headers."""
+        start = f"/?token={quote(config.DASH_TOKEN, safe='')}" if config.DASH_TOKEN else "/"
+        body = json.dumps({
+            "name": "mystical//assistant",
+            "short_name": "mystical",
+            "description": "A full desktop Claude client for the mystical-assistant bridge.",
+            "start_url": start,
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#060a0a",
+            "theme_color": "#060a0a",
+            "icons": [
+                {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                {"src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png",
+                 "purpose": "maskable"},
+            ],
+        }).encode()
+        self._send(body, 200, "application/manifest+json")
 
     def _static(self, path):
         if path in ("", "/"):

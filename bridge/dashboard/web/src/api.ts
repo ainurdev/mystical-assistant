@@ -593,6 +593,20 @@ export interface AiFeature {
   about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
 }
+/** Whether the bridge starts itself at login, from the two host-side files that
+ *  arrange it (a systemd user unit and a .cmd in the Windows Startup folder).
+ *  `supported: false` means this machine can't have them — `reason` says why, and
+ *  the switches hide. `supervised` is the separate question of whether the bridge
+ *  running *right now* is the unit's own: a hand-launched one still works, but
+ *  nothing restarts it. */
+export interface StartupState {
+  supported: boolean;
+  reason: string | null;
+  login: boolean;
+  window: boolean;
+  supervised: boolean;
+  browser: string | null; // e.g. "chrome.exe" — which one the window opens in
+}
 /** One environment setting, lifted out of .env so it has a switch here. The
  *  value shown is the effective one: a saved override, else what .env said, else
  *  the code default — `source` says which. A secret is returned masked. */
@@ -946,6 +960,14 @@ export const api = {
     req<{ ok: boolean; settings: EnvSetting[] }>("/local/envsettings", {
       method: "POST",
       body: { key, value },
+    }),
+  /** Does the bridge come up at login, and the window with it? */
+  startup: () => req<StartupState>("/local/startup"),
+  /** Send both switches — the server writes the whole desired state each time. */
+  setStartup: (login: boolean, window: boolean) =>
+    req<{ ok: boolean; startup: StartupState }>("/local/startup", {
+      method: "POST",
+      body: { login, window },
     }),
   /** Cached board — never spawns anything. */
   nextBoard: () => req<NextBoard>("/local/next"),

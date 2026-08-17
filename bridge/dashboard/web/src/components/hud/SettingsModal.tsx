@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect, useRef, useState, useSyncExternalStore,
+  type CSSProperties, type ReactNode,
+} from "react";
 import {
   AudioLines, Bell, CloudSun, KeyRound, LayoutTemplate, Palette, Server,
   SlidersHorizontal, Sparkles, type LucideIcon,
@@ -11,10 +14,14 @@ import {
   type FreeAgentInfo,
   type FreeAgents,
   type InstalledSkill,
+  type StartupState,
   type TagCount,
   type UpdateInfo,
   type Weather,
 } from "../../api";
+import {
+  canInstall as canInstallNow, install, isInstalled, subscribe,
+} from "../../lib/installprompt";
 import {
   autoBaseFont,
   AURORA_KEYS,
@@ -1326,6 +1333,118 @@ function EnvField({ s, busy, onSave }: {
   );
 }
 
+/** Installing the dashboard as an app, and having it there when you log in.
+ *
+ *  Three switches for three different machines' worth of state, which is why they
+ *  live together: the browser owns the install, systemd owns whether the bridge
+ *  starts itself, and a .cmd in the Windows Startup folder owns whether the window
+ *  comes up with it. Turning login OFF never stops the running bridge — you are
+ *  almost certainly talking to it. */
+function StartupSection() {
+  const [st, setSt] = useState<StartupState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const canInstall = useSyncExternalStore(subscribe, canInstallNow, () => false);
+  const [installed, setInstalled] = useState(isInstalled);
+
+  useEffect(() => {
+    void api.startup().then(setSt).catch(() => setSt(null));
+  }, []);
+
+  async function save(login: boolean, win: boolean) {
+    setBusy(true);
+    setErr(null);
+    try {
+      setSt((await api.setStartup(login, win)).startup);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section
+      title="STARTUP"
+      top
+      info="Two separate things. Installing puts the dashboard in your Start Menu as its own window, with no tab strip or address bar — that is the browser's doing and it never leaves this machine. Starting at login is the bridge's: a systemd user unit brings it up, and because nothing in WSL runs until Windows touches it, a small script in the Startup folder is what wakes the distro. Switching login off leaves the bridge you are using alone; it only stops the next boot from starting one."
+    >
+      <div style={CARD}>
+        <Row
+          first
+          label="INSTALL AS APP"
+          desc={
+            installed
+              ? "Installed — you are running it as an app."
+              : canInstall
+                ? "Opens your browser's install dialog."
+                : "Your browser handles this from the address bar (Chromium browsers only)."
+          }
+        >
+          <button
+            disabled={installed || !canInstall}
+            onClick={() => {
+              void install().then((ok) => ok && setInstalled(true));
+            }}
+            style={{
+              appearance: "none",
+              cursor: installed || !canInstall ? "default" : "pointer",
+              border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+              background: "transparent",
+              color: installed || !canInstall ? "var(--txl)" : "var(--acc)",
+              fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
+              padding: "6px 12px", flex: "none",
+            }}
+          >
+            {installed ? "INSTALLED" : "INSTALL"}
+          </button>
+        </Row>
+
+        {st && !st.supported ? (
+          <Row label="START AT LOGIN" desc={st.reason ?? "Not available on this machine."} />
+        ) : (
+          <>
+            <Row
+              label="START AT LOGIN"
+              desc="Brings the bridge up on its own when you sign in to Windows."
+            >
+              <Switch
+                on={!!st?.login}
+                onClick={() => !busy && st && void save(!st.login, st.window)}
+              />
+            </Row>
+            <Row
+              label="OPEN THE WINDOW TOO"
+              desc={
+                st?.browser
+                  ? `Opens the dashboard in ${st.browser} once the bridge answers.`
+                  : "Opens the dashboard once the bridge answers."
+              }
+            >
+              <Switch
+                on={!!st?.window && !!st?.login}
+                onClick={() => !busy && st?.login && void save(true, !st.window)}
+              />
+            </Row>
+          </>
+        )}
+      </div>
+
+      {/* A bridge that escaped its unit looks perfectly healthy — it just has
+          nothing watching it any more, so it is worth saying out loud. */}
+      {st?.login && !st.supervised && (
+        <div style={NOTE}>
+          This bridge was started by hand, so nothing restarts it if it dies. The unit takes
+          over at the next boot, or now with{" "}
+          <code>systemctl --user restart mystical-assistant</code>, which ends the sessions
+          running here.
+        </div>
+      )}
+      {err && <div style={{ ...NOTE, color: "var(--bad, #ff6b6b)" }}>{err}</div>}
+    </Section>
+  );
+}
+
 /** The rest of bridge/config.py, which until now needed a text editor and a
  *  restart to reach. Same precedence as the AI tab: what you set here beats
  *  .env, and RESET puts a row back to whatever .env said rather than to a
@@ -2502,6 +2621,8 @@ export function SettingsModal(props: SettingsModalProps) {
                     </Row>
                   </div>
                 </Section>
+
+                <StartupSection />
 
                 <Section title="HTTP INSPECTOR" top>
                   <div style={CARD}>
