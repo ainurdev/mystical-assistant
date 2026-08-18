@@ -549,6 +549,14 @@ body {
 @keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @keyframes introspin { to { transform: rotate(360deg); } }
 @keyframes introspinr { to { transform: rotate(-360deg); } }
+/* Handed over from a restart: every entrance animation here is fill-mode `both`
+   and under 3s, so pulling the delay back past its end leaves the emblem, the
+   wordmark and the log already drawn — the new document picks the intro up
+   where the old one left it instead of booting a second time. The infinite
+   ambient loops (grid, radar, drift) just start at a different phase. The
+   container is excluded: its crtoff exit still has to play. */
+.bootcontinue * { animation-delay: -3s !important; }
+
 @keyframes introdraw { from { stroke-dashoffset: 280; } to { stroke-dashoffset: 0; } }
 @keyframes intropop { 0% { transform: scale(0.55); filter: brightness(3.4); opacity: 0; } 55% { opacity: 1; } 100% { transform: none; filter: none; opacity: 1; } }
 @keyframes introdiamond { 0% { transform: rotate(45deg) scale(0); opacity: 0; } 100% { transform: rotate(45deg) scale(1); opacity: 1; } }

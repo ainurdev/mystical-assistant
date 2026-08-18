@@ -1,8 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { themeCanvas, themeFilter, type ThemeKey } from "../../lib/theme";
-import { BOOT_CEIL_MS, bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
+import { BOOT_CONTINUE, bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
 
 const FADE_MS = 650; // the crtoff wipe, after which the dashboard owns the screen
+
+// Read once per document, not per mount: a restart hands the intro over across a
+// reload, and this one has to come up mid-animation rather than from black. The
+// flag is spent on read, so a later reload of your own gets the whole entrance.
+const CONTINUED = sessionStorage.getItem(BOOT_CONTINUE) === "1";
+sessionStorage.removeItem(BOOT_CONTINUE);
 
 /** A line that hasn't answered yet. Three dots, so waiting reads as waiting. */
 function Ellipsis() {
@@ -23,11 +29,12 @@ export function BootIntro(props: {
   theme: ThemeKey;
   scanlines: boolean;
   steps: BootStep[];
-  /** How long to wait before leaving anyway. The restart overlay raises it: its
-      wait is a process coming back, which can outlast a hung fetch. */
-  ceilMs?: number;
+  /** Never leave on its own. The restart sets it: what ends that intro is the
+      reload into the next one, and uncovering a dashboard whose bridge is still
+      re-execing would be worse than waiting. */
+  hold?: boolean;
 }) {
-  const { onReveal, onDone, theme, scanlines, steps, ceilMs = BOOT_CEIL_MS } = props;
+  const { onReveal, onDone, theme, scanlines, steps, hold } = props;
   const [fade, setFade] = useState(false);
   const progress = bootProgress(steps);
   // Skipping only makes sense once there's a loaded dashboard to skip to —
@@ -38,8 +45,8 @@ export function BootIntro(props: {
   // once on mount. App re-renders every second (the telemetry clock), handing
   // BootIntro fresh callback identities each time — depending on them here would
   // clear+reset the timer before it fires, so the intro never auto-exits.
-  const cb = useRef({ onReveal, onDone, steps, ceilMs });
-  cb.current = { onReveal, onDone, steps, ceilMs };
+  const cb = useRef({ onReveal, onDone, steps, hold });
+  cb.current = { onReveal, onDone, steps, hold };
 
   useEffect(() => {
     const started = Date.now();
@@ -48,7 +55,7 @@ export function BootIntro(props: {
     // elapsed time — the last fetch can land before the floor, and a bridge
     // that never answers has to hit the ceiling with no step change at all.
     const id = window.setInterval(() => {
-      if (!bootReady(cb.current.steps, Date.now() - started, cb.current.ceilMs)) return;
+      if (cb.current.hold || !bootReady(cb.current.steps, Date.now() - started)) return;
       window.clearInterval(id);
       setFade(true);
       cb.current.onReveal();
@@ -68,7 +75,8 @@ export function BootIntro(props: {
 
   return (
     <div
-      onClick={loaded ? dismissBoot : undefined}
+      className={CONTINUED ? "bootcontinue" : undefined}
+      onClick={loaded && !hold ? dismissBoot : undefined}
       style={{
         position: "fixed",
         inset: 0,
@@ -80,7 +88,7 @@ export function BootIntro(props: {
         alignItems: "center",
         justifyContent: "center",
         gap: "26px",
-        cursor: loaded ? "pointer" : "default",
+        cursor: loaded && !hold ? "pointer" : "default",
         overflow: "hidden",
         transformOrigin: "center",
         animation: fade ? "crtoff .62s cubic-bezier(.7,0,.3,1) forwards" : "none",
@@ -380,35 +388,39 @@ export function BootIntro(props: {
           color: "var(--txd)",
         }}
       >
-        {steps.map((b, i) => (
-          <div
-            key={b.key}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: "12px",
-              animation: "bootline .4s ease both",
-              animationDelay: `${700 + i * 90}ms`,
-              opacity: b.phase === "wait" ? 0.7 : 1,
-              transition: "opacity .3s ease",
-            }}
-          >
-            <span style={{ whiteSpace: "nowrap" }}>
-              <span style={{ color: b.phase === "wait" ? "var(--txl)" : "var(--acc)" }}>›</span> {b.label}
-            </span>
-            <span
+        {/* Five rows whatever the log is: the restart's three would sit shorter
+            and slide the emblem up the moment the reload swaps one for the other. */}
+        <div style={{ minHeight: "calc(var(--t115) * 1.9 * 5)" }}>
+          {steps.map((b, i) => (
+            <div
+              key={b.key}
               style={{
-                color: b.phase === "fail" ? "var(--err)" : b.phase === "ok" ? "var(--ok)" : "var(--txd)",
-                letterSpacing: "1px",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "12px",
+                animation: "bootline .4s ease both",
+                animationDelay: `${700 + i * 90}ms`,
+                opacity: b.phase === "wait" ? 0.7 : 1,
+                transition: "opacity .3s ease",
               }}
             >
-              {b.phase === "wait" ? <Ellipsis /> : b.detail}
-            </span>
-          </div>
-        ))}
+              <span style={{ whiteSpace: "nowrap" }}>
+                <span style={{ color: b.phase === "wait" ? "var(--txl)" : "var(--acc)" }}>›</span> {b.label}
+              </span>
+              <span
+                style={{
+                  color: b.phase === "fail" ? "var(--err)" : b.phase === "ok" ? "var(--ok)" : "var(--txd)",
+                  letterSpacing: "1px",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {b.phase === "wait" ? <Ellipsis /> : b.detail}
+              </span>
+            </div>
+          ))}
+        </div>
         <div
           style={{
             height: "3px",
@@ -443,7 +455,7 @@ export function BootIntro(props: {
             {steps.find((s) => s.phase === "wait")?.label ?? "WORKSPACE READY"}
             <span style={{ animation: "caret 1s steps(1) infinite" }}>_</span>
           </span>
-          <span>{loaded ? "CLICK TO SKIP" : ""}</span>
+          <span>{loaded && !hold ? "CLICK TO SKIP" : ""}</span>
         </div>
       </div>
     </div>

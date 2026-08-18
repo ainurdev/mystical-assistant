@@ -47,10 +47,14 @@ export const BOOT_CEIL_MS = 8000; // a bridge that hangs must not trap you here
 
 /** Whether the intro should start its exit: everything answered and the opening
  *  animation has landed, or we've waited long enough that it no longer matters. */
-export function bootReady(steps: BootStep[], elapsedMs: number, ceilMs = BOOT_CEIL_MS): boolean {
-  if (elapsedMs >= ceilMs) return true;
+export function bootReady(steps: BootStep[], elapsedMs: number): boolean {
+  if (elapsedMs >= BOOT_CEIL_MS) return true;
   return bootProgress(steps) === 1 && elapsedMs >= BOOT_FLOOR_MS;
 }
+
+/** Set by the restart just before it reloads: the intro is already on screen in
+ *  the outgoing document, so the next one continues it instead of replaying. */
+export const BOOT_CONTINUE = "boot-continue";
 
 /** "12 REPOS" / "1 REPO" / "NONE" — the count is the point, so zero says so. */
 export function count(n: number, noun: string): string {

@@ -13,7 +13,7 @@ import { api } from "../api";
 import { askConfirm } from "../components/ui/Ask";
 import { notify } from "../components/hud/Notifications";
 import { BootIntro } from "../components/hud/BootIntro";
-import type { BootStep } from "./bootsteps";
+import { BOOT_CONTINUE, type BootStep } from "./bootsteps";
 import type { ThemeKey } from "./theme";
 
 // Three real events, same as the startup log: nothing here is on a timer.
@@ -35,11 +35,11 @@ export function RestartIntro(props: { theme: ThemeKey; scanlines: boolean }) {
     return () => { host = null; };
   }, []);
   if (!steps) return null;
-  // No ceiling: the only exits are the reload and the give-up below. A restart
-  // outlasts the startup one, and dropping the overlay early would uncover a
-  // dashboard talking to a port that isn't there.
+  // Held: the only exits are the reload and the give-up below. Letting it wipe
+  // itself off would uncover a dashboard talking to a port that isn't there —
+  // and the reload is about to draw this same intro again anyway.
   return (
-    <BootIntro theme={props.theme} scanlines={props.scanlines} steps={steps} ceilMs={Infinity}
+    <BootIntro theme={props.theme} scanlines={props.scanlines} steps={steps} hold
       onReveal={() => {}} onDone={() => setSteps(null)} />
   );
 }
@@ -66,6 +66,8 @@ export async function watchRestart(signal = "SIGINT") {
       continue;
     }
     mark("await", "ok", "ONLINE");
+    // The next document's intro carries on from this one rather than replaying.
+    sessionStorage.setItem(BOOT_CONTINUE, "1");
     location.reload();
     return;
   }
