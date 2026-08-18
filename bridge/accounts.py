@@ -7,6 +7,15 @@ skills, plugins and settings stay shared. Sharing projects/ is what lets any
 account --resume any session, and is why the bridge's six ~/.claude readers
 (transcript_jsonl, machine, skills, agents, native, models) need no changes.
 
+Two files can't be symlinked because they mix account state with user state, so
+their user half is synced key-by-key on every ensure_profile (and env_for runs
+it per spawn): user-scoped MCP server definitions (~/.claude.json `mcpServers`,
+ambient wins per name) and MCP OAuth tokens (.credentials.json `mcpOAuth`,
+fresher expiresAt wins, since a slot may hold the live refresh token). One-way,
+ambient -> slot: manage user-scoped MCP servers in the main login. A claude
+child rewriting these files mid-session can drop a just-synced key until the
+next spawn re-merges it.
+
 Every Claude turn stays a `claude` subprocess spawned by runner.py -- this is
 per-profile rotation, not a token-pooling proxy.
 """
@@ -55,9 +64,11 @@ def profile_dir(slot: int) -> str:
 
 def env_for(slot: "int | None") -> dict:
     """Env overrides pointing `claude` at this account's profile. The default
-    slot returns {} -- it uses the ambient ~/.claude."""
+    slot returns {} -- it uses the ambient ~/.claude. A non-default slot is
+    repaired and re-synced first, so every spawn sees current user MCP state."""
     if not slot or int(slot) == DEFAULT_SLOT:
         return {}
+    ensure_profile(int(slot))
     return {"CLAUDE_CONFIG_DIR": profile_dir(int(slot))}
 
 
@@ -70,7 +81,8 @@ def credentials_path(slot: "int | None") -> str:
 
 def ensure_profile(slot: int) -> str:
     """Create (or repair) slot's overlay and return its profile dir. Idempotent:
-    missing links are re-made, .credentials.json is never touched."""
+    missing links are re-made, user MCP state is re-synced, and the slot's
+    claudeAiOauth login is never touched."""
     p = profile_dir(int(slot))
     os.makedirs(p, mode=0o700, exist_ok=True)
     for name in SHARED:
@@ -85,7 +97,61 @@ def ensure_profile(slot: int) -> str:
         elif os.path.lexists(link):
             continue                     # a real file/dir here: leave it alone
         os.symlink(target, link)
+    _sync_user_mcp(p)
     return p
+
+
+def _read_json(path: str) -> dict:
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_json(path: str, data: dict) -> None:
+    """Atomic replace: a claude child reading these files mid-write would treat
+    a truncated JSON as corrupt config and reset it."""
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def _expires(entry) -> float:
+    try:
+        return float(entry.get("expiresAt") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0.0
+
+
+def _sync_user_mcp(p: str) -> None:
+    """Pull user-scoped MCP state from the ambient login into this profile.
+    Best-effort: an unreadable ambient file just means nothing to sync."""
+    servers = _read_json(IDENTITY).get("mcpServers")
+    if isinstance(servers, dict) and servers:
+        cfg_path = os.path.join(p, ".claude.json")
+        cfg = _read_json(cfg_path)
+        merged = {**(cfg.get("mcpServers") or {}), **servers}
+        if merged != cfg.get("mcpServers"):
+            cfg["mcpServers"] = merged
+            _write_json(cfg_path, cfg)
+    tokens = _read_json(os.path.join(CLAUDE_HOME, CREDENTIALS)).get("mcpOAuth")
+    dst = os.path.join(p, CREDENTIALS)
+    # No credentials file means a sign-in is (or may be) in flight: creating one
+    # here would read as that login succeeding (see submit_login_code).
+    if isinstance(tokens, dict) and tokens and os.path.exists(dst):
+        creds = _read_json(dst)
+        cur = creds.get("mcpOAuth") or {}
+        merged = dict(cur)
+        for name, tok in tokens.items():
+            if name not in cur or _expires(tok) > _expires(cur[name]):
+                merged[name] = tok
+        if merged != cur:
+            creds["mcpOAuth"] = merged
+            _write_json(dst, creds)
 
 
 # --- registry (ROOT/accounts.json) ------------------------------------------
@@ -122,6 +188,21 @@ def _email_at(path: str) -> "str | None":
         return None
 
 
+def _registered_slot_for(email: "str | None", reg: dict) -> "int | None":
+    """The slot (2+) already holding this login, if any. A slot's live
+    .claude.json outranks the registry email, same as list_accounts()."""
+    if not email:
+        return None
+    for key, e in reg.items():
+        if not str(key).isdigit() or int(key) == DEFAULT_SLOT:
+            continue
+        slot = int(key)
+        live = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
+        if (live or e.get("email")) == email:
+            return slot
+    return None
+
+
 def list_accounts() -> list:
     """Every known slot, lowest first. Slot 1 is the ambient login."""
     with _lock:
@@ -152,6 +233,13 @@ def add(slot: "int | None" = None, alias: "str | None" = None) -> int:
     email = _email_at(IDENTITY)
     with _lock:
         reg = _load()
+        # Ambient == slot 1 by definition right now; the designed flow re-logs
+        # ~/.claude as another account after the snapshot. Only slots 2+ can
+        # already hold this login.
+        dup = _registered_slot_for(email, reg)
+        if dup is not None:
+            raise ValueError(f"{email} is already saved as account {dup}. "
+                             "Log in as the account you want to add first.")
         if slot is None:
             slot = next(n for n in range(DEFAULT_SLOT + 1, 100)
                         if str(n) not in reg)
@@ -312,11 +400,29 @@ def submit_login_code(slot: int, code: str, timeout: float = 90) -> dict:
         raise LoginFailed("sign-in timed out — the code may have expired")
     _pending.pop(slot, None)
     login.close()
-    email = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
+    # The CLI can write credentials a beat before the identity; the email is
+    # what dedup and the account list run on, so give it a moment to land.
+    email = None
+    grace = time.time() + 5
+    while time.time() < grace:
+        email = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
+        if email:
+            break
+        time.sleep(0.25)
+    with _lock:
+        reg = _load()
+    taken = _registered_slot_for(email, reg)
+    if taken is None and email and email == _email_at(IDENTITY):
+        taken = DEFAULT_SLOT
+    if taken is not None:
+        shutil.rmtree(profile_dir(slot), ignore_errors=True)
+        raise LoginFailed(f"{email} is already account {taken}. Sign in as a "
+                          "different account to add one.")
     with _lock:
         reg = _load()
         reg[str(slot)] = {"email": email, "alias": login.alias, "disabled": False}
         _save(reg)
+    ensure_profile(slot)     # now that a login exists, its mcpOAuth sync applies
     return {"slot": slot, "email": email}
 
 
