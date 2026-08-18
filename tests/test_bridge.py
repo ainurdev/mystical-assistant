@@ -721,7 +721,7 @@ def test_usage_normalize():
                               "severity": "normal"}
     assert u["seven_day"]["percent"] == 51 and u["seven_day"]["severity"] == "warning"
     assert all(set(l) == {"kind", "group", "percent", "severity", "resets_at",
-                          "is_active"} for l in u["limits"])   # 'scope' dropped
+                          "is_active", "scope"} for l in u["limits"])   # scope names a scoped limit's model
 
 
 def test_usage_normalize_missing_buckets():

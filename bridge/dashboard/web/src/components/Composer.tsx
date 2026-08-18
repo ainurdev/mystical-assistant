@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronRight, ChevronsRight, Merge, Paperclip, Pause, Square } from "lucide-react";
-import { api, type EffortLevel, type GraphState, type ModelId } from "../api";
-import type { AgentOption } from "../models";
+import { api, type EffortLevel, type GraphState, type ModelId, type UsageInfo } from "../api";
+import { modelRows, type AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
@@ -44,7 +44,9 @@ export function Drop<T extends string>({
 }: {
   label: string;
   value: T;
-  options: { id: T; label: string; short?: string }[]; // short → what the chip shows
+  // short → what the chip shows; group → a heading printed once above each run
+  // of rows sharing it; tail → right-aligned decoration (the model meters)
+  options: { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string }[];
   open: boolean;
   onToggle: () => void;
   onPick: (id: T) => void;
@@ -74,34 +76,65 @@ export function Drop<T extends string>({
       {open && (
         <div
           style={{
-            position: "absolute", bottom: "calc(100% + 5px)", left: 0, minWidth: 132,
+            // max-content: the menu sizes to its longest row instead of wrapping
+            // labels inside the chip-wide box that positions it.
+            position: "absolute", bottom: "calc(100% + 5px)", left: 0, minWidth: 132, width: "max-content",
             zIndex: 30, border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
             boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
           }}
         >
-          {options.map((o) => {
+          {options.map((o, i) => {
             const on = o.id === value;
+            const heading = o.group && o.group !== options[i - 1]?.group ? o.group : null;
             return (
-              <button
-                key={o.id}
-                onClick={() => onPick(o.id)}
-                style={{
-                  width: "100%", appearance: "none", cursor: "pointer", border: 0,
-                  borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
-                  background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
-                  color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
-                  letterSpacing: ".3px", textAlign: "left", padding: "8px 11px",
-                  display: "flex", alignItems: "center", gap: 8,
-                }}
-              >
-                <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
-                {o.label}
-              </button>
+              <Fragment key={o.id}>
+                {heading && (
+                  <div style={{
+                    fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", whiteSpace: "nowrap",
+                    padding: i ? "10px 11px 4px" : "8px 11px 4px",
+                    borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+                  }}>
+                    {heading}
+                  </div>
+                )}
+                <button
+                  onClick={() => onPick(o.id)}
+                  title={o.title}
+                  style={{
+                    width: "100%", appearance: "none", cursor: "pointer", border: 0,
+                    borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+                    background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
+                    color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
+                    letterSpacing: ".3px", textAlign: "left", padding: "8px 11px",
+                    display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap",
+                  }}
+                >
+                  <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
+                  <span style={{ flex: 1 }}>{o.label}</span>
+                  {o.tail}
+                </button>
+              </Fragment>
             );
           })}
         </div>
       )}
     </div>
+  );
+}
+
+// A model row's fuel gauge in the MODEL menu: how much of its tightest usage
+// window is still unspent (fill = left, so a full bar is a full tank), in the
+// same track/fill idiom as the status bar's USED meter.
+function LeftMeter({ left, severity }: { left: number; severity?: string }) {
+  const c = severity === "critical" || severity === "exceeded" ? "var(--err)"
+    : severity && severity !== "normal" ? "var(--warn)" : "var(--acc)";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
+      <span style={{ width: 44, height: 3, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
+        <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${left}%`, background: c }} />
+      </span>
+      <span style={{ minWidth: 30, textAlign: "right", fontSize: "var(--t9)", letterSpacing: .5 }}>{left}%</span>
+    </span>
   );
 }
 
@@ -130,7 +163,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
 }
 
 export function Composer({
-  disabled, running, model, models, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, usage, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause,
 }: {
@@ -145,6 +178,8 @@ export function Composer({
   onOpenMap?: () => void;
   model: ModelId;
   models: { id: ModelId; label: string }[];
+  // The ambient login's usage meter — the MODEL menu shows what each model has left.
+  usage?: UsageInfo | null;
   // Which platform runs the turn — a Claude login or a free-agent provider.
   agent: string;
   agents: AgentOption[];
@@ -182,6 +217,15 @@ export function Composer({
   // A free agent brings its own model and has no effort knob, so those two
   // dropdowns would be lying about what runs — swap them for what actually will.
   const activeAgent = agents.find((a) => a.id === agent);
+  // MODEL rows grouped by usage pool, each with what it has left. The meter is
+  // the ambient login's, so it only decorates the rows while that login is the
+  // one running the turns; another account gets the plain list.
+  const modelOpts = useMemo(
+    () => modelRows(models, !activeAgent || activeAgent.def ? usage : null).map((r) => ({
+      ...r, tail: r.left === undefined ? undefined : <LeftMeter left={r.left} severity={r.severity} />,
+    })),
+    [models, usage, activeAgent],
+  );
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -476,7 +520,7 @@ export function Composer({
               </Tip>
             ) : (
               <>
-                <Drop label="MODEL" value={model} options={models} open={openDrop === "model"}
+                <Drop label="MODEL" value={model} options={modelOpts} open={openDrop === "model"}
                   onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
                   onPick={(id) => { onModel(id); setOpenDrop(""); }} />
                 <Drop label="EFFORT" value={effort} options={EFFORTS} open={openDrop === "effort"}

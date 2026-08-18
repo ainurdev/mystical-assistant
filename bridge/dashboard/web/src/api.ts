@@ -692,6 +692,8 @@ export interface UsageInfo {
     severity: string;
     resets_at: string | null;
     is_active: boolean;
+    // weekly_scoped limits name the model whose own weekly cap they are
+    scope?: { model?: { id: string | null; display_name: string | null } | null } | null;
   }[];
 }
 

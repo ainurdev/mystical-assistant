@@ -93,8 +93,10 @@ def _bucket(d, limits, *kinds) -> dict | None:
 
 
 def _normalize(payload: dict) -> dict:
+    # scope names the model a weekly_scoped limit belongs to ({"model":
+    # {"display_name": "Fable", ...}}) — the pickers pair it to a row by that.
     limits = [{k: limit.get(k) for k in
-               ("kind", "group", "percent", "severity", "resets_at", "is_active")}
+               ("kind", "group", "percent", "severity", "resets_at", "is_active", "scope")}
               for limit in (payload.get("limits") or []) if isinstance(limit, dict)]
     return {
         "available": True,

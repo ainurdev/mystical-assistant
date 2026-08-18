@@ -54,6 +54,22 @@ def test_success_normalizes_and_caches():
         restore()
 
 
+def test_scoped_limit_keeps_its_model():
+    """A weekly_scoped limit is only useful with its scope — that is what names
+    the model (e.g. Fable) whose own weekly cap it is."""
+    scoped = {"kind": "weekly_scoped", "group": "weekly", "percent": 40,
+              "severity": "normal", "resets_at": "2026-08-05T12:00:00+00:00",
+              "scope": {"model": {"id": None, "display_name": "Fable"}, "surface": None},
+              "is_active": False}
+    restore, _ = _stub({**PAYLOAD, "limits": [*PAYLOAD["limits"], scoped]})
+    try:
+        limits = usage.get_usage()["limits"]
+        assert limits[1]["scope"] == scoped["scope"]
+        assert limits[0]["scope"] is None          # unscoped rows say so
+    finally:
+        restore()
+
+
 def test_failure_serves_last_good():
     restore, calls = _stub(PAYLOAD, None)
     try:

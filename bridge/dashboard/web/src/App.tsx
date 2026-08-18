@@ -1899,7 +1899,7 @@ export function App() {
                       />
                     </div>
                     <Composer
-                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} effort={effort}
+                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={usage} effort={effort}
                       agent={agentId} agents={agentOpts} onAgent={setAgent}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       draft={draft} onDraft={setDraft}
