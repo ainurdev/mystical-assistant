@@ -611,6 +611,7 @@ export const api = {
     op: "enqueue" | "remove" | "bump" | "cancel" | "retry" | "pause" | "resume" | "clear_done";
     session_id: string;
     prompt?: string;
+    images?: string[];      // data URLs, saved server-side like a normal run's
     item_id?: string;
     model?: string;
     effort?: string;

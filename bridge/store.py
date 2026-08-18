@@ -975,7 +975,12 @@ def transcript(session_id: str, cursor: int = 0) -> dict:
         d["turn_id"] = r["turn_id"]
         events.append(d)
     for t in turns:
-        t["attachments"] = json.loads(t["attachments"])
+        # Stored as bare filenames; handed out as the upload-dir paths both
+        # surfaces serve back (/local/attachment, /api/attachment) — so reopening
+        # a session shows the screenshots you sent, not a paperclip count. The
+        # turn id IS the run's upload dir, so old turns resolve too.
+        t["attachments"] = [os.path.join(config.UPLOAD_DIR, t["id"], os.path.basename(n))
+                            for n in json.loads(t["attachments"])]
     next_cursor = (events[-1]["seq"] + 1) if events else cursor
     return {"session": s, "turns": turns, "events": events, "next_cursor": next_cursor}
 

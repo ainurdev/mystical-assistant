@@ -694,11 +694,25 @@ def get_job(job_id: str) -> Job | None:
         return _jobs.get(job_id)
 
 
-def steer(session_id: str, text: str) -> bool:
+def _with_images(prompt: str, image_paths: list[str] | None) -> str:
+    """Point the model at the screenshots it was sent. They stay on disk (the
+    upload dir) rather than going inline: a screenshot is a megabyte of base64,
+    and the child can just read the file."""
+    if not image_paths:
+        return prompt
+    return ("The user attached screenshot(s); view them before responding: "
+            + ", ".join(image_paths) + "\n\n" + prompt)
+
+
+def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> bool:
     """Fold a message into a session's IN-FLIGHT turn instead of queueing a new
     one. A stream-json user message written to the live child mid-turn is picked
     up at the next tool-loop boundary (the CLI's queued_command fold-in), so the
     running prompt changes course. False if that session has no live job.
+
+    Screenshots ride along as paths, exactly as a normal turn's do — the live
+    child reads them off disk, so a mid-turn "look at this" works the same as
+    one sent from a cold composer.
 
     Verified against claude 2.1.220: a turn with no tool call has no fold point,
     so a steer sent at the very end simply runs as a follow-up turn on the same
@@ -709,8 +723,9 @@ def steer(session_id: str, text: str) -> bool:
                     if j.store_session_id == session_id and j.status == "running"), None)
     if job is None or job.proc is None:
         return False
-    job._write_stdin({"type": "user", "message": {"role": "user", "content": text}})
-    job.add({"type": "steer", "text": text})
+    job._write_stdin({"type": "user", "message": {"role": "user",
+                                                  "content": _with_images(text, image_paths)}})
+    job.add({"type": "steer", "text": text, "images": list(image_paths or [])})
     return True
 
 
@@ -1465,10 +1480,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if (job.runtime or "").startswith("opencode:"):
             _consume_free_agent(job, prompt, cwd)
             return
-        full_prompt = prompt
-        if image_paths:
-            full_prompt = ("The user attached screenshot(s); view them before "
-                           "responding: " + ", ".join(image_paths) + "\n\n" + prompt)
+        full_prompt = _with_images(prompt, image_paths)
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,

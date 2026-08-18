@@ -122,6 +122,22 @@ def test_miniapp_serves_nothing_but_images_under_upload_dir():
         assert box["code"] == 404, what
 
 
+def test_stored_turn_attachments_reopen_after_a_session_switch():
+    """The store keeps bare filenames; a transcript must hand out paths this
+    endpoint can serve — otherwise leaving a session and coming back turns the
+    screenshots you sent into a paperclip count."""
+    from bridge import store
+    store.init()
+    s = store.create_session(555, "proj", cwd=config.BASE_PATH)
+    store.start_turn(s["id"], "job_reopen", "look at this", ["shot1.png"])
+    _upload("job_reopen", "shot1.png")
+
+    path = store.transcript(s["id"])["turns"][0]["attachments"][0]
+    h, box = _handler()
+    h._get_api("/local/attachment", {"path": [path]})
+    assert box["code"] == 200 and box["data"] == PNG
+
+
 def test_prune_keeps_recent_and_drops_expired():
     fresh = _upload("job_fresh", "shot1.png")
     stale = _upload("job_stale", "shot1.png")

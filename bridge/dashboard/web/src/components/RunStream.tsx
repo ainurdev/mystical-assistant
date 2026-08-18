@@ -1256,9 +1256,14 @@ export const RunStream = memo(function RunStream({
             // Sent into this turn while it was already running — shown so the
             // transcript explains why the agent changed course mid-task.
             return (
-              <div key={i} id={ckId(turnId, steerKey(i))} className="my-1.5 ml-[18px] flex scroll-mt-[44px] items-start gap-2 border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[length:var(--t12)] leading-relaxed text-[var(--violet)]">
-                <span className="mt-0.5"><SteerIcon size={12} /></span>
-                <span>{event.text}</span>
+              <div key={i} id={ckId(turnId, steerKey(i))} className="my-1.5 ml-[18px] scroll-mt-[44px] border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[length:var(--t12)] leading-relaxed text-[var(--violet)]">
+                <div className="flex items-start gap-2">
+                  <span className="mt-0.5"><SteerIcon size={12} /></span>
+                  <span>{event.text}</span>
+                </div>
+                {event.images && event.images.length > 0 && (
+                  <ToolImages paths={event.images} />
+                )}
               </div>
             );
           case "result":

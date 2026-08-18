@@ -147,11 +147,15 @@ export function Composer() {
         op: "enqueue",
         session_id: sessionId,
         prompt: text,
+        // A screenshot queues with its prompt — otherwise it sat in the tray
+        // while the prompt that needed it ran without it.
+        images: draftAttachments.map((a) => a.dataUrl ?? "").filter(Boolean),
         model,
         effort: effort || undefined,
         permission_mode: perm || undefined,
       });
       setDraft("");
+      draftAttachments.forEach((a) => removeAttachment(a.id));
       void qc.invalidateQueries({ queryKey: ["queues"] });
     } catch {
       /* the poll reconciles; the draft stays put */

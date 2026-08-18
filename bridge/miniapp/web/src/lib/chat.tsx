@@ -27,6 +27,9 @@ export interface Attachment {
   id: string;
   name: string;
   dataUrl?: string; // present for just-attached images; absent for loaded history
+  // Upload-dir path of a rehydrated one, fetched back through /api/attachment —
+  // so reopening a session shows the screenshots you sent, not just a count.
+  path?: string;
 }
 
 export interface Turn {
@@ -106,10 +109,12 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
     storeSeq.set(st.id, st.seq);
     const ex = map.get(st.id);
     // Prefer client-held attachments (just-sent, with data: URLs we can render);
-    // otherwise rehydrate from the store's filenames so a reopened session still
-    // shows that images were attached (the blob isn't persisted — see run.tsx).
+    // otherwise rehydrate from the store's upload paths, which run.tsx loads back
+    // through /api/attachment (a pruned one falls back to the count).
     const fromStore = (): Attachment[] =>
-      st.attachments.map((n, i) => ({ id: `${st.id}-a${i}`, name: n }));
+      st.attachments.map((p, i) => ({
+        id: `${st.id}-a${i}`, name: p.split("/").pop() || p, path: p,
+      }));
     if (ex) {
       // Keep the same object when nothing changed: identity is what lets the
       // memoized RunStream skip every past turn on a long session's 1.5s poll.

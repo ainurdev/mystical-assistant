@@ -652,14 +652,23 @@ class Handler(BaseHTTPRequestHandler):
             ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
             if not ok:
                 return self._json({"error": "invalid model"}, 400)
+            images = body.get("images") or []
+            if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
+                return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
             project = os.path.realpath(
                 os.path.join(config.BASE_PATH, str(s.get("project") or "").lstrip("/")))
+            run_job_id = uuid.uuid4().hex
+            try:
+                paths = _save_images(run_job_id, images) if images else []
+            except ValueError as e:
+                runner._cleanup_uploads(run_job_id)
+                return self._json({"error": str(e)}, 413)
             queue_manager.enqueue(
-                sid, text=prompt, prompt=prompt, images=[], model=model, effort=effort,
+                sid, text=prompt, prompt=prompt, images=paths, model=model, effort=effort,
                 permission_mode=normalize_permission_mode(body.get("permission_mode")),
                 width=0, sel=[], surface="miniapp", chat_id=chat_id,
                 project=project if browser.within_base(project) else None,
-                run_job_id=uuid.uuid4().hex)
+                run_job_id=run_job_id)
         elif op in ("pause", "resume", "clear_done"):
             getattr(queue_manager, op)(sid)
         elif op in ("remove", "bump", "cancel", "retry"):

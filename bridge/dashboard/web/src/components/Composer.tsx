@@ -162,7 +162,7 @@ export function Composer({
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
   onSend: (text: string, images: string[]) => void;
-  onSteer?: (text: string) => void;
+  onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
   queued?: { id: string; text: string }[];
@@ -350,13 +350,14 @@ export function Composer({
     setImages([]);
   }
 
-  // Land the text in the turn that's already running. Images can't fold into a
-  // live turn, so they stay in the tray for the next send.
+  // Land the text — and anything in the attachment tray — in the turn that's
+  // already running.
   function steer() {
     const t = text.trim();
     if (!t || !onSteer) return;
-    onSteer(t);
+    onSteer(t, images);
     setText("");
+    setImages([]);
   }
 
   const ctx = contextTokens ?? 0;
@@ -641,7 +642,7 @@ export function Composer({
                 PAUSE <Pause size={10} strokeWidth={0} fill="currentColor" aria-hidden /></button>
             )}
             {onSteer && (
-              <button onClick={steer} disabled={!text.trim()} title="Fold this into the turn that's running now (text only — falls back to queueing if the run just ended)"
+              <button onClick={steer} disabled={!text.trim()} title="Fold this into the turn that's running now (falls back to queueing if the run just ended)"
                 style={{ ...actBtn, cursor: !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--warn)", opacity: !text.trim() ? 0.4 : 1 }}>
                 STEER <SteerIcon /></button>
             )}

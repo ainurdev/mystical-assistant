@@ -1335,7 +1335,19 @@ class Handler(BaseHTTPRequestHandler):
             text = (body.get("text") or "").strip()
             if not text:
                 return self._json({"error": "empty prompt"}, 400)
-            if not runner.steer(sid, text):
+            images = body.get("images") or []
+            if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
+                return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
+            # Their own dir, not the running turn's: the steer can arrive after
+            # that turn's uploads were written, and pruning is by age anyway.
+            shot_id = uuid.uuid4().hex
+            try:
+                paths = _save_images(shot_id, images) if images else []
+            except ValueError as e:
+                runner._cleanup_uploads(shot_id)
+                return self._json({"error": str(e)}, 413)
+            if not runner.steer(sid, text, paths):
+                runner._cleanup_uploads(shot_id)
                 return self._json({"error": "nothing running"}, 409)
             return self._json(queue_manager.snapshot(sid))
         item_id = (body.get("item_id") or "").strip()

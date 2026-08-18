@@ -19,13 +19,17 @@ os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BASE_PATH", "/tmp")
 os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
-from bridge import goals, queue_manager, store  # noqa: E402
+from bridge import config, goals, queue_manager, store  # noqa: E402
 from bridge.miniapp import server as mini  # noqa: E402
 
 store.init()
 
 CHAT = 555
 OTHER = 999
+
+# The smallest valid PNG, as a data URL payload.
+PNG_B64 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKm"
+           "MIQAAAABJRU5ErkJggg==")
 
 
 def _handler():
@@ -58,6 +62,31 @@ def test_enqueue_then_list():
     queues = box["obj"]["queues"]
     assert len(queues) == 1 and queues[0]["session_id"] == sid
     assert queues[0]["items"][0]["status"] == "queued"
+
+
+def test_enqueue_carries_a_screenshot():
+    """A prompt queued from the phone keeps its attachment: the data URL is
+    written into the run's upload dir and the item carries that path, so the run
+    that eventually starts sees the screenshot the prompt was about."""
+    _queue()
+    sid = _session()
+    h, box = _handler()
+    h._api_queue_post(CHAT, {"op": "enqueue", "session_id": sid, "prompt": "why is this off",
+                             "images": [f"data:image/png;base64,{PNG_B64}"]})
+    assert box["code"] == 200
+    item = queue_manager.get()._q[sid]["items"][-1]
+    assert len(item.images) == 1
+    assert item.images[0].startswith(os.path.join(config.UPLOAD_DIR, item.run_job_id))
+    assert os.path.isfile(item.images[0])
+
+
+def test_enqueue_rejects_too_many_screenshots():
+    _queue()
+    sid = _session()
+    h, box = _handler()
+    h._api_queue_post(CHAT, {"op": "enqueue", "session_id": sid, "prompt": "spam",
+                             "images": ["x"] * (config.UPLOAD_MAX_COUNT + 1)})
+    assert box["code"] == 413
 
 
 def test_list_hides_another_chats_queue():

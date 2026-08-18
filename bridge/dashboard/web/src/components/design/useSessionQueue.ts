@@ -78,10 +78,11 @@ export function useSessionQueue(sessionId: string | null) {
      * back, and a blind toggle would pause a queue that was already running. */
     resumeIfPaused: () => { if (snap.paused) run(api.queueOp("resume", { session_id: sid })); },
     clearDone: () => run(api.queueOp("clear-done", { session_id: sid })),
-    /** Send text into the RUNNING turn (not the queue). Resolves false if the
-     * server says nothing is running, so the caller can queue it instead. */
-    steer: (text: string) =>
-      api.queueOp("steer", { session_id: sid, text })
+    /** Send text (and any attached screenshots) into the RUNNING turn — not the
+     * queue. Resolves false if the server says nothing is running, so the caller
+     * can queue it instead. */
+    steer: (text: string, images?: string[]) =>
+      api.queueOp("steer", { session_id: sid, text, images })
         .then((s) => { apply(s); return true; }).catch(() => false),
   };
 }

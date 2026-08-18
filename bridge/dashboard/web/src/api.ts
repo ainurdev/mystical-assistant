@@ -109,7 +109,9 @@ export type RunEvent =
   | { type: "result"; result: string; cost: number; elapsed: number; is_error?: boolean }
   | { type: "error"; message: string }
   | { type: "stopped" }
-  | { type: "steer"; text: string }
+  // `images`: screenshots sent with the steer, as upload-dir paths (same as
+  // tool_done's). Steers recorded before this landed carry none.
+  | { type: "steer"; text: string; images?: string[] }
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }

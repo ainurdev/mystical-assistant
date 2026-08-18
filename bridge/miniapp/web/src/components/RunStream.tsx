@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 import {
   PenLine,
   BookOpen,
@@ -345,12 +345,19 @@ function CallGroup({ name, calls }: {
   );
 }
 
-/** One screenshot a tool handed back. The bytes come through the API instead of a
- *  plain <img src> because the Mini App's auth lives in a header (see
- *  api.attachmentUrl). The upload dir is pruned by age, so an old turn's image is
- *  gone — that thumbnail just doesn't appear. */
-function ToolImage({ path, onZoom }: { path: string; onZoom: (src: string) => void }) {
+/** One screenshot from the upload dir — a tool's output, or one you attached to a
+ *  prompt. The bytes come through the API instead of a plain <img src> because the
+ *  Mini App's auth lives in a header (see api.attachmentUrl). The dir is pruned by
+ *  age, so an old turn's image is gone: `fallback` is what shows in its place. */
+export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto max-w-[160px] rounded-lg object-cover", fallback = null, onZoom }: {
+  path: string;
+  alt?: string;
+  className?: string;
+  fallback?: ReactNode;
+  onZoom: (src: string) => void;
+}) {
   const [src, setSrc] = useState<string | null>(null);
+  const [gone, setGone] = useState(false);
   useEffect(() => {
     let url: string | null = null;
     let dead = false;
@@ -358,16 +365,16 @@ function ToolImage({ path, onZoom }: { path: string; onZoom: (src: string) => vo
       url = u;
       if (dead) URL.revokeObjectURL(u);
       else setSrc(u);
-    }).catch(() => {});
+    }).catch(() => { if (!dead) setGone(true); });
     return () => {
       dead = true;
       if (url) URL.revokeObjectURL(url);
     };
   }, [path]);
-  if (!src) return null;
+  if (!src) return gone ? <>{fallback}</> : null;
   return (
-    <button type="button" onClick={() => onZoom(src)} aria-label="Open screenshot" className="block">
-      <img src={src} alt="tool output" className="h-20 w-auto max-w-[160px] rounded-lg object-cover" />
+    <button type="button" onClick={() => onZoom(src)} aria-label={`Open ${alt}`} className="block">
+      <img src={src} alt={alt} className={className} />
     </button>
   );
 }

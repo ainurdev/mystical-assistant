@@ -8,7 +8,7 @@ import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
 import { useLoadingPhase } from "../lib/loadingPhase";
 import { anchorAt, recall, remember, type Anchor } from "../lib/scrollmem";
-import { RunStream, TURN_TAIL } from "../components/RunStream";
+import { RunStream, ToolImage, TURN_TAIL } from "../components/RunStream";
 import { Composer } from "../components/Composer";
 import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
@@ -337,13 +337,19 @@ function RunPage() {
                         />
                       </button>
                     ))}
-                    {/* Rehydrated history has no blob to render — show a count. */}
-                    {turn.attachments.filter((a) => !a.dataUrl).length > 0 && (
-                      <span className="text-xs text-[var(--tg-hint)]">
-                        📎 {turn.attachments.filter((a) => !a.dataUrl).length} image
-                        {turn.attachments.filter((a) => !a.dataUrl).length > 1 ? "s" : ""}
-                      </span>
-                    )}
+                    {/* Rehydrated history: the bytes come back from the upload dir,
+                        so a reopened session shows what you sent. One pruned past
+                        UPLOAD_KEEP_DAYS falls back to the chip it used to be. */}
+                    {turn.attachments.filter((a) => !a.dataUrl && a.path).map((a) => (
+                      <ToolImage
+                        key={a.id}
+                        path={a.path as string}
+                        alt={a.name}
+                        className="h-16 w-16 rounded-lg object-cover"
+                        fallback={<span className="text-xs text-[var(--tg-hint)]">📎 1 image</span>}
+                        onZoom={(src) => setZoom({ src, alt: a.name })}
+                      />
+                    ))}
                   </div>
                 )}
                 {turn.prompt && (

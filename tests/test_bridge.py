@@ -156,7 +156,16 @@ def test_steer_writes_user_message_to_the_live_turn():
         sent = json.loads(job.proc.stdin.lines[-1])
         assert sent == {"type": "user",
                         "message": {"role": "user", "content": "actually, use tabs"}}
-        assert job.events[-1] == {"type": "steer", "text": "actually, use tabs"}
+        assert job.events[-1] == {"type": "steer", "text": "actually, use tabs",
+                                  "images": []}
+
+        # A screenshot steers too: the live child is pointed at the file, and the
+        # transcript keeps the path so the thumbnail survives a reload.
+        assert runner.steer("sess-steer", "like this", ["/up/j/shot1.png"]) is True
+        content = json.loads(job.proc.stdin.lines[-1])["message"]["content"]
+        assert "/up/j/shot1.png" in content and content.endswith("like this")
+        assert job.events[-1] == {"type": "steer", "text": "like this",
+                                  "images": ["/up/j/shot1.png"]}
 
         assert runner.steer("other-session", "hi") is False   # no such job
         job.status = "done"
@@ -164,6 +173,38 @@ def test_steer_writes_user_message_to_the_live_turn():
     finally:
         runner._jobs.clear()
         runner._jobs.update(saved)
+
+
+def test_dashboard_steer_saves_and_forwards_a_screenshot():
+    """STEER with an attachment: the data URL lands in the upload dir and its
+    path goes into the live turn. Nothing running -> 409, and the files it just
+    wrote don't linger."""
+    from bridge.dashboard import server as dash
+    png = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR"
+           "42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+    calls, live = [], [True]          # live[0]: is a turn still running?
+    real = runner.steer
+    runner.steer = lambda sid, text, paths=None: (calls.append((sid, text, paths)),
+                                                  live[0])[1]
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    try:
+        h._queue("steer", 555, {"session_id": "s1", "text": "this bit", "images": [png]})
+        assert box["code"] == 200
+        sid, text, paths = calls[0]
+        assert (sid, text) == ("s1", "this bit")
+        assert len(paths) == 1 and os.path.isfile(paths[0])
+        assert paths[0].startswith(os.path.realpath(config.UPLOAD_DIR) + os.sep)
+
+        # Nothing running: the 409 path takes its uploads back down with it.
+        calls.clear()
+        live[0] = False
+        h._queue("steer", 555, {"session_id": "s1", "text": "too late", "images": [png]})
+        assert box["code"] == 409
+        assert not os.path.exists(os.path.dirname(calls[0][2][0]))
+    finally:
+        runner.steer = real
 
 
 def test_summarize_tool():

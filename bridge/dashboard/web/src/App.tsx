@@ -1824,7 +1824,7 @@ export function App() {
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
-                      onSteer={(t) => void queue.steer(t).then((ok) => { if (!ok) void send(t, []); })}
+                      onSteer={(t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
                       onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       paused={queue.paused} onTogglePause={queue.togglePause}
