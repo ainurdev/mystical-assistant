@@ -332,3 +332,34 @@ def test_history_row_reports_unknown_tokens_as_none():
 
     assert row["total_elapsed"] == 9
     assert row["total_tokens"] is None
+
+
+def test_a_running_turns_spend_reaches_the_breakdown_before_it_finishes():
+    """The panel polls while the turn runs, so tokens flushed only at turn end
+    read as unknown for the whole run — the exact turn worth watching."""
+    from bridge import runner
+    sid = _session()
+    tid = f"{sid}:live"
+    store.start_turn(sid, tid, "p", None)
+    job = runner.Job(tid, 555, sid)
+
+    runner._handle_event(job, {"type": "assistant", "message": {
+        "usage": {"input_tokens": 3, "output_tokens": 4,
+                  "cache_creation_input_tokens": 5,
+                  "cache_read_input_tokens": 6},
+        "content": []}})
+
+    assert attribution.breakdown(sid)["tokens"] == {
+        "in": 3, "out": 4, "cache_w": 5, "cache_r": 6}
+
+
+def test_a_running_turns_wall_clock_counts_up_instead_of_reading_zero():
+    """Same shape as the token case: elapsed lands only at finish_turn, so a
+    breakdown taken mid-turn claimed 0s next to bars showing minutes."""
+    sid = _session()
+    store.start_turn(sid, f"{sid}:live-wall", "p", None)
+    with closing(store._connect()) as c:
+        c.execute("UPDATE turns SET started=? WHERE id=?",
+                  (time.time() - 30, f"{sid}:live-wall"))
+
+    assert attribution.breakdown(sid)["wall"] == pytest.approx(30, abs=2)

@@ -15,6 +15,7 @@ See docs/superpowers/specs/2026-08-13-session-time-token-attribution-design.md
 """
 
 import logging
+import time
 
 from bridge import config, store
 
@@ -63,6 +64,15 @@ def _tokens(rows: list[dict]) -> "dict | None":
     return {key: sum(r.get(col) or 0 for r in rows) for key, col in cols}
 
 
+def _elapsed(turn: dict) -> float:
+    """Seconds this turn has taken. `elapsed` is only written when the turn ends,
+    so a running one is measured from `started` — else a breakdown read mid-turn
+    reports 0s beside bars that already show minutes."""
+    if turn.get("status") == "running" and turn.get("started"):
+        return max(0.0, time.time() - turn["started"])
+    return float(turn.get("elapsed") or 0)
+
+
 def breakdown(session_id: str) -> dict:
     """What this session spent and on what. See module docstring for the posture."""
     try:
@@ -76,7 +86,7 @@ def _breakdown(session_id: str) -> dict:
     turns = store.turn_metrics(session_id)
     events = store.timed_events(session_id)
 
-    wall = float(sum(t.get("elapsed") or 0 for t in turns))
+    wall = float(sum(_elapsed(t) for t in turns))
     # Both conditions are required. Elapsed alone misreads a turn that legitimately
     # ran past the cap after an internal resume as one the cap killed.
     capped = sum(1 for t in turns if t.get("status") == "error"

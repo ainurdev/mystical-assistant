@@ -878,13 +878,34 @@ def history(chat_id: int, include_archived: bool = False,
     return rows
 
 
+def today(chat_id: int, since: float) -> dict:
+    """What this chat has spent since `since` (local midnight, computed by the
+    caller — the DB stores epoch seconds and knows nothing about timezones).
+
+    Tokens and turns, not dollars: 9f612a4 took the dollar readouts out because
+    the CLI prices these runs at API list rate while they go through a
+    subscription. `cost` is summed anyway for the callers that run on a real
+    API key, where the number means something; it is NULL when no turn in the
+    window reported one, which is not the same as $0.00."""
+    with closing(_connect()) as c:
+        r = c.execute(
+            "SELECT COUNT(t.id) AS turns, "
+            "COALESCE(SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
+            "  + COALESCE(t.tok_cache_w,0) + COALESCE(t.tok_cache_r,0)), 0) AS tokens, "
+            "SUM(t.cost) AS cost "
+            "FROM turns t JOIN sessions s ON s.id = t.session_id "
+            "WHERE s.chat_id=? AND t.started >= ?", (chat_id, since)).fetchone()
+    return {"turns": r["turns"], "tokens": r["tokens"], "cost": r["cost"]}
+
+
 def turn_metrics(session_id: str) -> list[dict]:
     """Per-turn status, wall time and token spend — the numbers a breakdown adds
     up. Ordered by seq so a caller can attribute per turn as well as per session."""
     with closing(_connect()) as c:
         return [dict(r) for r in c.execute(
-            "SELECT seq, status, elapsed, tok_in, tok_out, tok_cache_w, tok_cache_r "
-            "FROM turns WHERE session_id=? ORDER BY seq", (session_id,)).fetchall()]
+            "SELECT seq, status, elapsed, started, tok_in, tok_out, tok_cache_w, "
+            "tok_cache_r FROM turns WHERE session_id=? ORDER BY seq",
+            (session_id,)).fetchall()]
 
 
 def timed_events(session_id: str) -> list[dict]:

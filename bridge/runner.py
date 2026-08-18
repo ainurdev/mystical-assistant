@@ -1227,6 +1227,11 @@ def _add_usage(job: "Job", usage: dict) -> None:
     for key, src in _USAGE_KEYS:
         acc[key] += usage.get(src) or 0
     job.tokens = acc
+    # Flushed per message, not only in the turn's finally: SPEND polls while the
+    # turn runs, and a turn accounted only once it's over reads as "unknown" for
+    # exactly as long as anyone would be watching it.
+    if job.store_session_id:
+        store.set_turn_tokens(job.id, acc)
 
 
 # Longest log line kept — a debugging window rather than an archive (see
