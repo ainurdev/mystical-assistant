@@ -124,6 +124,10 @@ export interface Transcript {
   turns: StoreTurn[];
   events: StoreEvent[];
   next_cursor: number;
+  /** What the live turn is waiting on before its first token ("starting Claude",
+   *  "checking configured MCP servers"). Absent once it speaks — this is a live
+   *  status, never a recorded event. */
+  boot?: string | null;
   // Present only when the request carried ?tail= (and the server is new enough
   // to window) — older turns exist beyond the first loaded one.
   has_older?: boolean;
@@ -299,7 +303,7 @@ export interface QueueItem {
 }
 // The whole per-session queue. `seq` is a revision counter (SSE dedup); the
 // server publishes a fresh snapshot on every change.
-/** A tag and how many sessions wear it (SETTINGS · SESSION manages these). */
+/** A tag and how many sessions wear it (SETTINGS · TAGS manages these). */
 export interface TagCount {
   tag: string;
   count: number;
@@ -627,6 +631,23 @@ export interface EnvSetting {
   unit?: string;
   placeholder?: string;
 }
+export interface AgentConfigFile {
+  id: string;
+  name: string;
+  lang: "markdown" | "json";
+  hint: string;
+  path: string;   // display path, $HOME collapsed to ~
+  exists: boolean;
+  content: string;
+  error: string | null;   // unreadable/too large → the editor stays read-only
+}
+export interface AgentConfigTool {
+  id: string;
+  label: string;
+  hint: string;
+  installed: boolean;
+  files: AgentConfigFile[];
+}
 export interface NextItem {
   id: string;
   title: string;
@@ -646,6 +667,15 @@ export interface NextBoard {
   refreshing: boolean;
   enabled: boolean; // false → the list is the plain heuristic order
 }
+/* Since local midnight, for this chat. `cost` is null when no turn in the
+   window reported one — unknown, not $0.00 — and is priced at API list rate
+   even on a subscription (9f612a4), so tokens are the honest number. */
+export interface TodayInfo {
+  turns: number;
+  tokens: number;
+  cost: number | null;
+}
+
 export interface UsageInfo {
   available: boolean;
   five_hour?: UsageBucket | null;
@@ -963,6 +993,16 @@ export const api = {
       method: "POST",
       body: { key, value },
     }),
+  /** Each AI tool's own global config files (~/.claude/CLAUDE.md and friends),
+   *  contents included — nothing here is more than a few KB. */
+  agentConfig: () => req<{ tools: AgentConfigTool[] }>("/local/agentconfig"),
+  /** Writes the file verbatim; JSON is parsed first and a parse error comes
+   *  back as the request error rather than landing on disk. */
+  setAgentConfig: (id: string, content: string) =>
+    req<{ ok: boolean; tools: AgentConfigTool[] }>("/local/agentconfig", {
+      method: "POST",
+      body: { id, content },
+    }),
   /** Does the bridge come up at login, and the window with it? */
   startup: () => req<StartupState>("/local/startup"),
   /** Send both switches — the server writes the whole desired state each time. */
@@ -1021,6 +1061,7 @@ export const api = {
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
   running: () => req<RunningInfo>("/local/running"),
   usage: () => req<UsageInfo>("/local/usage"),
+  today: () => req<TodayInfo>("/local/today"),
   history: (archived = false) =>
     req<{ sessions: EnrichedSession[] }>(
       `/local/history${archived ? "?archived=1" : ""}`,

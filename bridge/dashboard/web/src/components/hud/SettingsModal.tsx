@@ -1,14 +1,15 @@
 import {
-  useEffect, useRef, useState, useSyncExternalStore,
+  Fragment, useEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from "react";
 import {
-  AudioLines, Bell, CloudSun, KeyRound, LayoutTemplate, Palette, Server,
-  SlidersHorizontal, Sparkles, type LucideIcon,
+  AudioLines, Bell, CloudSun, FileCog, KeyRound, LayoutTemplate, Palette, Server,
+  SlidersHorizontal, Sparkles, Tag, type LucideIcon,
 } from "lucide-react";
 import {
   api,
   type AccountInfo,
+  type AgentConfigTool,
   type AiFeature,
   type EnvSetting,
   type FreeAgentInfo,
@@ -103,19 +104,84 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "indicator" | "interface" | "ambient" | "notifications"
-  | "session" | "ai" | "accounts" | "system";
+  | "session" | "tags" | "ai" | "agentconfig" | "accounts" | "system";
 
-const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot", icon: Palette },
-  { key: "indicator", label: "INDICATOR", hint: "what plays while working", icon: AudioLines },
-  { key: "interface", label: "INTERFACE", hint: "transcript", icon: LayoutTemplate },
-  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun },
-  { key: "notifications", label: "NOTIFY", hint: "desktop · a sound per event", icon: Bell },
-  { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal },
-  { key: "ai", label: "AI", hint: "extras that spend model calls", icon: Sparkles },
-  { key: "accounts", label: "ACCOUNTS", hint: "logins · usage-limit fallback", icon: KeyRound },
-  { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server },
+// The rail carries the same three-way split the comment above describes, but
+// as two headings rather than ten peers: what the HUD is like, and what the
+// work does. Ten flat rows made you read the whole list to find one setting.
+//
+// Hints are one line each, always — the four that used to wrap ("what plays
+// while working", "extras that spend model calls") gave every other row a
+// different height, and a rail whose rows are all different heights reads as
+// ten unrelated things rather than two groups of five.
+const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: string }[] = [
+  { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot", icon: Palette, group: "THE HUD" },
+  { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD" },
+  { key: "interface", label: "INTERFACE", hint: "transcript", icon: LayoutTemplate, group: "THE HUD" },
+  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD" },
+  { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
+  { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK" },
+  { key: "tags", label: "TAGS", hint: "topics across sessions", icon: Tag, group: "THE WORK" },
+  { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK" },
+  { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK" },
+  { key: "accounts", label: "ACCOUNTS", hint: "logins · fallback", icon: KeyRound, group: "THE WORK" },
+  { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK" },
 ];
+
+// ---- SEARCH -----------------------------------------------------------------
+// Ten categories deep, "where do I turn X off" is a hunt through all ten. One
+// entry per Section, carrying the names of the rows inside it as `terms`: you
+// search for the setting and land on the block that holds it. The forty-odd
+// environment settings under SYSTEM are deliberately absent — they come from
+// the bridge, so search fetches that registry the first time you type and folds
+// it in row by row, which also means nobody has to keep a copy of them here.
+const INDEX: { tab: Tab; sec: string; terms: string }[] = [
+  { tab: "appearance", sec: "THEME · DARK", terms: "colour color palette scheme aurora phosphor" },
+  { tab: "appearance", sec: "THEME · LIGHT", terms: "colour color palette scheme day bright" },
+  { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
+  { tab: "appearance", sec: "FONT", terms: "typeface monospace family" },
+  { tab: "appearance", sec: "BASE FONT SIZE", terms: "text size zoom bigger smaller scale px auto" },
+  { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
+  { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
+  { tab: "interface", sec: "TRANSCRIPT", terms: "auto-open results bash output edit diffs tool" },
+  { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
+  { tab: "ambient", sec: "CLAUDE·FM", terms: "radio station music volume ambient" },
+  { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
+  { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
+  { tab: "notifications", sec: "PER EVENT", terms: "sound per event pack finished needs you error" },
+  { tab: "session", sec: "RUN DEFAULTS", terms: "model agent mode effort ponytail permission plan bypass opus sonnet" },
+  { tab: "session", sec: "PROFILES", terms: "preset saved knobs tools restore" },
+  { tab: "tags", sec: "TAGS", terms: "topics rename merge chart sessions" },
+  { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
+  { tab: "ai", sec: "DESIGN SYSTEM", terms: "claude design link pull sync skill" },
+  { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
+  { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
+  { tab: "accounts", sec: "ON USAGE LIMIT", terms: "policy wait switch fallback reset quota" },
+  { tab: "accounts", sec: "CLAUDE LOGINS", terms: "account add sign in oauth profile" },
+  { tab: "accounts", sec: "FREE AGENTS", terms: "api key gemini openai provider fallback handover" },
+  { tab: "system", sec: "BRIDGE", terms: "host port address" },
+  { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
+  { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
+  { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
+];
+
+type Hit = { tab: Tab; sec: string; row?: string; hint?: string };
+
+function search(q: string, env: EnvSetting[], hidden: Set<string>): Hit[] {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const label = (t: Tab) => TABS.find((x) => x.key === t)!.label;
+  const all: (Hit & { hay: string })[] = [
+    ...INDEX.filter((e) => !hidden.has(e.sec)).map((e) => ({
+      tab: e.tab, sec: e.sec, hay: `${label(e.tab)} ${e.sec} ${e.terms}`.toLowerCase(),
+    })),
+    ...env.map((s) => ({
+      tab: "system" as Tab, sec: s.group, row: s.label, hint: s.hint,
+      hay: `system ${s.group} ${s.label} ${s.key} ${s.hint}`.toLowerCase(),
+    })),
+  ];
+  return all.filter((e) => words.every((w) => e.hay.includes(w))).slice(0, 40);
+}
 
 // ---- WORKING INDICATOR ------------------------------------------------------
 // Four forms share one tabbed panel so the modal stays one screen: the stock
@@ -172,12 +238,9 @@ const INDICATOR_TABS: { key: Indicator; label: string; blurb: string; help?: Rea
 ];
 
 // 0 = AUTO (viewport-derived); the rest are the base the type scale hangs off.
-// Each step is drawn at the size it sets — a size list rendered all at one size
-// is a list of numbers, not a choice you can see.
 const BASE_FONT_OPTS = BASE_FONTS.map((n) => ({
   label: n === 0 ? "AUTO" : `${n}PX`,
   value: String(n),
-  size: n ? `${n}px` : undefined,
 }));
 
 const TONE_OPTS = (Object.keys(TONES) as ToneKey[]).map((k) => ({ label: TONES[k].label, value: k }));
@@ -255,7 +318,7 @@ function Section({ title, info, top, children }: {
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ marginTop: top ? 22 : 0 }}>
+    <div data-sec={typeof title === "string" ? title : undefined} style={{ marginTop: top ? 22 : 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>
           {title}
@@ -282,7 +345,10 @@ function Row({ label, desc, info, first, children }: {
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ marginTop: first ? 0 : 11, paddingTop: first ? 0 : 11, borderTop: first ? undefined : RULE }}>
+    <div
+      data-row={typeof label === "string" ? label : undefined}
+      style={{ marginTop: first ? 0 : 11, paddingTop: first ? 0 : 11, borderTop: first ? undefined : RULE }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={KEY_TX}>{label}</span>
         {info && <InfoDot on={open} about={typeof label === "string" ? label : undefined} onClick={() => setOpen(!open)} />}
@@ -346,26 +412,21 @@ function Volume({ value, disabled, onChange }: { value: number; disabled?: boole
 /** Segmented picker — one button per option, active one filled. A grid, not a
  *  wrapping flex row: flex stretches whatever lands on the last line, so ten
  *  fonts read as six even cells and then four oversized ones. Every cell is the
- *  same width here, however the list divides.
- *
- *  An option may carry its own `font`/`size` — a picker whose options are type
- *  faces or type sizes should show you the thing, not a label for it. */
+ *  same width here, however the list divides. */
 function Segmented<T extends string>({
   options,
   value,
   onPick,
   size = "var(--t10)",
-  min = 72,
 }: {
-  options: { label: string; value: T; font?: string; size?: string }[];
+  options: { label: string; value: T }[];
   value: T;
   onPick: (v: T) => void;
   size?: string;
-  min?: number;
 }) {
   const [hover, setHover] = useState<T | null>(null);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(${min}px,1fr))`, gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(72px,1fr))", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
       {options.map((o) => {
         const active = value === o.value;
         return (
@@ -382,8 +443,8 @@ function Segmented<T extends string>({
                 : hover === o.value ? "color-mix(in srgb, var(--acc) 12%, transparent)"
                 : "transparent",
               color: active ? "var(--acc-on)" : "var(--txd)",
-              fontFamily: o.font ?? "inherit",
-              fontSize: o.size ?? size,
+              fontFamily: "inherit",
+              fontSize: size,
               letterSpacing: 1,
               padding: "6px 4px",
             }}
@@ -1146,6 +1207,7 @@ const POLICY_BLURB: Record<string, string> = {
  *  fewer thing to explain. */
 function TagsPanel() {
   const [tags, setTags] = useState<TagCount[]>([]);
+  const [manage, setManage] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1170,44 +1232,76 @@ function TagsPanel() {
   if (!tags.length)
     return <div style={CARD}><span style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>No tags yet — they arrive with the first named session.</span></div>;
 
+  // The bar IS the chart: each tag against the most-used one. A count alone
+  // doesn't say whether 12 is a lot here; beside the longest bar it does. Only
+  // the head is worth drawing — the tail is a hundred one-session tags, which
+  // is a wall of stubs, so the full set lives in the list below instead.
+  const top = tags.slice(0, 12);
+  const peak = tags[0].count;
+
+  const nameStyle: CSSProperties = { fontSize: "var(--t11)", color: "var(--purple-d)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+  const editStyle: CSSProperties = { flex: 1, minWidth: 0, background: "transparent", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 7px", outline: "none" };
+
+  const rename = (t: TagCount) => (
+    <input
+      autoFocus
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") void commit(t.tag, value.trim() || undefined);
+        if (e.key === "Escape") setEditing(null);
+      }}
+      onBlur={() => setEditing(null)}
+      style={editStyle}
+    />
+  );
+
   return (
     <div style={CARD}>
-      {tags.map((t) => (
-        <div key={t.tag} style={{ ...KV, marginTop: 8, gap: 10 }}>
-          {editing === t.tag ? (
-            <input
-              autoFocus
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void commit(t.tag, value.trim() || undefined);
-                if (e.key === "Escape") setEditing(null);
-              }}
-              onBlur={() => setEditing(null)}
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 7px", outline: "none" }}
-            />
-          ) : (
-            <>
-              <span style={{ fontSize: "var(--t11)", color: "var(--purple-d)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {t.tag}
-              </span>
-              <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none" }}>
-                {t.count} session{t.count === 1 ? "" : "s"}
-              </span>
-              <button
-                onClick={() => { setEditing(t.tag); setValue(t.tag); }}
-                title="rename — an existing name merges the two"
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
-              >RENAME</button>
-              <button
-                onClick={() => void commit(t.tag)}
-                title={`remove "${t.tag}" from all ${t.count} session${t.count === 1 ? "" : "s"}`}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
-              >✕</button>
-            </>
-          )}
+      {top.map((t) => (
+        <div key={t.tag} style={{ marginTop: 9 }} title={`${t.count} session${t.count === 1 ? "" : "s"}`}>
+          <div style={{ ...KV, gap: 10 }}>
+            <span style={nameStyle}>{t.tag}</span>
+            <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none" }}>{t.count}</span>
+          </div>
+          <div style={{ height: 3, marginTop: 3, background: "color-mix(in srgb, var(--acc) 8%, transparent)" }}>
+            <div style={{ height: "100%", width: `${(t.count / peak) * 100}%`, background: "var(--purple-d)" }} />
+          </div>
         </div>
       ))}
+
+      <div style={{ ...ROW, marginTop: 16, paddingTop: 12, borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)" }}>
+        <span style={KEY_TX}>MANAGE ALL {tags.length}</span>
+        <span style={{ flex: 1 }} />
+        <Switch on={manage} onClick={() => { setManage(!manage); setEditing(null); }} />
+      </div>
+
+      {manage && (
+        <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 2 }}>
+          {tags.map((t) => (
+            <div key={t.tag} style={{ ...KV, marginTop: 8, gap: 10 }}>
+              {editing === t.tag ? rename(t) : (
+                <>
+                  <span style={nameStyle}>{t.tag}</span>
+                  <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none" }}>
+                    {t.count} session{t.count === 1 ? "" : "s"}
+                  </span>
+                  <button
+                    onClick={() => { setEditing(t.tag); setValue(t.tag); }}
+                    title="rename — an existing name merges the two"
+                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
+                  >RENAME</button>
+                  <button
+                    onClick={() => void commit(t.tag)}
+                    title={`remove "${t.tag}" from all ${t.count} session${t.count === 1 ? "" : "s"}`}
+                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
+                  >✕</button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1337,8 +1431,8 @@ function EnvField({ s, busy, onSave }: {
  *
  *  Three switches for three different machines' worth of state, which is why they
  *  live together: the browser owns the install, systemd owns whether the bridge
- *  starts itself, and a .cmd in the Windows Startup folder owns whether the window
- *  comes up with it. Turning login OFF never stops the running bridge — you are
+ *  starts itself, and a launcher — a .cmd in the Windows Startup folder under WSL,
+ *  a ~/.config/autostart entry otherwise — owns whether the window comes up with it. Turning login OFF never stops the running bridge — you are
  *  almost certainly talking to it. */
 function StartupSection() {
   const [st, setSt] = useState<StartupState | null>(null);
@@ -1367,7 +1461,7 @@ function StartupSection() {
     <Section
       title="STARTUP"
       top
-      info="Two separate things. Installing puts the dashboard in your Start Menu as its own window, with no tab strip or address bar — that is the browser's doing and it never leaves this machine. Starting at login is the bridge's: a systemd user unit brings it up, and because nothing in WSL runs until Windows touches it, a small script in the Startup folder is what wakes the distro. Switching login off leaves the bridge you are using alone; it only stops the next boot from starting one."
+      info="Two separate things. Installing puts the dashboard in your Start Menu as its own window, with no tab strip or address bar — that is the browser's doing and it never leaves this machine. Starting at login is the bridge's: a systemd user unit brings it up, and under WSL — where nothing runs until Windows touches the distro — a small script in the Startup folder is what wakes it. Switching login off leaves the bridge you are using alone; it only stops the next boot from starting one."
     >
       <div style={CARD}>
         <Row
@@ -1406,7 +1500,7 @@ function StartupSection() {
           <>
             <Row
               label="START AT LOGIN"
-              desc="Brings the bridge up on its own when you sign in to Windows."
+              desc="Brings the bridge up on its own when you sign in."
             >
               <Switch
                 on={!!st?.login}
@@ -1449,6 +1543,120 @@ function StartupSection() {
  *  restart to reach. Same precedence as the AI tab: what you set here beats
  *  .env, and RESET puts a row back to whatever .env said rather than to a
  *  hardcoded default — so the file stays the floor under all of this. */
+/** The global config files each AI tool reads for itself — ~/.claude/CLAUDE.md
+ *  and settings.json, opencode's pair when it is installed. Unlike EnvPanel
+ *  below, nothing here is layered over anything: the file on disk IS the state,
+ *  so a save is a write and there is no RESET to fall back to. Hence an
+ *  explicit SAVE rather than EnvPanel's save-on-blur — and a refused write
+ *  (invalid JSON) needs somewhere to say so. */
+function AgentConfigPanel() {
+  const [tools, setTools] = useState<AgentConfigTool[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<{ id: string; message: string } | null>(null);
+
+  useEffect(() => {
+    void api.agentConfig().then((r) => setTools(r.tools)).catch(() => setTools([]));
+  }, []);
+
+  async function save(id: string, content: string) {
+    setBusy(id);
+    setErr(null);
+    try {
+      setTools((await api.setAgentConfig(id, content)).tools);
+      setDrafts((d) => { const next = { ...d }; delete next[id]; return next; });
+    } catch (e) {
+      setErr({ id, message: e instanceof Error ? e.message : "could not save" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (tools === null) return <div style={NOTE}>Reading…</div>;
+  if (!tools.length)
+    return <div style={NOTE}>This bridge is running a build without the agent-config route. Restart it.</div>;
+
+  return (
+    <>
+      {tools.map((t, ti) => (
+        <Section
+          key={t.id}
+          title={t.label}
+          top={ti > 0}
+          info={
+            ti === 0
+              ? "These are the tools' own files, not bridge settings: written verbatim to the paths each tool reads for itself, and just as editable from a terminal or from Claude Code's own /config. A save lands immediately and the next turn picks it up — nothing restarts. A .json file is parsed before it is written, so a typo comes back as an error instead of quietly voiding every setting in it."
+              : undefined
+          }
+        >
+          <div style={CARD}>
+            {!t.installed ? (
+              <Row first label="NOT INSTALLED" desc={`${t.hint} — nothing to configure until it is`} />
+            ) : t.files.map((f, i) => {
+              const text = drafts[f.id] ?? f.content;
+              const dirty = text !== f.content;
+              return (
+                <div
+                  key={f.id}
+                  style={{ marginTop: i ? 11 : 0, paddingTop: i ? 11 : 0, borderTop: i ? RULE : undefined }}
+                >
+                  <Row
+                    first
+                    label={f.name}
+                    desc={
+                      <>
+                        {f.hint}
+                        <span style={{ color: "var(--txd)" }}> · {f.path}</span>
+                        {!f.exists && <span style={{ color: "var(--txd)" }}> · not created yet</span>}
+                      </>
+                    }
+                  >
+                    <button
+                      onClick={() => void (busy || !dirty ? null : save(f.id, text))}
+                      disabled={!!busy || !dirty || !!f.error}
+                      style={{
+                        appearance: "none", cursor: dirty && !busy ? "pointer" : "default",
+                        border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+                        background: "transparent", color: dirty ? "var(--acc)" : "var(--txd)",
+                        fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
+                        padding: "6px 12px", flex: "none",
+                      }}
+                    >
+                      {busy === f.id ? "SAVING…" : dirty ? "SAVE" : "SAVED"}
+                    </button>
+                  </Row>
+                  {f.error ? (
+                    <div style={{ ...NOTE, color: "var(--err)" }}>{f.error}</div>
+                  ) : (
+                    <textarea
+                      value={text}
+                      disabled={busy === f.id}
+                      spellCheck={false}
+                      rows={14}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setDrafts((d) => ({ ...d, [f.id]: v }));
+                      }}
+                      style={{
+                        ...field, width: "100%", marginTop: 8, resize: "vertical",
+                        lineHeight: 1.6, letterSpacing: 0,
+                        fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)",
+                      }}
+                    />
+                  )}
+                  {err?.id === f.id && (
+                    <div style={{ ...NOTE, color: "var(--err)", marginTop: 6 }}>{err.message}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      ))}
+    </>
+  );
+}
+
 function EnvPanel() {
   const [rows, setRows] = useState<EnvSetting[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -2122,7 +2330,7 @@ function ProfilesPanel({
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") save(); }}
           placeholder="name this setup"
-          style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }}
+          style={{ flex: "1 1 auto", minWidth: 0, maxWidth: 340, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }}
         />
         <button onClick={save} style={btn("var(--acc)")}>SAVE CURRENT</button>
       </div>
@@ -2155,6 +2363,51 @@ export function SettingsModal(props: SettingsModalProps) {
 
   const [tab, setTab] = useState<Tab>("appearance");
   const aiFeatures = useAiFeatures();   // the PONYTAIL level hides with its switch
+  // Search. A query replaces the panel with its results; picking one puts the
+  // tab back and scrolls to the setting, so `q` is also "which view is this".
+  const [q, setQ] = useState("");
+  const [jump, setJump] = useState<Hit | null>(null);
+  const [env, setEnv] = useState<EnvSetting[]>([]);
+  const asked = useRef(false);
+  const pane = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!q.trim() || asked.current) return;
+    asked.current = true;   // one attempt: a failed fetch must not retry per keystroke
+    void api.envSettings().then((r) => setEnv(r.settings)).catch(() => {});
+  }, [q]);
+  // Two sections only exist while their own switch is on, and a hit that
+  // scrolls to nothing is worse than no hit.
+  const hidden = new Set([
+    ...(aiFeatures.design ? [] : ["DESIGN SYSTEM"]),
+    ...(settings.pushSound ? [] : ["PER EVENT"]),
+  ]);
+  const hits = search(q, env, hidden);
+  const shown: Tab | "search" = q.trim() ? "search" : tab;
+  function go(h: Hit) {
+    setTab(h.tab);
+    setQ("");
+    setJump(h);
+  }
+  // The panel a hit lives in may still be fetching (the environment registry,
+  // the accounts list), so keep looking for a moment before giving up.
+  useEffect(() => {
+    if (!jump) return;
+    let timer = 0;
+    let tries = 0;
+    const find = () => {
+      const el = (jump.row && pane.current?.querySelector(`[data-row="${jump.row}"]`))
+        || pane.current?.querySelector(`[data-sec="${jump.sec}"]`);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        (el as HTMLElement).style.animation = "resultflash 1.2s ease both";
+        setJump(null);
+      } else if (++tries < 10) {
+        timer = window.setTimeout(find, 150);
+      }
+    };
+    find();
+    return () => clearTimeout(timer);
+  }, [jump]);
   // As a top strip the rail scrolls, and the browser's own scroll-on-click only
   // brings the tab just inside the edge — enough to leave the category you are
   // reading half off-screen. Centre it instead.
@@ -2165,7 +2418,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const autoBase = autoBaseFont(window.innerWidth, window.innerHeight);
   const [escHover, setEscHover] = useState(false);
   const [replayHover, setReplayHover] = useState(false);
-  const [doneHover, setDoneHover] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
 
   return (
     <div
@@ -2186,10 +2439,16 @@ export function SettingsModal(props: SettingsModalProps) {
         onClick={(e) => e.stopPropagation()}
         className="panel"
         style={{
-          width: 720,
-          maxWidth: "94vw",
-          height: "76vh",
-          maxHeight: "86vh",
+          // Content is capped at 760px by .mcol and the rail is 180 — a modal at
+          // the shared --modal-w (75vw) therefore spent ~130px a side on empty
+          // gutter. This width IS the content's width.
+          width: "min(976px, 94vw)",
+          // One height for every category, not one per: sizing to the tab meant
+          // the panel jumped ~200px between INTERFACE (one switch) and
+          // APPEARANCE, and a dialog that resizes under the pointer costs more
+          // than the void it saves. 86vh rather than the old 76vh — the tabs
+          // that overflow are the ones you spend time in.
+          height: "86vh",
           display: "flex",
           flexDirection: "column",
           border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
@@ -2198,15 +2457,18 @@ export function SettingsModal(props: SettingsModalProps) {
           animation: "modalIn .46s cubic-bezier(.16,.84,.3,1) both",
         }}
       >
-        {/* Header */}
+        {/* Header. The storage note used to stand in a footer bar under every
+            tab — a permanent caption for a fact you need once. It folds behind
+            the ⓘ here instead, the same way every long explanation in this
+            modal already does. */}
+        <div style={{ flex: "none", position: "relative" }}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
+            flexWrap: "wrap",
             gap: 11,
             padding: "14px 18px",
-            borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
-            flex: "none",
           }}
         >
           <svg
@@ -2227,12 +2489,25 @@ export function SettingsModal(props: SettingsModalProps) {
             CONFIGURE
           </span>
           <span
-            style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}
+            style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px", whiteSpace: "nowrap" }}
             className="glow"
           >
             DASHBOARD SETTINGS
           </span>
+          <InfoDot on={scopeOpen} about="where these are stored" onClick={() => setScopeOpen(!scopeOpen)} />
           <span style={{ flex: 1 }}></span>
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && hits.length) go(hits[0]);
+              // Otherwise Escape would close the whole modal from inside the box.
+              if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
+            }}
+            placeholder="search settings…"
+            style={{ ...field, flex: "0 1 220px", minWidth: 140 }}
+          />
           <button
             onClick={onClose}
             onMouseEnter={() => setEscHover(true)}
@@ -2252,34 +2527,80 @@ export function SettingsModal(props: SettingsModalProps) {
             ESC ✕
           </button>
         </div>
+        {scopeOpen && (
+          <div style={{ ...ASIDE, margin: "0 18px 12px" }}>
+            Stored in this browser — except weather and the prompt check, which the bridge keeps
+            for every client.
+          </div>
+        )}
+        {/* The panel's drawline, not a flat rule: teal at the title, gone by the
+            far edge, wiped in on open. */}
+        <div style={{
+          height: 1,
+          background: "linear-gradient(90deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc) 10%, transparent) 62%, transparent)",
+          transformOrigin: "left",
+          animation: "drawline .55s cubic-bezier(.2,.8,.2,1) .12s both",
+        }} />
+        </div>
 
         {/* Category rail + the active category's panel. Both the rail's own
             layout and its selected-tab marker live in index.css, which is what
             lets it turn from a side rail into a top strip on a phone. */}
         <div className="setbody">
           <div className="setrail" ref={rail}>
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                className={tab === t.key ? "on" : undefined}
-                aria-current={tab === t.key ? "page" : undefined}
-                onClick={() => setTab(t.key)}
-                style={{ display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <t.icon size={14} strokeWidth={1.7} aria-hidden style={{ flex: "none" }} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{t.label}</div>
-                  <div className="hint"
-                    style={{ fontSize: "var(--t85)", letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
-                    {t.hint}
+            {TABS.map((t, i) => (
+              <Fragment key={t.key}>
+                {t.group !== TABS[i - 1]?.group && <div className="setgroup">{t.group}</div>}
+                <button
+                  className={tab === t.key ? "on" : undefined}
+                  aria-current={tab === t.key ? "page" : undefined}
+                  onClick={() => setTab(t.key)}
+                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  <t.icon size={14} strokeWidth={1.7} aria-hidden style={{ flex: "none" }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{t.label}</div>
+                    <div className="hint"
+                      style={{ fontSize: "var(--t85)", letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
+                      {t.hint}
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+              </Fragment>
             ))}
           </div>
 
-          <div className="mscroll" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
-            {tab === "appearance" && (
+          <div ref={pane} className="mscroll mcol" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
+            {shown === "search" && (
+              <Section title={`SEARCH · ${hits.length} MATCH${hits.length === 1 ? "" : "ES"}`}>
+                {hits.length === 0 ? (
+                  <div style={NOTE}>Nothing here matches that.</div>
+                ) : (
+                  <div style={CARD}>
+                    {hits.map((h, i) => (
+                      <Row
+                        key={`${h.tab}${h.sec}${h.row ?? ""}`}
+                        first={!i}
+                        label={h.row ?? h.sec}
+                        desc={
+                          <>
+                            <span style={{ color: "var(--txd)" }}>
+                              {TABS.find((t) => t.key === h.tab)!.label}
+                              {h.row ? ` · ${h.sec}` : ""}
+                            </span>
+                            {h.hint ? ` — ${h.hint}` : ""}
+                          </>
+                        }
+                      >
+                        <MiniBtn onClick={() => go(h)}>GO</MiniBtn>
+                      </Row>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            )}
+
+            {shown === "appearance" && (
               <>
                 <Section title="THEME · DARK">
                   <ThemeCardGrid cards={DARK_CARDS} settings={settings} onTheme={onTheme} />
@@ -2312,16 +2633,21 @@ export function SettingsModal(props: SettingsModalProps) {
                 >
                   {/* Each name is set in the face it names — THEME included, which
                       is how you see what the palette brought without applying it. */}
-                  <Segmented
-                    min={96}
-                    options={FONTS.map((f) => ({
-                      label: f.label,
-                      value: f.key,
-                      font: fontStack(f.key, settings.theme) || "inherit",
-                    }))}
+                  <select
                     value={settings.font}
-                    onPick={(v) => onPatch({ font: v })}
-                  />
+                    onChange={(e) => onPatch({ font: e.target.value })}
+                    style={{ ...field, width: "100%", maxWidth: 340, fontFamily: fontStack(settings.font, settings.theme) || "inherit" }}
+                  >
+                    {FONTS.map((f) => (
+                      <option
+                        key={f.key}
+                        value={f.key}
+                        style={{ fontFamily: fontStack(f.key, settings.theme) || "inherit" }}
+                      >
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
                 </Section>
 
                 <Section
@@ -2336,11 +2662,15 @@ export function SettingsModal(props: SettingsModalProps) {
                     </>
                   }
                 >
-                  <Segmented
-                    options={BASE_FONT_OPTS}
+                  <select
                     value={String(settings.baseFont)}
-                    onPick={(v) => onPatch({ baseFont: Number(v) })}
-                  />
+                    onChange={(e) => onPatch({ baseFont: Number(e.target.value) })}
+                    style={{ ...field, width: "100%", maxWidth: 340 }}
+                  >
+                    {BASE_FONT_OPTS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
                 </Section>
 
                 <Section title="BOOT SEQUENCE" top>
@@ -2371,13 +2701,13 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {tab === "indicator" && (
+            {shown === "indicator" && (
               <Section title="WORKING INDICATOR">
                 <IndicatorPicker settings={settings} onPatch={onPatch} />
               </Section>
             )}
 
-            {tab === "ambient" && (
+            {shown === "ambient" && (
               <>
                 <Section title="WEATHER · header clock">
                   <WeatherCard weather={weather} onSetCity={onSetCity} onSetUnit={onSetUnit} />
@@ -2414,7 +2744,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {tab === "session" && (
+            {shown === "session" && (
               <>
                 <Section
                   title="RUN DEFAULTS"
@@ -2470,14 +2800,6 @@ export function SettingsModal(props: SettingsModalProps) {
                     onSessionTools={onSessionTools}
                   />
                 </Section>
-
-                <Section
-                  title="TAGS"
-                  top
-                  info="Tags come from the model when it names a session. Renaming one onto another merges them; every session wearing the old name follows."
-                >
-                  <TagsPanel />
-                </Section>
               </>
             )}
 
@@ -2485,7 +2807,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 PONYTAIL and GRAPH switches that used to sit here only hid their
                 chips while the features kept running; they are AI-tab switches
                 now, where off means off and the UI follows. */}
-            {tab === "interface" && (
+            {shown === "interface" && (
               <>
                 <Section title="TRANSCRIPT">
                   <div style={CARD}>
@@ -2504,7 +2826,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {tab === "notifications" && (
+            {shown === "notifications" && (
               <>
                 <Section title="DESKTOP">
                   <div style={CARD}>
@@ -2598,16 +2920,27 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {tab === "ai" && (
+            {shown === "tags" && (
+              <Section
+                title="TAGS"
+                info="Tags come from the model when it names a session. The chart is the twelve most-worn, each against the most-used one; MANAGE opens the full set, where renaming a tag onto an existing one merges them and every session wearing the old name follows."
+              >
+                <TagsPanel />
+              </Section>
+            )}
+
+            {shown === "ai" && (
               <>
                 <AiPanel />
                 {aiFeatures.design && <DesignSection onFeed={onFeed} />}
               </>
             )}
 
-            {tab === "accounts" && <AccountsPanel />}
+            {shown === "agentconfig" && <AgentConfigPanel />}
 
-            {tab === "system" && (
+            {shown === "accounts" && <AccountsPanel />}
+
+            {shown === "system" && (
               <>
                 <Section title="BRIDGE">
                   <div style={CARD}>
@@ -2655,42 +2988,6 @@ export function SettingsModal(props: SettingsModalProps) {
           </div>
         </div>
 
-        {/* Footer */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "12px 18px",
-            borderTop: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
-            flex: "none",
-          }}
-        >
-          <span style={{ fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--txl)", flex: 1 }}>
-            Stored in this browser — except weather and the prompt check, which the bridge keeps
-            for every client.
-          </span>
-          <button
-            onClick={onClose}
-            onMouseEnter={() => setDoneHover(true)}
-            onMouseLeave={() => setDoneHover(false)}
-            style={{
-              appearance: "none",
-              cursor: "pointer",
-              border: "1px solid var(--acc)",
-              background: doneHover
-                ? "color-mix(in srgb, var(--acc) 22%, transparent)"
-                : "color-mix(in srgb, var(--acc) 12%, transparent)",
-              color: "var(--txb)",
-              fontFamily: "inherit",
-              fontSize: "var(--t10)",
-              letterSpacing: 2,
-              padding: "9px 22px",
-            }}
-          >
-            DONE
-          </button>
-        </div>
       </div>
     </div>
   );
