@@ -186,6 +186,8 @@ export interface ChatContextValue {
   removeAttachment: (id: string) => void;
   activeTurn: Turn | null;
   isRunning: boolean;
+  /** What the live turn is waiting on before its first token, or null. */
+  boot: string | null;
   // The open session's AI is working — a live bridge turn OR a native (VS Code)
   // session being written to right now (from the unified status map).
   sessionWorking: boolean;
@@ -623,12 +625,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   async function newChat() {
     if (!project) return;
     setSendError(null);
+    // The empty chat opens now and the session is minted behind it: over the
+    // tunnel the POST is a visible round trip, and until it lands you'd be
+    // staring at the session you just left. `resolving` is what the transcript
+    // reads as "still coming" — same as the initial resolve.
+    sessionIdRef.current = null;
+    setSessionId(null);
+    setTurns([]);
+    setResolving(true);
     try {
       const { session } = await api.createSession(project);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
     } catch {
       /* ignore */
+    } finally {
+      setResolving(false);
     }
   }
 
@@ -652,6 +664,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     removeAttachment,
     activeTurn,
     isRunning,
+    boot: (isRunning && transcriptQ.data?.boot) || null,
     sessionWorking,
     pending,
     sendError,

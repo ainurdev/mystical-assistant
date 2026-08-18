@@ -45,6 +45,7 @@ def test_script_waits_rather_than_sleeping():
 
 
 def test_state_reports_why_when_there_is_no_windows_side(monkeypatch):
+    monkeypatch.setattr(startup, "_wsl", lambda: True)   # holds off WSL too
     monkeypatch.setattr(startup, "_has_systemd", lambda: True)
     monkeypatch.setattr(startup, "_startup_dir", lambda: None)
     st = startup.state()
@@ -99,6 +100,7 @@ def test_turning_login_off_never_stops_the_running_bridge(monkeypatch, tmp_path)
 
     cmd = tmp_path / startup.CMD_NAME
     cmd.write_text("old launcher")
+    monkeypatch.setattr(startup, "_wsl", lambda: True)
     monkeypatch.setattr(startup, "_has_systemd", lambda: True)
     monkeypatch.setattr(startup, "_startup_dir", lambda: str(tmp_path))
     monkeypatch.setattr(startup, "_systemctl", fake_systemctl)
@@ -123,3 +125,78 @@ def test_unit_pins_a_path_without_pyenv_shims(monkeypatch):
     assert ".pyenv/shims" not in path
     assert "/usr/bin" in path
     assert "Restart=on-failure" in text
+
+
+def test_profile_picks_the_one_that_has_used_the_dashboard(tmp_path, monkeypatch):
+    """Four Chrome profiles, one of them ours: the launcher must name it, or the
+    window is a coin flip."""
+    win = tmp_path / "Users/me"
+    startup_dir = win / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    startup_dir.mkdir(parents=True)
+    data = win / "AppData/Local/Google/Chrome/User Data"
+    for i, (name, text) in enumerate([("Default", "{}"),
+                                      ("Profile 2", '{"x":"http://localhost:8790,*"}'),
+                                      ("Profile 3", "{}")]):
+        (data / name).mkdir(parents=True)
+        prefs = data / name / "Preferences"
+        prefs.write_text(text)
+        os.utime(prefs, (0, 100 - i))          # Default is the most recently written
+    monkeypatch.setattr(startup, "_startup_dir", lambda: str(startup_dir))
+    chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+    assert startup._profile(chrome, 8790) == "Profile 2"
+
+    # Nothing has visited it yet — fall back to whatever Chrome last had open.
+    (data / "Profile 2" / "Preferences").write_text("{}")
+    (data / "Local State").write_text('{"profile":{"last_used":"Profile 3"}}')
+    assert startup._profile(chrome, 8790) == "Profile 3"
+
+    # No Chrome data at all: no flag, and Chrome picks as it does today.
+    monkeypatch.setattr(startup, "_startup_dir", lambda: str(tmp_path / "no/AppData/x"))
+    assert startup._profile(chrome, 8790) is None
+
+
+def test_profile_reads_the_linux_chrome_dir(tmp_path, monkeypatch):
+    """Same idea off WSL, where Chrome keeps its profiles under ~/.config."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    prof = tmp_path / ".config/google-chrome/Profile 5"
+    prof.mkdir(parents=True)
+    (prof / "Preferences").write_text('{"x":"http://localhost:8790,*"}')
+    assert startup._profile("/usr/bin/google-chrome", 8790) == "Profile 5"
+    assert startup._profile("/usr/bin/chromium", 8790) is None   # different dir
+
+
+def test_linux_gets_an_autostart_entry_instead_of_a_windows_launcher(tmp_path, monkeypatch):
+    """No distro to wake here, so start-at-login is the unit plus a .desktop —
+    and a machine without /mnt/c must not be told it is unsupported."""
+    entry = tmp_path / "autostart/mystical-assistant.desktop"
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_AUTOSTART", str(entry))
+    monkeypatch.setattr(startup, "_has_systemd", lambda: True)
+    monkeypatch.setattr(startup, "_browser", lambda: "/usr/bin/google-chrome")
+    monkeypatch.setattr(startup, "_profile", lambda *_: "Profile 5")
+    monkeypatch.setattr(startup, "_unit_text", lambda: "[Unit]\n")
+    monkeypatch.setattr(startup, "_systemctl", _fake_systemctl([]))
+    monkeypatch.setattr(startup.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(startup, "_UNIT_DIR", str(tmp_path / "systemd"))
+
+    st = startup.apply(True, True)
+    assert st["supported"] is True
+    text = entry.read_text()
+    assert "Exec=sh -c" in text and "--app=http://localhost:" in text
+    assert "'--profile-directory=Profile 5'" in text
+    assert "$" not in text, "a $ in Exec needs escaping the spec makes fiddly"
+
+    startup.apply(True, False)          # window off, login still on
+    assert not entry.exists()
+
+
+def _fake_systemctl(calls):
+    class R:
+        returncode = 0
+        stdout = "enabled"
+        stderr = ""
+
+    def run(*args):
+        calls.append(args)
+        return R()
+    return run

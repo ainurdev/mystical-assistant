@@ -4,11 +4,13 @@ Two host-side pieces, neither of them in this repo — which is exactly why they
 a switch that can also *report* on them:
 
   1. a systemd **user unit** that runs run.sh, enabled + lingering, and
-  2. a **.cmd in the Windows Startup folder**.
+  2. a launcher that opens the window: a **.cmd in the Windows Startup folder**
+     under WSL, a **~/.config/autostart entry** on a plain Linux desktop.
 
 Under WSL the second is what makes the first fire at all: nothing on the Linux side
-runs until Windows touches the distro, so the .cmd's real job is booting it. Opening
-the dashboard window afterwards is the optional half.
+runs until Windows touches the distro, so the .cmd's real job is booting it, and
+opening the window afterwards is the optional half. Off WSL there is nothing to
+wake — the unit already came up at boot — so the launcher is only the window.
 
 Everything here is best-effort and reversible, and `state()` never raises — a machine
 with no /mnt/c, several Windows profiles, or no systemd just reports
@@ -18,12 +20,18 @@ from __future__ import annotations
 
 import getpass
 import glob
+import json
 import os
+import platform
 import shutil
 import subprocess
 
 UNIT = "mystical-assistant.service"
 CMD_NAME = "mystical-assistant.cmd"
+# The native-Linux counterpart of the .cmd's second half: every desktop honours
+# ~/.config/autostart, whereas systemd's graphical-session.target only exists on
+# the desktops that bothered to wire it up.
+_AUTOSTART = os.path.expanduser("~/.config/autostart/mystical-assistant.desktop")
 _UNIT_DIR = os.path.expanduser("~/.config/systemd/user")
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -35,6 +43,8 @@ _BROWSERS = (
     "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
     "/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe",
 )
+_LINUX_BROWSERS = ("google-chrome", "google-chrome-stable", "chromium",
+                   "chromium-browser", "microsoft-edge")
 _SKIP_PROFILES = {"Public", "Default", "Default User", "All Users"}
 
 
@@ -61,8 +71,49 @@ def _startup_dir() -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def _wsl() -> bool:
+    """WSL needs the Windows side to wake the distro; native Linux does not."""
+    return "microsoft" in platform.release().lower()
+
+
 def _browser() -> str | None:
+    if not _wsl():
+        return next(filter(None, map(shutil.which, _LINUX_BROWSERS)), None)
     return next((p for p in _BROWSERS if os.path.exists(p)), None)
+
+
+def _profile(browser: str, port: int) -> str | None:
+    """Which browser profile to open the dashboard in, or None to let it choose.
+
+    Without --profile-directory Chrome opens whichever profile it last felt like,
+    so on a machine with four of them the login window is a coin flip. The tell is
+    the dashboard's own origin in a profile's Preferences; newest-written profile
+    wins, and last_used stands in when nothing has visited the dashboard yet."""
+    if browser.startswith("/mnt/"):
+        d = _startup_dir()
+        if not d:
+            return None
+        vendor = "Microsoft/Edge" if "msedge" in browser else "Google/Chrome"
+        root = f"{d.split('/AppData/', 1)[0]}/AppData/Local/{vendor}/User Data"
+    else:
+        name = os.path.basename(browser)
+        vendor = ("microsoft-edge" if "edge" in name else
+                  "chromium" if "chromium" in name else "google-chrome")
+        root = os.path.expanduser(f"~/.config/{vendor}")
+    for prefs in sorted(glob.glob(os.path.join(root, "*", "Preferences")),
+                        key=os.path.getmtime, reverse=True):
+        try:
+            with open(prefs, encoding="utf-8", errors="replace") as f:
+                if f"localhost:{port}" in f.read():
+                    return os.path.basename(os.path.dirname(prefs))
+        except OSError:
+            continue
+    try:
+        with open(os.path.join(root, "Local State"), encoding="utf-8",
+                  errors="replace") as f:
+            return json.load(f)["profile"].get("last_used")
+    except (OSError, ValueError, KeyError):
+        return None
 
 
 def _distro() -> str:
@@ -139,9 +190,32 @@ def _script(open_window: bool) -> str:
     ]
     browser = _browser()
     if open_window and browser:
-        lines += ["", f'start "" "{_win_path(browser)}" --app=http://localhost:{port}/']
+        prof = _profile(browser, port)
+        pick = f' --profile-directory="{prof}"' if prof else ""
+        lines += ["", f'start "" "{_win_path(browser)}"{pick} '
+                      f'--app=http://localhost:{port}/']
     # CRLF: a .cmd with bare LFs breaks cmd.exe's parsing of multi-line if blocks.
     return "\r\n".join(lines) + "\r\n"
+
+
+def _desktop() -> str:
+    """The autostart entry for a Linux desktop. No distro to boot here — the unit
+    already started at boot under linger — so this is only the window."""
+    from bridge import config
+    port, browser = config.DASH_PORT, _browser()
+    prof = _profile(browser, port)
+    pick = f" '--profile-directory={prof}'" if prof else ""
+    # Quoting: the Desktop Entry spec only makes ", `, $ and \ special inside a
+    # quoted Exec, so a $-free shell line needs no escaping at all.
+    # ponytail: the wait is unbounded — one sh and a curl a second if the bridge
+    # never answers. Bound it if that ever turns up in a process list.
+    return ("[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=mystical//assistant\n"
+            "Comment=Opens the dashboard once the bridge answers\n"
+            f'Exec=sh -c "until curl -sf -o /dev/null http://127.0.0.1:{port}/; '
+            f'do sleep 1; done; exec {browser}{pick} --app=http://localhost:{port}/"\n'
+            "X-GNOME-Autostart-enabled=true\n")
 
 
 # --- public API ---------------------------------------------------------------
@@ -150,35 +224,34 @@ def state() -> dict:
     if not _has_systemd():
         return {"supported": False, "reason": "no systemd on this machine",
                 "login": False, "window": False, "supervised": False, "browser": None}
-    d = _startup_dir()
-    if not d:
-        return {"supported": False,
-                "reason": "no single Windows Startup folder found (not WSL, or several profiles)",
-                "login": False, "window": False,
-                "supervised": _systemctl("is-active", UNIT).stdout.strip() == "active",
-                "browser": None}
-    cmd = os.path.join(d, CMD_NAME)
-    text = ""
-    if os.path.isfile(cmd):
-        try:
-            with open(cmd, encoding="utf-8", errors="replace") as f:
-                text = f.read()
-        except OSError:
-            text = ""
-    enabled = _systemctl("is-enabled", UNIT).stdout.strip() == "enabled"
     browser = _browser()
-    return {
+    base = {
         "supported": True,
         "reason": None,
-        # Both halves have to be in place; if they drift apart the switch reads
-        # off, and turning it on writes both back.
-        "login": bool(text) and enabled,
-        "window": "--app=" in text,
         # Is the bridge running under the unit *right now*? A `mystical restart`
         # from before the launcher learned about systemd leaves this false.
         "supervised": _systemctl("is-active", UNIT).stdout.strip() == "active",
         "browser": os.path.basename(browser) if browser else None,
     }
+    enabled = _systemctl("is-enabled", UNIT).stdout.strip() == "enabled"
+    if not _wsl():
+        # Nothing to wake: the unit starts at boot and the window comes from
+        # ~/.config/autostart, both of them ours.
+        return {**base, "login": enabled, "window": os.path.isfile(_AUTOSTART)}
+    d = _startup_dir()
+    if not d:
+        return {**base, "supported": False, "login": False, "window": False,
+                "browser": None,
+                "reason": "no single Windows Startup folder found (several profiles?)"}
+    text = ""
+    try:
+        with open(os.path.join(d, CMD_NAME), encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        pass
+    # Both halves have to be in place; if they drift apart the switch reads
+    # off, and turning it on writes both back.
+    return {**base, "login": bool(text) and enabled, "window": "--app=" in text}
 
 
 def apply(login: bool, window: bool) -> dict:
@@ -187,7 +260,7 @@ def apply(login: bool, window: bool) -> dict:
     st = state()
     if not st["supported"]:
         raise RuntimeError(st["reason"] or "not supported on this machine")
-    cmd = os.path.join(_startup_dir(), CMD_NAME)
+    cmd = os.path.join(_startup_dir(), CMD_NAME) if _wsl() else None
     if login:
         os.makedirs(_UNIT_DIR, exist_ok=True)
         unit = os.path.join(_UNIT_DIR, UNIT)
@@ -203,14 +276,22 @@ def apply(login: bool, window: bool) -> dict:
         # Linger, or the unit only starts once something logs in interactively.
         subprocess.run(["loginctl", "enable-linger", getpass.getuser()],
                        capture_output=True, text=True, timeout=20)
-        with open(cmd, "w", encoding="utf-8", newline="") as f:
-            f.write(_script(window))
+        if cmd:
+            with open(cmd, "w", encoding="utf-8", newline="") as f:
+                f.write(_script(window))
+        elif window and _browser():
+            os.makedirs(os.path.dirname(_AUTOSTART), exist_ok=True)
+            with open(_AUTOSTART, "w", encoding="utf-8") as f:
+                f.write(_desktop())
+        elif os.path.isfile(_AUTOSTART):
+            os.remove(_AUTOSTART)
     else:
         r = _systemctl("disable", UNIT)
         if r.returncode:
             raise RuntimeError((r.stderr or r.stdout).strip() or "systemctl disable failed")
         # Deliberately NOT `systemctl stop`: whoever flicked this switch is almost
         # certainly talking to us through the bridge it would kill.
-        if os.path.isfile(cmd):
-            os.remove(cmd)
+        for f in (cmd, None if cmd else _AUTOSTART):
+            if f and os.path.isfile(f):
+                os.remove(f)
     return state()

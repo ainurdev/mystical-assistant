@@ -515,6 +515,10 @@ class Job:
         self.fork = False                # duplicated session: --resume + --fork-session
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
+        # What this turn is waiting on before its first token, or None once the
+        # child starts talking. Deliberately NOT an event: it is a live status,
+        # and an event would persist "starting Claude" into every transcript.
+        self.boot: str | None = None
         self.result: str | None = None
         self.cost: float | None = None
         self.session_id: str | None = None
@@ -653,6 +657,7 @@ class Job:
                 "events": self.events[cursor:],
                 "next_cursor": len(self.events),
                 "pending": list(self.pending),
+                "boot": self.boot,
             }
             if self.status != "running":
                 out.update(result=self.result, cost=self.cost,
@@ -727,6 +732,15 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
                                                   "content": _with_images(text, image_paths)}})
     job.add({"type": "steer", "text": text, "images": list(image_paths or [])})
     return True
+
+
+def boot_phase(session_id: str) -> "str | None":
+    """What this session's live turn is waiting on before its first token, or
+    None. Same lookup as steer(): a session has at most one running job."""
+    with _jobs_lock:
+        job = next((j for j in _jobs.values()
+                    if j.store_session_id == session_id and j.status == "running"), None)
+    return job.boot if job else None
 
 
 def awaiting_input() -> list[dict]:
@@ -1282,6 +1296,7 @@ def _hook_log(job: Job, d: dict):
 
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
+    job.boot = None          # the child is talking; nothing is loading any more
     sid = d.get("session_id")
     if sid and sid != job.session_id:
         job.session_id = sid
@@ -1481,6 +1496,12 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             _consume_free_agent(job, prompt, cwd)
             return
         full_prompt = _with_images(prompt, image_paths)
+        # The gap before the first token is two waits, and an empty stream makes
+        # both read as a hang. Name whichever one we are actually in: the health
+        # check only blocks while the cache is still cold (see toolsets.warm).
+        from bridge import toolsets  # local: toolsets imports runner
+        if job.store_session_id and not toolsets.ready():
+            job.boot = "checking configured MCP servers"
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
@@ -1499,6 +1520,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.status = "error"
             return
         job.proc = proc
+        # Claude is up but still building its context — connecting MCP servers and
+        # loading the transcript — which is most of the wait on a resumed session.
+        job.boot = "starting Claude"
 
         # Drain stderr continuously: a child that writes more than the OS pipe
         # buffer mid-run would otherwise block against our unread pipe while we

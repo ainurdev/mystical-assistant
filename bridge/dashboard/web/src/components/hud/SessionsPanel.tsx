@@ -126,10 +126,12 @@ function SessionRow({
       }}
     >
       {/* The status word is gone from the row, so the dot carries it: filled +
-          glowing when the session is doing something, a hollow ring when idle.
+          glowing when the session is doing something, a hollow ring when idle,
+          and pulsing (.sessdot) while it's actually working, so a turn in
+          flight is distinguishable from one stopped waiting on you.
           Opening a session doesn't swap it for a spinner — the row you tapped
           shouldn't flicker to say something you already know. */}
-      <span title={sv.l.toLowerCase()} style={{ width: 9, height: 9, borderRadius: "50%", flex: "none", marginTop: 5, boxSizing: "border-box", background: idle ? "transparent" : sv.c, border: idle ? `1.5px solid ${sv.c}` : 0, boxShadow: `0 0 8px ${idle ? "transparent" : sv.c}` }} />
+      <span className="sessdot" data-work={sv.l === "WORK"} title={sv.l.toLowerCase()} style={{ width: 9, height: 9, borderRadius: "50%", flex: "none", marginTop: 5, boxSizing: "border-box", background: idle ? "transparent" : sv.c, border: idle ? `1.5px solid ${sv.c}` : 0, boxShadow: `0 0 8px ${idle ? "transparent" : sv.c}` }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "var(--t12)", lineHeight: 1.35, color: on ? "var(--txb)" : "var(--txh)", fontWeight: on ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {s.title || "untitled session"}

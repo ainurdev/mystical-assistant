@@ -65,8 +65,8 @@ export function ManageProjectsModal(props: Props) {
   return (
     <div onClick={onClose}
       style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 94, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "9vh", animation: "backdropIn .2s ease both" }}>
-      <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: 580, maxWidth: "94vw", maxHeight: "80vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
+      <div onClick={(e) => e.stopPropagation()} className="panel modal-tall"
+        style={{ width: "max(580px, var(--modal-w))", maxWidth: "94vw", maxHeight: "80vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none" }}>
           <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>MANAGE</span>
           <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>Projects</span>
@@ -74,7 +74,7 @@ export function ManageProjectsModal(props: Props) {
           <button onClick={onClose} {...hp("esc")}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "esc" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 12px" }}>ESC ✕</button>
         </div>
-        <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
+        <div className="mscroll mcol" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
           <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>HIDE keeps a project out of the sidebar · REMOVE detaches it from the bridge</div>
           {sections.map(({ parent, rows: srows }) => {
             const segs = parent ? parent.split("/") : [];
@@ -126,7 +126,7 @@ export function ManageProjectsModal(props: Props) {
           </div>
             );
           })}
-          <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", margin: "18px 0 9px" }}>IMPORT EXISTING REPOSITORY</div>
+          <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginTop: 18, marginBottom: 9 }}>IMPORT EXISTING REPOSITORY</div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "color-mix(in srgb, var(--info) 5%, transparent)", padding: "9px 11px" }}>
             <span style={{ fontSize: "var(--t12)", color: "var(--info)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>⌂</span>
             <input value={importPath} onChange={(e) => setImportPath(e.target.value)}

@@ -77,6 +77,20 @@ def test_untracked_file_listed():
     assert paths["new.txt"]["add"] == 3
 
 
+def test_untracked_dir_listed_as_files():
+    d = _mkrepo()
+    _write(d, "a.txt", "x\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    os.makedirs(os.path.join(d, "sub"))
+    _write(d, "sub/new.txt", "l1\nl2\n")
+    st = g.status(d)
+    paths = {f["path"]: f for f in st["files"]}
+    assert "sub/new.txt" in paths, paths       # not the collapsed "sub/"
+    assert paths["sub/new.txt"]["add"] == 2
+    assert "+l1" in g.diff(d, "sub/new.txt")
+
+
 def test_diff_has_changes():
     d = _mkrepo()
     _write(d, "a.txt", "one\ntwo\n")
@@ -283,3 +297,68 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+def test_status_splits_staged_from_unstaged():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _write(d, "b.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "a.txt", "two\n")          # staged only
+    _run(d, "add", "a.txt")
+    _write(d, "b.txt", "two\n")          # unstaged only
+    _write(d, "c.txt", "new\n")          # untracked
+    by = {f["path"]: f for f in g.status(d)["files"]}
+    assert (by["a.txt"]["x"], by["a.txt"]["y"]) == ("M", ".")
+    assert (by["b.txt"]["x"], by["b.txt"]["y"]) == (".", "M")
+    assert (by["c.txt"]["x"], by["c.txt"]["y"]) == ("?", "?")
+    # staged again after the unstaged edit: both halves are dirty at once
+    _write(d, "a.txt", "three\n")
+    a = {f["path"]: f for f in g.status(d)["files"]}["a.txt"]
+    assert (a["x"], a["y"]) == ("M", "M")
+
+
+def test_stage_unstage_round_trip():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "a.txt", "two\n")
+    assert g.stage(d, ["a.txt"])[0]
+    assert {f["path"]: f["x"] for f in g.status(d)["files"]}["a.txt"] == "M"
+    assert g.unstage(d, ["a.txt"])[0]
+    assert {f["path"]: f["x"] for f in g.status(d)["files"]}["a.txt"] == "."
+    assert g.stage(d, ["../escape.txt"]) == (False, "no files selected")
+
+
+def test_discard_restores_tracked_and_deletes_untracked():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "a.txt", "two\n")
+    _write(d, "u.txt", "new\n")
+    ok, _out = g.discard(d, ["a.txt", "u.txt"])
+    assert ok
+    assert open(os.path.join(d, "a.txt")).read() == "one\n"
+    assert not os.path.exists(os.path.join(d, "u.txt"))
+    assert g.status(d)["files"] == []
+
+
+def test_commit_takes_the_index_when_something_is_staged():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _write(d, "b.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _write(d, "a.txt", "two\n")
+    _write(d, "b.txt", "two\n")
+    _run(d, "add", "a.txt")
+    ok, _out = g.commit(d, "only a")
+    assert ok
+    # b was left out of the index on purpose, so it survives the commit dirty
+    assert [f["path"] for f in g.status(d)["files"]] == ["b.txt"]
+    # nothing staged now: commit falls back to sweeping everything up
+    assert g.commit(d, "the rest")[0]
+    assert g.status(d)["files"] == []

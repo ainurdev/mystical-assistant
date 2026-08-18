@@ -162,12 +162,12 @@ export function AnalyzeModal(props: Props) {
   return (
     <div onClick={close}
       style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "center", justifyContent: "center", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
-      {/* Both sizes are viewport-relative and definite: half the screen by
+      {/* Both sizes are viewport-relative and definite: most of the screen by
           default, near-full when maximized — never taller than the monitor, and
           a definite height is what lets each tab scroll inside itself instead of
           stretching the modal. */}
       <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: full ? "96vw" : "min(94vw, max(560px, 50vw))", height: full ? "94vh" : "min(90vh, max(440px, 50vh))", transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
+        style={{ width: full ? "96vw" : "min(94vw, max(560px, var(--modal-w)))", height: full ? "94vh" : "min(90vh, max(560px, 78vh))", transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>

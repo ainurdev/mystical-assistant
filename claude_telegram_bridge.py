@@ -42,7 +42,7 @@ import sys
 
 from bridge import (config, devserver, envsettings, landing, limits,
                     native_activity, onboard, pubsub, recovery, selfupdate,
-                    state, store, tunnel)
+                    state, store, toolsets, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -50,6 +50,11 @@ from bridge.telegram import get_updates, tg
 def _setup_miniapp():
     if not config.MINIAPP_ENABLE:
         print("Mini App disabled (MINIAPP_ENABLE=0).")
+        return
+    # initData is signed with the bot token; without one the HMAC key is a public
+    # constant, so a tokenless panel would be a tunnel with no lock on it.
+    if not config.TOKEN:
+        print("Mini App needs a bot token — skipped.")
         return
     from bridge.miniapp import server as miniapp
     if not miniapp.web_built():
@@ -122,24 +127,39 @@ def main():
     # Before anything reads config: the SYSTEM tab's saved settings go on top of
     # what .env said, so the checks below and every server started here see them.
     envsettings.apply()
-    if not config.TOKEN:
-        sys.exit("Set TELEGRAM_BOT_TOKEN.")
     if not os.path.isdir(config.BASE_PATH):
         sys.exit(f"BASE_PATH does not exist: {config.BASE_PATH}")
-    me = tg("getMe")
-    if not me:
-        sys.exit("Could not reach Telegram. Check the token / network.")
-    print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
-    onboard.ensure_profile(config.TOKEN)   # picture + description, if still blank
+    # No token is an answer, not a misconfiguration: setup.sh offers a
+    # dashboard-only install, and then the desktop dashboard IS the product —
+    # no bot to introduce, nothing to long-poll.
+    if config.TOKEN:
+        me = tg("getMe")
+        if not me:
+            sys.exit("Could not reach Telegram. Check the token / network.")
+        print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
+        onboard.ensure_profile(config.TOKEN)   # picture + description, if still blank
+    else:
+        print(f"Bridge online — dashboard only, no Telegram  base={config.BASE_PATH}")
     signal.signal(signal.SIGINT, _on_stop_signal)
     signal.signal(signal.SIGTERM, _on_stop_signal)   # bare `kill` now shuts down cleanly too
     store.init()
-    if not config.ALLOWED_CHAT_IDS:
+    # Discovery mode exists to learn a chat id off an incoming message; with no
+    # bot there is no message to learn it from, and stopping here would leave a
+    # dashboard-only install with no dashboard.
+    if config.TOKEN and not config.ALLOWED_CHAT_IDS:
         print("⚠️  No ALLOWED_CHAT_IDS — DISCOVERY mode (won't execute Claude).")
         recovery.recover()             # flip restart-orphaned turns (no resume in discovery)
     else:
-        _setup_miniapp()
+        # Off-thread before anything blocking: `claude mcp list` health-checks
+        # every configured server, and the first run needs that list to build its
+        # deny rules. Started here it finishes while the servers below come up,
+        # instead of stalling the first turn the user sends.
+        toolsets.warm()
+        # Dashboard first: the login launcher blocks on this port, and the Mini
+        # App's tunnel below spends seconds registering + settling before it
+        # returns. Nothing here reads the tunnel's URL at start-up.
         _setup_dashboard()
+        _setup_miniapp()
         _setup_landing()
         native_activity.start()        # tail live VS Code/terminal sessions
         resumed = recovery.recover()   # resume turns a restart interrupted (--resume + nudge)
@@ -149,6 +169,8 @@ def main():
 
     offset = 0
     try:
+        while not config.TOKEN:
+            signal.pause()     # dashboard-only: nothing to poll, wait for the stop signal
         while True:
             for upd in get_updates(offset):
                 offset = upd["update_id"] + 1

@@ -951,6 +951,18 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 ok, output = git.commit(cwd, msg)
             return self._json({"ok": ok, "output": output})
+        if path == "/local/git/op":
+            # CHANGES panel — stage / unstage / discard working-tree paths.
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            fn = {"stage": git.stage, "unstage": git.unstage,
+                  "discard": git.discard}.get((body.get("op") or "").strip())
+            if fn is None:
+                return self._json({"error": "unknown op"}, 400)
+            paths = [str(x) for x in (body.get("paths") or [])][:500]
+            ok, output = fn(cwd, paths)
+            return self._json({"ok": ok, "output": output})
         if path == "/local/git/commit-message":
             return self._commit_message(chat, body)
         if path == "/local/git/push":
@@ -966,6 +978,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": ok, "output": output})
         if path == "/local/update/publish":
             return self._publish_update(chat)
+        if path == "/local/restart":
+            # no pull, no rebuild — just re-exec the bridge (and with it this
+            # dashboard) so code already on disk becomes the code running.
+            selfupdate.restart()
+            return self._json({"ok": True})
         if path == "/local/files/write":
             # EDITOR tab :w / Ctrl-S — save a working-tree file to disk
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())

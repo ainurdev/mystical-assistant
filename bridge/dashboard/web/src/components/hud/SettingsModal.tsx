@@ -3,8 +3,12 @@ import {
   type CSSProperties, type ReactNode,
 } from "react";
 import {
-  AudioLines, Bell, CloudSun, FileCog, KeyRound, LayoutTemplate, Palette, Server,
-  SlidersHorizontal, Sparkles, Tag, type LucideIcon,
+  Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
+  Ellipsis, FileCog, FolderTree, Gauge, GitBranch, Handshake, Hourglass, KeyRound,
+  ListMusic, LoaderCircle, Lock, MessageCircleQuestion, Monitor, MonitorPlay,
+  Moon, Network, Palette, Play, Power, Radio, ScanLine, ScrollText, Search, Server, Shapes,
+  ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
+  Upload, Volume2, X, type LucideIcon,
 } from "lucide-react";
 import {
   api,
@@ -64,6 +68,7 @@ import {
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
+import { restartBridge } from "../../lib/restart";
 
 export interface SettingsModalProps {
   host: string;
@@ -103,7 +108,7 @@ export interface SettingsModalProps {
 // is there; likewise the prompt-box and transcript switches sat under SESSION
 // among the model/mode/effort knobs they have nothing to do with.
 
-type Tab = "appearance" | "indicator" | "interface" | "ambient" | "notifications"
+type Tab = "appearance" | "indicator" | "ambient" | "notifications"
   | "session" | "tags" | "ai" | "agentconfig" | "accounts" | "system";
 
 // The rail carries the same three-way split the comment above describes, but
@@ -115,9 +120,8 @@ type Tab = "appearance" | "indicator" | "interface" | "ambient" | "notifications
 // different height, and a rail whose rows are all different heights reads as
 // ten unrelated things rather than two groups of five.
 const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: string }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · CRT · boot", icon: Palette, group: "THE HUD" },
+  { key: "appearance", label: "APPEARANCE", hint: "theme · type · CRT", icon: Palette, group: "THE HUD" },
   { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD" },
-  { key: "interface", label: "INTERFACE", hint: "transcript", icon: LayoutTemplate, group: "THE HUD" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD" },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
   { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK" },
@@ -139,11 +143,10 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "THEME · DARK", terms: "colour color palette scheme aurora phosphor" },
   { tab: "appearance", sec: "THEME · LIGHT", terms: "colour color palette scheme day bright" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
-  { tab: "appearance", sec: "FONT", terms: "typeface monospace family" },
-  { tab: "appearance", sec: "BASE FONT SIZE", terms: "text size zoom bigger smaller scale px auto" },
+  { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
   { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
   { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
-  { tab: "interface", sec: "TRANSCRIPT", terms: "auto-open results bash output edit diffs tool" },
+  { tab: "appearance", sec: "TRANSCRIPT", terms: "auto-open results bash output edit diffs tool" },
   { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
   { tab: "ambient", sec: "CLAUDE·FM", terms: "radio station music volume ambient" },
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
@@ -307,19 +310,70 @@ function InfoDot({ on, about, onClick }: { on: boolean; about?: string; onClick:
   );
 }
 
+// One icon per block, looked up by title rather than passed at each call site:
+// the groups under SYSTEM and the tools under CONFIG are named by the bridge,
+// so they get theirs from the same table instead of a second mechanism.
+const SEC_ICONS: Record<string, LucideIcon> = {
+  "THEME · DARK": Moon,
+  "THEME · LIGHT": Sun,
+  "CRT EFFECTS": ScanLine,
+  TYPE: Type,
+  "BOOT SEQUENCE": MonitorPlay,
+  "WORKING INDICATOR": AudioLines,
+  TRANSCRIPT: ScrollText,
+  "WEATHER · header clock": CloudSun,
+  "CLAUDE·FM": Radio,
+  DESKTOP: Monitor,
+  SOUND: Volume2,
+  "PER EVENT": ListMusic,
+  "RUN DEFAULTS": SlidersHorizontal,
+  PROFILES: Bookmark,
+  TAGS: Tag,
+  "MODEL-SPENDING EXTRAS": Sparkles,
+  "DESIGN SYSTEM": Shapes,
+  "CLAUDE CODE": SquareTerminal,
+  OPENCODE: Boxes,
+  "ON USAGE LIMIT": Gauge,
+  "CLAUDE LOGINS": KeyRound,
+  "FREE AGENTS": Handshake,
+  BRIDGE: Network,
+  STARTUP: Power,
+  "HTTP INSPECTOR": Activity,
+  PLATFORM: GitBranch,
+  // …and the environment registry's own groups, which arrive from the bridge.
+  ACCESS: Lock,
+  PROJECTS: FolderTree,
+  RUNS: Play,
+  SERVERS: Server,
+  TUNNEL: Cable,
+  UPLOADS: Upload,
+  "AI TUNING": Sparkles,
+  "DEV SERVER": SquareTerminal,
+};
+
 /** A titled block. The explanation that used to stand under every block as a
  *  paragraph folds behind the ⓘ beside the title instead — nine tabs of prose
- *  at rest is what made these panels read as a wall of text. */
-function Section({ title, info, top, children }: {
+ *  at rest is what made these panels read as a wall of text.
+ *
+ *  The icon is what you actually navigate by once a tab is longer than a
+ *  screen: SYSTEM is twelve of these blocks, and twelve identical dim rules
+ *  give the eye nothing to count off against while scrolling. */
+function Section({ title, icon, info, top, children }: {
   title: ReactNode;
+  icon?: LucideIcon;
   info?: ReactNode;
   top?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const Icon = icon ?? (typeof title === "string" ? SEC_ICONS[title] : undefined);
   return (
     <div data-sec={typeof title === "string" ? title : undefined} style={{ marginTop: top ? 22 : 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+        {Icon && (
+          <Icon size={13} strokeWidth={1.7} aria-hidden
+            style={{ flex: "none", color: "var(--acc)", opacity: .75 }} />
+        )}
         <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>
           {title}
         </span>
@@ -357,6 +411,31 @@ function Row({ label, desc, info, first, children }: {
       </div>
       {desc && <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>{desc}</div>}
       {info && open && <div style={ASIDE}>{info}</div>}
+    </div>
+  );
+}
+
+/** Nothing to show yet, or nothing to show at all. A bare sentence in the top
+ *  corner of a 700px-tall empty pane reads as a rendering failure; centred
+ *  under its own icon it reads as the state it is. */
+function Placeholder({ icon: Icon, spin, children }: {
+  icon: LucideIcon;
+  spin?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      gap: 12, padding: "72px 20px", textAlign: "center",
+    }}>
+      <Icon size={26} strokeWidth={1.3} aria-hidden
+        style={{
+          color: "var(--acc)", opacity: .4,
+          animation: spin ? "introspin 1.4s linear infinite" : undefined,
+        }} />
+      <div style={{ fontSize: "var(--t10)", color: "var(--txl)", lineHeight: 1.75, maxWidth: 360 }}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -616,6 +695,17 @@ function PackBrowser({ cat, volume, onPick }: {
 /** The per-event table: one assignable sound per thing the dashboard notifies
  *  about. An unassigned event falls back to the single TONE below, which is
  *  what every install sounded like before this panel existed. */
+// Six rows that differ only in wording otherwise — the icon is what makes
+// "the one that fires when something breaks" findable without reading all six.
+const EVENT_ICONS: Record<PushEvent, LucideIcon> = {
+  done: CircleCheck,
+  question: MessageCircleQuestion,
+  permission: ShieldQuestion,
+  failure: TriangleAlert,
+  start: Play,
+  limit: Hourglass,
+};
+
 function SoundBoard({ settings, onPatch }: {
   settings: HudSettings;
   onPatch: (patch: Partial<HudSettings>) => void;
@@ -639,6 +729,7 @@ function SoundBoard({ settings, onPatch }: {
         const meta = PUSH_EVENTS[ev];
         const cur = settings.pushSounds[ev];
         const on = open === ev;
+        const Icon = EVENT_ICONS[ev];
         return (
           <div key={ev} style={{
             // A rule between rows, not above the first one — the card already
@@ -650,6 +741,8 @@ function SoundBoard({ settings, onPatch }: {
                 drops onto its own line under the event name instead of
                 squeezing the name down to two characters. */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Icon size={14} strokeWidth={1.6} aria-hidden
+                style={{ flex: "none", color: "var(--acc)", opacity: cur?.src === "off" ? .3 : .75 }} />
               <div style={{ flex: "1 1 150px", minWidth: 0 }}>
                 <div style={KEY_TX}>{meta.label}</div>
                 <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 3 }}>{meta.hint}</div>
@@ -662,8 +755,12 @@ function SoundBoard({ settings, onPatch }: {
                 }}>
                   {cur ? cur.label : `${TONES[settings.pushTone].label} (default)`}
                 </span>
-                <MiniBtn onClick={() => playSound(cur, settings.pushVolume, settings.pushTone)}>♪</MiniBtn>
-                <MiniBtn onClick={() => setOpen(on ? null : ev)}>{on ? "×" : "…"}</MiniBtn>
+                <MiniBtn title="play it" onClick={() => playSound(cur, settings.pushVolume, settings.pushTone)}>
+                  <Play size={11} strokeWidth={2} aria-hidden />
+                </MiniBtn>
+                <MiniBtn title={on ? "close" : "pick a sound"} onClick={() => setOpen(on ? null : ev)}>
+                  {on ? <X size={11} strokeWidth={2} aria-hidden /> : <Ellipsis size={11} strokeWidth={2} aria-hidden />}
+                </MiniBtn>
               </div>
             </div>
             {on && (
@@ -1170,6 +1267,15 @@ function UpdatePanel({ onFeed }: { onFeed: (texts: string[]) => void }) {
           <span style={{ fontSize: "var(--t105)", color: "var(--warn)" }}>{info.dirty} UNCOMMITTED</span>
         </Row>
       )}
+      <Row
+        label="RESTART"
+        info="The bridge runs the code it launched with. Anything already on disk — an edit, a setting that says it waits for a restart — takes effect on the next boot, and this is that boot without pulling anything."
+      >
+        <button onClick={() => void restartBridge()}
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", background: "transparent", color: "var(--warn)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none" }}>
+          RESTART BRIDGE
+        </button>
+      </Row>
       {info && info.behind > 0 && (
         <div style={{ marginTop: 12, display: "flex" }}>
           <UpdateButton onFeed={onFeed} />
@@ -1337,9 +1443,9 @@ function AiPanel() {
     }
   }
 
-  if (rows === null) return <div style={NOTE}>Reading…</div>;
+  if (rows === null) return <Placeholder icon={LoaderCircle} spin>Reading the feature switches…</Placeholder>;
   if (!rows.length)
-    return <div style={NOTE}>This bridge is running a build without the AI tab. Restart it.</div>;
+    return <Placeholder icon={TriangleAlert}>This bridge is running a build without the AI tab. Restart it.</Placeholder>;
 
   return (
     <Section
@@ -1572,9 +1678,9 @@ function AgentConfigPanel() {
     }
   }
 
-  if (tools === null) return <div style={NOTE}>Reading…</div>;
+  if (tools === null) return <Placeholder icon={LoaderCircle} spin>Reading each tool’s config files…</Placeholder>;
   if (!tools.length)
-    return <div style={NOTE}>This bridge is running a build without the agent-config route. Restart it.</div>;
+    return <Placeholder icon={TriangleAlert}>This bridge is running a build without the agent-config route. Restart it.</Placeholder>;
 
   return (
     <>
@@ -1680,9 +1786,9 @@ function EnvPanel() {
     }
   }
 
-  if (rows === null) return <div style={NOTE}>Reading…</div>;
+  if (rows === null) return <Placeholder icon={LoaderCircle} spin>Reading the environment registry…</Placeholder>;
   if (!rows.length)
-    return <div style={NOTE}>This bridge is running a build without the settings registry. Restart it.</div>;
+    return <Placeholder icon={TriangleAlert}>This bridge is running a build without the settings registry. Restart it.</Placeholder>;
 
   const groups = [...new Set(rows.map((r) => r.group))];
   const pending = rows.some((r) => r.source === "saved" && !r.live);
@@ -2220,17 +2326,22 @@ function MiniBtn({
   onClick,
   disabled,
   danger,
+  title,
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  /** An icon-only button has to say what it is somewhere. */
+  title?: string;
 }) {
   const [hov, setHov] = useState(false);
   return (
     <button
       onClick={onClick}
       disabled={disabled}
+      title={title}
+      aria-label={title}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
@@ -2244,6 +2355,8 @@ function MiniBtn({
         letterSpacing: 1,
         padding: "4px 9px",
         opacity: disabled ? 0.5 : 1,
+        // Icon children would otherwise sit on the text baseline and ride high.
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
       }}
     >
       {children}
@@ -2572,9 +2685,9 @@ export function SettingsModal(props: SettingsModalProps) {
 
           <div ref={pane} className="mscroll mcol" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
             {shown === "search" && (
-              <Section title={`SEARCH · ${hits.length} MATCH${hits.length === 1 ? "" : "ES"}`}>
+              <Section icon={Search} title={`SEARCH · ${hits.length} MATCH${hits.length === 1 ? "" : "ES"}`}>
                 {hits.length === 0 ? (
-                  <div style={NOTE}>Nothing here matches that.</div>
+                  <Placeholder icon={Search}>Nothing here matches that.</Placeholder>
                 ) : (
                   <div style={CARD}>
                     {hits.map((h, i) => (
@@ -2619,58 +2732,80 @@ export function SettingsModal(props: SettingsModalProps) {
                   </Section>
                 )}
 
+                {/* One block, not two: a section heading and a fold-out
+                    paragraph each, for one <select> each, spent more of the tab
+                    on the frame than on the two controls it framed. */}
                 <Section
-                  title="FONT"
+                  title="TYPE"
                   top
                   info={
                     <>
                       A theme is a palette; the type voice is yours.{" "}
                       <span style={{ color: "var(--txd)" }}>THEME</span> follows whichever one the
                       palette brought — anything else stays put when you switch palettes. Code and
-                      logs keep their monospace either way.
+                      logs keep their monospace either way. Every size in the HUD derives from the
+                      base: captions, body and headings move together, spacing stays put, and{" "}
+                      <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window ({autoBase}px
+                      on this one).
                     </>
                   }
                 >
-                  {/* Each name is set in the face it names — THEME included, which
-                      is how you see what the palette brought without applying it. */}
-                  <select
-                    value={settings.font}
-                    onChange={(e) => onPatch({ font: e.target.value })}
-                    style={{ ...field, width: "100%", maxWidth: 340, fontFamily: fontStack(settings.font, settings.theme) || "inherit" }}
-                  >
-                    {FONTS.map((f) => (
-                      <option
-                        key={f.key}
-                        value={f.key}
-                        style={{ fontFamily: fontStack(f.key, settings.theme) || "inherit" }}
-                      >
-                        {f.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={CARD}>
+                    <div style={{ ...LINE, marginTop: 0 }}>
+                      <Cell label="TYPEFACE" grow="2 1 240px">
+                        {/* Each name is set in the face it names — THEME included,
+                            which is how you see what the palette brought without
+                            applying it. */}
+                        <select
+                          value={settings.font}
+                          onChange={(e) => onPatch({ font: e.target.value })}
+                          style={{ ...field, width: "100%", fontFamily: fontStack(settings.font, settings.theme) || "inherit" }}
+                        >
+                          {FONTS.map((f) => (
+                            <option
+                              key={f.key}
+                              value={f.key}
+                              style={{ fontFamily: fontStack(f.key, settings.theme) || "inherit" }}
+                            >
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Cell>
+                      <Cell label="BASE SIZE" grow="1 1 130px">
+                        <select
+                          value={String(settings.baseFont)}
+                          onChange={(e) => onPatch({ baseFont: Number(e.target.value) })}
+                          style={{ ...field, width: "100%" }}
+                        >
+                          {BASE_FONT_OPTS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </Cell>
+                    </div>
+                  </div>
                 </Section>
 
-                <Section
-                  title="BASE FONT SIZE"
-                  top
-                  info={
-                    <>
-                      Every size in the HUD is derived from this one — captions, body and headings
-                      move together, spacing stays put.{" "}
-                      <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window: {autoBase}px
-                      on this one.
-                    </>
-                  }
-                >
-                  <select
-                    value={String(settings.baseFont)}
-                    onChange={(e) => onPatch({ baseFont: Number(e.target.value) })}
-                    style={{ ...field, width: "100%", maxWidth: 340 }}
-                  >
-                    {BASE_FONT_OPTS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                {/* Its own tab until it held exactly one switch and 700px of
+                    void. It is a reading preference, so it sits with the rest
+                    of how the HUD reads rather than under the run knobs. The
+                    PONYTAIL and GRAPH switches that used to keep it company
+                    only hid their chips while the features kept running; they
+                    are AI-tab switches now, where off means off. */}
+                <Section title="TRANSCRIPT" top>
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="AUTO-OPEN RESULTS"
+                      info="Bash output and edit diffs draw themselves open. Off, a turn reads as the list of commands and files it touched — click one to see its result."
+                    >
+                      <Switch
+                        on={settings.openResults}
+                        onClick={() => onPatch({ openResults: !settings.openResults })}
+                      />
+                    </Row>
+                  </div>
                 </Section>
 
                 <Section title="BOOT SEQUENCE" top>
@@ -2799,29 +2934,6 @@ export function SettingsModal(props: SettingsModalProps) {
                     onPatch={onPatch}
                     onSessionTools={onSessionTools}
                   />
-                </Section>
-              </>
-            )}
-
-            {/* What the HUD shows you, as opposed to what a run does. The
-                PONYTAIL and GRAPH switches that used to sit here only hid their
-                chips while the features kept running; they are AI-tab switches
-                now, where off means off and the UI follows. */}
-            {shown === "interface" && (
-              <>
-                <Section title="TRANSCRIPT">
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="AUTO-OPEN RESULTS"
-                      info="Bash output and edit diffs draw themselves open. Off, a turn reads as the list of commands and files it touched — click one to see its result."
-                    >
-                      <Switch
-                        on={settings.openResults}
-                        onClick={() => onPatch({ openResults: !settings.openResults })}
-                      />
-                    </Row>
-                  </div>
                 </Section>
               </>
             )}

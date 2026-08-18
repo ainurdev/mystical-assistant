@@ -25,6 +25,11 @@ def _api(url: str, params: dict | None = None, timeout: int = 30):
 
 
 def tg(method: str, **params):
+    # A Telegram-free install still runs everything else, and every caller here
+    # (runner, limits, devserver, ladder) sends unconditionally — so the no-op
+    # belongs in the one place they all route through.
+    if not config.TOKEN:
+        return None
     try:
         data = _api(f"{config.API}/{method}", params,
                     timeout=config.POLL_TIMEOUT + 15)

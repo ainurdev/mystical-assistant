@@ -70,6 +70,20 @@ function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean
  *  Code records it and simply never prints it. Shut by default: a turn holds
  *  dozens, and the row alone already explains the one thing a list of tool cards
  *  can't, the gap between them. */
+/** The gap between spawning the child and its first token — spent connecting MCP
+ *  servers and loading the transcript. An empty stream reads as a hang, so name
+ *  the wait. Live status, not an event: real output replaces it. */
+function BootRow({ text }: { text: string }) {
+  return (
+    <div role="status" className="flex items-center gap-2 py-0.5 text-[var(--muted-2)]">
+      <span aria-hidden
+            className="h-1.5 w-1.5 flex-none animate-pulse rounded-full bg-current motion-reduce:animate-none" />
+      <span className="text-[10px] uppercase tracking-[1px]">{text}</span>
+      <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
+    </div>
+  );
+}
+
 function ThinkingRow({ ms, text }: { ms?: number; text?: string }) {
   const [open, setOpen] = useState(false);
   const head = (
@@ -691,10 +705,13 @@ export const RunStream = memo(function RunStream({
   onWrite,
   tokens = null,
   ended = false,
+  boot = null,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
+  /** What this turn is waiting on before its first token, or null. */
+  boot?: string | null;
   /** This turn's token spend; null = never reported (unknown, not free). */
   tokens?: number | null;
   /** Send a reply to a question the model asked in prose. Only the last, finished
@@ -767,6 +784,7 @@ export const RunStream = memo(function RunStream({
   return (
     // vskip-card: off-screen event cards skip layout/paint (see index.css).
     <div className="space-y-2 vskip-card">
+      {boot ? <BootRow text={boot} /> : null}
       {from > 0 && (
         <button
           type="button"

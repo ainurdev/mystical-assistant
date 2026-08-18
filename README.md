@@ -257,15 +257,14 @@ the sessions already on your machine.
 | [`claude` CLI](https://claude.com/claude-code), installed and logged in | the bridge shells out to it | reuses your existing login, no API key |
 | Python 3.10+ | runs the bridge | stdlib only, nothing to `pip install` |
 | `npm` | builds the dashboard UI on first start | only the build; nothing Node runs at runtime |
-| A Telegram account | phone control, and setup asks for a bot token | see the note below |
+| A Telegram account | **optional** — only for the bot and the phone Mini App | setup asks, and takes no for an answer |
 
 A small tunnel client (only for the phone Mini App) and `opencode` (only for the
 free-provider fallback) are optional. Setup offers to install both.
 
-> **On the bot token:** the project began as a Telegram bridge and `setup.sh`
-> still requires a token even though the dashboard doesn't use one. Making it
-> optional for a dashboard-only install is on the list; until then, a throwaway
-> bot takes about a minute and nothing will message it.
+Say no to Telegram and you get the dashboard on its own: no bot token, no
+BotFather, nothing to sign up for. Add one later in the dashboard's SYSTEM tab
+and the phone half turns on after a restart.
 
 ```bash
 git clone https://github.com/ainurdev/mystical-assistant
@@ -273,10 +272,12 @@ cd mystical-assistant
 ./setup.sh
 ```
 
-`setup.sh` asks six questions and handles the rest. It checks what it needs
+`setup.sh` asks seven questions — five if you skip Telegram — and handles the rest. It checks what it needs
 before it changes anything, and a second pass only asks for what's still missing.
 
-1. **Bot token.** It walks you through [@BotFather](https://t.me/BotFather) →
+1. **Telegram, or not.** Say no and the next two questions don't happen — the
+   dashboard needs no token. Say yes and it walks you through
+   [@BotFather](https://t.me/BotFather) →
    `/newbot` → paste the token. Setup checks the token against Telegram and
    prints your bot's `t.me` link, so a typo fails here instead of at first run.
    A new token also gets the mystical logo set as the bot's profile picture.
@@ -328,8 +329,9 @@ mystical run        run in the foreground (Ctrl-C to quit)
 **Config**
 
 - **Config lives in `.env`** (git-ignored, `chmod 600`; `setup.sh` writes it).
-  `.env.example` documents every option. Required: `TELEGRAM_BOT_TOKEN`,
-  `BASE_PATH`, `ALLOWED_CHAT_IDS`.
+  `.env.example` documents every option. Required: `BASE_PATH`.
+  `TELEGRAM_BOT_TOKEN` + `ALLOWED_CHAT_IDS` only if you want the bot and the
+  Mini App; leave the token empty for a dashboard-only install.
 - **Dashboard only, no tunnel:** set `MINIAPP_ENABLE="0"`.
 - **Stable Mini App URL:** the panel gets a throwaway tunnel hostname by
   default, which changes on every restart. For a fixed one, provision a named

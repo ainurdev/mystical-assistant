@@ -206,3 +206,35 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+def test_git_op_stages_unstages_and_discards():
+    """The CHANGES panel's three index ops, over the one route that serves them."""
+    name, d = _mkproject("proj_gitop")
+    with open(os.path.join(d, "a.txt"), "w") as f:
+        f.write("edited\n")
+    h, box = _handler()
+
+    h._post_api("/local/git/op", {"project": name, "op": "stage", "paths": ["a.txt"]})
+    assert box["obj"]["ok"] is True
+    from bridge import git
+    assert {f["path"]: f["x"] for f in git.status(d)["files"]}["a.txt"] == "M"
+
+    h._post_api("/local/git/op", {"project": name, "op": "unstage", "paths": ["a.txt"]})
+    assert box["obj"]["ok"] is True
+    assert {f["path"]: f["x"] for f in git.status(d)["files"]}["a.txt"] == "."
+
+    h._post_api("/local/git/op", {"project": name, "op": "discard", "paths": ["a.txt"]})
+    assert box["obj"]["ok"] is True
+    assert git.status(d)["files"] == []
+
+
+def test_git_op_rejects_unknown_op_and_escape():
+    name, d = _mkproject("proj_gitop_bad")
+    h, box = _handler()
+    h._post_api("/local/git/op", {"project": name, "op": "nuke", "paths": ["a.txt"]})
+    assert box["code"] == 400
+    # An escaping path is filtered out, leaving nothing to act on — never the
+    # file outside the workspace.
+    h._post_api("/local/git/op", {"project": name, "op": "discard", "paths": ["../../etc/hosts"]})
+    assert box["obj"]["ok"] is False

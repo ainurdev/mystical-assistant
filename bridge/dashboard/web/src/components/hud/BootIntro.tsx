@@ -1,8 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { themeCanvas, themeFilter, type ThemeKey } from "../../lib/theme";
 import { BOOT_CONTINUE, bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
 
 const FADE_MS = 650; // the crtoff wipe, after which the dashboard owns the screen
+// Mount-to-paint, spent behind an intro that is still fully opaque. Having the
+// data is not having a screen: the transcript virtualizer estimates row heights,
+// re-measures, and only then scrolls to the bottom — measured at ~370ms on a
+// session whose turns were already in state. Wipe at reveal and that lands in
+// the open, as an empty chat panel that fills in after you can see it.
+const WARM_MS = 400;
 
 // Read once per document, not per mount: a restart hands the intro over across a
 // reload, and this one has to come up mid-animation rather than from black. The
@@ -48,30 +54,36 @@ export function BootIntro(props: {
   const cb = useRef({ onReveal, onDone, steps, hold });
   cb.current = { onReveal, onDone, steps, hold };
 
+  const warm = useRef(0);
+  const done = useRef(0);
+  // Mount the dashboard first and only wipe once it has had WARM_MS to lay
+  // itself out — the intro is opaque until `fade`, so this is all off-screen.
+  const leave = useCallback((reveal: () => void, finish: () => void) => {
+    reveal();
+    warm.current = window.setTimeout(() => {
+      setFade(true);
+      done.current = window.setTimeout(finish, FADE_MS);
+    }, WARM_MS);
+  }, []);
+
   useEffect(() => {
     const started = Date.now();
-    let done = 0;
     // Polled rather than driven off `steps`, because the exit also depends on
     // elapsed time — the last fetch can land before the floor, and a bridge
     // that never answers has to hit the ceiling with no step change at all.
     const id = window.setInterval(() => {
       if (cb.current.hold || !bootReady(cb.current.steps, Date.now() - started)) return;
       window.clearInterval(id);
-      setFade(true);
-      cb.current.onReveal();
-      done = window.setTimeout(() => cb.current.onDone(), FADE_MS);
+      leave(cb.current.onReveal, () => cb.current.onDone());
     }, 100);
     return () => {
       window.clearInterval(id);
-      window.clearTimeout(done);
+      window.clearTimeout(warm.current);
+      window.clearTimeout(done.current);
     };
-  }, []);
+  }, [leave]);
 
-  const dismissBoot = () => {
-    setFade(true);
-    onReveal();
-    window.setTimeout(() => onDone(), FADE_MS);
-  };
+  const dismissBoot = () => leave(onReveal, onDone);
 
   return (
     <div
@@ -388,9 +400,9 @@ export function BootIntro(props: {
           color: "var(--txd)",
         }}
       >
-        {/* Five rows whatever the log is: the restart's three would sit shorter
+        {/* Six rows whatever the log is: the restart's three would sit shorter
             and slide the emblem up the moment the reload swaps one for the other. */}
-        <div style={{ minHeight: "calc(var(--t115) * 1.9 * 5)" }}>
+        <div style={{ minHeight: "calc(var(--t115) * 1.9 * 6)" }}>
           {steps.map((b, i) => (
             <div
               key={b.key}

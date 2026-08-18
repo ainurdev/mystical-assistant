@@ -3,7 +3,9 @@
 import json
 import os
 import sys
+import termios
 import time
+import tty
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -44,6 +46,111 @@ def set_env(path, key, value):
         out.append(f'{key}="{value}"')
     with open(path, "w") as f:
         f.write("\n".join(out) + "\n")
+
+
+# --- directory picker --------------------------------------------------------
+# setup.sh captures this command's stdout, so the whole UI is written to /dev/tty
+# and only the chosen path goes to stdout. That split is the entire reason this
+# is hand-rolled ANSI rather than curses, which draws on stdout.
+
+def _dirs(path, cap=200):
+    """Subdirectories of `path` as (name, label) pairs, sorted, hidden ones
+    dropped. The label says whether the entry is a git repo or how many it
+    contains — that count is what makes this a projects-folder picker rather
+    than a file browser."""
+    try:
+        kids = sorted((e for e in os.scandir(path)
+                       if e.is_dir(follow_symlinks=False) and not e.name.startswith(".")),
+                      key=lambda e: e.name.lower())
+    except OSError:
+        return []
+    out = []
+    # ponytail: one level down and a flat cap. A projects root holds repos, not a
+    # filesystem; deepening this would walk node_modules on every keypress.
+    for e in kids[:cap]:
+        if os.path.isdir(os.path.join(e.path, ".git")):
+            out.append((e.name, "repo"))
+            continue
+        try:
+            n = sum(1 for k in os.scandir(e.path)
+                    if k.is_dir(follow_symlinks=False)
+                    and os.path.isdir(os.path.join(k.path, ".git")))
+        except OSError:
+            n = 0
+        out.append((e.name, f"{n} repo{'s' * (n > 1)}" if n else ""))
+    return out
+
+
+def _key(fh):
+    """One keypress, with arrow escape sequences folded into single names."""
+    c = fh.read(1)
+    if c == b"\x1b":
+        seq = fh.read(2)
+        return {b"[A": "up", b"[B": "down", b"[C": "right", b"[D": "left"}.get(seq, "esc")
+    return {b"\r": "enter", b"\n": "enter", b"k": "up", b"j": "down",
+            b"l": "right", b"h": "left", b"q": "esc", b"\x03": "esc"}.get(c, "")
+
+
+def pick_dir(start, rows=12):
+    """Arrow-key directory browser. Returns the chosen path, or None if the user
+    cancelled or there is no terminal to draw on."""
+    try:
+        fin = open("/dev/tty", "rb", buffering=0)
+        fout = open("/dev/tty", "w")
+    except OSError:
+        return None
+    cur = os.path.realpath(os.path.expanduser(start))
+    sel, top, drawn = 0, 0, 0
+    try:
+        old = termios.tcgetattr(fin)
+        tty.setraw(fin.fileno())
+    except termios.error:
+        fin.close(); fout.close()
+        return None
+    try:
+        while True:
+            kids = _dirs(cur)
+            items = [(".", "use this folder")] + kids
+            sel = max(0, min(sel, len(items) - 1))
+            top = max(0, min(top, sel, max(0, len(items) - rows)))
+            if sel >= top + rows:
+                top = sel - rows + 1
+            out = [f"\x1b[2K  \x1b[36m{cur}\x1b[0m\r\n"]
+            for i, (name, label) in enumerate(items[top:top + rows], start=top):
+                mark = "\x1b[36m>\x1b[0m" if i == sel else " "
+                text = "use this folder" if i == 0 else name + "/"
+                tail = f"  \x1b[2m{label}\x1b[0m" if (label and i) else ""
+                body = f"\x1b[36m{text}\x1b[0m" if i == sel else text
+                out.append(f"\x1b[2K {mark} {body}{tail}\r\n")
+            more = len(items) - (top + rows)
+            if more > 0:
+                out.append(f"\x1b[2K    \x1b[2m+{more} more\x1b[0m\r\n")
+            out.append("\x1b[2K  \x1b[2m↑↓ move · → open · ← up · ⏎ choose · q cancel\x1b[0m\r\n")
+            if drawn:
+                fout.write(f"\x1b[{drawn}A")
+            fout.write("".join(out) + "\x1b[J")
+            fout.flush()
+            drawn = len(out)
+
+            k = _key(fin)
+            if k == "esc":
+                return None
+            if k == "up":
+                sel -= 1
+            elif k == "down":
+                sel += 1
+            elif k == "left":
+                parent = os.path.dirname(cur)
+                if parent and parent != cur:
+                    cur, sel, top = parent, 0, 0
+            elif k == "right" and sel:
+                cur, sel, top = os.path.join(cur, items[sel][0]), 0, 0
+            elif k == "enter":
+                return cur if sel == 0 else os.path.join(cur, items[sel][0])
+    finally:
+        termios.tcsetattr(fin, termios.TCSADRAIN, old)
+        fout.write("\x1b[J"); fout.flush()
+        fin.close(); fout.close()
 
 
 def _call(token, method, **params):
@@ -140,13 +247,20 @@ def main(argv):
     if len(argv) >= 5 and argv[1] == "set-env":
         set_env(argv[2], argv[3], argv[4])
         return 0
+    if len(argv) >= 2 and argv[1] == "pick-dir":
+        chosen = pick_dir(argv[2] if len(argv) > 2 else "~")
+        if not chosen:
+            return 1
+        print(chosen)
+        return 0
     if len(argv) >= 3 and argv[1] == "set-avatar":
         try:
             return 0 if set_avatar(argv[2], *argv[3:4]) else 1
         except Exception:  # noqa: BLE001 — cosmetic, never blocks setup
             return 1
     print("usage: onboard.py capture-chat-id <token> | get-me <token> "
-          "| set-env <path> <key> <value> | set-avatar <token> [jpg]",
+          "| set-env <path> <key> <value> | set-avatar <token> [jpg] "
+          "| pick-dir [start]",
           file=sys.stderr)
     return 2
 

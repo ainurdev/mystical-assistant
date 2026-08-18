@@ -73,6 +73,40 @@ install_tunnel_client() {
   have cloudflared
 }
 
+# The bridge is nothing without the CLI it shells out to, so a missing `claude`
+# is the one prereq worth fetching before anything else can run.
+install_claude() {
+  curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1 || return 1
+  have claude
+}
+
+# npm is only ever used to BUILD the web bundles, but without them the dashboard
+# — the thing most people install this for — serves nothing. Same rules as the
+# tunnel client: user-local, no sudo, no shell rc.
+install_node() {
+  if [ "$(uname -s)" = "Darwin" ]; then
+    have brew || { warn "Homebrew not found — install Node manually."; return 1; }
+    brew install node >/dev/null || return 1
+  else
+    local a; case "$(uname -m)" in
+      x86_64) a=x64;; aarch64|arm64) a=arm64;; armv7l) a=armv7l;;
+      *) warn "unsupported arch $(uname -m) — install Node manually."; return 1;;
+    esac
+    # nodejs.org has no `latest-lts` path, so the index is the only way to learn
+    # which version that is today.
+    local v; v="$(curl -fsSL https://nodejs.org/dist/index.json | python3 -c \
+      'import json,sys;print(next(r["version"] for r in json.load(sys.stdin) if r["lts"]))')" || return 1
+    [ -n "$v" ] || return 1
+    mkdir -p "$HOME/.local/share" "$HOME/.local/bin"
+    rm -rf "$HOME/.local/share/node" "$HOME/.local/share/node-$v-linux-$a"
+    curl -fsSL "https://nodejs.org/dist/$v/node-$v-linux-$a.tar.gz" \
+      | tar -xz -C "$HOME/.local/share" || return 1
+    mv "$HOME/.local/share/node-$v-linux-$a" "$HOME/.local/share/node" || return 1
+    for b in node npm npx; do ln -sf "$HOME/.local/share/node/bin/$b" "$HOME/.local/bin/$b"; done
+  fi
+  have npm
+}
+
 # Same for the free-agent rung. opencode's installer already covers the
 # os/arch/musl/CPU-baseline matrix, so call it instead of guessing a release
 # asset — but keep it out of the user's shell rc and link it into ~/.local/bin,
@@ -90,14 +124,91 @@ if [ "${1:-}" = "--check-only" ]; then doctor; exit $?; fi
 
 printf '\n%s✦ mystical%s//%sassistant%s %ssetup%s\n' "$c_c" "$c_d" "$c_0$c_c" "$c_0" "$c_d" "$c_0"
 printf '%sAnswers are saved to .env, so a re-run only asks for what'"'"'s still missing.%s\n\n' "$c_d" "$c_0"
-if ! doctor; then echo; bad "Fix the required items above, then re-run ./setup.sh."; exit 1; fi
+# doctor only ever reports — `mystical doctor` pipes it and must stay side-effect
+# free — so the offers to fix what it found live out here, in the wizard.
+if ! doctor; then
+  if ! have claude; then
+    step "🧠" "Claude Code"
+    echo "The bridge shells out to the 'claude' CLI for every turn, so nothing"
+    echo "runs without it. The installer puts it in ~/.local/bin; no sudo."
+    printf "Install Claude Code now? [Y/n]: "
+    read -r ans || ans=n                 # EOF (piped/CI) = don't download
+    case "${ans:-y}" in
+      [Nn]*) : ;;
+      *) echo "Installing Claude Code…"
+         if install_claude; then
+           ok "claude installed → $(command -v claude)"
+           warn "log in once before you start: run 'claude' in a terminal"
+         else warn "install failed — see https://claude.com/claude-code"; fi ;;
+    esac
+  fi
+  if ! have python3 || ! python3 -c 'import sys;sys.exit(sys.version_info<(3,10))' 2>/dev/null; then
+    # Can't self-install the interpreter this script is already using for
+    # onboard.py — the most it can do is name the right command.
+    case "$(uname -s)" in
+      Darwin) warn "install Python 3.10+:  brew install python" ;;
+      *) have apt-get && warn "install Python 3.10+:  sudo apt-get install python3" \
+           || warn "install Python 3.10+ with your package manager" ;;
+    esac
+  fi
+  echo
+  if ! doctor; then echo; bad "Fix the required items above, then re-run ./setup.sh."; exit 1; fi
+fi
+
+# Optional, but each one silently costs a feature, so offer rather than warn. The
+# `have` guards mean a fully-equipped machine sees none of these questions.
+if ! have npm; then
+  step "📦" "Node"
+  echo "npm builds the dashboard and Mini App bundles. Without it the bridge"
+  echo "still runs, but the dashboard has nothing to serve."
+  printf "Install Node LTS into ~/.local (no sudo)? [Y/n]: "
+  read -r ans || ans=n
+  case "${ans:-y}" in
+    [Nn]*) warn "skipped — the dashboard and Mini App won't be built" ;;
+    *) echo "Downloading Node…"
+       if install_node; then ok "node $(node -v 2>/dev/null) → ~/.local/bin/node"
+       else warn "install failed — install Node yourself, then re-run ./setup.sh"; fi ;;
+  esac
+fi
+if ! have graphify && have pipx; then
+  step "🗺" "Project maps"
+  echo "graphify maps each project's code after its first turn, so /map answers"
+  echo "without spending a turn on it."
+  printf "Install it (pipx install graphifyy)? [Y/n]: "
+  read -r ans || ans=n
+  case "${ans:-y}" in
+    [Nn]*) warn "skipped — no project maps" ;;
+    *) if pipx install graphifyy >/dev/null 2>&1; then ok "graphify installed"
+       else warn "install failed — no project maps"; fi ;;
+  esac
+fi
+
 touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
 
-# -- bot token (validated, so a typo fails here and not at first run) ---------
+# -- Telegram, or dashboard only ---------------------------------------------
+# Key presence, not value: TELEGRAM_BOT_TOKEN="" is the recorded answer "no
+# Telegram", so a re-run doesn't march a desktop-only install back to BotFather.
+# Only an ENTIRELY absent key asks — a token that's on file but didn't validate
+# (network down, typo) still goes straight to the paste loop, as it always did.
 token="$(get_env TELEGRAM_BOT_TOKEN)"
 botname="$([ -n "$token" ] && "${ONBOARD[@]}" get-me "$token" || true)"
-if [ -z "$botname" ]; then step "🤖" "Telegram bot"; fi
-while [ -z "$botname" ]; do
+if [ -n "$botname" ] || [ -n "$token" ]; then
+  tg=1; [ -n "$botname" ] || step "🤖" "Telegram bot"
+elif grep -q '^TELEGRAM_BOT_TOKEN=' "$ENV_FILE"; then tg=0
+else
+  step "🤖" "Telegram"
+  echo "Telegram adds the bot and the phone Mini App: start a session at your desk,"
+  echo "answer it from your phone. It needs a bot token — about a minute of setup."
+  echo "Skip it and you get the desktop dashboard on its own, which is most of it."
+  printf "Set up Telegram? [Y/n]: "
+  read -r ans || ans=n                 # EOF (piped/CI) = nobody there to paste one
+  case "${ans:-y}" in [Nn]*) tg=0;; *) tg=1;; esac
+  if [ "$tg" = 0 ]; then
+    "${ONBOARD[@]}" set-env "$ENV_FILE" TELEGRAM_BOT_TOKEN ""
+    "${ONBOARD[@]}" set-env "$ENV_FILE" MINIAPP_ENABLE 0   # the panel is signed by the token
+  fi
+fi
+while [ "$tg" = 1 ] && [ -z "$botname" ]; do
   echo
   echo "Create a Telegram bot to get a token:"
   echo "  1. Open @BotFather:  https://t.me/BotFather"
@@ -108,19 +219,30 @@ while [ -z "$botname" ]; do
   botname="$("${ONBOARD[@]}" get-me "$token" || true)"
   [ -n "$botname" ] || bad "Telegram rejected that token — check it and try again."
 done
-if [ "$token" != "$(get_env TELEGRAM_BOT_TOKEN)" ]; then
-  "${ONBOARD[@]}" set-env "$ENV_FILE" TELEGRAM_BOT_TOKEN "$token"
-  # Only on a new/changed token, so a re-run never clobbers a picture you chose.
-  "${ONBOARD[@]}" set-avatar "$token" >/dev/null 2>&1 || true
+if [ "$tg" = 1 ]; then
+  if [ "$token" != "$(get_env TELEGRAM_BOT_TOKEN)" ]; then
+    "${ONBOARD[@]}" set-env "$ENV_FILE" TELEGRAM_BOT_TOKEN "$token"
+    # Only on a new/changed token, so a re-run never clobbers a picture you chose.
+    "${ONBOARD[@]}" set-avatar "$token" >/dev/null 2>&1 || true
+  fi
+  ok "bot @$botname — https://t.me/$botname"
+else
+  ok "dashboard only — add a bot token later in the dashboard's SYSTEM tab"
 fi
-ok "bot @$botname — https://t.me/$botname"
 
 # -- BASE_PATH ---------------------------------------------------------------
 if [ -z "$(get_env BASE_PATH)" ]; then
   step "📁" "Projects folder"
-  echo "Every project you can pick from Telegram lives under this folder."
-  printf "Root folder for your projects [%s]: " "$HOME/projects"
-  read -r base; base="${base:-$HOME/projects}"
+  echo "Every project you can open from the dashboard or your phone lives here."
+  base=""
+  # Browse it rather than recall it: the picker labels which folders hold repos.
+  # No terminal (piped/CI) or a cancel drops through to typing, where -e buys
+  # readline tab-completion of paths.
+  [ -t 0 ] && base="$("${ONBOARD[@]}" pick-dir "$HOME" || true)"
+  if [ -z "$base" ]; then
+    read -e -r -p "Root folder for your projects [$HOME/projects]: " base || true
+    base="${base:-$HOME/projects}"
+  fi
   "${ONBOARD[@]}" set-env "$ENV_FILE" BASE_PATH "$base"
   ok "BASE_PATH → $base"
 fi
@@ -134,7 +256,7 @@ if ! grep -q '^DASH_TOKEN=' "$ENV_FILE"; then
 fi
 
 # -- chat id (auto-capture) --------------------------------------------------
-if [ -z "$(get_env ALLOWED_CHAT_IDS)" ]; then
+if [ "$tg" = 1 ] && [ -z "$(get_env ALLOWED_CHAT_IDS)" ]; then
   step "💬" "Your chat"
   echo "Only chat ids listed here can drive Claude on this machine."
   echo "Open https://t.me/$botname and send it ANY message (or tap Start)"
@@ -243,7 +365,11 @@ case "$(get_env MINIAPP_ENABLE)" in
   *) mini="${c_d}off${c_0}" ;;
 esac
 row() { printf '  %s  %s%-11s%s %s\n' "$1" "$c_d" "$2" "$c_0" "$3"; }
-row 🤖 bot         "@$botname $c_d—$c_0 https://t.me/$botname"
+if [ "$tg" = 1 ]; then
+  row 🤖 bot         "@$botname $c_d—$c_0 https://t.me/$botname"
+else
+  row 🤖 bot         "${c_d}skipped — dashboard only$c_0"
+fi
 row 📁 projects    "$(get_env BASE_PATH)"
 row 🔐 permissions "$perm"
 row 📱 "mini app"  "$mini"

@@ -58,7 +58,7 @@ function TranscriptSkeleton() {
 
 function RunPage() {
   const {
-    turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession,
+    turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession, boot,
     runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
     hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav,
@@ -123,7 +123,7 @@ function RunPage() {
       // Mid-restore the scrolling is ours, and the half-settled positions on
       // the way must not be read as you parking somewhere.
       if (restoreTo.current) { prev = el.scrollTop; return; }
-      stick.current = stickToBottom(el, prev);
+      stick.current = stickToBottom(el, prev, stick.current);
       setParked(stick.current);
       prev = el.scrollTop;
       keepPlace.current();
@@ -387,6 +387,7 @@ function RunPage() {
                 <RunStream
                   events={turn.events}
                   tokens={turn.tokens ?? null}
+                  boot={isActive ? boot : null}
                   pending={isActive ? activeTurn.pending : NO_PENDING}
                   onRespond={isActive ? respond : undefined}
                   // Only the last finished turn can be replied to — a chip on an

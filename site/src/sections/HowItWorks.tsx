@@ -9,8 +9,8 @@ const STEPS = [
     body: "One script. It checks what it needs before it changes anything, and a second pass only asks for what's still missing.",
   },
   {
-    title: "Answer six questions",
-    body: "The folder your repos live in, how much autonomy Claude gets (it asks rather than defaulting you into unattended commands), and whether to install the free-provider CLI the ladder hands off to. It also wants a Telegram bot token, which the FAQ below explains.",
+    title: "Answer a few questions",
+    body: "The folder your repos live in, how much autonomy Claude gets (it asks rather than defaulting you into unattended commands), whether to install the free-provider CLI the ladder hands off to, and whether you want Telegram at all — say no and the dashboard needs no bot token.",
   },
   {
     title: "Open the dashboard",

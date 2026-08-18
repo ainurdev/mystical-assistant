@@ -181,7 +181,7 @@ export function AgentsModal({
       <div
         onClick={(e) => e.stopPropagation()}
         className="panel"
-        style={{ width: "min(900px,92vw)", height: "min(600px,88vh)", display: "flex",
+        style={{ width: "min(92vw, max(900px, var(--modal-w)))", height: "min(600px,88vh)", display: "flex",
                  flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
                  background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)",
                  animation: "mslide .2s ease both" }}

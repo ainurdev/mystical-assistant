@@ -21,7 +21,12 @@ const TAB_ANIM = "enterRight .55s cubic-bezier(.2,.8,.2,1) both";
 
 /** Right sidebar: the panel body plus a VS Code-style activity bar of icons on
  *  the outer edge. The bar is always visible — clicking the active icon
- *  collapses the body, any other icon opens on that tab. */
+ *  collapses the body, any other icon opens on that tab.
+ *
+ *  The body's width is fixed rather than fluid (329px = App's 372px column
+ *  minus the 30px rail and the 13px gap) and the row clips: while the column
+ *  animates shut, the body holds its open width and slides off the left edge
+ *  (justify-end overflows at the start), so only the transcript reflows. */
 export function RightPanel({
   tabs,
   activeId,
@@ -58,14 +63,14 @@ export function RightPanel({
     shown.current = { tab: tabId, key: bodyKey, swap: shown.current.key !== "" && shown.current.tab === tabId };
   }
   return (
-    <div className="flex min-h-0 min-w-0 gap-[13px]">
+    <div className="flex min-h-0 min-w-0 justify-end gap-[13px] overflow-hidden">
       {open && (
         // ponytail: the key is what replays the entry — remounting also drops
         // the previous session's rows, so nothing stale survives the swap.
         <div
           key={bodyKey}
           data-swap={shown.current.swap ? "" : undefined}
-          className={`flex min-h-0 min-w-0 flex-1 flex-col gap-[13px] pr-0.5 ${current?.ownScroll ? "" : "mscroll"}`}
+          className={`flex min-h-0 w-[329px] flex-none flex-col gap-[13px] pr-0.5 ${current?.ownScroll ? "" : "mscroll"}`}
           style={{ animation: shown.current.swap ? undefined : TAB_ANIM }}
         >
           {current?.render()}

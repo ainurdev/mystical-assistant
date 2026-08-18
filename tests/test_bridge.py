@@ -1251,3 +1251,35 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+def test_boot_phase_names_the_wait_and_clears_on_the_first_token():
+    """The gap between spawn and first token used to be an empty stream, which
+    reads as a hang. It's a live status, not an event: it must reach the poll,
+    and it must vanish the moment the child speaks — without being journaled."""
+    saved = dict(runner._jobs)
+    runner._jobs.clear()
+    try:
+        job = runner.Job("j-boot", 555, "sess-boot")
+        runner._register(job)
+
+        assert runner.boot_phase("sess-boot") is None      # nothing to say yet
+        job.boot = "starting Claude"
+        assert runner.boot_phase("sess-boot") == "starting Claude"
+        assert job.snapshot(0)["boot"] == "starting Claude"
+
+        # The first streamed event means it's up — status clears, and nothing
+        # about the wait is left in the transcript.
+        runner._handle_event(job, {"type": "assistant",
+                                   "message": {"content": [], "usage": {}}})
+        assert job.boot is None
+        assert runner.boot_phase("sess-boot") is None
+        assert not [e for e in job.events if "starting Claude" in str(e)]
+
+        # A finished turn is never "loading", even if it died before speaking.
+        job.boot = "starting Claude"
+        job.status = "done"
+        assert runner.boot_phase("sess-boot") is None
+    finally:
+        runner._jobs.clear()
+        runner._jobs.update(saved)

@@ -15,13 +15,13 @@ const ok = (cond: boolean, what: string) => {
 };
 
 const fresh = initialBootSteps();
-ok(fresh.length === 5, "five lines, one per startup fetch");
+ok(fresh.length === 6, "six lines, one per startup fetch");
 ok(fresh.every((s) => s.phase === "wait"), "nothing is OK before it has answered");
 ok(bootProgress(fresh) === 0, "an untouched boot shows no progress");
 
 // A step that answered moves the bar; the others stay waiting.
 const one = markStep(fresh, "sessions", "ok", "12 CHATS");
-ok(bootProgress(one) === 0.2, "one of five answering is a fifth of the bar");
+ok(Math.abs(bootProgress(one) - 1 / 6) < 1e-9, "one of six answering is a sixth of the bar");
 ok(one.find((s) => s.key === "sessions")?.detail === "12 CHATS", "the line carries what came back");
 ok(fresh.every((s) => s.phase === "wait"), "marking doesn't mutate the array it was handed");
 
@@ -32,10 +32,10 @@ ok(markStep(one, "nope" as never, "ok", "x") === one, "an unknown key is a no-op
 
 // A failed fetch still counts as answered — a dead bridge must not hang the intro.
 const failed = markStep(one, "git", "fail", "OFFLINE");
-ok(bootProgress(failed) === 0.4, "a failure advances the bar like a success");
+ok(Math.abs(bootProgress(failed) - 2 / 6) < 1e-9, "a failure advances the bar like a success");
 ok(markStep(failed, "git", "ok", "3 REPOS") === failed, "and a later success can't overwrite it");
 
-const all = ["bridge", "projects", "git", "auth"].reduce(
+const all = ["bridge", "projects", "git", "auth", "chat"].reduce(
   (s, k) => markStep(s, k as never, "ok", "OK"), one);
 ok(bootProgress(all) === 1, "every line answered fills the bar");
 

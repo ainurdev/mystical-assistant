@@ -148,3 +148,14 @@ def test_button_rides_the_last_chunk():
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))
+
+
+def test_no_token_sends_nothing(monkeypatch):
+    """Dashboard-only install: every caller still sends, so tg() must no-op here
+    rather than fire a request at https://api.telegram.org/bot/ and log it."""
+    def boom(*a, **k):                    # any HTTP attempt fails the test
+        raise AssertionError("tried to reach Telegram without a token")
+    monkeypatch.setattr(telegram.config, "TOKEN", "")
+    monkeypatch.setattr(telegram, "urlopen", boom)
+    assert telegram.tg("sendMessage", chat_id=1, text="hi") is None
+    telegram.send(1, "hi")                # the fallback path must stay quiet too

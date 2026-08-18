@@ -43,6 +43,7 @@ preamble — put it in conftest, above the first bridge import.
 
 ## Project skills
 
+- **bridge-worktree** — where feature work lives, and keeping its data off the live DB.
 - **bridge-ship** — build, restart, and confirm a change is actually live.
 - **bridge-feature-slice** — wiring a capability across all three surfaces.
 - **bridge-eyes** — screenshotting/driving the UIs headlessly to verify frontend work.

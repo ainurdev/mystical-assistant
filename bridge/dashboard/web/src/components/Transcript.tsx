@@ -7,7 +7,7 @@ import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
-import { anchorAt, type Anchor } from "../lib/scrollmem";
+import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
 
@@ -126,11 +126,13 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, isActive, isLast, promptIdx, hud, liveTurns, showAll,
+  turn, isActive, isLast, promptIdx, hud, liveTurns, showAll, boot,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer,
 }: {
   turn: Turn;
   isActive: boolean;
+  /** What the live turn is waiting on before its first token, or null. */
+  boot?: string | null;
   isLast: boolean;
   /** Ctrl-F is mounting everything, so the turn's tail cap lifts too. */
   showAll?: boolean;
@@ -148,7 +150,12 @@ function TurnBlock({
   const working = isActive && turn.status === "running" && turn.pending.length === 0;
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
   return (
-    <div id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[44px]">
+    // data-ctx-*: the dashboard's right-click menu reads the nearest one of
+    // these off the target chain, so a click anywhere inside a turn resolves to
+    // that turn rather than the terminal pane wrapping it.
+    <div id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[44px]"
+      data-ctx-type="turn" data-ctx-id={turn.id}
+      data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       {turn.prompt && (
         <div data-prompt-idx={promptIdx}>
           <PromptBubble text={turn.prompt} />
@@ -165,6 +172,7 @@ function TurnBlock({
           {(turn.events.length > 0 || turn.status === "running") && (
             <RunStream
               events={turn.events}
+              boot={isActive ? boot : null}
               pending={turn.pending as PendingRequest[]}
               onRespond={isActive ? onRespond : undefined}
               animate={liveTurns?.has(turn.id) ?? false}
@@ -207,6 +215,7 @@ export interface TranscriptNav {
 export function Transcript({
   turns,
   activeId,
+  boot,
   onRespond,
   liveTurns,
   trailingWorking,
@@ -226,6 +235,8 @@ export function Transcript({
 }: {
   turns: Turn[];
   activeId: string | null;
+  /** What the live turn is waiting on before its first token, or null. */
+  boot?: string | null;
   onRespond: Respond;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
@@ -328,6 +339,18 @@ export function Transcript({
     if (!navRef) return;
     const rowIndex = (turnId: string) =>
       rows.findIndex((r) => r.kind === "turn" && r.turn.id === turnId);
+    // Full mount (ctrl-F) has every row in the DOM and no virtual items, so the
+    // two readers below measure rects instead — reported in the same frame the
+    // virtualizer uses, i.e. against the content origin rather than the viewport.
+    // Without this both returned null, so a find left the place unsaved and the
+    // next session switch landed at the bottom.
+    const domRows = (el: HTMLElement): Rows => {
+      const origin = el.getBoundingClientRect().top - el.scrollTop;
+      return [...el.querySelectorAll<HTMLElement>("[data-key]")].map((r) => {
+        const b = r.getBoundingClientRect();
+        return { key: r.getAttribute("data-key") ?? "", start: b.top - origin, end: b.bottom - origin };
+      });
+    };
     navRef.current = {
       jumpToTurn: (turnId, subAnchorId) => {
         if (fullRef.current) {
@@ -345,7 +368,9 @@ export function Transcript({
         return true;
       },
       turnTop: (turnId) => {
-        if (fullRef.current) return null;     // caller falls back to DOM rects
+        const el = scrollRef?.current;
+        if (fullRef.current)
+          return el ? domRows(el).find((r) => r.key === turnId)?.start ?? null : null;
         const i = rowIndex(turnId);
         if (i < 0) return null;
         const off = virtualizer.getOffsetForIndex(i, "start");
@@ -353,9 +378,9 @@ export function Transcript({
       },
       anchor: () => {
         const el = scrollRef?.current;
-        if (!el || fullRef.current) return null;
+        if (!el) return null;
         return anchorAt(
-          virtualizer.getVirtualItems()
+          fullRef.current ? domRows(el) : virtualizer.getVirtualItems()
             .map((v) => ({ key: String(v.key), start: v.start, end: v.end })),
           el.scrollTop);
       },
@@ -372,6 +397,7 @@ export function Transcript({
       <TurnBlock
         turn={row.turn}
         isActive={row.turn.id === activeId}
+        boot={boot}
         isLast={index === visible.length - 1}
         promptIdx={cut + index}
         showAll={fullMount}
@@ -407,7 +433,7 @@ export function Transcript({
       <div className="flex flex-col gap-3">
         {olderButton}
         {rows.map((row, i) => (
-          <div key={keyOf(row)}>{blockFor(row, i)}</div>
+          <div key={keyOf(row)} data-key={keyOf(row)}>{blockFor(row, i)}</div>
         ))}
       </div>
     );

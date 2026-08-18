@@ -89,6 +89,10 @@ export interface Transcript {
   turns: StoreTurn[];
   events: StoreEvent[];
   next_cursor: number;
+  /** What the live turn is waiting on before its first token ("starting Claude",
+   *  "checking configured MCP servers"). Absent once it speaks — this is a live
+   *  status, never a recorded event. */
+  boot?: string | null;
   // Present only when the request carried ?tail= (and the server is new enough
   // to window) — older turns exist beyond the first loaded one.
   has_older?: boolean;

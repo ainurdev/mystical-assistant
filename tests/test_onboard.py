@@ -81,3 +81,27 @@ def test_bundled_avatar_is_a_jpeg():
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))
+
+
+def test_dirs_labels_repos_and_counts(tmp_path):
+    """The labels are the whole point of the picker: they say which folder is a
+    repo and which is a root full of them."""
+    (tmp_path / "mystical" / ".git").mkdir(parents=True)
+    (tmp_path / "work" / "a" / ".git").mkdir(parents=True)
+    (tmp_path / "work" / "b" / ".git").mkdir(parents=True)
+    (tmp_path / "empty").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / "notes.txt").write_text("x")
+
+    assert onboard._dirs(str(tmp_path)) == [
+        ("empty", ""), ("mystical", "repo"), ("work", "2 repos"),
+    ]
+
+
+def test_dirs_survives_an_unreadable_path(tmp_path):
+    assert onboard._dirs(str(tmp_path / "nope")) == []
+
+
+def test_dirs_counts_one_repo_in_the_singular(tmp_path):
+    (tmp_path / "solo" / "only" / ".git").mkdir(parents=True)
+    assert onboard._dirs(str(tmp_path)) == [("solo", "1 repo")]

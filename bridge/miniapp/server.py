@@ -153,7 +153,12 @@ def transcript_for(session: dict, cursor: int = 0,
     (transcript_page.tail_slice) — turns and next_cursor always ship whole, so
     forward polling is unaffected. Without `tail` the shape is unchanged."""
     def page(d: dict) -> dict:
-        return transcript_page.tail_slice(d, tail, before) if tail is not None else d
+        d = transcript_page.tail_slice(d, tail, before) if tail is not None else d
+        # A turn that has spawned but not yet spoken shows an empty stream, which
+        # reads as a hang. Say what it is waiting on — live, so it disappears on
+        # the first token rather than being journaled into the transcript.
+        boot = runner.boot_phase(session["id"])
+        return {**d, "boot": boot} if boot else d
     if session.get("origin") in ("vscode", "terminal"):
         path = transcript_jsonl.find_transcript(session.get("claude_session_id"))
         data = (transcript_jsonl.parse_jsonl(path, cursor) if path

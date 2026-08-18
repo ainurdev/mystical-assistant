@@ -7,12 +7,12 @@ const NEEDS = [
   ["claude CLI", "installed and logged in", "reuses that login — no API key"],
   ["Python 3.10+", "runs the bridge", "stdlib only, nothing to pip install"],
   ["npm", "builds the UI on first start", "the build only; nothing Node runs after"],
-  ["A Telegram account", "for the phone surfaces", "setup asks for a bot token"],
+  ["A Telegram account", "optional — only the phone surfaces", "setup asks, and takes no for an answer"],
 ];
 
 const STEPS = [
   ["Clone it and run setup.sh", "It checks what it needs before it changes anything, and a second pass only asks for what is still missing."],
-  ["Answer six questions", "Bot token, projects root, permission posture, Mini App, free-provider fallback, start now. Everything else runs itself."],
+  ["Answer seven questions", "Telegram or not, bot token, projects root, permission posture, Mini App, free-provider fallback, start now. Skip Telegram and it is five. Everything else runs itself."],
   ["Open the URL it prints", "It reads the sessions already on your machine, so there is something to look at a minute after it starts."],
 ];
 
@@ -79,11 +79,10 @@ export function Setup() {
               </dl>
             </div>
 
-            <p className="mt-4 border-l-2 border-[var(--wait)] pl-4 font-mono text-[0.68rem] leading-[1.7] text-[var(--ink-dim)]">
-              <span className="text-[var(--wait)]">Heads up.</span> The project began as a Telegram
-              bridge, so setup still requires a bot token even if you only want the dashboard.
-              Making it optional is on the list; until then a throwaway bot takes a minute and
-              nothing will message it.
+            <p className="mt-4 border-l-2 border-[var(--rule-hi)] pl-4 font-mono text-[0.68rem] leading-[1.7] text-[var(--ink-dim)]">
+              <span className="text-[var(--live)]">Dashboard only?</span> Say no when setup asks about
+              Telegram and it never mentions it again — no bot, no token, nothing to sign up for.
+              Add one later in the dashboard&rsquo;s SYSTEM tab to turn the phone half on.
             </p>
           </Reveal>
         </div>

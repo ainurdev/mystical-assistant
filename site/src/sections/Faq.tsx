@@ -49,8 +49,8 @@ const FAQ: { q: string; a: string; soon?: boolean }[] = [
     a: "macOS and Linux, including WSL.",
   },
   {
-    q: "Setup asks for a Telegram bot token. Why?",
-    a: "The project began as a Telegram bridge and setup still requires that token, even though the dashboard doesn't use it. Making it optional for a dashboard-only install is the next thing on the list. Until then, creating a throwaway bot takes about a minute and nothing will message it.",
+    q: "Do I need Telegram?",
+    a: "No. Setup asks, and no is an answer: the desktop dashboard runs without a bot token, and the two questions after it disappear. Telegram buys you the bot and the phone Mini App — answering a session from your pocket. Add a token later in the dashboard's SYSTEM tab and the phone half turns on after a restart.",
   },
 ];
 

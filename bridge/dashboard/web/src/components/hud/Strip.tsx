@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import type { Weather } from "../../api";
+import { api, type TodayInfo, type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
 import { UpdateButton } from "./UpdateButton";
 
@@ -23,6 +23,45 @@ const seg = (on: boolean): CSSProperties => ({
   color: on ? "var(--txb)" : "var(--txd)",
   fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: "1px", padding: "7px",
 });
+
+function fmtTokens(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
+  return String(n);
+}
+
+/* Turns and tokens since local midnight. Dollars are deliberately not the
+   headline: the CLI prices subscription runs at API list rate (9f612a4), so
+   they only mean something on a real API key — where they show up in the
+   tooltip. Polls on the same 60s cadence the footer's usage meter uses; a
+   day total does not move faster than that. */
+function TodayChip() {
+  const [today, setToday] = useState<TodayInfo | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => void api.today().then((r) => { if (live) setToday(r); }).catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+  if (!today || !today.turns) return null;
+  const cost = today.cost === null ? "not reported" : `$${today.cost.toFixed(2)} at API list rate`;
+  return (
+    <span
+      title={`Since midnight: ${today.turns} turn${today.turns === 1 ? "" : "s"}, `
+        + `${today.tokens.toLocaleString()} tokens — ${cost}`}
+      style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "var(--t10)",
+               letterSpacing: "1.5px", color: "var(--txd)", flex: "none" }}
+    >
+      TODAY
+      <span style={{ color: "var(--tx)" }}>{today.turns}</span>
+      <span style={{ color: "var(--txf)" }}>TURNS</span>
+      <span style={{ color: "var(--tx)" }}>{fmtTokens(today.tokens)}</span>
+      <span style={{ color: "var(--txf)" }}>TOK</span>
+    </span>
+  );
+}
 
 export function Strip(props: StripProps) {
   const { radio, onToggleRadio, onNextRadio, onOpenSettings, clock, weather, onSetCity, onSetUnit, openSettings, onFeed } = props;
@@ -117,6 +156,7 @@ export function Strip(props: StripProps) {
       >
         MYSTICAL//ASSISTANT
       </span>
+      <TodayChip />
       <span
         style={{ position: "relative", flex: "none" }}
         data-ctx-type="weather" data-ctx-id="weather" data-ctx-label={weather.loc}
@@ -199,7 +239,11 @@ export function Strip(props: StripProps) {
         )}
       </span>
       <span style={{ flex: 1 }}></span>
+      {/* One line: transport, alive-signal, track. Elapsed moved to the
+          tooltip — it cost a second line, and a second line set the whole
+          strip's height. */}
       <div
+        title={`Claude FM — ${radio.elapsed} elapsed`}
         style={{
           display: "flex",
           alignItems: "center",
@@ -207,13 +251,13 @@ export function Strip(props: StripProps) {
           border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)",
           background: "color-mix(in srgb, var(--panel2) 45%, transparent)",
           padding: "3px 5px 3px 7px",
-          width: "248px",
+          width: "220px",
           flex: "none",
         }}
       >
         <button
           onClick={onToggleRadio}
-          title="Claude FM"
+          title={radio.playing ? "pause" : "play"}
           style={{
             appearance: "none",
             cursor: "pointer",
@@ -239,77 +283,35 @@ export function Strip(props: StripProps) {
             </svg>
           )}
         </button>
-        <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span
-              style={{ fontSize: "var(--t75)", letterSpacing: "1.5px", color: "var(--acc)", flex: "none" }}
-            >
-              CLAUDE·FM
-            </span>
-            {radio.playing && (
+        {radio.playing && (
+          <span style={{ display: "inline-flex", alignItems: "flex-end", gap: "1.5px", height: "8px", flex: "none" }}>
+            {[0, 0.18, 0.36].map((d) => (
               <span
+                key={d}
                 style={{
-                  display: "inline-flex",
-                  alignItems: "flex-end",
-                  gap: "1.5px",
+                  width: "2px",
                   height: "8px",
-                  flex: "none",
+                  background: "var(--ok)",
+                  transformOrigin: "bottom",
+                  animation: `eqbar .8s ease-in-out infinite ${d}s`,
                 }}
-              >
-                <span
-                  style={{
-                    width: "2px",
-                    height: "8px",
-                    background: "var(--ok)",
-                    transformOrigin: "bottom",
-                    animation: "eqbar .8s ease-in-out infinite",
-                  }}
-                ></span>
-                <span
-                  style={{
-                    width: "2px",
-                    height: "8px",
-                    background: "var(--ok)",
-                    transformOrigin: "bottom",
-                    animation: "eqbar .8s ease-in-out infinite .18s",
-                  }}
-                ></span>
-                <span
-                  style={{
-                    width: "2px",
-                    height: "8px",
-                    background: "var(--ok)",
-                    transformOrigin: "bottom",
-                    animation: "eqbar .8s ease-in-out infinite .36s",
-                  }}
-                ></span>
-              </span>
-            )}
-            <span style={{ flex: 1 }}></span>
-            <span
-              style={{
-                fontSize: "var(--t75)",
-                color: "var(--txf)",
-                flex: "none",
-                fontFamily: "'JetBrains Mono',monospace",
-              }}
-            >
-              {radio.elapsed}
-            </span>
-          </div>
-          <div
-            style={{
-              fontSize: "var(--t10)",
-              color: "var(--tx)",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              marginTop: "1px",
-              lineHeight: 1.3,
-            }}
-          >
-            {radio.title} <span style={{ color: "var(--txf)" }}>· {radio.artist}</span>
-          </div>
+              />
+            ))}
+          </span>
+        )}
+        <div
+          style={{
+            fontSize: "var(--t10)",
+            color: "var(--tx)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            lineHeight: 1.3,
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          {radio.title} <span style={{ color: "var(--txf)" }}>· {radio.artist}</span>
         </div>
         <button
           onClick={onNextRadio}

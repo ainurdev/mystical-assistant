@@ -103,11 +103,29 @@
   --shadow-pop: rgba(0, 0, 0, 0.62);
   --shadow-modal: rgba(0, 0, 0, 0.78);
 
+  /* Centred dialogs share one width. On a laptop or a 1440/1600 monitor a
+     fixed 560-900px panel reads as a stamp in the middle of the screen, so
+     they take three quarters of it; past 1900px half the screen is already
+     wider than that, and a full-width dialog is a neck exercise. Each modal
+     keeps its own px floor (max()) so it stays usable on a narrow window. */
+  --modal-w: 75vw;
+
   /* Preview Console: the UI/label voice + house easing (from the design system). */
   --font-display: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
   --ease-hud: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --radius: 0;
+}
+
+@media (min-width: 1900px) {
+  :root { --modal-w: 50vw; }
+}
+
+/* Same reasoning, one axis over: on a small screen a dialog sized to its
+   content is a stamp with a lot of empty around it, so MANAGE Projects takes a
+   fixed 80% of the height instead of shrinking to its list. */
+@media (max-width: 1080px) {
+  .modal-tall { height: 80vh; }
 }
 
 /* === LIGHT GROUNDS ==========================================================
@@ -328,6 +346,14 @@ body {
 [data-swap] .swapin {
   animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+/* Collapsing the right panel re-widths the transcript. Animating the column
+   (not a transform) is what lets the chat reflow into the space instead of
+   jumping a panel-width in one frame; RightPanel clips its own body at a fixed
+   width so the panel's own text doesn't reflow along the way. */
+.hudgrid {
+  transition: grid-template-columns 0.26s var(--ease-hud);
+}
+
 /* The transcript draws its own bar (CheckpointRail) over this edge — one rail,
    not two. Everything else keeps the native scrollbar. */
 .mscroll-bare {
@@ -362,14 +388,21 @@ body {
 .trow:hover {
   background: color-mix(in srgb, var(--acc) 6%, transparent);
 }
+/* The commit box is the one place in the HUD you type prose into, so its
+   textarea keeps a focus cue — every other input here suppresses the outline. */
+.cbox textarea:focus {
+  border-color: color-mix(in srgb, var(--acc) 45%, transparent);
+}
 /* The open session's left bar grows out of the row instead of fading in — a
    colour fade from transparent goes through washed-out purple and reads as lag
-   at any duration. A composited scaleY snaps. Sits over the row's own 2px
-   transparent border-left, so nothing shifts when it appears. */
+   at any duration. A composited scaleY snaps. Sits inside the row's own 2px
+   transparent border-left, so nothing shifts when it appears — and, unlike a
+   negative offset, it survives the paint containment `content-visibility` puts
+   on .vskip-card rows, so BY PROJECT marks the open session like RECENT does. */
 .sessrow::before {
   content: "";
   position: absolute;
-  left: -2px;
+  left: 0;
   top: 6px;
   bottom: 6px;
   width: 2px;
@@ -380,6 +413,12 @@ body {
 }
 .sessrow[data-on="true"]::before {
   transform: scaleY(1);
+}
+/* Only WORK gets motion. Every other busy state (WAIT, ASK, CHECK) is waiting
+   on you and already shouts with colour — a pulse there would be four things
+   blinking at once. This one says "churning, leave it alone". */
+.sessdot[data-work="true"] {
+  animation: workpulse 1.8s ease-out infinite;
 }
 .panel {
   position: relative;
@@ -541,6 +580,8 @@ body {
 @keyframes flicker { 0% { filter: brightness(0.35); } 9% { filter: brightness(2.2); } 13% { filter: brightness(0.6); } 22% { filter: brightness(1.5); } 100% { filter: none; } }
 @keyframes drawline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes mpulse { 0% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0.55); } 70% { box-shadow: 0 0 0 6px rgba(143, 217, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(143, 217, 168, 0); } }
+/* mpulse, but keeping the dot's own glow under the ring so it never reads as flat between beats, and themed off --ok rather than a baked-in green. */
+@keyframes workpulse { 0% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 8px var(--ok), 0 0 0 6px transparent; } 100% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 transparent; } }
 @keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
 @keyframes mslide { from { transform: translateX(10px); filter: brightness(1.5); } to { transform: none; filter: none; } }
 @keyframes mpop { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
@@ -888,9 +929,23 @@ input {
    less room for a setting than for the name of its category.
 
    A media query rather than a container query — unlike the composer, whose
-   width depends on which sidebars are open, this modal is min(720px, 94vw), so
-   its width IS the viewport. 94vw drops under 560px at a 600px viewport. */
+   width depends on which sidebars are open, this modal is min(976px, 94vw)
+   (rail + the 760px measure its rows keep, nothing spare), so under 1040px its
+   width IS the viewport. 94vw drops under 560px at a 600px viewport. */
 .setbody { flex: 1; display: flex; min-height: 0; }
+
+/* A modal that is a column of rows — a setting and its switch, a repo and its
+   buttons — gains nothing from the width the dialogs took on a wide screen: the
+   label sits against one edge and its control against the other, far enough
+   apart to read as two things. The rows keep a measure and centre in the pane;
+   the modal stays wide for its header and for anything grid-shaped inside it.
+   Not for the modals whose rows are a table (the HTTP inspector): there the
+   middle column absorbs the width instead of leaving a hole in it. */
+.mcol > * {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
 
 /* The ⓘ that unfolds a setting's explanation is a 15px disc — small enough to
    sit inside a caption, too small to hit with a thumb. The pseudo-element is
@@ -907,9 +962,30 @@ input {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 10px 0;
+  padding: 4px 0 10px;
   overflow: hidden auto;
   border-right: 1px solid color-mix(in srgb, var(--acc) 16%, transparent);
+}
+
+/* Ten categories are two groups of five — what the HUD is like, and what the
+   work does. A dashed rule and a tracked caption, the same way a panel splits
+   its sub-sections. */
+.setgroup {
+  font-size: var(--t8);
+  letter-spacing: 2px;
+  color: var(--txl);
+  padding: 12px 12px 6px;
+  margin-top: 5px;
+  border-top: 1px dashed color-mix(in srgb, var(--acc) 14%, transparent);
+}
+.setgroup:first-child { margin-top: 0; border-top: 0; padding-top: 9px; }
+
+/* A hint that wraps gives its row a different height from the nine others.
+   Clip instead — the label above it already carries the meaning. */
+.setrail .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .setrail button {
@@ -953,8 +1029,10 @@ input {
   }
   .setrail button.on { border-bottom-color: var(--acc); }
   /* The one-line hint under each category is the first thing to go — a
-     horizontal strip has width to spend, not height. */
+     horizontal strip has width to spend, not height. The group captions go
+     with it: a caption stacked beside its own tabs reads as another tab. */
   .setrail .hint { display: none; }
+  .setgroup { display: none; }
 }
 
 /* Session swap, slow case: the transcript you are leaving holds its place and
@@ -1024,6 +1102,8 @@ input {
    motion — dropping it here would flicker the scrim on every switch. Only the
    fade and the sweep go. */
 @media (prefers-reduced-motion: reduce) {
+  .sessdot[data-work="true"] { animation: none; }
+  .hudgrid { transition: none; }
   .swapscrim,
   .swapline { transition-duration: 0s; }
   .swapwrap[data-swapping] .swapline::after {

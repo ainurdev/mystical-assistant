@@ -1,3 +1,5 @@
+import threading
+
 from bridge import toolsets
 
 # Verbatim `claude mcp list` output, including the health-check header and the
@@ -47,3 +49,40 @@ def test_clean_drops_anything_not_offered_as_a_switch(monkeypatch):
     # Not a known tool, and not a shell fragment we'd hand to claude either.
     assert toolsets.clean(["Bash; rm -rf /", "mcp__nope", 7]) == []
     assert toolsets.clean("Bash") == []
+
+
+def test_a_stale_cache_is_served_without_waiting_for_the_health_check(monkeypatch):
+    # The regression this guards: `claude mcp list` ran on the thread that spawns
+    # claude, so an idle session's next turn stalled for a full health check
+    # (measured 8.6s) before the run started.
+    import time as _time
+    import types
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_run(*a, **kw):
+        started.set()
+        release.wait(5)
+        return types.SimpleNamespace(stdout=SAMPLE)
+
+    monkeypatch.setattr(toolsets.subprocess, "run", slow_run)
+    monkeypatch.setattr(toolsets, "_cache", (_time.time() - toolsets._TTL - 1,
+                                            [{"name": "stale", "rule": "mcp__stale"}]))
+    monkeypatch.setattr(toolsets, "_filling", False)
+
+    t0 = _time.monotonic()
+    got = toolsets.servers()
+    assert _time.monotonic() - t0 < 1          # did not block on the health check
+    assert [s["name"] for s in got] == ["stale"]
+    assert started.wait(5)                     # ...but the refresh did start
+
+    release.set()
+    for _ in range(100):                       # and lands in the cache
+        if {s["name"] for s in toolsets._cache[1]} == {
+                "plugin:cloudflare:cloudflare-api", "github", "figma",
+                "chrome-devtools", "railway"}:
+            break
+        _time.sleep(0.05)
+    else:
+        raise AssertionError("background refresh never updated the cache")

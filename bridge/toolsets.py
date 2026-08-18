@@ -28,11 +28,14 @@ BUILTINS = [
 ]
 _BUILTIN_RULES = {b["rule"] for b in BUILTINS}
 
-# `claude mcp list` health-checks every server, which takes seconds. The set of
-# configured servers changes about never, so one call is reused.
+# `claude mcp list` health-checks every server, which takes seconds (measured
+# 8.6s here, 15 servers). The set of configured servers changes about never, so
+# one call is reused — and once it has ever succeeded, no caller waits on it
+# again: a stale list is served while the refresh runs off-thread.
 _TTL = 300
 _cache: "tuple[float, list[dict]] | None" = None
 _lock = threading.Lock()
+_filling = False   # a background refresh is already in flight
 
 # "name: rest - ✔ Connected" / "name: rest - ! Needs authentication". The name is
 # matched lazily rather than as "no colons": a plugin server is called
@@ -73,13 +76,10 @@ def _parse(out: str) -> list[dict]:
     return servers
 
 
-def servers(refresh: bool = False) -> list[dict]:
-    """Configured MCP servers, newest health check within _TTL. Empty on any
-    failure — a settings panel with no servers beats a 500."""
-    global _cache
-    with _lock:
-        if not refresh and _cache and time.time() - _cache[0] < _TTL:
-            return _cache[1]
+def _fill() -> list[dict]:
+    """Run the health check and store it. Empty on any failure — a settings panel
+    with no servers beats a 500."""
+    global _cache, _filling
     from bridge import runner  # local: runner imports this module for the deny list
     try:
         p = subprocess.run([runner.claude_bin(), "mcp", "list"],
@@ -89,7 +89,51 @@ def servers(refresh: bool = False) -> list[dict]:
         found = []
     with _lock:
         _cache = (time.time(), found)
+        _filling = False
     return found
+
+
+def servers(refresh: bool = False) -> list[dict]:
+    """Configured MCP servers, health-checked within _TTL.
+
+    Stale-while-revalidate: past the TTL the previous answer is returned
+    immediately and the refresh happens on a background thread. Blocking here
+    blocks the thread that spawns claude, so an idle session's next turn used to
+    sit for the length of a full health check before the run even started —
+    which reads as the bridge hanging, for a list that changes about never.
+    refresh=True forces the synchronous path, for a panel that wants live status.
+    """
+    global _filling
+    with _lock:
+        cached = _cache
+        if cached and not refresh:
+            if time.time() - cached[0] < _TTL:
+                return cached[1]
+            if not _filling:
+                _filling = True
+                threading.Thread(target=_fill, daemon=True).start()
+            return cached[1]
+    # ponytail: concurrent cold callers each fetch. Bounded to the boot window,
+    # and warm() closes it; add an in-flight wait if that ever shows up.
+    return _fill()
+
+
+def ready() -> bool:
+    """True once the list has been fetched at least once — i.e. servers() will
+    answer without shelling out. Lets a caller say what it is waiting for."""
+    with _lock:
+        return _cache is not None
+
+
+def warm() -> None:
+    """Fill the cache off the boot thread, so the first turn never pays for the
+    health check. Called once at start-up; safe if it fails."""
+    global _filling
+    with _lock:
+        if _filling or _cache:
+            return
+        _filling = True
+    threading.Thread(target=_fill, daemon=True).start()
 
 
 def clean(rules) -> list[str]:

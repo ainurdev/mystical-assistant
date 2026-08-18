@@ -14,6 +14,7 @@ os.environ.setdefault("BASE_PATH", "/tmp")
 os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 from bridge import git as g, selfupdate  # noqa: E402
+from bridge.dashboard import server as dash  # noqa: E402
 
 
 def _run(cwd, *args):
@@ -98,6 +99,23 @@ def test_publish_pushes_an_already_committed_branch():
     ok, out = selfupdate.publish("")          # nothing to commit — push only
     assert ok is True, out
     assert selfupdate.check()["ahead"] == 0
+
+
+def test_restart_endpoint_arms_a_restart():
+    """POST /local/restart re-execs the bridge and nothing else — no pull, no
+    build. Stubbed: the real one SIGINTs this process."""
+    called = []
+    saved = selfupdate.restart
+    selfupdate.restart = lambda *a, **k: called.append(True)
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    try:
+        h._post_api("/local/restart", {})
+    finally:
+        selfupdate.restart = saved
+    assert called == [True]
+    assert box["code"] == 200 and box["obj"] == {"ok": True}
 
 
 def test_no_upstream_yields_nothing():

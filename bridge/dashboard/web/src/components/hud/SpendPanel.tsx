@@ -84,8 +84,11 @@ export function SpendPanel({ sessionId, running }: {
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
+  // Load once per session (and again when a turn ends) so the button carries a
+  // real number before anyone clicks it; the 5s poll is only worth running while
+  // the dropdown is actually open on a live turn.
   useEffect(() => {
-    if (!open || !sessionId) return;
+    if (!sessionId) return;
     let live = true;
     const load = () => {
       void api.sessionBreakdown(sessionId)
@@ -98,7 +101,7 @@ export function SpendPanel({ sessionId, running }: {
         .catch(() => {});
     };
     load();
-    if (!running) return () => { live = false; };
+    if (!open || !running) return () => { live = false; };
     const t = setInterval(load, POLL_MS);
     return () => { live = false; clearInterval(t); };
   }, [open, sessionId, running]);

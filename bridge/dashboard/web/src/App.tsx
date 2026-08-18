@@ -74,6 +74,7 @@ import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./
 import { SettingsModal } from "./components/hud/SettingsModal";
 import { AskDialog, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
+import { RestartIntro, restartBridge } from "./lib/restart";
 import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
@@ -204,6 +205,9 @@ export function App() {
   // "still loading", not "you have no projects".
   const [booted, setBooted] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
+  // What the live turn is waiting on before its first token — a status the poll
+  // carries, not a recorded event, so it clears itself when the child speaks.
+  const [boot, setBoot] = useState<string | null>(null);
   const [view, setView] = useState<View>("chat");
   // Which model-spending extras are on: each one owns a tab and a palette entry
   // that don't exist while it's off.
@@ -316,6 +320,13 @@ export function App() {
   // land, so the pixel the anchor points at keeps moving.
   const restoreTo = useRef<Anchor | null>(null);
   const restoreT = useRef(0);
+  // Older pages walked back looking for the remembered turn. Bounded: a restore
+  // that never converges would leave keepPlace disarmed for the tab's life.
+  const restorePages = useRef(0);
+  // The walk advances one page per effect pass, and the effect only re-runs when
+  // turns change — so a page that fails to load stalls it with the restore still
+  // armed, and nothing would be saved again until a reload. This ends it.
+  const pageT = useRef(0);
   // A smooth scroll of ours is in flight — the scroll listener must not read its
   // downward travel as a gesture (mid-glide we're still far from the bottom,
   // which would drop stick and flash the jump button).
@@ -471,6 +482,7 @@ export function App() {
     restoreTo.current = was && was !== "bottom" ? was : null;
     window.clearTimeout(restoreT.current);
     restoreT.current = 0;
+    restorePages.current = 0;
     stickRef.current = !restoreTo.current;
     setAtBottom(stickRef.current);
     staleTurns.current = true;
@@ -557,11 +569,14 @@ export function App() {
         const was = ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
         if (was) openSession(was.id);
+        // Nothing to reopen (or the list never landed) — say so, or the intro
+        // would wait on a transcript fetch that is never going to happen.
+        else markBoot("chat", "ok", "NONE");
       }
     });
     const id = setInterval(loadSessions, 5000);
     return () => { live = false; clearInterval(id); };
-  }, [loadSessions, projectRel, sessionId]);
+  }, [loadSessions, projectRel, sessionId, markBoot]);
 
   // The other half: the chat on screen is the one to come back to next time.
   useEffect(() => {
@@ -579,13 +594,16 @@ export function App() {
         const held = staleTurns.current;
         staleTurns.current = false;
         setTurns((prev) => mergeDelta(held ? [] : prev, t));
+        setBoot(t.boot ?? null);
         seqRef.current = t.next_cursor;
         if (first && t.has_older !== undefined)
           setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
+        markBoot("chat", "ok", bootCount(t.turns.length, "TURN"));
       } catch {
         // Never landed: drop the previous session's turns rather than pass them
         // off as this one's.
         if (live && staleTurns.current) { staleTurns.current = false; setTurns([]); }
+        markBoot("chat", "fail", "NO TRANSCRIPT");
       }
       finally { if (live) setLoadingSession(false); }
     };
@@ -598,7 +616,7 @@ export function App() {
       if (running || openWorking) void fetchOnce();
     }, 1500);
     return () => { live = false; clearInterval(id); };
-  }, [sessionId, running, openWorking]);
+  }, [sessionId, running, openWorking, markBoot]);
 
   // Fetch the page of turns before the oldest loaded one and prepend it.
   // mergeDelta does the prepending for free: older turns already exist in the
@@ -661,6 +679,8 @@ export function App() {
     restoreTo.current = null;
     window.clearTimeout(restoreT.current);
     restoreT.current = 0;
+    window.clearTimeout(pageT.current);
+    pageT.current = 0;
   }, []);
 
   useEffect(() => {
@@ -719,22 +739,35 @@ export function App() {
   }, [view, showDashboard, keepPlace, applyRestore, endRestore]);
 
   // The other half of keepPlace: once the opened session's turns are on screen,
-  // put you back where you left it. A turn we can't find didn't come with the
-  // tail (you'd loaded older ones before leaving), and the bottom is the honest
-  // answer to "that place is gone".
+  // put you back where you left it — paging older turns back in if the place you
+  // left is behind the tail cut, and only falling back to the bottom once there
+  // is nothing left to load.
   useEffect(() => {
     const a = restoreTo.current;
     if (!a || a === "bottom" || loadingSession || !turns.length) return;
     if (transcriptNav.current?.turnTop(a.turn) == null) {
+      // Not in the tail: you'd paged older turns in before leaving. Page them
+      // back — a prepend re-runs this effect, so this walks back one page per
+      // pass until the row exists. Only with nothing left to load is the bottom
+      // the honest answer to "that place is gone".
+      if (olderRef.current.has && !olderRef.current.loading
+          && restorePages.current < 200) {   // pages ≫ max observed 34 turns
+        restorePages.current++;
+        if (!pageT.current) pageT.current = window.setTimeout(endRestore, 10000);
+        void loadOlder();
+        return;
+      }
       endRestore();
-      jumpToBottom();               // that place didn't come back with the tail
+      jumpToBottom();
       return;
     }
+    window.clearTimeout(pageT.current);      // found it — the walk is over
+    pageT.current = 0;
     // Pinned for a beat, not aimed once: the turns keep measuring after they
     // land, and every measurement moves the pixel the anchor points at.
     if (!restoreT.current) restoreT.current = window.setTimeout(endRestore, 2000);
     applyRestore();
-  }, [turns, loadingSession, jumpToBottom, applyRestore, endRestore]);
+  }, [turns, loadingSession, jumpToBottom, applyRestore, endRestore, loadOlder]);
 
   useEffect(() => {
     let live = true;
@@ -1139,10 +1172,22 @@ export function App() {
   // New session in `project`, then run `prompt` in it. The explicit sessionId is
   // what makes send() reusable here: it otherwise reads sessionId from state,
   // which React has not updated yet for the session we just created.
+  // Opening a new session means a round trip (a POST, and for a worktree a git
+  // add that takes seconds) — spent staring at the session you just left. So the
+  // chat opens on nothing first and the transcript's own loading state carries
+  // the wait; the real session drops in behind it.
+  function openBlank() {
+    setSessionId(null);
+    setTurns([]);
+    setLoadingSession(true);
+    setView("chat");
+  }
+
   async function startIn(
     project: string, prompt: string,
     opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string },
   ) {
+    openBlank();
     try {
       const { session } = await api.createSession(project, opts?.cwd, opts?.title);
       setSessions((prev) => [session, ...prev]);
@@ -1151,6 +1196,7 @@ export function App() {
       await send(prompt, opts?.images ?? [],
                  { sessionId: session.id, project, force: opts?.force });
     } catch (e) {
+      setLoadingSession(false);
       notify("error", (e as Error).message);
     }
   }
@@ -1177,27 +1223,27 @@ export function App() {
   }
 
   async function newSession(project: string) {
+    openBlank();
     try {
       const { session } = await api.createSession(project);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
-      setView("chat");
-    } catch { /* ignore */ }
+    } catch { setLoadingSession(false); }
   }
 
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
                                  firstPrompt?: string) {
+    openBlank();
     try {
       const wt = await api.worktreeAdd(rel, branch, parent, create);
-      if (!wt.ok) { notify("error", wt.output || "worktree failed"); return; }
+      if (!wt.ok) { setLoadingSession(false); notify("error", wt.output || "worktree failed"); return; }
       // With a prompt this is startIn's job — it already opens a session in a
       // given cwd and addresses the run to it by id.
       if (firstPrompt) { await startIn(rel, firstPrompt, { cwd: wt.path }); return; }
       const { session } = await api.createSession(rel, wt.path);
       await loadSessions();
       openSession(session.id);
-      setView("chat");
-    } catch (e) { notify("error", (e as Error).message); }
+    } catch (e) { setLoadingSession(false); notify("error", (e as Error).message); }
   }
 
   async function createProject(name: string, prompt: string) {
@@ -1508,15 +1554,17 @@ export function App() {
         hint: "TOP", onClick: () => togglePin(ctxMenu.id) });
       // Usage-limit fallback policy for this session; the 5s session poll picks
       // up the new value, so the ● marker is fresh next open.
-      const pol = s?.fallback_policy ?? null;
+      const pol = s?.fallback_policy ?? "ask";
       const setPol = (v: string) => { void api.setPolicy(ctxMenu.id, v).then(() => void loadSessions()); };
       items.push({ divider: true });
-      items.push({ icon: pol === null || pol === "ask" ? "●" : "○", label: "On limit: ask",
-        hint: "offer account/free-agent choices", onClick: () => setPol("ask") });
-      items.push({ icon: pol === "auto" ? "●" : "○", label: "On limit: auto-switch",
-        hint: "take the best fallback silently", onClick: () => setPol("auto") });
-      items.push({ icon: pol === "wait" ? "●" : "○", label: "On limit: wait",
-        hint: "only wait for the reset", onClick: () => setPol("wait") });
+      items.push({ icon: "◈", label: `On limit: ${pol === "auto" ? "auto-switch" : pol}`, children: [
+        { icon: pol === "ask" ? "●" : "○", label: "Ask",
+          hint: "offer account/free-agent choices", onClick: () => setPol("ask") },
+        { icon: pol === "auto" ? "●" : "○", label: "Auto-switch",
+          hint: "take the best fallback silently", onClick: () => setPol("auto") },
+        { icon: pol === "wait" ? "●" : "○", label: "Wait",
+          hint: "only wait for the reset", onClick: () => setPol("wait") },
+      ] });
       // How full this session's window is, and when claude compacts it. The
       // reading is written at the end of each turn, so it's the fill the next
       // turn resumes into.
@@ -1526,16 +1574,18 @@ export function App() {
       const setAt = (v: string) => {
         void api.setAutocompact(ctxMenu.id, v).then(() => void loadSessions());
       };
-      items.push({ divider: true });
-      items.push({ icon: "◫", label: `Context: ${ctxPct === null ? "not measured yet" : `${ctxPct}% full`}`,
-        hint: s?.ctx_tokens ? `${s.ctx_tokens.toLocaleString()} tokens on the last request` : "runs a turn to measure",
-        onClick: () => { /* a reading, not an action */ } });
-      items.push({ icon: at === "auto" ? "●" : "○", label: "Compact: auto",
-        hint: "claude decides when", onClick: () => setAt("auto") });
-      items.push({ icon: at === "100000" ? "●" : "○", label: "Compact at 100k",
-        hint: "earlier, shorter context", onClick: () => setAt("100000") });
-      items.push({ icon: at === "150000" ? "●" : "○", label: "Compact at 150k",
-        hint: "later, more room before it summarises", onClick: () => setAt("150000") });
+      items.push({ icon: "◫", label: `Context: ${ctxPct === null ? "not measured yet" : `${ctxPct}% full`}`, children: [
+        { icon: "◫", label: s?.ctx_tokens ? `${s.ctx_tokens.toLocaleString()} tokens` : "no reading yet",
+          hint: s?.ctx_tokens ? "on the last request" : "runs a turn to measure",
+          onClick: () => { /* a reading, not an action */ } },
+        { divider: true },
+        { icon: at === "auto" ? "●" : "○", label: "Compact: auto",
+          hint: "claude decides when", onClick: () => setAt("auto") },
+        { icon: at === "100000" ? "●" : "○", label: "Compact at 100k",
+          hint: "earlier, shorter context", onClick: () => setAt("100000") },
+        { icon: at === "150000" ? "●" : "○", label: "Compact at 150k",
+          hint: "later, more room before it summarises", onClick: () => setAt("150000") },
+      ] });
       const nOff = s?.disabled_tools?.length ?? 0;
       items.push({ icon: "⚒", label: "Tools & MCP…",
         hint: nOff ? `${nOff} switched off` : "all on",
@@ -1547,34 +1597,37 @@ export function App() {
       items.push({ icon: "↻", label: "Regenerate title",
         hint: "let the model name it from the whole session",
         onClick: () => void regenerateTitle(ctxMenu.id) });
-      items.push({ icon: "⇗", label: "Share — read-only link",
-        hint: "expires in 7 days",
-        onClick: () => void shareSession(ctxMenu.id) });
-      items.push({ icon: "⊘", label: "Revoke share links",
-        hint: "every link to this session stops working",
-        onClick: () => void revokeShares(ctxMenu.id) });
       items.push({ icon: "⧉", label: "Duplicate session",
         hint: "copy the transcript into a new one",
         onClick: () => void duplicateSession(ctxMenu.id) });
-      // One item per worktree of this session's project. A submenu would need a
-      // picker; the branches are a short list, so they go straight in.
-      for (const wt of relocTargets)
-        items.push({ icon: "⇉", label: `Relocate to ${wt.branch}`,
+      items.push({ icon: "⇗", label: "Share", children: [
+        { icon: "⇗", label: "Read-only link", hint: "expires in 7 days",
+          onClick: () => void shareSession(ctxMenu.id) },
+        { icon: "⊘", label: "Revoke share links",
+          hint: "every link to this session stops working",
+          onClick: () => void revokeShares(ctxMenu.id) },
+      ] });
+      // One section, one item per worktree of this session's project.
+      if (relocTargets.length)
+        items.push({ icon: "⇉", label: "Relocate to worktree", children: relocTargets.map((wt) => ({
+          icon: "⇉", label: wt.branch,
           hint: "rewrites paths so the model never sees the move",
-          onClick: () => void relocateSession(ctxMenu.id, s?.project ?? "", wt.branch) });
+          onClick: () => void relocateSession(ctxMenu.id, s?.project ?? "", wt.branch),
+        })) });
       items.push({ divider: true });
       // Lifecycle: all three take the session out of the active list, but which
       // one you picked is the difference between "shipped" and "come back to it".
       const lc = s?.lifecycle ?? null;
-      items.push({ icon: lc === "done" ? "●" : "○", label: "Mark done",
-        hint: "finished — out of the sidebar", onClick: () => void setLifecycle(ctxMenu.id, "done") });
-      items.push({ icon: lc === "backlog" ? "●" : "○", label: "Move to backlog",
-        hint: "not now, not dead", onClick: () => void setLifecycle(ctxMenu.id, "backlog") });
-      items.push({ icon: lc === "abandoned" ? "●" : "○", label: "Abandon", danger: true,
-        hint: "gave up on it", onClick: () => void setLifecycle(ctxMenu.id, "abandoned") });
-      if (lc !== null)
-        items.push({ icon: "↺", label: "Reopen", hint: "back to the active list",
-          onClick: () => void setLifecycle(ctxMenu.id, null) });
+      items.push({ icon: "◐", label: `Lifecycle: ${lc ?? "active"}`, children: [
+        { icon: lc === "done" ? "●" : "○", label: "Mark done",
+          hint: "finished — out of the sidebar", onClick: () => void setLifecycle(ctxMenu.id, "done") },
+        { icon: lc === "backlog" ? "●" : "○", label: "Move to backlog",
+          hint: "not now, not dead", onClick: () => void setLifecycle(ctxMenu.id, "backlog") },
+        { icon: lc === "abandoned" ? "●" : "○", label: "Abandon", danger: true,
+          hint: "gave up on it", onClick: () => void setLifecycle(ctxMenu.id, "abandoned") },
+        ...(lc !== null ? [{ icon: "↺", label: "Reopen", hint: "back to the active list",
+          onClick: () => void setLifecycle(ctxMenu.id, null) }] : []),
+      ] });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
@@ -1585,6 +1638,29 @@ export function App() {
     } else if (ctxMenu.type === "issue") {
       items.push({ icon: "▸", label: "Feed to Claude", onClick: () => feed([`Address issue #${ctxMenu.id} in ${cproj}`], cproj) });
       items.push({ icon: "⧉", label: "Copy issue ref", onClick: () => copy(`${cproj}#${ctxMenu.id}`) });
+      items.push({ divider: true });
+    } else if (ctxMenu.type === "turn") {
+      // The turn the cursor was inside — its prompt, and whatever the agent
+      // said back. Tool calls and thinking are left out of "reply": what you
+      // want on the clipboard is the answer, not the working.
+      const t = turns.find((x) => x.id === ctxMenu.id);
+      const reply = (t?.events ?? [])
+        .map((e) => (e.type === "text" ? e.text : ""))
+        .filter(Boolean).join("\n\n").trim();
+      if (t?.prompt)
+        items.push({ icon: "⧉", label: "Copy prompt", onClick: () => copy(t.prompt) });
+      if (reply)
+        items.push({ icon: "⧉", label: "Copy reply", onClick: () => copy(reply) });
+      if (t?.prompt || reply)
+        items.push({ icon: "⧉", label: "Copy turn as Markdown",
+          onClick: () => copy(`**${t?.prompt || "(no prompt)"}**\n\n${reply || "_(no reply)_"}`) });
+      if (reply)
+        items.push({ icon: "❞", label: "Quote reply in composer",
+          hint: "drops it into the prompt box", onClick: () => quote(reply) });
+      if (t?.prompt)
+        items.push({ icon: "↻", label: "Send this prompt again",
+          hint: "runs it as a new turn in this session",
+          onClick: () => void send(t.prompt, []) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "terminal") {
       items.push({ icon: "⊙", label: "Copy session title", onClick: () => copy(selected?.title || "session") });
@@ -1600,10 +1676,16 @@ export function App() {
     items.push({ icon: "♪", label: "Toggle Claude·FM", onClick: () => radio.toggle() });
     items.push({ icon: "⚙", label: "Dashboard settings", onClick: () => setSettingsOpen(true) });
     items.push({ icon: "↻", label: "Replay boot", onClick: () => replayBoot() });
-    items.push({ divider: true }, ...nativeCtx.page);
+    items.push({ icon: "⏻", label: "Restart bridge",
+      hint: "picks up code on disk; running turns resume",
+      onClick: () => void restartBridge() });
+    // The browser-level block (back/reload/print) is never the reason you opened
+    // the menu — it goes behind one row.
+    if (nativeCtx.page.length)
+      items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets]);
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
@@ -1742,7 +1824,7 @@ export function App() {
             />
 
             <div
-              className="grid min-h-0 flex-1 gap-[13px] p-[13px]"
+              className="hudgrid grid min-h-0 flex-1 gap-[13px] p-[13px]"
               style={{ gridTemplateColumns: `360px minmax(0,1fr) ${settings.rightOpen ? "372px" : "30px"}`, minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
@@ -1772,6 +1854,7 @@ export function App() {
                   { title: it.title, cwd: it.cwd, force: true })}
                 liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession || !booted} hud={settings}
+                boot={boot}
                 hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
                 renderFrom={older.from}
                 navRef={transcriptNav} restoringRef={restoreTo} onJumpMark={(m) => void jumpToMark(m)}
@@ -1911,6 +1994,7 @@ export function App() {
             {/* every plain title="" in here, drawn in the HUD's own type */}
             <NativeTips />
             <AskDialog />
+            <RestartIntro theme={settings.theme} scanlines={settings.scanlines} />
         </div>
       )}
 

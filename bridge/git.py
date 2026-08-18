@@ -51,10 +51,14 @@ def _status_letter(xy: str) -> str:
 
 
 def _parse(raw: str):
-    """(branch, upstream, ahead, behind, [(status, path, untracked)]) from
+    """(branch, upstream, ahead, behind, [(status, path, untracked, xy)]) from
     porcelain v2. `upstream` is "" when the branch has never been pushed —
     which is also when ahead/behind stay 0, so the two can't be told apart
-    from the counts alone."""
+    from the counts alone.
+
+    `xy` is porcelain's raw pair: X is the index (staged) state, Y the working
+    tree's, `.` meaning unchanged — that pair is the whole staged/unstaged
+    split the CHANGES panel draws."""
     branch, upstream, ahead, behind, entries = "", "", 0, 0, []
     for line in raw.splitlines():
         if line.startswith("# branch.head"):
@@ -68,17 +72,21 @@ def _parse(raw: str):
                 elif tok.startswith("-"):
                     behind = int(tok[1:] or 0)
         elif line[:1] == "1":
-            entries.append((_status_letter(line.split(" ", 2)[1]),
-                            line.split(" ", 8)[8] if len(line.split(" ", 8)) > 8 else "", False))
+            xy = line.split(" ", 2)[1]
+            entries.append((_status_letter(xy),
+                            line.split(" ", 8)[8] if len(line.split(" ", 8)) > 8 else "", False, xy))
         elif line[:1] == "2":
             parts = line.split(" ", 9)
             rest = parts[9] if len(parts) > 9 else ""
-            entries.append((_status_letter(line.split(" ", 2)[1]),
-                            rest.split("\t")[0], False))
+            xy = line.split(" ", 2)[1]
+            entries.append((_status_letter(xy), rest.split("\t")[0], False, xy))
         elif line.startswith("u "):
-            entries.append(("U", line.rsplit(" ", 1)[-1], False))
+            # A conflict's XY is both sides (UU, AA…), which would file it under
+            # staged AND unstaged. It belongs in neither until it's resolved, so
+            # it reports as unstaged only.
+            entries.append(("U", line.rsplit(" ", 1)[-1], False, ".U"))
         elif line.startswith("? "):
-            entries.append(("?", line[2:], True))
+            entries.append(("?", line[2:], True, "??"))
     return branch, upstream, ahead, behind, entries
 
 
@@ -112,8 +120,12 @@ def _count_lines(path: str) -> int:
 def _porcelain(cwd: str) -> str | None:
     # quotePath=false: emit non-ASCII paths verbatim, not C-quoted ("caf\303\251"),
     # so the path is usable as a pathspec and the file's diff renders.
+    # -uall: git collapses a wholly-untracked directory into one "dir/" entry,
+    # which has no line count and no diff — the CHANGES panel drew it as an
+    # unreadable +0 -0 row. Listing the files inside costs a deeper walk on a
+    # dirty tree; ignored directories are still pruned, so it's bounded.
     rc, out, _ = _run(cwd, "-c", "core.quotePath=false",
-                      "status", "--porcelain=v2", "--branch")
+                      "status", "--porcelain=v2", "--branch", "-uall")
     return out if rc == 0 else None
 
 
@@ -135,11 +147,12 @@ def status(cwd: str) -> dict:
     branch, upstream, ahead, behind, entries = _parse(_porcelain(cwd) or "")
     nums = _numstat(cwd)
     files = []
-    for st, path, untracked in entries:
+    for st, path, untracked, xy in entries:
         add, dele = nums.get(path, [0, 0])
         if untracked:
             add = _count_lines(os.path.join(cwd, path))
-        files.append({"path": path, "status": st, "add": add, "del": dele})
+        files.append({"path": path, "status": st, "add": add, "del": dele,
+                      "x": xy[0], "y": xy[1]})
     return {"is_repo": True, "branch": branch, "upstream": upstream,
             "ahead": ahead, "behind": behind,
             "dirty": len(files), "files": files}
@@ -159,12 +172,69 @@ def diff(cwd: str, path: str) -> str:
     return out
 
 
+def _has_staged(cwd: str) -> bool:
+    # rc 1 = the index differs from HEAD. 0 = nothing staged, anything else
+    # (no HEAD yet, broken repo) is read as nothing staged so commit still
+    # falls back to staging everything.
+    rc, _o, _e = _run(cwd, "diff", "--cached", "--quiet")
+    return rc == 1
+
+
 def commit(cwd: str, message: str) -> tuple[bool, str]:
-    rc, out, err = _run(cwd, "add", "-A")
-    if rc != 0:
-        return False, (err or out or "git add failed").strip()
+    """Commit the index; with nothing staged, stage everything first. That's the
+    VS Code rule, and it's what makes CHANGES' staged section mean anything —
+    an unconditional `add -A` would sweep up the changes you deliberately left
+    out. With an empty index the behaviour is unchanged: commit all."""
+    if not _has_staged(cwd):
+        rc, out, err = _run(cwd, "add", "-A")
+        if rc != 0:
+            return False, (err or out or "git add failed").strip()
     rc, out, err = _run(cwd, "commit", "-m", message)
     return rc == 0, (out + err).strip()
+
+
+def _safe_paths(cwd: str, paths: list[str]) -> list[str]:
+    return [p for p in (_mutable_path(cwd, x) for x in paths) if p]
+
+
+def stage(cwd: str, paths: list[str]) -> tuple[bool, str]:
+    safe = _safe_paths(cwd, paths)
+    if not safe:
+        return False, "no files selected"
+    rc, out, err = _run(cwd, "add", "--", *safe)
+    return rc == 0, (out + err).strip()
+
+
+def unstage(cwd: str, paths: list[str]) -> tuple[bool, str]:
+    safe = _safe_paths(cwd, paths)
+    if not safe:
+        return False, "no files selected"
+    rc, out, err = _run(cwd, "restore", "--staged", "--", *safe)
+    return rc == 0, (out + err).strip()
+
+
+def discard(cwd: str, paths: list[str]) -> tuple[bool, str]:
+    """Throw away working-tree changes. A tracked file goes back to the index;
+    an untracked one is deleted, because there is no earlier version to go
+    back to — same as VS Code's Discard Changes, and just as unrecoverable."""
+    safe = _safe_paths(cwd, paths)
+    if not safe:
+        return False, "no files selected"
+    rc, out, _ = _run(cwd, "-c", "core.quotePath=false", "ls-files", "--", *safe)
+    tracked = {p for p in out.splitlines() if p} if rc == 0 else set()
+    ok, notes = True, []
+    if tracked:
+        rc, out, err = _run(cwd, "restore", "--worktree", "--", *sorted(tracked))
+        ok = rc == 0
+        notes.append((out + err).strip())
+    for rel in safe:
+        if rel in tracked:
+            continue
+        good, note = delete_path(cwd, rel)
+        ok = ok and good
+        if not good:
+            notes.append(note)
+    return ok, "\n".join(n for n in notes if n)
 
 
 def commit_paths(cwd: str, message: str, paths: list[str]) -> tuple[bool, str]:

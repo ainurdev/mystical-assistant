@@ -11,7 +11,7 @@ export interface BootStep {
   detail: string; // right-hand column: "OK", "12 REPOS", "OFFLINE"…
 }
 
-export type BootKey = "bridge" | "projects" | "sessions" | "git" | "auth";
+export type BootKey = "bridge" | "projects" | "sessions" | "git" | "auth" | "chat";
 
 const LABELS: { key: BootKey; label: string }[] = [
   { key: "bridge", label: "ESTABLISHING BRIDGE" },
@@ -19,6 +19,10 @@ const LABELS: { key: BootKey; label: string }[] = [
   { key: "sessions", label: "CONVERSATION STORE" },
   { key: "git", label: "GIT WORKTREES" },
   { key: "auth", label: "AUTH · CLAUDE LOGIN" },
+  // Last on purpose: it can't even start until CONVERSATION STORE answers and
+  // names the chat to reopen. Without it the wipe uncovers an empty transcript
+  // that fills in a few hundred ms later — the whole point of the gate.
+  { key: "chat", label: "RESTORING TRANSCRIPT" },
 ];
 
 export function initialBootSteps(): BootStep[] {
