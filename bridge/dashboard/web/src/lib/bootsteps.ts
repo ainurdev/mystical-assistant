@@ -5,7 +5,7 @@
 export type BootPhase = "wait" | "ok" | "fail";
 
 export interface BootStep {
-  key: BootKey;
+  key: string; // BootKey at startup; the restart overlay reuses the log with its own keys
   label: string;
   phase: BootPhase;
   detail: string; // right-hand column: "OK", "12 REPOS", "OFFLINE"…
@@ -47,8 +47,8 @@ export const BOOT_CEIL_MS = 8000; // a bridge that hangs must not trap you here
 
 /** Whether the intro should start its exit: everything answered and the opening
  *  animation has landed, or we've waited long enough that it no longer matters. */
-export function bootReady(steps: BootStep[], elapsedMs: number): boolean {
-  if (elapsedMs >= BOOT_CEIL_MS) return true;
+export function bootReady(steps: BootStep[], elapsedMs: number, ceilMs = BOOT_CEIL_MS): boolean {
+  if (elapsedMs >= ceilMs) return true;
   return bootProgress(steps) === 1 && elapsedMs >= BOOT_FLOOR_MS;
 }
 

@@ -185,6 +185,11 @@ export interface GitFile {
   status: string;
   add: number;
   del: number;
+  // Porcelain's raw pair: `x` is the index (staged) state, `y` the working
+  // tree's, "." meaning unchanged, "?" untracked. Absent on an old backend
+  // that hasn't restarted yet — CHANGES then treats everything as unstaged.
+  x?: string;
+  y?: string;
 }
 export interface GitStatus {
   is_repo: boolean;
@@ -849,6 +854,7 @@ export const api = {
   publishUpdate: () =>
     req<{ ok: boolean; output: string; message: string }>(
       "/local/update/publish", { method: "POST", body: {} }),
+  restart: () => req<{ ok: boolean }>("/local/restart", { method: "POST", body: {} }),
   projects: (dir?: string) =>
     req<ProjectsListing>(`/local/projects${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`),
   sessions: (project?: string) =>
@@ -1101,6 +1107,12 @@ export const api = {
     req<{ message?: string; error?: string }>("/local/git/commit-message", {
       method: "POST",
       body: { project, branch, paths },
+    }),
+  // CHANGES panel — stage / unstage / discard working-tree paths.
+  gitOp: (project: string, op: "stage" | "unstage" | "discard", paths: string[], branch?: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/op", {
+      method: "POST",
+      body: { project, op, paths, ...(branch ? { branch } : {}) },
     }),
   gitPush: (project: string, branch?: string) =>
     req<{ ok: boolean; output: string }>("/local/git/push", {

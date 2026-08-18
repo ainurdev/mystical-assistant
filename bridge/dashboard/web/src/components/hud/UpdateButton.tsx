@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
+import { watchRestart } from "../../lib/restart";
 
 // Header sync button for the platform's own checkout, both directions: pull the
 // commits waiting upstream (then rebuild + restart the bridge), or ship the work
@@ -101,14 +102,10 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
     setErr("");
   }
 
-  // The bridge is re-execing: every request fails until the new process binds
-  // the port again. Poll until one lands, then reload into the new build.
+  // The bridge is re-execing: the boot intro comes back up and waits it out,
+  // then reloads into the new build. Only returns if it never came back.
   async function waitForRestart() {
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 1500));
-      try { await api.state(); location.reload(); return; } catch { /* still down */ }
-    }
-    notify("error", "bridge did not come back — check the logs");
+    await watchRestart("PULLED");
     setPhase("");
     setOpen(false);
   }

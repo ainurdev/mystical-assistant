@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { themeCanvas, themeFilter, type ThemeKey } from "../../lib/theme";
-import { bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
+import { BOOT_CEIL_MS, bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
 
 const FADE_MS = 650; // the crtoff wipe, after which the dashboard owns the screen
 
@@ -23,17 +23,23 @@ export function BootIntro(props: {
   theme: ThemeKey;
   scanlines: boolean;
   steps: BootStep[];
+  /** How long to wait before leaving anyway. The restart overlay raises it: its
+      wait is a process coming back, which can outlast a hung fetch. */
+  ceilMs?: number;
 }) {
-  const { onReveal, onDone, theme, scanlines, steps } = props;
+  const { onReveal, onDone, theme, scanlines, steps, ceilMs = BOOT_CEIL_MS } = props;
   const [fade, setFade] = useState(false);
   const progress = bootProgress(steps);
+  // Skipping only makes sense once there's a loaded dashboard to skip to —
+  // before that the click just swaps the boot log for an empty HUD.
+  const loaded = progress === 1;
 
   // Keep the latest callbacks + steps in a ref so the exit poll below can run
   // once on mount. App re-renders every second (the telemetry clock), handing
   // BootIntro fresh callback identities each time — depending on them here would
   // clear+reset the timer before it fires, so the intro never auto-exits.
-  const cb = useRef({ onReveal, onDone, steps });
-  cb.current = { onReveal, onDone, steps };
+  const cb = useRef({ onReveal, onDone, steps, ceilMs });
+  cb.current = { onReveal, onDone, steps, ceilMs };
 
   useEffect(() => {
     const started = Date.now();
@@ -42,7 +48,7 @@ export function BootIntro(props: {
     // elapsed time — the last fetch can land before the floor, and a bridge
     // that never answers has to hit the ceiling with no step change at all.
     const id = window.setInterval(() => {
-      if (!bootReady(cb.current.steps, Date.now() - started)) return;
+      if (!bootReady(cb.current.steps, Date.now() - started, cb.current.ceilMs)) return;
       window.clearInterval(id);
       setFade(true);
       cb.current.onReveal();
@@ -62,7 +68,7 @@ export function BootIntro(props: {
 
   return (
     <div
-      onClick={dismissBoot}
+      onClick={loaded ? dismissBoot : undefined}
       style={{
         position: "fixed",
         inset: 0,
@@ -74,7 +80,7 @@ export function BootIntro(props: {
         alignItems: "center",
         justifyContent: "center",
         gap: "26px",
-        cursor: "pointer",
+        cursor: loaded ? "pointer" : "default",
         overflow: "hidden",
         transformOrigin: "center",
         animation: fade ? "crtoff .62s cubic-bezier(.7,0,.3,1) forwards" : "none",
@@ -437,7 +443,7 @@ export function BootIntro(props: {
             {steps.find((s) => s.phase === "wait")?.label ?? "WORKSPACE READY"}
             <span style={{ animation: "caret 1s steps(1) infinite" }}>_</span>
           </span>
-          <span>CLICK TO SKIP</span>
+          <span>{loaded ? "CLICK TO SKIP" : ""}</span>
         </div>
       </div>
     </div>
