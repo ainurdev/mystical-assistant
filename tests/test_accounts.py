@@ -5,6 +5,7 @@ symlinked back to ~/.claude so transcripts/skills/settings stay shared. Env is
 pinned before importing the package so config picks it up.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -100,11 +101,14 @@ def _fresh_root():
     return accounts.ROOT
 
 
-def _fake_identity(email="me@example.com"):
+def _fake_identity(email="me@example.com", mcp=None):
     """Stand-in ~/.claude.json (identity lives OUTSIDE ~/.claude)."""
     path = os.path.join(tempfile.mkdtemp(), ".claude.json")
+    data = {"oauthAccount": {"emailAddress": email}}
+    if mcp is not None:
+        data["mcpServers"] = mcp
     with open(path, "w") as fh:
-        fh.write('{"oauthAccount": {"emailAddress": "%s"}}' % email)
+        json.dump(data, fh)
     accounts.IDENTITY = path
     return path
 
@@ -151,6 +155,21 @@ def test_add_records_the_email_it_snapshotted():
     accounts.add()
     entry = [a for a in accounts.list_accounts() if a["slot"] == 2][0]
     assert entry["email"] == "work@example.com"
+
+
+def test_add_refuses_a_login_already_saved_in_a_slot():
+    """Pressing ADD twice must not mint two slots of the same account."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("work@example.com")
+    accounts.add()
+    try:
+        accounts.add()
+    except ValueError as e:
+        assert "2" in str(e) and "work@example.com" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
+    assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
 
 
 def test_add_refuses_when_there_is_no_login_to_copy():
@@ -204,6 +223,98 @@ def test_remove_refuses_to_delete_the_ambient_login():
     except ValueError:
         return
     raise AssertionError("expected ValueError")
+
+
+# --- user-scoped MCP state follows the ambient login into every profile ------
+
+def test_ensure_profile_seeds_user_scoped_mcp_servers():
+    """A slot's fresh .claude.json knows nothing of `claude mcp add --scope
+    user` servers: they live in the ambient ~/.claude.json."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity(mcp={"railway": {"type": "http", "url": "https://x"}})
+
+    p = accounts.ensure_profile(2)
+
+    with open(os.path.join(p, ".claude.json")) as fh:
+        assert json.load(fh)["mcpServers"]["railway"]["url"] == "https://x"
+
+
+def test_ensure_profile_merges_mcp_servers_ambient_wins():
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity(mcp={"railway": {"url": "https://new"}})
+    p = accounts.ensure_profile(2)
+    with open(os.path.join(p, ".claude.json"), "w") as fh:
+        json.dump({"oauthAccount": {"emailAddress": "slot@example.com"},
+                   "mcpServers": {"railway": {"url": "https://old"},
+                                  "local-only": {"url": "https://keep"}}}, fh)
+
+    accounts.ensure_profile(2)
+
+    with open(os.path.join(p, ".claude.json")) as fh:
+        got = json.load(fh)
+    assert got["mcpServers"]["railway"]["url"] == "https://new"
+    assert got["mcpServers"]["local-only"]["url"] == "https://keep"
+    assert got["oauthAccount"]["emailAddress"] == "slot@example.com"
+
+
+def test_ensure_profile_syncs_mcp_oauth_into_a_logged_in_slot():
+    """MCP OAuth tokens (Notion, GitHub, plugin servers…) are the user's tool
+    logins, not the Claude account's; a slot without them has every external
+    server stuck at 'needs authentication'."""
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity()
+    with open(os.path.join(home, ".credentials.json"), "w") as fh:
+        json.dump({"claudeAiOauth": {"accessToken": "ambient-token"},
+                   "mcpOAuth": {"notion|abc": {"accessToken": "n1", "expiresAt": 200},
+                                "github|def": {"accessToken": "g1", "expiresAt": 200}}}, fh)
+    p = accounts.ensure_profile(2)
+    creds = os.path.join(p, ".credentials.json")
+    with open(creds, "w") as fh:
+        json.dump({"claudeAiOauth": {"accessToken": "slot-token"},
+                   "mcpOAuth": {"notion|abc": {"accessToken": "n-newer",
+                                               "expiresAt": 900}}}, fh)
+
+    accounts.ensure_profile(2)
+
+    with open(creds) as fh:
+        got = json.load(fh)
+    assert got["claudeAiOauth"]["accessToken"] == "slot-token", \
+        "the Claude login is the slot's own, never overwrite it"
+    assert got["mcpOAuth"]["github|def"]["accessToken"] == "g1", "missing token copied"
+    assert got["mcpOAuth"]["notion|abc"]["accessToken"] == "n-newer", \
+        "a fresher slot token must survive the sync"
+    assert os.stat(creds).st_mode & 0o777 == 0o600
+
+
+def test_ensure_profile_never_creates_credentials_for_a_pending_login():
+    """submit_login_code treats the file's existence as login success."""
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity()
+    with open(os.path.join(home, ".credentials.json"), "w") as fh:
+        json.dump({"claudeAiOauth": {"accessToken": "x"},
+                   "mcpOAuth": {"notion|abc": {"accessToken": "n1"}}}, fh)
+
+    p = accounts.ensure_profile(2)
+
+    assert not os.path.exists(os.path.join(p, ".credentials.json"))
+
+
+def test_env_for_a_slot_repairs_and_syncs_its_profile():
+    """Every spawn self-heals: a server added to the ambient login after the
+    slot was created still reaches the next turn run on that slot."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity(mcp={"railway": {"url": "https://x"}})
+
+    env = accounts.env_for(4)
+
+    assert env["CLAUDE_CONFIG_DIR"] == accounts.profile_dir(4)
+    with open(os.path.join(accounts.profile_dir(4), ".claude.json")) as fh:
+        assert "railway" in json.load(fh)["mcpServers"]
 
 
 # --- browser sign-in ---------------------------------------------------------
@@ -310,6 +421,49 @@ def test_a_rejected_code_leaves_no_half_made_account():
         undo()
 
 
+def test_submit_login_code_refuses_an_account_already_in_a_slot():
+    """Signing in as an account that already has a slot must not duplicate it."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("mine@example.com")
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        accounts.submit_login_code(2, "good-code", timeout=10)   # other@example.com
+        accounts.begin_login()
+        try:
+            accounts.submit_login_code(3, "good-code", timeout=10)  # same account
+        except accounts.LoginFailed as e:
+            assert "other@example.com" in str(e) and "2" in str(e)
+        else:
+            raise AssertionError("expected LoginFailed")
+        assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
+        assert not os.path.exists(accounts.profile_dir(3))
+    finally:
+        undo()
+
+
+def test_submit_login_code_refuses_the_ambient_account():
+    """Signing in as the login already active in ~/.claude is a duplicate of
+    slot 1, not a new account."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("other@example.com")   # ambient == what the fake CLI signs in as
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        try:
+            accounts.submit_login_code(2, "good-code", timeout=10)
+        except accounts.LoginFailed as e:
+            assert "1" in str(e)
+        else:
+            raise AssertionError("expected LoginFailed")
+        assert [a["slot"] for a in accounts.list_accounts()] == [1]
+        assert not os.path.exists(accounts.profile_dir(2))
+    finally:
+        undo()
+
+
 def test_a_new_sign_in_never_inherits_a_stale_slot_credential():
     """Spoil from an abandoned attempt would otherwise read as success."""
     _fresh_root()
@@ -347,12 +501,14 @@ def _stub_usage(by_slot: dict):
 
 
 def _slots(n):
-    """Register slots 2..n so list_accounts() reports them."""
+    """Register slots 2..n so list_accounts() reports them. Each add is a
+    distinct login: the same account twice is exactly what add() refuses."""
     _fresh_root()
     _fake_claude_home()
-    _fake_identity()
-    for _ in range(2, n + 1):
+    for i in range(2, n + 1):
+        _fake_identity(f"acct{i}@example.com")
         accounts.add()
+    _fake_identity()
 
 
 def test_pick_takes_the_account_with_most_quota_left():
