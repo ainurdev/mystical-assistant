@@ -367,6 +367,14 @@ export interface QueueItem {
   created: number;
   started: number | null;
 }
+// One `/name` the next prompt could start with — a skill, a custom command, a
+// plugin's (`plugin:name`) or one bundled in the CLI. Offered by lib/slash.ts.
+export interface SlashCommand {
+  name: string;
+  description: string;
+  scope: "project" | "user" | "plugin" | "builtin";
+}
+
 export interface QueueSnapshot {
   session_id: string;
   seq: number;
@@ -610,6 +618,8 @@ export const api = {
     }),
 
   getQueues: () => request<{ queues: QueueSnapshot[] }>("/api/queue"),
+  // what `/` offers in the composer, for the chat's active project
+  getCommands: () => request<{ commands: SlashCommand[] }>("/api/commands"),
 
   queueOp: (body: {
     op: "enqueue" | "remove" | "bump" | "cancel" | "retry" | "pause" | "resume" | "clear_done";

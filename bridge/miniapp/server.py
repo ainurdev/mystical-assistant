@@ -274,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(github.issues(state.project_dir(chat_id)))
                 if path == "/api/queue":
                     return self._api_queue_get(chat_id)
+                if path == "/api/commands":
+                    return self._api_commands(chat_id)
                 if path == "/api/nextup":
                     from bridge import nextup
                     return self._json(nextup.board(chat_id))
@@ -629,6 +631,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         with open(fp, "rb") as f:
             self._send_bytes(f.read(), 200, ctype, cache="private, max-age=300")
+
+    def _api_commands(self, chat_id: int):
+        """What `/` offers in the composer, for the chat's active project."""
+        from bridge import commands
+        self._json({"commands": commands.available(state.project_dir(chat_id))})
 
     def _api_queue_get(self, chat_id: int):
         """Every queue of this chat that still holds something. The phone's WORK

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
 import { useChat } from "../lib/chat";
 import { api, type EffortLevel, type ModelId } from "../lib/api";
+import { isExact, rankCommands, slashQuery } from "../lib/slash";
 import { Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
@@ -136,6 +137,24 @@ export function Composer() {
   const blocked = isRunning || pending.length > 0;
   const sendDisabled = blocked || draft.trim().length === 0;
 
+  // --- / commands ----------------------------------------------------------
+  // A draft that is just `/word` opens the command list, as the CLI's input
+  // does — skills, custom commands, plugins, the CLI's bundled ones. Fetched
+  // when it opens (a local scan), so a skill you just installed is in it.
+  const slashQ = slashQuery(draft);
+  const slashOn = slashQ !== null;
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  useEffect(() => { if (!slashOn) setSlashDismissed(false); }, [slashOn]);
+  // No retries: a bridge still running pre-restart code 404s this, and the
+  // list should say so now rather than after three backoffs.
+  const cmdsQ = useQuery({ queryKey: ["commands"], queryFn: () => api.getCommands(), enabled: slashOn, retry: false });
+  const hits = slashQ === null ? [] : rankCommands(cmdsQ.data?.commands ?? [], slashQ);
+  const slashOpen = slashOn && !slashDismissed && (hits.length > 0 || cmdsQ.isError);
+  function takeSlash(name: string) {
+    setDraft(`/${name} `);
+    taRef.current?.focus();
+  }
+
   // A run in flight no longer costs you the thought: the prompt goes on this
   // session's queue (bridge/queue_manager.py) and sends itself when the chat
   // frees up, instead of waiting on you to come back and press Send.
@@ -209,13 +228,38 @@ export function Composer() {
         </div>
       )}
 
+      {slashOpen && (
+        <div className="mb-2 max-h-[40vh] overflow-y-auto rounded-xl border border-border bg-secondary/60">
+          {hits.length === 0 ? (
+            <div className="p-3 text-center text-xs text-[var(--tg-hint)]">
+              the bridge needs a restart before it can list commands
+            </div>
+          ) : hits.map((c) => (
+            <button
+              key={c.name}
+              type="button"
+              // keep the keyboard up: the tap must not move focus off the textarea
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => takeSlash(c.name)}
+              className="flex w-full items-baseline gap-2 border-b border-border/60 px-3 py-2 text-left last:border-b-0 active:bg-secondary"
+            >
+              <span className="shrink-0 font-mono text-xs text-[var(--brand-soft)]">/{c.name}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <Textarea
         ref={taRef}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
+          if (e.key === "Escape" && slashOpen) { e.preventDefault(); setSlashDismissed(true); return; }
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
+            // Enter completes the command unless it's already typed out — then
+            // it sends, as `/compact` + Enter should.
+            if (slashOpen && hits.length && !isExact(hits[0], slashQ!)) { takeSlash(hits[0].name); return; }
             void (blocked ? queue() : send());
           }
         }}

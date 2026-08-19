@@ -632,6 +632,11 @@ class Handler(BaseHTTPRequestHandler):
             # so the SKILLS panel paints before this lands.
             from bridge import plugins
             return self._json(plugins.listing())
+        if path == "/local/commands":
+            # What `/` offers in the composer — the project's, the user's, the
+            # enabled plugins', the CLI's own. Blank/unknown project: the rest.
+            from bridge import commands
+            return self._json({"commands": commands.available(_abs_project(qs.get("project", [None])[0]))})
         if path == "/local/update":
             # the platform's own checkout — new commits waiting upstream?
             return self._json(selfupdate.check())

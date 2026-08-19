@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronRight, ChevronsRight, Merge, Paperclip, Pause, Square } from "lucide-react";
-import { api, type EffortLevel, type GraphState, type ModelId, type UsageInfo } from "../api";
+import { api, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { modelRows, type AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
-import { applyMention, mentionAt, rankPaths } from "../lib/mention";
+import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
+import { isExact, rankCommands, slashAt } from "../lib/slash";
 import { Tip } from "./ui/Tip";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
@@ -291,10 +292,10 @@ export function Composer({
   const mentionOpen = !!mention && hits.length > 0 && mention.start !== dismissed;
   useEffect(() => { setMentionPick(0); }, [mention?.q, mention?.start]);
 
-  /** Splice the highlighted path over the `@query` and put the caret after it. */
-  function takeMention(path: string) {
-    if (!mention) return;
-    const next = applyMention(text, mention, caret, path);
+  /** Splice `ins` over the word under the caret (an `@query` or a `/command`)
+   *  and put the caret after it. */
+  function splice(m: Mention, ins: string) {
+    const next = applyMention(text, m, caret, ins);
     setText(next.text);
     requestAnimationFrame(() => {
       const el = taRef.current;
@@ -303,6 +304,9 @@ export function Composer({
       el.setSelectionRange(next.caret, next.caret);
       setCaret(next.caret);
     });
+  }
+  function takeMention(path: string) {
+    if (mention) splice(mention, path);
   }
 
   /** Arrow/Tab/Enter belong to the mention list while it's open; Escape closes
@@ -322,6 +326,56 @@ export function Composer({
     if (e.key === "Escape") {
       e.preventDefault();
       setDismissed(mention!.start);
+      return true;
+    }
+    return false;
+  }
+
+  // --- /commands -----------------------------------------------------------
+  // A leading `/` opens the command list, as the CLI's own input does — skills,
+  // custom commands, plugins, the CLI's bundled ones. Re-read each time it
+  // opens: a local scan of a few dozen files, and a skill installed from the
+  // SKILLS tab a moment ago should already be in it.
+  const [cmds, setCmds] = useState<SlashCommand[]>([]);
+  // A bridge still running pre-restart code has no commands route; with nothing
+  // ever loaded the list says so rather than silently never opening.
+  const [cmdsStale, setCmdsStale] = useState(false);
+  const [slashPick, setSlashPick] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const slash = slashAt(text, caret);
+  const slashOn = slash !== null;
+  useEffect(() => {
+    if (!slashOn) { setSlashDismissed(false); return; }
+    let live = true;
+    void api.commands(project)
+      .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
+      .catch(() => { if (live) setCmdsStale(true); });
+    return () => { live = false; };
+  }, [slashOn, project]);
+  const shits = slash ? rankCommands(cmds, slash.q) : [];
+  const slashOpen = !!slash && !slashDismissed && (shits.length > 0 || cmdsStale);
+  useEffect(() => { setSlashPick(0); }, [slash?.q]);
+  const slashListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    slashListRef.current?.querySelector<HTMLElement>('[data-on="1"]')?.scrollIntoView({ block: "nearest" });
+  }, [slashPick, slashOpen]);
+
+  /** Arrow/Tab belong to the command list while it's open. Enter takes the
+   *  highlighted command unless it's already what you typed — then it sends,
+   *  as `/compact` + Enter should. Escape closes it until the `/` is gone. */
+  function slashKey(e: React.KeyboardEvent): boolean {
+    if (!slashOpen) return false;
+    if (e.key === "Escape") { e.preventDefault(); setSlashDismissed(true); return true; }
+    if (!shits.length) return false;          // only the restart note is showing
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setSlashPick((p) => (p + (e.key === "ArrowDown" ? 1 : shits.length - 1)) % shits.length);
+      return true;
+    }
+    const pick = shits[slashPick] ?? shits[0];
+    if (e.key === "Tab" || (e.key === "Enter" && !isExact(pick, slash!.q))) {
+      e.preventDefault();
+      splice(slash!, `/${pick.name}`);
       return true;
     }
     return false;
@@ -635,6 +689,29 @@ export function Composer({
             </div>
           </div>
         )}
+        {slashOpen && (
+          <div ref={slashListRef} style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 240, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
+            {shits.length === 0 ? (
+              <div style={{ padding: "6px 10px", fontSize: "var(--t10)", letterSpacing: .5, color: "var(--txd)" }}>
+                the bridge needs a restart before it can list commands
+              </div>
+            ) : shits.map((c, i) => (
+              <button
+                key={c.name}
+                type="button"
+                data-on={i === slashPick ? 1 : 0}
+                onMouseDown={(e) => { e.preventDefault(); splice(slash!, `/${c.name}`); }}
+                onMouseEnter={() => setSlashPick(i)}
+                title={c.description}
+                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === slashPick ? "var(--acc)" : "transparent"}`, background: i === slashPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === slashPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
+              >
+                <span style={{ flex: "none", color: "var(--acc)" }}>/{c.name}</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--txl)" }}>{c.description}</span>
+                <span style={{ flex: "none", fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{c.scope === "builtin" ? "CLI" : c.scope.toUpperCase()}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {mentionOpen && (
           <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
             {hits.map((p, i) => (
@@ -657,7 +734,7 @@ export function Composer({
           onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); }}
           onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
           onKeyDown={(e) => {
-            if (mentionKey(e)) return;
+            if (mentionKey(e) || slashKey(e)) return;
             // Ctrl+R is the browser's reload; in the command line it's the shell's
             // history search, which is what the hands in this box expect.
             if (e.key === "r" && e.ctrlKey) { e.preventDefault(); setRsearch(""); return; }

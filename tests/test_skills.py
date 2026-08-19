@@ -390,3 +390,12 @@ def test_design_id_tolerates_a_non_utf8_marker(tmp_path):
     (d / skills.DESIGN_MARKER).write_bytes(b"\xff\xfe not valid utf-8\n")
     is_design, _design_id = skills._design_id(str(d))
     assert is_design is True
+
+
+def test_front_matter_reads_folded_and_quoted_scalars():
+    fm = skills._front_matter(
+        "---\nname: ponytail\ndescription: >\n  Forces the laziest\n  solution. Use it.\n"
+        "allowed-tools: \"Read, Grep\"\n---\nbody: not front matter\n")
+    assert fm == {"name": "ponytail", "description": "Forces the laziest solution. Use it.",
+                  "allowed-tools": "Read, Grep"}
+    assert skills._front_matter("no front matter\n---\nx: y\n") == {}

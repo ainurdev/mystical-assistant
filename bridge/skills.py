@@ -47,17 +47,28 @@ def _root(scope: str, abs_project: "str | None") -> "str | None":
 
 def _front_matter(text: str) -> dict:
     """`key: value` pairs from the leading `---` block. Deliberately minimal —
-    skills only carry flat scalars there (name, description)."""
+    skills only carry flat scalars there (name, description), though a long
+    description is sometimes folded (`description: >` + indented lines), which
+    reads back as those lines joined."""
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
     out = {}
+    key = None
     for line in lines[1:]:
         if line.strip() == "---":
             break
-        key, sep, val = line.partition(":")
-        if sep and not key.startswith((" ", "\t")):
-            out[key.strip()] = val.strip().strip('"').strip("'")
+        if key and line.startswith((" ", "\t")):
+            out[key] = f"{out[key]} {line.strip()}".strip()     # continuation of a folded value
+            continue
+        k, sep, val = line.partition(":")
+        if sep and not k.startswith((" ", "\t")):
+            val = val.strip().strip('"').strip("'")
+            key = k.strip()
+            # `>` / `|` (and their -/+ chomping forms) open a block scalar
+            out[key] = "" if val and val[0] in ">|" and len(val) <= 2 else val
+        else:
+            key = None
     return out
 
 

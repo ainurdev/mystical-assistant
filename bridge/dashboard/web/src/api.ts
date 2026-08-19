@@ -721,6 +721,14 @@ export interface SkillsInfo {
   catalog: CatalogSkill[];
 }
 
+// One `/name` the next prompt could start with — a skill, a custom command, a
+// plugin's (`plugin:name`) or one bundled in the CLI. Offered by lib/slash.ts.
+export interface SlashCommand {
+  name: string;
+  description: string;
+  scope: "project" | "user" | "plugin" | "builtin";
+}
+
 // Plugins are the catalog's bigger sibling: Claude Code installs and versions a
 // whole bundle (multi-file skills, agents, MCP servers), so `claude plugin`
 // owns all of this and the bridge only relays it.
@@ -1290,6 +1298,9 @@ export const api = {
         `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
         (workflowId ? `&workflow=${encodeURIComponent(workflowId)}` : ""),
     ),
+  // --- slash commands: what `/` offers in the composer (lib/slash.ts) ---
+  commands: (project?: string | null) =>
+    req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
   skills: (project?: string | null) =>
     req<SkillsInfo>(`/local/skills${project ? `?project=${encodeURIComponent(project)}` : ""}`),
