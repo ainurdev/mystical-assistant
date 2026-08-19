@@ -330,10 +330,15 @@ export function SessionsPanel(props: Props) {
     void api.branches(nsProject).then((b) => {
       if (!live) return;
       const cur = b.current || b.branches[0] || "main";
+      // Default to the branch of the session you're in when it's this project —
+      // new work continues where you are, not wherever the main checkout sits.
+      const mine = sessions.find((s) => s.id === selectedSessionId);
+      const pick = mine?.project === nsProject && mine.branch && b.branches.includes(mine.branch)
+        ? mine.branch : cur;
       setBranches(b.branches);
       setCurrent(cur);
-      setNsBranch(cur);
-      setNsParent(cur);
+      setNsBranch(pick);
+      setNsParent(pick);
     }).catch(() => {});
     return () => { live = false; };
   }, [nsOpen, nsProject]);
