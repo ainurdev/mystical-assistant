@@ -41,8 +41,8 @@ import signal
 import sys
 
 from bridge import (config, devserver, envsettings, landing, limits,
-                    native_activity, onboard, pubsub, recovery, selfupdate,
-                    state, store, toolsets, tunnel)
+                    native_activity, onboard, pubsub, recovery, report,
+                    selfupdate, state, store, toolsets, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -161,6 +161,8 @@ def main():
         if resumed:
             print(f"↻ Auto-resumed {resumed} interrupted session(s) after restart.")
         limits.boot()                  # re-arm sessions parked on a usage-limit reset
+        if config.TOKEN:
+            report.boot()              # Monday-morning weekly report (catches up a dark Monday)
         # Telegram LAST: the login launcher blocks on the dashboard port above,
         # and a cold boot's not-yet-ready network must not gate the window. A
         # failed getMe is a warning, not an exit — get_updates already retries

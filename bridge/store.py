@@ -898,6 +898,44 @@ def today(chat_id: int, since: float) -> dict:
     return {"turns": r["turns"], "tokens": r["tokens"], "cost": r["cost"]}
 
 
+def week_by_project(chat_id: int, since: float, until: float) -> list[dict]:
+    """Per-project aggregates over turns started in [since, until): sessions
+    touched (not created — an old session worked on this week counts), turns,
+    wall seconds, the four token counters and models used. Each token column is
+    a bare SUM, so it is NULL when no turn in the window ever reported that
+    counter — unknown, not free, same semantics as history()."""
+    with closing(_connect()) as c:
+        rows = c.execute(
+            "SELECT s.project, COUNT(DISTINCT s.id) AS sessions, "
+            "COUNT(t.id) AS turns, COALESCE(SUM(t.elapsed), 0) AS elapsed, "
+            "SUM(t.tok_in) AS tok_in, SUM(t.tok_out) AS tok_out, "
+            "SUM(t.tok_cache_w) AS tok_cache_w, SUM(t.tok_cache_r) AS tok_cache_r, "
+            "GROUP_CONCAT(DISTINCT t.model) AS models "
+            "FROM turns t JOIN sessions s ON s.id = t.session_id "
+            "WHERE s.chat_id=? AND t.started >= ? AND t.started < ? "
+            "GROUP BY s.project ORDER BY elapsed DESC",
+            (chat_id, since, until)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
+        out.append(d)
+    return out
+
+
+def week_by_day(chat_id: int, since: float, until: float) -> list[dict]:
+    """Turns and wall seconds per local calendar day; only days with activity.
+    'localtime' matches the /local/today convention — the DB stores epoch
+    seconds and the buckets have to agree with the user's midnight."""
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute(
+            "SELECT date(t.started, 'unixepoch', 'localtime') AS day, "
+            "COUNT(t.id) AS turns, COALESCE(SUM(t.elapsed), 0) AS elapsed "
+            "FROM turns t JOIN sessions s ON s.id = t.session_id "
+            "WHERE s.chat_id=? AND t.started >= ? AND t.started < ? "
+            "GROUP BY day ORDER BY day", (chat_id, since, until)).fetchall()]
+
+
 def turn_metrics(session_id: str) -> list[dict]:
     """Per-turn status, wall time and token spend — the numbers a breakdown adds
     up. Ordered by seq so a caller can attribute per turn as well as per session."""

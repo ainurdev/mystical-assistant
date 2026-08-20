@@ -31,7 +31,7 @@ import re
 from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
                     models, native, preview_detect, project_config,
-                    pubsub, queue_manager, relevance, runner, selfupdate,
+                    pubsub, queue_manager, relevance, report, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, usage,
                     weather, wsutil)
@@ -309,6 +309,9 @@ class Handler(BaseHTTPRequestHandler):
             midnight = datetime.datetime.now().replace(
                 hour=0, minute=0, second=0, microsecond=0).timestamp()
             return self._json(store.today(chat, midnight))
+        if path == "/local/report":
+            # back=1 → the completed week (what the Monday push covers).
+            return self._json(report.weekly(chat, back=_qs_int(qs, "back") or 0))
         if path == "/local/accounts":
             from bridge import accounts, ladder
             return self._json({
