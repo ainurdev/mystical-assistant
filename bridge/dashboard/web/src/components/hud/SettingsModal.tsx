@@ -6,7 +6,7 @@ import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
   Ellipsis, FileCog, FolderTree, Gauge, GitBranch, Handshake, Hourglass, KeyRound,
   ListMusic, LoaderCircle, Lock, MessageCircleQuestion, Monitor, MonitorPlay,
-  Moon, Network, Palette, Play, Power, Radio, ScanLine, ScrollText, Search, Server,
+  Moon, Network, Palette, Play, Plug, Power, Radio, ScanLine, ScrollText, Search, Server,
   ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
   Upload, Volume2, X, type LucideIcon,
 } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   type EnvSetting,
   type FreeAgentInfo,
   type FreeAgents,
+  type McpInfo,
   type StartupState,
   type TagCount,
   type UpdateInfo,
@@ -108,7 +109,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "indicator" | "ambient" | "notifications"
-  | "session" | "tags" | "ai" | "agentconfig" | "accounts" | "system";
+  | "session" | "tags" | "ai" | "agentconfig" | "mcp" | "accounts" | "system";
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -127,6 +128,7 @@ const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: st
   { key: "tags", label: "TAGS", hint: "topics across sessions", icon: Tag, group: "THE WORK" },
   { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK" },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK" },
+  { key: "mcp", label: "MCP", hint: "servers · auth", icon: Plug, group: "THE WORK" },
   { key: "accounts", label: "ACCOUNTS", hint: "logins · fallback", icon: KeyRound, group: "THE WORK" },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK" },
 ];
@@ -157,6 +159,8 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
   { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
+  { tab: "mcp", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
+  { tab: "mcp", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
   { tab: "accounts", sec: "ON USAGE LIMIT", terms: "policy wait switch fallback reset quota" },
   { tab: "accounts", sec: "CLAUDE LOGINS", terms: "account add sign in oauth profile" },
   { tab: "accounts", sec: "FREE AGENTS", terms: "api key gemini openai provider fallback handover" },
@@ -330,6 +334,8 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "MODEL-SPENDING EXTRAS": Sparkles,
   "CLAUDE CODE": SquareTerminal,
   OPENCODE: Boxes,
+  "MCP SERVERS": Plug,
+  "ADD A SERVER": Server,
   "ON USAGE LIMIT": Gauge,
   "CLAUDE LOGINS": KeyRound,
   "FREE AGENTS": Handshake,
@@ -1892,6 +1898,321 @@ function EnvPanel() {
   );
 }
 
+/* MCP — every server this machine can reach, and the four things you actually
+   do to one: add it, drop it, sign in again when its token expires, or forget
+   the token entirely. `claude mcp` runs all of it, so what shows here is what a
+   terminal shows, and an add from this panel is byte-identical to one typed.
+
+   Which servers a *session* switches on is a different question, and stays in
+   the TOOLS modal beside the built-in tools it belongs with. This tab is about
+   what exists on the machine at all. */
+const REMOTE = /\((HTTP|SSE)\)\s*$/i;   // a stdio server has no OAuth to renew
+
+function McpPanel() {
+  const [info, setInfo] = useState<McpInfo | null>(null);
+  // The client can be newer than the bridge: a dashboard built from this commit
+  // against a process that started before it gets a 404 here, not a panel.
+  const [stale, setStale] = useState(false);
+  const [busy, setBusy] = useState("");            // the row mid-action, if any
+  const [checking, setChecking] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // Authorization in flight: the CLI is parked on its "paste the redirect URL"
+  // prompt under a pty, waiting for what the browser hands back.
+  const [login, setLogin] = useState<{ name: string; url: string } | null>(null);
+  const [name, setName] = useState("");
+  const [target, setTarget] = useState("");
+  const [transport, setTransport] = useState("http");
+  const [scope, setScope] = useState("user");
+
+  const load = (refresh = false) => {
+    if (refresh) setChecking(true);
+    return api
+      .mcp(refresh)
+      .then((r) => {
+        setInfo(r);
+        setLogin(r.pending?.url ? { name: r.pending.name, url: r.pending.url } : null);
+      })
+      .catch((e) => setStale(e instanceof Error && e.message.includes("404")))
+      .finally(() => setChecking(false));
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  // The CLI runs its own localhost callback listener, so a browser on this
+  // machine usually finishes the flow with nothing pasted back. Poll for that,
+  // or the panel keeps asking for a code that already arrived.
+  useEffect(() => {
+    if (!login) return;
+    const t = setInterval(() => {
+      void api
+        .mcp()
+        .then((r) => {
+          if (!r.pending) {
+            setLogin(null);
+            setInfo(r);
+          }
+        })
+        .catch(() => {});
+    }, 2500);
+    return () => clearInterval(t);
+  }, [login]);
+
+  async function act(action: string, server: string, extra?: Record<string, unknown>) {
+    setBusy(server);
+    setErr(null);
+    try {
+      const r = await api.mcpAction(action, server, extra);
+      if (r.servers) setInfo((i) => (i ? { ...i, servers: r.servers! } : i));
+      return true;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed");
+      return false;
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function startLogin(server: string) {
+    setBusy(server);
+    setErr(null);
+    try {
+      const r = await api.mcpAction("login_begin", server);
+      if (r.url) {
+        setLogin({ name: server, url: r.url });
+        window.open(r.url, "_blank", "noopener");
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not start authorization");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function addServer() {
+    if (!name.trim() || !target.trim()) return;
+    setBusy("+");
+    setErr(null);
+    try {
+      const r = await api.mcpAction("add", name.trim(), { target: target.trim(), transport, scope });
+      if (r.servers) setInfo((i) => (i ? { ...i, servers: r.servers! } : i));
+      setName("");
+      setTarget("");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not add it");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const servers = info?.servers ?? [];
+  const live = servers.filter((s) => s.ok).length;
+
+  return (
+    <>
+      <Section
+        title="MCP SERVERS"
+        info={
+          <>
+            The servers <span style={{ color: "var(--txd)" }}>claude mcp list</span> knows about,
+            health-checked. NEEDS AUTH means the server is configured but its token expired or was
+            never granted — AUTH opens its authorization page, and the sign-in usually completes
+            the moment the browser lands back on this machine. A plugin&apos;s servers arrive with
+            the plugin, so they&apos;re removed in the SKILLS tab, not here. Every server on costs
+            context in each session that has it switched on; that switch lives in TOOLS.
+          </>
+        }
+      >
+        <div style={CARD}>
+          <div style={{ ...KV, marginBottom: servers.length ? 12 : 0 }}>
+            <span style={KEY_TX}>
+              {stale ? "NEEDS A RESTART" : info === null ? "READING…" : `${live}/${servers.length} CONNECTED`}
+            </span>
+            <MiniBtn disabled={checking || stale} onClick={() => void load(true)}>
+              {checking ? "CHECKING…" : "REFRESH"}
+            </MiniBtn>
+          </div>
+
+          {stale && (
+            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
+              the bridge needs a restart before it can answer this
+            </div>
+          )}
+          {!stale && info !== null && servers.length === 0 && (
+            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
+              No MCP servers configured. Add one below.
+            </div>
+          )}
+
+          {servers.map((s, i) => {
+            const remote = !s.target || REMOTE.test(s.target);
+            const plugin = s.name.startsWith("plugin:");
+            const working = busy === s.name;
+            return (
+              <div
+                key={s.name}
+                style={{ ...ROW, marginTop: i ? 9 : 0, opacity: working ? 0.5 : 1 }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    flex: "none",
+                    background: s.ok ? "var(--ok)" : s.status.startsWith("!") ? "var(--warn)" : "var(--err)",
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: "var(--t11)",
+                    color: s.ok ? "var(--tx)" : "var(--txb)",
+                    flex: "none",
+                    maxWidth: "42%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={s.name}
+                >
+                  {plugin ? s.name.slice("plugin:".length) : s.name}
+                </span>
+                {/* Healthy: what it connects to, which is what identifies it.
+                    Unhealthy: why — calendly's registration error is the whole
+                    reason you opened this tab. */}
+                <span
+                  style={{
+                    fontSize: "var(--t95)",
+                    color: s.ok ? "var(--txd)" : s.status.startsWith("!") ? "var(--warn)" : "var(--err)",
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={s.ok ? s.target : s.status}
+                >
+                  {s.ok ? s.target : s.status}
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
+                  {/* Says why there is no REMOVE here: the plugin owns it. */}
+                  {plugin && <span style={{ ...CAPTION, width: "auto" }}>PLUGIN</span>}
+                  {remote && (
+                    <MiniBtn disabled={!!busy || !!login} onClick={() => void startLogin(s.name)}>
+                      {s.ok ? "RE-AUTH" : "AUTH"}
+                    </MiniBtn>
+                  )}
+                  {remote && s.ok && (
+                    <MiniBtn
+                      disabled={!!busy}
+                      title="forget this machine's stored credentials for the server"
+                      onClick={() => void act("logout", s.name)}
+                    >
+                      LOGOUT
+                    </MiniBtn>
+                  )}
+                  {!plugin && (
+                    <MiniBtn disabled={!!busy} danger onClick={() => void act("remove", s.name)}>
+                      REMOVE
+                    </MiniBtn>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+
+          {login && (
+            <LoginFlow
+              url={login.url}
+              placeholder="paste the redirect URL here"
+              steps={
+                <>
+                  Authorizing <span style={{ color: "var(--tx)" }}>{login.name}</span> — the page
+                  should already be open.{" "}
+                  <a href={login.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--acc)" }}>
+                    open it again
+                  </a>
+                  <br />
+                  It usually finishes on its own. If the browser can&apos;t reach this machine, copy
+                  the URL it lands on and paste it here:
+                </>
+              }
+              onSubmit={(url) => api.mcpAction("login_submit", login.name, { url })}
+              onDone={() => {
+                setLogin(null);
+                void load();
+              }}
+              onCancel={() => {
+                void api.mcpAction("login_cancel").catch(() => {});
+                setLogin(null);
+                void load();
+              }}
+            />
+          )}
+          {err && <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 10 }}>{err}</div>}
+        </div>
+      </Section>
+
+      <Section
+        title="ADD A SERVER"
+        top
+        info={
+          <>
+            HTTP and SSE take a URL and authorize in the browser; STDIO takes a command line the
+            bridge runs locally. USER scope makes it available in every project on this machine,
+            PROJECT writes it to the project&apos;s{" "}
+            <span style={{ color: "var(--txd)" }}>.mcp.json</span>, LOCAL keeps it to you here. A
+            server that needs API keys or auth headers has to be added with{" "}
+            <span style={{ color: "var(--txd)" }}>claude mcp add-json</span> in a terminal.
+          </>
+        }
+      >
+        <div style={CARD}>
+          <div style={{ ...LINE, marginTop: 0 }}>
+            <Cell label="KIND" grow="1 1 200px">
+              <Segmented
+                options={(info?.transports ?? ["http", "sse", "stdio"]).map((t) => ({
+                  label: t.toUpperCase(),
+                  value: t,
+                }))}
+                value={transport}
+                onPick={setTransport}
+              />
+            </Cell>
+            <Cell label="SCOPE" grow="1 1 200px">
+              <Segmented
+                options={(info?.scopes ?? ["user", "local", "project"]).map((sc) => ({
+                  label: sc.toUpperCase(),
+                  value: sc,
+                }))}
+                value={scope}
+                onPick={setScope}
+              />
+            </Cell>
+          </div>
+          <div style={{ ...ROW, gap: 8 }}>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="name"
+              style={{ ...FIELD, flex: "none", width: 130 }}
+            />
+            <input
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void addServer()}
+              placeholder={transport === "stdio" ? "npx -y some-mcp-server" : "https://mcp.example.com/mcp"}
+              style={FIELD}
+            />
+            <MiniBtn disabled={!!busy || stale} onClick={() => void addServer()}>
+              {busy === "+" ? "…" : "ADD"}
+            </MiniBtn>
+          </div>
+        </div>
+      </Section>
+    </>
+  );
+}
+
 function AccountsPanel() {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
   const [policy, setPolicy] = useState("ask");
@@ -2121,11 +2442,17 @@ function LoginFlow({
   onSubmit,
   onDone,
   onCancel,
+  steps,
+  placeholder = "paste the code here",
 }: {
   url: string;
   onSubmit: (code: string) => Promise<unknown>;
   onDone: () => void;
   onCancel: () => void;
+  /** What the user has to do, in their words — an account sign-in and an MCP
+   *  authorization differ only in this and the placeholder. */
+  steps?: ReactNode;
+  placeholder?: string;
 }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2147,11 +2474,15 @@ function LoginFlow({
   return (
     <div style={{ marginTop: 13, borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", paddingTop: 12 }}>
       <div style={{ fontSize: "var(--t105)", color: "var(--txl)", lineHeight: 1.7 }}>
-        1 · Sign in as the account you want to add —{" "}
-        <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--acc)" }}>
-          open the sign-in page
-        </a>
-        <br />2 · Paste the code it gives you back:
+        {steps ?? (
+          <>
+            1 · Sign in as the account you want to add —{" "}
+            <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--acc)" }}>
+              open the sign-in page
+            </a>
+            <br />2 · Paste the code it gives you back:
+          </>
+        )}
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
         <input
@@ -2159,7 +2490,7 @@ function LoginFlow({
           autoFocus
           onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void submit()}
-          placeholder="paste the code here"
+          placeholder={placeholder}
           style={err ? { ...FIELD, border: "1px solid var(--err)" } : FIELD}
         />
         <MiniBtn disabled={busy} onClick={() => void submit()}>
@@ -2965,6 +3296,7 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "agentconfig" && <AgentConfigPanel />}
 
+            {shown === "mcp" && <McpPanel />}
             {shown === "accounts" && <AccountsPanel />}
 
             {shown === "system" && (

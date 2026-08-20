@@ -584,9 +584,25 @@ export interface InspectorState {
  *  `claude --disallowedTools`, and the key we store. */
 export interface Toolsets {
   builtins: { rule: string; label: string; hint: string }[];
-  servers: { name: string; rule: string; ok: boolean; status: string }[];
+  servers: McpServer[];
   /** What a session that never opened this modal runs with. */
   default: string[];
+}
+/** One MCP server, as `claude mcp list` reports it. `target` is absent on a
+ *  bridge older than the MCP panel — the client can be newer than the server. */
+export interface McpServer {
+  name: string;
+  rule: string;
+  ok: boolean;
+  status: string;
+  target?: string;
+}
+export interface McpInfo {
+  servers: McpServer[];
+  /** A sign-in waiting on the browser, if one is in flight. */
+  pending: { name: string; url: string | null } | null;
+  scopes: string[];
+  transports: string[];
 }
 export interface AccountsInfo {
   accounts: AccountInfo[];
@@ -975,6 +991,14 @@ export const api = {
       method: "POST",
       body: { disabled_tools },
     }),
+  // Same health check behind it as toolsets(); refresh=true pays for a fresh
+  // one (seconds), which is what the REFRESH button is for.
+  mcp: (refresh = false) => req<McpInfo>(`/local/mcp${refresh ? "?refresh=1" : ""}`),
+  /** add · remove · logout · login_begin · login_submit · login_cancel. Every
+   *  one runs `claude mcp`, so a failure arrives as its own error text. */
+  mcpAction: (action: string, name?: string, extra?: Record<string, unknown>) =>
+    req<{ ok: boolean; error?: string | null; servers?: McpServer[]; url?: string }>(
+      "/local/mcp", { method: "POST", body: { action, name, ...extra } }),
   inspector: () => req<InspectorState>("/local/inspector"),
   inspectorAction: (action: "on" | "off" | "clear") =>
     req<{ ok: boolean; on: boolean }>("/local/inspector", {

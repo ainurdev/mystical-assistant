@@ -68,6 +68,8 @@ def _parse(out: str) -> list[dict]:
         servers.append({
             "name": name,
             "rule": rule_for(name),
+            # What it connects to: "https://… (HTTP)" or a stdio command line.
+            "target": m.group("rest"),
             # The health check is advisory — a server that needs auth is still
             # configured, and still costs context until it's switched off.
             "ok": status.startswith("✔"),
@@ -116,6 +118,14 @@ def servers(refresh: bool = False) -> list[dict]:
     # ponytail: concurrent cold callers each fetch. Bounded to the boot window,
     # and warm() closes it; add an in-flight wait if that ever shows up.
     return _fill()
+
+
+def invalidate() -> None:
+    """Forget the cached list. A server was just added, removed or re-authed,
+    so the next servers() call refetches instead of serving the old answer."""
+    global _cache
+    with _lock:
+        _cache = None
 
 
 def ready() -> bool:

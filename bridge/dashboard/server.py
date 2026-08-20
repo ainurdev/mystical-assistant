@@ -625,6 +625,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"builtins": toolsets.BUILTINS,
                                "servers": toolsets.servers(),
                                "default": store.default_disabled_tools()})
+        if path == "/local/mcp":
+            # refresh=1 re-runs the health check (seconds, all servers) — the
+            # panel asks for it on demand, never on first paint.
+            from bridge import mcp as mcpmod
+            return self._json({"servers": mcpmod.servers(refresh=bool(_qs_int(qs, "refresh"))),
+                               "pending": mcpmod.pending(),
+                               "scopes": list(mcpmod.SCOPES),
+                               "transports": list(mcpmod.TRANSPORTS)})
         if path == "/local/tags":
             return self._json({"tags": store.tag_counts()})
         if path == "/local/prompts":
@@ -760,6 +768,37 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"error": f"unknown action {action!r}"}, 400)
+        if path == "/local/mcp":
+            # Every mutation is `claude mcp`, which owns validation and state;
+            # we hand back its freshly health-checked list, so an add costs one
+            # health check before the panel repaints.
+            from bridge import mcp as mcpmod
+            action = (body.get("action") or "").strip()
+            name = str(body.get("name") or "")[:200]
+            if action == "login_begin":
+                got = mcpmod.begin_login(name)
+                if got.get("error"):
+                    return self._json(got, 400)
+                return self._json({"ok": True, **got})
+            if action == "login_submit":
+                ok, err = mcpmod.submit_login(str(body.get("url") or ""))
+                return self._json({"ok": ok, "error": err or None,
+                                   "servers": mcpmod.servers()}, 200 if ok else 400)
+            if action == "login_cancel":
+                mcpmod.cancel_login()
+                return self._json({"ok": True})
+            acts = {
+                "add": lambda: mcpmod.add(name, str(body.get("target") or ""),
+                                          str(body.get("transport") or "http"),
+                                          str(body.get("scope") or "user")),
+                "remove": lambda: mcpmod.remove(name),
+                "logout": lambda: mcpmod.logout(name),
+            }
+            if action not in acts:
+                return self._json({"error": f"unknown action {action!r}"}, 400)
+            ok, err = acts[action]()
+            return self._json({"ok": ok, "error": err or None,
+                               "servers": mcpmod.servers()}, 200 if ok else 400)
         if path == "/local/aifeatures":
             from bridge import aifeatures
             try:
