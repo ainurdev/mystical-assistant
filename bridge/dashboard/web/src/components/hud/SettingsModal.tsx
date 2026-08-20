@@ -6,7 +6,7 @@ import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
   Ellipsis, FileCog, FolderTree, Gauge, GitBranch, Handshake, Hourglass, KeyRound,
   ListMusic, LoaderCircle, Lock, MessageCircleQuestion, Monitor, MonitorPlay,
-  Moon, Network, Palette, Play, Power, Radio, ScanLine, ScrollText, Search, Server, Shapes,
+  Moon, Network, Palette, Play, Power, Radio, ScanLine, ScrollText, Search, Server,
   ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
   Upload, Volume2, X, type LucideIcon,
 } from "lucide-react";
@@ -18,7 +18,6 @@ import {
   type EnvSetting,
   type FreeAgentInfo,
   type FreeAgents,
-  type InstalledSkill,
   type StartupState,
   type TagCount,
   type UpdateInfo,
@@ -156,7 +155,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "session", sec: "PROFILES", terms: "preset saved knobs tools restore" },
   { tab: "tags", sec: "TAGS", terms: "topics rename merge chart sessions" },
   { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
-  { tab: "ai", sec: "DESIGN SYSTEM", terms: "claude design link pull sync skill" },
   { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
   { tab: "accounts", sec: "ON USAGE LIMIT", terms: "policy wait switch fallback reset quota" },
@@ -330,7 +328,6 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   PROFILES: Bookmark,
   TAGS: Tag,
   "MODEL-SPENDING EXTRAS": Sparkles,
-  "DESIGN SYSTEM": Shapes,
   "CLAUDE CODE": SquareTerminal,
   OPENCODE: Boxes,
   "ON USAGE LIMIT": Gauge,
@@ -1871,106 +1868,6 @@ function EnvPanel() {
   );
 }
 
-// bridge/skills.py stamps every SKILLS entry with `from_design`/`design_project`
-// (a pulled design system's own marker), but api.ts's InstalledSkill predates
-// that marker — widen it locally here rather than touch the shared bindings.
-type DesignSkill = InstalledSkill & { from_design: boolean; design_project: string | null };
-
-/** Link this repo to a Claude Design project, then pull its tokens and
- *  components down as a project skill. Every button only composes a prompt
- *  (api.designPrompt) and hands it to the open session the same way a failed
- *  self-update does — onFeed — so nothing here runs a tool on its own. */
-function DesignSection({ onFeed }: { onFeed: (texts: string[]) => void }) {
-  const [project, setProject] = useState<string | null>(null);
-  const [linkedId, setLinkedId] = useState<string | null>(null);
-  const [skill, setSkill] = useState<DesignSkill | null>(null);
-  const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState<"link" | "pull" | "push" | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const st = await api.state();
-        const rel = st.project?.rel ?? null;
-        if (!alive) return;
-        setProject(rel);
-        if (!rel) return;
-        const [settings, info] = await Promise.all([
-          api.projectSettings({ project: rel }),
-          api.skills(rel),
-        ]);
-        if (!alive) return;
-        setLinkedId(settings.design_project);
-        const pulled = (info.project as DesignSkill[]).find(
-          (s) => s.from_design && s.design_project === settings.design_project,
-        );
-        setSkill(pulled ?? null);
-      } catch {
-        /* leave the UNLINKED default rather than blocking the tab on it */
-      } finally {
-        if (alive) setReady(true);
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  async function act(kind: "link" | "pull" | "push", name?: string) {
-    setBusy(kind);
-    setErr(null);
-    try {
-      const res = await api.designPrompt({ project }, kind, name);
-      if (res.error) setErr(res.error);
-      else if (res.prompt) onFeed([res.prompt]);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "could not reach the bridge");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <Section
-      title="DESIGN SYSTEM"
-      top
-      info="LINK, PULL and SYNC compose a prompt and queue it into this session — nothing runs until you send it. A pull lands under .claude/skills/ as a project skill, which Claude Code loads on its own per prompt."
-    >
-      <div style={CARD}>
-        {!ready ? (
-          <div style={NOTE}>Reading…</div>
-        ) : !linkedId ? (
-          <Row first label="STATUS" desc="Not linked to a Claude Design project.">
-            <MiniBtn onClick={() => void act("link")} disabled={busy !== null}>
-              {busy === "link" ? "…" : "LINK"}
-            </MiniBtn>
-          </Row>
-        ) : !skill ? (
-          <Row
-            first
-            label="LINKED"
-            desc={<span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{linkedId}</span>}
-          >
-            <MiniBtn onClick={() => void act("pull")} disabled={busy !== null}>
-              {busy === "pull" ? "…" : "PULL"}
-            </MiniBtn>
-          </Row>
-        ) : (
-          <Row first label="SKILL" desc={skill.name || skill.id}>
-            <MiniBtn onClick={() => void act("push")} disabled={busy !== null}>
-              {busy === "push" ? "…" : "SYNC"}
-            </MiniBtn>
-            <MiniBtn onClick={() => void act("pull", skill.id)} disabled={busy !== null}>
-              {busy === "pull" ? "…" : "RE-PULL"}
-            </MiniBtn>
-          </Row>
-        )}
-        {err && <div style={{ ...NOTE, color: "var(--err)" }}>{err}</div>}
-      </div>
-    </Section>
-  );
-}
-
 function AccountsPanel() {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
   const [policy, setPolicy] = useState("ask");
@@ -2491,7 +2388,6 @@ export function SettingsModal(props: SettingsModalProps) {
   // Two sections only exist while their own switch is on, and a hit that
   // scrolls to nothing is worse than no hit.
   const hidden = new Set([
-    ...(aiFeatures.design ? [] : ["DESIGN SYSTEM"]),
     ...(settings.pushSound ? [] : ["PER EVENT"]),
   ]);
   const hits = search(q, env, hidden);
@@ -3041,12 +2937,7 @@ export function SettingsModal(props: SettingsModalProps) {
               </Section>
             )}
 
-            {shown === "ai" && (
-              <>
-                <AiPanel />
-                {aiFeatures.design && <DesignSection onFeed={onFeed} />}
-              </>
-            )}
+            {shown === "ai" && <AiPanel />}
 
             {shown === "agentconfig" && <AgentConfigPanel />}
 

@@ -18,6 +18,7 @@ import { EditorTab, type BranchOpt } from "./EditorTab";
 import { LearnTab } from "./LearnTab";
 import { MapTab } from "./MapTab";
 import { SkillsTab } from "./SkillsTab";
+import { DesignTab } from "./DesignTab";
 import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
 
@@ -25,7 +26,7 @@ import { XtermPane } from "./XtermPane";
    530–1258): header with editable short tag, tab bar (EDITOR / GIT /
    WORKTREES / TERMINAL / ISSUES), and per-tab bodies. */
 
-export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "issues" | "map" | "learn";
+export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "design" | "issues" | "map" | "learn";
 
 interface Props {
   project: string;
@@ -154,7 +155,8 @@ export function AnalyzeModal(props: Props) {
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
     { k: "skills", l: "SKILLS" },
-    // both hidden while their AI switch is off — nothing is being built or written
+    // all hidden while their AI switch is off — nothing is being built or written
+    ...(aiFeatures.design ? [{ k: "design" as Tab, l: "DESIGN" }] : []),
     ...(aiFeatures.graph ? [{ k: "map" as Tab, l: "MAP" }] : []),
     ...(aiFeatures.learn ? [{ k: "learn" as Tab, l: "LEARN" }] : []),
   ];
@@ -240,6 +242,7 @@ export function AnalyzeModal(props: Props) {
               initialCommand={props.initialCommand} />
           )}
           {tab === "skills" && <SkillsTab project={project} name={name(project)} />}
+          {tab === "design" && <DesignTab project={project} onFeed={(t) => props.onFeed(t, project)} />}
           {tab === "issues" && (
             <IssuesTab project={project} info={issues} onFeed={(t) => props.onFeed(t, project)}
               onShip={(i) => props.onWorktreeSession(

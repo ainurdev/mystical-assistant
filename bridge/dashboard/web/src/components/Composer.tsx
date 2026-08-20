@@ -620,6 +620,13 @@ export function Composer({
                 GRILL
               </button>
             </Tip>
+            <Tip text={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header)."}>
+              <button onClick={() => { const t = text.trim(); if (!t) return; onSend(`/design-first ${t}`, images); setText(""); setImages([]); }}
+                disabled={disabled || !text.trim()}
+                style={{ ...chip, flex: "none", cursor: disabled || !text.trim() ? "not-allowed" : "pointer", opacity: disabled || !text.trim() ? 0.4 : 1 }}>
+                DESIGN
+              </button>
+            </Tip>
           </div>
           {onOpenMap && graph?.available && (
             <div className="ctrl-group">

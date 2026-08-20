@@ -1557,16 +1557,42 @@ export function App() {
     const copy = (t: string) => { try { void navigator.clipboard?.writeText(t); } catch { /* ignore */ } };
     if (ctxMenu.type === "session") {
       const s = sessions.find((x) => x.id === ctxMenu.id);
-      items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
-      items.push({ icon: "⧉", label: "Copy session name", onClick: () => s && copy(s.title || "session") });
       const pinned = pins.has(ctxMenu.id);
+      // Lifecycle rides at the top: it's the row you come here for, and burying
+      // it under rename/duplicate/share meant scrolling past nine rows to find it.
+      // All four write the same column — the difference is what HISTORY tags it,
+      // so the hints say that rather than implying three different fates.
+      const lc = s?.lifecycle ?? null;
+      items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
+      items.push({ icon: "◐", label: `Lifecycle: ${lc ?? "active"}`,
+        hint: lc ? "hidden from the sidebar" : undefined, children: [
+        { icon: lc === "done" ? "●" : "○", label: "Mark done",
+          hint: "finished — hides it, HISTORY tags it done",
+          onClick: () => void setLifecycle(ctxMenu.id, "done") },
+        { icon: lc === "backlog" ? "●" : "○", label: "Move to backlog",
+          hint: "not now, not dead — hides it, HISTORY tags it backlog in amber",
+          onClick: () => void setLifecycle(ctxMenu.id, "backlog") },
+        { icon: lc === "abandoned" ? "●" : "○", label: "Abandon", danger: true,
+          hint: "gave up — hides it, HISTORY tags it abandoned",
+          onClick: () => void setLifecycle(ctxMenu.id, "abandoned") },
+        ...(lc !== null ? [{ icon: "↺", label: "Reopen",
+          hint: "unhide — back in the sidebar, untagged",
+          onClick: () => void setLifecycle(ctxMenu.id, null) }] : []),
+      ] });
       items.push({ icon: pinned ? "★" : "☆", label: pinned ? "Unpin session" : "Pin session",
         hint: "TOP", onClick: () => togglePin(ctxMenu.id) });
+      items.push({ icon: "✎", label: "Rename session…",
+        hint: "your own name for it",
+        onClick: () => void renameSession(ctxMenu.id, s?.title ?? "") });
+      items.push({ divider: true });
+      const nOff = s?.disabled_tools?.length ?? 0;
+      items.push({ icon: "⚒", label: "Tools & MCP…",
+        hint: nOff ? `${nOff} switched off` : "all on",
+        onClick: () => setToolsFor(ctxMenu.id) });
       // Usage-limit fallback policy for this session; the 5s session poll picks
       // up the new value, so the ● marker is fresh next open.
       const pol = s?.fallback_policy ?? "ask";
       const setPol = (v: string) => { void api.setPolicy(ctxMenu.id, v).then(() => void loadSessions()); };
-      items.push({ divider: true });
       items.push({ icon: "◈", label: `On limit: ${pol === "auto" ? "auto-switch" : pol}`, children: [
         { icon: pol === "ask" ? "●" : "○", label: "Ask",
           hint: "offer account/free-agent choices", onClick: () => setPol("ask") },
@@ -1596,47 +1622,28 @@ export function App() {
         { icon: at === "150000" ? "●" : "○", label: "Compact at 150k",
           hint: "later, more room before it summarises", onClick: () => setAt("150000") },
       ] });
-      const nOff = s?.disabled_tools?.length ?? 0;
-      items.push({ icon: "⚒", label: "Tools & MCP…",
-        hint: nOff ? `${nOff} switched off` : "all on",
-        onClick: () => setToolsFor(ctxMenu.id) });
       items.push({ divider: true });
-      items.push({ icon: "✎", label: "Rename session…",
-        hint: "your own name for it",
-        onClick: () => void renameSession(ctxMenu.id, s?.title ?? "") });
-      items.push({ icon: "↻", label: "Regenerate title",
-        hint: "let the model name it from the whole session",
-        onClick: () => void regenerateTitle(ctxMenu.id) });
-      items.push({ icon: "⧉", label: "Duplicate session",
-        hint: "copy the transcript into a new one",
-        onClick: () => void duplicateSession(ctxMenu.id) });
-      items.push({ icon: "⇗", label: "Share", children: [
-        { icon: "⇗", label: "Read-only link", hint: "expires in 7 days",
+      // The once-a-month rows. Flat inside one section — a submenu can't open
+      // its own submenu, so share and relocate live here as plain rows.
+      items.push({ icon: "⋯", label: "More", children: [
+        { icon: "⧉", label: "Copy session name", onClick: () => s && copy(s.title || "session") },
+        { icon: "↻", label: "Regenerate title",
+          hint: "let the model name it from the whole session",
+          onClick: () => void regenerateTitle(ctxMenu.id) },
+        { icon: "⧉", label: "Duplicate session",
+          hint: "copy the transcript into a new one",
+          onClick: () => void duplicateSession(ctxMenu.id) },
+        { divider: true },
+        { icon: "⇗", label: "Share read-only link", hint: "expires in 7 days",
           onClick: () => void shareSession(ctxMenu.id) },
         { icon: "⊘", label: "Revoke share links",
           hint: "every link to this session stops working",
           onClick: () => void revokeShares(ctxMenu.id) },
-      ] });
-      // One section, one item per worktree of this session's project.
-      if (relocTargets.length)
-        items.push({ icon: "⇉", label: "Relocate to worktree", children: relocTargets.map((wt) => ({
-          icon: "⇉", label: wt.branch,
+        ...(relocTargets.length ? [{ divider: true }, ...relocTargets.map((wt) => ({
+          icon: "⇉", label: `Relocate to ${wt.branch}`,
           hint: "rewrites paths so the model never sees the move",
           onClick: () => void relocateSession(ctxMenu.id, s?.project ?? "", wt.branch),
-        })) });
-      items.push({ divider: true });
-      // Lifecycle: all three take the session out of the active list, but which
-      // one you picked is the difference between "shipped" and "come back to it".
-      const lc = s?.lifecycle ?? null;
-      items.push({ icon: "◐", label: `Lifecycle: ${lc ?? "active"}`, children: [
-        { icon: lc === "done" ? "●" : "○", label: "Mark done",
-          hint: "finished — out of the sidebar", onClick: () => void setLifecycle(ctxMenu.id, "done") },
-        { icon: lc === "backlog" ? "●" : "○", label: "Move to backlog",
-          hint: "not now, not dead", onClick: () => void setLifecycle(ctxMenu.id, "backlog") },
-        { icon: lc === "abandoned" ? "●" : "○", label: "Abandon", danger: true,
-          hint: "gave up on it", onClick: () => void setLifecycle(ctxMenu.id, "abandoned") },
-        ...(lc !== null ? [{ icon: "↺", label: "Reopen", hint: "back to the active list",
-          onClick: () => void setLifecycle(ctxMenu.id, null) }] : []),
+        }))] : []),
       ] });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
@@ -1682,13 +1689,21 @@ export function App() {
       items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
       items.push({ divider: true });
     }
-    items.push({ icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) });
-    items.push({ icon: "♪", label: "Toggle Claude·FM", onClick: () => radio.toggle() });
-    items.push({ icon: "⚙", label: "Dashboard settings", onClick: () => setSettingsOpen(true) });
-    items.push({ icon: "↻", label: "Replay boot", onClick: () => replayBoot() });
-    items.push({ icon: "⏻", label: "Restart bridge",
-      hint: "picks up code on disk; running turns resume",
-      onClick: () => void restartBridge() });
+    // Dashboard-wide rows. When you right-clicked *something* — a card, a turn,
+    // a file — these five are never the reason, so they collapse to one row and
+    // stop pushing that thing's own options off the bottom. On bare surface,
+    // where there is nothing else, they are the menu.
+    const globals: CtxItem[] = [
+      { icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) },
+      { icon: "♪", label: "Toggle Claude·FM", onClick: () => radio.toggle() },
+      { icon: "⚙", label: "Dashboard settings", onClick: () => setSettingsOpen(true) },
+      { icon: "↻", label: "Replay boot", onClick: () => replayBoot() },
+      { icon: "⏻", label: "Restart bridge",
+        hint: "picks up code on disk; running turns resume",
+        onClick: () => void restartBridge() },
+    ];
+    if (ctxMenu.type === "surface") items.push(...globals);
+    else items.push({ icon: "⌗", label: "Dashboard", children: globals });
     // The browser-level block (back/reload/print) is never the reason you opened
     // the menu — it goes behind one row.
     if (nativeCtx.page.length)
@@ -1881,6 +1896,7 @@ export function App() {
                   } else void send(text, []);
                 }}
                 onOpenFile={openFileRef}
+                onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}

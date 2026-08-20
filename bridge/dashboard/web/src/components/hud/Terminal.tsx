@@ -141,12 +141,34 @@ function ChannelTuning() {
   );
 }
 
+/** Header shortcut into the project's DESIGN tab — link, pull and sync the
+ *  design system without a detour through the project modal's other tabs. */
+function DesignBtn({ onClick }: { onClick: () => void }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button
+      onClick={onClick} title="design system — link, pull & sync"
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        appearance: "none", cursor: "pointer", fontFamily: "inherit",
+        fontSize: "var(--t9)", letterSpacing: 1, padding: "2px 7px", flex: "none",
+        border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)",
+        background: hov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+        color: hov ? "var(--txb)" : "var(--txm)",
+      }}
+    >
+      ◇ DESIGN SYSTEM
+    </button>
+  );
+}
+
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
+  onOpenDesign,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -188,6 +210,8 @@ export function Terminal({
   onQuote?: (text: string) => void;
   onOpenFile?: (path: string, line?: number) => void;
   onAnswer?: (text: string) => void;
+  /** Open this project's DESIGN tab (the design-system link & sync). */
+  onOpenDesign?: () => void;
 }) {
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
@@ -318,6 +342,7 @@ export function Terminal({
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
+          {view === "chat" && onOpenDesign && <DesignBtn onClick={onOpenDesign} />}
           {view === "chat" && (
             <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
           )}
