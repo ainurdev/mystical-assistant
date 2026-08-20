@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/tools.check.ts
-import { hostOf, mcpParts, toolAccent, toolKind } from "./tools.ts";
+import { cmdKind, hostOf, mcpParts, toolAccent, toolKind } from "./tools.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -23,3 +23,12 @@ ok(p2.server === "plugin_cloudflare" && p2.tool === "d1 database query", "server
 
 ok(hostOf("https://example.com/a/b?q=1") === "example.com", "url yields its host");
 ok(hostOf("how do I center a div") === "", "a search query is not a url");
+
+ok(cmdKind("git status --short | head") === "git", "the first binary wins, not the pipe");
+ok(cmdKind("cd bridge/dashboard/web && npm run build") === "pkg", "cd's argument is not the command");
+ok(cmdKind("timeout 30 python3 script.py") === "run", "timeout and its seconds are scaffolding");
+ok(cmdKind("python3 -m pytest tests/ -q") === "test", "a test run reads as a test, not python");
+ok(cmdKind("grep -rn foo src | head -20") === "search", "grep is a search even when it feeds head");
+ok(cmdKind("/usr/bin/docker ps") === "docker", "an absolute path resolves to its basename");
+ok(cmdKind("mystical restart | grep ok") === "shell", "an unknown binary falls back to the shell icon");
+ok(cmdKind("") === "shell", "an empty command still has an icon");

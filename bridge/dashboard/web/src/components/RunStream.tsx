@@ -3,18 +3,21 @@ import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
   Search, Globe, Bot, ListChecks, Plug, Quote,
   BookOpen, PenLine, GitCompare, Terminal, Wrench, Layers, Brain,
+  GitBranch, FileText, FilePen, Trash2, FolderTree, Play, Package,
+  FlaskConical, Cpu, Database, Container,
 } from "lucide-react";
 import { api, type AnswerSelection, type RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { SteerIcon } from "./Composer";
 import { Markdown } from "./Markdown";
+import { FileIcon } from "../lib/fileicon";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut } from "../lib/toolfold";
-import { hostOf, mcpParts, toolAccent, toolKind } from "../lib/tools";
+import { cmdKind, hostOf, mcpParts, toolAccent, toolKind, type CmdKind } from "../lib/tools";
 
 // Result blocks already "printed" this session — guards against re-typing when a
 // session is reopened or the transcript re-renders.
@@ -100,6 +103,12 @@ function dur(ms?: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+/** The duration worth printing. Under a second nothing was slow, so the figure
+ *  is noise on every row — the ones that matter are the ones that waited. */
+function slow(ms?: number): string {
+  return ms && ms >= 1000 ? dur(ms) : "";
+}
+
 /** Header affordance — small, quiet, brightens on hover. Never a <button> inside
  *  another one, so the surrounding header stays a plain row. */
 function HeadBtn({
@@ -140,6 +149,29 @@ function CopyBtn({ text, title }: { text: string; title: string }) {
   );
 }
 
+/** The glyph a command wears, so a terminal window reads as a list of actions
+ *  rather than a wall of text. */
+const CMD_ICON: Record<CmdKind, typeof Terminal> = {
+  git: GitBranch, search: Search, read: FileText, edit: FilePen, delete: Trash2,
+  fs: FolderTree, run: Play, pkg: Package, test: FlaskConical, net: Globe,
+  proc: Cpu, db: Database, docker: Container, shell: Terminal,
+};
+
+/** The window's three lights, the one thing that says "terminal" at a glance.
+ *  A lone command draws them itself — a header row for one line is all frame. */
+function Lights({ accent, running }: { accent: string; running: boolean }) {
+  return (
+    <span className="flex flex-none gap-[3px]" aria-hidden>
+      <i
+        className="block h-[5px] w-[5px]"
+        style={{ background: accent, animation: running ? "blink 1.1s steps(1) infinite" : undefined }}
+      />
+      <i className="block h-[5px] w-[5px] bg-[var(--txl)]" />
+      <i className="block h-[5px] w-[5px] bg-[var(--txg)]" />
+    </span>
+  );
+}
+
 type Cmd = { command: string; done?: Done };
 
 /** One command inside a terminal window: the prompt line is the toggle for its
@@ -152,11 +184,13 @@ function CommandRow({
   newest,
   animate,
   autoOpen,
+  lights,
   onRerun,
 }: Cmd & {
   newest: boolean;
   animate: boolean;
   autoOpen: boolean;
+  lights?: boolean;
   onRerun?: (command: string) => void;
 }) {
   const running = !done;
@@ -166,7 +200,9 @@ function CommandRow({
   const out = exit ? raw.slice(exit[0].length) : raw;
   const lines = out ? out.split("\n").length : 0;
   const [open, setOpen] = useState(autoOpen && (running || failed || newest));
-  const dot = failed ? "var(--err)" : running ? "var(--warn)" : "var(--ok)";
+  // Colour is for exceptions: a command that simply worked stays quiet.
+  const tint = failed ? "var(--err)" : running ? "var(--warn)" : "var(--muted-2)";
+  const Icon = CMD_ICON[cmdKind(command)];
 
   return (
     <div
@@ -174,6 +210,11 @@ function CommandRow({
       style={animate ? { animation: "termLine .3s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <div className="flex items-start gap-1 px-2.5 py-1.5 hover:bg-[var(--ac-03)]">
+        {lights && (
+          <span className="mt-[6px] mr-1 flex-none">
+            <Lights accent={failed ? "var(--err)" : running ? "var(--warn)" : "var(--ok)"} running={running} />
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -181,14 +222,17 @@ function CommandRow({
           className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
         >
           <span
-            className="mt-[3px] block h-[5px] w-[5px] flex-none"
+            className={`mt-[3px] flex-none ${running ? "animate-pulse motion-reduce:animate-none" : ""}`}
             aria-hidden
-            style={{ background: dot, animation: running ? "blink 1.1s steps(1) infinite" : undefined }}
-          />
-          <span className="flex-none select-none font-mono text-[length:var(--t12)] leading-relaxed" style={{ color: "var(--primary)" }}>
-            ❯
+            style={{ color: tint }}
+          >
+            <Icon size={12} />
           </span>
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[length:var(--t12)] leading-relaxed text-foreground-bright">
+          <span
+            className={`min-w-0 flex-1 font-mono text-[length:var(--t12)] leading-relaxed text-foreground-bright ${
+              open ? "whitespace-pre-wrap break-all" : "truncate"
+            }`}
+          >
             {command}
             {running && (
               <span
@@ -199,7 +243,11 @@ function CommandRow({
           </span>
           <span className="mt-[3px] flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px] text-muted-2">
             {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
-            {done?.ms ? <span>{dur(done.ms)}</span> : null}
+            {done?.ms ? (
+              <span className={slow(done.ms) ? "" : "opacity-0 transition-opacity group-hover/cmd:opacity-100"}>
+                {dur(done.ms)}
+              </span>
+            ) : null}
             {lines > 0 && <span>{lines}L</span>}
           </span>
         </button>
@@ -262,32 +310,25 @@ function TerminalGroup({
         ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <div className="flex items-center gap-2 border-b border-border bg-[var(--ac-03)] px-2.5 py-1">
-        <span className="flex flex-none gap-[3px]" aria-hidden>
-          <i
-            className="block h-[5px] w-[5px]"
-            style={{
-              background: accent,
-              animation: running ? "blink 1.1s steps(1) infinite" : undefined,
-            }}
-          />
-          <i className="block h-[5px] w-[5px] bg-[var(--txl)]" />
-          <i className="block h-[5px] w-[5px] bg-[var(--txg)]" />
-        </span>
-        <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
-          <Terminal size={11} aria-hidden />
-          BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
-        </span>
-        {cmds.length > 1 && (
+      {cmds.length > 1 && (
+        <div className="flex items-center gap-2 border-b border-border bg-[var(--ac-03)] px-2.5 py-1">
+          <Lights accent={accent} running={running} />
+          <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
+            <Terminal size={11} aria-hidden />
+            BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
+          </span>
           <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {cmds.length} CMDS</span>
-        )}
-        {ms > 0 && <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>}
-      </div>
+          {slow(ms) && (
+            <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>
+          )}
+        </div>
+      )}
       {cmds.map((c, k) => (
         <CommandRow
           key={k}
           command={c.command}
           done={c.done}
+          lights={cmds.length === 1}
           newest={k === cmds.length - 1}
           animate={animate}
           autoOpen={autoOpen}
@@ -346,8 +387,9 @@ function DiffBlock({
             <GitCompare size={11} aria-hidden />
             {name.toUpperCase()} //
           </span>
+          <FileIcon name={path} size={12} />
           <span className="min-w-0 truncate font-mono text-[length:var(--t11)] text-foreground-bright">{path}</span>
-          {ms ? (
+          {slow(ms) ? (
             <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>
           ) : null}
           <ChevronDown
@@ -383,7 +425,8 @@ function DiffBlock({
 function FilePath({ path }: { path: string }) {
   const cut = path.lastIndexOf("/");
   return (
-    <span className="flex min-w-0 flex-1 font-mono text-[length:var(--t12)]" title={path}>
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[length:var(--t12)]" title={path}>
+      <FileIcon name={path} size={12} />
       <span className="truncate text-muted-2">{cut >= 0 ? path.slice(0, cut + 1) : ""}</span>
       <span className="flex-none text-foreground-bright">{path.slice(cut + 1)}</span>
     </span>
@@ -393,7 +436,7 @@ function FilePath({ path }: { path: string }) {
 /** The right-hand end of a tool card: what came back, then how long it took.
  *  Both are optional — an unfinished call has neither. */
 function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean }) {
-  if (!ms && !stat) return null;
+  if (!slow(ms) && !stat) return null;
   return (
     <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px]">
       {stat && (
@@ -401,8 +444,8 @@ function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean
           {stat}
         </span>
       )}
-      {stat && ms ? <span className="text-muted-2" aria-hidden>·</span> : null}
-      {ms ? <span className="text-muted-2">{dur(ms)}</span> : null}
+      {stat && slow(ms) ? <span className="text-muted-2" aria-hidden>·</span> : null}
+      {slow(ms) ? <span className="text-muted-2">{dur(ms)}</span> : null}
     </span>
   );
 }
@@ -425,16 +468,41 @@ function BootRow({ text }: { text: string }) {
   );
 }
 
+/** A pause with nothing recorded but its length. A row of its own said only
+ *  "there was a gap" four times a turn, so it rides the top edge of whatever ran
+ *  next instead — zero height, and the number stays where the wait happened.
+ *  contentVisibility has to be inline: `.vskip-card > *` hands every child
+ *  `content-visibility: auto`, a zero-height child reads as off-screen to the
+ *  skipper, and its label never paints. A utility class ties on specificity and
+ *  loses, being layered. */
+function GapMark({ ms }: { ms: number }) {
+  return (
+    <div aria-hidden className="pointer-events-none relative z-10 -mt-2 h-0"
+         style={{ contentVisibility: "visible" }}>
+      <span className="absolute right-1 -top-[3px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
+        +{dur(ms)}
+      </span>
+    </div>
+  );
+}
+
 function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animate: boolean }) {
   const [open, setOpen] = useState(false);
+  // The row costs its height either way — the first line of the reasoning is
+  // what makes it worth reading, and it is the one thing the tool cards can't say.
+  const peek = (text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
   const head = (
     <>
       <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[2px]">
         <Brain size={11} aria-hidden />
         THOUGHT
       </span>
-      <span aria-hidden className="h-px flex-1 bg-border" />
-      <span className="flex-none text-[length:var(--t95)] tracking-[1px]">{dur(ms)}</span>
+      {peek && !open ? (
+        <span className="min-w-0 flex-1 truncate text-[length:var(--t11)] italic opacity-75">{peek}</span>
+      ) : (
+        <span aria-hidden className="h-px flex-1 bg-border" />
+      )}
+      <span className="flex-none text-[length:var(--t95)] tracking-[1px]">{slow(ms)}</span>
       {text ? (
         <ChevronDown
           size={12}
@@ -833,7 +901,7 @@ function CallGroup({
         {kind === "mcp" ? <Plug size={11} aria-hidden /> : kind === "web" ? <Globe size={11} aria-hidden /> : <Bot size={11} aria-hidden />}
         <span className="truncate">{tag.toUpperCase()}</span>
         <span className="flex-none tracking-[1px] text-muted-2">· {calls.length} CALLS</span>
-        {total > 0 && <span className="flex-none tracking-[1px] text-muted-2">· {dur(total)}</span>}
+        {slow(total) && <span className="flex-none tracking-[1px] text-muted-2">· {dur(total)}</span>}
       </div>
       {calls.map((c, k) => (
         <div key={k} className="flex items-center gap-2.5 border-t border-border px-2.5 py-1 first:border-t-0">
@@ -1256,6 +1324,7 @@ export const RunStream = memo(function RunStream({
             );
           }
           case "thinking":
+            if (!event.text) return event.ms ? <GapMark key={i} ms={event.ms} /> : null;
             return <ThinkingRow key={i} ms={event.ms} text={event.text} animate={animate} />;
           case "log":
             return (
