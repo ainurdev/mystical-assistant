@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ChevronRight, ChevronsRight, DraftingCompass, Merge, Paperclip, Pause, Square } from "lucide-react";
+import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { modelRows, type AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
@@ -49,11 +49,12 @@ export function Drop<T extends string>({
   label, code, value, options, open, onToggle, onPick, minWidth = 78,
 }: {
   label: string;
-  // A 3-letter field code printed inside the chip. The name of the field then
+  // A field glyph printed inside the chip. The identity of the field then
   // travels with the control instead of sitting beside it as a separate span,
   // which is what let the layout ladder shed it exactly when the row got tight
-  // enough that you could no longer tell the five dropdowns apart.
-  code?: string;
+  // enough that you could no longer tell the five dropdowns apart. `label` is
+  // in the button title, so the glyph never has to carry the name alone.
+  code?: ReactNode;
   value: T;
   // short → what the chip shows; group → a heading printed once above each run
   // of rows sharing it; tail → right-aligned decoration (the model meters)
@@ -587,7 +588,7 @@ export function Composer({
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
           <div className="ctrl-set">
-            <Drop label="AGENT" code="ACT" value={agent} options={agents} minWidth={104} open={openDrop === "agent"}
+            <Drop label="AGENT" code={<UserRound size={12} />} value={agent} options={agents} minWidth={104} open={openDrop === "agent"}
               onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
               onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
             {activeAgent?.free ? (
@@ -601,20 +602,20 @@ export function Composer({
               </Tip>
             ) : (
               <>
-                <Drop label="MODEL" code="MDL" value={model} options={modelOpts} open={openDrop === "model"}
+                <Drop label="MODEL" code={<Brain size={12} />} value={model} options={modelOpts} open={openDrop === "model"}
                   onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
                   onPick={(id) => { onModel(id); setOpenDrop(""); }} />
-                <Drop label="EFFORT" code="EFF" value={effort} options={EFFORTS} open={openDrop === "effort"}
+                <Drop label="EFFORT" code={<Gauge size={12} />} value={effort} options={EFFORTS} open={openDrop === "effort"}
                   onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
                   onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
               </>
             )}
-            <Drop label="MODE" code="MOD" value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
+            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
             {showPonytail && (
               <Tip text={PONYTAIL_TIP} pin={false}>
-                <Drop label="PONYTAIL" code="PNY" value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
+                <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
                   onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
                   onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
               </Tip>

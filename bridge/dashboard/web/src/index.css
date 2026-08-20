@@ -908,11 +908,11 @@ input {
               padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); }
 .drop-btn { min-width: var(--dw, 78px); }
 
-/* The field code, printed inside the chip. This is what the old .ctrl-label
+/* The field glyph, printed inside the chip. This is what the old .ctrl-label
    eyebrow and .ctrl-tag cluster heading both did, except it cannot be shed:
    five unlabelled dropdowns is the state the ladder used to collapse into. */
-.ctrl-fld { flex: none; font-size: var(--t8); letter-spacing: 1.2px; color: var(--acc);
-            background: color-mix(in srgb, var(--acc) 9%, transparent); padding: 2px 4px; }
+.ctrl-fld { flex: none; display: flex; align-items: center; color: var(--acc);
+            background: color-mix(in srgb, var(--acc) 9%, transparent); padding: 3px; }
 
 .ctrl-verb { appearance: none; cursor: pointer; border: 0; background: none; padding: 0 0 2px;
              border-bottom: 1px solid transparent; color: var(--txd); font-family: inherit;

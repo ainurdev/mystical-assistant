@@ -17,7 +17,7 @@ import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut } from "../lib/toolfold";
-import { cmdKind, hostOf, mcpParts, toolAccent, toolKind, type CmdKind } from "../lib/tools";
+import { cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, type CmdKind } from "../lib/tools";
 
 // Result blocks already "printed" this session — guards against re-typing when a
 // session is reopened or the transcript re-renders.
@@ -203,6 +203,10 @@ function CommandRow({
   // Colour is for exceptions: a command that simply worked stays quiet.
   const tint = failed ? "var(--err)" : running ? "var(--warn)" : "var(--muted-2)";
   const Icon = CMD_ICON[cmdKind(command)];
+  // What the command did, in words. Empty when nothing beats the line itself,
+  // and never while the row is open — reading output next to a paraphrase of
+  // the command that made it is worse than reading the command.
+  const said = open ? "" : cmdAbstract(command);
 
   return (
     <div
@@ -233,7 +237,14 @@ function CommandRow({
               open ? "whitespace-pre-wrap break-all" : "truncate"
             }`}
           >
-            {command}
+            {said ? (
+              <>
+                <span className="font-sans group-hover/cmd:hidden">{said}</span>
+                <span className="hidden group-hover/cmd:inline">{command}</span>
+              </>
+            ) : (
+              command
+            )}
             {running && (
               <span
                 className="ml-px inline-block h-[1em] w-[7px] translate-y-[2px] bg-primary align-middle"
@@ -470,16 +481,17 @@ function BootRow({ text }: { text: string }) {
 
 /** A pause with nothing recorded but its length. A row of its own said only
  *  "there was a gap" four times a turn, so it rides the top edge of whatever ran
- *  next instead — zero height, and the number stays where the wait happened.
+ *  next instead — a hairline slot of its own, right edge in the same column as
+ *  the rows' chevrons, so it lines up instead of floating over the card.
  *  contentVisibility has to be inline: `.vskip-card > *` hands every child
  *  `content-visibility: auto`, a zero-height child reads as off-screen to the
  *  skipper, and its label never paints. A utility class ties on specificity and
  *  loses, being layered. */
 function GapMark({ ms }: { ms: number }) {
   return (
-    <div aria-hidden className="pointer-events-none relative z-10 -mt-2 h-0"
+    <div aria-hidden className="pointer-events-none relative z-10 h-0"
          style={{ contentVisibility: "visible" }}>
-      <span className="absolute right-1 -top-[3px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
+      <span className="absolute right-[11px] -top-[6px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
         +{dur(ms)}
       </span>
     </div>

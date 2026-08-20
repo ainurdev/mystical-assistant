@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/tools.check.ts
-import { cmdKind, hostOf, mcpParts, toolAccent, toolKind } from "./tools.ts";
+import { cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind } from "./tools.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -32,3 +32,16 @@ ok(cmdKind("grep -rn foo src | head -20") === "search", "grep is a search even w
 ok(cmdKind("/usr/bin/docker ps") === "docker", "an absolute path resolves to its basename");
 ok(cmdKind("mystical restart | grep ok") === "shell", "an unknown binary falls back to the shell icon");
 ok(cmdKind("") === "shell", "an empty command still has an icon");
+
+const abs = (c: string) => cmdAbstract(c);
+ok(abs("git add a.ts b.ts c.ts") === "stage 3 files", `git add: ${abs("git add a.ts b.ts c.ts")}`);
+ok(abs("git diff bridge/dashboard/web/src/components/Composer.tsx") === "diff Composer.tsx", "a diff names the file, not the path");
+ok(abs("git branch -d feat/session-worktree-mirror && git worktree prune -v") === "delete branch feat/session-worktree-mirror +1 more",
+   `a chain owns up to the rest: ${abs("git branch -d feat/x && git worktree prune")}`);
+ok(abs("sed -n 1755,1772p bridge/runner.py") === "read lines 1755–1772 of runner.py", `sed range: ${abs("sed -n 1755,1772p bridge/runner.py")}`);
+ok(abs('grep -rn "isdir(cwd)" bridge/runner.py bridge/sessions.py') === "search “isdir(cwd)” in 2 files", `grep: ${abs('grep -rn "isdir(cwd)" a.py b.py')}`);
+ok(abs("python3 -m pytest tests/ -q") === "run the tests", "pytest through the interpreter still reads as a test run");
+ok(abs("mystical status 2>&1 | head -20") === "mystical status", "a pipe into head is formatting, not another command");
+ok(abs("python3 - <<'PY'\nimport os\nPY") === "run a python snippet", `heredoc: ${abs("python3 - <<'PY'")}`);
+ok(abs("./node_modules/.bin/vite build") === "build the app", "a binary out of node_modules is still vite");
+ok(abs("for d in /proc/*; do echo $d; done") === "", "a shell loop has no honest summary, so the row keeps the command");

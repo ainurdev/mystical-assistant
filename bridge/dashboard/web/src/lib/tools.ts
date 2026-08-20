@@ -65,6 +65,9 @@ export type CmdKind =
 // argument is a path, not a binary); the rest only shadow the next token.
 const SEG_SKIP = new Set(["cd", "pushd", "popd", "export", "source", "."]);
 const PREFIX = new Set(["sudo", "env", "timeout", "exec", "nohup", "setsid", "command", "time", "stdbuf"]);
+// A loop or a conditional is a shell program, not a command: nothing inside it
+// stands for the whole line, so both the icon and the phrase give up on it.
+const KEYWORD = new Set(["for", "while", "until", "if", "then", "else", "elif", "fi", "do", "done", "case", "esac", "function", "select"]);
 
 const BIN: Record<string, CmdKind> = {
   git: "git", gh: "git", tig: "git",
@@ -85,19 +88,122 @@ const BIN: Record<string, CmdKind> = {
   psql: "db", sqlite3: "db", mysql: "db", "redis-cli": "db",
 };
 
+/** The leading command of a line, past the scaffolding: `cd x && git log -3`
+ *  is git, with ["log", "-3"] behind it. Empty when nothing leads. */
+function lead(command: string): { bin: string; args: string[] } {
+  for (const seg of command.split(/&&|\|\||[|;\n]/)) {
+    const toks = seg.trim().split(/\s+/);
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i].replace(/^[(!{'"]+/, "");
+      if (!t || t.startsWith("-") || /^\d+$/.test(t) || /^\w+=/.test(t)) continue;
+      const bin = t.split("/").pop() ?? t;
+      if (PREFIX.has(bin)) continue;
+      if (KEYWORD.has(bin)) return { bin: "", args: [] };
+      if (SEG_SKIP.has(bin)) break; // rest of this segment is that builtin's argument
+      return { bin, args: toks.slice(i + 1) };
+    }
+  }
+  return { bin: "", args: [] };
+}
+
 export function cmdKind(command: string): CmdKind {
   // A runner invoked through its interpreter (`python3 -m pytest`, `npx vitest`)
   // is still a test run — the leading binary would say "run".
   if (/\b(pytest|vitest|jest)\b/.test(command)) return "test";
-  for (const seg of command.split(/&&|\|\||[|;\n]/)) {
-    for (const tok of seg.trim().split(/\s+/)) {
-      const t = tok.replace(/^[(!{'"]+/, "");
-      if (!t || t.startsWith("-") || /^\d+$/.test(t) || /^\w+=/.test(t)) continue;
-      const bin = t.split("/").pop() ?? t;
-      if (PREFIX.has(bin)) continue;
-      if (SEG_SKIP.has(bin)) break; // rest of this segment is that builtin's argument
-      return BIN[bin] ?? "shell";
+  return BIN[lead(command).bin] ?? "shell";
+}
+
+const base = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const clip = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n - 1)}\u2026` : s);
+const unquote = (s: string) => s.replace(/^["']|["']$/g, "");
+
+/** A command in words, so a turn reads as what it did rather than what was
+ *  typed. Empty when nothing here beats showing the line itself — the row falls
+ *  back to the command, which is always the honest answer. */
+export function cmdAbstract(command: string): string {
+  const { bin, args } = lead(command);
+  if (!bin) return "";
+  const rest = args.filter((a) => !a.startsWith("-") && !/^\d?[<>]/.test(a));
+  const flag = (f: string) => args.includes(f);
+  const [a0 = "", a1 = ""] = rest;
+  // Everything after the first `&&`/`|` is real work the phrase doesn't cover.
+  const more = command.split(/&&|\|\||;/).map((s) => s.trim()).filter(Boolean).length - 1;
+  const tail = more > 0 ? ` +${more} more` : "";
+  const say = (s: string) => (s ? s + tail : "");
+
+  switch (bin) {
+    case "git":
+      switch (a0) {
+        case "add": return say(a1 === "." || flag("-A") ? "stage everything" : `stage ${plural(rest.length - 1, "file")}`);
+        case "commit": return say("commit");
+        case "status": return say("check the working tree");
+        case "diff": return say(a1 ? `diff ${base(a1)}` : "diff the working tree");
+        case "log": return say("read the last commits");
+        case "show": return say(`read commit ${clip(a1 || "HEAD", 12)}`);
+        case "push": return say("push");
+        case "pull": case "fetch": return say(`${a0} from the remote`);
+        case "branch": return say(flag("-d") || flag("-D") ? `delete branch ${rest[rest.length - 1] ?? ""}` : "list branches");
+        case "checkout": case "switch": return say(`switch to ${a1}`);
+        case "merge": return say(`merge ${a1}`);
+        case "stash": return say("stash the working tree");
+        case "worktree": return say(`${a1 || "list"} a worktree`);
+        default: return say(a0 ? `git ${a0}` : "");
+      }
+    case "gh": return say(`gh ${[a0, a1].filter(Boolean).join(" ")}`);
+    case "grep": case "rg": case "ag": {
+      const where = rest.length > 2 ? plural(rest.length - 1, "file") : rest[1] ? base(rest[1]) : "the tree";
+      return say(a0 ? `search \u201c${clip(unquote(a0))}\u201d in ${where}` : "");
     }
+    case "find": case "fd": return say(`find files under ${base(a0) || "."}`);
+    case "sed": {
+      const range = rest.find((r) => /^\d+,\d+p$/.test(r));
+      const file = rest.find((r) => r.includes(".") || r.includes("/"));
+      if (range) return say(`read lines ${range.replace(",", "\u2013").replace("p", "")} of ${base(file ?? "")}`);
+      return say(file ? `edit ${base(file)}` : "edit a file");
+    }
+    case "cat": case "less": case "bat":
+      return say(rest.length > 1 ? `read ${plural(rest.length, "file")}` : `read ${base(a0)}`);
+    case "head": case "tail": return say(a0 ? `${bin === "head" ? "read the top of" : "read the end of"} ${base(a0)}` : "");
+    case "wc": return say(`count ${base(a0) || "the input"}`);
+    case "ls": case "tree": return say(`list ${base(a0) || "this directory"}`);
+    case "mkdir": return say(`create ${base(a0)}`);
+    case "rm": case "rmdir": return say(rest.length > 1 ? `delete ${plural(rest.length, "path")}` : `delete ${base(a0)}`);
+    case "mv": return say(`move ${base(a0)}`);
+    case "cp": return say(`copy ${base(a0)}`);
+    case "chmod": return say(`set permissions on ${base(a1)}`);
+    case "python": case "python3":
+      if (/\bpytest\b/.test(command)) return say("run the tests");
+      if (args[0] === "-c") return say("run a python one-liner");
+      if (a0 === "-" || /<<'?\w+'?/.test(command)) return say("run a python snippet");
+      if (args[0] === "-m") return say(`run the ${a0} module`);
+      return say(a0 ? `run ${base(a0)}` : "python");
+    case "node": case "deno": case "bun": return say(a0 ? `run ${base(a0)}` : bin);
+    case "npm": case "pnpm": case "yarn":
+      if (a0 === "run") return say(`run the ${a1} script`);
+      if (a0 === "install" || a0 === "i") return say("install packages");
+      return say(`${bin} ${a0}`);
+    case "npx": return say(`run ${a0}`);
+    case "vite": return say(a0 === "build" ? "build the app" : `vite ${a0}`);
+    case "tsc": return say("typecheck");
+    case "pytest": return say("run the tests");
+    case "curl": case "wget": {
+      const url = rest.find((r) => r.startsWith("http")) ?? "";
+      try { return say(`fetch ${new URL(url).host}`); } catch { return say("fetch a url"); }
+    }
+    case "ssh": return say(`ssh ${a0}`);
+    case "docker": case "podman": case "kubectl": return say(`${bin} ${a0}`);
+    case "systemctl": case "journalctl": {
+      const verb = rest.find((r) => ["start", "stop", "restart", "status", "enable", "disable"].includes(r));
+      const unit = rest.find((r) => r.includes(".") || r.includes("-"));
+      return say(verb ? `${verb} ${base(unit ?? "")}`.trim() : bin);
+    }
+    case "pkill": case "pgrep": case "kill": return say(`${bin === "kill" ? "kill" : bin === "pkill" ? "kill" : "find"} ${clip(a0 || "a process", 20)}`);
+    case "ps": case "top": case "htop": return say("look at running processes");
+    case "echo": return say("");
+    default:
+      // A subcommand is the one generic phrase worth making: `mystical status`
+      // says more than the flags after it. Anything else keeps its own line.
+      return a0 && /^[a-z][\w-]*$/.test(a0) ? say(`${bin} ${a0}`) : "";
   }
-  return "shell";
 }
