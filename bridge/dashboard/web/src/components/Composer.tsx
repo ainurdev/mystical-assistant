@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ChevronRight, ChevronsRight, Merge, Paperclip, Pause, Square } from "lucide-react";
+import { ChevronRight, ChevronsRight, DraftingCompass, Merge, Paperclip, Pause, Square } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { modelRows, type AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
@@ -460,6 +460,18 @@ export function Composer({
     setImages([]);
   }
 
+  // A third destination for whatever is in the box, alongside submit() and
+  // steer(): the same text, routed to /design-first instead of straight at the
+  // turn. It sits with them rather than in the verb tier because it *is* the
+  // send gesture — the verbs are commands that stand on their own.
+  function design() {
+    const t = text.trim();
+    if (!t) return;
+    onSend(`/design-first ${t}`, images);
+    setText("");
+    setImages([]);
+  }
+
   const ctx = contextTokens ?? 0;
   const ctxPct = Math.min(100, Math.round((ctx / CONTEXT_MAX_TOKENS) * 100));
   const suggest = ctx >= COMPACT_SUGGEST_TOKENS;
@@ -480,13 +492,6 @@ export function Composer({
       tip: "GRILL — a relentless interview before any code gets written.\n\nIt asks one question at a time until every open branch of the decision is closed, then you have something worth building from.\n\nType first to grill a specific idea; leave the box empty to grill the conversation so far.\n\nNeeds a grill skill installed — SKILLS ▸ PLUGINS.",
       disabled,
       onClick: () => { const t = text.trim(); setText(""); onSend(t ? `/grill-me ${t}` : "/grill-me", []); },
-    },
-    {
-      key: "design",
-      label: "DESIGN",
-      tip: "DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header).",
-      disabled: disabled || !text.trim(),
-      onClick: () => { const t = text.trim(); if (!t) return; onSend(`/design-first ${t}`, images); setText(""); setImages([]); },
     },
     ...(showPonytail ? [
       { key: "review", label: "REVIEW", tip: "REVIEW — /ponytail-review over the working tree: what in this diff can be deleted, reused, or replaced by stdlib.", disabled, onClick: () => onSend("/ponytail-review", []) },
@@ -813,6 +818,9 @@ export function Composer({
                 <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
             )}
             <span className="act-fence" aria-hidden />
+            <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
+              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header)."}>
+              DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
             {onSteer && (
               <button className="act-alt" onClick={steer} disabled={!text.trim()}
                 title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
@@ -823,8 +831,13 @@ export function Composer({
               QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
           </>
         ) : (
-          <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()}>
-            SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
+          <>
+            <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
+              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header)."}>
+              DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
+            <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()}>
+              SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
+          </>
         )}
       </div>
     </div>

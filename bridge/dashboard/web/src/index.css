@@ -964,6 +964,11 @@ input {
            border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
            background: transparent; color: var(--warn); }
 .act-alt:disabled { opacity: .32; cursor: not-allowed; }
+/* An alternate that is a different *destination* rather than a different
+   urgency (DESIGN routes the box at /design-first instead of at the turn), so
+   it takes the neutral accent instead of the interrupt amber. */
+.act-alt.neutral { border-color: color-mix(in srgb, var(--acc) 30%, transparent); color: var(--txd); }
+.act-alt.neutral:hover:not(:disabled) { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 55%, transparent); }
 .act-pri { appearance: none; cursor: pointer; flex: none; font-family: inherit; font-size: var(--t10);
            letter-spacing: 1.8px; padding: 7px 15px; display: inline-flex; align-items: center; gap: 7px;
            border: 1px solid var(--acc); background: var(--acc); color: var(--acc-on);
