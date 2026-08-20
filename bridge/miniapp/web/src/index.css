@@ -257,7 +257,7 @@ input {
 .md h3 { font-size: 1.06em; }
 .md ul, .md ol { margin: 0.4em 0; padding-left: 1.25em; }
 .md ul { list-style: disc; }
-.md ol { list-style: decimal; }
+.md ol { list-style: decimal; padding-left: 2em; }
 .md li { margin: 0.15em 0; }
 .md li > ul, .md li > ol { margin: 0.2em 0; }
 .md a { color: var(--brand-soft); text-decoration: underline; text-underline-offset: 2px; }

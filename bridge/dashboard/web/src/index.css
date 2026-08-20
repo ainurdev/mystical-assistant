@@ -762,7 +762,7 @@ input {
 .md h1, .md h2, .md h3, .md h4 { color: var(--foreground-bright); }
 .md ul, .md ol { margin: 0.5em 0; padding-left: 1.4em; }
 .md ul { list-style: disc; }
-.md ol { list-style: decimal; }
+.md ol { list-style: decimal; padding-left: 2.2em; }
 /* The marker is the accent, so a response's structure reads before its words. */
 .md li::marker { color: var(--acc); }
 .md li { margin: 0.2em 0; }
