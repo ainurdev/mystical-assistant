@@ -491,11 +491,17 @@ export function App() {
     setDoneIds((d) => { if (!d.has(id)) return d; const n = new Set(d); n.delete(id); return n; });
   }
 
-  async function selectSession(s: SessionBrief) {
-    if (s.project !== activeProject) {
-      try { await api.select(s.project); setState(await api.state()); } catch { /* ignore */ }
-    }
-    openSession(s.id);
+  // Point the bridge's active project (the selection Telegram shares) at `rel`
+  // without making the UI wait for the round-trip: patch local state now, then
+  // let the real response (and the 3s state poll) reconcile.
+  function selectProjectBg(rel: string) {
+    setState((st) => st ? { ...st, project: { rel, name: rel.split("/").pop() || rel } } : st);
+    void api.select(rel).then(() => api.state()).then(setState).catch(() => { /* ignore */ });
+  }
+
+  function selectSession(s: SessionBrief) {
+    openSession(s.id);  // instant — the transcript keys off the id, not the active project
+    if (s.project !== activeProject) selectProjectBg(s.project);
   }
 
   // --- polls (unchanged data flow) ---
@@ -1216,9 +1222,11 @@ export function App() {
   }
 
   async function selectProject(rel: string) {
-    try { await api.select(rel); setState(await api.state()); } catch { /* ignore */ }
-    const ss = await loadSessions();
-    const cur = ss.find((s) => s.project === rel);
+    selectProjectBg(rel);
+    // The list on screen almost always has this project's sessions already; hit
+    // the network only when it doesn't (a session created since the last poll).
+    const cur = sessions.find((s) => s.project === rel)
+      ?? (await loadSessions()).find((s) => s.project === rel);
     if (cur) openSession(cur.id);
   }
 
@@ -1256,11 +1264,13 @@ export function App() {
     } catch (e) { notify("error", (e as Error).message); }
   }
 
-  async function openFromHistory(s: EnrichedSession) {
-    try { await api.select(s.project); setState(await api.state()); } catch { /* ignore */ }
-    await loadSessions();
+  function openFromHistory(s: EnrichedSession) {
+    // Seed the list so the header/composer know this session before a poll
+    // does; loadSessions keeps the open one even when the backend list omits it.
+    setSessions((prev) => prev.some((x) => x.id === s.id) ? prev : [s, ...prev]);
     openSession(s.id);
     setView("chat");
+    if (s.project !== activeProject) selectProjectBg(s.project);
   }
 
   function replayBoot() {
