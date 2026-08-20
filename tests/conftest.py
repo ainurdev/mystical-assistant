@@ -22,6 +22,10 @@ os.environ["TELEGRAM_BOT_TOKEN"] = "12345:TESTTOKEN"
 os.environ["ALLOWED_CHAT_IDS"] = "555"
 os.environ["DASH_TOKEN"] = "test-dash-token"     # non-empty → the CSRF gate is ON
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "bridge-test.db")
+# The MCP allowlist seeds default_disabled_tools(); the bridge exports .env into
+# the shells it hosts, so an unpinned value flips that default under the very
+# sessions that run this suite (tests patch config.MCP_SERVERS when they want one).
+os.environ["MCP_SERVERS"] = ""
 # Hard-pin a canonical project root before config freezes it, so within_base()
 # is deterministic suite-wide (config.BASE_PATH is read once, at first import).
 # Tests that assert on containment should build fixtures under config.BASE_PATH.
