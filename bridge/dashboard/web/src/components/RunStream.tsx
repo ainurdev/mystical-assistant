@@ -466,6 +466,21 @@ function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean
   );
 }
 
+/** Why a call failed, in full — its own wrapped line under the card, not a chip
+ *  squeezed into the row. The reason is a sentence ("MCP requests not allowed
+ *  for free accounts") and it lands after the summary, so a clipped one shows
+ *  only the half that says nothing. */
+function ErrLine({ text }: { text: string }) {
+  return (
+    <div
+      className="whitespace-pre-wrap break-words border-l-2 py-1 pl-2 font-mono text-[length:var(--t11)] leading-relaxed"
+      style={{ color: "var(--err)", borderColor: "var(--err)" }}
+    >
+      {text}
+    </div>
+  );
+}
+
 /** A pause where the model reasoned, opening onto the reasoning itself — Claude
  *  Code records it and simply never prints it. Shut by default: a turn holds
  *  dozens, and the row alone already explains the one thing a list of tool cards
@@ -921,11 +936,16 @@ function CallGroup({
         {slow(total) && <span className="flex-none tracking-[1px] text-muted-2">· {dur(total)}</span>}
       </div>
       {calls.map((c, k) => (
-        <div key={k} className="flex items-center gap-2.5 border-t border-border px-2.5 py-1 first:border-t-0">
-          <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">
-            {callLine(c.name, c.summary)}
-          </span>
-          <Took ms={c.ms} stat={c.stat} error={c.error} />
+        <div key={k} className="border-t border-border first:border-t-0">
+          <div className="flex items-center gap-2.5 px-2.5 py-1">
+            <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">
+              {callLine(c.name, c.summary)}
+            </span>
+            <Took ms={c.ms} stat={c.error ? undefined : c.stat} error={c.error} />
+          </div>
+          {c.error && c.stat ? (
+            <div className="px-2.5 pb-1.5"><ErrLine text={c.stat} /></div>
+          ) : null}
         </div>
       ))}
     </div>
@@ -1338,10 +1358,13 @@ export const RunStream = memo(function RunStream({
                   name={event.name}
                   summary={event.summary}
                   ms={done?.ms}
-                  stat={done?.stat}
+                  stat={done?.is_error ? undefined : done?.stat}
                   error={done?.is_error}
                   animate={animate}
                 />
+                {done?.is_error && done.stat ? (
+                  <div className="my-1.5 ml-[18px]"><ErrLine text={done.stat} /></div>
+                ) : null}
                 {/* Screenshots the tool handed back — Playwright, chrome-devtools,
                     Figma. Drawn under whatever card the tool got, so every kind
                     gets them without each card learning about images. */}

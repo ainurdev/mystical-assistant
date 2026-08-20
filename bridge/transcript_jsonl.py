@@ -48,6 +48,9 @@ _SUMMARY_KEYS = ("command", "file_path", "path", "pattern", "url", "query", "pro
 
 # Max chars of Bash output kept per tool call (see bash_output).
 _OUT_MAX = 2000
+# Max chars of a tool error kept (see result_stat). Long enough for the reason a
+# call failed, which an MCP server puts after the summary line.
+_ERR_MAX = 600
 # Shortest pause that earns a bare "thought for …" marker — one with no reasoning
 # text behind it, which is the only kind this gates. Extended thinking fires on
 # nearly every step, so a low floor would put a marker between every two tool
@@ -191,9 +194,13 @@ def result_stat(name: str, block: dict, result) -> str:
     r = result if isinstance(result, dict) else {}
     text = _text_of(block.get("content")).strip()
     if block.get("is_error"):
-        # The first line of a tool error is the whole story ("File does not
-        # exist", "No such file or directory") — the rest is a stack or a hint.
-        return text.splitlines()[0][:90] if text else "failed"
+        # The whole error, not its first 90 chars: an MCP failure names the
+        # reason *after* the summary — "bad request: failed to list projects
+        # (403): … MCP requests not allowed for free accounts" — and clipping
+        # keeps only the half that says nothing. The card wraps it.
+        if not text:
+            return "failed"
+        return text[:_ERR_MAX].rstrip() + "…" if len(text) > _ERR_MAX else text
     if name in _NO_STAT:
         return ""
     if name == "Read":

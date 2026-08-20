@@ -337,7 +337,13 @@ def test_result_stat_measures_what_came_back():
 
 def test_result_stat_says_why_a_tool_failed():
     ev = _done("Read", _text_block("File does not exist.\nDid you mean…", is_error=True))
-    assert ev["is_error"] is True and ev["stat"] == "File does not exist."
+    assert ev["is_error"] is True and ev["stat"] == "File does not exist.\nDid you mean…"
+    # the reason lands after the summary, so it has to survive the cap
+    mcp = ("bad request: failed to list projects (403): " + "x" * 200
+           + " MCP requests not allowed for free accounts")
+    assert _done("mcp__tw__list", _text_block(mcp, is_error=True))["stat"] == mcp
+    long = _done("mcp__tw__list", _text_block("e" * 900, is_error=True))["stat"]
+    assert len(long) == 601 and long.endswith("…")
 
 
 def test_no_stat_for_a_fixed_confirmation_or_a_diff():

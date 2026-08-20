@@ -77,6 +77,21 @@ function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean
   );
 }
 
+/** Why a call failed, in full — its own wrapped line under the card, not a chip
+ *  squeezed into the row. The reason is a sentence ("MCP requests not allowed
+ *  for free accounts") and it lands after the summary, so a clipped one shows
+ *  only the half that says nothing. */
+function ErrLine({ text }: { text: string }) {
+  return (
+    <div
+      className="whitespace-pre-wrap break-words border-l-2 py-1 pl-2 font-mono text-[10.5px] leading-relaxed"
+      style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+    >
+      {text}
+    </div>
+  );
+}
+
 /** A pause where the model reasoned, opening onto the reasoning itself — Claude
  *  Code records it and simply never prints it. Shut by default: a turn holds
  *  dozens, and the row alone already explains the one thing a list of tool cards
@@ -377,13 +392,16 @@ function CallGroup({ name, calls }: {
         {slow(total) && <span className="flex-none text-[var(--muted-2)]">· {dur(total)}</span>}
       </div>
       {calls.map((c, k) => (
-        <div key={k} className="flex items-center gap-2 border-t border-[var(--border)] px-2 py-1 first:border-t-0">
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--foreground-bright)]">
-            {kind === "mcp"
-              ? [mcpParts(c.name).tool, c.summary].filter(Boolean).join(" · ")
-              : hostOf(c.summary) || c.summary}
-          </span>
-          <Took ms={c.ms} stat={c.stat} error={c.error} />
+        <div key={k} className="border-t border-[var(--border)] first:border-t-0">
+          <div className="flex items-center gap-2 px-2 py-1">
+            <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--foreground-bright)]">
+              {kind === "mcp"
+                ? [mcpParts(c.name).tool, c.summary].filter(Boolean).join(" · ")
+                : hostOf(c.summary) || c.summary}
+            </span>
+            <Took ms={c.ms} stat={c.error ? undefined : c.stat} error={c.error} />
+          </div>
+          {c.error && c.stat ? <div className="px-2 pb-1.5"><ErrLine text={c.stat} /></div> : null}
         </div>
       ))}
     </div>
@@ -908,9 +926,10 @@ export const RunStream = memo(function RunStream({
                   name={event.name}
                   summary={event.summary}
                   ms={done?.ms}
-                  stat={done?.stat}
+                  stat={done?.is_error ? undefined : done?.stat}
                   error={done?.is_error}
                 />
+                {done?.is_error && done.stat ? <ErrLine text={done.stat} /> : null}
                 {/* Screenshots the tool handed back — drawn under whatever card it
                     got, so every kind gets them without each card knowing. */}
                 {done?.images?.length ? <ToolImages paths={done.images} /> : null}
