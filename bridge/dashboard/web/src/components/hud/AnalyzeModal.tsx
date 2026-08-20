@@ -83,6 +83,7 @@ export function AnalyzeModal(props: Props) {
   const [branches, setBranches] = useState<string[]>([]);
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
+  const [mergedBranches, setMergedBranches] = useState<string[]>([]);
   const [termCount, setTermCount] = useState(0);
   const [closing, setClosing] = useState(false);
   // Maximize sticks per browser, so the next open comes back the way you left it.
@@ -100,7 +101,11 @@ export function AnalyzeModal(props: Props) {
   const tagBd = tint.border;
 
   const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
-  const refreshWt = () => { void api.worktrees(project).then((w) => setWorktrees(w.worktrees)).catch(() => {}); };
+  const refreshWt = () => {
+    void api.worktrees(project)
+      .then((w) => { setWorktrees(w.worktrees); setMergedBranches(w.merged ?? []); })
+      .catch(() => {});
+  };
   const refreshBranches = () => {
     void api.branches(project).then((b) => { setBranches(b.branches); if (b.default) setDefaultBranch(b.default); }).catch(() => {});
   };
@@ -229,7 +234,7 @@ export function AnalyzeModal(props: Props) {
           )}
           {tab === "worktrees" && (
             <WorktreesTab project={project} sessions={props.sessions} worktrees={worktrees}
-              branches={branches} defaultBranch={defaultBranch} git={git}
+              branches={branches} defaultBranch={defaultBranch} git={git} mergedBranches={mergedBranches}
               onSelectSession={props.onSelectSession} onWorktreeSession={props.onWorktreeSession}
               onRefresh={() => { refreshGit(); refreshWt(); refreshBranches(); }} />
           )}

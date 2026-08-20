@@ -20,6 +20,8 @@ interface Props {
   worktrees: Worktree[];
   branches: string[];
   defaultBranch: string;
+  /** Branch names already contained in the default branch, from git. */
+  mergedBranches: string[];
   git: GitStatus | null;
   onSelectSession: (s: SessionBrief) => void;
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
@@ -38,7 +40,7 @@ const SECTION: React.CSSProperties = { fontSize: "var(--t8)", letterSpacing: 1.5
 const BTN: React.CSSProperties = { appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "5px 10px", lineHeight: 1.4, flex: "none" };
 
 export function WorktreesTab({
-  project, sessions, worktrees, branches, defaultBranch, git,
+  project, sessions, worktrees, branches, defaultBranch, git, mergedBranches,
   onSelectSession, onWorktreeSession, onRefresh,
 }: Props) {
   const base = defaultBranch || "main";
@@ -56,8 +58,9 @@ export function WorktreesTab({
   useEffect(() => () => { if (bannerT.current) clearTimeout(bannerT.current); }, []);
 
   const [busy, setBusy] = useState(false);
-  // merged-this-session branches (backend has no merged-branch detection yet).
-  // TODO(phase2-data): detect already-merged branches via compare on load.
+  // Branches merged from this tab just now. `mergedBranches` covers the ones git
+  // already knows about; this covers the merge you pressed a second ago, before
+  // the refresh that would have told us the same thing.
   const [merged, setMerged] = useState<Set<string>>(new Set());
   const [mergeTarget, setMergeTarget] = useState<Record<string, string>>({});
   const [mergeMenu, setMergeMenu] = useState("");
@@ -176,7 +179,7 @@ export function WorktreesTab({
   function branchRow(name: string) {
     const wt = wtByBranch.get(name);
     const open = !!wt;
-    const isMerged = merged.has(name);
+    const isMerged = merged.has(name) || mergedBranches.includes(name);
     const sess = sessions.filter((s) => (s.branch || base) === name);
     const st = stats[name];
     const current = name === cur;

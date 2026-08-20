@@ -1256,8 +1256,10 @@ export const api = {
     req<{ branches: string[]; current: string; default: string }>(
       `/local/git/branches?project=${encodeURIComponent(project)}`,
     ),
+  // `merged`: branch names already contained in the default branch — the WORKTREES
+  // tab marks them, worktree or not, so a finished branch is visible as finished.
   worktrees: (project: string) =>
-    req<{ worktrees: Worktree[] }>(
+    req<{ worktrees: Worktree[]; merged: string[] }>(
       `/local/git/worktrees?project=${encodeURIComponent(project)}`,
     ),
   compare: (project: string, base: string, head: string, dots?: 2 | 3) =>

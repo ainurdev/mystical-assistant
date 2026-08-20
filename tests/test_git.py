@@ -362,3 +362,32 @@ def test_commit_takes_the_index_when_something_is_staged():
     # nothing staged now: commit falls back to sweeping everything up
     assert g.commit(d, "the rest")[0]
     assert g.status(d)["files"] == []
+
+
+def test_merged_branches_reports_only_contained_branches():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    # `done` is merged in; `wip` has a commit of its own that base never took.
+    _commit_on_branch(d, "done")
+    _write(d, "b.txt", "two\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "done work")
+    _run(d, "checkout", "-q", base)
+    _run(d, "merge", "-q", "--no-edit", "done")
+    _commit_on_branch(d, "wip", base)
+    _write(d, "c.txt", "three\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "wip work")
+    _run(d, "checkout", "-q", base)
+
+    merged = g.merged_branches(d, base)
+    assert "done" in merged
+    assert "wip" not in merged
+    # base is contained in itself; reporting it would flag the trunk as disposable
+    assert base not in merged
+    # no base given → the repo's default branch, same answer here
+    assert g.merged_branches(d) == merged
+    assert g.merged_branches(tempfile.mkdtemp()) == []

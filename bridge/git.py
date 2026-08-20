@@ -600,6 +600,25 @@ def branches(cwd: str) -> list[str]:
     return names
 
 
+def merged_branches(cwd: str, base: str = "") -> list[str]:
+    """Local branches already contained in `base` — the work is in, so the branch
+    and its worktree are only taking up space. `base` defaults to the repo's
+    default branch, which is what a PR would have targeted.
+
+    Contained, not "was merged": a squash-merged or rebased branch is not reported,
+    because its commits are no longer ancestors of base. That is the honest answer
+    one git call can give — anything better means comparing trees per branch."""
+    if not is_repo(cwd):
+        return []
+    base = base or default_branch(cwd)
+    # --merged takes an *optional* argument, so it has to be attached with '=';
+    # `--merged base` would read base as a positional pattern instead.
+    rc, out, _ = _run(cwd, "branch", f"--merged={base}", "--format=%(refname:short)")
+    if rc != 0:
+        return []
+    return [b for b in (x.strip() for x in out.splitlines()) if b and b != base]
+
+
 def checkout(cwd: str, ref: str) -> tuple[bool, str]:
     # --end-of-options: a ref beginning with '-' must be treated as a ref, never
     # parsed as a git option (plain '--' would make checkout read it as a pathspec).

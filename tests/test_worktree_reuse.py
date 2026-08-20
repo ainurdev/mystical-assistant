@@ -112,6 +112,31 @@ def test_switched_worktree_is_not_reused_for_the_branch_it_is_named_after():
     assert dash._worktree_cwd(name, "staging") != os.path.realpath(wt)
 
 
+def test_new_worktree_gets_the_project_env():
+    """`git worktree add` checks out tracked files only, so a git-ignored .env is
+    missing — and this repo's own bin/mystical dies without one. The handler copies
+    it at creation so a worktree session isn't born broken."""
+    name, d = _mkproject("wtenv_copy")
+    with open(os.path.join(d, ".env"), "w") as f:
+        f.write("TELEGRAM_BOT_TOKEN=abc\n")
+
+    h, box = _handler()
+    h._worktree({"project": name, "branch": "feat/env", "create": True})
+    assert box["obj"]["ok"] is True, box["obj"]
+    copied = os.path.join(box["obj"]["path"], ".env")
+    assert os.path.isfile(copied), "worktree has no .env"
+    assert open(copied).read() == "TELEGRAM_BOT_TOKEN=abc\n"
+
+
+def test_new_worktree_without_a_project_env_is_still_fine():
+    """No .env to copy is the normal case for every other repo — not an error."""
+    name, _d = _mkproject("wtenv_none")
+    h, box = _handler()
+    h._worktree({"project": name, "branch": "feat/noenv", "create": True})
+    assert box["obj"]["ok"] is True, box["obj"]
+    assert not os.path.exists(os.path.join(box["obj"]["path"], ".env"))
+
+
 def _branch_of(cwd):
     return subprocess.run(["git", "-C", cwd, "branch", "--show-current"],
                           capture_output=True, text=True).stdout.strip()

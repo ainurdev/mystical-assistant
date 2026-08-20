@@ -18,6 +18,7 @@ import json
 import mimetypes
 import os
 import queue
+import shutil
 import socket
 import subprocess
 import threading
@@ -537,7 +538,9 @@ class Handler(BaseHTTPRequestHandler):
             wts = git.worktrees(abs_p)
             for w in wts:
                 w["rel"] = browser.rel(w["path"]) if browser.within_base(w["path"]) else None
-            return self._json({"worktrees": wts})
+            # Branch names, not per-worktree flags: the WORKTREES tab lists
+            # branches without a worktree too, and marks both from one set.
+            return self._json({"worktrees": wts, "merged": git.merged_branches(abs_p)})
         if path == "/local/git/since":
             # Drift since a checkpoint's commit (turns.sha).
             cwd = _worktree_cwd(qs.get("project", [None])[0],
@@ -1188,6 +1191,19 @@ class Handler(BaseHTTPRequestHandler):
         ok, output = git.worktree_add(abs_p, wt, branch, parent, create=bool(create))
         if not ok:
             return self._json({"ok": False, "output": output})
+        # git checks out tracked files only, so everything git-ignored is missing —
+        # .env above all, without which this repo's own bin/mystical dies on every
+        # command. Copying it is what the worktree skill tells a human to do by
+        # hand; doing it here is why a worktree session isn't born broken.
+        # ponytail: .env only. node_modules is a build concern — symlink the launch
+        # checkout's if you must build inside the worktree.
+        src_env = os.path.join(abs_p, ".env")
+        dst_env = os.path.join(wt, ".env")
+        if os.path.isfile(src_env) and not os.path.exists(dst_env):
+            try:
+                shutil.copy2(src_env, dst_env)
+            except OSError as e:
+                output = f"{output}\nworktree created, .env not copied: {e}".strip()
         return self._json({"ok": True, "path": wt, "rel": rel, "branch": branch,
                            "output": output})
 
