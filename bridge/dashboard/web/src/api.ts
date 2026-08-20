@@ -681,6 +681,30 @@ export interface TodayInfo {
   cost: number | null;
 }
 
+/** One week, grouped per project — time and tokens, no dollars (9f612a4). */
+export interface WeekProject {
+  project: string;
+  sessions: number;
+  turns: number;
+  elapsed: number; // wall seconds
+  tokens: number | null; // all four counters summed; null = never reported
+  models: string[];
+}
+
+export interface WeeklyReport {
+  since: number;
+  until: number;
+  projects: WeekProject[];
+  totals: {
+    sessions: number;
+    turns: number;
+    elapsed: number;
+    tokens: { in: number; out: number; cache_w: number; cache_r: number } | null;
+  };
+  days: { day: string; turns: number; elapsed: number }[];
+  prev: { turns: number; elapsed: number; tokens: number | null };
+}
+
 export interface UsageInfo {
   available: boolean;
   five_hour?: UsageBucket | null;
@@ -1078,6 +1102,8 @@ export const api = {
   running: () => req<RunningInfo>("/local/running"),
   usage: () => req<UsageInfo>("/local/usage"),
   today: () => req<TodayInfo>("/local/today"),
+  report: (back = 0) =>
+    req<WeeklyReport>(`/local/report${back ? "?back=1" : ""}`),
   history: (archived = false) =>
     req<{ sessions: EnrichedSession[] }>(
       `/local/history${archived ? "?archived=1" : ""}`,

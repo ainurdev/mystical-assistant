@@ -4,7 +4,7 @@ import os
 import sys
 import threading
 
-from bridge import accounts, config, graphmap, ladder, state, store
+from bridge import accounts, config, graphmap, ladder, report, state, store
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -22,6 +22,7 @@ HELP = (
     "/logs [n] — recent server output\n"
     "/map [query] — project map: summary · /map build · /map <thing>\n"
     "/next — ranked next steps across your recent repos · /next refresh\n"
+    "/report — this week per project (time · tokens) · /report last\n"
     "/accounts — Claude logins and their usage · /accounts add\n"
     "/policy — what to do when a chat hits the usage limit\n"
     "/status — everything at a glance\n"
@@ -185,6 +186,10 @@ def on_message(msg: dict):
         threading.Thread(target=_handle_next,
                          args=(chat_id, text[len("/next"):].strip()),
                          daemon=True).start()
+        return
+    if cmd0 == "/report":
+        back = 1 if text[len("/report"):].strip() == "last" else 0
+        send(chat_id, report.render(report.weekly(chat_id, back=back)))
         return
     if cmd0 in ("/accounts", "/policy"):
         # /accounts reads every account's usage meter — network, so off-thread.
