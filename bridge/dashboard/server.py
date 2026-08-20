@@ -782,7 +782,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/startup":
             from bridge import startup
             try:
-                st = startup.apply(bool(body.get("login")), bool(body.get("window")))
+                st = startup.apply(bool(body.get("login")), bool(body.get("window")),
+                                   body.get("profile") or None)
             except (RuntimeError, OSError, subprocess.SubprocessError) as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "startup": st})

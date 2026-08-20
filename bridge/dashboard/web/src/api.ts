@@ -617,6 +617,9 @@ export interface StartupState {
   window: boolean;
   supervised: boolean;
   browser: string | null; // e.g. "chrome.exe" — which one the window opens in
+  // Absent on a bridge older than the profile selector — hide the row then.
+  profiles?: { dir: string; name: string }[];
+  profile?: string | null; // the launcher's pinned profile; null = auto-guess
 }
 /** One environment setting, lifted out of .env so it has a switch here. The
  *  value shown is the effective one: a saved override, else what .env said, else
@@ -1021,11 +1024,12 @@ export const api = {
     }),
   /** Does the bridge come up at login, and the window with it? */
   startup: () => req<StartupState>("/local/startup"),
-  /** Send both switches — the server writes the whole desired state each time. */
-  setStartup: (login: boolean, window: boolean) =>
+  /** Send the whole desired state each time — the server rewrites both files.
+   *  `profile` pins the browser profile the window opens in; null = auto. */
+  setStartup: (login: boolean, window: boolean, profile?: string | null) =>
     req<{ ok: boolean; startup: StartupState }>("/local/startup", {
       method: "POST",
-      body: { login, window },
+      body: { login, window, profile: profile ?? null },
     }),
   /** Cached board — never spawns anything. */
   nextBoard: () => req<NextBoard>("/local/next"),

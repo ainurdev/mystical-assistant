@@ -129,17 +129,6 @@ def main():
     envsettings.apply()
     if not os.path.isdir(config.BASE_PATH):
         sys.exit(f"BASE_PATH does not exist: {config.BASE_PATH}")
-    # No token is an answer, not a misconfiguration: setup.sh offers a
-    # dashboard-only install, and then the desktop dashboard IS the product —
-    # no bot to introduce, nothing to long-poll.
-    if config.TOKEN:
-        me = tg("getMe")
-        if not me:
-            sys.exit("Could not reach Telegram. Check the token / network.")
-        print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
-        onboard.ensure_profile(config.TOKEN)   # picture + description, if still blank
-    else:
-        print(f"Bridge online — dashboard only, no Telegram  base={config.BASE_PATH}")
     signal.signal(signal.SIGINT, _on_stop_signal)
     signal.signal(signal.SIGTERM, _on_stop_signal)   # bare `kill` now shuts down cleanly too
     store.init()
@@ -147,6 +136,12 @@ def main():
     # bot there is no message to learn it from, and stopping here would leave a
     # dashboard-only install with no dashboard.
     if config.TOKEN and not config.ALLOWED_CHAT_IDS:
+        # Mid-setup at a terminal: an unreachable Telegram is worth stopping for.
+        me = tg("getMe")
+        if not me:
+            sys.exit("Could not reach Telegram. Check the token / network.")
+        print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
+        onboard.ensure_profile(config.TOKEN)   # picture + description, if still blank
         print("⚠️  No ALLOWED_CHAT_IDS — DISCOVERY mode (won't execute Claude).")
         recovery.recover()             # flip restart-orphaned turns (no resume in discovery)
     else:
@@ -166,6 +161,20 @@ def main():
         if resumed:
             print(f"↻ Auto-resumed {resumed} interrupted session(s) after restart.")
         limits.boot()                  # re-arm sessions parked on a usage-limit reset
+        # Telegram LAST: the login launcher blocks on the dashboard port above,
+        # and a cold boot's not-yet-ready network must not gate the window. A
+        # failed getMe is a warning, not an exit — get_updates already retries
+        # until the network comes up, and the dashboard works either way.
+        if config.TOKEN:
+            me = tg("getMe")
+            if me:
+                print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
+                onboard.ensure_profile(config.TOKEN)   # picture + description, if still blank
+            else:
+                print("⚠️  Telegram unreachable at start — check token/network; "
+                      "retrying via long-poll.", file=sys.stderr)
+        else:
+            print(f"Bridge online — dashboard only, no Telegram  base={config.BASE_PATH}")
 
     offset = 0
     try:
