@@ -49,6 +49,7 @@ import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
+import { branchForSession } from "./lib/issuebranch";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -1242,16 +1243,21 @@ export function App() {
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
                                  firstPrompt?: string) {
     openBlank();
+    // `git worktree add` checks out the whole tree — seconds on a big repo, spent
+    // on a blank chat that says nothing about what it's waiting for. Same boot
+    // line a starting child gets; the transcript's first poll clears it.
+    setBoot(create ? `cutting worktree ${branch}` : `checking out ${branch}`);
     try {
       const wt = await api.worktreeAdd(rel, branch, parent, create);
-      if (!wt.ok) { setLoadingSession(false); notify("error", wt.output || "worktree failed"); return; }
+      if (!wt.ok) { setBoot(null); setLoadingSession(false); notify("error", wt.output || "worktree failed"); return; }
+      setBoot(`moving into ${wt.rel}`);
       // With a prompt this is startIn's job — it already opens a session in a
       // given cwd and addresses the run to it by id.
       if (firstPrompt) { await startIn(rel, firstPrompt, { cwd: wt.path }); return; }
       const { session } = await api.createSession(rel, wt.path);
       await loadSessions();
       openSession(session.id);
-    } catch (e) { setLoadingSession(false); notify("error", (e as Error).message); }
+    } catch (e) { setBoot(null); setLoadingSession(false); notify("error", (e as Error).message); }
   }
 
   async function createProject(name: string, prompt: string) {
@@ -1639,11 +1645,15 @@ export function App() {
         { icon: "⊘", label: "Revoke share links",
           hint: "every link to this session stops working",
           onClick: () => void revokeShares(ctxMenu.id) },
-        ...(relocTargets.length ? [{ divider: true }, ...relocTargets.map((wt) => ({
+        { divider: true },
+        { icon: "⑂", label: "Move to a new worktree",
+          hint: "branch named after the session; uncommitted work stays behind",
+          onClick: () => void moveToNewWorktree(ctxMenu.id) },
+        ...relocTargets.map((wt) => ({
           icon: "⇉", label: `Relocate to ${wt.branch}`,
           hint: "rewrites paths so the model never sees the move",
           onClick: () => void relocateSession(ctxMenu.id, s?.project ?? "", wt.branch),
-        }))] : []),
+        })),
       ] });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
@@ -1766,6 +1776,28 @@ export function App() {
       await loadSessions();
       setSessionId(session.id);          // land in the copy, not the original
       notify("info", `Duplicated — “${session.title ?? "session"}”`);
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
+  // "This is bigger than I thought." Cut a worktree for the session you are in and
+  // keep going in it, instead of abandoning the chat and starting a new one next
+  // door. The branch is the session's own title — nothing to type on a phone — and
+  // the branch list decides the suffix so a second press can't fail on the name.
+  async function moveToNewWorktree(id: string) {
+    const s = sessions.find((x) => x.id === id);
+    if (!s) return;
+    try {
+      const { branches } = await api.branches(s.project);
+      const branch = branchForSession(s.title || "", branches);
+      // Cut from the session's own branch, not the main checkout's HEAD: a session
+      // already in a worktree is asking to branch from where it is standing.
+      const wt = await api.worktreeAdd(s.project, branch, s.branch || undefined, true);
+      if (!wt.ok) { notify("error", wt.output || "worktree failed"); return; }
+      await api.relocateSession(id, s.project, branch);
+      await loadSessions();
+      notify("info", `Now in ${branch}`);
     } catch (e) {
       notify("error", (e as Error).message);
     }

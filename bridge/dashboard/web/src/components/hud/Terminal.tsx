@@ -131,12 +131,16 @@ function FreshState({ project }: { project: string | null }) {
 
 /** The "channel tuning" loading state: a held, unstable scanline (the collapsed
  *  channel) that stays until the transcript is ready — then the viewport blooms open.
- *  Replaces a spinner so the channel-change transition spans the whole load. */
-function ChannelTuning() {
+ *  Replaces a spinner so the channel-change transition spans the whole load.
+ *
+ *  `step` names the wait when we know it (a worktree being cut, a child starting):
+ *  seconds of "TUNING SIGNAL…" reads as a hang, the same reason RunStream's boot
+ *  row exists. Without one it stays generic. */
+function ChannelTuning({ step }: { step?: string | null }) {
   return (
     <div style={{ height: "100%", minHeight: 330, position: "relative", overflow: "hidden", animation: "mfadeup .3s ease both" }}>
       <div aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, transform: "translateY(-50%)", background: "var(--acc)", boxShadow: "0 0 20px 2px color-mix(in srgb, var(--acc) 80%, transparent), 0 0 4px var(--acc)", animation: "chanline 1.15s ease-in-out infinite" }} />
-      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s linear infinite" }}>TUNING SIGNAL…</span>
+      <span style={{ position: "absolute", left: 0, right: 0, top: "calc(50% + 30px)", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 3, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", animation: "awaitsweep 2.4s linear infinite", textTransform: "uppercase" }}>{step || "TUNING SIGNAL…"}</span>
     </div>
   );
 }
@@ -332,9 +336,25 @@ export function Terminal({
               {projectLabel || "—"}
             </span>
             {branch && (
-              <span title="session branch" style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px" }}>
+              // The chat's one session affordance. data-ctx-* makes right-click open
+              // the session menu (the SESSIONS list's own), and the click re-fires it
+              // as a contextmenu anchored under the chip so it isn't right-click-only
+              // — that menu is where "move to a new worktree" lives, and the branch
+              // you're on is where you notice you want it.
+              <button
+                title={sessionId ? "session branch — session actions" : "session branch"}
+                data-ctx-type={sessionId ? "session" : undefined}
+                data-ctx-id={sessionId ?? undefined}
+                data-ctx-label={branch}
+                disabled={!sessionId}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
+                    { bubbles: true, clientX: r.left, clientY: r.bottom }));
+                }}
+                style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px", appearance: "none", background: "transparent", fontFamily: "inherit", cursor: sessionId ? "pointer" : "default" }}>
                 <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
-              </span>
+              </button>
             )}
             <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {selected?.title || "new session"}
@@ -379,7 +399,7 @@ export function Terminal({
                     scanline for a load that's already over, and no FreshState
                     flashing in front of a transcript that's about to arrive. */}
                 {empty && slowLoad ? (
-                  <ChannelTuning />
+                  <ChannelTuning step={boot} />
                 ) : empty && loading ? null : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
