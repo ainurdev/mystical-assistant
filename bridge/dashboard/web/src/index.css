@@ -887,41 +887,91 @@ input {
 .pillstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 16px 0; }
 .pillstrip:empty { display: none; }
 
-/* Composer control row — three fenced clusters: AI · PONYTAIL · GRAPH. The row
-   keys off its own wrapper's width, not the viewport's: the composer narrows
-   when the sidebars and floating windows open, so a media query would collapse
-   at the wrong moments. */
+/* Composer control row — two tiers on one line. SETTINGS (what the next turn
+   *is*) keep a box and carry their own field code, so the name travels with the
+   control; VERBS (things that fire now) have no box at all, because a box reads
+   as a setting and bare tracked text reads as a command. The row keys off its
+   own wrapper's width, not the viewport's: the composer narrows when the
+   sidebars and floating windows open, so a media query would collapse at the
+   wrong moments. */
 .ctrl-cq { container-type: inline-size; }
-/* One line, always: the row never wraps, it sheds. Each rung below buys width
-   back, and the last one lets the dropdowns themselves shrink and ellipsise so
-   even a very narrow composer keeps every control on the one line. */
-.ctrl-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 9px 11px; }
-.ctrl-group { display: flex; align-items: center; flex-wrap: nowrap; gap: 7px 11px; min-width: 0; }
-.ctrl-group + .ctrl-group { padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 12%, transparent); }
-.ctrl-tag { flex: none; font-size: var(--t8); letter-spacing: 1.5px; color: var(--acc); }
+.ctrl-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 12px; }
+.ctrl-set { display: flex; align-items: center; flex-wrap: nowrap; gap: 5px; min-width: 0; }
+.ctrl-verbs { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; position: relative;
+              padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); }
 .drop-btn { min-width: var(--dw, 78px); }
 
-/* 1000px: the per-field eyebrows go — worth ~115px. The cluster tag names the
-   group, and every control keeps a "FIELD — value" tooltip for the name it just
-   dropped. Fires early on purpose: it buys the row its one line. */
-@container (max-width: 1000px) {
-  .ctrl-label { display: none; }
-}
+/* The field code, printed inside the chip. This is what the old .ctrl-label
+   eyebrow and .ctrl-tag cluster heading both did, except it cannot be shed:
+   five unlabelled dropdowns is the state the ladder used to collapse into. */
+.ctrl-fld { flex: none; font-size: var(--t8); letter-spacing: 1.2px; color: var(--acc);
+            background: color-mix(in srgb, var(--acc) 9%, transparent); padding: 2px 4px; }
 
-/* 900px: the cluster tags (AI · PONYTAIL · GRAPH) go — worth another ~110px.
-   The fences between the groups stay, so the grouping still reads. */
-@container (max-width: 900px) {
-  .ctrl-tag { display: none; }
-  .ctrl-group + .ctrl-group { padding-left: 9px; }
-  .ctrl-row, .ctrl-group { gap: 7px; }
-}
+.ctrl-verb { appearance: none; cursor: pointer; border: 0; background: none; padding: 0 0 2px;
+             border-bottom: 1px solid transparent; color: var(--txd); font-family: inherit;
+             font-size: var(--t10); letter-spacing: 1.6px; white-space: nowrap;
+             display: inline-flex; align-items: center; gap: 6px; }
+.ctrl-verb:hover:not(:disabled) { color: var(--acc); border-bottom-color: color-mix(in srgb, var(--acc) 50%, transparent); }
+.ctrl-verb:disabled { opacity: .4; cursor: not-allowed; }
+.ctrl-verb .stamp { color: var(--txl); letter-spacing: .6px; }
 
-/* Below that there is nothing left to drop: the dropdowns give up their
-   uniform width and truncate their value instead of pushing GRAPH onto a
-   second line. The full value is still in each control's own tooltip. */
-@container (max-width: 780px) {
-  .drop-btn { min-width: 0; }
+/* The overflow the verbs fold into once the row runs out of width. */
+.ctrl-more { display: none; appearance: none; cursor: pointer; font-family: inherit; line-height: 1.1;
+             border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); background: transparent;
+             color: var(--txd); font-size: var(--t11); letter-spacing: 2px; padding: 3px 9px; }
+.ctrl-more:hover { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
+
+/* CONTEXT as an instrument, ~110px, closing the row — the bar it replaces was
+   full-bleed and spent a whole row of the composer rendering "1%". */
+.ctrl-ctx { margin-left: auto; flex: none; display: flex; align-items: center; gap: 7px;
+            font-size: var(--t9); letter-spacing: 1.4px; color: var(--txl); }
+.ctrl-ctx .seg { display: flex; gap: 2px; flex: none; }
+.ctrl-ctx .seg i { display: block; width: 7px; height: 9px; transition: background .3s ease;
+                   background: color-mix(in srgb, var(--acc) 10%, transparent); }
+
+/* 1040px: the verbs fold into a ··· that opens them WITH their names. Five
+   unlabelled icons would be worse than none, which is why nothing here sheds
+   a label — it sheds a position. */
+@container (max-width: 1040px) {
+  .ctrl-verbs .ctrl-verb { display: none; }
+  .ctrl-more { display: inline-flex; }
+  .ctrl-row { gap: 9px; }
 }
+/* 820px: the word CTX goes. The lamps and the percentage still read. */
+@container (max-width: 820px) { .ctrl-ctx .lbl { display: none; } }
+/* Below that the settings give up their uniform width and ellipsise the value
+   rather than push the row onto a second line. The field code stays. */
+@container (max-width: 700px) { .drop-btn { min-width: 0; } }
+
+/* Composer action cluster — exactly one primary. STOP and PAUSE are rare,
+   modal, and one of them is destructive: they stay recessive until reached
+   for. STEER is the alternate target for the same text. QUEUE/SEND is what
+   Enter does, so it is the only filled control on the line. */
+.act-glyph { appearance: none; cursor: pointer; width: 28px; height: 28px; flex: none;
+             display: inline-flex; align-items: center; justify-content: center; color: var(--txd);
+             border: 1px solid color-mix(in srgb, var(--acc) 16%, transparent); background: transparent;
+             transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.act-glyph.stop:hover { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, transparent);
+                        background: color-mix(in srgb, var(--err) 10%, transparent); }
+.act-glyph.hold:hover { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+                        background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.act-glyph.armed { color: var(--warn); border-color: var(--warn);
+                   background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.act-fence { width: 1px; height: 20px; flex: none; margin: 0 2px;
+             background: color-mix(in srgb, var(--acc) 16%, transparent); }
+.act-alt { appearance: none; cursor: pointer; flex: none; font-family: inherit; font-size: var(--t10);
+           letter-spacing: 1.6px; padding: 7px 12px; display: inline-flex; align-items: center; gap: 6px;
+           border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+           background: transparent; color: var(--warn); }
+.act-alt:disabled { opacity: .32; cursor: not-allowed; }
+.act-pri { appearance: none; cursor: pointer; flex: none; font-family: inherit; font-size: var(--t10);
+           letter-spacing: 1.8px; padding: 7px 15px; display: inline-flex; align-items: center; gap: 7px;
+           border: 1px solid var(--acc); background: var(--acc); color: var(--acc-on);
+           box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 14%, transparent); }
+.act-pri.queue { border-color: var(--purple); background: var(--purple-d); color: var(--panel3);
+                 box-shadow: 0 0 12px color-mix(in srgb, var(--purple) 16%, transparent); }
+.act-pri:disabled { background: transparent; color: var(--txl); box-shadow: none; cursor: not-allowed;
+                    border-color: color-mix(in srgb, var(--acc) 16%, transparent); }
 
 /* --- SETTINGS MODAL --------------------------------------------------------
    The category rail runs down the side of the panel, and across the top of it

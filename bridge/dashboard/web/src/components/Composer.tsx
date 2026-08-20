@@ -38,12 +38,22 @@ export const PONYTAILS: { id: string; label: string }[] = [
 
 const COMPACT_SUGGEST_TOKENS = 100_000;
 const CONTEXT_MAX_TOKENS = 200_000;
+// The context readout is a segmented instrument, not a track: eight lamps read
+// as fast as a bar at a tenth of the width, and the width is the point — the
+// old full-bleed bar spent a whole row of the composer to render "1%".
+const CTX_SEGMENTS = 8;
+const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
 // Exported for the status bar, which offers the same AGENT pick from the footer.
 export function Drop<T extends string>({
-  label, value, options, open, onToggle, onPick, minWidth = 78, showLabel = true,
+  label, code, value, options, open, onToggle, onPick, minWidth = 78,
 }: {
   label: string;
+  // A 3-letter field code printed inside the chip. The name of the field then
+  // travels with the control instead of sitting beside it as a separate span,
+  // which is what let the layout ladder shed it exactly when the row got tight
+  // enough that you could no longer tell the five dropdowns apart.
+  code?: string;
   value: T;
   // short → what the chip shows; group → a heading printed once above each run
   // of rows sharing it; tail → right-aligned decoration (the model meters)
@@ -52,7 +62,6 @@ export function Drop<T extends string>({
   onToggle: () => void;
   onPick: (id: T) => void;
   minWidth?: number;
-  showLabel?: boolean; // off when the cluster tag already names the field
 }) {
   const cur = options.find((o) => o.id === value) ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
@@ -61,18 +70,17 @@ export function Drop<T extends string>({
   const btn: CSSProperties = {
     appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
     background: "color-mix(in srgb, var(--panel2) 60%, transparent)", color: "var(--txh)", fontFamily: "inherit",
-    fontSize: "var(--t95)", letterSpacing: ".3px", padding: "4px 9px", display: "flex",
-    alignItems: "center", gap: 10, justifyContent: "space-between",
+    fontSize: "var(--t95)", letterSpacing: ".3px", display: "flex",
+    alignItems: "center", gap: code ? 7 : 10, justifyContent: code ? "flex-start" : "space-between",
+    padding: code ? "4px 8px 4px 5px" : "4px 9px",
     ["--dw" as string]: `${minWidth}px`,
   };
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-      {showLabel && (
-        <span className="ctrl-label" style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txl)", flex: "none" }}>{label}</span>
-      )}
       <button className="drop-btn" onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur.short ?? cur.label}</span>
-        <span style={{ color: "var(--txd)", fontSize: "var(--t8)" }}>▾</span>
+        {code && <span className="ctrl-fld">{code}</span>}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
+        <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
       </button>
       {open && (
         <div
@@ -151,12 +159,6 @@ const chip: CSSProperties = {
   letterSpacing: 1, padding: "3px 8px",
 };
 
-// Shared look for the command-line action buttons (STOP / STEER / QUEUE / SEND).
-const actBtn: CSSProperties = {
-  appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 2,
-  padding: "6px 14px", flex: "none", display: "inline-flex", alignItems: "center", gap: 6,
-};
-
 // Steering folds text into the turn already in flight. Merge rotated a quarter
 // turn: two strands come in from the left and leave as one, pointing forward.
 export function SteerIcon({ size = 13 }: { size?: number }) {
@@ -214,7 +216,7 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony">("");
+  const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony" | "verbs">("");
   // A free agent brings its own model and has no effort knob, so those two
   // dropdowns would be lying about what runs — swap them for what actually will.
   const activeAgent = agents.find((a) => a.id === agent);
@@ -461,6 +463,50 @@ export function Composer({
   const ctx = contextTokens ?? 0;
   const ctxPct = Math.min(100, Math.round((ctx / CONTEXT_MAX_TOKENS) * 100));
   const suggest = ctx >= COMPACT_SUGGEST_TOKENS;
+  const ctxSegs = Math.min(CTX_SEGMENTS, Math.ceil((ctxPct / 100) * CTX_SEGMENTS));
+  // The meter is teal until the window is actually filling. Colour that is
+  // always on is colour that says nothing.
+  const ctxColor = ctxPct >= 85 ? "var(--err)" : suggest ? "var(--warn)" : "var(--acc)";
+
+  // The verb tier as data, so the row and the ··· overflow it collapses into
+  // render the same list from the same handlers.
+  const verbs: {
+    key: string; label: string; stamp?: string; stampTone?: string; hot?: boolean;
+    tip: string; anchor?: "right"; disabled?: boolean; onClick: () => void;
+  }[] = [
+    {
+      key: "grill",
+      label: "GRILL",
+      tip: "GRILL — a relentless interview before any code gets written.\n\nIt asks one question at a time until every open branch of the decision is closed, then you have something worth building from.\n\nType first to grill a specific idea; leave the box empty to grill the conversation so far.\n\nNeeds a grill skill installed — SKILLS ▸ PLUGINS.",
+      disabled,
+      onClick: () => { const t = text.trim(); setText(""); onSend(t ? `/grill-me ${t}` : "/grill-me", []); },
+    },
+    {
+      key: "design",
+      label: "DESIGN",
+      tip: "DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header).",
+      disabled: disabled || !text.trim(),
+      onClick: () => { const t = text.trim(); if (!t) return; onSend(`/design-first ${t}`, images); setText(""); setImages([]); },
+    },
+    ...(showPonytail ? [
+      { key: "review", label: "REVIEW", tip: "REVIEW — /ponytail-review over the working tree: what in this diff can be deleted, reused, or replaced by stdlib.", disabled, onClick: () => onSend("/ponytail-review", []) },
+      { key: "audit", label: "AUDIT", tip: "AUDIT — /ponytail-audit over the whole repo: a ranked list of what to delete, simplify, or replace with a native equivalent.", disabled, onClick: () => onSend("/ponytail-audit", []) },
+    ] : []),
+    ...(onOpenMap && graph?.available ? [{
+      key: "map",
+      label: "MAP",
+      stamp: graph.building ? "LEARNING…" : graph.exists ? ago(graph.built_at) : "—",
+      stampTone: graph.stale && !graph.building ? "var(--warn)" : undefined,
+      hot: graph.building,
+      anchor: "right" as const,
+      tip: graph.building
+        ? "Learning your project for better and faster responses. Opens the MAP tab."
+        : graph.exists
+        ? `Project map — built ${ago(graph.built_at)} ago${graph.stale ? ", stale" : ""}. Opens the MAP tab.`
+        : "No project map yet — it builds itself after the first turn. Opens the MAP tab.",
+      onClick: onOpenMap,
+    }] : []),
+  ];
 
   return (
     <div style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px" }}>
@@ -502,33 +548,6 @@ export function Composer({
           ))}
         </div>
       )}
-      {/* context meter — full-width status line above the controls */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--t10)", letterSpacing: 1, color: "var(--txl)", marginBottom: 10 }}>
-        CONTEXT
-        <span style={{ flex: 1, height: 4, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
-          {/* scaleX, not width: a width transition relayouts the composer on
-              every frame of the .4s, which is exactly when the main thread is
-              busiest (a session open, a turn streaming). The gradient paints
-              across the full track and is squashed with it, so it looks the
-              same. */}
-          <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "100%", transform: `scaleX(${ctxPct / 100})`, transformOrigin: "left", willChange: "transform", background: "linear-gradient(90deg,var(--acc),var(--purple))", transition: "transform .4s ease" }} />
-        </span>
-        <span style={{ color: suggest ? "var(--warn)" : "var(--acc)", flex: "none" }}>{ctxPct}%</span>
-        {ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
-        {onCompact && (
-          // Whatever is in the box rides along as compaction instructions ("keep
-          // the auth work, drop the log spelunking") — Piebald opens a dialog for
-          // this; we already have a text box right there.
-          <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
-            title={text.trim()
-              ? "Compact the context, keeping what you've typed in mind"
-              : "Compact context (/compact) — type first to steer what the summary keeps"}
-            style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer", opacity: disabled || running ? 0.4 : 1, ...(suggest ? { border: "1px solid var(--warn)", color: "var(--warn)" } : null) }}>
-            COMPACT
-          </button>
-        )}
-      </div>
-
       {/* image attachments */}
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
       {images.length > 0 && (
@@ -551,16 +570,19 @@ export function Composer({
         </div>
       )}
 
-      {/* session controls — four fenced clusters: what runs the turn (AI), how
-          much code it writes (PONYTAIL, with its two review commands), the
-          interview that precedes the code (FLOW), and the project map (GRAPH).
-          Layout ladder lives in index.css. */}
+      {/* session controls — one line, two tiers. SETTINGS (what the next turn
+          *is*) keep a box and carry their own field code, so no width can shed
+          the name off a control. VERBS (things that fire now) have no box at
+          all: bare tracked text reads as a command, a box reads as a setting,
+          which is the distinction the old 12%-alpha fences were failing to
+          make. The context meter closes the row as an instrument rather than
+          spending a whole row of its own on a track that is empty most of the
+          time. Layout ladder lives in index.css. */}
       {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
-          <div className="ctrl-group">
-            <span className="ctrl-tag">AI</span>
-            <Drop label="AGENT" value={agent} options={agents} minWidth={104} open={openDrop === "agent"}
+          <div className="ctrl-set">
+            <Drop label="AGENT" code="ACT" value={agent} options={agents} minWidth={104} open={openDrop === "agent"}
               onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
               onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
             {activeAgent?.free ? (
@@ -574,79 +596,90 @@ export function Composer({
               </Tip>
             ) : (
               <>
-                <Drop label="MODEL" value={model} options={modelOpts} open={openDrop === "model"}
+                <Drop label="MODEL" code="MDL" value={model} options={modelOpts} open={openDrop === "model"}
                   onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
                   onPick={(id) => { onModel(id); setOpenDrop(""); }} />
-                <Drop label="EFFORT" value={effort} options={EFFORTS} open={openDrop === "effort"}
+                <Drop label="EFFORT" code="EFF" value={effort} options={EFFORTS} open={openDrop === "effort"}
                   onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
                   onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
               </>
             )}
-            <Drop label="MODE" value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
+            <Drop label="MODE" code="MOD" value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
-          </div>
-          {showPonytail && (
-            <div className="ctrl-group">
-              <span className="ctrl-tag">PONYTAIL</span>
-              <Drop label="PONYTAIL" showLabel={false} value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
-                onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
-                onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
-              <Tip text={"PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with."}>
-                <button type="button" aria-label="About ponytail"
-                  style={{ ...chip, flex: "none", cursor: "help", padding: "3px 6px", marginLeft: -5 }}>ⓘ</button>
+            {showPonytail && (
+              <Tip text={PONYTAIL_TIP} pin={false}>
+                <Drop label="PONYTAIL" code="PNY" value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
+                  onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
+                  onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
               </Tip>
-              <button onClick={() => onSend("/ponytail-review", [])} disabled={disabled} title="ponytail review of the working tree"
-                style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
-                REVIEW
-              </button>
-              <button onClick={() => onSend("/ponytail-audit", [])} disabled={disabled} title="ponytail repo audit"
-                style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
-                AUDIT
-              </button>
-            </div>
-          )}
-          {/* GRILL — an interview that asks one question at a time until every
-              branch of a decision is resolved. It is the one skill shaped like
-              this app: the questions arrive as answerable cards on whatever
-              you're holding, so the interview survives you walking away. Like
-              COMPACT, whatever is in the box becomes the subject. */}
-          <div className="ctrl-group">
-            <span className="ctrl-tag">FLOW</span>
-            <Tip text={"GRILL — a relentless interview before any code gets written.\n\nIt asks one question at a time until every open branch of the decision is closed, then you have something worth building from.\n\nType first to grill a specific idea; leave the box empty to grill the conversation so far.\n\nNeeds a grill skill installed — SKILLS ▸ PLUGINS."}>
-              <button onClick={() => { const t = text.trim(); setText(""); onSend(t ? `/grill-me ${t}` : "/grill-me", []); }}
-                disabled={disabled}
-                style={{ ...chip, flex: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
-                GRILL
-              </button>
-            </Tip>
-            <Tip text={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header)."}>
-              <button onClick={() => { const t = text.trim(); if (!t) return; onSend(`/design-first ${t}`, images); setText(""); setImages([]); }}
-                disabled={disabled || !text.trim()}
-                style={{ ...chip, flex: "none", cursor: disabled || !text.trim() ? "not-allowed" : "pointer", opacity: disabled || !text.trim() ? 0.4 : 1 }}>
-                DESIGN
-              </button>
-            </Tip>
+            )}
           </div>
-          {onOpenMap && graph?.available && (
-            <div className="ctrl-group">
-              <span className="ctrl-tag">GRAPH</span>
-              <Tip anchor="right" pin={false}
-                text={graph.building
-                  ? "Learning your project for better and faster responses. Opens the MAP tab."
-                  : graph.exists
-                  ? `Project map — built ${ago(graph.built_at)} ago${graph.stale ? ", stale" : ""}. Opens the MAP tab.`
-                  : "No project map yet — it builds itself after the first turn. Opens the MAP tab."}>
-                <button onClick={onOpenMap}
-                  style={{ ...chip, flex: "none", display: "flex", alignItems: "center", gap: 6, ...(graph.building ? { border: "1px solid var(--acc)", color: "var(--acc)" } : null) }}>
-                  MAP
-                  <span style={{ color: graph.stale && !graph.building ? "var(--warn)" : "inherit" }}>
-                    {graph.building ? "LEARNING…" : graph.exists ? ago(graph.built_at) : "—"}
-                  </span>
+          {/* One verb list, rendered twice: inline across the row, and inside
+              the ··· popover the container query swaps in once the row runs out
+              of width. A narrow composer loses where the verbs sit, never what
+              they are called — five unlabelled icons would be worse than none. */}
+          <div className="ctrl-verbs">
+            {verbs.map((v) => (
+              <Tip key={v.key} text={v.tip} anchor={v.anchor} pin={false}>
+                <button className="ctrl-verb" onClick={v.onClick} disabled={v.disabled}
+                  style={v.hot ? { color: "var(--acc)" } : undefined}>
+                  {v.label}
+                  {v.stamp && <span className="stamp" style={v.stampTone ? { color: v.stampTone } : undefined}>{v.stamp}</span>}
                 </button>
               </Tip>
-            </div>
-          )}
+            ))}
+            <button className="ctrl-more" onClick={() => setOpenDrop((d) => (d === "verbs" ? "" : "verbs"))}
+              title="More actions">···</button>
+            {openDrop === "verbs" && (
+              <div style={{
+                position: "absolute", bottom: "calc(100% + 6px)", left: 0, minWidth: 158, width: "max-content", zIndex: 30,
+                border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
+                background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
+                boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
+              }}>
+                {verbs.map((v) => (
+                  <button key={v.key} onClick={() => { setOpenDrop(""); v.onClick(); }} disabled={v.disabled} title={v.tip}
+                    style={{
+                      width: "100%", appearance: "none", cursor: v.disabled ? "not-allowed" : "pointer", border: 0,
+                      borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+                      background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
+                      letterSpacing: 1.4, textAlign: "left", padding: "7px 11px", opacity: v.disabled ? 0.4 : 1,
+                      display: "flex", alignItems: "center", gap: 10, whiteSpace: "nowrap",
+                    }}>
+                    <span style={{ flex: 1 }}>{v.label}</span>
+                    {v.stamp && <span style={{ color: v.stampTone ?? "var(--txl)", letterSpacing: .6 }}>{v.stamp}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* CONTEXT as an instrument: eight segments that only recolour when
+              the window is actually filling, and a COMPACT that only exists
+              past the point where pressing it is the right call. */}
+          <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${CONTEXT_MAX_TOKENS / 1000}k${ctx > 0 ? ` (~${fmtTokens(ctx)} tokens)` : ""}`}>
+            <span className="lbl">CTX</span>
+            <span className="seg">
+              {Array.from({ length: CTX_SEGMENTS }, (_, i) => (
+                <i key={i} style={i < ctxSegs ? { background: ctxColor } : undefined} />
+              ))}
+            </span>
+            <span style={{ color: suggest ? ctxColor : "var(--txd)", fontSize: "var(--t10)", letterSpacing: .5, flex: "none" }}>{ctxPct}%</span>
+            {suggest && ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
+            {suggest && onCompact && (
+              // Whatever is in the box rides along as compaction instructions ("keep
+              // the auth work, drop the log spelunking") — Piebald opens a dialog for
+              // this; we already have a text box right there.
+              <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
+                title={text.trim()
+                  ? "Compact the context, keeping what you've typed in mind"
+                  : "Compact context (/compact) — type first to steer what the summary keeps"}
+                style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer",
+                         opacity: disabled || running ? 0.4 : 1, border: `1px solid ${ctxColor}`, color: ctxColor }}>
+                COMPACT
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -757,30 +790,40 @@ export function Composer({
         <button onClick={() => fileRef.current?.click()} title="Attach image"
           style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
           <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
+        {/* Exactly one primary. STOP and PAUSE are rare and modal and one of
+            them is destructive, so they sit as recessive glyphs and only take
+            their colour when you reach for them — their labels live in the
+            tooltip. STEER is the alternate target for the same text, so it
+            stays an outline. QUEUE/SEND is what Enter does, so it is the only
+            filled control on the line. */}
         {running ? (
           <>
-            <button onClick={onStop}
-              style={{ ...actBtn, border: "1px solid var(--err)", background: "color-mix(in srgb, var(--err) 12%, transparent)", color: "var(--err)" }}>
-              STOP <Square size={10} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+            <button className="act-glyph stop" onClick={onStop} aria-label="Stop"
+              title="STOP — interrupt this turn now">
+              <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
             {/* The graceful counterpart to STOP: no interrupt, no half-written
-                file — the turn lands, then the loop holds. */}
-            {onTogglePause && !paused && (
-              <button onClick={onTogglePause} title="Let this turn finish, then hold — no queued prompt or goal nudge starts after it"
-                style={{ ...actBtn, border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 10%, transparent)", color: "var(--warn)" }}>
-                PAUSE <Pause size={10} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+                file — the turn lands, then the loop holds. It keeps its armed
+                state here so the banner is confirmation, not the only tell. */}
+            {onTogglePause && (
+              <button className={`act-glyph hold${paused ? " armed" : ""}`} onClick={onTogglePause}
+                aria-label={paused ? "Resume" : "Pause"}
+                title={paused
+                  ? "PAUSED — nothing starts after this turn. Click to resume."
+                  : "PAUSE — let this turn finish, then hold; no queued prompt or goal nudge starts after it"}>
+                <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
             )}
+            <span className="act-fence" aria-hidden />
             {onSteer && (
-              <button onClick={steer} disabled={!text.trim()} title="Fold this into the turn that's running now (falls back to queueing if the run just ended)"
-                style={{ ...actBtn, cursor: !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--warn)", opacity: !text.trim() ? 0.4 : 1 }}>
+              <button className="act-alt" onClick={steer} disabled={!text.trim()}
+                title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
                 STEER <SteerIcon /></button>
             )}
-            <button onClick={submit} disabled={disabled || !text.trim()} title="Queue this prompt to run after the current turn"
-              style={{ ...actBtn, cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--purple-b)", opacity: disabled || !text.trim() ? 0.4 : 1 }}>
+            <button className="act-pri queue" onClick={submit} disabled={disabled || !text.trim()}
+              title="QUEUE — run this prompt after the current turn (Enter)">
               QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
           </>
         ) : (
-          <button onClick={submit} disabled={disabled || !text.trim()}
-            style={{ ...actBtn, cursor: disabled || !text.trim() ? "not-allowed" : "pointer", border: "1px solid var(--acc)", background: "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", opacity: disabled || !text.trim() ? 0.4 : 1 }}>
+          <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()}>
             SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
         )}
       </div>

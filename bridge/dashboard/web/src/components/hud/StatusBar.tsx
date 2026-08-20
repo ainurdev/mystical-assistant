@@ -156,7 +156,6 @@ export function StatusBar(props: StatusBarProps) {
             <span style={{ position: "relative", zIndex: 26, color: free ? "var(--warn)" : "var(--acc)" }}>
               <Drop
                 label="AGENT"
-                showLabel={false}
                 value={agent.id}
                 // Dropping `short` leaves Drop on the full label, so the footer
                 // keeps reading "A1 · you@example.com · 68% LEFT" as it did.
