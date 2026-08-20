@@ -23,6 +23,7 @@ import glob
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 
@@ -82,6 +83,20 @@ def _browser() -> str | None:
     return next((p for p in _BROWSERS if os.path.exists(p)), None)
 
 
+def _chrome_root(browser: str) -> str | None:
+    """The browser's User Data dir — where profiles and Local State live."""
+    if browser.startswith("/mnt/"):
+        d = _startup_dir()
+        if not d:
+            return None
+        vendor = "Microsoft/Edge" if "msedge" in browser else "Google/Chrome"
+        return f"{d.split('/AppData/', 1)[0]}/AppData/Local/{vendor}/User Data"
+    name = os.path.basename(browser)
+    vendor = ("microsoft-edge" if "edge" in name else
+              "chromium" if "chromium" in name else "google-chrome")
+    return os.path.expanduser(f"~/.config/{vendor}")
+
+
 def _profile(browser: str, port: int) -> str | None:
     """Which browser profile to open the dashboard in, or None to let it choose.
 
@@ -89,17 +104,9 @@ def _profile(browser: str, port: int) -> str | None:
     so on a machine with four of them the login window is a coin flip. The tell is
     the dashboard's own origin in a profile's Preferences; newest-written profile
     wins, and last_used stands in when nothing has visited the dashboard yet."""
-    if browser.startswith("/mnt/"):
-        d = _startup_dir()
-        if not d:
-            return None
-        vendor = "Microsoft/Edge" if "msedge" in browser else "Google/Chrome"
-        root = f"{d.split('/AppData/', 1)[0]}/AppData/Local/{vendor}/User Data"
-    else:
-        name = os.path.basename(browser)
-        vendor = ("microsoft-edge" if "edge" in name else
-                  "chromium" if "chromium" in name else "google-chrome")
-        root = os.path.expanduser(f"~/.config/{vendor}")
+    root = _chrome_root(browser)
+    if not root:
+        return None
     for prefs in sorted(glob.glob(os.path.join(root, "*", "Preferences")),
                         key=os.path.getmtime, reverse=True):
         try:
@@ -114,6 +121,31 @@ def _profile(browser: str, port: int) -> str | None:
             return json.load(f)["profile"].get("last_used")
     except (OSError, ValueError, KeyError):
         return None
+
+
+def _profiles(browser: str) -> list[dict]:
+    """Every profile the browser knows, with its human name — the selector's list."""
+    root = _chrome_root(browser)
+    if not root:
+        return []
+    try:
+        with open(os.path.join(root, "Local State"), encoding="utf-8",
+                  errors="replace") as f:
+            cache = json.load(f)["profile"]["info_cache"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    return [{"dir": d, "name": v.get("name") or d}
+            for d, v in sorted(cache.items()) if isinstance(v, dict)]
+
+
+# The .cmd quotes the value, the .desktop entry quotes the whole argument —
+# match either, so state() can read a choice back out of whichever launcher.
+_PROFILE_RE = re.compile(r"--profile-directory=(?:\"([^\"]+)\"|([^']+)')")
+
+
+def _written_profile(text: str) -> str | None:
+    m = _PROFILE_RE.search(text)
+    return (m.group(1) or m.group(2)) if m else None
 
 
 def _distro() -> str:
@@ -165,7 +197,7 @@ WantedBy=default.target
 """
 
 
-def _script(open_window: bool) -> str:
+def _script(open_window: bool, profile: str | None = None) -> str:
     from bridge import config
     port = config.DASH_PORT
     distro, user = _distro(), getpass.getuser()
@@ -176,10 +208,11 @@ def _script(open_window: bool) -> str:
         "REM Booting the WSL distro is the whole trick: systemd + linger bring the",
         "REM bridge up on their own once Windows touches the distro. Then wait for",
         "REM the port to actually answer, because WSL boot plus bridge start takes",
-        "REM several seconds and a blind sleep races it.",
+        "REM several seconds and a blind sleep races it. Quarter-second polls, so",
+        "REM the window opens the moment it answers (same 60s ceiling).",
         "",
-        f'wsl.exe -d {distro} -u {user} -e bash -c "for i in $(seq 1 60); do '
-        f'curl -sf -o /dev/null http://127.0.0.1:{port}/ && exit 0; sleep 1; done; exit 1"',
+        f'wsl.exe -d {distro} -u {user} -e bash -c "for i in $(seq 1 240); do '
+        f'curl -sf -o /dev/null http://127.0.0.1:{port}/ && exit 0; sleep 0.25; done; exit 1"',
         "",
         "if errorlevel 1 (",
         f"  echo mystical//assistant did not answer on :{port} within 60s.",
@@ -190,7 +223,7 @@ def _script(open_window: bool) -> str:
     ]
     browser = _browser()
     if open_window and browser:
-        prof = _profile(browser, port)
+        prof = profile or _profile(browser, port)
         pick = f' --profile-directory="{prof}"' if prof else ""
         lines += ["", f'start "" "{_win_path(browser)}"{pick} '
                       f'--app=http://localhost:{port}/']
@@ -198,23 +231,23 @@ def _script(open_window: bool) -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
-def _desktop() -> str:
+def _desktop(profile: str | None = None) -> str:
     """The autostart entry for a Linux desktop. No distro to boot here — the unit
     already started at boot under linger — so this is only the window."""
     from bridge import config
     port, browser = config.DASH_PORT, _browser()
-    prof = _profile(browser, port)
+    prof = profile or _profile(browser, port)
     pick = f" '--profile-directory={prof}'" if prof else ""
     # Quoting: the Desktop Entry spec only makes ", `, $ and \ special inside a
     # quoted Exec, so a $-free shell line needs no escaping at all.
-    # ponytail: the wait is unbounded — one sh and a curl a second if the bridge
-    # never answers. Bound it if that ever turns up in a process list.
+    # ponytail: the wait is unbounded — one sh and four curls a second if the
+    # bridge never answers. Bound it if that ever turns up in a process list.
     return ("[Desktop Entry]\n"
             "Type=Application\n"
             "Name=mystical//assistant\n"
             "Comment=Opens the dashboard once the bridge answers\n"
             f'Exec=sh -c "until curl -sf -o /dev/null http://127.0.0.1:{port}/; '
-            f'do sleep 1; done; exec {browser}{pick} --app=http://localhost:{port}/"\n'
+            f'do sleep 0.25; done; exec {browser}{pick} --app=http://localhost:{port}/"\n'
             "X-GNOME-Autostart-enabled=true\n")
 
 
@@ -223,7 +256,8 @@ def state() -> dict:
     """Never raises — the UI needs something to render on every host."""
     if not _has_systemd():
         return {"supported": False, "reason": "no systemd on this machine",
-                "login": False, "window": False, "supervised": False, "browser": None}
+                "login": False, "window": False, "supervised": False,
+                "browser": None, "profiles": [], "profile": None}
     browser = _browser()
     base = {
         "supported": True,
@@ -232,16 +266,25 @@ def state() -> dict:
         # from before the launcher learned about systemd leaves this false.
         "supervised": _systemctl("is-active", UNIT).stdout.strip() == "active",
         "browser": os.path.basename(browser) if browser else None,
+        # For the selector; the launcher's flag is the persisted choice.
+        "profiles": _profiles(browser) if browser else [],
     }
     enabled = _systemctl("is-enabled", UNIT).stdout.strip() == "enabled"
     if not _wsl():
         # Nothing to wake: the unit starts at boot and the window comes from
         # ~/.config/autostart, both of them ours.
-        return {**base, "login": enabled, "window": os.path.isfile(_AUTOSTART)}
+        text = ""
+        try:
+            with open(_AUTOSTART, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            pass
+        return {**base, "login": enabled, "window": os.path.isfile(_AUTOSTART),
+                "profile": _written_profile(text)}
     d = _startup_dir()
     if not d:
         return {**base, "supported": False, "login": False, "window": False,
-                "browser": None,
+                "browser": None, "profiles": [], "profile": None,
                 "reason": "no single Windows Startup folder found (several profiles?)"}
     text = ""
     try:
@@ -251,12 +294,14 @@ def state() -> dict:
         pass
     # Both halves have to be in place; if they drift apart the switch reads
     # off, and turning it on writes both back.
-    return {**base, "login": bool(text) and enabled, "window": "--app=" in text}
+    return {**base, "login": bool(text) and enabled, "window": "--app=" in text,
+            "profile": _written_profile(text)}
 
 
-def apply(login: bool, window: bool) -> dict:
+def apply(login: bool, window: bool, profile: str | None = None) -> dict:
     """Write or remove both artefacts. Raises RuntimeError with something worth
-    showing the user; the caller turns that into a 400."""
+    showing the user; the caller turns that into a 400. `profile` pins the
+    browser profile the window opens in; None keeps the auto-guess."""
     st = state()
     if not st["supported"]:
         raise RuntimeError(st["reason"] or "not supported on this machine")
@@ -278,11 +323,11 @@ def apply(login: bool, window: bool) -> dict:
                        capture_output=True, text=True, timeout=20)
         if cmd:
             with open(cmd, "w", encoding="utf-8", newline="") as f:
-                f.write(_script(window))
+                f.write(_script(window, profile))
         elif window and _browser():
             os.makedirs(os.path.dirname(_AUTOSTART), exist_ok=True)
             with open(_AUTOSTART, "w", encoding="utf-8") as f:
-                f.write(_desktop())
+                f.write(_desktop(profile))
         elif os.path.isfile(_AUTOSTART):
             os.remove(_AUTOSTART)
     else:

@@ -38,10 +38,60 @@ def test_script_opens_a_window_only_when_asked():
 
 
 def test_script_waits_rather_than_sleeping():
-    """A fixed sleep races WSL boot; the loop is the whole point of the file."""
+    """A fixed sleep races WSL boot; the loop is the whole point of the file.
+    Quarter-second polls, so the window opens the moment the port answers."""
     text = startup._script(True)
-    assert "for i in $(seq 1 60)" in text
+    assert "for i in $(seq 1 240)" in text
+    assert "sleep 0.25" in text
     assert "errorlevel 1" in text
+
+
+def test_script_takes_an_explicit_profile_over_the_guess(monkeypatch):
+    monkeypatch.setattr(startup, "_browser",
+                        lambda: "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe")
+    monkeypatch.setattr(startup, "_profile", lambda *_: "Profile 2")
+    assert '--profile-directory="Profile 4"' in startup._script(True, "Profile 4")
+    # No choice made: the guess still decides, as it always has.
+    assert '--profile-directory="Profile 2"' in startup._script(True)
+
+
+def test_profiles_lists_what_the_browser_knows(tmp_path, monkeypatch):
+    """The selector needs every profile with its human name, not just the guess."""
+    win = tmp_path / "Users/me"
+    startup_dir = win / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    startup_dir.mkdir(parents=True)
+    data = win / "AppData/Local/Google/Chrome/User Data"
+    data.mkdir(parents=True)
+    (data / "Local State").write_text(
+        '{"profile":{"info_cache":{"Default":{"name":"Alice"},'
+        '"Profile 2":{"name":"Work"},"Profile 3":{}}}}')
+    monkeypatch.setattr(startup, "_startup_dir", lambda: str(startup_dir))
+    chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+    assert startup._profiles(chrome) == [
+        {"dir": "Default", "name": "Alice"},
+        {"dir": "Profile 2", "name": "Work"},
+        {"dir": "Profile 3", "name": "Profile 3"},   # no name recorded: the dir stands in
+    ]
+    # No Local State at all — an empty list, never a raise.
+    monkeypatch.setattr(startup, "_startup_dir", lambda: str(tmp_path / "no/x"))
+    assert startup._profiles(chrome) == []
+
+
+def test_state_reports_the_profile_written_into_the_launcher(tmp_path, monkeypatch):
+    """What the selector shows must be what the .cmd will actually do."""
+    (tmp_path / startup.CMD_NAME).write_text(
+        'wsl.exe ...\r\nstart "" "C:\\chrome.exe" --profile-directory="Profile 2" '
+        '--app=http://localhost:8790/\r\n')
+    monkeypatch.setattr(startup, "_wsl", lambda: True)
+    monkeypatch.setattr(startup, "_has_systemd", lambda: True)
+    monkeypatch.setattr(startup, "_startup_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(startup, "_systemctl", _fake_systemctl([]))
+    monkeypatch.setattr(startup, "_browser", lambda: "/mnt/c/x/chrome.exe")
+    monkeypatch.setattr(startup, "_profiles",
+                        lambda _b: [{"dir": "Profile 2", "name": "Work"}])
+    st = startup.state()
+    assert st["profile"] == "Profile 2"
+    assert st["profiles"] == [{"dir": "Profile 2", "name": "Work"}]
 
 
 def test_state_reports_why_when_there_is_no_windows_side(monkeypatch):
@@ -184,7 +234,15 @@ def test_linux_gets_an_autostart_entry_instead_of_a_windows_launcher(tmp_path, m
     text = entry.read_text()
     assert "Exec=sh -c" in text and "--app=http://localhost:" in text
     assert "'--profile-directory=Profile 5'" in text
+    assert "sleep 0.25" in text
     assert "$" not in text, "a $ in Exec needs escaping the spec makes fiddly"
+
+    # An explicit choice beats the guess, and state() reads it back out of the
+    # entry — the artifact is the persistence.
+    monkeypatch.setattr(startup, "_profiles", lambda _b: [])
+    st = startup.apply(True, True, "Profile 7")
+    assert "'--profile-directory=Profile 7'" in entry.read_text()
+    assert st["profile"] == "Profile 7"
 
     startup.apply(True, False)          # window off, login still on
     assert not entry.exists()
