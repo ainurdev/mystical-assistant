@@ -1,8 +1,18 @@
 // Grouping runs of consecutive tool events in a transcript turn. Pure — the
 // renderer decides what a "block" is, this only groups.
 
-/** Events that render nothing, so they can't break a run. */
-const INVISIBLE = new Set(["tool_done", "permission_resolved", "question_answered"]);
+/** Only what the grouping reads: the discriminator, plus the text that decides
+ *  whether a `thinking` event is a paragraph or just a pause. */
+type Ev = { type: string; text?: string };
+
+/** Events that take no row of their own, so they can't break a run. A textless
+ *  `thinking` is a pause — both frontends draw it as a zero-height mark, so a
+ *  22-second think between two commands must not split their card in two. */
+const invisible = (e: Ev) =>
+  e.type === "tool_done" ||
+  e.type === "permission_resolved" ||
+  e.type === "question_answered" ||
+  (e.type === "thinking" && !e.text);
 
 /** Shortest run worth folding — two chips is not yet noise. */
 export const MIN_RUN = 3;
@@ -17,7 +27,7 @@ export const MIN_RUN = 3;
  * renderer knows which rows the head now draws.
  */
 export function runsOf(
-  events: { type: string }[],
+  events: Ev[],
   keyOf: (i: number) => string | null,
   min: number,
 ): { folds: Map<number, number[]>; headOf: Map<number, number> } {
@@ -41,7 +51,7 @@ export function runsOf(
       if (k !== key) flush();
       key = k;
       run.push(i);
-    } else if (!INVISIBLE.has(e.type)) {
+    } else if (!invisible(e)) {
       flush();
     }
   });
@@ -57,7 +67,7 @@ export function runsOf(
  * terminal, an edit diff) — those break a run rather than joining it.
  */
 export function foldChips(
-  events: { type: string }[],
+  events: Ev[],
   blocky: (i: number) => boolean,
 ): { folds: Map<number, number[]>; headOf: Map<number, number> } {
   return runsOf(events, (i) => (blocky(i) ? null : "chip"), MIN_RUN);
@@ -70,7 +80,7 @@ export function foldChips(
  * a head and its members would render neither, and those events would silently
  * vanish. Returns the earliest head owning anything at or after `cut`.
  *
- * Checking only `events[cut]` is not enough: an INVISIBLE event joins no run but
+ * Checking only `events[cut]` is not enough: an invisible event joins no run but
  * doesn't break one either, so a run can straddle the cut without `cut` itself
  * belonging to it.
  */
@@ -84,4 +94,15 @@ export function headSafeCut(
   for (let i = cut; i < count; i++)
     for (const h of heads) from = Math.min(from, h.get(i) ?? i);
   return from;
+}
+
+
+/**
+ * Does `i` fall between a run's head and its last member? The head draws the
+ * whole card, so an invisible event swallowed mid-run renders *after* it — a
+ * gap mark would float at the card's foot, and two of them would stack on the
+ * same pixel. The renderer drops those instead.
+ */
+export function insideRun(i: number, ...runs: Map<number, number[]>[]): boolean {
+  return runs.some((m) => [...m.values()].some((r) => r[0] < i && r[r.length - 1] > i));
 }

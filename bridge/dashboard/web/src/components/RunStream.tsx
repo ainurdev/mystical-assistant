@@ -16,7 +16,7 @@ import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
-import { foldChips, runsOf, headSafeCut } from "../lib/toolfold";
+import { foldChips, runsOf, headSafeCut, insideRun } from "../lib/toolfold";
 import { cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, type CmdKind } from "../lib/tools";
 
 // Result blocks already "printed" this session — guards against re-typing when a
@@ -213,7 +213,7 @@ function CommandRow({
       className="group/cmd border-t border-border first:border-t-0"
       style={animate ? { animation: "termLine .3s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <div className="flex items-start gap-1 px-2.5 py-1.5 hover:bg-[var(--ac-03)]">
+      <div className="flex items-start gap-1 px-2.5 py-1.5 transition-colors duration-200 hover:bg-[var(--ac-03)]">
         {lights && (
           <span className="mt-[6px] mr-1 flex-none">
             <Lights accent={failed ? "var(--err)" : running ? "var(--warn)" : "var(--ok)"} running={running} />
@@ -238,10 +238,19 @@ function CommandRow({
             }`}
           >
             {said ? (
-              <>
-                <span className="font-sans group-hover/cmd:hidden">{said}</span>
-                <span className="hidden group-hover/cmd:inline">{command}</span>
-              </>
+              // Stacked in one grid cell so the swap dissolves instead of cutting,
+              // and gated on hover intent: a cursor crossing the transcript on its
+              // way somewhere else rewrites nothing. Only a cursor that stops on
+              // the row for ~250ms gets the command, over a slow fade — the reveal
+              // is for reading, and reading is something you stop to do.
+              <span className="inline-grid max-w-full">
+                <span className="col-start-1 row-start-1 truncate font-sans transition-opacity duration-200 group-hover/cmd:opacity-0 group-hover/cmd:delay-250">
+                  {said}
+                </span>
+                <span aria-hidden className="col-start-1 row-start-1 truncate opacity-0 transition-opacity duration-200 group-hover/cmd:opacity-100 group-hover/cmd:delay-[310ms]">
+                  {command}
+                </span>
+              </span>
             ) : (
               command
             )}
@@ -255,14 +264,14 @@ function CommandRow({
           <span className="mt-[3px] flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px] text-muted-2">
             {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
             {done?.ms ? (
-              <span className={slow(done.ms) ? "" : "opacity-0 transition-opacity group-hover/cmd:opacity-100"}>
+              <span className={slow(done.ms) ? "" : "opacity-0 transition-opacity duration-200 group-hover/cmd:opacity-100 group-hover/cmd:delay-250"}>
                 {dur(done.ms)}
               </span>
             ) : null}
             {lines > 0 && <span>{lines}L</span>}
           </span>
         </button>
-        <span className="mt-[2px] flex flex-none items-center gap-1.5 opacity-0 transition-opacity group-hover/cmd:opacity-100">
+        <span className="mt-[2px] flex flex-none items-center gap-1.5 opacity-0 transition-opacity duration-200 group-hover/cmd:opacity-100 group-hover/cmd:delay-250">
           <CopyBtn text={command} title="copy command" />
           {onRerun && (
             <HeadBtn title="run this again in a terminal" onClick={() => onRerun(command)}>
@@ -1336,7 +1345,11 @@ export const RunStream = memo(function RunStream({
             );
           }
           case "thinking":
-            if (!event.text) return event.ms ? <GapMark key={i} ms={event.ms} /> : null;
+            // A pause swallowed by a group is drawn by nobody: its mark would
+            // land at the foot of the card instead of between the rows it fell
+            // between, and two of them would stack on the same pixel.
+            if (!event.text)
+              return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
             return <ThinkingRow key={i} ms={event.ms} text={event.text} animate={animate} />;
           case "log":
             return (

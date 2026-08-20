@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
-import { foldChips, runsOf, headSafeCut } from "../lib/toolfold";
+import { foldChips, runsOf, headSafeCut, insideRun } from "../lib/toolfold";
 import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
@@ -911,7 +911,11 @@ export const RunStream = memo(function RunStream({
             );
           }
           case "thinking":
-            if (!event.text) return event.ms ? <GapMark key={i} ms={event.ms} /> : null;
+            // A pause swallowed by a group is drawn by nobody: its mark would
+            // land at the foot of the card instead of between the rows it fell
+            // between, and two of them would stack on the same pixel.
+            if (!event.text)
+              return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
             return <ThinkingRow key={i} ms={event.ms} text={event.text} />;
           case "log":
             return (

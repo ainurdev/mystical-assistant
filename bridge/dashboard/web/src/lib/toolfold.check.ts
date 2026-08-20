@@ -1,12 +1,12 @@
 // Run: node bridge/dashboard/web/src/lib/toolfold.check.ts
-import { foldChips, runsOf, headSafeCut } from "./toolfold.ts";
+import { foldChips, runsOf, headSafeCut, insideRun } from "./toolfold.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
   console.log(`ok - ${what}`);
 };
 
-const t = (type: string) => ({ type });
+const t = (type: string, text?: string) => ({ type, text });
 const none = () => false;
 
 // tool_done between chips must not break the run.
@@ -90,6 +90,27 @@ const none = () => false;
   const evs = [t("tool"), t("text"), t("text"), t("text")];
   const { headOf } = foldChips(evs, none);
   ok(headSafeCut(evs.length, 2, headOf) === 2, "an unfolded cut is left alone");
+}
+
+// A bare pause (a textless `thinking`, drawn as a zero-height gap mark) must not
+// split one run of commands into two cards; a thought with prose still does.
+{
+  const bash = [0, 2, 4];
+  const evs = [t("tool"), t("thinking"), t("tool"), t("thinking"), t("tool")];
+  const { folds } = runsOf(evs, (i) => (bash.includes(i) ? "bash" : null), 2);
+  ok(folds.get(0)?.join() === "0,2,4", `pauses keep one window: ${folds.get(0)}`);
+
+  const spoke = [t("tool"), t("thinking", "hmm"), t("tool")];
+  const two = runsOf(spoke, (i) => (i === 1 ? null : "bash"), 2).folds;
+  ok(two.size === 0, "a thought with text still breaks the run");
+}
+
+// insideRun: only what a head's card draws over is swallowed.
+{
+  const runs = new Map([[0, [0, 2, 4]]]);
+  ok(insideRun(1, runs) && insideRun(3, runs), "a gap between the members is swallowed");
+  ok(!insideRun(5, runs), "a gap after the last member still draws");
+  ok(!insideRun(3, new Map()), "no runs, nothing swallowed");
 }
 
 console.log("\nall toolfold checks passed");
