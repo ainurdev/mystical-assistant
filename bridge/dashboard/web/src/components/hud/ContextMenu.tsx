@@ -133,7 +133,11 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
       {open && !closing && (
         <div data-ctxmenu="1" onMouseEnter={() => clearTimeout(shut.current)}
           style={{ ...PANEL, left: subX, top: subY, zIndex: 98, animation: "ctxIn .18s cubic-bezier(.16,.84,.3,1) both" }}>
-          <div className="mscroll" style={{ padding: "4px 0", maxHeight: vh - 16, overflowY: "auto" }}>
+          {/* Clamped to what's left below the submenu's own top, not the whole
+              viewport — menuH only estimates wrapped hints, so a long section
+              (More, with a relocate row per worktree) otherwise runs off the
+              bottom edge instead of scrolling. */}
+          <div className="mscroll" style={{ padding: "4px 0", maxHeight: vh - subY - 16, overflowY: "auto" }}>
             <Rows items={open.items} onClose={onClose} />
           </div>
         </div>
