@@ -79,6 +79,10 @@ function stripMarker(node: unknown): unknown {
   return node;
 }
 
+/** Opening a file from prose: the path, the line it named, and where on screen
+ *  the link sits (so an ambiguous name can be asked about in place). */
+export type OpenFile = (path: string, line?: number, at?: { x: number; y: number }) => void;
+
 /** An inline code span that names a file, drawn as a link into the editor. The
  *  icon is the same filetype icon the file browser uses, so a path reads as a
  *  file at a glance rather than as more monospace. */
@@ -88,12 +92,17 @@ function FileRefSpan({
   path: string;
   line?: number;
   label: string;
-  onOpen: (path: string, line?: number) => void;
+  onOpen: OpenFile;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onOpen(path, line)}
+      // The link's own box is the anchor: a bare filename can name two files,
+      // and the picker that asks which one has to open under the word clicked.
+      onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        onOpen(path, line, { x: r.left, y: r.bottom + 4 });
+      }}
       title={`Open ${path}${line ? ` at line ${line}` : ""}`}
       className="md-fileref"
     >
@@ -109,7 +118,7 @@ export const Markdown = memo(function Markdown({
   children: string;
   className?: string;
   /** Given, inline code that parses as a repo path becomes a link. */
-  onOpenFile?: (path: string, line?: number) => void;
+  onOpenFile?: OpenFile;
 }) {
   return (
     <div className={`md ${className}`}>

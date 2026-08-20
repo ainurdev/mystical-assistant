@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/filepath.check.ts
-import { parseFileRef, resolveFileRef } from "./filepath.ts";
+import { distinctDirs, parseFileRef, resolveFileRef } from "./filepath.ts";
 
 const yes: [string, string, number | undefined][] = [
   ["bridge/runner.py", "bridge/runner.py", undefined],
@@ -65,6 +65,45 @@ const hinted: [string, string[], string | null][] = [
 for (const [input, hints, want] of hinted) {
   const got = resolveFileRef(tree, input, hints);
   console.assert(got === want, `resolve ${input} +hints → ${got}, wanted ${want}`);
+}
+
+// A tool summary is a whole Bash command, not a bare path — the case every
+// bypass-permissions session produces, where nothing is read through Read.
+const tools = [
+  "bridge/dashboard/web/src/App.tsx",
+  "bridge/dashboard/web/src/lib/tools.ts",
+  "bridge/miniapp/web/src/lib/tools.ts",
+];
+const cmd: [string, string[], string | null][] = [
+  ["tools.ts", ["sed -n 1,80p bridge/miniapp/web/src/lib/tools.ts"], "bridge/miniapp/web/src/lib/tools.ts"],
+  ["tools.ts", ["python3 - <<'PY'\np = pathlib.Path(\"bridge/dashboard/web/src/lib/tools.ts\")\nPY"],
+    "bridge/dashboard/web/src/lib/tools.ts"],
+  // A command naming both decides nothing; the older, single-file one does.
+  ["tools.ts", ["diff -u bridge/miniapp/web/src/lib/tools.ts bridge/dashboard/web/src/lib/tools.ts | head -60",
+                "cat bridge/dashboard/web/src/lib/tools.ts"], "bridge/dashboard/web/src/lib/tools.ts"],
+  ["tools.ts", ["diff -u bridge/miniapp/web/src/lib/tools.ts bridge/dashboard/web/src/lib/tools.ts"], null],
+  ["tools.ts", ["grep -rn cmdAbstract bridge/"], null],
+];
+for (const [input, hints, want] of cmd) {
+  const got = resolveFileRef(tools, input, hints);
+  console.assert(got === want, `resolve ${input} +cmd hints → ${got}, wanted ${want}`);
+}
+
+// A path only matches on a segment boundary: `mega/lib` is not `a/lib`.
+const near = ["a/lib/tools.ts", "mega/lib/tools.ts"];
+console.assert(resolveFileRef(near, "tools.ts", ["cat mega/lib/tools.ts"]) === "mega/lib/tools.ts",
+  "suffix of another candidate must not count as a mention");
+
+// distinctDirs: what the picker labels its rows with.
+const dirs: [string[], string[]][] = [
+  [["bridge/dashboard/web/src/lib/x.ts", "bridge/miniapp/web/src/lib/x.ts"],
+    ["dashboard/web/src/lib", "miniapp/web/src/lib"]],
+  [["a/x.ts", "b/x.ts"], ["a", "b"]],
+  [["x.ts", "a/x.ts"], [".", "a"]],
+];
+for (const [input, want] of dirs) {
+  const got = distinctDirs(input);
+  console.assert(got.join("|") === want.join("|"), `distinctDirs ${input} → ${got}, wanted ${want}`);
 }
 
 console.log("filepath ok");

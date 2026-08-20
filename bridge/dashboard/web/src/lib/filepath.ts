@@ -47,22 +47,45 @@ export function fileRefCandidates(files: string[], path: string): string[] {
   return files.filter((f) => f.endsWith(`/${path}`));
 }
 
+/** Does this hint name that file? A hint is what a tool call was about, and for
+ *  a Bash call that is the whole command line — `sed -n 1,80p a/b.ts`, a heredoc
+ *  with the path buried in it. So the path is a substring of the hint, never the
+ *  hint itself. The boundary check is what keeps `mega/lib/x.ts` from counting
+ *  as a mention of `a/lib/x.ts`. */
+function mentions(hint: string, file: string): boolean {
+  for (let i = hint.indexOf(file); i >= 0; i = hint.indexOf(file, i + 1))
+    if (!/[\w.-]/.test(hint[i - 1] ?? "")) return true;
+  return false;
+}
+
 /** The parsed path, matched against the working tree it will be opened in.
  *
  *  A path in prose is a claim, not a fact: the model names files it has not
  *  created yet, and it writes them relative to whatever directory it was
  *  thinking in. Both land the editor on nothing. One candidate → that's it.
  *  Several (`App.tsx` lives in three packages here) → the one this session has
- *  actually been in, which is what the sentence meant: `hints` are the paths
- *  its tools touched, newest first. Still undecidable → null, and the click
- *  says so instead of opening an empty or wrong buffer.
+ *  actually been in, which is what the sentence meant: `hints` are its tool
+ *  summaries, newest first. A hint that names several candidates (`diff a b`)
+ *  settles nothing and the next one down gets to decide. Still undecidable →
+ *  null, and the caller asks instead of opening a wrong buffer.
  */
 export function resolveFileRef(files: string[], path: string, hints: string[] = []): string | null {
   const hits = fileRefCandidates(files, path);
   if (hits.length <= 1) return hits[0] ?? null;
   for (const h of hints) {
-    const hit = hits.find((f) => h === f || h.endsWith(`/${f}`));
-    if (hit) return hit;
+    const named = hits.filter((f) => mentions(h, f));
+    if (named.length === 1) return named[0];
   }
   return null;
+}
+
+/** What a reader has to compare when picking between same-named files: each
+ *  candidate's directory, minus the leading segments all of them share.
+ *  `bridge/{dashboard,miniapp}/web/src/lib/x.ts` → `dashboard/web/src/lib` ·
+ *  `miniapp/web/src/lib`. The filename is already on the chip they clicked. */
+export function distinctDirs(paths: string[]): string[] {
+  const segs = paths.map((p) => p.split("/").slice(0, -1));
+  let i = 0;
+  while (segs.every((s) => i < s.length - 1 && s[i] === segs[0][i])) i++;
+  return segs.map((s) => s.slice(i).join("/") || ".");
 }

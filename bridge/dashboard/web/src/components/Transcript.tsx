@@ -5,6 +5,7 @@ import { api, type AnswerSelection } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
+import type { OpenFile } from "./Markdown";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
 import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
@@ -144,7 +145,7 @@ function TurnBlock({
   onRespond: Respond;
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
-  onOpenFile?: (path: string, line?: number) => void;
+  onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
 }) {
   const working = isActive && turn.status === "running" && turn.pending.length === 0;
@@ -243,7 +244,7 @@ export function Transcript({
   hud?: HudSettings;
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
-  onOpenFile?: (path: string, line?: number) => void;
+  onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
   hasOlder?: boolean;
   olderLoading?: boolean;

@@ -53,7 +53,7 @@ import { branchForSession } from "./lib/issuebranch";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
-import { fileRefCandidates, resolveFileRef } from "./lib/filepath";
+import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -279,7 +279,9 @@ export function App() {
   const setPonytail = (p: string) => patchSettings({ ponytail: p });
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
   // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
-  const [analyzeFile, setAnalyzeFile] = useState<{ path: string; branch?: string } | null>(null);
+  const [analyzeFile, setAnalyzeFile] = useState<{ path: string; branch?: string; line?: number } | null>(null);
+  // Same-named files the click could have meant, waiting to be picked between.
+  const [filePick, setFilePick] = useState<{ x: number; y: number; name: string; line?: number; paths: string[] } | null>(null);
   // Set only when something opens the modal straight onto a tab (composer MAP).
   const [analyzeTab, setAnalyzeTab] = useState<AnalyzeTab | undefined>(undefined);
   // Set only by re-run on a transcript terminal block — typed into the PTY.
@@ -450,7 +452,7 @@ export function App() {
 
   // Every AnalyzeModal open goes through here so a stale file deep-link can't
   // survive into the next (plain) open.
-  function openAnalyze(rel: string, file?: { path: string; branch?: string }, tab?: AnalyzeTab,
+  function openAnalyze(rel: string, file?: { path: string; branch?: string; line?: number }, tab?: AnalyzeTab,
                        command?: string) {
     setAnalyzeFile(file ?? null);
     setAnalyzeTab(tab);
@@ -1110,11 +1112,10 @@ export function App() {
     setDrafts((d) => (text ? { ...d, [sid]: text } : omit(d, sid)));
   }
 
-  /** A path the model mentioned, opened in the editor. Routed through the same
-   *  call the file browser uses, so it lands on the session's own branch.
-   *  ponytail: the `:42` in a reference is parsed and then dropped — jumping to
-   *  the line means threading it through AnalyzeModal into the CM6 view. */
-  async function openFileRef(path: string) {
+  /** A path the model mentioned, opened in the editor — at the line it named,
+   *  if it named one. Routed through the same call the file browser uses, so it
+   *  lands on the session's own branch. */
+  async function openFileRef(path: string, line?: number, at?: { x: number; y: number }) {
     if (!sessionProject) { notify("info", "No project open for this session."); return; }
     // The path came out of prose, so check it against the tree we're about to
     // open it in — a file the model invented, or named from another directory,
@@ -1122,13 +1123,22 @@ export function App() {
     let target = path;
     try {
       const { files } = await api.filesTree(sessionProject, sessionBranch);
-      // A bare `App.tsx` matches one per package, so break the tie with the
-      // files this session's tools have touched (their summary is the path).
-      const touched = turns.flatMap((t) =>
-        t.events.flatMap((e) => (e.type === "tool" ? [e.summary] : []))).reverse();
+      // A bare `App.tsx` matches one per package, so break the tie with what
+      // this session has already said and done: tool summaries (a Bash command
+      // with the path inside it) and the model's own prose, which names files in
+      // full far more often than it abbreviates them.
+      // ponytail: a Bash summary is the command's first 120 chars (runner.py),
+      // so a path buried deeper in a heredoc is invisible here — the picker below
+      // catches those. Raising that cap means widening the bot's status line too.
+      const touched = turns.flatMap((t) => t.events.flatMap((e) =>
+        e.type === "tool" ? [e.summary] : e.type === "text" ? [e.text] : [])).reverse();
       const hit = resolveFileRef(files, path, touched);
       if (!hit) {
         const many = fileRefCandidates(files, path);
+        // Undecidable is a question, not an error: the candidates open as a menu
+        // under the link. A toast listing them would name the right file and
+        // still leave you to go find it in the tree yourself.
+        if (many.length > 1 && at) { setFilePick({ ...at, name: path, line, paths: many }); return; }
         notify("info", many.length > 1
           ? `Several files named ${path} — ${many.join("  ·  ")}`
           : `No such file in this branch — ${path}`);
@@ -1136,7 +1146,7 @@ export function App() {
       }
       target = hit;
     } catch { /* tree unreachable: open anyway, the editor reports its own error */ }
-    openAnalyze(sessionProject, { path: target, branch: sessionBranch });
+    openAnalyze(sessionProject, { path: target, branch: sessionBranch, line });
   }
 
   /** A line of the model's prose → a markdown blockquote in the prompt box, the
@@ -2005,9 +2015,10 @@ export function App() {
               <AnalyzeModal
                 // The file is part of the key so a second deep-link (same
                 // project, different file) remounts on that file.
-                key={`${analyzeProject}:${analyzeFile?.path ?? ""}:${analyzeTab ?? ""}:${analyzeCommand ?? ""}`}
+                key={`${analyzeProject}:${analyzeFile?.path ?? ""}:${analyzeFile?.line ?? ""}:${analyzeTab ?? ""}:${analyzeCommand ?? ""}`}
                 project={analyzeProject} badge={gitBadges.get(analyzeProject)}
                 initialFile={analyzeFile?.path} initialBranch={analyzeFile?.branch}
+                initialLine={analyzeFile?.line}
                 initialTab={analyzeTab} initialCommand={analyzeCommand}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
@@ -2049,6 +2060,19 @@ export function App() {
                 onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
+            {filePick && (
+              <ContextMenu
+                ctx={{ x: filePick.x, y: filePick.y, type: "file", id: "", label: filePick.name }}
+                items={distinctDirs(filePick.paths).map((dir, i) => ({
+                  icon: "▤", label: dir,
+                  onClick: () => {
+                    if (sessionProject)
+                      openAnalyze(sessionProject, { path: filePick.paths[i], branch: sessionBranch, line: filePick.line });
+                  },
+                }))}
+                onClose={() => setFilePick(null)}
+              />
+            )}
             {/* every plain title="" in here, drawn in the HUD's own type */}
             <NativeTips />
             <AskDialog />

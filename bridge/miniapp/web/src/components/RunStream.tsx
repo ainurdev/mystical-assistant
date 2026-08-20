@@ -856,8 +856,15 @@ export const RunStream = memo(function RunStream({
                   <Markdown className="text-sm leading-normal">{event.text}</Markdown>
                 </Card>
               );
+            // The agent talking, drawn as the mirror of your bubble: a bar down the
+            // left where yours is a rounded block on the right. Bare prose between
+            // filled cards is the one thing in a turn with nothing to catch a
+            // scrolling eye — and it is the part worth reading.
             return (
-              <Markdown key={i} className="text-sm leading-normal">
+              <Markdown
+                key={i}
+                className="my-2 border-l-2 border-[var(--brand-soft)] pl-2.5 text-sm leading-normal"
+              >
                 {event.text}
               </Markdown>
             );

@@ -57,6 +57,7 @@ interface Props {
   branchOpts: BranchOpt[];
   onPickBranch: (b: string) => void;
   initialFile?: string; // opened straight away (sidebar FILES → editor modal)
+  initialLine?: number;  // ...scrolled to this line (a chat `file.ts:42` link)
 }
 
 // One row in the quick-open palette: a file, a symbol, or (`>` mode) a command.
@@ -260,7 +261,7 @@ const crtTheme = EditorView.theme({
   },
 }, { dark: true });
 
-export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFile }: Props) {
+export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFile, initialLine }: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
@@ -340,6 +341,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     bufs.current.clear();
     setTabs(initialFile ? [initialFile] : []); setPeek(null);
     setOpen(initialFile ?? null); setMeta(null);
+    jumpRef.current = initialLine ?? 0;
     void api.filesTree(project, branch || undefined)
       .then((r) => {
         if (!live) return;
@@ -351,7 +353,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       })
       .catch(() => { if (live) { setPaths([]); setIgnored([]); } });
     return () => { live = false; };
-  }, [project, branch, initialFile]);
+  }, [project, branch, initialFile, initialLine]);
 
   const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
   const labels = useMemo(() => tabLabels(tabs), [tabs]);

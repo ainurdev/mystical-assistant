@@ -9,7 +9,7 @@ import {
 import { api, type AnswerSelection, type RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { SteerIcon } from "./Composer";
-import { Markdown } from "./Markdown";
+import { Markdown, type OpenFile } from "./Markdown";
 import { FileIcon } from "../lib/fileicon";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
@@ -238,19 +238,15 @@ function CommandRow({
             }`}
           >
             {said ? (
-              // Stacked in one grid cell so the swap dissolves instead of cutting,
-              // and gated on hover intent: a cursor crossing the transcript on its
-              // way somewhere else rewrites nothing. Only a cursor that stops on
-              // the row for ~250ms gets the command, over a slow fade — the reveal
-              // is for reading, and reading is something you stop to do.
-              <span className="inline-grid max-w-full">
-                <span className="col-start-1 row-start-1 truncate font-sans transition-opacity duration-200 group-hover/cmd:opacity-0 group-hover/cmd:delay-250">
-                  {said}
-                </span>
-                <span aria-hidden className="col-start-1 row-start-1 truncate opacity-0 transition-opacity duration-200 group-hover/cmd:opacity-100 group-hover/cmd:delay-[310ms]">
-                  {command}
-                </span>
-              </span>
+              // A cut, not a fade. Cross-fading the two leaves ~70ms where both
+              // are legible on top of each other, which is worse than any hard
+              // swap; staggering them blanks the row instead, and a hover-intent
+              // delay makes the row feel unresponsive. The tint carries the
+              // smoothness — the text just changes.
+              <>
+                <span className="font-sans group-hover/cmd:hidden">{said}</span>
+                <span className="hidden group-hover/cmd:inline">{command}</span>
+              </>
             ) : (
               command
             )}
@@ -264,14 +260,14 @@ function CommandRow({
           <span className="mt-[3px] flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px] text-muted-2">
             {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
             {done?.ms ? (
-              <span className={slow(done.ms) ? "" : "opacity-0 transition-opacity duration-200 group-hover/cmd:opacity-100 group-hover/cmd:delay-250"}>
+              <span className={slow(done.ms) ? "" : "opacity-0 transition-opacity group-hover/cmd:opacity-100"}>
                 {dur(done.ms)}
               </span>
             ) : null}
             {lines > 0 && <span>{lines}L</span>}
           </span>
         </button>
-        <span className="mt-[2px] flex flex-none items-center gap-1.5 opacity-0 transition-opacity duration-200 group-hover/cmd:opacity-100 group-hover/cmd:delay-250">
+        <span className="mt-[2px] flex flex-none items-center gap-1.5 opacity-0 transition-opacity group-hover/cmd:opacity-100">
           <CopyBtn text={command} title="copy command" />
           {onRerun && (
             <HeadBtn title="run this again in a terminal" onClick={() => onRerun(command)}>
@@ -1137,7 +1133,7 @@ export const RunStream = memo(function RunStream({
   openResults?: boolean;
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
-  onOpenFile?: (path: string, line?: number) => void;
+  onOpenFile?: OpenFile;
   /** Send a reply to a question the model asked in prose. Only the last, finished
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
@@ -1245,7 +1241,16 @@ export const RunStream = memo(function RunStream({
             return (
               <div key={i} style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
                 <MessageBlock text={event.text} onQuote={onQuote}>
-                  <Markdown className="pl-[18px] leading-relaxed text-[var(--txm)]" onOpenFile={onOpenFile}>{event.text}</Markdown>
+                  {/* The agent talking, drawn as the mirror of your prompt bubble: a
+                      solid bar down the left where yours wears one down the right.
+                      Bare prose between boxed, labelled cards is the one thing in a
+                      turn with nothing to catch a scrolling eye — and it is the part
+                      worth reading. No box and no tag, so it stays the quietest
+                      member of the family; just enough edge to be findable. */}
+                  <Markdown
+                    className="my-2 ml-[18px] border-l-2 border-[var(--acc)] pl-2 leading-relaxed text-[var(--tx)]"
+                    onOpenFile={onOpenFile}
+                  >{event.text}</Markdown>
                 </MessageBlock>
               </div>
             );

@@ -7,6 +7,7 @@ import { surfaceFor, projectTint } from "../../lib/surfaces";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
+import type { OpenFile } from "../Markdown";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
@@ -212,7 +213,7 @@ export function Terminal({
   /** Re-run a transcript command in this project's TERMINAL tab. */
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
-  onOpenFile?: (path: string, line?: number) => void;
+  onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;

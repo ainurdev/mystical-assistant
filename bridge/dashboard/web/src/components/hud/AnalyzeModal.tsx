@@ -37,6 +37,9 @@ interface Props {
   // on this file, in the branch's worktree the explorer was listing.
   initialFile?: string;
   initialBranch?: string;
+  /** Line named by a chat file reference (`RunStream.tsx:190`) — the editor
+      opens scrolled to it. */
+  initialLine?: number;
   initialTab?: Tab;
   /** Re-run from a transcript terminal block: typed into the TERMINAL tab's PTY. */
   initialCommand?: string;
@@ -240,7 +243,7 @@ export function AnalyzeModal(props: Props) {
           )}
           {tab === "editor" && (
             <EditorTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
-              onPickBranch={setSelectedBranch} initialFile={props.initialFile} />
+              onPickBranch={setSelectedBranch} initialFile={props.initialFile} initialLine={props.initialLine} />
           )}
           {tab === "terminal" && (
             <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount}
