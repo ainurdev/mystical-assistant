@@ -1551,11 +1551,14 @@ function StartupSection() {
     void api.startup().then(setSt).catch(() => setSt(null));
   }, []);
 
-  async function save(login: boolean, win: boolean) {
+  // The toggles pass no profile and keep the current pin; the selector passes
+  // its pick (null = back to the auto-guess).
+  async function save(login: boolean, win: boolean, profile?: string | null) {
     setBusy(true);
     setErr(null);
     try {
-      setSt((await api.setStartup(login, win)).startup);
+      const pin = profile === undefined ? (st?.profile ?? null) : profile;
+      setSt((await api.setStartup(login, win, pin)).startup);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1626,6 +1629,27 @@ function StartupSection() {
                 onClick={() => !busy && st?.login && void save(true, !st.window)}
               />
             </Row>
+            {/* Absent `profiles` = a bridge older than the selector; hide the row. */}
+            {!!st?.window && !!st?.login && !!st.profiles?.length && (
+              <Row
+                label="AS PROFILE"
+                desc="Which browser profile the window opens in. AUTO guesses the one that visits the dashboard."
+              >
+                <select
+                  value={st.profile ?? ""}
+                  disabled={busy}
+                  onChange={(e) => void save(true, true, e.target.value || null)}
+                  style={{ ...field, flex: "none", maxWidth: 220 }}
+                >
+                  <option value="">AUTO</option>
+                  {st.profiles.map((p) => (
+                    <option key={p.dir} value={p.dir}>
+                      {p.name === p.dir ? p.dir : `${p.name} — ${p.dir}`}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            )}
           </>
         )}
       </div>
