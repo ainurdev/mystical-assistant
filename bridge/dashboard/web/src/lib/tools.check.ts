@@ -45,3 +45,11 @@ ok(abs("mystical status 2>&1 | head -20") === "mystical status", "a pipe into he
 ok(abs("python3 - <<'PY'\nimport os\nPY") === "run a python snippet", `heredoc: ${abs("python3 - <<'PY'")}`);
 ok(abs("./node_modules/.bin/vite build") === "build the app", "a binary out of node_modules is still vite");
 ok(abs("for d in /proc/*; do echo $d; done") === "", "a shell loop has no honest summary, so the row keeps the command");
+
+// A `cd` into the worktree and an `echo` banner are how a turn labels its own
+// output; the row has to say what came after them, not what came before.
+ok(cmdKind('cd /x/staging\necho "=== routes ==="\ngrep -rn foo app') === "search", "a banner does not become the row's icon");
+ok(abs('cd /x/staging\necho "=== A.1 import routes ==="; grep -rn "import" routes/web.php') === "search “import” in web.php",
+   `past cd and echo: ${abs('cd /x\necho "=== A ==="; grep -rn "import" routes/web.php')}`);
+ok(abs("cd bridge/dashboard/web && npm run build") === "run the build script", `a cd is not "+1 more": ${abs("cd bridge/dashboard/web && npm run build")}`);
+ok(abs('grep -rn "risk_estimate\\|residual" app') === "search “risk_estimate” in the tree", `a segment cut mid-quote keeps no escape: ${abs('grep -rn "a\\|b" app')}`);

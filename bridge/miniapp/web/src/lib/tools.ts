@@ -67,8 +67,9 @@ export type CmdKind =
   | "pkg" | "test" | "net" | "proc" | "db" | "docker" | "shell";
 
 // Scaffolding in front of the real command. `cd` owns its whole segment (its
-// argument is a path, not a binary); the rest only shadow the next token.
-const SEG_SKIP = new Set(["cd", "pushd", "popd", "export", "source", "."]);
+// argument is a path, not a binary), and an `echo` banner is the model
+// labelling its own output — never the work. The rest only shadow the next token.
+const SEG_SKIP = new Set(["cd", "pushd", "popd", "export", "source", ".", "echo"]);
 const PREFIX = new Set(["sudo", "env", "timeout", "exec", "nohup", "setsid", "command", "time", "stdbuf"]);
 // A loop or a conditional is a shell program, not a command: nothing inside it
 // stands for the whole line, so both the icon and the phrase give up on it.
@@ -94,7 +95,9 @@ const BIN: Record<string, CmdKind> = {
 };
 
 /** The leading command of a line, past the scaffolding: `cd x && git log -3`
- *  is git, with ["log", "-3"] behind it. Empty when nothing leads. */
+ *  is git, with ["log", "-3"] behind it. Empty when nothing leads.
+ *  ponytail: separators are split blind, so a `|` inside quotes ends a segment
+ *  early; a real shell tokenizer only if a phrase ever comes out wrong-headed. */
 function lead(command: string): { bin: string; args: string[] } {
   for (const seg of command.split(/&&|\|\||[|;\n]/)) {
     const toks = seg.trim().split(/\s+/);
@@ -111,6 +114,11 @@ function lead(command: string): { bin: string; args: string[] } {
   return { bin: "", args: [] };
 }
 
+/** A segment that only sets the stage — a `cd`, a printed banner. Not work, so
+ *  it never counts toward the "+N more" the phrase owes the reader. */
+const isScaffold = (seg: string) =>
+  SEG_SKIP.has((seg.trim().split(/\s+/)[0] ?? "").replace(/^[(!{'"]+/, "").split("/").pop() ?? "");
+
 export function cmdKind(command: string): CmdKind {
   // A runner invoked through its interpreter (`python3 -m pytest`, `npx vitest`)
   // is still a test run — the leading binary would say "run".
@@ -121,7 +129,7 @@ export function cmdKind(command: string): CmdKind {
 const base = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const clip = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n - 1)}\u2026` : s);
-const unquote = (s: string) => s.replace(/^["']|["']$/g, "");
+const unquote = (s: string) => s.replace(/^["']|["']$/g, "").replace(/\\$/, "");
 
 /** A command in words, so a turn reads as what it did rather than what was
  *  typed. Empty when nothing here beats showing the line itself — the row falls
@@ -132,8 +140,9 @@ export function cmdAbstract(command: string): string {
   const rest = args.filter((a) => !a.startsWith("-") && !/^\d?[<>]/.test(a));
   const flag = (f: string) => args.includes(f);
   const [a0 = "", a1 = ""] = rest;
-  // Everything after the first `&&`/`|` is real work the phrase doesn't cover.
-  const more = command.split(/&&|\|\||;/).map((s) => s.trim()).filter(Boolean).length - 1;
+  // Everything after the first `&&`/`;` is real work the phrase doesn't cover —
+  // except the scaffolding, which is not work anyone is owed a count of.
+  const more = command.split(/&&|\|\||;/).filter((s) => s.trim() && !isScaffold(s)).length - 1;
   const tail = more > 0 ? ` +${more} more` : "";
   const say = (s: string) => (s ? s + tail : "");
 
@@ -205,7 +214,6 @@ export function cmdAbstract(command: string): string {
     }
     case "pkill": case "pgrep": case "kill": return say(`${bin === "kill" ? "kill" : bin === "pkill" ? "kill" : "find"} ${clip(a0 || "a process", 20)}`);
     case "ps": case "top": case "htop": return say("look at running processes");
-    case "echo": return say("");
     default:
       // A subcommand is the one generic phrase worth making: `mystical status`
       // says more than the flags after it. Anything else keeps its own line.
