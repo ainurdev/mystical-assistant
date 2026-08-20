@@ -669,6 +669,41 @@ def worktrees(cwd: str) -> list[dict]:
     return items
 
 
+# A session's shell can walk out of the checkout claude was spawned in — `cd
+# <worktree> && git commit` is the normal way an agent works a feature branch —
+# and from then on the session's stored cwd names a branch nobody is touching.
+# These two answer "where is this session's shell, really", for the branch label
+# every surface shows. Only a literal `cd` counts: a command that merely reads a
+# path is not working there.
+_CD = re.compile(
+    r"""(?:^|&&|\|\||;|\n)\s*cd\s+(?:-[PL]\s+|--\s+)*"""
+    r"""("[^"]*"|'[^']*'|[^\s;&|<>]+)""")
+
+
+def shell_cd_target(command: str) -> str:
+    """The absolute directory the *last* `cd` in a shell command line moves to,
+    "" when there is none. Last wins because that is where the rest of the line
+    runs. Relative targets are dropped rather than guessed at — resolving them
+    needs the shell's own cwd, which we don't have."""
+    last = ""
+    for m in _CD.finditer(command or ""):
+        raw = m.group(1).strip("\"'")
+        if raw:
+            last = os.path.expanduser(raw)
+    return last if last.startswith("/") else ""
+
+
+def is_worktree_of(cwd: str, path: str) -> bool:
+    """True when git lists `path` as a worktree of the repo at `cwd`. Git is the
+    source of truth, not the path shape: a worktree may live under our
+    `.worktrees/` convention, under Claude Code's `.claude/worktrees/`, or
+    anywhere a hand-made `git worktree add` put it."""
+    if not path:
+        return False
+    want = os.path.realpath(path)
+    return any(os.path.realpath(w["path"]) == want for w in worktrees(cwd))
+
+
 def worktree_add(cwd: str, path: str, branch: str, start: str = "",
                  create: bool = True) -> tuple[bool, str]:
     """Add a worktree at `path`. create=True makes a new branch `branch` from

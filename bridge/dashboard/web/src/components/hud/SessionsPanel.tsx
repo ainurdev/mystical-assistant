@@ -104,6 +104,7 @@ function SessionRow({
   const [tagHov, setTagHov] = useState(false);
   const tint = projectTint(s.project);
   const idle = sv.l === "IDLE";
+  const inWorktree = !!s.work_cwd;
   const fv = flag ? FLAG_VIEW[flag] : null;
   return (
     <div
@@ -145,8 +146,13 @@ function SessionRow({
               style={{ appearance: "none", cursor: "pointer", flex: "none", fontSize: "var(--t85)", letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 5, background: tagHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
             >{tint.tag}</button>
           )}
-          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "var(--t10)", color: "var(--txd)", minWidth: 0 }} title="worktree">
-            <span style={{ color: "var(--txf)", flex: "none" }}>⎇</span>
+          {/* The branch is normally the checkout's, and reads as background. When
+              the session's shell has moved into a worktree the branch is that
+              one's — lit, so a row whose commits land somewhere other than the
+              project checkout says so at a glance. */}
+          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "var(--t10)", color: inWorktree ? "var(--acc)" : "var(--txd)", minWidth: 0 }}
+                title={inWorktree ? `working in ${s.work_cwd}` : "branch"}>
+            <span style={{ color: inWorktree ? "var(--acc)" : "var(--txf)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
           </span>
           {showTags && (s.tags ?? []).slice(0, 2).map((t) => (

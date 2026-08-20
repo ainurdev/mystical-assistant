@@ -32,7 +32,8 @@ export interface SessionBrief {
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
-  branch?: string; // the session's git branch (worktree branch, or the project's)
+  branch?: string; // the branch the session is working on (its worktree's, else its checkout's)
+  work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
   ctx_tokens?: number | null; // window fill at the end of the last turn (null = unmeasured)
   ctx_window?: number; // what ctx_tokens is a fraction of (config.CONTEXT_WINDOW)

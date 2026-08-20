@@ -61,7 +61,8 @@ export interface SessionBrief {
   ctx_tokens?: number | null; // window fill at the end of the last turn (null = unmeasured)
   ctx_window?: number; // what ctx_tokens is a fraction of (config.CONTEXT_WINDOW)
   autocompact?: string | null; // compact at: "auto" | token count | null (claude's default)
-  branch?: string; // the checkout this session runs in ("" when unknown)
+  branch?: string; // the branch it is working on ("" when unknown)
+  work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
 }
 
