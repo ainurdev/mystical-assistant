@@ -167,6 +167,22 @@ def test_render_names_projects_and_never_prices():
     assert "$" not in text
 
 
+def test_render_bolds_through_telegrams_own_converter():
+    """render() emits markdown, not HTML: send() runs every message through
+    _md_to_html, which escapes < and > — so a pre-baked <b> shipped as the
+    literal text "<b>" (the first week's push did exactly that)."""
+    from bridge.telegram import _md_to_html
+
+    chat = _fresh_chat()
+    sid = store.create_session(chat, "/proj-x")["id"]
+    _turn(sid, f"{sid}:1", _at(2026, 8, 17), elapsed=3600)
+
+    html = _md_to_html(report.render(report.weekly(chat, now=NOW)))
+
+    assert "<b>proj-x</b>" in html
+    assert "&lt;" not in html
+
+
 def test_render_survives_an_empty_week():
     chat = _fresh_chat()
 

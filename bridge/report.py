@@ -16,7 +16,6 @@ function of (now, last-sent marker) checked at boot, and one re-armed
 threading.Timer covers the running case, the same posture as limits.py.
 """
 
-import html
 import logging
 import threading
 import time
@@ -101,7 +100,7 @@ def weekly(chat_id: int, now: "float | None" = None, back: int = 0) -> dict:
     }
 
 
-# --- rendering (Telegram HTML) ------------------------------------------------
+# --- rendering (markdown) -----------------------------------------------------
 
 def _dur(s: float) -> str:
     if s < 60:
@@ -135,11 +134,14 @@ def short_name(project: str) -> str:
 
 
 def render(rep: dict) -> str:
-    """The report as one Telegram-HTML message. Project basenames, not full
-    paths — the phone column is narrow and the base dir is always the same."""
+    """The report as one markdown message. Markdown, not the HTML Telegram
+    renders: everything routes through telegram.send, which runs _md_to_html
+    and escapes < and > — pre-baked tags arrive as literal "<b>". Project
+    basenames, not full paths — the phone column is narrow and the base dir is
+    always the same."""
     a = datetime.fromtimestamp(rep["since"])
     b = datetime.fromtimestamp(rep["until"]) - timedelta(days=1)
-    head = f"📊 <b>Week {a:%b %-d} – {b:%b %-d}</b>"
+    head = f"📊 **Week {a:%b %-d} – {b:%b %-d}**"
     t, prev = rep["totals"], rep["prev"]
     if not rep["projects"]:
         return head + "\nNothing ran this week."
@@ -156,12 +158,12 @@ def render(rep: dict) -> str:
                      f"{_kilo(tok['cache_r'] + tok['cache_w'])} cache")
     lines.append("")
     for p in rep["projects"]:
-        name = html.escape(short_name(p["project"]))
+        name = short_name(p["project"])
         bits = [_n(p["sessions"], "session"), _n(p["turns"], "turn"), _dur(p["elapsed"])]
         if p["tokens"] is not None:
             bits.append(f"{_kilo(p['tokens'])} tok")
         models = ", ".join(m.removeprefix("claude-") for m in p["models"])
-        lines.append(f"<b>{name}</b> — {' · '.join(bits)}"
+        lines.append(f"**{name}** — {' · '.join(bits)}"
                      + (f"\n      {models}" if models else ""))
     if rep["days"]:
         busy = max(rep["days"], key=lambda d: d["elapsed"])
