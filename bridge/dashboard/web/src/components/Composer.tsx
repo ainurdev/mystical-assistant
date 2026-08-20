@@ -660,8 +660,8 @@ export function Composer({
             )}
           </div>
           {/* CONTEXT as an instrument: eight segments that only recolour when
-              the window is actually filling, and a COMPACT that only exists
-              past the point where pressing it is the right call. */}
+              the window is actually filling, and a COMPACT that is always
+              there, dim until past the point where pressing it is the right call. */}
           <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${CONTEXT_MAX_TOKENS / 1000}k${ctx > 0 ? ` (~${fmtTokens(ctx)} tokens)` : ""}`}>
             <span className="lbl">CTX</span>
             <span className="seg">
@@ -671,7 +671,7 @@ export function Composer({
             </span>
             <span style={{ color: suggest ? ctxColor : "var(--txd)", fontSize: "var(--t10)", letterSpacing: .5, flex: "none" }}>{ctxPct}%</span>
             {suggest && ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
-            {suggest && onCompact && (
+            {onCompact && (
               // Whatever is in the box rides along as compaction instructions ("keep
               // the auth work, drop the log spelunking") — Piebald opens a dialog for
               // this; we already have a text box right there.
@@ -680,7 +680,8 @@ export function Composer({
                   ? "Compact the context, keeping what you've typed in mind"
                   : "Compact context (/compact) — type first to steer what the summary keeps"}
                 style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer",
-                         opacity: disabled || running ? 0.4 : 1, border: `1px solid ${ctxColor}`, color: ctxColor }}>
+                         opacity: disabled || running ? 0.4 : 1,
+                         ...(suggest ? { border: `1px solid ${ctxColor}`, color: ctxColor } : null) }}>
                 COMPACT
               </button>
             )}

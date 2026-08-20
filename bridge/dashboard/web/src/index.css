@@ -895,8 +895,15 @@ input {
    sidebars and floating windows open, so a media query would collapse at the
    wrong moments. */
 .ctrl-cq { container-type: inline-size; }
-.ctrl-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 12px; }
+/* wrap: when the column is too narrow for settings + verbs + CTX on one line,
+   the CTX cluster drops to its own line. Starving the settings until only their
+   field codes survive reads worse than a second row that only appears when it
+   has to. */
+.ctrl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
 .ctrl-set { display: flex; align-items: center; flex-wrap: nowrap; gap: 5px; min-width: 0; }
+/* Flex items default to min-width:auto, so the settings refused to shrink and
+   overpainted the CTX cluster instead of ellipsising as the ladder intends. */
+.ctrl-set > * { min-width: 0; }
 .ctrl-verbs { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; position: relative;
               padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); }
 .drop-btn { min-width: var(--dw, 78px); }
