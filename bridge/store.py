@@ -160,6 +160,11 @@ def init() -> None:
         # token count); NULL = don't pass --autocompact, i.e. the CLI default.
         if "autocompact" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN autocompact TEXT")
+        # Where the session's shell actually is, when it has walked out of `cwd`
+        # into one of the repo's worktrees (runner._note_work_cwd). NULL = it is
+        # working in its own checkout, which is the normal case.
+        if "work_cwd" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN work_cwd TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -364,6 +369,14 @@ def set_autocompact(session_id: str, value: "str | None") -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET autocompact=? WHERE id=?",
                   (value, session_id))
+
+
+def set_work_cwd(session_id: str, path: "str | None") -> None:
+    """Record (or clear, with None) the worktree this session's shell moved into.
+    Verified as a worktree of the session's repo by the caller — this only
+    stores."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET work_cwd=? WHERE id=?", (path, session_id))
 
 
 def parse_goal(raw: "str | None") -> dict | None:
@@ -823,7 +836,8 @@ def relocate(session_id: str, new_cwd: str) -> int:
     new = new_cwd.rstrip("/")
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
-        c.execute("UPDATE sessions SET cwd=?, updated=? WHERE id=?",
+        # work_cwd goes too: it named a detour from the *old* checkout.
+        c.execute("UPDATE sessions SET cwd=?, work_cwd=NULL, updated=? WHERE id=?",
                   (new, time.time(), session_id))
         n = 0
         # No old cwd, or a no-op move: retarget the session and stop. Substituting

@@ -425,7 +425,7 @@ def test_session_brief_shape(monkeypatch):
     assert set(b) == {"id", "title", "project", "updated", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal",
                       "lifecycle", "tags", "disabled_tools",
-                      "ctx_tokens", "ctx_window", "autocompact"}
+                      "ctx_tokens", "ctx_window", "autocompact", "work_cwd"}
     assert b["id"] == s["id"] and b["project"] == "p6"
     assert b["ctx_tokens"] is None        # nothing measured until a turn runs
     assert b["autocompact"] is None       # claude's own default until chosen

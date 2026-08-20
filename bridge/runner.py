@@ -540,6 +540,8 @@ class Job:
         # None until a message actually reports usage, so a stream that never did
         # leaves the columns NULL — unknown rather than free.
         self.tokens: dict | None = None
+        self.cwd: str | None = None       # where claude was spawned (set by _run_streaming)
+        self.work_cwd: str | None = None  # worktree the shell moved into, if any
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
         self.open_tools: dict[str, tuple[str, float]] = {}
         self._interrupt_timer: threading.Timer | None = None
@@ -1294,6 +1296,39 @@ def _hook_log(job: Job, d: dict):
              "text": body[:_HOOK_MAX], "error": bad})
 
 
+def _note_work_cwd(job: "Job", command: str) -> None:
+    """Follow the session's shell when it walks into a worktree.
+
+    `cd ~/projects/.worktrees/x/feat-y && git commit` is how an agent works a
+    feature branch, and claude's own cwd never moves with it — so the session
+    row keeps naming the checkout's branch while every commit lands on another
+    one. Recording the destination lets the surfaces label the session with the
+    branch it is actually on.
+
+    Deliberately narrow: only a literal `cd` to a path git already lists as a
+    worktree of this session's repo counts. A `cd /tmp`, a relative `cd`, or a
+    command that merely reads a worktree leaves the label alone — a wrong branch
+    on the card is worse than a stale one. Best-effort; never raises into the
+    turn."""
+    if not (job.store_session_id and job.cwd):
+        return
+    try:
+        dest = git.shell_cd_target(command)
+        if not dest:
+            return
+        if os.path.realpath(dest) == os.path.realpath(job.cwd):
+            new = None                       # walked back home
+        elif git.is_worktree_of(job.cwd, dest):
+            new = dest
+        else:
+            return
+        if new != job.work_cwd:
+            job.work_cwd = new
+            store.set_work_cwd(job.store_session_id, new)
+    except Exception:  # noqa: BLE001 - a label is never worth failing a turn over
+        pass
+
+
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
     job.boot = None          # the child is talking; nothing is loading any more
@@ -1337,6 +1372,8 @@ def _handle_event(job: Job, d: dict):
             elif b.get("type") == "tool_use":
                 name = b.get("name", "tool")
                 inp = b.get("input", {})
+                if name == "Bash":
+                    _note_work_cwd(job, inp.get("command") or "")
                 job.open_tools[b.get("id")] = (name, time.time())
                 job.add({"type": "tool", "name": name, "id": b.get("id"),
                          "summary": _summarize_tool(name, inp)})
@@ -1491,6 +1528,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
                    permission_mode: str | None = None, ponytail: str | None = None):
     proc = None
+    job.cwd = cwd
     try:
         if (job.runtime or "").startswith("opencode:"):
             _consume_free_agent(job, prompt, cwd)

@@ -110,6 +110,13 @@ def normalize_autocompact(value) -> "tuple[bool, str | None]":
 
 def _session_brief(s: dict) -> dict:
     cwd = s.get("cwd")
+    # The branch the session is *working* on: the worktree its shell moved into
+    # (runner._note_work_cwd) before its own checkout. A recorded worktree that
+    # has since been removed reports no branch, so the checkout answers instead —
+    # and work_cwd goes out as None, so nothing labels a branch as a worktree it
+    # can no longer see.
+    wt = s.get("work_cwd") or ""
+    wt_branch = git.current_branch_cached(wt) if wt else ""
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
@@ -121,7 +128,8 @@ def _session_brief(s: dict) -> dict:
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
             "tags": store.parse_tags(s.get("tags")),
-            "branch": git.current_branch_cached(cwd) if cwd else ""}
+            "work_cwd": wt if wt_branch else None,
+            "branch": wt_branch or (git.current_branch_cached(cwd) if cwd else "")}
 
 
 def _pre_title(s: dict, title) -> dict:
