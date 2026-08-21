@@ -67,9 +67,12 @@ export type CmdKind =
 // conditional without adding to it. The rest only shadow the next token.
 const SEG_SKIP = new Set(["cd", "pushd", "popd", "export", "source", ".", "echo", "done", "fi", "esac"]);
 const PREFIX = new Set(["sudo", "env", "timeout", "exec", "nohup", "setsid", "command", "time", "stdbuf"]);
-// A loop or a conditional is a shell program, not a command: nothing inside it
-// stands for the whole line, so both the icon and the phrase give up on it.
-const KEYWORD = new Set(["for", "while", "until", "if", "then", "else", "elif", "do", "case", "function", "select"]);
+// A loop or a conditional is a shell program. Its header — the list, the test —
+// is syntax up to the body keyword; the body is the work, and its first command
+// stands for the whole program (`for p in $(pgrep x); do ps $p; done` looks at
+// processes). `elif` reopens a header; `case` and `function` never reach a body.
+const HEADER = new Set(["for", "while", "until", "if", "elif", "case", "select", "function"]);
+const BODY = new Set(["do", "then", "else"]);
 
 const BIN: Record<string, CmdKind> = {
   git: "git", gh: "git", tig: "git",
@@ -93,19 +96,23 @@ const BIN: Record<string, CmdKind> = {
 /** The leading command of a line, past the scaffolding: `cd x && git log -3`
  *  is git, with ["log", "-3"] behind it. A `cd` is not the work — but when
  *  nothing after it can be put in words (the line is only the cd, or a loop
- *  follows) it is the one thing left to say, so it leads. Empty otherwise.
+ *  with nothing to say follows) it is the one thing left to say, so it leads.
+ *  Empty otherwise.
  *  ponytail: separators are split blind, so a `|` inside quotes ends a segment
  *  early; a real shell tokenizer only if a phrase ever comes out wrong-headed. */
 function lead(command: string): { bin: string; args: string[] } {
   let cd: string[] | undefined;
-  scan: for (const seg of command.split(/&&|\|\||[|;\n]/)) {
+  let header = false; // inside a loop's list or a conditional's test, up to its body
+  for (const seg of command.split(/&&|\|\||[|;\n]/)) {
     const toks = seg.trim().split(/\s+/);
     for (let i = 0; i < toks.length; i++) {
       const t = toks[i].replace(/^[(!{'"]+/, "");
       if (!t || t.startsWith("-") || /^\d+$/.test(t) || /^\w+=/.test(t)) continue;
       const bin = t.split("/").pop() ?? t;
       if (PREFIX.has(bin)) continue;
-      if (KEYWORD.has(bin)) break scan;
+      if (HEADER.has(bin)) { header = true; break; }
+      if (BODY.has(bin)) { header = false; continue; }
+      if (header) break;
       if (bin === "cd") cd = toks.slice(i + 1);
       if (SEG_SKIP.has(bin)) break; // rest of this segment is that builtin's argument
       return { bin, args: toks.slice(i + 1) };
@@ -114,10 +121,13 @@ function lead(command: string): { bin: string; args: string[] } {
   return cd ? { bin: "cd", args: cd } : { bin: "", args: [] };
 }
 
-/** A segment that only sets the stage — a `cd`, a printed banner. Not work, so
- *  it never counts toward the "+N more" the phrase owes the reader. */
-const isScaffold = (seg: string) =>
-  SEG_SKIP.has((seg.trim().split(/\s+/)[0] ?? "").replace(/^[(!{'"]+/, "").split("/").pop() ?? "");
+/** A segment that only sets the stage — a `cd`, a printed banner, the body or
+ *  the close of a loop (its header counts for it, once). Not work, so it never
+ *  counts toward the "+N more" the phrase owes the reader. */
+const isScaffold = (seg: string) => {
+  const first = (seg.trim().split(/\s+/)[0] ?? "").replace(/^[(!{'"]+/, "").split("/").pop() ?? "";
+  return SEG_SKIP.has(first) || BODY.has(first);
+};
 
 export function cmdKind(command: string): CmdKind {
   // A runner invoked through its interpreter (`python3 -m pytest`, `npx vitest`)
@@ -141,8 +151,9 @@ export function cmdAbstract(command: string): string {
   const flag = (f: string) => args.includes(f);
   const [a0 = "", a1 = ""] = rest;
   // Everything after the first `&&`/`;` is real work the phrase doesn't cover —
-  // except the scaffolding, which is not work anyone is owed a count of.
-  const more = command.split(/&&|\|\||;/).filter((s) => s.trim() && !isScaffold(s)).length - 1;
+  // except the scaffolding, which is not work anyone is owed a count of. A cd
+  // that leads is scaffolding too: not among the counted, so nothing comes off.
+  const more = command.split(/&&|\|\||;/).filter((s) => s.trim() && !isScaffold(s)).length - (bin === "cd" ? 0 : 1);
   const tail = more > 0 ? ` +${more} more` : "";
   const say = (s: string) => (s ? s + tail : "");
 
