@@ -362,20 +362,16 @@ function RunPage() {
 
             {/* assistant turn — everything it did hangs off one rail, so the
                 turn reads as a single reply opposite your bubble instead of a
-                flat column of unrelated cards. Flat, not a gradient: a turn runs
-                to thousands of pixels, so anything that fades is invisible for
-                most of its own length. */}
+                flat column of unrelated cards. The diamonds on it belong to the
+                messages (RailNode in RunStream), one where each starts. Flat,
+                not a gradient: a turn runs to thousands of pixels, so anything
+                that fades is invisible for most of its own length. */}
             {(turn.events.length > 0 || turn.status === "running" || turn.runtime) && (
               <div className="relative space-y-2 pl-3">
                 <span
                   aria-hidden
                   className="pointer-events-none absolute bottom-0 left-[2px] top-[11px] w-px"
                   style={{ background: "color-mix(in srgb, var(--brand-soft) 22%, transparent)" }}
-                />
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute left-0 top-[3px] h-[6px] w-[6px] rotate-45 border"
-                  style={{ borderColor: "var(--brand-soft)", background: "var(--tg-bg)" }}
                 />
                 {turn.runtime && (
                   <div className="text-[11px] text-[var(--tg-hint)]">

@@ -658,6 +658,28 @@ function DiffBlock({
   );
 }
 
+/** Where the agent speaks, marked on the rail the turn hangs off (run.tsx): the
+ *  diamond the rail used to wear once at its top, now one per message, with a
+ *  tick into the bubble so it reads as that message's. Drawn inside the row's
+ *  own box — the row pulls back over the gutter with -ml-3/pl-3 — because
+ *  .vskip-card paint-contains each row and would clip a mark hung outside it. */
+function RailNode() {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-0 top-[15px] h-[6px] w-[6px] rotate-45 border"
+        style={{ borderColor: "var(--brand-soft)", background: "var(--tg-bg)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-[7px] top-[18px] h-px w-[5px]"
+        style={{ background: "color-mix(in srgb, var(--brand-soft) 40%, transparent)" }}
+      />
+    </>
+  );
+}
+
 /** A run of plain lookups collapsed to one line — on a phone the chips are most
  *  of the scroll. */
 function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void }) {
@@ -870,21 +892,26 @@ export const RunStream = memo(function RunStream({
             // answer got a card. Box it like one.
             if (asksNext(i))
               return (
-                <Card key={i} className="border border-[var(--tg-button)]/30">
-                  <Markdown className="text-sm leading-normal">{event.text}</Markdown>
-                </Card>
+                <div key={i} className="relative -ml-3 pl-3">
+                  <RailNode />
+                  <Card className="border border-[var(--tg-button)]/30">
+                    <Markdown className="text-sm leading-normal">{event.text}</Markdown>
+                  </Card>
+                </div>
               );
-            // The agent talking, drawn as the mirror of your bubble: a bar down the
-            // left where yours is a rounded block on the right. Bare prose between
-            // filled cards is the one thing in a turn with nothing to catch a
-            // scrolling eye — and it is the part worth reading.
+            // The agent talking, drawn as the mirror of your bubble: rounded and
+            // tailed at the bottom-left where yours is at the bottom-right, at most
+            // the same 85%, shrink-wrapped, with a node on the rail where it
+            // starts. Bare prose between filled cards was the one thing in a turn
+            // with nothing to catch a scrolling eye — and it is the part worth
+            // reading.
             return (
-              <Markdown
-                key={i}
-                className="my-2 border-l-2 border-[var(--brand-soft)] pl-2.5 text-sm leading-normal"
-              >
-                {event.text}
-              </Markdown>
+              <div key={i} className="relative -ml-3 flex pl-3">
+                <RailNode />
+                <Markdown className="min-w-0 max-w-[85%] break-words rounded-2xl rounded-bl-sm border border-border bg-[var(--ac-06)] px-3 py-2 text-sm leading-normal">
+                  {event.text}
+                </Markdown>
+              </div>
             );
           case "tool": {
             const head = headOf.get(i);
@@ -952,14 +979,16 @@ export const RunStream = memo(function RunStream({
             return null;
           case "result":
             return (
-              <FinalResult
-                key={i}
-                result={event.result}
-                elapsed={event.elapsed}
-                tokens={tokens}
-                onAnswer={onAnswer}
-                onWrite={onWrite}
-              />
+              <div key={i} className="relative -ml-3 pl-3">
+                <RailNode />
+                <FinalResult
+                  result={event.result}
+                  elapsed={event.elapsed}
+                  tokens={tokens}
+                  onAnswer={onAnswer}
+                  onWrite={onWrite}
+                />
+              </div>
             );
           case "error":
             return (

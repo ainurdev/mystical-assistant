@@ -96,24 +96,18 @@ function PromptBubble({ text }: { text: string }) {
 }
 
 /** The agent's side of the chat: a hairline down the 18px gutter every card in a
- *  turn already indents past, capped by a diamond where the turn starts. One line
- *  instead of a bubble per card — the cards are the message. */
+ *  turn already indents past. The diamonds on it belong to the messages — each
+ *  prose bubble and the RESULT box draws its own where it starts (RailNode in
+ *  RunStream) — so the rail marks where the agent spoke, not just that it did. */
 function AgentRail() {
   return (
-    <>
-      {/* Flat, not a gradient: a turn runs to thousands of pixels, so anything
-          that fades out is invisible for most of its own length. */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute bottom-1 left-[6px] top-[14px] w-px"
-        style={{ background: "var(--ac-12)" }}
-      />
-      <span
-        aria-hidden
-        className="pointer-events-none absolute left-[3px] top-[6px] h-[7px] w-[7px] rotate-45 border"
-        style={{ borderColor: "var(--acc)", background: "var(--panel3)" }}
-      />
-    </>
+    // Flat, not a gradient: a turn runs to thousands of pixels, so anything
+    // that fades out is invisible for most of its own length.
+    <span
+      aria-hidden
+      className="pointer-events-none absolute bottom-1 left-[6px] top-[14px] w-px"
+      style={{ background: "var(--ac-12)" }}
+    />
   );
 }
 

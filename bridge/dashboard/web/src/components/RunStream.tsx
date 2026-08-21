@@ -1042,10 +1042,36 @@ function ToolCard({
   );
 }
 
-/** One block of the model's prose, with the two things you actually want to do
- *  with it. The buttons float over the text on hover rather than taking a row of
- *  their own — a transcript is mostly prose, and a permanent toolbar per
- *  paragraph would read as chrome. */
+/** Where the agent speaks, marked on the rail the turn hangs off — the diamond
+ *  the rail used to wear once at the top of a turn, now one per message, with a
+ *  tick into the bubble so it reads as that message's and not as a bead on the
+ *  line. Drawn inside the row's own box (the row pads past the gutter instead of
+ *  margining past it): .vskip-card paint-contains each row, so a mark hung
+ *  outside it would be clipped. */
+function RailNode() {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-[3px] top-[13px] h-[7px] w-[7px] rotate-45 border"
+        style={{ borderColor: "var(--acc)", background: "var(--panel3)" }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-[11px] top-[16px] h-px w-[7px]"
+        style={{ background: "var(--ac-22)" }}
+      />
+    </>
+  );
+}
+
+/** One block of the model's prose, drawn as the mirror of your prompt bubble —
+ *  teal where yours is violet, the solid bar down the left where yours wears one
+ *  down the right, shrink-wrapped to at most the same 78% — so the two sides of
+ *  the conversation read as two sides. The two things you actually want to do
+ *  with it float over the text on hover rather than taking a row of their own: a
+ *  transcript is mostly prose, and a permanent toolbar per paragraph would read
+ *  as chrome. */
 function MessageBlock({
   text, onQuote, children,
 }: {
@@ -1066,9 +1092,17 @@ function MessageBlock({
   }
 
   return (
-    <div ref={ref} className="group/msg relative">
+    <div
+      ref={ref}
+      className="group/msg relative min-w-0 max-w-[78%] break-words border border-l-[3px] px-3 py-1.5 text-foreground-bright"
+      style={{
+        borderColor: "var(--ac-22)",
+        borderLeftColor: "var(--acc)",
+        background: "var(--ac-06)",
+      }}
+    >
       {children}
-      <div className="absolute right-1 top-0 flex gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
+      <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
         <button
           onClick={() => {
             try { void navigator.clipboard?.writeText(text); } catch { /* ignore */ }
@@ -1259,18 +1293,18 @@ export const RunStream = memo(function RunStream({
                 />
               );
             return (
-              <div key={i} style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
+              <div
+                key={i}
+                className="relative flex pl-[18px]"
+                style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+              >
+                <RailNode />
+                {/* The agent talking. Bare prose between boxed, labelled cards was
+                    the one thing in a turn with nothing to catch a scrolling eye —
+                    and it is the part worth reading — so it gets a bubble of its
+                    own (MessageBlock) and a node on the rail where it starts. */}
                 <MessageBlock text={event.text} onQuote={onQuote}>
-                  {/* The agent talking, drawn as the mirror of your prompt bubble: a
-                      solid bar down the left where yours wears one down the right.
-                      Bare prose between boxed, labelled cards is the one thing in a
-                      turn with nothing to catch a scrolling eye — and it is the part
-                      worth reading. No box and no tag, so it stays the quietest
-                      member of the family; just enough edge to be findable. */}
-                  <Markdown
-                    className="my-2 ml-[18px] border-l-2 border-[var(--acc)] pl-2 leading-relaxed text-[var(--tx)]"
-                    onOpenFile={onOpenFile}
-                  >{event.text}</Markdown>
+                  <Markdown className="leading-relaxed" onOpenFile={onOpenFile}>{event.text}</Markdown>
                 </MessageBlock>
               </div>
             );
@@ -1595,59 +1629,62 @@ function FinalResult({
   // the session arrive folded.
   const [open, setOpen] = useState(flash || lines <= RESULT_FOLD_LINES);
   return (
-    <div
-      className="group/res my-2 ml-[18px] border"
-      style={{
-        borderColor: `color-mix(in srgb, ${tone} 28%, transparent)`,
-        background: `color-mix(in srgb, ${tone} 4%, transparent)`,
-        animation: flash ? "resultflash 1.2s ease both" : undefined,
-      }}
-    >
+    <div className="relative my-2 pl-[18px]">
+      <RailNode />
       <div
-        className="flex items-center gap-2 border-b px-3 py-1.5 text-[length:var(--t95)] tracking-[2px]"
-        style={{ borderColor: `color-mix(in srgb, ${tone} 18%, transparent)`, color: tone }}
+        className="group/res border"
+        style={{
+          borderColor: `color-mix(in srgb, ${tone} 28%, transparent)`,
+          background: `color-mix(in srgb, ${tone} 4%, transparent)`,
+          animation: flash ? "resultflash 1.2s ease both" : undefined,
+        }}
       >
-        <span>{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
-        <span className="ml-auto flex items-center gap-2 tracking-[1px] text-muted-2">
-          {typeof elapsed === "number" && elapsed > 0 && (
-            <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
-          )}
-          {typeof tokens === "number" && tokens > 0 && (
-            <span title="tokens this turn spent">
-              {tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}K`} TOK
-            </span>
-          )}
-        </span>
-        <span className="flex-none opacity-0 transition-opacity group-focus-within/res:opacity-100 group-hover/res:opacity-100">
-          <CopyBtn text={result} title="copy result" />
-        </span>
-      </div>
-      {body && (
-        <div className="relative px-3 py-2.5">
-          <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
-            <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
-          </div>
-          {!open && (
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-20"
-              style={{ background: "linear-gradient(to bottom, transparent, var(--background))" }}
-              aria-hidden
-            />
-          )}
-        </div>
-      )}
-      {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
-      {lines > RESULT_FOLD_LINES && (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center justify-center gap-1.5 border-t px-3 py-1 text-[length:var(--t95)] tracking-[1.5px] text-muted-2 hover:text-foreground-bright"
-          style={{ borderColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
+        <div
+          className="flex items-center gap-2 border-b px-3 py-1.5 text-[length:var(--t95)] tracking-[2px]"
+          style={{ borderColor: `color-mix(in srgb, ${tone} 18%, transparent)`, color: tone }}
         >
-          <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
-          {open ? "FOLD" : `SHOW ALL // ${lines} LINES`}
-        </button>
-      )}
+          <span>{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
+          <span className="ml-auto flex items-center gap-2 tracking-[1px] text-muted-2">
+            {typeof elapsed === "number" && elapsed > 0 && (
+              <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
+            )}
+            {typeof tokens === "number" && tokens > 0 && (
+              <span title="tokens this turn spent">
+                {tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}K`} TOK
+              </span>
+            )}
+          </span>
+          <span className="flex-none opacity-0 transition-opacity group-focus-within/res:opacity-100 group-hover/res:opacity-100">
+            <CopyBtn text={result} title="copy result" />
+          </span>
+        </div>
+        {body && (
+          <div className="relative px-3 py-2.5">
+            <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
+              <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
+            </div>
+            {!open && (
+              <div
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-20"
+                style={{ background: "linear-gradient(to bottom, transparent, var(--background))" }}
+                aria-hidden
+              />
+            )}
+          </div>
+        )}
+        {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
+        {lines > RESULT_FOLD_LINES && (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="flex w-full items-center justify-center gap-1.5 border-t px-3 py-1 text-[length:var(--t95)] tracking-[1.5px] text-muted-2 hover:text-foreground-bright"
+            style={{ borderColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
+          >
+            <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+            {open ? "FOLD" : `SHOW ALL // ${lines} LINES`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
