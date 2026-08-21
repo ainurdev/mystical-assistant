@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Button, Card, Spinner } from "./ui";
 import type { AnswerSelection, Question } from "../lib/api";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
@@ -23,6 +24,10 @@ export function QuestionCard({
   const [restored] = useState(() => readDraft(requestId));
   const [sel, setSel] = useState<Record<string, string[]>>(restored.sel);
   const [notes, setNotes] = useState<Record<string, string>>(restored.notes);
+  // The free-text fold per question. A restored note opens it by default (or the
+  // draft reads as lost); your own toggling overrides that — `restored` is static.
+  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
+  const noteRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   // The answer travels to the bridge and only comes back on the next transcript
   // poll, so without this the card sits there looking untouched — the click
   // reads as dropped and people press it again.
@@ -124,7 +129,11 @@ export function QuestionCard({
   return (
     <div className="panel space-y-3 border border-amber-400/45 bg-[var(--card)] p-3.5">
       <div className="text-[9.5px] tracking-[2px] text-amber-400">? QUESTION // NEEDS YOU</div>
-      {questions.map((q) => (
+      {questions.map((q) => {
+        const open = openNotes[q.header] ?? (restored.notes[q.header] ?? "") !== "";
+        // Typed text counts as the answer (see `ready`), so the frame says so.
+        const frame = (notes[q.header] ?? "").trim() ? "border-[var(--brand-soft)]" : "border-border";
+        return (
         <div key={q.header} className="space-y-1.5">
           <div className="text-sm font-medium text-foreground-bright">{q.question}</div>
           <div className="flex flex-col gap-1.5">
@@ -159,19 +168,30 @@ export function QuestionCard({
                 </button>
               );
             })}
-            {/* A restored note sits inside this fold; open it or the draft reads as lost.
-                `restored` never changes, so it's a default — your own toggling sticks.
-                It rides *inside* the option list at option weight, on the numbered
-                gutter: an escape hatch that reads as a footnote gets scrolled past. */}
-            <details
-              className={`group border border-dashed ${
-                (notes[q.header] ?? "").trim() ? "border-[var(--brand-soft)]" : "border-border"
-              }`}
-              open={(restored.notes[q.header] ?? "") !== ""}
-            >
-              <summary className="cursor-pointer list-none px-3 py-2.5 text-left text-sm active:opacity-70 [&::-webkit-details-marker]:hidden">
+            {/* The free-text escape hatch rides *inside* the option list at option
+                weight, on the numbered gutter: as a footnote it got scrolled past.
+                Not a <details>: its content is display:none while closed, so it can
+                only snap open. A 0fr→1fr grid row transitions everywhere, and a
+                button's click handler can focus the textarea synchronously — which is
+                what lets phones raise the keyboard on that same tap. */}
+            <div className={`overflow-hidden border border-dashed ${frame}`}>
+              <button
+                type="button"
+                aria-expanded={open}
+                disabled={sending}
+                onClick={() => {
+                  // flushSync: the textarea is inert while closed, so the open render
+                  // has to commit before focus() — and focus has to stay inside this
+                  // tap's task or iOS won't raise the keyboard.
+                  flushSync(() => setOpenNotes((prev) => ({ ...prev, [q.header]: !open })));
+                  if (!open) noteRefs.current[q.header]?.focus({ preventScroll: true });
+                }}
+                className="w-full px-3 py-2.5 text-left text-sm active:opacity-70"
+              >
                 <span className="flex items-center gap-2">
-                  <span className="shrink-0 text-[10px] tracking-wider text-[var(--tg-hint)] transition-transform group-open:rotate-90">
+                  <span
+                    className={`shrink-0 text-[10px] tracking-wider text-[var(--tg-hint)] transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+                  >
                     ▶
                   </span>
                   <span className="font-medium">None of these</span>
@@ -179,20 +199,30 @@ export function QuestionCard({
                 <span className="block pl-[17px] text-xs text-[var(--tg-hint)]">
                   Answer in your own words
                 </span>
-              </summary>
-              <textarea
-                rows={2}
-                value={notes[q.header] ?? ""}
-                onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
-                // Enter sends (same as the composer); shift+Enter for a newline.
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready && !sending) { e.preventDefault(); void submit(); } }}
-                placeholder="Your own answer, or extra context for this question"
-                className="w-full resize-y border-t border-dashed border-[inherit] bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none"
-              />
-            </details>
+              </button>
+              <div
+                className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+                  open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                }`}
+              >
+                <div className="min-h-0 overflow-hidden" inert={!open}>
+                  <textarea
+                    ref={(el) => { noteRefs.current[q.header] = el; }}
+                    rows={2}
+                    value={notes[q.header] ?? ""}
+                    onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
+                    // Enter sends (same as the composer); shift+Enter for a newline.
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready && !sending) { e.preventDefault(); void submit(); } }}
+                    placeholder="Your own answer, or extra context for this question"
+                    className={`block w-full resize-y border-t border-dashed bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none ${frame}`}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      ))}
+        );
+      })}
       <Button
         className="w-full shadow-[0_0_18px_var(--brand-glow)]"
         disabled={!ready || sending}
