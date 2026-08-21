@@ -153,23 +153,40 @@ export function QuestionCard({
                 </button>
               );
             })}
+            {/* A restored note sits inside this fold; open it or the draft reads as lost.
+                `restored` never changes, so it's a default — your own toggling sticks.
+                It rides *inside* the option list at option weight: an escape hatch that
+                reads as a footnote under the buttons is one people scroll straight past. */}
+            <details
+              className={`group overflow-hidden rounded-lg border border-dashed ${
+                (notes[q.header] ?? "").trim()
+                  ? "border-[var(--tg-button)]"
+                  : "border-[var(--tg-hint)]/40"
+              }`}
+              open={(restored.notes[q.header] ?? "") !== ""}
+            >
+              <summary className="cursor-pointer list-none px-3 py-2 text-left text-sm active:opacity-70 [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center gap-2 font-medium">
+                  <span className="shrink-0 text-[10px] transition-transform group-open:rotate-90">
+                    ▶
+                  </span>
+                  None of these
+                </span>
+                <span className="block pl-[18px] text-xs text-[var(--tg-hint)]">
+                  Answer in your own words
+                </span>
+              </summary>
+              <textarea
+                rows={2}
+                value={notes[q.header] ?? ""}
+                onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
+                // Enter sends (same as the composer); shift+Enter for a newline.
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready && !sending) { e.preventDefault(); void submit(); } }}
+                placeholder="Your own answer, or extra context for this question"
+                className="w-full resize-y border-t border-dashed border-[inherit] bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none"
+              />
+            </details>
           </div>
-          {/* A restored note sits inside this fold; open it or the draft reads as lost.
-              `restored` never changes, so it's a default — your own toggling sticks. */}
-          <details open={(restored.notes[q.header] ?? "") !== ""}>
-            <summary className="cursor-pointer text-xs text-[var(--tg-hint)]">
-              None of these? Answer in your own words
-            </summary>
-            <textarea
-              rows={2}
-              value={notes[q.header] ?? ""}
-              onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
-              // Enter sends (same as the composer); shift+Enter for a newline.
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready && !sending) { e.preventDefault(); void submit(); } }}
-              placeholder="Your own answer, or extra context for this question"
-              className="mt-1.5 w-full resize-y rounded-lg bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none"
-            />
-          </details>
         </div>
       ))}
       <Button className="w-full" disabled={!ready || sending} onClick={() => void submit()}>
