@@ -62,13 +62,14 @@ export type CmdKind =
   | "pkg" | "test" | "net" | "proc" | "db" | "docker" | "shell";
 
 // Scaffolding in front of the real command. `cd` owns its whole segment (its
-// argument is a path, not a binary), and an `echo` banner is the model
-// labelling its own output — never the work. The rest only shadow the next token.
-const SEG_SKIP = new Set(["cd", "pushd", "popd", "export", "source", ".", "echo"]);
+// argument is a path, not a binary), an `echo` banner is the model labelling
+// its own output — never the work — and `done`/`fi`/`esac` close a loop or a
+// conditional without adding to it. The rest only shadow the next token.
+const SEG_SKIP = new Set(["cd", "pushd", "popd", "export", "source", ".", "echo", "done", "fi", "esac"]);
 const PREFIX = new Set(["sudo", "env", "timeout", "exec", "nohup", "setsid", "command", "time", "stdbuf"]);
 // A loop or a conditional is a shell program, not a command: nothing inside it
 // stands for the whole line, so both the icon and the phrase give up on it.
-const KEYWORD = new Set(["for", "while", "until", "if", "then", "else", "elif", "fi", "do", "done", "case", "esac", "function", "select"]);
+const KEYWORD = new Set(["for", "while", "until", "if", "then", "else", "elif", "do", "case", "function", "select"]);
 
 const BIN: Record<string, CmdKind> = {
   git: "git", gh: "git", tig: "git",
@@ -76,7 +77,7 @@ const BIN: Record<string, CmdKind> = {
   cat: "read", head: "read", tail: "read", less: "read", bat: "read", wc: "read", diff: "read", jq: "read",
   sed: "edit", awk: "edit", tee: "edit", patch: "edit", touch: "edit", chmod: "edit", mv: "edit", cp: "edit",
   rm: "delete", rmdir: "delete",
-  ls: "fs", tree: "fs", mkdir: "fs", du: "fs", df: "fs", pwd: "fs",
+  ls: "fs", tree: "fs", mkdir: "fs", du: "fs", df: "fs", pwd: "fs", cd: "fs",
   python: "run", python3: "run", node: "run", deno: "run", bun: "run", ruby: "run", perl: "run", go: "run",
   bash: "run", sh: "run", zsh: "run",
   npm: "pkg", npx: "pkg", pnpm: "pkg", yarn: "pkg", pip: "pkg", pip3: "pkg", uv: "pkg", cargo: "pkg",
@@ -90,23 +91,27 @@ const BIN: Record<string, CmdKind> = {
 };
 
 /** The leading command of a line, past the scaffolding: `cd x && git log -3`
- *  is git, with ["log", "-3"] behind it. Empty when nothing leads.
+ *  is git, with ["log", "-3"] behind it. A `cd` is not the work — but when
+ *  nothing after it can be put in words (the line is only the cd, or a loop
+ *  follows) it is the one thing left to say, so it leads. Empty otherwise.
  *  ponytail: separators are split blind, so a `|` inside quotes ends a segment
  *  early; a real shell tokenizer only if a phrase ever comes out wrong-headed. */
 function lead(command: string): { bin: string; args: string[] } {
-  for (const seg of command.split(/&&|\|\||[|;\n]/)) {
+  let cd: string[] | undefined;
+  scan: for (const seg of command.split(/&&|\|\||[|;\n]/)) {
     const toks = seg.trim().split(/\s+/);
     for (let i = 0; i < toks.length; i++) {
       const t = toks[i].replace(/^[(!{'"]+/, "");
       if (!t || t.startsWith("-") || /^\d+$/.test(t) || /^\w+=/.test(t)) continue;
       const bin = t.split("/").pop() ?? t;
       if (PREFIX.has(bin)) continue;
-      if (KEYWORD.has(bin)) return { bin: "", args: [] };
+      if (KEYWORD.has(bin)) break scan;
+      if (bin === "cd") cd = toks.slice(i + 1);
       if (SEG_SKIP.has(bin)) break; // rest of this segment is that builtin's argument
       return { bin, args: toks.slice(i + 1) };
     }
   }
-  return { bin: "", args: [] };
+  return cd ? { bin: "cd", args: cd } : { bin: "", args: [] };
 }
 
 /** A segment that only sets the stage — a `cd`, a printed banner. Not work, so
@@ -176,6 +181,12 @@ export function cmdAbstract(command: string): string {
     case "head": case "tail": return say(a0 ? `${bin === "head" ? "read the top of" : "read the end of"} ${base(a0)}` : "");
     case "wc": return say(`count ${base(a0) || "the input"}`);
     case "ls": case "tree": return say(`list ${base(a0) || "this directory"}`);
+    case "cd": {
+      // Leads only when it is all the line has to say (see lead). A `$(…)` or an
+      // unexpanded variable is no name for a place — the line itself is.
+      const dir = base(unquote(a0)) || "~";
+      return say(/^[\w.~-]+$/.test(dir) ? `enter ${dir}` : "");
+    }
     case "mkdir": return say(`create ${base(a0)}`);
     case "rm": case "rmdir": return say(rest.length > 1 ? `delete ${plural(rest.length, "path")}` : `delete ${base(a0)}`);
     case "mv": return say(`move ${base(a0)}`);

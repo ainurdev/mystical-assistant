@@ -53,3 +53,11 @@ ok(abs('cd /x/staging\necho "=== A.1 import routes ==="; grep -rn "import" route
    `past cd and echo: ${abs('cd /x\necho "=== A ==="; grep -rn "import" routes/web.php')}`);
 ok(abs("cd bridge/dashboard/web && npm run build") === "run the build script", `a cd is not "+1 more": ${abs("cd bridge/dashboard/web && npm run build")}`);
 ok(abs('grep -rn "risk_estimate\\|residual" app') === "search “risk_estimate” in the tree", `a segment cut mid-quote keeps no escape: ${abs('grep -rn "a\\|b" app')}`);
+
+// A cd is scaffolding until it is all the line has to say — alone, or in front
+// of a loop no phrase stands for. Then it leads, as the place it went.
+ok(abs("cd /home/me/projects/mystical-assistant") === "enter mystical-assistant", `a lone cd: ${abs("cd /home/me/projects/mystical-assistant")}`);
+ok(cmdKind("cd bridge/dashboard/web") === "fs", "a lone cd wears the folder icon");
+const loop = 'cd /x/mystical-assistant && for p in $(pgrep -f "bridge" | head -20); do ps -p $p; done';
+ok(abs(loop) === "enter mystical-assistant +1 more", `a cd before a loop owns up to the loop, once: ${abs(loop)}`);
+ok(abs('cd "$(git rev-parse --show-toplevel)"') === "", "a cd into a substitution has no name to give, so the row keeps the line");
