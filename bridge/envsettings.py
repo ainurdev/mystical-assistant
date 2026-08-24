@@ -184,6 +184,14 @@ SETTINGS = (
      "about": "Measured 8-15s per check including CLI cold start, so this is "
               "deliberately generous — at a tighter timeout every check fails open and "
               "the guard is a silent no-op. A failure always lets the prompt through."},
+    {"key": "FLOWTYPE_MODEL", "type": "str", "live": True,
+     "group": "AI TUNING", "label": "AUTO-TYPE MODEL", "hint": "model that types new sessions",
+     "about": "Only consulted while the AI tab's AUTO TYPE is on."},
+    {"key": "FLOWTYPE_TIMEOUT", "type": "int", "live": True, "min": 1, "unit": "seconds",
+     "group": "AI TUNING", "label": "AUTO-TYPE TIMEOUT", "hint": "before the verdict fails open",
+     "about": "Same cold-start reality as the guard timeout, and it never blocks a "
+              "turn — the classify runs beside the first turn. A failure just leaves "
+              "the session a plain chat."},
     {"key": "NEXTUP_MODEL", "type": "str", "live": True,
      "group": "AI TUNING", "label": "SCOUT MODEL", "hint": "model for the next-up board's Claude rung",
      "about": "Used only after the free-agent rung is unavailable, and only while the "

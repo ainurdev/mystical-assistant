@@ -80,6 +80,7 @@ export interface FlowShape {
 }
 export interface FlowCatalog {
   enabled: boolean; // the TYPED FLOWS switch in the AI tab
+  auto: boolean; // AUTO TYPE switch: first message classifies, pickers hide
   flows: FlowShape[];
   full?: Record<string, unknown>; // raw templates — dashboard only, for the editor
   all?: { stype: string; label: string; source: string; disabled: boolean }[];

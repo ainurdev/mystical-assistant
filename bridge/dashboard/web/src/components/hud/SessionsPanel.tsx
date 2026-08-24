@@ -4,7 +4,7 @@ import type { FlowShape, SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
-import { useFlows } from "../../lib/flows";
+import { useFlows, useFlowsAuto } from "../../lib/flows";
 import { Rows2, Rows4, Tag, TagX } from "lucide-react";
 import type { ProjectGroup } from "./ProjectsPanel";
 
@@ -320,6 +320,7 @@ export function SessionsPanel(props: Props) {
   // is a "get this out of my way right now", not a preference.
   const [shut, setShut] = useState<Set<string>>(new Set());
   const flows = useFlows();
+  const flowsAuto = useFlowsAuto();
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   // Which kind of work to show. "chat" is the untyped bucket — every session
   // that predates flows lands there, so the filter never hides history.
@@ -640,7 +641,9 @@ export function SessionsPanel(props: Props) {
         )}
       </div>
       </>)}
-      {flows.length > 0 && (<>
+      {/* AUTO TYPE on: no picker, no forms — the first message classifies the
+          session (bridge/flowtype.py) and the type chip lands on its card. */}
+      {flows.length > 0 && !flowsAuto && (<>
       <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "12px 0 6px" }}>
         <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>TYPE</span>
         {nsTypeShape && (

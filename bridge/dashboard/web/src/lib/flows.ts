@@ -8,11 +8,13 @@ import { api, type FlowCatalog, type FlowShape } from "../api";
  *  the bridge has answered — or while the TYPED FLOWS switch is off. */
 
 let snapshot: FlowShape[] = [];
+let auto = false;
 let asked = false;
 const subs = new Set<() => void>();
 
 function publish(cat: FlowCatalog): void {
   snapshot = cat.enabled ? cat.flows : [];
+  auto = !!cat.auto;
   subs.forEach((fn) => fn());
 }
 
@@ -36,4 +38,10 @@ function subscribe(fn: () => void): () => void {
 
 export function useFlows(): FlowShape[] {
   return useSyncExternalStore(subscribe, () => snapshot);
+}
+
+/** AUTO TYPE on: the picker hides — sessions type themselves off the first
+ *  message. The catalog itself stays published for rails and chips. */
+export function useFlowsAuto(): boolean {
+  return useSyncExternalStore(subscribe, () => auto);
 }

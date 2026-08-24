@@ -130,7 +130,8 @@ def catalog() -> dict:
             "stages": [{"id": s["id"], "label": s.get("label", s["id"].upper()),
                         "gate": bool(s.get("gate"))} for s in f["stages"]],
         })
-    return {"enabled": enabled(), "flows": out}
+    return {"enabled": enabled(), "flows": out,
+            "auto": aifeatures.enabled("flowtype")}
 
 
 def save_custom(stype: str, d) -> "list[str]":
@@ -329,7 +330,11 @@ def after_turn(job, model=None, effort=None) -> None:
             return
         sess = store.get_session(sid) or {}
         f = get_flow(sess.get("stype"))
-        stage = sess.get("stage")
+        # The stage the turn was COMPOSED under, not where the session sits
+        # now: an auto-classify verdict (bridge/flowtype.py) or a manual stage
+        # move can land mid-turn, and a turn that never saw a stage's contract
+        # must not be nudged for missing its card.
+        stage = getattr(job, "flow_stage", None)
         if not f or not stage or not stage_by_id(f, stage):
             return
         text = job.result or (job.texts[-1] if job.texts else "")
