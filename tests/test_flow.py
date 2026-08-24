@@ -249,3 +249,64 @@ def test_after_turn_is_a_noop_for_plain_chat_and_bad_turns():
     err = _StubJob(t["id"], "flow-j7", CARD, status="error")
     flow.after_turn(err)
     assert err.added == []                    # a failed turn settles nothing
+
+
+# --- API: what both servers hand out ----------------------------------------
+
+def test_session_brief_carries_stype_and_stage():
+    from bridge.miniapp.server import _session_brief
+    s = store.create_session(555, "/p", stype="fix", stage="reproduce")
+    b = _session_brief(s)
+    assert b["stype"] == "fix" and b["stage"] == "reproduce"
+    plain = _session_brief(store.create_session(555, "/p"))
+    assert plain["stype"] is None and plain["stage"] is None
+
+
+class _StubHandler:
+    """Duck-typed stand-in for either server's Handler: _stage_action only
+    needs _json, and both real ones have the same signature."""
+
+    def __init__(self):
+        self.sent = None
+
+    def _json(self, body, code=200):
+        self.sent = (body, code)
+        return self.sent
+
+
+def test_resolve_stype_gates_creation():
+    from bridge.miniapp.server import _resolve_stype
+    assert _resolve_stype("fix") == ("fix", "reproduce", None)
+    assert _resolve_stype("") == (None, None, None)          # plain chat
+    assert _resolve_stype(None) == (None, None, None)
+    assert _resolve_stype("nope")[2] == "unknown flow type"
+
+
+def test_resolve_stype_refuses_a_disabled_type():
+    from bridge.miniapp.server import _resolve_stype
+    zap = {"stype": "zap", "label": "ZAP", "blurb": "", "form": [],
+           "stages": [{"id": "go", "label": "GO", "gate": False,
+                       "instructions": "x", "card_fields": []}],
+           "disabled": True}
+    flow.save_custom("zap", zap)
+    try:
+        assert _resolve_stype("zap")[2] == "unknown flow type"
+    finally:
+        flow.delete_custom("zap")
+
+
+def test_stage_endpoint_moves_and_refuses():
+    from bridge.miniapp.server import _stage_action
+    s = store.create_session(555, "/p", stype="fix", stage="reproduce")
+    h = _StubHandler()
+    _stage_action(h, 555, s["id"], {"action": "advance"})
+    assert h.sent == ({"ok": True, "stage": "rootcause"}, 200)
+    assert store.get_session(s["id"])["stage"] == "rootcause"
+
+    _stage_action(h, 555, s["id"], {"action": "set", "stage": "nope"})
+    assert h.sent[1] == 400
+    _stage_action(h, 999, s["id"], {"action": "advance"})     # another chat
+    assert h.sent[1] == 404
+    plain = store.create_session(555, "/p")
+    _stage_action(h, 555, plain["id"], {"action": "advance"})
+    assert h.sent == ({"error": "not a typed session"}, 400)
