@@ -292,10 +292,22 @@ def test_todowrite_summary_names_the_item_it_just_started():
     assert T._summarize_tool("TodoWrite", {"todos": []}) == ""
 
 
-def test_skill_summary_names_the_skill_and_its_argument():
-    assert T._summarize_tool("Skill", {"skill": "graphify"}) == "graphify"
-    assert (T._summarize_tool("Skill", {"skill": "code-review", "args": "ultra"})
-            == "code-review ultra")
+def test_skill_summary_is_the_argument_and_the_kit_rides_in_agent_meta():
+    # The kit's name is the card's header (agent_meta), so the summary carries
+    # only what it was asked to do.
+    assert T._summarize_tool("Skill", {"skill": "graphify"}) == ""
+    assert T._summarize_tool("Skill", {"skill": "code-review", "args": "ultra"}) == "ultra"
+    assert T.agent_meta("Skill", {"skill": "graphify"}) == {"type": "graphify"}
+
+
+def test_agent_meta_carries_the_type_and_title_a_summary_cannot():
+    assert T.agent_meta("Task", {"subagent_type": "Explore", "description": "map the renderers",
+                                 "prompt": "..."}) == {"type": "Explore", "title": "map the renderers"}
+    # Partial input keeps whatever it has; nothing at all is None, so the event
+    # stays exactly the shape it was.
+    assert T.agent_meta("Task", {"prompt": "..."}) is None
+    assert T.agent_meta("Bash", {"command": "ls"}) is None
+    assert T.agent_meta("Task", "not a dict") is None
 
 
 def test_unknown_tools_summarize_from_whatever_arguments_they_took():

@@ -307,18 +307,149 @@ function McpCard({ name, summary, ms, stat, error }: Res & { name: string; summa
   );
 }
 
-/** A delegated run (Task / Skill): a rail down the side and the brief it was
- *  handed, which is a paragraph, not a path — so it wraps instead of truncating. */
-function AgentCard({ name, summary, ms, stat, error }: Res & { name: string; summary: string }) {
-  const accent = toolAccent(name);
+/** What a delegated run knows about itself past its brief: which agent took the
+ *  work, and the short name the caller gave the job. Both are absent on turns
+ *  recorded before the bridge carried them (bridge/transcript_jsonl.agent_meta),
+ *  so every part of the header is optional — the frame is not. */
+type AgentMeta = { type?: string; title?: string };
+
+/** One delegation, as the block draws it. */
+type AgentRun = Res & { name: string; summary: string; meta?: AgentMeta; running?: boolean };
+
+/** Teal for an agent, violet for a skill (the model's own kit, and violet is
+ *  already the model's colour), salmon when it failed. */
+function agentHue({ name, error }: { name: string; error?: boolean }): string {
+  if (error) return "var(--danger)";
+  return name === "Skill" ? "var(--violet)" : toolAccent(name);
+}
+
+/** How long a run has been out.
+ *  ponytail: mount time is the start, so reopening the chat mid-run restarts the
+ *  count — a tool event carries no timestamp. Stamp one on the event if the
+ *  figure ever has to survive a reload. */
+function LiveClock() {
+  const [t0] = useState(() => Date.now());
+  const [s, setS] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setS(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [t0]);
+  return <span className="agb-live">{Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}</span>;
+}
+
+/** The chrome every delegation block wears: the mark, what kind of delegation
+ *  this was, who took it, and — on a phone, where the header has no room for
+ *  numbers — how far it has got. */
+function AgentHead({ kind, type, running, state }: {
+  kind: string; type?: string; running?: boolean; state?: React.ReactNode;
+}) {
+  return (
+    <div className="agb-head">
+      <span className="agb-mark" aria-hidden>{running ? "\u25c8" : "\u25c7"}</span>
+      <span className="agb-kind">{kind} //</span>
+      {type ? <span className="agb-type" title={type}>{type}</span> : null}
+      <span className="agb-rule" aria-hidden />
+      {state ? <span className="agb-state">{state}</span> : null}
+    </div>
+  );
+}
+
+/** A delegated run: the one card that keeps a frame, because it is a turn nested
+ *  inside your turn. The agent that took the work is the tag — "AGENT" alone was
+ *  the same word for a one-file lookup and a four-minute fan-out — and the brief
+ *  is the body rather than a paragraph clipped into a line. */
+function AgentBlock({ run, live }: { run: AgentRun; live?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { name, summary, meta, ms, stat, error, running } = run;
+  const title = meta?.title ?? "";
   return (
     <div
-      className="flex items-start gap-2 rounded-lg border border-l-2 bg-[var(--ac-03)] px-2 py-1.5"
-      style={{ borderColor: edge(accent), borderLeftColor: accent }}
+      className="agb"
+      data-run={running ? "" : undefined}
+      data-err={error ? "" : undefined}
+      data-open={open ? "" : undefined}
+      style={{ "--h": agentHue(run) } as React.CSSProperties}
     >
-      <Bot size={12} className="mt-px flex-none" style={{ color: accent }} aria-hidden />
-      <span className="min-w-0 flex-1 line-clamp-2 text-[11px] leading-relaxed text-[var(--tg-hint)]">{summary}</span>
-      <span className="mt-px"><Took ms={ms} stat={stat} error={error} /></span>
+      <i className="agb-rail" aria-hidden />
+      {running ? <span className="agb-sweep" aria-hidden><i /></span> : null}
+      <AgentHead
+        kind={name === "Skill" ? "SKILL" : "AGENT"}
+        type={meta?.type}
+        running={running}
+        // The clock only runs on the turn streaming into this chat; on an older
+        // one it would be counting from when you scrolled to it, not from when
+        // the agent went out.
+        state={running ? (live ? <LiveClock /> : null)
+                       : error ? <span style={{ color: "var(--danger)" }}>FAILED</span> : null}
+      />
+      {title || summary ? (
+        <div className="agb-brief">
+          {title ? <b>{title}</b> : null}
+          {title && summary ? " \u2014 " : null}
+          {summary}
+        </div>
+      ) : null}
+      {/* The reason lives inside the frame, not under it: it belongs to this run,
+          and a block with a border makes a line floating below it read as loose. */}
+      {error && stat ? <div className="agb-err">{stat}</div> : null}
+      {/* While it is out, the only true figures are that it is working and for
+          how long — what it will report does not exist yet. */}
+      <button
+        type="button"
+        className="agb-nums"
+        onClick={() => setOpen((o) => !o)}
+        title={open ? "clip the brief" : "the whole brief"}
+      >
+        {running ? <span style={{ color: "var(--h)" }}>WORKING</span> : null}
+        {stat && !error && !running ? <b>{stat}</b> : null}
+        {slow(ms) ? <span>{dur(ms)}</span> : null}
+        <i aria-hidden />
+        {summary ? <span className="go">{open ? "\u2303" : "\u2304"} BRIEF</span> : null}
+      </button>
+    </div>
+  );
+}
+
+/** One delegation inside a fan: its agent, what it was asked for, and where it
+ *  got to. No clock of its own — one interval per row to say what the block's
+ *  own clock already says. */
+function AgentFanRow({ run }: { run: AgentRun }) {
+  const { name, summary, meta, ms, stat, error, running } = run;
+  const label = meta?.type || (name === "Skill" ? "SKILL" : "AGENT");
+  const said = meta?.title || summary;
+  return (
+    <div
+      className="agb-fan"
+      data-state={running ? "run" : error ? "err" : "done"}
+      style={{ "--h": agentHue(run) } as React.CSSProperties}
+    >
+      <i className="agb-dot" aria-hidden />
+      <span className="t" title={label}>{label}</span>
+      <span className="d" title={said}>{said}</span>
+      <span className="n">{error ? "FAILED" : running ? "" : stat || slow(ms)}</span>
+    </div>
+  );
+}
+
+/** A run of delegations under one frame, drawn as the fan it is: a diamond per
+ *  agent, the ones still out lit. It says how many ran, not that they ran at
+ *  once — the event stream can't tell a fan-out from four in a row. */
+function AgentFan({ runs, live }: { runs: AgentRun[]; live?: boolean }) {
+  const out = runs.filter((r) => r.running).length;
+  const total = runs.reduce((t, r) => t + (r.ms ?? 0), 0);
+  return (
+    <div className="agb" data-run={out ? "" : undefined}
+         style={{ "--h": "var(--primary)" } as React.CSSProperties}>
+      <i className="agb-rail" aria-hidden />
+      {out ? <span className="agb-sweep" aria-hidden><i /></span> : null}
+      <AgentHead
+        kind="AGENTS"
+        type={`${runs.length} RUNS`}
+        running={!!out}
+        state={out ? <><span style={{ color: "var(--h)" }}>{out} WORKING</span>{live ? <> <LiveClock /></> : null}</>
+                   : slow(total) ? dur(total) : null}
+      />
+      {runs.map((r, k) => <AgentFanRow key={k} run={r} />)}
     </div>
   );
 }
@@ -353,7 +484,6 @@ function ToolCard({ name, summary, ms, stat, error }: Res & { name: string; summ
 
   if (kind === "read" && summary) return <ReadCard path={summary} {...res} />;
   if (kind === "write" && summary) return <WriteCard name={name} path={summary} {...res} />;
-  if (kind === "agent") return <AgentCard name={name} summary={summary} {...res} />;
   if (kind === "mcp") return <McpCard name={name} summary={summary} {...res} />;
   if (kind === "web") return <WebCard name={name} summary={summary} {...res} />;
   if (kind === "search") return <SearchCard name={name} summary={summary} {...res} />;
@@ -813,6 +943,7 @@ export const RunStream = memo(function RunStream({
   tokens = null,
   ended = false,
   boot = null,
+  live = false,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
@@ -828,6 +959,9 @@ export const RunStream = memo(function RunStream({
   /** Approve a gated stage's requested move (server-owned; the card can ask). */
   onStageAdvance?: () => void;
   ended?: boolean;
+  /** Is this the turn streaming into the chat right now? Only it may run a
+   *  clock — on an older turn the figure would start when you scrolled to it. */
+  live?: boolean;
 }) {
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
   // Derived from the length rather than stored as an index, so a running turn's
@@ -963,6 +1097,20 @@ export const RunStream = memo(function RunStream({
               return <TerminalBlock key={i} command={event.summary} done={done} />;
             if (groupOf.has(i)) return null;   // drawn by the run's head
             const run = groups.get(i);
+            // A delegation is a turn nested inside this one, so it is drawn as
+            // its own framed block — and a run of them as one fan, not as N
+            // identical cards or a generic "AGENT · 4 CALLS" box.
+            if (toolKind(event.name) === "agent") {
+              const runs = (run ?? [i]).map((j) => {
+                const e = events[j] as { name: string; summary: string; agent?: AgentMeta };
+                const d = doneOf(events[j]);
+                return { name: e.name, summary: e.summary, meta: e.agent, ms: d?.ms,
+                         stat: d?.stat, error: d?.is_error, running: !d };
+              });
+              return runs.length > 1
+                ? <AgentFan key={i} runs={runs} live={live} />
+                : <AgentBlock key={i} run={runs[0]} live={live} />;
+            }
             if (done?.patch)
               return (
                 <EditGroup

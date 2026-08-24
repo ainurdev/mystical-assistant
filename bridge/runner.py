@@ -1477,8 +1477,11 @@ def _handle_event(job: Job, d: dict):
                 if name == "Bash":
                     _note_work_cwd(job, inp.get("command") or "")
                 job.open_tools[b.get("id")] = (name, time.time())
-                job.add({"type": "tool", "name": name, "id": b.get("id"),
-                         "summary": _summarize_tool(name, inp)})
+                ev = {"type": "tool", "name": name, "id": b.get("id"),
+                      "summary": _summarize_tool(name, inp)}
+                if (am := transcript_jsonl.agent_meta(name, inp)):
+                    ev["agent"] = am
+                job.add(ev)
     elif t == "user":
         for b in d.get("message", {}).get("content", []):
             if isinstance(b, dict) and b.get("type") == "tool_result":

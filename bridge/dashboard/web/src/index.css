@@ -891,10 +891,11 @@ input {
 .md tbody tr:nth-child(even) { background: var(--ac-03); }
 .md img { max-width: 100%; border-radius: 8px; }
 
-/* Session readouts above the composer (agents, goal) — one row, aligned to the
-   composer's own padding. Both pills render nothing when there is nothing to
-   say, so the strip collapses rather than leaving a gap where a pill was. */
-.pillstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 16px 0; }
+/* Session readouts (agents, goal) — one row at the top of the composer's own
+   box, so it shares the composer's padding instead of claiming a bare strip of
+   panel above it. Both pills render nothing when there is nothing to say, so
+   the row collapses rather than leaving a gap where a pill was. */
+.pillstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 9px; }
 .pillstrip:empty { display: none; }
 
 /* Composer control row — two tiers on one line. SETTINGS (what the next turn
@@ -1300,4 +1301,133 @@ input {
   border-radius: 999px; padding: 0 6px; height: 13px;
   display: inline-flex; align-items: center;
   background: color-mix(in srgb, var(--h) 14%, transparent); color: var(--h);
+}
+
+/* === THE AGENT BLOCK =======================================================
+   A delegated run — Task, Agent, Skill. The one thing in the stream that keeps
+   a frame, because it is not a step of your turn but a turn nested inside it:
+   its own tool calls, its own minutes, its own report. Everything else traded
+   its box for an .actrow row; this earns one back.
+
+   It reuses .panel for the corner brackets (so it follows the theme's corner
+   shape like every other panel) and draws a double rail down its left edge —
+   the two-line margin that says "nested". `--h` is the block's hue, set inline:
+   teal for an agent, violet for a skill, salmon when it failed. */
+.agb {
+  margin-left: 18px;
+  padding-left: 10px;
+  border: 1px solid var(--ac-16);
+  background: var(--panel3);
+}
+/* .panel draws its brackets in flat aqua; the block wears its own hue. */
+.agb::before,
+.agb::after { border-color: color-mix(in srgb, var(--h) 55%, transparent); }
+.agb-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--h); }
+.agb-rail::after {
+  content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px;
+  background: color-mix(in srgb, var(--h) 30%, transparent);
+}
+.agb[data-run] { border-color: color-mix(in srgb, var(--h) 26%, transparent); }
+.agb[data-run] > .agb-rail { animation: agbpulse 1.4s ease-in-out infinite; }
+/* Not `blink`: that goes to opacity 0, and a full-height rail flicking out
+   reads as the frame breaking rather than as a run still out. */
+@keyframes agbpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.32; } }
+
+.agb-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0 9px; }
+.agb-mark {
+  flex: none; line-height: 1; font-size: 11px; color: var(--h);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--h) 55%, transparent);
+}
+.agb-kind {
+  flex: none; font-size: var(--t95); letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--h);
+}
+.agb-kind > span { margin: 0 3px; color: color-mix(in srgb, var(--h) 45%, transparent); }
+/* The agent that took the work — the one thing the old row never said. */
+.agb-type {
+  flex: none; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t95); letter-spacing: 1.5px; text-transform: uppercase; line-height: 14px;
+  padding: 0 5px; color: var(--h);
+  border: 1px solid color-mix(in srgb, var(--h) 34%, transparent);
+}
+.agb-rule {
+  flex: 1; min-width: 8px; height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--h) 22%, transparent), transparent);
+}
+.agb-nums {
+  display: flex; flex: none; gap: 9px; white-space: nowrap;
+  font-size: var(--t95); letter-spacing: 1.2px; text-transform: uppercase; color: var(--txf);
+}
+.agb-nums > b { font-weight: 400; color: var(--txd); }
+.agb-live { color: var(--h); font-variant-numeric: tabular-nums; }
+
+/* The brief, in the oracle's own register — lowercase italic, the one voice
+   nothing else in the stream wears. A brief is an instruction spoken into a
+   machine; it reads like one. Two lines shut, all of it open. */
+.agb-brief {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  /* margin, not padding: the clamp cuts at the content box, so a bottom padding
+     would show a sliver of the third line under it. */
+  margin-bottom: 7px; padding: 5px 30px 0 9px;
+  font-family: var(--mono); font-size: var(--t115); line-height: 1.5;
+  font-style: italic; color: var(--txm);
+}
+.agb[data-open] > .agb-brief { display: block; }
+.agb[data-err] > .agb-brief { color: var(--txf); }
+.agb-brief > b {
+  font-weight: 400; font-style: normal; color: var(--txb);
+  font-family: var(--font-display); letter-spacing: 0.6px;
+}
+.agb-foot {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 0 9px 6px 9px;
+  font-size: var(--t95); letter-spacing: 1.3px; text-transform: uppercase; color: var(--txf);
+}
+.agb-foot:hover { color: var(--txm); }
+.agb-foot > i { flex: 1; height: 1px; background: var(--ac-06); }
+.agb-err {
+  margin: 0 9px 7px 9px; padding: 2px 0 2px 8px; border-left: 2px solid var(--err);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--mono); font-size: var(--t11); line-height: 1.5; color: var(--err);
+}
+
+/* A fan-out: one frame, a row per delegation, the ones still out lit. */
+.agb-fan {
+  display: grid; grid-template-columns: 14px minmax(0, 150px) minmax(0, 1fr) max-content;
+  align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 3px 10px 3px 9px; border-top: 1px solid var(--ac-06);
+  font-family: var(--mono); font-size: var(--t11);
+}
+.agb-fan:hover { background: var(--ac-03); }
+.agb-dot {
+  justify-self: center; width: 6px; height: 6px; transform: rotate(45deg);
+  border: 1px solid var(--txl); background: var(--panel3);
+}
+.agb-fan[data-state="run"] > .agb-dot { border-color: var(--h); background: var(--h); animation: agbpulse 1.4s ease-in-out infinite; }
+.agb-fan[data-state="done"] > .agb-dot { border-color: var(--ok); background: var(--ok); }
+.agb-fan[data-state="err"] > .agb-dot { border-color: var(--err); background: var(--err); }
+.agb-fan > .t {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-display); font-size: var(--t95); letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--h); border-left: 2px solid var(--h); padding-left: 6px;
+}
+.agb-fan > .d { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                font-style: italic; color: var(--txm); }
+.agb-fan > .n { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                font-family: var(--font-display); font-size: var(--t95);
+                letter-spacing: 1.2px; text-transform: uppercase; color: var(--txf); }
+
+/* A bright band running the block's bottom edge: the one honest thing to draw
+   while a run is out, since nothing it will report exists yet. */
+.agb-sweep { position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; overflow: hidden; }
+.agb-sweep > i {
+  position: absolute; top: 0; height: 1px; width: 34%;
+  background: linear-gradient(90deg, transparent, var(--h), transparent);
+  animation: agbsweep 1.9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+@keyframes agbsweep { from { left: -34%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .agb-sweep { display: none; }
+  .agb[data-run] > .agb-rail,
+  .agb-fan[data-state="run"] > .agb-dot { animation: none; }
 }

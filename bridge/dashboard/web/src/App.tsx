@@ -2017,17 +2017,18 @@ export function App() {
                         onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
-                    {/* Session readouts share one padded row above the
-                        composer: a pill on its own bare row, flush against the
-                        panel edge, read as a layout slip rather than a status. */}
-                    <div className="pillstrip">
-                      <AgentsPill sessionId={sessionId} running={running} />
-                      <GoalPill
-                        goal={sessions.find((s) => s.id === sessionId)?.goal}
-                        onClear={() => void send("/goal", [])}
-                      />
-                    </div>
                     <Composer
+                      pills={
+                        // Inside the composer's box, not on the bare panel above
+                        // it: a lone pill on its own strip read as a layout slip.
+                        <div className="pillstrip">
+                          <AgentsPill sessionId={sessionId} running={running} />
+                          <GoalPill
+                            goal={sessions.find((s) => s.id === sessionId)?.goal}
+                            onClear={() => void send("/goal", [])}
+                          />
+                        </div>
+                      }
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={usage} effort={effort}
                       agent={agentId} agents={agentOpts} onAgent={setAgent}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}

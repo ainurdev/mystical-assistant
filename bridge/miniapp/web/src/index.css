@@ -324,3 +324,108 @@ input {
 }
 .md th { background: var(--muted); font-weight: 600; }
 .md img { max-width: 100%; border-radius: 8px; }
+
+/* === THE AGENT BLOCK ======================================================
+   A delegated run — Task, Agent, Skill. The one card that keeps a frame,
+   because it is not a step of your turn but a turn nested inside it. Mirrors
+   the desktop block (bridge/dashboard/web/src/index.css `.agb`) folded into a
+   phone: same double rail, same diamond, same oracle-voice brief, but rounded
+   like the rest of this surface, no corner brackets at 390px, and the numbers
+   on their own strip because a header this narrow can't hold them.
+   `--h` is the block's hue, set inline. */
+.agb {
+  position: relative; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--panel3); padding-left: 9px;
+}
+.agb-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--h); }
+.agb-rail::after {
+  content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 1px;
+  background: color-mix(in srgb, var(--h) 28%, transparent);
+}
+.agb[data-run] { border-color: color-mix(in srgb, var(--h) 26%, transparent); }
+.agb[data-run] > .agb-rail { animation: agbpulse 1.4s ease-in-out infinite; }
+/* A pulse, not a blink: a full-height rail flicking to nothing reads as the
+   frame breaking rather than as a run still out. */
+@keyframes agbpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.32; } }
+
+.agb-head { display: flex; align-items: center; gap: 6px; padding: 6px 9px 0 8px; }
+.agb-mark {
+  flex: none; line-height: 1; font-size: 11px; color: var(--h);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--h) 55%, transparent);
+}
+.agb-kind { flex: none; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--h); }
+.agb-type {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 9.5px; letter-spacing: 1.4px; text-transform: uppercase; line-height: 14px;
+  padding: 0 5px; color: var(--h);
+  border: 1px solid color-mix(in srgb, var(--h) 32%, transparent);
+}
+.agb-rule {
+  flex: 1; min-width: 6px; height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--h) 20%, transparent), transparent);
+}
+.agb-state { flex: none; font-size: 9.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted-2); }
+.agb-live { color: var(--h); font-variant-numeric: tabular-nums; }
+
+.agb-brief {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  /* margin, not padding: the clamp cuts at the content box, so bottom padding
+     would show a sliver of the third line under it. */
+  margin-bottom: 6px; padding: 5px 10px 0 8px;
+  font-family: var(--mono); font-size: 11px; line-height: 1.5; font-style: italic; color: var(--txm);
+}
+.agb[data-open] > .agb-brief { display: block; }
+.agb[data-err] > .agb-brief { color: var(--txf); }
+.agb-brief > b { font-weight: 400; font-style: normal; color: var(--foreground-bright); letter-spacing: 0.4px; }
+
+.agb-nums {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  padding: 0 9px 6px 8px; font-size: 9.5px; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--muted-2);
+}
+.agb-nums > b { font-weight: 400; color: var(--txd); }
+.agb-nums > i { flex: 1; height: 1px; background: var(--ac-06); }
+.agb-nums > .go { flex: none; color: var(--txd); }
+.agb-err {
+  margin: 0 9px 7px 8px; padding: 2px 0 2px 7px; border-left: 2px solid var(--danger);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.5; color: var(--danger);
+}
+
+/* A fan-out: one frame, a row per delegation, the ones still out lit. */
+.agb-fan {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 9px 4px 8px; border-top: 1px solid var(--ac-06);
+  font-family: var(--mono); font-size: 10.5px;
+}
+.agb-dot {
+  flex: none; width: 6px; height: 6px; transform: rotate(45deg);
+  border: 1px solid var(--txl); background: var(--panel3);
+}
+.agb-fan[data-state="run"] > .agb-dot { border-color: var(--h); background: var(--h); animation: agbpulse 1.4s ease-in-out infinite; }
+.agb-fan[data-state="done"] > .agb-dot { border-color: var(--success); background: var(--success); }
+.agb-fan[data-state="err"] > .agb-dot { border-color: var(--danger); background: var(--danger); }
+.agb-fan > .t {
+  flex: none; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--h);
+  border-left: 2px solid var(--h); padding-left: 5px;
+}
+.agb-fan > .d { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                font-style: italic; color: var(--txm); }
+.agb-fan > .n { flex: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted-2); }
+
+/* A bright band running the block's bottom edge: the one honest thing to draw
+   while a run is out, since nothing it will report exists yet. */
+.agb-sweep { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; overflow: hidden; }
+.agb-sweep > i {
+  position: absolute; top: 0; height: 1px; width: 36%;
+  background: linear-gradient(90deg, transparent, var(--h), transparent);
+  animation: agbsweep 1.9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+@keyframes agbsweep { from { left: -36%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .agb-sweep { display: none; }
+  .agb[data-run] > .agb-rail,
+  .agb-fan[data-state="run"] > .agb-dot { animation: none; }
+}

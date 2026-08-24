@@ -169,7 +169,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
 export function Composer({
   disabled, running, model, models, usage, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, onModel, onEffort, onSend, onSteer, onStop, onCompact,
-  queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause,
+  queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause, pills,
 }: {
   disabled: boolean;
   running: boolean;
@@ -211,6 +211,9 @@ export function Composer({
   // no queued prompt, no goal nudge. Your own SEND still runs (and unpauses).
   paused?: boolean;
   onTogglePause?: () => void;
+  // Session readouts (agents, goal) rendered inside the composer's box, so a
+  // lone pill never sits on bare panel between transcript and border.
+  pills?: ReactNode;
 }) {
   const text = draft;
   const setText = onDraft;
@@ -516,6 +519,7 @@ export function Composer({
 
   return (
     <div style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px" }}>
+      {pills}
       {/* Paused: shown even when idle, because that's exactly when you can't tell
           from the transcript that the queue and the goal loop are being held. */}
       {paused && (

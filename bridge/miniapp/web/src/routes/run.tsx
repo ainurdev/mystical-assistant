@@ -382,6 +382,7 @@ function RunPage() {
                 )}
                 <RunStream
                   events={turn.events}
+                  live={isActive}
                   tokens={turn.tokens ?? null}
                   boot={isActive ? boot : null}
                   pending={isActive ? activeTurn.pending : NO_PENDING}

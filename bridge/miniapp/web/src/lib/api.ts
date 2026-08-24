@@ -173,7 +173,10 @@ export type RunEvent =
   // context, blocked a tool or crashed, and whatever the claude child wrote to
   // stderr (normally nothing — a dying MCP server, or --debug).
   | { type: "log"; src: "hook" | "stderr"; label?: string; text: string; error?: boolean }
-  | { type: "tool"; name: string; summary: string; id?: string }
+  // `agent` is Task/Agent/Skill-only (bridge/transcript_jsonl.agent_meta) and
+  // absent on turns recorded before it landed.
+  | { type: "tool"; name: string; summary: string; id?: string;
+      agent?: { type?: string; title?: string } }
   // `output` is Bash-only, `patch` edit-only, `stat` for everything else (see
   // transcript_jsonl.tool_done); turns recorded before this landed carry no `id`.
   | {

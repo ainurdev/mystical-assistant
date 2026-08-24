@@ -123,11 +123,33 @@ def _summarize_tool(name: str, inp) -> str:
     if name == "TodoWrite":
         return _todo_summary(inp.get("todos"))
     if name == "Skill":
-        return " ".join(str(inp.get(k) or "") for k in ("skill", "args")).strip()[:120]
+        # The kit's name rides in agent_meta, where the card draws it as a header
+        # — repeating it in front of the argument said it twice.
+        return str(inp.get("args") or "")[:120]
     for key in _SUMMARY_KEYS:
         if inp.get(key):
             return str(inp[key])[:120]
     return _arg_summary(inp)
+
+
+def agent_meta(name: str, inp) -> dict | None:
+    """The two things a delegated run knows about itself that its summary can't
+    carry: which agent was handed the work, and the short name the caller gave
+    the job. Both sit in the Task tool's input and were thrown away — _SUMMARY_KEYS
+    picks `prompt`, so the transcript said "AGENT" and 120 characters of brief for
+    every delegation alike. A Skill has no subagent type; the kit it ran is its
+    name. None for every other tool, so their events keep their exact shape."""
+    if not isinstance(inp, dict):
+        return None
+    if name == "Skill":
+        meta = {"type": str(inp.get("skill") or "")}
+    elif name in ("Task", "Agent"):
+        meta = {"type": str(inp.get("subagent_type") or ""),
+                "title": str(inp.get("description") or "")}
+    else:
+        return None
+    meta = {k: v[:60] for k, v in meta.items() if v}
+    return meta or None
 
 
 def _arg_summary(inp: dict) -> str:
@@ -522,8 +544,12 @@ def _parse_full(path: str) -> dict:
                             emit({"type": "question", "request_id": rid, "questions": qs})
                         else:
                             open_tools[b.get("id")] = (name, _ts(rec))
-                            emit({"type": "tool", "name": name, "id": b.get("id"),
-                                  "summary": _summarize_tool(name, b.get("input", {}))})
+                            inp = b.get("input", {})
+                            ev = {"type": "tool", "name": name, "id": b.get("id"),
+                                  "summary": _summarize_tool(name, inp)}
+                            if (am := agent_meta(name, inp)):
+                                ev["agent"] = am
+                            emit(ev)
             # other record types (queue-operation, mode, file-history-snapshot,
             # last-prompt, attachment, ...) carry no transcript content -> skipped
             if state["turn"] is not None:
