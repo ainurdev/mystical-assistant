@@ -425,8 +425,16 @@ def test_current_branch_detached_names_something_useful():
     # detached at a commit a branch points at → that branch, not "HEAD"
     _run(d, "checkout", "-q", "--detach", "HEAD")
     assert g.current_branch(d) == base
-    # detached at a commit nothing points at → the short sha
+    # detached behind a branch (a worktree whose branch moved to another
+    # checkout) → the branch-relative name, not a bare sha
+    _run(d, "checkout", "-q", base)
     _write(d, "a.txt", "two\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "ahead")
+    _run(d, "checkout", "-q", "--detach", "HEAD~1")
+    assert g.current_branch(d) == f"{base}~1"
+    # detached at a commit no branch contains → the short sha
+    _write(d, "a.txt", "three\n")
     _run(d, "add", "-A")
     _run(d, "commit", "-qm", "loose")
     sha = subprocess.run(["git", "-C", d, "rev-parse", "--short", "HEAD"],
