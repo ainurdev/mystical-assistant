@@ -14,6 +14,7 @@ import {
   ListChecks,
   Plug,
   Layers,
+  Merge,
   GitCompare,
   Brain,
   ChevronDown,
@@ -977,6 +978,23 @@ export const RunStream = memo(function RunStream({
             );
           case "tool_done":
             return null;
+          case "steer":
+            // Sent into this turn while it was already running — drawn as your
+            // bubble (right-aligned, button color, out of the agent rail) so
+            // mid-turn words read as yours; the tag marks them as a steer.
+            return (
+              <div key={i} className="-ml-3 flex justify-end">
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
+                  <div className="mb-0.5 flex items-center justify-end gap-1 text-[11px] uppercase tracking-wide opacity-70">
+                    steer <Merge size={11} strokeWidth={1.8} style={{ transform: "rotate(90deg)" }} aria-hidden />
+                  </div>
+                  {event.text}
+                  {event.images && event.images.length > 0 && (
+                    <ToolImages paths={event.images} />
+                  )}
+                </div>
+              </div>
+            );
           case "result":
             return (
               <div key={i} className="relative -ml-3 pl-3">

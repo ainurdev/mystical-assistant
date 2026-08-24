@@ -1427,17 +1427,30 @@ export const RunStream = memo(function RunStream({
           case "tool_done":
             return null;
           case "steer":
-            // Sent into this turn while it was already running — shown so the
-            // transcript explains why the agent changed course mid-task.
+            // Sent into this turn while it was already running — drawn with the
+            // prompt bubble's geometry (right-aligned, bordered, tinted) so it
+            // reads as the user speaking, not another agent row; violet + the
+            // STEER tag keep it distinct from the turn-opening prompt.
             return (
-              <div key={i} id={ckId(turnId, steerKey(i))} className="my-1.5 ml-[18px] scroll-mt-[44px] border-l-2 border-[var(--violet)] py-0.5 pl-2.5 text-[length:var(--t12)] leading-relaxed text-[var(--violet)]">
-                <div className="flex items-start gap-2">
-                  <span className="mt-0.5"><SteerIcon size={12} /></span>
-                  <span>{event.text}</span>
+              <div key={i} id={ckId(turnId, steerKey(i))} className="my-2 flex scroll-mt-[44px] justify-end">
+                <div
+                  className="max-w-[78%] border border-r-[3px] px-3 py-1.5"
+                  style={{
+                    borderColor: "color-mix(in srgb, var(--violet) 26%, transparent)",
+                    borderRightColor: "var(--violet)",
+                    background: "color-mix(in srgb, var(--violet) 7%, transparent)",
+                  }}
+                >
+                  <div className="mb-0.5 flex items-center justify-end gap-1.5 text-[length:var(--t10)] tracking-[1.6px] text-[var(--violet)]">
+                    STEER <SteerIcon size={11} />
+                  </div>
+                  <span className="block whitespace-pre-wrap break-words text-[length:var(--t12)] leading-relaxed text-foreground-bright">
+                    {event.text}
+                  </span>
+                  {event.images && event.images.length > 0 && (
+                    <ToolImages paths={event.images} />
+                  )}
                 </div>
-                {event.images && event.images.length > 0 && (
-                  <ToolImages paths={event.images} />
-                )}
               </div>
             );
           case "result":

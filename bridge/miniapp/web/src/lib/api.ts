@@ -149,6 +149,9 @@ export type RunEvent =
       // Screenshots a tool returned, as upload-dir paths (see /api/attachment).
       images?: string[];
     }
+  // A message folded into the turn while it was already running; `images` are
+  // upload-dir paths like tool_done's.
+  | { type: "steer"; text: string; images?: string[] }
   | { type: "result"; result: string; cost: number; elapsed: number }
   | { type: "error"; message: string }
   | { type: "stopped" }
