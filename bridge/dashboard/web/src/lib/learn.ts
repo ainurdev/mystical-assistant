@@ -50,3 +50,44 @@ export function checkYourself(md: string): string {
  *  an all-read shelf should not nag you with a question you have answered. */
 export const nextUnread = (list: Lesson[], read: Set<string>): Lesson | undefined =>
   [...list].sort((a, b) => b.at - a.at).find((l) => !read.has(lessonKey(l)));
+
+// ── study scheduler ──────────────────────────────────────────────────────────
+// Gentle mode: GOT IT on a lesson outside the ladder retires it for good; only
+// REVIEW AGAIN enters the 1d → 3d → 7d ladder, and climbing off the top
+// retires. Retired = no entry here + present in the read set. Times: epoch ms.
+
+export interface SchedEntry { box: 1 | 2 | 3; due: number }
+export type Sched = Record<string, SchedEntry>;
+
+const DAY_MS = 86_400_000;
+const STEP_MS = { 1: DAY_MS, 2: 3 * DAY_MS, 3: 7 * DAY_MS } as const;
+
+export function grade(sched: Sched, key: string,
+  verdict: "got" | "review" | "skip", now: number): Sched {
+  const next = { ...sched };
+  const cur = next[key];
+  if (verdict === "review") next[key] = { box: 1, due: now + STEP_MS[1] };
+  else if (verdict === "got" && cur && cur.box < 3) {
+    const box = (cur.box + 1) as 2 | 3;
+    next[key] = { box, due: now + STEP_MS[box] };
+  } else delete next[key]; // skip, got-at-top, or got outside the ladder
+  return next;
+}
+
+export const dueCount = (list: Lesson[], sched: Sched, now: number): number =>
+  list.filter((l) => (sched[lessonKey(l)]?.due ?? Infinity) <= now).length;
+
+/** STUDY's next card: overdue reviews first (most overdue first), then fresh
+ *  unread oldest-first — skipping the concept just dealt, so one shelf's
+ *  same-day run of lessons interleaves with the others. */
+export function deal(list: Lesson[], read: Set<string>, sched: Sched, now: number,
+  lastConcept?: string): Lesson | undefined {
+  const due = list
+    .filter((l) => (sched[lessonKey(l)]?.due ?? Infinity) <= now)
+    .sort((a, b) => sched[lessonKey(a)]!.due - sched[lessonKey(b)]!.due);
+  if (due.length) return due[0];
+  const fresh = list
+    .filter((l) => !read.has(lessonKey(l)) && !sched[lessonKey(l)])
+    .sort((a, b) => a.at - b.at);
+  return fresh.find((l) => (l.concept || UNSORTED) !== lastConcept) ?? fresh[0];
+}
