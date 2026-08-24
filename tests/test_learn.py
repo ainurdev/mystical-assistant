@@ -270,11 +270,15 @@ def test_backfill_tags_untagged_lessons_once(repo):
     body = learn.read(repo, got["file"])
     assert body.startswith("# Streaming Turns Over SSE\n> concept:")
 
-    def boom(*a, **k):
-        raise AssertionError("a tagged lesson must not be re-sent to the model")
+    calls = []
 
-    runner.run_blocking = boom
+    def count(*a, **k):
+        calls.append(1)
+        return ("> topic: x", None, 0.0, False)
+
+    runner.run_blocking = count
     assert learn.backfill(1, repo) == 0             # second run is a no-op
+    assert calls == []                              # and never reached the model
 
 
 def test_backfill_keeps_an_existing_concept(repo):
@@ -297,6 +301,39 @@ def test_backfill_ignores_a_malformed_reply(repo):
     _stub("Sure! I think the concept is probably vibes.")
     assert learn.backfill(1, repo) == 0
     assert learn.lessons(repo)[0]["topic"] == ""    # file untouched
+
+
+def test_backfill_rejects_a_concept_off_the_list(repo):
+    """An invented shelf would fragment the grouping — the topic still lands."""
+    sess, tid = _session_with_turn(repo)
+    _stub(LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("> concept: vibes\n> topic: server push")
+    assert learn.backfill(1, repo) == 1
+    got = learn.lessons(repo)[0]
+    assert got["concept"] == ""                     # the invented one is dropped
+    assert got["topic"] == "server push"
+
+
+def test_backfill_feeds_a_coined_topic_to_the_next_file(repo):
+    """One run, two files: the topic coined for the first is offered to the
+    second, so a run does not invent two names for one thing."""
+    for _ in range(2):
+        sess, tid = _session_with_turn(repo)
+        _stub(LESSON)
+        learn.generate_after_turn(1, sess, tid)
+
+    seen = []
+
+    def cap(chat, prompt, **k):
+        seen.append(prompt)
+        return ("> concept: testing\n> topic: drift guards", None, 0.0, False)
+
+    runner.run_blocking = cap
+    assert learn.backfill(1, repo) == 2
+    assert "none yet" in seen[0]                    # nothing known on the first
+    assert "drift guards" in seen[1]                # coined, then offered
 
 
 if __name__ == "__main__":
