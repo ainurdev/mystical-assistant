@@ -42,6 +42,47 @@ export interface SessionBrief {
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   tags?: string[]; // topic tags, written by the titler's existing one-shot
+  stype?: string | null; // the flow this session runs (null = a plain chat)
+  stage?: string | null; // where in that flow it is ("done" = finished)
+}
+
+export interface HudCardAction {
+  label: string;
+  send: string;
+} // a canned next move; tapping it sends `send` as the next prompt
+export interface HudCard {
+  stage: string;
+  summary: string;
+  fields: Record<string, unknown>;
+  advance?: boolean; // the model asking to move on — gated stages still wait for you
+  actions?: HudCardAction[];
+}
+export interface FlowField {
+  key: string;
+  label: string;
+  required?: boolean;
+  multiline?: boolean;
+}
+export interface FlowStageShape {
+  id: string;
+  label: string;
+  gate: boolean;
+}
+// The catalog carries shape, never stage instructions: a picker needs the form
+// and the rail, not the prompts behind them (bridge/flow.py catalog()).
+export interface FlowShape {
+  stype: string;
+  label: string;
+  blurb: string;
+  source: "builtin" | "custom";
+  form: FlowField[];
+  stages: FlowStageShape[];
+}
+export interface FlowCatalog {
+  enabled: boolean; // the TYPED FLOWS switch in the AI tab
+  flows: FlowShape[];
+  full?: Record<string, unknown>; // raw templates — dashboard only, for the editor
+  all?: { stype: string; label: string; source: string; disabled: boolean }[];
 }
 export interface StoreTurn {
   id: string;
@@ -116,7 +157,13 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  // A typed session's settled turn: the parsed hud-card block (the raw fence is
+  // stripped from the text above it), the stage it ran under, and the server's
+  // record of every move between stages.
+  | { type: "card"; card: HudCard; stage: string; gated?: boolean }
+  | { type: "stage"; from: string | null; to: string; by: "auto" | "user" }
+  | { type: "card_missing"; errors?: string[] };
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };
 
@@ -926,10 +973,31 @@ export const api = {
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>
     `/local/attachment?path=${encodeURIComponent(path)}`,
-  createSession: (project: string, cwd?: string, title?: string) =>
+  createSession: (project: string, cwd?: string, title?: string, stype?: string) =>
     req<{ session: SessionBrief }>("/local/sessions", {
       method: "POST",
-      body: { project, ...(cwd ? { cwd } : {}), ...(title ? { title } : {}) },
+      body: {
+        project,
+        ...(cwd ? { cwd } : {}),
+        ...(title ? { title } : {}),
+        ...(stype ? { stype } : {}),
+      },
+    }),
+  flows: () => req<FlowCatalog>("/local/flows"),
+  // Templates are the user's: save edits a built-in or defines a new type,
+  // delete drops an override (the built-in underneath resurfaces).
+  saveFlow: (stype: string, body: unknown) =>
+    req<{ ok: boolean }>(`/local/flows/${encodeURIComponent(stype)}`, { method: "POST", body }),
+  deleteFlow: (stype: string) =>
+    req<{ ok: boolean }>(`/local/flows/${encodeURIComponent(stype)}/delete`, {
+      method: "POST",
+      body: {},
+    }),
+  // The move is the server's to make — this asks for it.
+  setStage: (sid: string, action: "advance" | "back" | "set", stage?: string) =>
+    req<{ ok: boolean; stage: string }>(`/local/sessions/${encodeURIComponent(sid)}/stage`, {
+      method: "POST",
+      body: { action, ...(stage ? { stage } : {}) },
     }),
   // Copy a session's whole transcript into a new one. The copy forks its claude
   // session on first run, so continuing it never appends to the original.

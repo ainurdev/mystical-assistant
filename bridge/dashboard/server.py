@@ -29,14 +29,15 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import re
 
-from bridge import (agents, attribution, browser, config, devserver, fmt, git,
+from bridge import (agents, attribution, browser, config, devserver, flow, fmt, git,
                     github, graphmap, httpgz,
                     models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, report, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, usage,
                     weather, wsutil)
-from bridge.miniapp.server import (_pre_title, _qs_int, _save_images, _session_brief,
+from bridge.miniapp.server import (_pre_title, _qs_int, _resolve_stype, _save_images,
+                                   _session_brief, _stage_action,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
 
@@ -310,6 +311,18 @@ class Handler(BaseHTTPRequestHandler):
             midnight = datetime.datetime.now().replace(
                 hour=0, minute=0, second=0, microsecond=0).timestamp()
             return self._json(store.today(chat, midnight))
+        if path == "/local/flows":
+            flows = flow.load_flows()
+            cat = flow.catalog()
+            # The editor needs the templates themselves, which the catalog
+            # deliberately withholds (a picker wants shape, not prompts).
+            cat["full"] = {st: {k: v for k, v in f.items() if k != "_custom"}
+                           for st, f in flows.items()}
+            cat["all"] = [{"stype": st, "label": f.get("label", st.upper()),
+                           "source": "custom" if f.get("_custom") else "builtin",
+                           "disabled": bool(f.get("disabled"))}
+                          for st, f in sorted(flows.items())]
+            return self._json(cat)
         if path == "/local/report":
             # back=1 → the completed week (what the Monday push covers).
             return self._json(report.weekly(chat, back=_qs_int(qs, "back") or 0))
@@ -709,8 +722,12 @@ class Handler(BaseHTTPRequestHandler):
             cwd = (wt_abs if wt_abs and browser.within_base(wt_abs)
                    and os.path.isdir(wt_abs) else None) \
                 or _abs_project(project) or state.project_dir(chat)
+            stype, stage, err = _resolve_stype(body.get("stype"))
+            if err:
+                return self._json({"error": err}, 400)
             s = store.create_session(chat, project, origin="dashboard", cwd=cwd,
-                                     permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+                                     permission_mode=config.NEW_SESSION_PERMISSION_MODE,
+                                     stype=stype, stage=stage)
             s = _pre_title(s, body.get("title"))
             return self._json({"session": _session_brief(s)})
         if path.startswith("/local/sessions/") and path.endswith("/archive"):
@@ -916,6 +933,16 @@ class Handler(BaseHTTPRequestHandler):
                 goals.clear(sid)          # empty objective = abandon the goal
                 return self._json({"ok": True, "goal": None})
             return self._json({"ok": True, "goal": goals.create(sid, objective)})
+        if path.startswith("/local/sessions/") and path.endswith("/stage"):
+            return _stage_action(
+                self, chat, path[len("/local/sessions/"):-len("/stage")], body)
+        if path.startswith("/local/flows/") and path.endswith("/delete"):
+            return self._json({"ok": flow.delete_custom(
+                path[len("/local/flows/"):-len("/delete")])})
+        if path.startswith("/local/flows/"):
+            errs = flow.save_custom(path[len("/local/flows/"):], body)
+            return self._json({"errors": errs}, 400) if errs \
+                else self._json({"ok": True})
         if path.startswith("/local/sessions/") and path.endswith("/lifecycle"):
             sid = path[len("/local/sessions/"):-len("/lifecycle")]
             s = store.get_session(sid)

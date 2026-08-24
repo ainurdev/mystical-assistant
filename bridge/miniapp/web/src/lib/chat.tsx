@@ -224,7 +224,9 @@ export interface ChatContextValue {
   transcriptNav: MutableRefObject<{ jumpToTurn: (turnId: string) => boolean } | null>;
   /** Jump to a turn, auto-loading older pages until it exists. */
   jumpToTurn: (turnId: string) => Promise<void>;
-  newChat: () => Promise<void>;
+  newChat: (stype?: string) => Promise<void>;
+  /** Move the open session's stage — a gate's APPROVE. */
+  setStage: (action: "advance" | "back" | "set", stage?: string) => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
   checking: boolean;
@@ -622,7 +624,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refresh();
   }
 
-  async function newChat() {
+  async function newChat(stype?: string) {
     if (!project) return;
     setSendError(null);
     // The empty chat opens now and the session is minted behind it: over the
@@ -634,13 +636,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setTurns([]);
     setResolving(true);
     try {
-      const { session } = await api.createSession(project);
+      // A type starts the flow; the brief is whatever you type first, so the
+      // phone never has to fill a labelled form (the dashboard's job).
+      const { session } = await api.createSession(project, undefined, undefined, stype);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
     } catch {
       /* ignore */
     } finally {
       setResolving(false);
+    }
+  }
+
+  async function setStage(action: "advance" | "back" | "set", stage?: string) {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      const r = await api.setStage(sid, action, stage);
+      setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, stage: r.stage } : s)));
+    } catch {
+      /* the poll reconciles */
     }
   }
 
@@ -686,6 +701,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     respond,
     loadingSession,
     newChat,
+    setStage,
     held,
     heldBusy,
     checking,

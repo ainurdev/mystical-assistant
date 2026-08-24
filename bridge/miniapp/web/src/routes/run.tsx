@@ -59,7 +59,7 @@ function TranscriptSkeleton() {
 function RunPage() {
   const {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession, boot,
-    runPrompt, setDraft,
+    runPrompt, setDraft, setStage,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
     hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav,
   } = useChat();
@@ -398,6 +398,9 @@ function RunPage() {
                       : undefined
                   }
                   onWrite={setDraft}
+                  onStageAdvance={
+                    i === visibleTurns.length - 1 ? () => void setStage("advance") : undefined
+                  }
                   ended={turn.status !== "running"}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}

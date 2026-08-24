@@ -179,6 +179,11 @@ function ChatsPage() {
                     {s.title || "New chat"}
                     {s.archived ? " (archived)" : ""}
                   </span>
+                  {s.stype && (
+                    <span className="shrink-0 border border-border px-1.5 text-[9px] tracking-[1px] text-[var(--brand-soft)]">
+                      {s.stype.toUpperCase()}
+                    </span>
+                  )}
                   <SurfaceBadge origin={s.origin} />
                 </div>
                 <div className="flex gap-1.5 text-[11px] text-[var(--tg-hint)]">

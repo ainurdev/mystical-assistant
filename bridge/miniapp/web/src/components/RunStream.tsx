@@ -38,6 +38,8 @@ import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+import { FlowCard } from "./FlowCard";
+import { stripHudCard } from "../lib/hudcard";
 import { askBack } from "../lib/askback";
 import { hostOf, mcpParts, toolAccent, toolKind, cmdKind, type CmdKind } from "../lib/tools";
 
@@ -789,6 +791,7 @@ export const RunStream = memo(function RunStream({
   onRespond,
   onAnswer,
   onWrite,
+  onStageAdvance,
   tokens = null,
   ended = false,
   boot = null,
@@ -804,6 +807,8 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   onWrite?: (question: string) => void;
+  /** Approve a gated stage's requested move (server-owned; the card can ask). */
+  onStageAdvance?: () => void;
   ended?: boolean;
 }) {
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
@@ -854,14 +859,17 @@ export const RunStream = memo(function RunStream({
   // The turn's closing text arrives twice — streamed as a text block, then again
   // as the run's result — so only the result card draws it. A native session
   // emits no result event, so its final text keeps rendering as text.
-  const resultText = events.find((e) => e.type === "result")?.result?.trim();
+  const resultText = stripHudCard(
+    events.find((e) => e.type === "result")?.result ?? "",
+  ).trim();
 
   // Is the next thing the model does asking a question card?
   const asksNext = (i: number): boolean => {
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking" || t === "log") continue;
+          || t === "thinking" || t === "log" || t === "card" || t === "stage"
+          || t === "card_missing") continue;
       return t === "question";
     }
     return false;
@@ -886,8 +894,10 @@ export const RunStream = memo(function RunStream({
       {events.slice(from).map((event, k) => {
         const i = k + from;
         switch (event.type) {
-          case "text":
-            if (resultText && event.text.trim() === resultText) return null;
+          case "text": {
+            const text = stripHudCard(event.text);
+            if (!text) return null;
+            if (resultText && text.trim() === resultText) return null;
             // A turn ending on an AskUserQuestion emits no result event, so the
             // prose explaining the card used to render bare while every other
             // answer got a card. Box it like one.
@@ -896,7 +906,7 @@ export const RunStream = memo(function RunStream({
                 <div key={i} className="relative -ml-3 pl-3">
                   <RailNode />
                   <Card className="border border-[var(--tg-button)]/30">
-                    <Markdown className="text-sm leading-normal">{event.text}</Markdown>
+                    <Markdown className="text-sm leading-normal">{text}</Markdown>
                   </Card>
                 </div>
               );
@@ -910,10 +920,11 @@ export const RunStream = memo(function RunStream({
               <div key={i} className="relative -ml-3 flex pl-3">
                 <RailNode />
                 <Markdown className="min-w-0 max-w-[85%] break-words rounded-2xl rounded-bl-sm border border-border bg-[var(--ac-06)] px-3 py-2 text-sm leading-normal">
-                  {event.text}
+                  {text}
                 </Markdown>
               </div>
             );
+          }
           case "tool": {
             const head = headOf.get(i);
             if (head !== undefined && !openFolds.has(head)) return null;
@@ -1000,7 +1011,7 @@ export const RunStream = memo(function RunStream({
               <div key={i} className="relative -ml-3 pl-3">
                 <RailNode />
                 <FinalResult
-                  result={event.result}
+                  result={stripHudCard(event.result)}
                   elapsed={event.elapsed}
                   tokens={tokens}
                   onAnswer={onAnswer}
@@ -1059,6 +1070,29 @@ export const RunStream = memo(function RunStream({
                 <span>Stopped — send a message to continue.</span>
               </div>
             );
+          case "card":
+            return (
+              <div key={i} className="relative -ml-3 pl-3">
+                <RailNode />
+                <FlowCard
+                  card={event.card}
+                  gated={!!event.gated}
+                  // onAnswer reaches only the last finished turn — exactly when a
+                  // card is still something to act on rather than history.
+                  isCurrent={!!onAnswer}
+                  onAction={(send) => onAnswer?.(send)}
+                  onApprove={() => onStageAdvance?.()}
+                />
+              </div>
+            );
+          case "stage":
+            return (
+              <div key={i} className="pl-3 text-[10px] tracking-[1px] text-[var(--tg-hint)]">
+                STAGE ▸ {(event.to === "done" ? "COMPLETE" : event.to).toUpperCase()}
+                {event.by === "user" ? " (approved)" : ""}
+              </div>
+            );
+          case "card_missing":
           case "permission_resolved":
           case "question_answered":
             return null; // shown inside the relevant card

@@ -1,0 +1,17 @@
+{
+  "stype": "review",
+  "label": "REVIEW",
+  "blurb": "Review a branch, PR, or path.",
+  "form": [
+    {"key": "target", "label": "TARGET (branch/PR/path)", "required": true, "multiline": false},
+    {"key": "depth", "label": "DEPTH (quick/thorough)", "required": false, "multiline": false}
+  ],
+  "stages": [
+    {"id": "sweep", "label": "SWEEP", "gate": false,
+     "instructions": "Read the target's diff or code fully before judging. Collect candidate findings with file:line anchors; verify each against the actual code before keeping it.",
+     "card_fields": ["findings"]},
+    {"id": "report", "label": "REPORT", "gate": false,
+     "instructions": "Report surviving findings ranked by severity: file, line, what breaks, and the concrete failure scenario. Zero findings is a valid result — say so plainly.",
+     "card_fields": ["findings", "verdict"]}
+  ]
+}

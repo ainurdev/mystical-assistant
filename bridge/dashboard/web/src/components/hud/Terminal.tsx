@@ -5,6 +5,8 @@ import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import { useLoadingPhase } from "../../lib/loadingPhase";
+import { useFlows } from "../../lib/flows";
+import { StageRail } from "../StageRail";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
 import type { OpenFile } from "../Markdown";
@@ -171,7 +173,7 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking, boot,
-  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
+  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, onStage,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
   onOpenDesign,
 }: {
@@ -215,9 +217,13 @@ export function Terminal({
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
+  /** Move a typed session's stage — the rail's jumps and a gate's APPROVE. */
+  onStage?: (action: "advance" | "back" | "set", stage?: string) => void;
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;
 }) {
+  const flows = useFlows();
+  const flowShape = flows.find((f) => f.stype === selected?.stype) ?? null;
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
@@ -361,6 +367,17 @@ export function Terminal({
               {selected?.title || "new session"}
             </span>
           </div>
+          {/* Where a typed session stands. Its own line: the row above is one
+              line of ellipsised text, and a rail wrapped inside it stacked
+              vertically and pushed the title out. Untyped sessions have no
+              rail — there is nothing to stand in. */}
+          {view === "chat" && flowShape && (
+            <StageRail
+              stages={flowShape.stages}
+              current={selected?.stage ?? null}
+              onSet={(stage) => onStage?.("set", stage)}
+            />
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
           {view === "chat" && onOpenDesign && <DesignBtn onClick={onOpenDesign} />}
@@ -404,7 +421,7 @@ export function Terminal({
                 ) : empty && loading ? null : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
+                  <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} stage={selected?.stage ?? null} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
                 )}
               </div>
             </div>

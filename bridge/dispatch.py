@@ -4,7 +4,7 @@ import os
 import sys
 import threading
 
-from bridge import accounts, config, graphmap, ladder, report, state, store
+from bridge import accounts, config, flow, graphmap, ladder, report, state, store
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -165,6 +165,16 @@ def on_message(msg: dict):
         return
     if text == "/new":
         key = state.project_key(chat_id)
+        cat = flow.catalog()
+        if cat["enabled"] and cat["flows"]:
+            # A type is a choice, so it is buttons; CHAT is the same fresh
+            # session /new always made.
+            rows = [[{"text": f["label"], "callback_data": f"flow:{f['stype']}"}]
+                    for f in cat["flows"]]
+            rows.append([{"text": "CHAT", "callback_data": "flow:"}])
+            send(chat_id, "🆕 What kind of session?",
+                 {"inline_keyboard": rows})
+            return
         s = store.create_session(chat_id, key)
         send(chat_id, "🆕 Fresh Claude session.", panel_kb(chat_id, s["id"], key))
         return
@@ -207,6 +217,23 @@ def on_message(msg: dict):
                       f"Mini App: {'live' if state.miniapp_url else 'off'}\n"
                       f"Session: {sid}",
              panel_kb(chat_id, s["id"] if s else None, key))
+        return
+
+    # A type was picked from /new and this is the brief it was waiting for: the
+    # session starts typed, with the text as its first field.
+    stype = _pending_flow.pop(chat_id, None)
+    f = flow.get_flow(stype) if stype else None
+    if f:
+        key = state.project_key(chat_id)
+        session = store.create_session(chat_id, key, origin="telegram",
+                                       stype=f["stype"], stage=flow.first_stage(f))
+        primary = (f.get("form") or [{}])[0].get("key") or "what"
+        text = flow.compose_first_prompt(f, {primary: text})
+        if not state.acquire_run(session["id"], chat_id):
+            send(chat_id, "⏳ Still working on this session — please wait.")
+            return
+        threading.Thread(target=handle_task, args=(chat_id, text, session),
+                         daemon=True).start()
         return
 
     # Plain text -> prompt to Claude in the active project. Claim this session's
@@ -354,6 +381,11 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
     return True
 
 
+# A type picked from /new, waiting for the brief that follows.
+# ponytail: in memory, so a restart forgets it — a column if that ever matters.
+_pending_flow: "dict[int, str]" = {}
+
+
 def handle_callback(cb: dict):
     chat_id = cb["message"]["chat"]["id"]
     msg_id = cb["message"]["message_id"]
@@ -393,6 +425,34 @@ def handle_callback(cb: dict):
              "• /app to open the control panel\n"
              f"• /server to start it (default: {config.START_CMD})\n"
              "• /preview to open it in your browser")
+
+    elif data.startswith("flow:"):
+        stype = data[len("flow:"):]
+        f = flow.get_flow(stype) if stype else None
+        if f:
+            _pending_flow[chat_id] = f["stype"]
+            answer_cb(cb["id"], f["label"])
+            edit(chat_id, msg_id,
+                 f"🆕 {f['label']} — {(f.get('form') or [{}])[0].get('label', 'BRIEF')}?")
+        else:
+            _pending_flow.pop(chat_id, None)
+            key = state.project_key(chat_id)
+            s = store.create_session(chat_id, key, origin="telegram")
+            answer_cb(cb["id"], "Chat")
+            edit(chat_id, msg_id, "🆕 Fresh Claude session.")
+            send(chat_id, "Send a prompt to start.", panel_kb(chat_id, s["id"], key))
+
+    elif data.startswith("flowadv:"):
+        sid = data[len("flowadv:"):]
+        s = store.get_session(sid)
+        f = flow.get_flow(s.get("stype")) if s else None
+        to = (flow.resolve_stage_action(f, s.get("stage"), "advance", None)
+              if f else None)
+        if to:
+            flow.apply_stage(sid, to, "user")
+            answer_cb(cb["id"], to.upper())
+        else:
+            answer_cb(cb["id"], "nothing to approve")
 
     elif data.startswith("fb:"):
         _fallback_callback(cb, chat_id, msg_id, data)

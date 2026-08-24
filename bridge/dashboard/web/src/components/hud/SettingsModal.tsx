@@ -1,5 +1,5 @@
 import {
-  Fragment, useEffect, useRef, useState, useSyncExternalStore,
+  Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from "react";
 import {
@@ -8,7 +8,7 @@ import {
   ListMusic, LoaderCircle, Lock, MessageCircleQuestion, Monitor, MonitorPlay,
   Moon, Network, Palette, Play, Plug, Power, Radio, ScanLine, ScrollText, Search, Server,
   ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
-  Upload, Volume2, X, type LucideIcon,
+  Upload, Volume2, Workflow, X, type LucideIcon,
 } from "lucide-react";
 import {
   api,
@@ -16,6 +16,7 @@ import {
   type AgentConfigTool,
   type AiFeature,
   type EnvSetting,
+  type FlowCatalog,
   type FreeAgentInfo,
   type FreeAgents,
   type McpInfo,
@@ -50,6 +51,7 @@ import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
+import { refreshFlows } from "../../lib/flows";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import {
   loadPackSounds,
@@ -109,7 +111,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "indicator" | "ambient" | "notifications"
-  | "session" | "tags" | "ai" | "agentconfig" | "mcp" | "accounts" | "system";
+  | "session" | "tags" | "flows" | "ai" | "agentconfig" | "mcp" | "accounts" | "system";
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -126,6 +128,7 @@ const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: st
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
   { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK" },
   { key: "tags", label: "TAGS", hint: "topics across sessions", icon: Tag, group: "THE WORK" },
+  { key: "flows", label: "FLOWS", hint: "session types · stages", icon: Workflow, group: "THE WORK" },
   { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK" },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK" },
   { key: "mcp", label: "MCP", hint: "servers · auth", icon: Plug, group: "THE WORK" },
@@ -141,6 +144,7 @@ const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: st
 // the bridge, so search fetches that registry the first time you type and folds
 // it in row by row, which also means nobody has to keep a copy of them here.
 const INDEX: { tab: Tab; sec: string; terms: string }[] = [
+  { tab: "flows", sec: "SESSION TYPES", terms: "flow type stage gate template card build fix probe ops review design" },
   { tab: "appearance", sec: "THEME · DARK", terms: "colour color palette scheme aurora phosphor" },
   { tab: "appearance", sec: "THEME · LIGHT", terms: "colour color palette scheme day bright" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
@@ -1411,6 +1415,148 @@ function TagsPanel() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+const BLANK_FLOW = `{
+  "stype": "mytype",
+  "label": "MY TYPE",
+  "blurb": "what this kind of session is for",
+  "form": [
+    {"key": "what", "label": "WHAT", "required": true, "multiline": true}
+  ],
+  "stages": [
+    {"id": "first", "label": "FIRST", "gate": false,
+     "instructions": "what the session should do in this stage",
+     "card_fields": ["result"]},
+    {"id": "second", "label": "SECOND", "gate": true,
+     "instructions": "what it should do next; gate:true waits for your approval",
+     "card_fields": ["done"]}
+  ]
+}`;
+
+/** The templates behind typed sessions. JSON rather than a form builder: a
+ *  stage is instructions plus a couple of flags, and the JSON says exactly what
+ *  the server will read — a builder would hide that behind widgets and still
+ *  need the same fields. The server validates and answers with the problems. */
+function FlowsPanel() {
+  const [cat, setCat] = useState<FlowCatalog | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [errs, setErrs] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.flows();
+      setCat(r);
+      // The picker elsewhere reads the shared store; keep it in step.
+      void refreshFlows();
+    } catch { setCat({ enabled: false, flows: [] }); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  function open(stype: string | null) {
+    setErrs([]);
+    if (stype === null) { setEditing("+"); setDraft(BLANK_FLOW); return; }
+    setEditing(stype);
+    setDraft(JSON.stringify(cat?.full?.[stype] ?? {}, null, 2));
+  }
+
+  async function save() {
+    setBusy(true);
+    setErrs([]);
+    try {
+      const body = JSON.parse(draft) as { stype?: string };
+      const stype = String(body.stype ?? "");
+      if (!stype) { setErrs(["stype is required"]); return; }
+      await api.saveFlow(stype, body);
+      setEditing(null);
+      await load();
+    } catch (e) {
+      // Both failures land here: unparseable JSON in the box, and the server's
+      // field-level complaints about JSON that parsed fine.
+      const m = e instanceof Error ? e.message : "could not save";
+      setErrs(m.split("\n").filter(Boolean));
+    } finally { setBusy(false); }
+  }
+
+  async function drop(stype: string) {
+    if (!window.confirm(`Delete the ${stype.toUpperCase()} template? A built-in of the same name comes back.`)) return;
+    setBusy(true);
+    try { await api.deleteFlow(stype); setEditing(null); await load(); }
+    finally { setBusy(false); }
+  }
+
+  async function setDisabled(stype: string, off: boolean) {
+    setBusy(true);
+    try {
+      const body = { ...(cat?.full?.[stype] as object), disabled: off };
+      await api.saveFlow(stype, body);
+      await load();
+    } catch { /* the row just doesn't change */ }
+    finally { setBusy(false); }
+  }
+
+  if (!cat) return <Placeholder icon={LoaderCircle} spin>Reading the flow templates…</Placeholder>;
+
+  if (editing !== null) {
+    return (
+      <div style={CARD}>
+        <textarea
+          value={draft} onChange={(e) => setDraft(e.target.value)} rows={20} spellCheck={false}
+          style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", lineHeight: 1.5, padding: 9 }}
+        />
+        {errs.length > 0 && (
+          <ul style={{ margin: "8px 0 0", paddingLeft: 16, color: "var(--err)", fontSize: "var(--t10)" }}>
+            {errs.map((e) => <li key={e}>{e}</li>)}
+          </ul>
+        )}
+        <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+          <button
+            onClick={() => void save()} disabled={busy}
+            style={{ appearance: "none", cursor: busy ? "default" : "pointer", border: "1px solid var(--acc)", background: "color-mix(in srgb, var(--acc) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "7px 14px" }}
+          >SAVE</button>
+          <button
+            onClick={() => { setEditing(null); setErrs([]); }}
+            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "7px 14px" }}
+          >CANCEL</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={CARD}>
+      {(cat.all ?? []).map((f, i) => (
+        <Row
+          key={f.stype} first={!i} label={f.label}
+          desc={<>{f.source === "custom" ? "yours" : "built-in"}
+            {f.disabled && <span style={{ color: "var(--txd)" }}> · hidden from the picker</span>}</>}
+        >
+          <span style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => open(f.stype)}
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 9px" }}
+            >EDIT</button>
+            <button
+              onClick={() => void setDisabled(f.stype, !f.disabled)} disabled={busy}
+              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 9px" }}
+            >{f.disabled ? "ENABLE" : "DISABLE"}</button>
+            {f.source === "custom" && (
+              <button
+                onClick={() => void drop(f.stype)} disabled={busy}
+                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 9px" }}
+              >DELETE</button>
+            )}
+          </span>
+        </Row>
+      ))}
+      <button
+        onClick={() => open(null)}
+        style={{ width: "100%", marginTop: 9, appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8 }}
+      >+ NEW TYPE</button>
     </div>
   );
 }
@@ -3297,6 +3443,15 @@ export function SettingsModal(props: SettingsModalProps) {
                 info="Tags come from the model when it names a session. The chart is the twelve most-worn, each against the most-used one; MANAGE opens the full set, where renaming a tag onto an existing one merges them and every session wearing the old name follows."
               >
                 <TagsPanel />
+              </Section>
+            )}
+
+            {shown === "flows" && (
+              <Section
+                title="SESSION TYPES"
+                info="A typed session starts from a short form and walks its own stages, each turn ending in a card you can act on; a gated stage waits for your approval before the work moves on. The templates are yours: edit a built-in, disable one you never use, or write a new type. Changes take effect on the next turn — nothing to restart. The feature itself is the TYPED FLOWS switch in the AI tab."
+              >
+                <FlowsPanel />
               </Section>
             )}
 

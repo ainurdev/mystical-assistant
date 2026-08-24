@@ -1,4 +1,5 @@
 import type { Turn } from "../chat";
+import { stripHudCard } from "./hudcard";
 
 /** A session as markdown you can paste into an issue, a PR, or another chat.
  *
@@ -13,14 +14,16 @@ export function chatToMarkdown(turns: Turn[], title?: string): string {
     if (t.prompt.trim()) out.push(`## ${t.prompt.trim()}`, "");
     const tools: string[] = [];
     for (const e of t.events) {
-      if (e.type === "text" && e.text.trim()) {
+      // A typed session's fenced hud-card is machinery, not prose: it is
+      // rendered as the card above, so an export carries the words, not the JSON.
+      if (e.type === "text" && stripHudCard(e.text).trim()) {
         if (tools.length) { out.push(toolLine(tools), ""); tools.length = 0; }
-        out.push(e.text.trim(), "");
+        out.push(stripHudCard(e.text).trim(), "");
       } else if (e.type === "tool") {
         tools.push(e.name);
-      } else if (e.type === "result" && e.result?.trim()) {
+      } else if (e.type === "result" && stripHudCard(e.result ?? "").trim()) {
         if (tools.length) { out.push(toolLine(tools), ""); tools.length = 0; }
-        out.push(e.result.trim(), "");
+        out.push(stripHudCard(e.result).trim(), "");
       }
     }
     if (tools.length) out.push(toolLine(tools), "");

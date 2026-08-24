@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   tags              TEXT,
   fork_from         TEXT,
   ctx_tokens        INTEGER,
-  autocompact       TEXT
+  autocompact       TEXT,
+  stype             TEXT,
+  stage             TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -59,7 +61,8 @@ CREATE TABLE IF NOT EXISTS turns (
   tok_in      INTEGER,
   tok_out     INTEGER,
   tok_cache_w INTEGER,
-  tok_cache_r INTEGER
+  tok_cache_r INTEGER,
+  stage       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
@@ -165,6 +168,14 @@ def init() -> None:
         # working in its own checkout, which is the normal case.
         if "work_cwd" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN work_cwd TEXT")
+        # Typed-session flow: which flow this session runs (NULL = plain chat)
+        # and which of its stages the next turn composes at ('done' = finished).
+        for col in ("stype", "stage"):
+            if col not in scols:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
+        # Which stage a turn ran under, stamped post-turn (NULL = untyped/legacy).
+        if "stage" not in cols:
+            c.execute("ALTER TABLE turns ADD COLUMN stage TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -202,15 +213,17 @@ def _row(r) -> dict | None:
 
 def create_session(chat_id: int, project: str, *, session_id: str | None = None,
                    origin: str | None = None, cwd: str | None = None,
-                   permission_mode: str | None = None) -> dict:
+                   permission_mode: str | None = None,
+                   stype: str | None = None, stage: str | None = None) -> dict:
     sid = session_id or uuid.uuid4().hex
     now = time.time()
     with closing(_connect()) as c:
         c.execute(
             "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"
-            "created,updated,archived,origin,cwd,permission_mode) "
-            "VALUES(?,?,?,?,?,?,?,0,?,?,?)",
-            (sid, chat_id, project, None, None, now, now, origin, cwd, permission_mode))
+            "created,updated,archived,origin,cwd,permission_mode,stype,stage) "
+            "VALUES(?,?,?,?,?,?,?,0,?,?,?,?,?)",
+            (sid, chat_id, project, None, None, now, now, origin, cwd,
+             permission_mode, stype, stage))
     return get_session(sid)
 
 
@@ -585,6 +598,15 @@ def set_setting(key: str, value: "str | None") -> None:
                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
 
+def settings_with_prefix(prefix: str) -> "dict[str, str]":
+    """Every settings row whose key starts with prefix — how flow:* template
+    overrides are read in one query instead of one per known type."""
+    with closing(_connect()) as c:
+        rows = c.execute("SELECT key, value FROM settings WHERE key LIKE ?",
+                         (prefix + "%",)).fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
 def get_disabled_tools(session_id: str) -> list[str]:
     """Deny rules switched on for this session (see bridge/toolsets.py)."""
     with closing(_connect()) as c:
@@ -653,6 +675,30 @@ def archive(session_id: str, archived: bool = True) -> None:
             "lifecycle=CASE WHEN ?=1 THEN COALESCE(lifecycle,'done') ELSE NULL END "
             "WHERE id=?",
             (1 if archived else 0, time.time(), 1 if archived else 0, session_id))
+
+
+def latest_turn_id(session_id: str) -> "str | None":
+    with closing(_connect()) as c:
+        row = c.execute("SELECT id FROM turns WHERE session_id=? "
+                        "ORDER BY seq DESC LIMIT 1", (session_id,)).fetchone()
+    return row["id"] if row else None
+
+
+def set_session_stage(session_id: str, stage: "str | None") -> None:
+    """Move a typed session's stage. Server-owned: the model asks, this decides."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET stage=? WHERE id=?", (stage, session_id))
+
+
+def set_turn_stage(turn_id: str, stage: "str | None") -> None:
+    with closing(_connect()) as c:
+        c.execute("UPDATE turns SET stage=? WHERE id=?", (stage, turn_id))
+
+
+def turn_prompt(turn_id: str) -> "str | None":
+    with closing(_connect()) as c:
+        row = c.execute("SELECT prompt FROM turns WHERE id=?", (turn_id,)).fetchone()
+    return row["prompt"] if row else None
 
 
 def set_lifecycle(session_id: str, state: str | None) -> None:
@@ -864,7 +910,7 @@ def history(chat_id: int, include_archived: bool = False,
     subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
     a session that predates the columns is unknown, not free."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, "
+         "s.lifecycle, s.stype, s.stage, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "

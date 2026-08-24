@@ -425,7 +425,8 @@ def test_session_brief_shape(monkeypatch):
     assert set(b) == {"id", "title", "project", "updated", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal",
                       "lifecycle", "tags", "disabled_tools",
-                      "ctx_tokens", "ctx_window", "autocompact", "work_cwd"}
+                      "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
+                      "stype", "stage"}
     assert b["id"] == s["id"] and b["project"] == "p6"
     assert b["ctx_tokens"] is None        # nothing measured until a turn runs
     assert b["autocompact"] is None       # claude's own default until chosen
@@ -433,6 +434,7 @@ def test_session_brief_shape(monkeypatch):
     assert isinstance(b["branch"], str)   # "" when cwd has no repo
     assert b["goal"] is None              # parsed from the column, not the raw JSON
     assert b["lifecycle"] is None         # a fresh session is active
+    assert b["stype"] is None             # untyped: a plain chat, no flow
 
 
 def test_store_list_sessions_all():

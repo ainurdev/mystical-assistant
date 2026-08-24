@@ -168,6 +168,12 @@ NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback p
 LEARN_ENABLE = os.environ.get("LEARN_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 
+# Typed sessions: a picked type walks the session through that flow's stages,
+# each turn ending in a parsed card. Nothing fires until a type is picked — a
+# plain chat pays nothing — so it defaults ON.
+FLOWS_ENABLE = os.environ.get("FLOWS_ENABLE", "1").lower() \
+    not in ("0", "false", "no", "")
+
 # Decide whether a turn that ENDED on a question is waiting on you or just being
 # polite. Free markers (auth failures, usage limits, "reply go") always count;
 # this is the fall-through to a model call for the ambiguous rest. Automatic —
