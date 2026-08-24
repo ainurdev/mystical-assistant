@@ -109,3 +109,33 @@ export function headSafeCut(
 export function insideRun(i: number, ...runs: Map<number, number[]>[]): boolean {
   return runs.some((m) => [...m.values()].some((r) => r[0] < i && r[r.length - 1] > i));
 }
+
+
+/** What a merged file row needs from the events behind it. */
+export type EditEv = { name: string; path: string; patch?: string[]; ms?: number; error?: boolean };
+export type FileEdit = Required<Omit<EditEv, "patch">> & { patch: string[]; count: number };
+
+/**
+ * Seven edits to one seeder are one thing that happened to it, not seven rows
+ * saying its name. Merge a run of edits by path — first appearance keeps the
+ * order, hunks concatenate in the order they were applied, and `count` is how
+ * many edits landed on that file.
+ */
+export function byFile(edits: EditEv[]): FileEdit[] {
+  const out = new Map<string, FileEdit>();
+  for (const e of edits) {
+    const f = out.get(e.path);
+    if (f) {
+      f.patch.push(...(e.patch ?? []));
+      f.ms += e.ms ?? 0;
+      f.count += 1;
+      f.error = f.error || !!e.error;
+    } else {
+      out.set(e.path, {
+        name: e.name, path: e.path, patch: [...(e.patch ?? [])],
+        ms: e.ms ?? 0, error: !!e.error, count: 1,
+      });
+    }
+  }
+  return [...out.values()];
+}

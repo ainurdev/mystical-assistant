@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
-import { foldChips, runsOf, headSafeCut, insideRun } from "../lib/toolfold";
+import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
@@ -608,17 +608,21 @@ function diffColor(line: string): string {
 }
 
 /** An edit shown as the diff Claude Code already computed for it, so a turn says
- *  what changed instead of just which file was touched. */
+ *  what changed instead of just which file was touched. One box is one *file*:
+ *  `count` is how many edits landed on it, and the hunks below are all of them
+ *  in the order they were applied. */
 function DiffBlock({
   name,
   path,
   patch,
   ms,
+  count = 1,
 }: {
   name: string;
   path: string;
   patch: string[];
   ms?: number;
+  count?: number;
 }) {
   const [open, setOpen] = useState(false);
   const shown = open ? patch : patch.slice(0, DIFF_PREVIEW);
@@ -634,6 +638,9 @@ function DiffBlock({
           {name.toUpperCase()} //
         </span>
         <span className="min-w-0 truncate font-mono text-[11px] text-[var(--foreground-bright)]">{path}</span>
+        {count > 1 ? (
+          <span className="flex-none text-[9.5px] tracking-[1px] text-[var(--muted-2)]">×{count}</span>
+        ) : null}
         {slow(ms) ? (
           <span className="flex-none text-[9.5px] tracking-[1px] text-[var(--muted-2)]">· {dur(ms)}</span>
         ) : null}
@@ -656,6 +663,18 @@ function DiffBlock({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** A run of edits, merged by file. Seven edits to one seeder used to be seven
+ *  boxes on a phone screen that fits two — here they are one box wearing ×7 with
+ *  every hunk in it. No frame around the run: each file already carries its own,
+ *  and a box inside a box is chrome nobody asked for at 360px. */
+function EditGroup({ edits }: { edits: EditEv[] }) {
+  return (
+    <div className="space-y-2">
+      {byFile(edits).map((f) => <DiffBlock key={f.path} {...f} />)}
     </div>
   );
 }
@@ -841,8 +860,11 @@ export const RunStream = memo(function RunStream({
   // block with six rows instead of six cards. MCP groups by server.
   const groupKey = (i: number): string | null => {
     const e = events[i];
-    if (e.type !== "tool" || doneOf(e)?.patch) return null;
+    if (e.type !== "tool") return null;
     if (e.name === "Bash") return null;      // a terminal per command, as before
+    // Edits group so their card can merge them by file — a run of them is the
+    // same file over and over far more often than it is many files.
+    if (doneOf(e)?.patch) return "edit";
     const kind = toolKind(e.name);
     if (kind === "mcp") return `mcp:${mcpParts(e.name).server}`;
     return BLOCK_KINDS.has(kind) ? kind : null;   // the quiet ones fold into chips
@@ -939,12 +961,20 @@ export const RunStream = memo(function RunStream({
             const done = doneOf(event);
             if (event.name === "Bash")
               return <TerminalBlock key={i} command={event.summary} done={done} />;
-            if (done?.patch)
-              return (
-                <DiffBlock key={i} name={event.name} path={event.summary} patch={done.patch} ms={done.ms} />
-              );
             if (groupOf.has(i)) return null;   // drawn by the run's head
             const run = groups.get(i);
+            if (done?.patch)
+              return (
+                <EditGroup
+                  key={i}
+                  edits={(run ?? [i]).map((j) => {
+                    const e = events[j] as { name: string; summary: string };
+                    const d = doneOf(events[j]);
+                    return { name: e.name, path: e.summary, patch: d?.patch, ms: d?.ms,
+                             error: d?.is_error };
+                  })}
+                />
+              );
             if (run)
               return (
                 <CallGroup

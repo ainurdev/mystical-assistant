@@ -17,7 +17,7 @@ import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { stripHudCard } from "../lib/hudcard";
 import { ckId, steerKey } from "../lib/checkpoints";
-import { foldChips, runsOf, headSafeCut, insideRun } from "../lib/toolfold";
+import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import {
   cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTier,
   type CmdKind, type Shape, type Tier,
@@ -342,7 +342,12 @@ function diffColor(line: string): string {
  *  other write — the patch lives in its drawer, where the row's `+n −n` is the
  *  promise of what you'll find. `shownMax` is a preview or the lot; a diff can
  *  run to hundreds of lines and the drawer is the wrong place for all of them
- *  by default. */
+ *  by default.
+ *
+ *  One row is one *file*, not one call: `count` is how many edits landed on it
+ *  and the drawer holds all their hunks in order. `bare` drops the tag for a row
+ *  inside an EDIT window, where the header already said it — and no lead glyph
+ *  takes its place, because inside that window every row is the same verb. */
 function DiffBlock({
   name,
   path,
@@ -350,6 +355,9 @@ function DiffBlock({
   ms,
   animate,
   autoOpen,
+  count = 1,
+  error = false,
+  bare = false,
 }: {
   name: string;
   path: string;
@@ -357,6 +365,9 @@ function DiffBlock({
   ms?: number;
   animate: boolean;
   autoOpen: boolean;
+  count?: number;
+  error?: boolean;
+  bare?: boolean;
 }) {
   const [shownMax, setShownMax] = useState(DIFF_PREVIEW);
   const add = patch.filter((l) => l.startsWith("+")).length;
@@ -365,13 +376,15 @@ function DiffBlock({
   return (
     <ActionRow
       tier="mark"
-      shape={toolShape(name)}
+      shape={bare ? undefined : toolShape(name)}
       accent={toolAccent(name)}
-      tag={name.toUpperCase()}
+      tag={bare ? undefined : name.toUpperCase()}
       animate={animate}
+      error={error}
       startOpen={autoOpen}
       stat={
         <>
+          {count > 1 && <span style={{ color: "var(--txm)" }}>×{count}</span>}
           <span style={{ color: "var(--ok)" }}>+{add}</span>
           <span style={{ color: "var(--err)" }}>−{del}</span>
           {slow(ms) ? <span>{dur(ms)}</span> : null}
@@ -395,6 +408,7 @@ function DiffBlock({
             </div>
             <DrawerFoot>
               <span>{add} ADDED · {del} REMOVED</span>
+              {count > 1 ? <span>{count} EDITS</span> : null}
               {ms ? <span>{dur(ms)}</span> : null}
               {hidden > 0 && (
                 <HeadBtn title="show the whole diff" onClick={() => setShownMax(patch.length)}>
@@ -408,6 +422,67 @@ function DiffBlock({
     >
       <FilePath path={path} />
     </ActionRow>
+  );
+}
+
+/** A run of edits drawn the way a run of commands is: the tag once in the
+ *  header, a row per *file* — seven edits to one seeder used to print its name
+ *  seven times, each with its own two-line diffstat, and the turn read as a
+ *  stutter instead of as work. Here they are one row wearing ×7, with every
+ *  hunk in its drawer, and the header carries what the whole run cost.
+ *
+ *  One file needs no window: the merged row is already the card, the same way a
+ *  lone command is a ledger row and not a terminal. */
+function EditGroup({
+  edits,
+  animate,
+  autoOpen,
+}: {
+  edits: EditEv[];
+  animate: boolean;
+  autoOpen: boolean;
+}) {
+  const files = byFile(edits);
+  if (files.length === 1)
+    return <DiffBlock {...files[0]} animate={animate} autoOpen={autoOpen} />;
+
+  const accent = toolAccent("Edit");
+  const failed = files.some((f) => f.error);
+  const lines = files.flatMap((f) => f.patch);
+  const add = lines.filter((l) => l.startsWith("+")).length;
+  const del = lines.filter((l) => l.startsWith("-")).length;
+  const ms = files.reduce((t, f) => t + f.ms, 0);
+
+  return (
+    <div
+      className="ax-window"
+      style={{
+        borderColor: failed ? "color-mix(in srgb, var(--err) 32%, transparent)" : edge(accent),
+        ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
+      }}
+    >
+      <div
+        className="flex items-center gap-2 border-b px-2.5 py-1 text-[length:var(--t95)] tracking-[2px]"
+        style={{ borderColor: edge(accent), color: failed ? "var(--err)" : accent }}
+      >
+        <FilePen size={11} aria-hidden />
+        <span className="truncate">EDIT{failed ? " // FAILED" : ""}</span>
+        <span className="flex-none tracking-[1px] text-muted-2">· {files.length} FILES</span>
+        {edits.length > files.length && (
+          <span className="flex-none tracking-[1px] text-muted-2">· {edits.length} EDITS</span>
+        )}
+        {slow(ms) && <span className="flex-none tracking-[1px] text-muted-2">· {dur(ms)}</span>}
+        {/* The one figure the header exists for: what this whole run did to the
+            tree, without opening a single drawer. */}
+        <span className="ml-auto flex flex-none gap-1.5 tracking-[1px]">
+          <span style={{ color: "var(--ok)" }}>+{add}</span>
+          <span style={{ color: "var(--err)" }}>−{del}</span>
+        </span>
+      </div>
+      {files.map((f) => (
+        <DiffBlock key={f.path} {...f} bare animate={false} autoOpen={autoOpen} />
+      ))}
+    </div>
   );
 }
 
@@ -1104,9 +1179,12 @@ function RailNode() {
  *  message then reads as another card rather than as the other half of a
  *  conversation, which is the distinction worth keeping. Its padding matches the
  *  cards' so the prose still starts in their text column. The two things you
- *  actually want to do with it float over the text on hover rather than taking a
- *  row of their own: a transcript is mostly prose, and a permanent toolbar per
- *  paragraph would read as chrome. */
+ *  actually want to do with it appear on hover rather than taking a row of their
+ *  own: a transcript is mostly prose, and a permanent toolbar per paragraph
+ *  would read as chrome. They sit in the row's right gutter — the bubble caps at
+ *  78% width, so that space is always empty — not over the prose, where they
+ *  used to cover the first line and swallow clicks on any link under them (an
+ *  opacity-0 overlay still hit-tests, so the corner was dead even unhovered). */
 function MessageBlock({
   text, onQuote, children,
 }: {
@@ -1127,17 +1205,19 @@ function MessageBlock({
   }
 
   return (
-    <div
-      ref={ref}
-      className="group/msg relative min-w-0 max-w-[78%] break-words border border-l-[3px] px-2.5 py-1.5 text-foreground-bright"
-      style={{
-        borderColor: "var(--ac-22)",
-        borderLeftColor: "var(--acc)",
-        background: "var(--ac-06)",
-      }}
-    >
-      {children}
-      <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
+    <>
+      <div
+        ref={ref}
+        className="min-w-0 max-w-[78%] break-words border border-l-[3px] px-2.5 py-1.5 text-foreground-bright"
+        style={{
+          borderColor: "var(--ac-22)",
+          borderLeftColor: "var(--acc)",
+          background: "var(--ac-06)",
+        }}
+      >
+        {children}
+      </div>
+      <div className="pointer-events-none absolute right-0 top-1 flex gap-1 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100">
         <button
           onClick={() => {
             try { void navigator.clipboard?.writeText(text); } catch { /* ignore */ }
@@ -1160,7 +1240,7 @@ function MessageBlock({
           </button>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1287,8 +1367,11 @@ export const RunStream = memo(function RunStream({
   // groups by server, so two servers in a row stay two cards.
   const groupKey = (i: number): string | null => {
     const e = events[i];
-    if (e.type !== "tool" || doneOf(e)?.patch) return null;
+    if (e.type !== "tool") return null;
     if (e.name === "Bash") return "bash";
+    // Edits group too, and their card merges them by file — a run of them is
+    // the same file over and over far more often than it is many files.
+    if (doneOf(e)?.patch) return "edit";
     const kind = toolKind(e.name);
     if (kind === "mcp") return `mcp:${mcpParts(e.name).server}`;
     return toolTier(e.name) === "glance" ? null : kind; // the quiet ones fold into chips
@@ -1360,7 +1443,7 @@ export const RunStream = memo(function RunStream({
             return (
               <div
                 key={i}
-                className="relative flex pl-[18px]"
+                className="group/msg relative flex pl-[18px]"
                 style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
               >
                 <RailNode />
@@ -1402,6 +1485,20 @@ export const RunStream = memo(function RunStream({
                   onRerun={onRunCommand}
                 />
               );
+            if (done?.patch)
+              return (
+                <EditGroup
+                  key={i}
+                  edits={run.map((j) => {
+                    const e = events[j] as { name: string; summary: string };
+                    const d = doneOf(events[j]);
+                    return { name: e.name, path: e.summary, patch: d?.patch, ms: d?.ms,
+                             error: d?.is_error };
+                  })}
+                  animate={animate}
+                  autoOpen={openResults}
+                />
+              );
             if (run.length > 1)
               return (
                 <CallGroup
@@ -1414,18 +1511,6 @@ export const RunStream = memo(function RunStream({
                              error: d?.is_error };
                   })}
                   animate={animate}
-                />
-              );
-            if (done?.patch)
-              return (
-                <DiffBlock
-                  key={i}
-                  name={event.name}
-                  path={event.summary}
-                  patch={done.patch}
-                  ms={done.ms}
-                  animate={animate}
-                  autoOpen={openResults}
                 />
               );
             const kind = toolKind(event.name);
