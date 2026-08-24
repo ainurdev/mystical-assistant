@@ -627,6 +627,11 @@ export const api = {
     }),
 
   flows: () => request<FlowCatalog>("/api/flows"),
+  // AUTO TYPE reads one message and can be wrong; null clears back to chat.
+  retypeSession: (sid: string, stype: string | null) =>
+    request<{ ok: boolean; stype: string | null; stage: string | null }>(
+      `/api/sessions/${encodeURIComponent(sid)}/stype`,
+      { method: "POST", body: { stype } }),
 
   // The move is the server's to make — this asks for it.
   setStage: (sid: string, action: "advance" | "back" | "set", stage?: string) =>

@@ -1,24 +1,70 @@
 {
   "stype": "build",
   "label": "BUILD",
-  "blurb": "Ship a feature.",
+  "blurb": "Ship a new feature or capability that isn't there yet.",
   "form": [
-    {"key": "what", "label": "WHAT", "required": true, "multiline": true},
-    {"key": "why",  "label": "WHY",  "required": false, "multiline": false},
-    {"key": "done", "label": "DONE WHEN", "required": false, "multiline": true}
+    {
+      "key": "what",
+      "label": "WHAT",
+      "required": true,
+      "multiline": true
+    },
+    {
+      "key": "why",
+      "label": "WHY",
+      "required": false,
+      "multiline": false
+    },
+    {
+      "key": "done",
+      "label": "DONE WHEN",
+      "required": false,
+      "multiline": true
+    }
   ],
   "stages": [
-    {"id": "plan", "label": "PLAN", "gate": true,
-     "instructions": "Read the code this touches and produce a short plan: approach, files, risks, how it will be verified. Do not write code in this stage.",
-     "card_fields": ["approach", "files", "risks"]},
-    {"id": "implement", "label": "IMPLEMENT", "gate": false, "permission_mode": "acceptEdits",
-     "instructions": "Execute the approved plan. Match the surrounding code's style. List every file changed as you go.",
-     "card_fields": ["changed"]},
-    {"id": "verify", "label": "VERIFY", "gate": false,
-     "instructions": "Run the tests and any 'done when' checks from the brief. Report exact commands and results; never claim pass without output.",
-     "card_fields": ["checks", "pass"]},
-    {"id": "ship", "label": "SHIP", "gate": true,
-     "instructions": "Summarize what shipped and what the user should look at. Commit if the repo's conventions call for it; state the commit sha.",
-     "card_fields": ["shipped"]}
+    {
+      "id": "plan",
+      "label": "PLAN",
+      "gate": true,
+      "instructions": "Read the code this touches and produce a short plan: approach, files, risks, how it will be verified. Do not write code in this stage.",
+      "card_fields": [
+        "approach",
+        "files",
+        "risks"
+      ]
+    },
+    {
+      "id": "implement",
+      "label": "IMPLEMENT",
+      "gate": false,
+      "permission_mode": "acceptEdits",
+      "instructions": "Execute the approved plan. Match the surrounding code's style. List every file changed as you go.",
+      "card_fields": [
+        "changed"
+      ]
+    },
+    {
+      "id": "verify",
+      "label": "VERIFY",
+      "gate": false,
+      "instructions": "Run the tests and any 'done when' checks from the brief. Report exact commands and results; never claim pass without output.",
+      "card_fields": [
+        "checks",
+        "pass"
+      ],
+      "next_allowed": [
+        "implement"
+      ]
+    },
+    {
+      "id": "ship",
+      "label": "SHIP",
+      "gate": true,
+      "instructions": "Summarize what shipped and what the user should look at. Commit if the repo's conventions call for it; state the commit sha.",
+      "card_fields": [
+        "shipped"
+      ]
+    }
   ]
 }

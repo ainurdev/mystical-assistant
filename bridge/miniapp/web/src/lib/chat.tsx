@@ -227,6 +227,7 @@ export interface ChatContextValue {
   newChat: (stype?: string) => Promise<void>;
   /** Move the open session's stage — a gate's APPROVE. */
   setStage: (action: "advance" | "back" | "set", stage?: string) => Promise<void>;
+  retype: (stype: string | null) => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
   checking: boolean;
@@ -659,6 +660,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /** Out of a wrong AUTO TYPE verdict, or into a type the guess missed. */
+  async function retype(stype: string | null) {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      const r = await api.retypeSession(sid, stype);
+      setSessions((prev) => prev.map((s) =>
+        (s.id === sid ? { ...s, stype: r.stype, stage: r.stage } : s)));
+    } catch {
+      /* the poll reconciles */
+    }
+  }
+
   function selectSession(id: string) {
     if (id === sessionId) return;
     openSession(id);
@@ -702,6 +716,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     loadingSession,
     newChat,
     setStage,
+    retype,
     held,
     heldBusy,
     checking,

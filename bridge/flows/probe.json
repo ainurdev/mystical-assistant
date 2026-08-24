@@ -1,17 +1,41 @@
 {
   "stype": "probe",
   "label": "PROBE",
-  "blurb": "Answer a question about the code or system.",
+  "blurb": "Investigate this codebase and report findings, changing nothing.",
   "form": [
-    {"key": "question", "label": "QUESTION", "required": true, "multiline": true},
-    {"key": "depth", "label": "DEPTH (quick/deep)", "required": false, "multiline": false}
+    {
+      "key": "question",
+      "label": "QUESTION",
+      "required": true,
+      "multiline": true
+    },
+    {
+      "key": "depth",
+      "label": "DEPTH (quick/deep)",
+      "required": false,
+      "multiline": false
+    }
   ],
   "stages": [
-    {"id": "dig", "label": "DIG", "gate": false,
-     "instructions": "Investigate. Read the code, run read-only commands, follow the evidence. Avoid mutating anything. Note findings as you go; advance when you can answer.",
-     "card_fields": ["findings"]},
-    {"id": "report", "label": "REPORT", "gate": false,
-     "instructions": "Answer the question directly, then the evidence (file:line, command output). End with a recommendation and how confident you are.",
-     "card_fields": ["answer", "recommendation", "confidence"]}
+    {
+      "id": "dig",
+      "label": "DIG",
+      "gate": false,
+      "instructions": "Investigate. Read the code, run read-only commands, follow the evidence. Avoid mutating anything. Note findings as you go; advance when you can answer.",
+      "card_fields": [
+        "findings"
+      ]
+    },
+    {
+      "id": "report",
+      "label": "REPORT",
+      "gate": false,
+      "instructions": "Answer the question directly, then the evidence (file:line, command output). End with a recommendation and how confident you are.",
+      "card_fields": [
+        "answer",
+        "recommendation",
+        "confidence"
+      ]
+    }
   ]
 }

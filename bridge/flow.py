@@ -75,6 +75,18 @@ def validate_flow(d) -> "list[str]":
         pm = s.get("permission_mode")
         if pm is not None and pm not in _PERM_MODES:
             errs.append(f"stages[{i}].permission_mode must be one of {_PERM_MODES}")
+    # Branch targets last: every id has to be known by now, and a typo here is
+    # a stage the model can name but the engine can never reach.
+    for i, s in enumerate(stages):
+        if not isinstance(s, dict):
+            continue
+        nxt = s.get("next_allowed", [])
+        if not isinstance(nxt, list):
+            errs.append(f"stages[{i}].next_allowed must be a list of stage ids")
+            continue
+        for t in nxt:
+            if t not in seen and t != "done":
+                errs.append(f"stages[{i}].next_allowed names unknown stage {t!r}")
     return errs
 
 
@@ -184,6 +196,12 @@ _CONTRACT = """End EVERY reply with exactly one fenced code block tagged hud-car
 "fields" must contain: {names}. "actions" are 0-3 canned next moves the user
 can tap. Do not discuss this block in prose; it is parsed, not read."""
 
+# Only stages that declare next_allowed get this line: a stage with one way out
+# should not be told it has choices, and the prompt stays stable per stage.
+_BRANCH = ('This stage may hand off somewhere other than the next one. Add '
+           '"next": "<id>" to the card to go there, choosing from: {ids}. '
+           'Omit it to follow the normal order.')
+
 
 def stage_by_id(f: dict, stage_id: "str | None") -> "dict | None":
     return next((s for s in f.get("stages", []) if s["id"] == stage_id), None)
@@ -240,27 +258,75 @@ def compose_section(f: dict, stage_id: "str | None") -> str:
             "past the gate."
             if s.get("gate") else
             'Setting "advance": true moves the flow on by itself.')
-    return "\n\n".join([
+    nxt = [t for t in s.get("next_allowed", [])]
+    branch = _BRANCH.format(ids=", ".join(nxt)) if nxt else ""
+    return "\n\n".join([p for p in [
         f"[flow] This is a typed {label} session. Stages: {rail}. "
         f"Current stage: {s.get('label', s['id'].upper())}.",
         s["instructions"].strip(),
         _CONTRACT.format(sid=s["id"], fields=fields, names=names),
         gate,
-    ])
+        branch,
+    ] if p])
+
+
+def _balanced(text: str, start: int) -> "str | None":
+    """The {...} beginning at `start`, brace-counted so nested objects survive.
+    String-aware, or a brace inside a summary would end the object early."""
+    depth, instr, esc = 0, False, False
+    for i in range(start, len(text)):
+        c = text[i]
+        if instr:
+            instr, esc = (instr and not (c == '"' and not esc)), (c == "\\" and not esc)
+            continue
+        if c == '"':
+            instr, esc = True, False
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
+
+
+def _loads(raw: "str | None") -> "dict | None":
+    """json.loads, then one repair pass. A model that fenced the card but put
+    prose beside it, or left a trailing comma, has done the work — re-running
+    the turn to fix punctuation costs more than parsing around it."""
+    if not raw:
+        return None
+    for attempt in (raw, None):
+        if attempt is None:                       # repair: isolate + de-comma
+            i = raw.find("{")
+            attempt = _balanced(raw, i) if i >= 0 else None
+            if attempt is None:
+                return None
+            attempt = re.sub(r",(\s*[}\]])", r"\1", attempt)
+        try:
+            d = json.loads(attempt)
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            return d
+    return None
 
 
 def parse_card(text: "str | None") -> "dict | None":
     """The LAST hud-card block in a reply, as a dict; None if absent or
     unparseable. Last wins because a turn that shows an example mid-reply
-    still ends with the real one."""
+    still ends with the real one. A malformed-but-recognisable card is
+    repaired rather than nudged for — see _loads."""
     hits = _CARD_RE.findall(text) if text else []
-    if not hits:
-        return None
-    try:
-        d = json.loads(hits[-1])
-    except ValueError:
-        return None
-    return d if isinstance(d, dict) else None
+    if hits:
+        return _loads(hits[-1])
+    # No fence at all: the commonest miss is the JSON alone, on its own line.
+    # Only accept one that looks like a card, never a stray object in prose.
+    for m in re.finditer(r"^\s*\{", text or "", re.M):
+        d = _loads(_balanced(text, m.start() + text[m.start():].index("{")))
+        if d and "stage" in d and "summary" in d:
+            return d
+    return None
 
 
 def validate_card(f: dict, stage_id: str, card) -> "list[str]":
@@ -277,9 +343,15 @@ def validate_card(f: dict, stage_id: str, card) -> "list[str]":
     if not isinstance(fields, dict):
         errs.append("fields must be an object")
         fields = {}
-    for name in (stage_by_id(f, stage_id) or {}).get("card_fields", []):
+    st = stage_by_id(f, stage_id) or {}
+    for name in st.get("card_fields", []):
         if name not in fields:
             errs.append(f"fields.{name} is required in stage {stage_id}")
+    # "next" is only ever offered to a stage that declares targets, so a value
+    # off that list is a real miss. A stage with no branch ignores the key.
+    nxt, allowed = card.get("next"), st.get("next_allowed", [])
+    if nxt is not None and allowed and nxt not in allowed:
+        errs.append(f"next {nxt!r} is not one of {', '.join(allowed)}")
     return errs
 
 
@@ -293,6 +365,26 @@ def apply_stage(session_id: str, to_stage: str, by: str, turn_id: str = "") -> N
     store.set_session_stage(session_id, to_stage)
     seq = store.append_event(session_id, turn_id, ev)
     pubsub.publish(f"session:{session_id}", {**ev, "seq": seq, "turn_id": turn_id})
+
+
+def retype(session_id: str, stype: "str | None") -> bool:
+    """Change (or clear) a session's type, starting the new flow at stage one.
+    The classifier reads one message and can be wrong; this is the way out.
+    False when the stype names no flow. Clearing is CHAT: no type, no stage."""
+    from bridge import pubsub
+    f = get_flow(stype) if stype else None
+    if stype and not f:
+        return False
+    sess = store.get_session(session_id) or {}
+    to = first_stage(f) if f else None
+    ev = {"type": "retype", "from": sess.get("stype"), "to": stype,
+          "stage": to, "by": "user"}
+    store.set_session_stype(session_id, stype)
+    store.set_session_stage(session_id, to)
+    turn_id = store.latest_turn_id(session_id) or ""
+    seq = store.append_event(session_id, turn_id, ev)
+    pubsub.publish(f"session:{session_id}", {**ev, "seq": seq, "turn_id": turn_id})
+    return True
 
 
 # --- what the runner calls --------------------------------------------------
@@ -344,7 +436,13 @@ def after_turn(job, model=None, effort=None) -> None:
             job.add({"type": "card", "card": card, "stage": stage,
                      "gated": bool(stage_by_id(f, stage).get("gate"))})
             store.set_turn_stage(job.id, stage)
-            if card.get("advance") is True and not stage_by_id(f, stage).get("gate"):
+            st = stage_by_id(f, stage)
+            if st.get("gate"):
+                return                       # gated: only the user moves this
+            nxt = card.get("next")
+            if nxt in st.get("next_allowed", []):
+                apply_stage(sid, nxt, "auto", turn_id=job.id)
+            elif card.get("advance") is True:
                 apply_stage(sid, next_stage(f, stage), "auto", turn_id=job.id)
             return
         job.add({"type": "card_missing", "errors": errs[:4]})

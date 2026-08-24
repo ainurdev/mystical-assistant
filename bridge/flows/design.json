@@ -1,19 +1,47 @@
 {
   "stype": "design",
   "label": "DESIGN",
-  "blurb": "Design before code, then build the approved design.",
+  "blurb": "Design the change first, then build the approved design.",
   "form": [
-    {"key": "brief", "label": "BRIEF", "required": true, "multiline": true}
+    {
+      "key": "brief",
+      "label": "BRIEF",
+      "required": true,
+      "multiline": true
+    }
   ],
   "stages": [
-    {"id": "draft", "label": "DRAFT", "gate": true,
-     "instructions": "Invoke the /design-first skill with the brief and follow it: brand-system mockups, screenshots into the transcript, push to the linked design project. Stop for approval — that approval is this stage's gate.",
-     "card_fields": ["screens"]},
-    {"id": "implement", "label": "IMPLEMENT", "gate": false, "permission_mode": "acceptEdits",
-     "instructions": "Implement the approved design in the repo. List every file changed.",
-     "card_fields": ["changed"]},
-    {"id": "verify", "label": "VERIFY", "gate": false,
-     "instructions": "Screenshot the built UI (bridge-eyes) and compare against the approved draft. Run the frontend typecheck and build. Report results with evidence.",
-     "card_fields": ["checks", "pass"]}
+    {
+      "id": "draft",
+      "label": "DRAFT",
+      "gate": true,
+      "instructions": "Invoke the /design-first skill with the brief and follow it: brand-system mockups, screenshots into the transcript, push to the linked design project. Stop for approval — that approval is this stage's gate.",
+      "card_fields": [
+        "screens"
+      ]
+    },
+    {
+      "id": "implement",
+      "label": "IMPLEMENT",
+      "gate": false,
+      "permission_mode": "acceptEdits",
+      "instructions": "Implement the approved design in the repo. List every file changed.",
+      "card_fields": [
+        "changed"
+      ]
+    },
+    {
+      "id": "verify",
+      "label": "VERIFY",
+      "gate": false,
+      "instructions": "Screenshot the built UI (bridge-eyes) and compare against the approved draft. Run the frontend typecheck and build. Report results with evidence.",
+      "card_fields": [
+        "checks",
+        "pass"
+      ],
+      "next_allowed": [
+        "implement"
+      ]
+    }
   ]
 }

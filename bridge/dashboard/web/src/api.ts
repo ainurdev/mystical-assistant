@@ -1000,6 +1000,12 @@ export const api = {
       method: "POST",
       body: { action, ...(stage ? { stage } : {}) },
     }),
+  // AUTO TYPE reads one message and can be wrong; this is the way out.
+  // stype null clears the session back to a plain chat.
+  retypeSession: (sid: string, stype: string | null) =>
+    req<{ ok: boolean; stype: string | null; stage: string | null }>(
+      `/local/sessions/${encodeURIComponent(sid)}/stype`,
+      { method: "POST", body: { stype } }),
   // Copy a session's whole transcript into a new one. The copy forks its claude
   // session on first run, so continuing it never appends to the original.
   duplicateSession: (id: string) =>

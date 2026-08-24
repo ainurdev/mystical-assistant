@@ -36,7 +36,8 @@ from bridge import (agents, attribution, browser, config, devserver, flow, fmt, 
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, usage,
                     weather, wsutil)
-from bridge.miniapp.server import (_pre_title, _qs_int, _resolve_stype, _save_images,
+from bridge.miniapp.server import (_pre_title, _qs_int, _resolve_stype, _retype_action,
+                                   _save_images,
                                    _session_brief, _stage_action,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -933,6 +934,9 @@ class Handler(BaseHTTPRequestHandler):
                 goals.clear(sid)          # empty objective = abandon the goal
                 return self._json({"ok": True, "goal": None})
             return self._json({"ok": True, "goal": goals.create(sid, objective)})
+        if path.startswith("/local/sessions/") and path.endswith("/stype"):
+            return _retype_action(
+                self, chat, path[len("/local/sessions/"):-len("/stype")], body)
         if path.startswith("/local/sessions/") and path.endswith("/stage"):
             return _stage_action(
                 self, chat, path[len("/local/sessions/"):-len("/stage")], body)

@@ -1,19 +1,44 @@
 {
   "stype": "ops",
   "label": "OPS",
-  "blurb": "Run a chore: restart, deploy, config, cleanup.",
+  "blurb": "Run a chore on the machine: restart, deploy, config, cleanup.",
   "form": [
-    {"key": "task", "label": "TASK", "required": true, "multiline": true}
+    {
+      "key": "task",
+      "label": "TASK",
+      "required": true,
+      "multiline": true
+    }
   ],
   "stages": [
-    {"id": "state", "label": "STATE", "gate": true,
-     "instructions": "State exactly what will be executed and what it affects — commands, targets, blast radius, rollback. Execute nothing in this stage.",
-     "card_fields": ["will_do", "blast_radius"]},
-    {"id": "execute", "label": "EXECUTE", "gate": false,
-     "instructions": "Run exactly what was approved, nothing more. Capture the output of each command.",
-     "card_fields": ["ran"]},
-    {"id": "confirm", "label": "CONFIRM", "gate": false,
-     "instructions": "Verify the world is in the intended state (service up, config live, files gone). Show the checks and their output.",
-     "card_fields": ["checks", "ok"]}
+    {
+      "id": "state",
+      "label": "STATE",
+      "gate": true,
+      "instructions": "State exactly what will be executed and what it affects — commands, targets, blast radius, rollback. Execute nothing in this stage.",
+      "card_fields": [
+        "will_do",
+        "blast_radius"
+      ]
+    },
+    {
+      "id": "execute",
+      "label": "EXECUTE",
+      "gate": false,
+      "instructions": "Run exactly what was approved, nothing more. Capture the output of each command.",
+      "card_fields": [
+        "ran"
+      ]
+    },
+    {
+      "id": "confirm",
+      "label": "CONFIRM",
+      "gate": false,
+      "instructions": "Verify the world is in the intended state (service up, config live, files gone). Show the checks and their output.",
+      "card_fields": [
+        "checks",
+        "ok"
+      ]
+    }
   ]
 }

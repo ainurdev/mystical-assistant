@@ -360,3 +360,106 @@ def test_strip_card_leaves_the_prose():
     body = "Fixed it.\n\n```hud-card\n{\"stage\": \"fix\"}\n```"
     assert flow.strip_card(body) == "Fixed it."
     assert flow.strip_card("no card") == "no card"
+
+
+# --- branching, repair, retype (2026-08-24) ----------------------------------
+
+def test_validate_flow_rejects_a_branch_to_nowhere():
+    f = flow.get_flow("fix")
+    bad = {**f, "stages": [{**f["stages"][0], "next_allowed": ["nope"]}]}
+    assert flow.validate_flow(bad) == [
+        "stages[0].next_allowed names unknown stage 'nope'"]
+    assert flow.validate_flow({**f, "stages": [{**f["stages"][0],
+                                                "next_allowed": "fix"}]}) == [
+        "stages[0].next_allowed must be a list of stage ids"]
+
+
+def test_branch_is_offered_only_where_it_exists():
+    f = flow.get_flow("fix")
+    assert '"next"' in flow.compose_section(f, "verify")     # loops back to fix
+    assert '"next"' not in flow.compose_section(f, "reproduce")
+
+
+def test_card_branch_loops_back_instead_of_advancing():
+    s = store.create_session(555, "/p", stype="fix", stage="verify")
+    store.start_turn(s["id"], "flow-b1", "work", [])
+    body = "```hud-card\n" + json.dumps(
+        {"stage": "verify", "summary": "two checks failed",
+         "fields": {"checks": ["a"], "pass": False},
+         "advance": True, "next": "fix"}) + "\n```"
+    flow.after_turn(_StubJob(s["id"], "flow-b1", body, flow_stage="verify"))
+    assert store.get_session(s["id"])["stage"] == "fix"   # back, not on to done
+
+
+def test_card_branch_off_the_allowlist_is_an_error(monkeypatch):
+    from bridge import queue_manager
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: True)
+    f = flow.get_flow("fix")
+    errs = flow.validate_card(f, "verify", {"stage": "verify", "summary": "s",
+                                            "fields": {"checks": [], "pass": True},
+                                            "next": "reproduce"})
+    assert errs == ["next 'reproduce' is not one of fix"]
+    # a stage with no branch simply ignores the key
+    assert flow.validate_card(f, "reproduce",
+                              {"stage": "reproduce", "summary": "s",
+                               "fields": {"reproduced": True, "evidence": "e"},
+                               "next": "anywhere"}) == []
+
+
+def test_a_gate_still_holds_against_a_branch():
+    s = store.create_session(555, "/p", stype="fix", stage="rootcause")
+    store.start_turn(s["id"], "flow-b2", "work", [])
+    body = "```hud-card\n" + json.dumps(
+        {"stage": "rootcause", "summary": "found it",
+         "fields": {"cause": "c", "fix_plan": "p"},
+         "advance": True, "next": "reproduce"}) + "\n```"
+    flow.after_turn(_StubJob(s["id"], "flow-b2", body, flow_stage="rootcause"))
+    assert store.get_session(s["id"])["stage"] == "rootcause"
+
+
+def test_parse_card_repairs_what_the_model_nearly_got_right():
+    trailing = '```hud-card\n{"stage": "fix", "summary": "s", "fields": {},}\n```'
+    assert flow.parse_card(trailing)["summary"] == "s"
+    unfenced = 'All done.\n\n{"stage": "fix", "summary": "no fence", "fields": {}}'
+    assert flow.parse_card(unfenced)["summary"] == "no fence"
+    brace = '```hud-card\n{"stage": "f", "summary": "a } brace", "fields": {}}\n```'
+    assert flow.parse_card(brace)["summary"] == "a } brace"
+
+
+def test_parse_card_still_refuses_what_is_not_a_card():
+    assert flow.parse_card('prose with {"unrelated": 1} in it') is None
+    assert flow.parse_card("no json at all") is None
+    assert flow.parse_card('```hud-card\n["a list"]\n```') is None
+
+
+def test_retype_moves_a_session_between_flows_and_out_to_chat():
+    s = store.create_session(555, "/p", stype="fix", stage="verify")
+    assert flow.retype(s["id"], "build") is True
+    row = store.get_session(s["id"])
+    assert row["stype"] == "build" and row["stage"] == "plan"   # flow restarts
+    assert flow.retype(s["id"], None) is True
+    row = store.get_session(s["id"])
+    assert row["stype"] is None and row["stage"] is None        # back to CHAT
+    assert flow.retype(s["id"], "nope") is False                # unknown type
+    assert store.get_session(s["id"])["stype"] is None
+
+
+def test_retype_journals_an_event_the_surfaces_can_read():
+    s = store.create_session(555, "/p")
+    flow.retype(s["id"], "probe")
+    ev = [e for e in store.transcript(s["id"])["events"] if e["type"] == "retype"]
+    assert ev and ev[-1]["to"] == "probe" and ev[-1]["stage"] == "dig"
+
+
+def test_retype_endpoint_guards_ownership_and_the_type():
+    from bridge.miniapp.server import _retype_action
+    s = store.create_session(555, "/p", stype="fix", stage="reproduce")
+    h = _StubHandler()
+    _retype_action(h, 555, s["id"], {"stype": "probe"})
+    assert h.sent == ({"ok": True, "stype": "probe", "stage": "dig"}, 200)
+    _retype_action(h, 999, s["id"], {"stype": "build"})       # someone else's
+    assert h.sent[1] == 404 and store.get_session(s["id"])["stype"] == "probe"
+    _retype_action(h, 555, s["id"], {"stype": "nope"})
+    assert h.sent[1] == 400 and store.get_session(s["id"])["stype"] == "probe"
+    _retype_action(h, 555, s["id"], {"stype": ""})            # "" clears to chat
+    assert h.sent == ({"ok": True, "stype": None, "stage": None}, 200)

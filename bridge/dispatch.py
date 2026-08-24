@@ -18,6 +18,7 @@ HELP = (
     "/project — show the active project\n"
     "/app — open the Mini App control panel\n"
     "/new — fresh Claude session for the active project\n"
+    "/type [kind] — what kind of work this session is, or re-type it\n"
     "/server [cmd] — start the dev server · /server stop\n"
     "/logs [n] — recent server output\n"
     "/map [query] — project map: summary · /map build · /map <thing>\n"
@@ -197,6 +198,26 @@ def on_message(msg: dict):
         threading.Thread(target=_handle_next,
                          args=(chat_id, text[len("/next"):].strip()),
                          daemon=True).start()
+        return
+    if cmd0 == "/type":
+        # The escape from a wrong AUTO TYPE verdict, for the surface with no
+        # chip to tap. Bare /type says what this session is and what it can be.
+        want = text[len("/type"):].strip().lower()
+        sess = store.latest_session(chat_id, state.project_key(chat_id))
+        if not sess:
+            send(chat_id, "No session yet — send anything to start one.")
+            return
+        kinds = [f["stype"] for f in flow.catalog()["flows"]]
+        if not want:
+            send(chat_id, f"This session is {(sess.get('stype') or 'chat').upper()}."
+                          f"\n/type " + " | /type ".join(kinds + ["chat"]))
+            return
+        if not flow.retype(sess["id"], None if want == "chat" else want):
+            send(chat_id, f"No such type. Try: {', '.join(kinds + ['chat'])}")
+            return
+        now = store.get_session(sess["id"]) or {}
+        send(chat_id, f"Re-typed as {want.upper()}"
+                      + (f" · stage {now['stage'].upper()}" if now.get("stage") else ""))
         return
     if cmd0 == "/report":
         back = 1 if text[len("/report"):].strip() == "last" else 0

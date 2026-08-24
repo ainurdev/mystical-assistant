@@ -162,6 +162,19 @@ def _stage_action(handler, chat_id: int, sid: str, body: dict):
     return handler._json({"ok": True, "stage": to})
 
 
+def _retype_action(handler, chat_id: int, sid: str, body: dict):
+    """POST {surface}/sessions/<id>/stype. The way out of a wrong verdict:
+    AUTO TYPE reads one message, and one message is sometimes not enough."""
+    s = store.get_session(sid)
+    if not s or s["chat_id"] != chat_id:
+        return handler._json({"error": "not found"}, 404)
+    stype = (body.get("stype") or "").strip().lower() or None
+    if not flow.retype(sid, stype):
+        return handler._json({"error": "unknown type"}, 400)
+    return handler._json({"ok": True, "stype": stype,
+                          "stage": (store.get_session(sid) or {}).get("stage")})
+
+
 def _pre_title(s: dict, title) -> dict:
     """Name a freshly created, still-empty session (the relevance guardrail routes
     a split-off task into one pre-titled). Marks it manual so the auto-titler
@@ -366,6 +379,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/sessions/") and path.endswith("/stage"):
                 return _stage_action(
                     self, chat_id, path[len("/api/sessions/"):-len("/stage")], body)
+            if path.startswith("/api/sessions/") and path.endswith("/stype"):
+                return _retype_action(
+                    self, chat_id, path[len("/api/sessions/"):-len("/stype")], body)
             if path.startswith("/api/sessions/") and path.endswith("/policy"):
                 return self._api_session_policy(
                     chat_id, path[len("/api/sessions/"):-len("/policy")], body)

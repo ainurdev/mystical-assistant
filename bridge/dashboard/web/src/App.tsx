@@ -1302,6 +1302,19 @@ export function App() {
     }
   }
 
+  /** The way out of a wrong AUTO TYPE verdict: re-type the session, or clear
+   *  it back to a plain chat. The new flow restarts at its first stage. */
+  async function retypeSession(stype: string | null) {
+    if (!sessionId) return;
+    try {
+      const r = await api.retypeSession(sessionId, stype);
+      setSessions((prev) => prev.map((s) =>
+        (s.id === sessionId ? { ...s, stype: r.stype, stage: r.stage } : s)));
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
                                  firstPrompt?: string) {
     openBlank();
@@ -1984,6 +1997,7 @@ export function App() {
                   } else void send(text, []);
                 }}
                 onStage={(action, stage) => void setStage(action, stage)}
+                onRetype={(stype) => void retypeSession(stype)}
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
                 composer={

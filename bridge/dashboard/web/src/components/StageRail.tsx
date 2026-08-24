@@ -1,4 +1,43 @@
-import type { FlowStageShape } from "../api";
+import type { FlowShape, FlowStageShape } from "../api";
+
+// What kind of work this session is. AUTO TYPE guesses it from the first
+// message, so it can be wrong — a native select is the whole escape hatch:
+// keyboard, phone and screen reader for free, no popover to manage.
+export function TypePicker({
+  flows,
+  current,
+  onRetype,
+}: {
+  flows: FlowShape[];
+  current: string | null;
+  onRetype: (stype: string | null) => void;
+}) {
+  return (
+    <select
+      value={current ?? ""}
+      title="what kind of work this session is"
+      onChange={(e) => {
+        const to = e.target.value || null;
+        // Retyping restarts the new flow at stage one — worth one click's pause.
+        if (window.confirm(`Re-type this session as ${to ? to.toUpperCase() : "CHAT"}?`))
+          onRetype(to);
+      }}
+      style={{
+        appearance: "none", cursor: "pointer", flex: "none",
+        background: "color-mix(in srgb, var(--panel2) 55%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)",
+        color: current ? "var(--txb)" : "var(--txm)",
+        fontFamily: "inherit", fontSize: "var(--t8)", letterSpacing: 1,
+        padding: "1px 4px",
+      }}
+    >
+      <option value="">CHAT</option>
+      {flows.map((f) => (
+        <option key={f.stype} value={f.stype}>{f.label}</option>
+      ))}
+    </select>
+  );
+}
 
 // Where a typed session stands, and the only place to move it by hand. Past
 // stages dim, the current one is lit, gates carry a ◆ — so a stage that will
