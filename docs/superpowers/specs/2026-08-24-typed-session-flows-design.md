@@ -27,11 +27,14 @@ skill-backed types (B): server-enforced stages, not prompt hopes.
 - Stages are server state. The model requests advancement; the server (and on
   gated stages, the user) decides. A gate cannot be prompt-engineered past.
 - The session list groups and filters by type.
+- The feature is user-managed from settings: a master on/off toggle, and
+  add / edit / disable of flow templates without touching the repo.
 
 ## Non-goals (v1)
 
 - No auto-classification of existing sessions — untyped ones bucket as CHAT.
-- No user-facing flow editor — `bridge/flows/*.json` files are the editor.
+- No form-builder GUI — flows are edited in settings as validated JSON, not
+  drag-and-drop fields.
 - No parallel or nested flows per session.
 - No reimplementation of `/design-first` — the DESIGN flow invokes the skill.
 - No hard-blocking of nonconforming turns — the model's work is never
@@ -58,10 +61,24 @@ Additive, same ALTER-if-missing migration pattern as `tags`:
 Stage transitions append to the existing `events` table (type `stage`) —
 history is free, no new table. Parsed cards append as `card` events.
 
-## Flow definitions (`bridge/flows/*.json`)
+## Flow definitions (`bridge/flows/*.json` + settings overlay)
 
-Loaded from disk per run — **not** frozen into `bridge/config` constants — so
-editing instructions or forms takes effect on the next turn without a bridge
+Built-in flows ship as one JSON file per type in `bridge/flows/`. User
+customizations live in the existing `settings` table and are overlaid at load
+time:
+
+- `flows_enabled` — master toggle for the whole feature (default `"1"`).
+  Off: type picker and flow catalog hidden, but **in-flight typed sessions
+  keep their engine** — the toggle gates creation, never strands work.
+- `flow:<stype>` — a full flow JSON that replaces the built-in of the same
+  stype, or defines a brand-new user type. A `"disabled": true` key inside
+  the JSON hides that type from the picker (built-ins can't be deleted, only
+  disabled; user types can be deleted outright).
+
+Load order in the engine: read `bridge/flows/*.json` → overlay `flow:*`
+settings rows → drop disabled → if `flows_enabled` is off, expose none for
+creation. Everything is read per run — **not** frozen into `bridge/config`
+constants — so a template edit takes effect on the next turn without a bridge
 restart. Engine code changes still need a restart (bridge-ship as usual).
 
 ```json
@@ -178,7 +195,15 @@ Served by both HTTP servers (`bridge/miniapp/server.py`,
 `bridge/dashboard/server.py`), same pattern as existing session endpoints:
 
 - `GET /api/flows` — catalog: stype, label, blurb, form schema, stage list
-  (id, label, gate). No instruction text — UIs need shape, not prompts.
+  (id, label, gate), plus `enabled` (master toggle) and per-flow
+  `source: "builtin" | "custom"` / `disabled`. Creation UIs use the shape
+  fields; the settings editor fetches the full JSON.
+- `PUT /api/flows/{stype}` — upsert a customized or new flow. Body is the
+  full flow JSON; the server validates (shape, stage ids unique, gates
+  boolean, known permission modes) and returns field-level errors on 400.
+- `DELETE /api/flows/{stype}` — remove a custom flow (built-in of the same
+  name resurfaces) ; disabling a built-in is a PUT with `"disabled": true`.
+- `PUT /api/flows-enabled` — the master toggle (settings-backed).
 - `POST /api/sessions` — gains optional `stype`. Unknown stype → 400.
   The **first prompt is composed by the surface** (web composer, or dispatch
   for the bot) from the form as labeled lines, e.g. `[FIX] WHAT BROKE: …`,
@@ -200,9 +225,13 @@ Served by both HTTP servers (`bridge/miniapp/server.py`,
 - Transcript: card component (summary, fields, action buttons, APPROVE on
   gated cards) rendered from `card` events.
 - Session list: type chip per row; group/filter by type, untyped = CHAT.
+- Settings: a FLOWS section — master toggle, flow list (builtin/custom badge,
+  disabled state), per-flow JSON editor with server-side validation errors
+  shown inline, NEW TYPE from a blank scaffold.
 
 **Mini App:** same data, compact forms, stage chip instead of full rail, same
-card rendering.
+card rendering. Flow *management* is dashboard-only in v1 — the Mini App
+respects the toggle and renders whatever the catalog serves.
 
 **Bot** (`bridge/dispatch.py`, rendering via `bridge/fmt.py`):
 - `/new` keyboard gains a type row. Typed pick → one follow-up message; the
@@ -218,8 +247,10 @@ card rendering.
   gated advance, back/set, done), card parsing (valid, malformed JSON, missing
   fields, multiple blocks → last wins), per-stage prompt composition,
   permission-mode resolution.
-- `tests/test_bridge.py` additions — `/api/flows`, create-with-stype,
-  stage endpoint, stype filter, `card`/`stage` events on the stream.
+- `tests/test_bridge.py` additions — `/api/flows` (catalog + overlay merge +
+  toggle), PUT/DELETE flow management (validation errors, builtin disable,
+  custom delete), create-with-stype, stage endpoint, stype filter,
+  `card`/`stage` events on the stream.
 - Env-dependent config stays conftest-pinned per the existing rule.
 
 ## Rollout
@@ -232,9 +263,10 @@ card rendering.
 
 ## Build order (for the plan)
 
-1. Store columns + `flow.py` engine + flow JSONs + tests (no UI yet).
+1. Store columns + `flow.py` engine (incl. settings overlay) + flow JSONs +
+   tests (no UI yet).
 2. Runner integration: compose, validate, nudge, transition, events.
-3. API endpoints on both servers.
-4. Dashboard picker/form/rail/cards/list.
+3. API endpoints on both servers — catalog, stage, and flow management.
+4. Dashboard picker/form/rail/cards/list + settings FLOWS editor.
 5. Mini App.
 6. Bot.
