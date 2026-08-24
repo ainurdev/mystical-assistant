@@ -351,5 +351,86 @@ def test_backfill_skips_a_lesson_with_no_heading(repo):
         assert f.read() == "just prose, no heading.\n"    # untouched
 
 
+# --- concept cards: a topic distilled once it recurs -------------------------
+
+CARD = "# Copies Guarded By A Drift Test\n\n**The pattern** — copy, then guard.\n"
+
+
+def _span_repos(repo, monkeypatch):
+    monkeypatch.setattr(config, "BASE_PATH", os.path.dirname(repo))
+    monkeypatch.setattr(browser, "list_projects",
+                        lambda *a, **k: ["/" + os.path.basename(repo)])
+
+
+def _seed_topic(repo, n, topic="drift guards"):
+    for i in range(n):
+        sess, tid = _session_with_turn(repo)
+        _stub(f"# Lesson {i}\n> concept: testing\n> topic: {topic}\n\n"
+              "**The idea** — x.\n")
+        learn.generate_after_turn(1, sess, tid)
+
+
+def test_no_card_below_the_threshold(repo, monkeypatch):
+    _span_repos(repo, monkeypatch)
+    _seed_topic(repo, learn.CARD_MIN - 1)
+    assert learn.list_cards() == []
+
+
+def test_the_threshold_distills_a_card(repo, monkeypatch):
+    _span_repos(repo, monkeypatch)
+    real = learn._maybe_card
+    monkeypatch.setattr(learn, "_maybe_card", lambda *a: None)   # seed quietly
+    _seed_topic(repo, learn.CARD_MIN)
+
+    _stub(CARD)
+    real(1, repo, "drift guards")
+
+    cards = learn.list_cards()
+    assert [c["file"] for c in cards] == ["drift-guards.md"]
+    assert cards[0]["topic"] == "drift guards"
+    assert cards[0]["concept"] == "testing"        # inherited from the instances
+    body = learn.read_card("drift-guards.md")
+    assert body.startswith("# Copies Guarded By A Drift Test\n> concept: testing\n> topic: drift guards")
+    assert "**Seen in**" in body
+    assert body.count("\n- /") == learn.CARD_MIN   # one deterministic link per instance
+
+
+def test_a_current_card_is_left_alone(repo, monkeypatch):
+    _span_repos(repo, monkeypatch)
+    real = learn._maybe_card
+    monkeypatch.setattr(learn, "_maybe_card", lambda *a: None)
+    _seed_topic(repo, learn.CARD_MIN)
+    _stub(CARD)
+    real(1, repo, "drift guards")
+
+    def boom(*a, **k):
+        raise AssertionError("a fresh card must not be re-distilled")
+
+    runner.run_blocking = boom
+    real(1, repo, "drift guards")                  # must not raise
+
+
+def test_a_newer_instance_regenerates_the_card(repo, monkeypatch):
+    _span_repos(repo, monkeypatch)
+    real = learn._maybe_card
+    monkeypatch.setattr(learn, "_maybe_card", lambda *a: None)
+    _seed_topic(repo, learn.CARD_MIN)
+    _stub(CARD)
+    real(1, repo, "drift guards")
+
+    d = os.path.join(repo, ".mystical", "learn")
+    future = os.path.getmtime(os.path.join(learn.cards_dir(), "drift-guards.md")) + 60
+    for n in os.listdir(d):
+        os.utime(os.path.join(d, n), (future, future))
+    _stub(CARD.replace("guard.", "guard, loudly."))
+    real(1, repo, "drift guards")
+    assert "loudly" in learn.read_card("drift-guards.md")
+
+
+def test_read_card_rejects_unknown_names(repo):
+    assert learn.read_card("../../../etc/passwd") is None
+    assert learn.read_card("nope.md") is None
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
