@@ -339,7 +339,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
             <button onClick={() => void commit()} disabled={noCommit} title="⌘/Ctrl+Enter"
               onMouseEnter={() => setHov("cm")} onMouseLeave={() => setHov("")}
               style={{ width: "100%", marginTop: 6, appearance: "none", whiteSpace: "nowrap", cursor: noCommit ? "not-allowed" : "pointer", opacity: noCommit ? 0.4 : 1, border: "1px solid var(--acc)", background: hov === "cm" && !noCommit ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 10px" }}>
-              {staged.length ? `▸ COMMIT STAGED (${staged.length})` : `▸ COMMIT ALL (${changed.size})`}
+              {!ready ? "▸ COMMIT" : staged.length ? `▸ COMMIT STAGED (${staged.length})` : `▸ COMMIT ALL (${changed.size})`}
             </button>
           </div>
         )}
@@ -350,10 +350,16 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
         {!project && <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>No session selected.</div>}
         {project && !rows.length && (
           skel ? (
-            <div className="swapin" style={{ padding: "4px 7px", color: "var(--txm)" }} aria-label="Reading the working tree" aria-busy>
+            <div className="swapin" style={{ padding: "4px 7px" }} aria-label="Reading the working tree" aria-busy>
               {SKEL.map(([d, w], i) => (
                 <Skeleton key={i} className="h-[13px] rounded-none"
-                  style={{ marginLeft: 9 + d * 11, width: `${w}%`, marginBottom: 5 }} />
+                  style={{
+                    // CHANGES lists flat full paths — indenting its placeholder
+                    // would promise a tree that never arrives.
+                    marginLeft: 9 + (changedOnly ? 0 : d * 11),
+                    width: `${w}%`, marginBottom: 5,
+                    background: "color-mix(in srgb, var(--acc) 13%, transparent)",
+                  }} />
               ))}
             </div>
           ) : ready ? (
