@@ -550,16 +550,20 @@ def current_branch(cwd: str) -> str:
     which names nothing and is what every branch chip ended up drawing, so
     resolve it: a ref pointing at this exact commit (a `git checkout origin/foo`
     or a tag, sorted so a local branch wins), else the short sha — git's own
-    "HEAD detached at 1383914"."""
+    "HEAD detached at 1383914". A remote-tracking ref drops its remote: the chip
+    names a branch, and "origin/" says where the ref is stored, not which branch
+    this is — the local one is gone (deleted after merge) as often as not."""
     rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
     name = out.strip() if rc == 0 else ""
     if name != "HEAD":
         return name
     rc, out, _ = _run(cwd, "for-each-ref", "--points-at", "HEAD", "--count=1",
-                      "--exclude=refs/remotes/*/HEAD", "--format=%(refname:short)",
+                      "--exclude=refs/remotes/*/HEAD",
+                      "--format=%(refname)\x1f%(refname:short)",
                       "refs/heads", "refs/remotes", "refs/tags")
     if rc == 0 and out.strip():
-        return out.strip().splitlines()[0]
+        full, _, short = out.strip().splitlines()[0].partition("\x1f")
+        return short.split("/", 1)[1] if full.startswith("refs/remotes/") else short
     rc, out, _ = _run(cwd, "rev-parse", "--short", "HEAD")
     return out.strip() if rc == 0 else ""
 

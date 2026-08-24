@@ -432,3 +432,19 @@ def test_current_branch_detached_names_something_useful():
     sha = subprocess.run(["git", "-C", d, "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
     assert g.current_branch(d) == sha
+
+
+def test_current_branch_detached_on_remote_ref_drops_the_remote():
+    # a worktree parked on origin/foo after the local foo was deleted: the chip
+    # should read "foo", not "origin/foo"
+    up = _mkrepo()
+    _write(up, "a.txt", "one\n")
+    _run(up, "add", "-A")
+    _run(up, "commit", "-qm", "init")
+    _run(up, "branch", "feat/photos")
+
+    d = _mkrepo()
+    _run(d, "remote", "add", "origin", up)
+    _run(d, "fetch", "-q", "origin")
+    _run(d, "checkout", "-q", "--detach", "origin/feat/photos")
+    assert g.current_branch(d) == "feat/photos"
