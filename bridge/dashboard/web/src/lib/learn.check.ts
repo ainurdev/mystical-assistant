@@ -12,8 +12,8 @@ const ok = (cond: boolean, what: string) => {
 const eq = (got: unknown, want: unknown, what: string) =>
   ok(JSON.stringify(got) === JSON.stringify(want), `${what} — got ${JSON.stringify(got)}`);
 
-const L = (file: string, concept: string, at: number, project?: string) =>
-  ({ file, title: file, concept, at, project }) as never;
+const L = (file: string, concept: string, at: number, project?: string, topic?: string) =>
+  ({ file, title: file, concept, topic, at, project }) as never;
 
 ok(lessonKey({ project: "/a", file: "0001-x.md" }) !== lessonKey({ project: "/b", file: "0001-x.md" }),
   "the same file number in two repos is two different lessons");
@@ -34,6 +34,22 @@ eq(sh.map((s) => s.unread), [1, 2, 1], "every lesson is unread when nothing is r
 eq(shelves(list, new Set([lessonKey(list[0])])).find((s) => s.concept === "testing")!.unread, 1,
   "reading one lesson drops its shelf's unread count");
 eq(shelves([], new Set()), [], "no lessons, no shelves");
+
+// ── topic groups inside a shelf ──────────────────────────────────────────────
+const tl = [
+  L("0001-a.md", "testing", 100, undefined, "drift guards"),
+  L("0002-b.md", "testing", 300, undefined, "drift guards"),
+  L("0003-c.md", "testing", 200),
+  L("0004-d.md", "testing", 400, undefined, "fixtures"),
+];
+const tsh = shelves(tl, new Set())[0]!;
+eq(tsh.groups.map((g) => g.topic), ["fixtures", "drift guards", ""],
+  "topic groups sort by newest, topicless tail last");
+eq(tsh.groups[1]!.lessons.map((l) => l.file), ["0002-b.md", "0001-a.md"],
+  "a group is newest-first inside");
+eq(tsh.groups.map((g) => g.unread), [1, 2, 1], "group unread counts");
+eq(shelves(list, new Set())[0]!.groups.map((g) => g.topic), [""],
+  "topicless lessons form one plain group");
 
 eq(nextUnread(list, new Set())!.file, "0004-d.md", "the newest lesson is the one to open");
 eq(nextUnread(list, new Set([lessonKey(list[3])]))!.file, "0002-b.md",

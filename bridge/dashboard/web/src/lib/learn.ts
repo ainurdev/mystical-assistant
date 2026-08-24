@@ -12,16 +12,24 @@ export const lessonKey = (l: { project?: string; file: string }) =>
 
 export const UNSORTED = "unsorted";
 
-export interface Shelf {
-  concept: string;
+export interface TopicGroup {
+  topic: string;
   lessons: Lesson[];
   unread: number;
 }
 
-/** Lessons grouped onto concept shelves, each shelf ordered newest-first and the
- *  shelves themselves ordered by their newest lesson — so the concept you were
- *  working in today sits at the top. Lessons written before concepts existed
- *  land on `unsorted`, which is always last however recent it is. */
+export interface Shelf {
+  concept: string;
+  /** The whole shelf, for its meter and for search — groups re-cut the same
+   *  lessons for rendering. */
+  lessons: Lesson[];
+  unread: number;
+  groups: TopicGroup[];
+}
+
+/** Lessons grouped onto concept shelves and, inside each, onto topic groups.
+ *  Shelves order by their newest lesson (unsorted last); groups likewise, the
+ *  topicless group always last. Everything is newest-first inside. */
 export function shelves(list: Lesson[], read: Set<string>): Shelf[] {
   const by = new Map<string, Lesson[]>();
   for (const l of list) {
@@ -31,7 +39,19 @@ export function shelves(list: Lesson[], read: Set<string>): Shelf[] {
   return [...by.entries()]
     .map(([concept, ls]) => {
       const lessons = [...ls].sort((a, b) => b.at - a.at);
-      return { concept, lessons, unread: lessons.filter((l) => !read.has(lessonKey(l))).length };
+      const gby = new Map<string, Lesson[]>();
+      for (const l of lessons) {
+        const t = l.topic || "";
+        (gby.get(t) ?? gby.set(t, []).get(t)!).push(l);
+      }
+      const groups = [...gby.entries()]
+        .map(([topic, gls]) => ({ topic, lessons: gls,
+          unread: gls.filter((l) => !read.has(lessonKey(l))).length }))
+        .sort((a, b) =>
+          (a.topic === "" ? 1 : 0) - (b.topic === "" ? 1 : 0) ||
+          b.lessons[0].at - a.lessons[0].at);
+      return { concept, lessons, groups,
+        unread: lessons.filter((l) => !read.has(lessonKey(l))).length };
     })
     .sort((a, b) =>
       (a.concept === UNSORTED ? 1 : 0) - (b.concept === UNSORTED ? 1 : 0) ||

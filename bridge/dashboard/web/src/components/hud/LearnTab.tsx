@@ -112,6 +112,14 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   // inside one concept — the old all-expanded default meant the thirty lessons
   // of whichever shelf you were in buried the other nine entirely.
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Topic groups fold like shelves; keyed concept::topic so two shelves can
+  // hold the same topic word without sharing a hinge.
+  const [openTopics, setOpenTopics] = useState<Set<string>>(new Set());
+  const toggleTopic = (gk: string) => setOpenTopics((o) => {
+    const n = new Set(o);
+    if (!n.delete(gk)) n.add(gk);
+    return n;
+  });
   // A study run deals the unread ones in turn: no list, one card, next.
   const [study, setStudy] = useState(false);
   const [err, setErr] = useState(false);
@@ -368,31 +376,56 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
                         <Meter pct={(done / sh.lessons.length) * 100} h={2} dim />
                       </span>
                     </button>
-                    {!shut && sh.lessons.map((l) => {
-                      const k = lessonKey(l);
-                      const on = k === selK;
-                      const seen = readSet.has(k);
+                    {!shut && sh.groups.map((g) => {
+                      const gk = `${sh.concept}::${g.topic}`;
+                      const gShut = !!g.topic && !q && !openTopics.has(gk);
+                      const gDone = g.lessons.length - g.unread;
                       return (
-                        <button key={k} onClick={() => openLesson(l)}
-                          style={{ display: "flex", gap: 7, width: "100%", textAlign: "left", appearance: "none",
-                            border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
-                            cursor: "pointer", fontFamily: "inherit", padding: "7px 9px", marginBottom: 2,
-                            background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
-                            color: on ? "var(--txb)" : seen ? "var(--txd)" : "var(--tx)",
-                            fontSize: "var(--t11)", lineHeight: 1.35 }}>
-                          <span style={{ flex: "none", marginTop: 2, width: 8, textAlign: "center",
-                            fontSize: "var(--t9)", color: seen ? "var(--txl)" : "var(--acc)" }}>
-                            {seen ? "✓" : "●"}
-                          </span>
-                          <span style={{ minWidth: 0 }}>
-                            {l.title}
-                            <span style={{ display: "block", ...mono, fontSize: "var(--t9)", color: "var(--txl)", marginTop: 3,
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {scope === "*" && l.project ? `${l.project.split("/").pop()} · ` : `${l.file.slice(0, 4)} · `}
-                              {when(l.at)}
-                            </span>
-                          </span>
-                        </button>
+                        <div key={gk || "misc"} style={{ paddingLeft: g.topic ? 6 : 0 }}>
+                          {g.topic && (
+                            <button onClick={() => toggleTopic(gk)}
+                              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%",
+                                appearance: "none", border: 0, background: "transparent",
+                                cursor: "pointer", padding: "4px 4px", textAlign: "left" }}>
+                              <span style={{ ...label, fontSize: "var(--t9)",
+                                color: gShut ? "var(--txm)" : "var(--txb)" }}>
+                                {gShut ? "▸" : "▾"} {g.topic}
+                              </span>
+                              <span style={{ flex: 1 }} />
+                              <span style={{ ...mono, fontSize: "var(--t9)",
+                                color: g.unread ? "var(--acc)" : "var(--txl)" }}>
+                                {gDone}/{g.lessons.length}
+                              </span>
+                            </button>
+                          )}
+                          {!gShut && g.lessons.map((l) => {
+                            const k = lessonKey(l);
+                            const on = k === selK;
+                            const seen = readSet.has(k);
+                            return (
+                              <button key={k} onClick={() => openLesson(l)}
+                                style={{ display: "flex", gap: 7, width: "100%", textAlign: "left", appearance: "none",
+                                  border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
+                                  cursor: "pointer", fontFamily: "inherit", padding: "7px 9px", marginBottom: 2,
+                                  background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                                  color: on ? "var(--txb)" : seen ? "var(--txd)" : "var(--tx)",
+                                  fontSize: "var(--t11)", lineHeight: 1.35 }}>
+                                <span style={{ flex: "none", marginTop: 2, width: 8, textAlign: "center",
+                                  fontSize: "var(--t9)", color: seen ? "var(--txl)" : "var(--acc)" }}>
+                                  {seen ? "✓" : "●"}
+                                </span>
+                                <span style={{ minWidth: 0 }}>
+                                  {l.title}
+                                  <span style={{ display: "block", ...mono, fontSize: "var(--t9)", color: "var(--txl)", marginTop: 3,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {scope === "*" && l.project ? `${l.project.split("/").pop()} · ` : `${l.file.slice(0, 4)} · `}
+                                    {when(l.at)}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       );
                     })}
                   </div>
