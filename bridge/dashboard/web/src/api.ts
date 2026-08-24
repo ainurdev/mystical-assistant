@@ -883,6 +883,7 @@ export interface Lesson {
   file: string; // 0007-a-slug.md, also its identity in the read endpoint
   title: string;
   concept: string; // one of learn.CONCEPTS; "" for lessons written before them
+  topic: string; // free 2-4 word grouping inside the concept; "" before topics
   at: number; // epoch seconds
   project?: string; // only in the ALL scope, where a lesson can be from any repo
 }

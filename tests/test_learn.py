@@ -210,5 +210,146 @@ def test_all_lessons_skips_repos_that_never_had_one(repo, monkeypatch):
     assert learn.all_lessons() == []
 
 
+# --- topics: the free grouping inside a concept shelf ------------------------
+
+TOPIC_LESSON = ("# Streaming Turns Over SSE\n> concept: protocols & apis\n"
+                "> topic: server push\n\n**The idea** — one-way text frames.\n")
+
+
+def test_a_topic_line_rides_with_the_lesson(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(TOPIC_LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    got = learn.lessons(repo)[0]
+    assert got["topic"] == "server push"
+    assert got["concept"] == "protocols & apis"    # both header lines parse
+
+
+def test_a_topic_without_a_concept_still_parses(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub("# A Title\n> topic: server push\n\n**The idea** — x.\n")
+    learn.generate_after_turn(1, sess, tid)
+
+    got = learn.lessons(repo)[0]
+    assert got["topic"] == "server push"
+    assert got["concept"] == ""
+
+
+def test_prompt_asks_for_a_topic_and_feeds_prior_ones(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(TOPIC_LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    captured = {}
+
+    def cap(chat, prompt, **k):
+        captured["p"] = prompt
+        return ("SKIP", None, 0.0, False)
+
+    runner.run_blocking = cap
+    sess, tid = _session_with_turn(repo)
+    learn.generate_after_turn(1, sess, tid)
+
+    assert "> topic:" in captured["p"]              # the format asks for one
+    assert "server push" in captured["p"]           # prior topics are fed back
+
+
+# --- backfill: tagging the lessons written before topics existed -------------
+
+def test_backfill_tags_untagged_lessons_once(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(LESSON)                                   # no concept, no topic
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("> concept: protocols & apis\n> topic: server push")
+    assert learn.backfill(1, repo) == 1
+    got = learn.lessons(repo)[0]
+    assert got["concept"] == "protocols & apis"
+    assert got["topic"] == "server push"
+    body = learn.read(repo, got["file"])
+    assert body.startswith("# Streaming Turns Over SSE\n> concept:")
+
+    calls = []
+
+    def count(*a, **k):
+        calls.append(1)
+        return ("> topic: x", None, 0.0, False)
+
+    runner.run_blocking = count
+    assert learn.backfill(1, repo) == 0             # second run is a no-op
+    assert calls == []                              # and never reached the model
+
+
+def test_backfill_keeps_an_existing_concept(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(CONCEPT_LESSON)                           # concept present, no topic
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("> concept: testing\n> topic: server push")   # tries to flip the shelf
+    learn.backfill(1, repo)
+    got = learn.lessons(repo)[0]
+    assert got["concept"] == "protocols & apis"     # the original survives
+    assert got["topic"] == "server push"
+
+
+def test_backfill_ignores_a_malformed_reply(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("Sure! I think the concept is probably vibes.")
+    assert learn.backfill(1, repo) == 0
+    assert learn.lessons(repo)[0]["topic"] == ""    # file untouched
+
+
+def test_backfill_rejects_a_concept_off_the_list(repo):
+    """An invented shelf would fragment the grouping — the topic still lands."""
+    sess, tid = _session_with_turn(repo)
+    _stub(LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("> concept: vibes\n> topic: server push")
+    assert learn.backfill(1, repo) == 1
+    got = learn.lessons(repo)[0]
+    assert got["concept"] == ""                     # the invented one is dropped
+    assert got["topic"] == "server push"
+
+
+def test_backfill_feeds_a_coined_topic_to_the_next_file(repo):
+    """One run, two files: the topic coined for the first is offered to the
+    second, so a run does not invent two names for one thing."""
+    for _ in range(2):
+        sess, tid = _session_with_turn(repo)
+        _stub(LESSON)
+        learn.generate_after_turn(1, sess, tid)
+
+    seen = []
+
+    def cap(chat, prompt, **k):
+        seen.append(prompt)
+        return ("> concept: testing\n> topic: drift guards", None, 0.0, False)
+
+    runner.run_blocking = cap
+    assert learn.backfill(1, repo) == 2
+    assert "none yet" in seen[0]                    # nothing known on the first
+    assert "drift guards" in seen[1]                # coined, then offered
+
+
+def test_backfill_skips_a_lesson_with_no_heading(repo):
+    """A file with no '# ' line has nowhere to put the tags — it must not be
+    counted as tagged, or every future run re-sends it to the model."""
+    d = os.path.join(repo, ".mystical", "learn")
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, "0001-no-heading.md")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("just prose, no heading.\n")
+
+    _stub("> concept: testing\n> topic: server push")
+    assert learn.backfill(1, repo) == 0
+    with open(p, encoding="utf-8") as f:
+        assert f.read() == "just prose, no heading.\n"    # untouched
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

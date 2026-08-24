@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Lesson } from "../../api";
 import { Markdown } from "../Markdown";
 import { ago } from "../../lib/surfaces";
-import { checkYourself, lessonKey, nextUnread, shelves } from "../../lib/learn";
-import { useStickyFlag, useStickySet, useStickyStr } from "../../lib/prefs";
+import { checkYourself, deal, dueCount, grade, lessonKey, nextUnread, shelves,
+  UNSORTED, type Sched } from "../../lib/learn";
+import { useStickyFlag, useStickyObj, useStickySet, useStickyStr } from "../../lib/prefs";
 
 /* LEARN tab — the lessons written after turns (bridge/learn.py), shelved by the
    concept each one teaches, read as a list on the left and the selected lesson
@@ -88,6 +89,11 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const readSet = read ?? ownRead;
   const markRead = onRead ?? ((k: string) => setOwnRead((r) => new Set(r).add(k)));
 
+  // The review ladder — which read lessons are due back, and when. Lives beside
+  // the read set in localStorage; a lesson in neither is new, in the read set
+  // alone retired, in both scheduled.
+  const [sched, setSched] = useStickyObj<Sched>("hud-learn-sched", {});
+
   // Inverted on purpose: the unset default is ALL, and the flag records the
   // narrowing rather than the norm.
   const [repoOnly, setRepoOnly] = useStickyFlag("hud-learn-repo-only");
@@ -106,6 +112,14 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   // inside one concept — the old all-expanded default meant the thirty lessons
   // of whichever shelf you were in buried the other nine entirely.
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Topic groups fold like shelves; keyed concept::topic so two shelves can
+  // hold the same topic word without sharing a hinge.
+  const [openTopics, setOpenTopics] = useState<Set<string>>(new Set());
+  const toggleTopic = (gk: string) => setOpenTopics((o) => {
+    const n = new Set(o);
+    if (!n.delete(gk)) n.add(gk);
+    return n;
+  });
   // A study run deals the unread ones in turn: no list, one card, next.
   const [study, setStudy] = useState(false);
   const [err, setErr] = useState(false);
@@ -176,10 +190,14 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const unread = list ? list.filter((l) => !readSet.has(lessonKey(l))) : [];
   const total = list?.length ?? 0;
   const readCount = total - unread.length;
+  const dueN = list ? dueCount(list, sched, Date.now()) : 0;
   const question = body ? checkYourself(body) : "";
   // An unread lesson is asked before it is answered — but only when the model
   // wrote a question to ask. Older lessons open straight into the markdown.
-  const gated = !!sel && !revealed && !readSet.has(selK) && !!question;
+  // A due review is re-asked its question in STUDY even though it is read —
+  // that is the point of the ladder. Browse mode never re-gates a read lesson.
+  const isDueHere = study && !!sched[selK] && sched[selK].due <= Date.now();
+  const gated = !!sel && !revealed && !!question && (!readSet.has(selK) || isDueHere);
 
   // A lesson whose body is on screen has been read, whether you answered a
   // question to get there or it never had one to ask. Without this the older
@@ -190,12 +208,30 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selK, body, gated]);
 
-  const deal = () => {
-    const n = nextUnread(list ?? [], readSet);
+  const dealNext = (lastConcept?: string) => {
+    const n = deal(list ?? [], readSet, sched, Date.now(), lastConcept);
     if (n) setSelKey(lessonKey(n));
     else setSelKey("");   // deck clear — the run says so rather than looping
   };
-  const startStudy = () => { setStudy(true); deal(); };
+  const startStudy = () => { setStudy(true); dealNext(); };
+  // One handler for all three verdicts: SKIP arrives from the quiz card (either
+  // mode), GOT IT / REVIEW only from a study run's footer. The next deal reads
+  // the post-grade state computed here — dealing from the render's sched/read
+  // would re-deal the card just graded.
+  const gradeCard = (v: "got" | "review" | "skip") => {
+    const last = sel ? (sel.concept || UNSORTED) : undefined;
+    if (selK) {
+      const nextSched = grade(sched, selK, v, Date.now());
+      setSched(nextSched);
+      markRead(selK);
+      if (study) {
+        const n = deal(list ?? [], new Set(readSet).add(selK), nextSched, Date.now(), last);
+        setSelKey(n ? lessonKey(n) : "");
+        return;
+      }
+    } else if (study) { dealNext(last); return; }
+    setRevealed(true);   // browse SKIP: retired, but stays on screen
+  };
 
   if (err) {
     return (
@@ -207,9 +243,9 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   }
   if (!list) return <div style={{ ...mono, color: "var(--txd)" }}>loading…</div>;
 
-  // Study runs on the unread of the *scope you are reading* — the run and the
-  // meter above it can never disagree about how many are left.
-  const studyDone = study && (!sel || readSet.has(selK)) && !unread.length;
+  // Done when the deal came up empty (selKey ""), not when the current card is
+  // read — every dealt review card is read by definition.
+  const studyDone = study && !selKey && !unread.length && !dueN;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
@@ -274,9 +310,10 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
         </div>
       ) : study ? (
         <StudyRun
-          left={unread.length} done={studyDone} sel={sel} body={body} gated={gated}
-          question={question} scope={scope}
-          onReveal={reveal} onNext={deal} onExit={() => setStudy(false)} />
+          left={unread.length} due={dueN} done={studyDone} sel={sel} body={body}
+          gated={gated} question={question} scope={scope}
+          onReveal={reveal} onGrade={(v) => gradeCard(v)}
+          onSkip={() => gradeCard("skip")} onExit={() => setStudy(false)} />
       ) : (
         <>
           <div style={{ flex: "none", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -288,10 +325,10 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
                 background: "color-mix(in srgb, var(--panel2) 45%, transparent)",
                 border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
                 outline: "none", padding: "6px 9px" }} />
-            {unread.length > 0 && (
+            {(unread.length > 0 || dueN > 0) && (
               <button onClick={startStudy} style={{ ...btnHero, padding: "6px 12px", flex: "none" }}
                 title="deal the unread lessons one at a time">
-                ▸ STUDY {unread.length}
+                ▸ STUDY {unread.length + dueN}
               </button>
             )}
           </div>
@@ -339,31 +376,56 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
                         <Meter pct={(done / sh.lessons.length) * 100} h={2} dim />
                       </span>
                     </button>
-                    {!shut && sh.lessons.map((l) => {
-                      const k = lessonKey(l);
-                      const on = k === selK;
-                      const seen = readSet.has(k);
+                    {!shut && sh.groups.map((g) => {
+                      const gk = `${sh.concept}::${g.topic}`;
+                      const gShut = !!g.topic && !q && !openTopics.has(gk);
+                      const gDone = g.lessons.length - g.unread;
                       return (
-                        <button key={k} onClick={() => openLesson(l)}
-                          style={{ display: "flex", gap: 7, width: "100%", textAlign: "left", appearance: "none",
-                            border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
-                            cursor: "pointer", fontFamily: "inherit", padding: "7px 9px", marginBottom: 2,
-                            background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
-                            color: on ? "var(--txb)" : seen ? "var(--txd)" : "var(--tx)",
-                            fontSize: "var(--t11)", lineHeight: 1.35 }}>
-                          <span style={{ flex: "none", marginTop: 2, width: 8, textAlign: "center",
-                            fontSize: "var(--t9)", color: seen ? "var(--txl)" : "var(--acc)" }}>
-                            {seen ? "✓" : "●"}
-                          </span>
-                          <span style={{ minWidth: 0 }}>
-                            {l.title}
-                            <span style={{ display: "block", ...mono, fontSize: "var(--t9)", color: "var(--txl)", marginTop: 3,
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {scope === "*" && l.project ? `${l.project.split("/").pop()} · ` : `${l.file.slice(0, 4)} · `}
-                              {when(l.at)}
-                            </span>
-                          </span>
-                        </button>
+                        <div key={gk || "misc"} style={{ paddingLeft: g.topic ? 6 : 0 }}>
+                          {g.topic && (
+                            <button onClick={() => toggleTopic(gk)}
+                              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%",
+                                appearance: "none", border: 0, background: "transparent",
+                                cursor: "pointer", padding: "4px 4px", textAlign: "left" }}>
+                              <span style={{ ...label, fontSize: "var(--t9)",
+                                color: gShut ? "var(--txm)" : "var(--txb)" }}>
+                                {gShut ? "▸" : "▾"} {g.topic}
+                              </span>
+                              <span style={{ flex: 1 }} />
+                              <span style={{ ...mono, fontSize: "var(--t9)",
+                                color: g.unread ? "var(--acc)" : "var(--txl)" }}>
+                                {gDone}/{g.lessons.length}
+                              </span>
+                            </button>
+                          )}
+                          {!gShut && g.lessons.map((l) => {
+                            const k = lessonKey(l);
+                            const on = k === selK;
+                            const seen = readSet.has(k);
+                            return (
+                              <button key={k} onClick={() => openLesson(l)}
+                                style={{ display: "flex", gap: 7, width: "100%", textAlign: "left", appearance: "none",
+                                  border: 0, borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`,
+                                  cursor: "pointer", fontFamily: "inherit", padding: "7px 9px", marginBottom: 2,
+                                  background: on ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                                  color: on ? "var(--txb)" : seen ? "var(--txd)" : "var(--tx)",
+                                  fontSize: "var(--t11)", lineHeight: 1.35 }}>
+                                <span style={{ flex: "none", marginTop: 2, width: 8, textAlign: "center",
+                                  fontSize: "var(--t9)", color: seen ? "var(--txl)" : "var(--acc)" }}>
+                                  {seen ? "✓" : "●"}
+                                </span>
+                                <span style={{ minWidth: 0 }}>
+                                  {l.title}
+                                  <span style={{ display: "block", ...mono, fontSize: "var(--t9)", color: "var(--txl)", marginTop: 3,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {scope === "*" && l.project ? `${l.project.split("/").pop()} · ` : `${l.file.slice(0, 4)} · `}
+                                    {when(l.at)}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       );
                     })}
                   </div>
@@ -374,7 +436,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
               {body === null
                 ? <div style={{ ...mono, color: "var(--txd)" }}>loading…</div>
                 : gated
-                  ? <Quiz title={sel!.title} concept={sel!.concept} question={question} onReveal={reveal} />
+                  ? <Quiz title={sel!.title} concept={sel!.concept} question={question} onReveal={reveal} onSkip={() => gradeCard("skip")} />
                   : (
                     <>
                       <LessonHead sel={sel!} scope={scope} />
@@ -405,8 +467,9 @@ function LessonHead({ sel, scope }: { sel: Lesson; scope: string }) {
 /** An unread lesson, asked before it is answered. The question is the lesson's
  *  own closing line — it was always there, at the bottom, after the answer.
  *  Framed as a panel because it is the one thing on the tab worth stopping at. */
-function Quiz({ title, concept, question, onReveal, cta = "SHOW THE LESSON" }: {
-  title: string; concept: string; question: string; onReveal: () => void; cta?: string;
+function Quiz({ title, concept, question, onReveal, onSkip, cta = "SHOW THE LESSON" }: {
+  title: string; concept: string; question: string; onReveal: () => void;
+  onSkip: () => void; cta?: string;
 }) {
   return (
     <div className="panel" style={{ border: line, background: "color-mix(in srgb, var(--panel2) 40%, transparent)",
@@ -419,8 +482,9 @@ function Quiz({ title, concept, question, onReveal, cta = "SHOW THE LESSON" }: {
         <span style={{ ...label, color: "var(--txd)", display: "block", marginBottom: 8 }}>CAN YOU ANSWER THIS?</span>
         <span style={{ ...mono, fontSize: "var(--t13)", lineHeight: 1.6, color: "var(--tx)" }}>{question}</span>
       </div>
-      <div>
+      <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onReveal} style={btnHero}>{cta}</button>
+        <button onClick={onSkip} style={btn} title="I already know this — retire it">SKIP</button>
       </div>
     </div>
   );
@@ -428,16 +492,17 @@ function Quiz({ title, concept, question, onReveal, cta = "SHOW THE LESSON" }: {
 
 /** STUDY — the unread ones dealt one at a time. The list is what you use when
  *  you know which lesson you want; this is for the ninety you don't. */
-function StudyRun({ left, done, sel, body, gated, question, scope, onReveal, onNext, onExit }: {
-  left: number; done: boolean; sel?: Lesson; body: string | null; gated: boolean;
-  question: string; scope: string;
-  onReveal: () => void; onNext: () => void; onExit: () => void;
+function StudyRun({ left, due, done, sel, body, gated, question, scope, onReveal, onGrade, onSkip, onExit }: {
+  left: number; due: number; done: boolean; sel?: Lesson; body: string | null;
+  gated: boolean; question: string; scope: string;
+  onReveal: () => void; onGrade: (v: "got" | "review") => void;
+  onSkip: () => void; onExit: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 9 }}>
         <span style={{ ...label, color: "var(--acc)" }}>STUDY RUN</span>
-        <span style={{ ...mono, fontSize: "var(--t95)", color: "var(--txm)" }}>{left} LEFT</span>
+        <span style={{ ...mono, fontSize: "var(--t95)", color: "var(--txm)" }}>{due} DUE · {left} NEW</span>
         <span style={{ flex: 1 }} />
         <button onClick={onExit} style={{ ...btn, padding: "3px 9px" }}>✕ DONE</button>
       </div>
@@ -453,15 +518,14 @@ function StudyRun({ left, done, sel, body, gated, question, scope, onReveal, onN
         ) : body === null ? (
           <div style={{ ...mono, color: "var(--txd)" }}>dealing…</div>
         ) : gated ? (
-          <Quiz title={sel.title} concept={sel.concept} question={question} onReveal={onReveal} cta="REVEAL" />
+          <Quiz title={sel.title} concept={sel.concept} question={question} onReveal={onReveal} onSkip={onSkip} cta="REVEAL" />
         ) : (
           <div style={{ maxWidth: 720 }}>
             <LessonHead sel={sel} scope={scope} />
             <Markdown>{body}</Markdown>
-            <div style={{ marginTop: 18, paddingTop: 14, borderTop: line }}>
-              <button onClick={onNext} style={btnHero}>
-                {left > 0 ? `NEXT LESSON ▸ ${left} LEFT` : "FINISH RUN ▸"}
-              </button>
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: line, display: "flex", gap: 8 }}>
+              <button onClick={() => onGrade("got")} style={btnHero}>GOT IT ▸</button>
+              <button onClick={() => onGrade("review")} style={btn}>REVIEW AGAIN · 1D</button>
             </div>
           </div>
         )}
