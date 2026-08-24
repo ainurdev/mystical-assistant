@@ -20,6 +20,7 @@ Every Claude turn stays a `claude` subprocess spawned by runner.py -- this is
 per-profile rotation, not a token-pooling proxy.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -271,12 +272,29 @@ _PROMPT = re.compile(r".*Paste code here[^>]*>\s*")      # the one prompt this f
 _pending: dict = {}                                      # slot -> _Login
 
 
+def _creds_mark(path: str) -> str:
+    """Fingerprint of a credentials file — "" when it isn't there or is empty.
+    What "this sign-in wrote credentials" is measured against: a re-auth
+    overwrites a file that already exists, so existence proves nothing, and
+    mtime is too coarse to trust (two writes can share one clock tick). The
+    token itself is never kept — a fresh sign-in always changes the hash."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return ""
+    return hashlib.sha256(data).hexdigest() if data else ""
+
+
 class _Login:
     """One in-flight `claude auth login`, with its output drained off-thread so
     the half-line 'Paste code here >' prompt can't deadlock the pipe."""
 
-    def __init__(self, slot: int, proc, alias: "str | None"):
+    def __init__(self, slot: int, proc, alias: "str | None",
+                 relogin: bool = False):
         self.slot, self.proc, self.alias = slot, proc, alias
+        self.relogin = relogin
+        self.creds_at = _creds_mark(credentials_path(slot))
         self.buf = bytearray()
         threading.Thread(target=self._pump, daemon=True).start()
 
@@ -340,26 +358,37 @@ def _free_slot(reg: dict) -> int:
                 if str(n) not in reg and n not in _pending)
 
 
-def begin_login(alias: "str | None" = None, timeout: float = 30) -> dict:
-    """Start a sign-in in the next free slot; returns {slot, url} for the user
-    to open. Only one sign-in is ever in flight, so an abandoned one can't pile
-    up child processes."""
+def begin_login(alias: "str | None" = None, timeout: float = 30,
+                slot: "int | None" = None) -> dict:
+    """Start a sign-in; returns {slot, url} for the user to open. With no slot
+    it lands in the next free one — adding an account. With a slot it signs that
+    account back in *in place*, which is the answer to an expired OAuth session:
+    the same login has to come back, and a free slot would only get it rejected
+    as a duplicate. Only one sign-in is ever in flight, so an abandoned one
+    can't pile up child processes."""
     from bridge import runner                   # lazy: runner imports the world
-    for slot in list(_pending):
-        cancel_login(slot)
-    with _lock:
-        slot = _free_slot(_load())
-    # An unregistered slot dir is spoil from an earlier attempt: wipe it, or a
-    # stale .credentials.json would read as this sign-in succeeding.
-    shutil.rmtree(profile_dir(slot), ignore_errors=True)
-    ensure_profile(slot)
+    for pending in list(_pending):
+        cancel_login(pending)
+    relogin = slot is not None
+    if relogin:
+        slot = int(slot)
+    else:
+        with _lock:
+            slot = _free_slot(_load())
+        # An unregistered slot dir is spoil from an earlier attempt: wipe it, or
+        # a stale .credentials.json would read as this sign-in succeeding.
+        shutil.rmtree(profile_dir(slot), ignore_errors=True)
+    env = {**os.environ, "BROWSER": "true"}     # the browser is the user's, not ours
+    if slot == DEFAULT_SLOT:
+        env.pop("CLAUDE_CONFIG_DIR", None)      # slot 1 *is* the ambient ~/.claude
+    else:
+        ensure_profile(slot)
+        env["CLAUDE_CONFIG_DIR"] = profile_dir(slot)
     proc = subprocess.Popen(
-        [runner.claude_bin(), *_LOGIN_ARGS],
-        env={**os.environ, "CLAUDE_CONFIG_DIR": profile_dir(slot),
-             "BROWSER": "true"},                # the browser is the user's, not ours
+        [runner.claude_bin(), *_LOGIN_ARGS], env=env,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, bufsize=0)
-    login = _Login(slot, proc, alias)
+    login = _Login(slot, proc, alias, relogin)
     _pending[slot] = login
     url = login.wait_url(timeout)
     if not url:
@@ -388,7 +417,8 @@ def submit_login_code(slot: int, code: str, timeout: float = 90) -> dict:
     dst = credentials_path(slot)
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if os.path.exists(dst) and os.path.getsize(dst) > 0:
+        mark = _creds_mark(dst)
+        if mark and mark != login.creds_at:
             break
         if login.proc.poll() is not None:
             detail = login.tail()
@@ -403,12 +433,27 @@ def submit_login_code(slot: int, code: str, timeout: float = 90) -> dict:
     # The CLI can write credentials a beat before the identity; the email is
     # what dedup and the account list run on, so give it a moment to land.
     email = None
+    ident = (IDENTITY if slot == DEFAULT_SLOT
+             else os.path.join(profile_dir(slot), ".claude.json"))
     grace = time.time() + 5
     while time.time() < grace:
-        email = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
+        email = _email_at(ident)
         if email:
             break
         time.sleep(0.25)
+    if login.relogin:
+        # Signing an existing account back in: no dedup (coming back as the same
+        # email is the entire point) and no new row — just keep the registry
+        # honest if they signed in as somebody else.
+        with _lock:
+            reg = _load()
+            if email and str(slot) in reg:
+                reg[str(slot)]["email"] = email
+                _save(reg)
+        if slot != DEFAULT_SLOT:
+            ensure_profile(slot)
+        _resume_dead_turn(slot)
+        return {"slot": slot, "email": email, "relogin": True}
     with _lock:
         reg = _load()
     taken = _registered_slot_for(email, reg)
@@ -432,10 +477,22 @@ def cancel_login(slot: int) -> None:
     login = _pending.pop(slot, None)
     if login:
         login.close()
+        if login.relogin:
+            return               # re-auth: that profile was already the user's
     with _lock:
         registered = str(slot) in _load()
     if not registered:
         shutil.rmtree(profile_dir(slot), ignore_errors=True)
+
+
+def _resume_dead_turn(slot: int) -> None:
+    """A turn may have stopped on this account's expired login (runner.py keeps
+    it). Signing back in is the go-ahead to pick that work back up."""
+    try:
+        from bridge import runner               # lazy: runner imports the world
+        runner.resume_after_login(slot)
+    except Exception as e:  # noqa: BLE001
+        print(f"[accounts] resume after sign-in failed: {e}", file=sys.stderr)
 
 
 def pending_login() -> "dict | None":

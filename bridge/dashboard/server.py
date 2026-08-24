@@ -742,7 +742,11 @@ class Handler(BaseHTTPRequestHandler):
                 # gets back comes to login_submit. Both are slow-ish (a child
                 # process and an OAuth round-trip) but bounded by their timeouts.
                 if action == "login_begin":
-                    return self._json({"ok": True, **accounts.begin_login()})
+                    # With a slot the sign-in re-authenticates that account in
+                    # place (an expired login); without one it adds a new one.
+                    slot = body.get("slot")
+                    return self._json({"ok": True, **accounts.begin_login(
+                        slot=slot if isinstance(slot, int) else None)})
                 if action == "login_submit":
                     slot = body.get("slot")
                     if not isinstance(slot, int):

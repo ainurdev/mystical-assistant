@@ -480,6 +480,9 @@ def handle_task(chat_id: int, prompt: str, session: dict):
                 send(chat_id, f"⚠️ Claude API error — retrying {limits.wait_str(d[0])} "
                               f"(attempt {d[1]}/{len(limits.SERVER_BACKOFF)}).")
                 return
+        if is_error and limits.is_auth_error(result):
+            _auth_stop(chat_id, session["id"], None, reply=True)
+            return
         if not is_error:
             _graph_refresh_after_turn(chat_id, None)
         footer = f"\n\n— {int(time.time() - started)}s"
@@ -1028,7 +1031,7 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
 # ---------------------------------------------------------------------------
 # Auto-resume: only the user may stop a turn
 # ---------------------------------------------------------------------------
-# Four non-user ways a turn dies, four answers:
+# Five non-user ways a turn dies, five answers:
 #   - The bridge is restarting (group SIGINT/SIGKILL takes the Claude child down):
 #     leave the turn 'running' so startup recovery (bridge/recovery.py) claims and
 #     resumes it on the next boot.
@@ -1038,6 +1041,9 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
 #   - The API failed transiently (5xx, or a server-side 429): retry, but on
 #     limits.SERVER_BACKOFF — once immediately, then 1m/5m/10m/15m/30m apart.
 #     Hammering an API that's down neither helps nor keeps the transcript readable.
+#   - The login behind the turn expired: no reset and no retry clears that, so
+#     the turn stops and its message carries a sign-in button — and the work is
+#     remembered, so signing back in resumes it (resume_after_login, below).
 #   - Claude crashed while the bridge stays up (API drop, OOM, CLI failure), or
 #     the RUN_TIMEOUT watchdog killed a run still doing real work: resume the
 #     session right here with a nudge. Consecutive failures are capped per
@@ -1128,6 +1134,12 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                 f"{limits.wait_str(when)} "
                 f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).")
         return True
+    if limits.is_auth_error(job.result or job.error_msg):
+        # The login behind this turn is dead. Resuming would re-send the same
+        # prompt to the same expired token and fail identically, five times
+        # over, so stop and hand back the way back in instead.
+        _auth_stop(job.chat_id, sid, job.account_slot, cwd, model, effort)
+        return False
     if limits.is_context_error(job.result or job.error_msg):
         # The transcript no longer fits the window. A resume resends the same
         # too-long context, so every retry below fails identically at full turn
@@ -1159,6 +1171,75 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     else:
         _notify(job.chat_id, f"🔄 The turn was interrupted by an error "
                              f"— resuming {_session_label(sid)}.")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Dead login: stop, and hand back the way in
+# ---------------------------------------------------------------------------
+# An expired OAuth session is neither a wait nor a retry — no reset clears it
+# and a resume re-sends the same prompt to the same dead token — so the turn
+# stops and its message carries a sign-in button. The turn is remembered per
+# account slot, so accounts.submit_login_code picks the work back up the moment
+# the login lands.
+
+AUTH_NUDGE = (
+    "⏮ Your previous turn was cut off because the Claude login had expired — "
+    "not by the user. It is signed in again. Review your recent transcript and "
+    "continue exactly where you left off; finish the task you were doing. "
+    "Don't start over.")
+
+_auth_dead: dict[int, dict] = {}      # account slot -> the turn its dead login killed
+
+
+def _auth_kb(chat_id: int | None, slot: int) -> dict | None:
+    """One button, the only one that helps: start the sign-in for that account.
+    Private chats only — same reason panel_kb bails in a group."""
+    if not chat_id or chat_id <= 0:
+        return None
+    return {"inline_keyboard": [[{"text": "🔐 Log in to Claude",
+                                  "callback_data": f"re:{slot}"}]]}
+
+
+def _auth_stop(chat_id: int | None, sid: str | None, slot: int | None,
+               cwd: str | None = None, model: str | None = None,
+               effort: str | None = None, reply: bool = False) -> None:
+    """Report a turn its login killed, and remember it for the sign-in to resume.
+
+    reply=True when this message IS the answer to a prompt sent in the chat (the
+    bot path): it goes out whether or not pushes are enabled, because there is
+    no other surface it would show up on."""
+    slot = int(slot or accounts.DEFAULT_SLOT)
+    if sid and chat_id:
+        _auth_dead[slot] = {"sid": sid, "chat_id": chat_id, "cwd": cwd,
+                            "model": model, "effort": effort, "slot": slot}
+    text = (f"🔐 Claude's login has expired — {_session_label(sid)} is stopped. "
+            "Sign in again and it picks up where it left off.")
+    if reply and chat_id:
+        send(chat_id, text, _auth_kb(chat_id, slot))
+    else:
+        _notify(chat_id, text, _auth_kb(chat_id, slot))
+
+
+def resume_after_login(slot: "int | None") -> bool:
+    """A sign-in landed (bridge/accounts.py calls this): resume the turn that
+    slot's dead login killed. Returns whether a resume actually started."""
+    e = _auth_dead.pop(int(slot or accounts.DEFAULT_SLOT), None)
+    if not e or not config.AUTO_RESUME:
+        return False
+    sess = store.get_session(e["sid"])
+    if not sess or not sess.get("claude_session_id"):
+        return False                              # died before init — nothing to resume
+    try:
+        job = start_streaming_job(e["chat_id"], AUTH_NUDGE, [], project=e["cwd"],
+                                  session_id=e["sid"], model=e["model"],
+                                  effort=e["effort"], account_slot=e["slot"])
+    except Exception as ex:  # noqa: BLE001
+        print(f"[reauth] resume failed for {e['sid']}: {ex}", file=sys.stderr)
+        return False
+    if job is None:
+        return False                              # slot taken — the user moved on
+    _notify(e["chat_id"], f"🔄 Signed in — resuming {_session_label(e['sid'])}.")
     return True
 
 

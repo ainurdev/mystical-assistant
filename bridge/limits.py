@@ -98,6 +98,23 @@ def is_context_error(text: "str | None") -> bool:
     return bool(_CONTEXT_RE.search(text or ""))
 
 
+# Turn-death texts that mean "the login behind this turn is dead". Also not a
+# wait: no reset and no retry clears it — only a fresh sign-in does — so like
+# the context error it gets no defer() counterpart. The caller stops and hands
+# back a way to sign in (bridge/runner.py's _auth_stop).
+_AUTH_RE = re.compile(
+    r"failed to authenticate"
+    r"|oauth (?:session|token) (?:expired|revoked)"
+    r"|invalid api key"
+    r"|authentication[ _]error"
+    r"|please run /login",
+    re.IGNORECASE)
+
+
+def is_auth_error(text: "str | None") -> bool:
+    return bool(_AUTH_RE.search(text or ""))
+
+
 def wait_str(epoch: float) -> str:
     s = max(0.0, epoch - time.time())
     return "now" if s < 30 else f"in {round(s / 60)} min"

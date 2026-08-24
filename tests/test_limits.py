@@ -16,7 +16,7 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ["ALLOWED_CHAT_IDS"] = "555"
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
-from bridge import config, limits, runner, store  # noqa: E402
+from bridge import accounts, config, limits, runner, store  # noqa: E402
 
 store.init()
 
@@ -127,6 +127,27 @@ def test_is_context_error_matches_real_shapes():
         assert limits.is_context_error(t), f"should match: {t!r}"
     for t in no:
         assert not limits.is_context_error(t), f"should NOT match: {t!r}"
+
+
+def test_is_auth_error_matches_the_dead_login_shapes():
+    yes = [
+        "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "API Error: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\"}}",
+        "Invalid API key · Please run /login",
+        "OAuth token revoked",
+    ]
+    no = [
+        "You've hit your weekly limit · resets Thu 09:00",
+        "API Error: 529 Overloaded",
+        "prompt is too long",
+        "claude exited 1",
+        "",
+        None,
+    ]
+    for t in yes:
+        assert limits.is_auth_error(t), f"should match: {t!r}"
+    for t in no:
+        assert not limits.is_auth_error(t), f"should NOT match: {t!r}"
 
 
 def test_defer_server_walks_the_backoff_ladder():
@@ -696,3 +717,55 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+def test_runner_stops_a_dead_login_turn_and_hands_back_the_sign_in():
+    """The point of the whole thing: an expired login must not be retried — five
+    resumes would re-send the same prompt to the same dead token at full price."""
+    s = store.create_session(CHAT, "auth", cwd="/tmp/auth")
+    store.set_claude_session_id(s["id"], "c-auth")
+    job = runner.Job("j-auth", CHAT, s["id"])
+    job.status = "error"
+    job.result = "Failed to authenticate: OAuth session expired and could not be refreshed"
+
+    started, notes = [], []
+    saved_start, saved_notify = runner.start_streaming_job, runner._notify
+    saved_auto = config.AUTO_RESUME
+    runner.start_streaming_job = lambda *a, **kw: started.append((a, kw))
+    runner._notify = lambda chat, text, kb=None: notes.append((text, kb))
+    config.AUTO_RESUME = True
+    try:
+        assert runner._maybe_auto_resume(job, "/tmp/auth", "opus", None) is False
+        assert started == []                               # nothing re-sent
+        assert len(notes) == 1 and "login" in notes[0][0]
+        assert (notes[0][1]["inline_keyboard"][0][0]["callback_data"]
+                == f"re:{accounts.DEFAULT_SLOT}")          # the button to sign in
+        assert runner._resume_fails.get(s["id"]) is None   # crash cap untouched
+        assert runner._auth_dead[accounts.DEFAULT_SLOT]["sid"] == s["id"]
+    finally:
+        runner.start_streaming_job, runner._notify = saved_start, saved_notify
+        config.AUTO_RESUME = saved_auto
+        runner._auth_dead.clear()
+
+
+def test_signing_back_in_resumes_the_turn_that_dead_login_killed():
+    s = store.create_session(CHAT, "auth2", cwd="/tmp/auth2")
+    store.set_claude_session_id(s["id"], "c-auth2")
+    runner._auth_dead[7] = {"sid": s["id"], "chat_id": CHAT, "cwd": "/tmp/auth2",
+                            "model": "opus", "effort": None, "slot": 7}
+
+    started = []
+    saved_start, saved_notify = runner.start_streaming_job, runner._notify
+    saved_auto = config.AUTO_RESUME
+    runner.start_streaming_job = lambda *a, **kw: started.append((a, kw)) or "JOB"
+    runner._notify = lambda chat, text, kb=None: None
+    config.AUTO_RESUME = True
+    try:
+        assert runner.resume_after_login(7) is True
+        assert started[0][0][1] == runner.AUTH_NUDGE
+        assert started[0][1]["account_slot"] == 7          # same login, now alive
+        assert runner.resume_after_login(7) is False       # remembered once only
+    finally:
+        runner.start_streaming_job, runner._notify = saved_start, saved_notify
+        config.AUTO_RESUME = saved_auto
+        runner._auth_dead.clear()

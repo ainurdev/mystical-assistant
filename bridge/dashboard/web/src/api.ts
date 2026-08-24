@@ -1025,11 +1025,13 @@ export const api = {
       method: "POST",
       body: { action, ...(slot === undefined ? {} : { slot }) },
     }),
-  /** Start a sign-in in a fresh profile — the ambient ~/.claude login is untouched. */
-  loginBegin: () =>
+  /** Start a sign-in. No slot: a fresh profile, so the ambient ~/.claude login is
+   *  untouched. A slot: that account signs back in where it already lives — the
+   *  fix for an expired session, which a new profile would not be. */
+  loginBegin: (slot?: number) =>
     req<{ ok: boolean; slot: number; url: string }>("/local/accounts", {
       method: "POST",
-      body: { action: "login_begin" },
+      body: { action: "login_begin", ...(slot === undefined ? {} : { slot }) },
     }),
   loginSubmit: (slot: number, code: string) =>
     req<{ ok: boolean; slot: number; email: string | null }>("/local/accounts", {

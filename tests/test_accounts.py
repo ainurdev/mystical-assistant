@@ -330,12 +330,13 @@ sys.stdout.write("\\x1b]8;;%s\\x1b\\\\%s\\x1b]8;;\\x1b\\\\\\n" % (url, url))
 sys.stdout.write("Paste code here if prompted > ")
 sys.stdout.flush()
 code = sys.stdin.readline().strip()
-home = os.environ["CLAUDE_CONFIG_DIR"]
+# No CLAUDE_CONFIG_DIR = the ambient login (slot 1): the real CLI writes ~/.claude.
+home = os.environ.get("CLAUDE_CONFIG_DIR") or os.environ["FAKE_CLAUDE_HOME"]
 if code != "good-code":
     sys.stdout.write("Login failed: Request failed with status code 400\\n")
     sys.exit(1)
 with open(os.path.join(home, ".credentials.json"), "w") as fh:
-    json.dump({"claudeAiOauth": {"accessToken": "slot-token"}}, fh)
+    json.dump({"claudeAiOauth": {"accessToken": "slot-token-%d" % os.getpid()}}, fh)
 with open(os.path.join(home, ".claude.json"), "w") as fh:
     json.dump({"oauthAccount": {"emailAddress": "other@example.com"}}, fh)
 '''
@@ -619,3 +620,72 @@ if __name__ == "__main__":
                 traceback.print_exc()
     print(f"\n{fails} failure(s)")
     sys.exit(1 if fails else 0)
+
+
+# --- re-auth: the same account back in the same slot -------------------------
+# An expired OAuth session needs *this* login again. A free slot would be the
+# same account twice (and get rejected as a duplicate), so begin_login(slot=N)
+# signs N back in where it already lives.
+
+def test_relogin_signs_the_same_slot_back_in_without_adding_a_row():
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("mine@example.com")
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        accounts.submit_login_code(2, "good-code", timeout=10)
+        before = open(accounts.credentials_path(2)).read()
+
+        began = accounts.begin_login(slot=2)
+        assert began["slot"] == 2                       # not 3 — no new account
+        done = accounts.submit_login_code(2, "good-code", timeout=10)
+
+        assert done["relogin"] is True
+        assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
+        assert open(accounts.credentials_path(2)).read() != before   # fresh tokens
+    finally:
+        undo()
+
+
+def test_relogin_of_the_default_account_lands_in_the_ambient_login():
+    """Slot 1 has no profile dir — its re-auth must write ~/.claude itself."""
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity("mine@example.com")
+    os.environ["FAKE_CLAUDE_HOME"] = home
+    undo = _fake_cli()
+    try:
+        assert accounts.begin_login(slot=1)["slot"] == 1
+        accounts.submit_login_code(1, "good-code", timeout=10)
+
+        assert "slot-token" in open(os.path.join(home, ".credentials.json")).read()
+        assert not os.path.exists(accounts.profile_dir(1))   # still ambient-only
+        assert [a["slot"] for a in accounts.list_accounts()] == [1]
+    finally:
+        os.environ.pop("FAKE_CLAUDE_HOME", None)
+        undo()
+
+
+def test_a_failed_relogin_leaves_the_account_it_was_signing_in():
+    """The add path wipes the half-made profile on failure. Doing that to an
+    existing account would delete a working login over a mistyped code."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("mine@example.com")
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        accounts.submit_login_code(2, "good-code", timeout=10)
+
+        accounts.begin_login(slot=2)
+        try:
+            accounts.submit_login_code(2, "nope", timeout=10)
+            raise AssertionError("a bad code must fail the sign-in")
+        except accounts.LoginFailed:
+            pass
+
+        assert os.path.exists(accounts.credentials_path(2))
+        assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
+    finally:
+        undo()

@@ -251,6 +251,24 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
          "⚠️ Couldn't hand the work over — still parked until the limit resets.")
 
 
+def _relogin_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
+    """The button on a dead-login message (re:<slot>): sign that same account
+    back in. The sign-in parks on its code prompt, so /accounts code <code>
+    finishes it exactly like an add does — and the turn its expired login killed
+    resumes itself from there (bridge/runner.py's resume_after_login)."""
+    slot = data.split(":", 1)[1]
+    answer_cb(cb["id"], "Starting the sign-in…")
+    try:
+        began = accounts.begin_login(slot=int(slot) if slot.isdigit() else None)
+    except (accounts.LoginFailed, ValueError) as e:
+        send(chat_id, f"⚠️ {e}")
+        return
+    send(chat_id, f"Sign in again as account {began['slot']}, then send me the code "
+                  "it gives you:\n\n/accounts code <the code>",
+         {"inline_keyboard": [[{"text": "🔓 Open the sign-in page",
+                                "url": began["url"]}]]})
+
+
 def _policy_text() -> str:
     return ("Usage-limit fallback: what happens when a chat hits the limit.\n\n"
             f"Current default: {ladder.default_policy()}\n\n"
@@ -317,8 +335,10 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
                               "/accounts login.")
             else:
                 done = accounts.submit_login_code(waiting["slot"], rest)
-                send(chat_id, f"✅ Added {done['email'] or 'the account'} as account "
-                              f"{done['slot']}.")
+                who = done["email"] or "that account"
+                send(chat_id, f"✅ Signed back in as {who} (account {done['slot']})."
+                     if done.get("relogin") else
+                     f"✅ Added {who} as account {done['slot']}.")
         elif verb in ("remove", "disable", "enable") and rest.isdigit():
             getattr(accounts, verb)(int(rest))
             send(chat_id, f"✅ Account {rest} {verb}d.")
@@ -376,6 +396,10 @@ def handle_callback(cb: dict):
 
     elif data.startswith("fb:"):
         _fallback_callback(cb, chat_id, msg_id, data)
+
+    elif data.startswith("re:"):
+        threading.Thread(target=_relogin_callback,
+                         args=(cb, chat_id, msg_id, data), daemon=True).start()
 
     elif data.startswith("nx:"):
         threading.Thread(target=_next_callback,

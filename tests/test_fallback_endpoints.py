@@ -249,7 +249,8 @@ def test_session_brief_carries_the_policy():
 
 def _stub_login(begin=None, submit=None):
     saved = (accounts.begin_login, accounts.submit_login_code)
-    accounts.begin_login = begin or (lambda: {"slot": 2, "url": "https://x/oauth"})
+    accounts.begin_login = begin or (
+        lambda slot=None: {"slot": slot or 2, "url": "https://x/oauth"})
     accounts.submit_login_code = submit or (
         lambda slot, code: {"slot": slot, "email": "new@x.com"})
     return lambda: (setattr(accounts, "begin_login", saved[0]),
@@ -281,8 +282,23 @@ def test_dashboard_finishes_a_sign_in_with_the_pasted_code():
         restore()
 
 
+def test_dashboard_re_logins_the_account_the_slot_names():
+    """RE-LOGIN on an account row: the slot has to ride through, or an expired
+    login would be 'fixed' by adding a second copy of the same account."""
+    seen = {}
+    restore = _stub_login(begin=lambda slot=None: seen.update(slot=slot)
+                          or {"slot": slot, "url": "https://x/oauth"})
+    h, box = _dash_handler()
+    try:
+        h._post_api("/local/accounts", {"action": "login_begin", "slot": 1})
+        assert box["code"] == 200 and box["obj"]["slot"] == 1
+        assert seen == {"slot": 1}
+    finally:
+        restore()
+
+
 def test_a_failed_sign_in_answers_with_the_reason_not_a_500():
-    def boom():
+    def boom(slot=None):
         raise accounts.LoginFailed("sign-in timed out")
     restore = _stub_login(begin=boom)
     h, box = _dash_handler()

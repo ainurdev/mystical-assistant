@@ -2256,11 +2256,13 @@ function AccountsPanel() {
     }
   }
 
-  async function startLogin() {
+  // No slot adds an account; a slot signs that one back in where it lives —
+  // what an expired OAuth session needs, and what the bot's dead-login button does.
+  async function startLogin(slot?: number) {
     setBusy(true);
     setErr(null);
     try {
-      const r = await api.loginBegin();
+      const r = await api.loginBegin(slot);
       setLogin({ slot: r.slot, url: r.url });
       window.open(r.url, "_blank", "noopener");
     } catch (e) {
@@ -2300,8 +2302,11 @@ function AccountsPanel() {
             and you paste the code back. Your current login is never touched — the new one gets its
             own profile. COPY CURRENT LOGIN is the old way in: it snapshots whoever is logged in at{" "}
             <span style={{ color: "var(--txd)" }}>~/.claude</span> right now, which only helps if you
-            already switched accounts in a terminal. Accounts share transcripts and skills; only the
-            credentials differ.
+            already switched accounts in a terminal. RE-LOGIN signs an account that is already here
+            back in — the fix when a turn dies on{" "}
+            <span style={{ color: "var(--txd)" }}>OAuth session expired</span>, where adding a new
+            account would just be the same login again. Accounts share transcripts and skills; only
+            the credentials differ.
           </>
         }
       >
@@ -2339,6 +2344,9 @@ function AccountsPanel() {
               >
                 {a.left === null ? "—" : `${a.left}% LEFT`}
               </span>
+              <MiniBtn disabled={busy || !!login} onClick={() => void startLogin(a.slot)}>
+                RE-LOGIN
+              </MiniBtn>
               {!a.default && (
                 <>
                   <MiniBtn disabled={busy} onClick={() => void act(a.disabled ? "enable" : "disable", a.slot)}>
