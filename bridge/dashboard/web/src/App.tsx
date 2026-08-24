@@ -1595,27 +1595,18 @@ export function App() {
     if (ctxMenu.type === "session") {
       const s = sessions.find((x) => x.id === ctxMenu.id);
       const pinned = pins.has(ctxMenu.id);
-      // Lifecycle rides at the top: it's the row you come here for, and burying
-      // it under rename/duplicate/share meant scrolling past nine rows to find it.
-      // All four write the same column — the difference is what HISTORY tags it,
-      // so the hints say that rather than implying three different fates.
+      // One exit, not a taxonomy — done/backlog sounded useful and weren't, so
+      // a single Abandon replaces the lifecycle submenu. Its flip side shows
+      // only for a hidden row (seeded back into `sessions` by openFromHistory).
       const lc = s?.lifecycle ?? null;
       items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
-      items.push({ icon: "◐", label: `Lifecycle: ${lc ?? "active"}`,
-        hint: lc ? "hidden from the sidebar" : undefined, children: [
-        { icon: lc === "done" ? "●" : "○", label: "Mark done",
-          hint: "finished — hides it, HISTORY tags it done",
-          onClick: () => void setLifecycle(ctxMenu.id, "done") },
-        { icon: lc === "backlog" ? "●" : "○", label: "Move to backlog",
-          hint: "not now, not dead — hides it, HISTORY tags it backlog in amber",
-          onClick: () => void setLifecycle(ctxMenu.id, "backlog") },
-        { icon: lc === "abandoned" ? "●" : "○", label: "Abandon", danger: true,
-          hint: "gave up — hides it, HISTORY tags it abandoned",
-          onClick: () => void setLifecycle(ctxMenu.id, "abandoned") },
-        ...(lc !== null ? [{ icon: "↺", label: "Reopen",
-          hint: "unhide — back in the sidebar, untagged",
-          onClick: () => void setLifecycle(ctxMenu.id, null) }] : []),
-      ] });
+      items.push(lc === null
+        ? { icon: "⊘", label: "Abandon session", danger: true,
+            hint: "gave up — hides it, HISTORY tags it abandoned",
+            onClick: () => void setLifecycle(ctxMenu.id, "abandoned") }
+        : { icon: "↺", label: "Reopen session",
+            hint: "unhide — back in the sidebar, untagged",
+            onClick: () => void setLifecycle(ctxMenu.id, null) });
       items.push({ icon: pinned ? "★" : "☆", label: pinned ? "Unpin session" : "Pin session",
         hint: "TOP", onClick: () => togglePin(ctxMenu.id) });
       items.push({ icon: "✎", label: "Rename session…",
