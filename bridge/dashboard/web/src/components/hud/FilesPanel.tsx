@@ -5,6 +5,8 @@ import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { askConfirm } from "../ui/Ask";
 import { FileIcon } from "../../lib/fileicon";
 import { ignoredMatcher } from "../../lib/gitignored";
+import { Skeleton } from "../ui";
+import { useLoadingPhase } from "../../lib/loadingPhase";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
    (project + its branch's worktree). Git-changed files carry their status
@@ -34,6 +36,13 @@ type Row = {
 
 const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
 
+/* Placeholder rows while the list loads: [indent, width%]. Shaped like a tree
+   rather than a spinner, so the panel's layout is already there when the real
+   rows replace it and nothing jumps. */
+const SKEL: [number, number][] = [
+  [0, 62], [1, 78], [1, 51], [0, 70], [1, 44], [1, 83], [0, 57], [1, 66], [1, 38], [0, 74], [1, 60], [1, 47],
+];
+
 function ancestorsOf(paths: Iterable<string>): Set<string> {
   const out = new Set<string>();
   for (const p of paths) {
@@ -55,7 +64,12 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
   // Folders start closed — a repo tree is thousands of rows in a 358px column.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hov, setHov] = useState("");
-  const [loading, setLoading] = useState(false);
+  // Has the fetch that fills THIS mode come back yet? An empty list before the
+  // first answer means "not read yet", not "nothing here" — the tree read is
+  // ~1s on a big repo, and the panel used to spend it claiming the project was
+  // not a git repo, because [] renders the same either way.
+  const [treeReady, setTreeReady] = useState(false);
+  const [gitReady, setGitReady] = useState(false);
   // CHANGES mode also owns commit/push (the git panel is graph-only).
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -71,14 +85,13 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
 
   const loadTree = useCallback(async () => {
     if (!project || changedOnly) { setPaths([]); return; }
-    setLoading(true);
     try {
       const r = await api.filesTree(project, branch || undefined);
       setPaths(r.files);
       setIgnored(r.ignored ?? []);
       setCollapsed(new Set(dirsOf(r.files)));
     } catch { setPaths([]); setIgnored([]); }
-    finally { setLoading(false); }
+    finally { setTreeReady(true); }
   }, [project, branch, changedOnly]);
 
   useEffect(() => { void loadTree(); }, [loadTree]);
@@ -89,6 +102,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
       const g = await api.git(project, branch || undefined);
       setFiles(g.files);
     } catch { setFiles([]); }
+    finally { setGitReady(true); }
   }, [project, branch]);
 
   const changed = useMemo(
@@ -254,6 +268,11 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
   }
 
   const noCommit = busy || !msg.trim() || !changed.size;
+  // FILES waits on the tree read, CHANGES on the git poll. useLoadingPhase keeps
+  // a fast answer (a cached tree, a clean `git status`) from strobing the
+  // placeholder on and off inside one frame budget.
+  const ready = changedOnly ? gitReady : treeReady;
+  const skel = useLoadingPhase(!ready);
 
   const tools: { k: string; g: string; t: string; on: () => void }[] = changedOnly
     ? [{ k: "ref", g: "⟳", t: "refresh", on: () => void loadGit() }]
@@ -330,9 +349,18 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
         )}
         {!project && <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>No session selected.</div>}
         {project && !rows.length && (
-          <div className="swapin" style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>
-            {changedOnly ? "Working tree clean." : loading ? "Reading tree…" : "No files — not a git repo?"}
-          </div>
+          skel ? (
+            <div className="swapin" style={{ padding: "4px 7px", color: "var(--txm)" }} aria-label="Reading the working tree" aria-busy>
+              {SKEL.map(([d, w], i) => (
+                <Skeleton key={i} className="h-[13px] rounded-none"
+                  style={{ marginLeft: 9 + d * 11, width: `${w}%`, marginBottom: 5 }} />
+              ))}
+            </div>
+          ) : ready ? (
+            <div className="swapin" style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>
+              {changedOnly ? "Working tree clean." : "No files — not a git repo?"}
+            </div>
+          ) : null
         )}
         {/* vskip-row: a repo tree is thousands of rows once expanded — off-screen
             ones skip layout and paint (see index.css). */}

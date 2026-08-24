@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AccountInfo, GitStatus } from "../../api";
+import { api, type AccountInfo, type GitStatus } from "../../api";
 import type { AgentOption } from "../../models";
 import { Drop } from "../Composer";
 
@@ -45,6 +45,12 @@ export interface StatusBarProps {
   // Swap key for the CTX chip only — a new session is a new measurement even
   // when the percent happens to match.
   sessionId?: string | null;
+  // The worktree the footer is reporting on, so PUBLISH pushes that tree and
+  // not the project checkout. Same value the git status was fetched with.
+  branch?: string | null;
+  // Push landed — the footer's git poll is 10s, too slow to watch a chip you
+  // just changed, so the owner of that poll re-reads it now.
+  onPushed?: () => void;
   onPalette: () => void;
   // Same action as the composer's AGENT picker, so the footer switches who runs
   // the turn rather than only reporting it. Takes an agent option id.
@@ -53,7 +59,7 @@ export interface StatusBarProps {
 
 export function StatusBar(props: StatusBarProps) {
   const { mount, usedPct, resetLabel, accounts = [], agent, agents = [], repo, changes,
-          git, ctxTokens, ctxWindow, sessionId, onPalette, onPickAgent } = props;
+          git, ctxTokens, ctxWindow, sessionId, branch, onPushed, onPalette, onPickAgent } = props;
   // Window fill of the open session. Unmeasured (no turn yet under the meter)
   // shows nothing rather than 0%, which would read as "plenty of room".
   const ctxPct = ctxTokens && ctxWindow ? Math.round((ctxTokens / ctxWindow) * 100) : null;
@@ -80,6 +86,28 @@ export function StatusBar(props: StatusBarProps) {
   // stands for the default account; another login reports its own headroom, and
   // a free agent has no Claude quota to report at all.
   const sync = git?.is_repo ? syncChip(git) : null;
+  // Every link of the branch chain is the same box; .chain draws the hairline
+  // between them, since inline styles can't say :first-child.
+  const seg = { padding: "2px 9px", display: "inline-block" } as const;
+
+  // Sending the branch to the remote — offered where the chain already reports
+  // that it isn't there. git.push() publishes with -u when there's no upstream.
+  const canPush = !!git?.is_repo && repo !== "—" && !git.behind &&
+    git.upstream !== undefined && (git.upstream === "" || git.ahead > 0);
+  const [pushing, setPushing] = useState(false);
+  const [pushErr, setPushErr] = useState("");
+  const [pushHov, setPushHov] = useState(false);
+  async function doPush() {
+    if (repo === "—" || pushing) return;
+    setPushing(true);
+    setPushErr("");
+    try {
+      const r = await api.gitPush(repo, branch || undefined);
+      if (!r.ok) setPushErr(r.output || "push failed");
+      else onPushed?.();
+    } catch (e) { setPushErr((e as Error).message); }
+    finally { setPushing(false); }
+  }
   const free = agent?.free ?? false;
   const pct = !agent || agent.def ? usedPct
     : agent.left === null ? null : 100 - agent.left;
@@ -233,23 +261,61 @@ export function StatusBar(props: StatusBarProps) {
       <span key={`repo:${repo}`} style={swap}>
         REPO <span style={{ color: "var(--tx)" }}>{repo}</span>
       </span>
-      {gitPending && (
-        <>
-          <span aria-hidden style={{ color: "var(--txd)", opacity: 0.4, display: "inline-block", minWidth: "60px" }}>⎇ ···</span>
-          <span aria-hidden style={{ color: "var(--txd)", opacity: 0.4, display: "inline-block", minWidth: "70px" }}>···</span>
-        </>
-      )}
-      {git?.branch && (
-        <span title={`Branch checked out in the open session's working tree`} style={swap}>
-          ⎇ <span style={{ color: "var(--tx)" }}>{git.branch}</span>
-        </span>
-      )}
-      {sync && (
-        <span title={sync.title} style={{ ...swap, color: sync.warn ? "var(--warn)" : "var(--txd)" }}>
-          {sync.text}
-        </span>
-      )}
-      <span key={`chg:${changes}`} style={{ ...swap, color: "var(--warn)" }}>{changes} CHANGES</span>
+      {/* One chain, not three loose labels: the branch and the two facts that
+          are only true *of that branch* — where it stands against its remote,
+          and what its working tree is holding — welded into a single bordered
+          group whose segments are separated by hairlines (.chain). */}
+      <span className="chain" style={{
+        display: "flex", alignItems: "center",
+        border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+      }}>
+        {gitPending && (
+          <>
+            <span aria-hidden style={{ ...seg, color: "var(--txd)", opacity: 0.4, minWidth: "60px" }}>⎇ ···</span>
+            <span aria-hidden style={{ ...seg, color: "var(--txd)", opacity: 0.4, minWidth: "70px" }}>···</span>
+          </>
+        )}
+        {git?.branch && (
+          <span title={`Branch checked out in the open session's working tree`}
+                style={{ ...seg, ...swap, color: "var(--tx)" }}>
+            ⎇ {git.branch}
+          </span>
+        )}
+        {sync && (
+          <span title={sync.title}
+                style={{ ...seg, ...swap, color: sync.warn ? "var(--warn)" : "var(--txd)" }}>
+            {sync.text}
+          </span>
+        )}
+        <span key={`chg:${changes}`} style={{ ...seg, ...swap, color: "var(--warn)" }}>{changes} CHANGES</span>
+        {/* VS Code's "publish branch", in the link of the chain the state it
+            fixes lives in. Only where a plain push can succeed: a branch the
+            remote has never seen, or commits it hasn't got. Diverged needs a
+            pull first, which this button doesn't do. */}
+        {canPush && (
+          <button
+            type="button"
+            disabled={pushing}
+            onClick={() => void doPush()}
+            title={pushErr || (git?.upstream
+              ? `Push ${git.ahead} commit${git.ahead === 1 ? "" : "s"} to ${git.upstream}`
+              : `Publish ${git?.branch} to origin — it exists only in this checkout`)}
+            style={{
+              ...seg,
+              font: "inherit",
+              letterSpacing: "inherit",
+              border: 0,
+              background: pushHov && !pushing ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
+              color: pushErr ? "var(--err)" : pushing ? "var(--txd)" : "var(--acc)",
+              cursor: pushing ? "default" : "pointer",
+            }}
+            onMouseEnter={() => setPushHov(true)}
+            onMouseLeave={() => setPushHov(false)}
+          >
+            {pushing ? "SENDING…" : pushErr ? "FAILED" : git?.upstream ? "↑ PUSH" : "↑ PUBLISH"}
+          </button>
+        )}
+      </span>
       <button
         onClick={onPalette}
         onMouseEnter={() => setHovered(true)}

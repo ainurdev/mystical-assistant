@@ -471,7 +471,13 @@ def clean_commit_message(raw: str) -> str:
 
 
 def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
-    rc, out, err = _run(cwd, "push", timeout=timeout)
+    """Send this branch to its remote. A branch the remote has never seen has no
+    upstream, and plain `git push` refuses it ("no upstream branch") — publish it
+    with `-u` instead, which is what every caller means either way. Asked with
+    rev-parse rather than by matching git's error text, which is localized."""
+    published = _run(cwd, "rev-parse", "--abbrev-ref", "@{u}")[0] == 0
+    args = ("push",) if published else ("push", "-u", "origin", "HEAD")
+    rc, out, err = _run(cwd, *args, timeout=timeout)
     return rc == 0, (out + err).strip()
 
 

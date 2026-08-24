@@ -202,6 +202,28 @@ def test_push_to_bare_remote():
     assert local and local == remote
 
 
+def test_push_publishes_a_branch_with_no_upstream():
+    """The footer's PUBLISH button pushes a branch the remote has never seen —
+    plain `git push` refuses that, so push() has to add -u itself."""
+    bare = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "--bare", "-q", bare], check=True)
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _run(d, "remote", "add", "origin", bare)
+    assert g.status(d)["upstream"] == ""
+    ok, out = g.push(d)
+    assert ok is True, out
+    branch = g.current_branch(d)
+    assert g.status(d)["upstream"] == f"origin/{branch}"
+    local = subprocess.run(["git", "-C", d, "rev-parse", "HEAD"],
+                           capture_output=True, text=True).stdout.strip()
+    remote = subprocess.run(["git", "-C", d, "ls-remote", "origin", branch],
+                            capture_output=True, text=True).stdout.split("\t")[0].strip()
+    assert local and local == remote
+
+
 def test_upstream_distinguishes_unpushed_from_synced():
     bare = tempfile.mkdtemp()
     subprocess.run(["git", "init", "--bare", "-q", bare], check=True)

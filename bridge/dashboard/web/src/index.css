@@ -346,6 +346,14 @@ body {
 [data-swap] .swapin {
   animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+/* The footer's branch chain: branch, remote standing, working-tree changes and
+   the button that fixes them, in one bordered group. The hairline between links
+   lives here because inline styles can't say :first-child.
+   See components/hud/StatusBar.tsx. */
+.chain > * + * {
+  border-left: 1px solid color-mix(in srgb, var(--acc) 16%, transparent);
+}
+
 /* Collapsing the right panel re-widths the transcript. Animating the column
    (not a transform) is what lets the chat reflow into the space instead of
    jumping a panel-width in one frame; RightPanel clips its own body at a fixed

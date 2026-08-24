@@ -224,6 +224,9 @@ export function App() {
   // The open session's own working tree (its worktree when it has one), which
   // gitBadges can't answer — those are keyed by project, one badge per repo.
   const [sessionGit, setSessionGit] = useState<GitStatus | null>(null);
+  // Bumped by the footer's PUBLISH — a 10s poll is too slow to watch a chip you
+  // just acted on, so the push re-runs the fetch below instead of waiting.
+  const [gitNonce, setGitNonce] = useState(0);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   // Free-agent rungs that are ready to run right now (configured + opencode
@@ -1397,8 +1400,10 @@ export function App() {
 
   // Footer git state for that tree. Same 10s cadence as the project badges;
   // clears on switch so the footer never shows the last session's branch.
+  // Clearing is its own effect: a push bumps gitNonce to re-read now, and that
+  // must not blank the chain back to its loading stand-ins on the way.
+  useEffect(() => { setSessionGit(null); }, [sessionProject, sessionBranch]);
   useEffect(() => {
-    setSessionGit(null);
     if (!sessionProject) return;
     let live = true;
     const tick = async () => {
@@ -1414,7 +1419,7 @@ export function App() {
     void tick();
     const id = setInterval(tick, 10000);
     return () => { live = false; clearInterval(id); };
-  }, [sessionProject, sessionBranch]);
+  }, [sessionProject, sessionBranch, gitNonce]);
 
   // Unread lessons, for the LEARN tab's badge — the whole reason to open a tab
   // you are not already looking at. Every repo's, because the panel reads that
@@ -2019,6 +2024,8 @@ export function App() {
               ctxTokens={selected?.ctx_tokens ?? null}
               ctxWindow={selected?.ctx_window ?? null}
               sessionId={sessionId}
+              branch={sessionBranch}
+              onPushed={() => setGitNonce((n) => n + 1)}
               onPalette={() => setPaletteOpen(true)}
               agents={agentOpts} onPickAgent={setAgent}
             />
