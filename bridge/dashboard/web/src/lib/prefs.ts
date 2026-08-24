@@ -37,6 +37,19 @@ export function useStickySet(key: string): [Set<string>, Dispatch<SetStateAction
   return [set, setSet];
 }
 
+/** A small JSON object the browser remembers — the study ladder, and whatever
+ *  the next panel needs beyond a flag or a set. */
+export function useStickyObj<T>(key: string, initial: T): [T, Dispatch<SetStateAction<T>>] {
+  const [obj, setObj] = useState<T>(() => {
+    try { return { ...initial, ...JSON.parse(localStorage.getItem(key) || "{}") }; }
+    catch { return initial; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(obj)); } catch { /* ignore */ }
+  }, [key, obj]);
+  return [obj, setObj];
+}
+
 /** Sessions you pinned to the top of the lists. Call it once (App owns it) and
  *  hand the pair down — the sessions panel and the context menu have to toggle
  *  the same set, so two copies of this state would drift. */

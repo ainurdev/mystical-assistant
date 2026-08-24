@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Lesson } from "../../api";
 import { Markdown } from "../Markdown";
 import { ago } from "../../lib/surfaces";
-import { checkYourself, lessonKey, nextUnread, shelves } from "../../lib/learn";
-import { useStickyFlag, useStickySet, useStickyStr } from "../../lib/prefs";
+import { checkYourself, deal, dueCount, grade, lessonKey, nextUnread, shelves,
+  UNSORTED, type Sched } from "../../lib/learn";
+import { useStickyFlag, useStickyObj, useStickySet, useStickyStr } from "../../lib/prefs";
 
 /* LEARN tab — the lessons written after turns (bridge/learn.py), shelved by the
    concept each one teaches, read as a list on the left and the selected lesson
@@ -87,6 +88,11 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const [ownRead, setOwnRead] = useStickySet(READ_KEY);
   const readSet = read ?? ownRead;
   const markRead = onRead ?? ((k: string) => setOwnRead((r) => new Set(r).add(k)));
+
+  // The review ladder — which read lessons are due back, and when. Lives beside
+  // the read set in localStorage; a lesson in neither is new, in the read set
+  // alone retired, in both scheduled.
+  const [sched, setSched] = useStickyObj<Sched>("hud-learn-sched", {});
 
   // Inverted on purpose: the unset default is ALL, and the flag records the
   // narrowing rather than the norm.
@@ -176,10 +182,14 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   const unread = list ? list.filter((l) => !readSet.has(lessonKey(l))) : [];
   const total = list?.length ?? 0;
   const readCount = total - unread.length;
+  const dueN = list ? dueCount(list, sched, Date.now()) : 0;
   const question = body ? checkYourself(body) : "";
   // An unread lesson is asked before it is answered — but only when the model
   // wrote a question to ask. Older lessons open straight into the markdown.
-  const gated = !!sel && !revealed && !readSet.has(selK) && !!question;
+  // A due review is re-asked its question in STUDY even though it is read —
+  // that is the point of the ladder. Browse mode never re-gates a read lesson.
+  const isDueHere = study && !!sched[selK] && sched[selK].due <= Date.now();
+  const gated = !!sel && !revealed && !!question && (!readSet.has(selK) || isDueHere);
 
   // A lesson whose body is on screen has been read, whether you answered a
   // question to get there or it never had one to ask. Without this the older
@@ -190,12 +200,20 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selK, body, gated]);
 
-  const deal = () => {
-    const n = nextUnread(list ?? [], readSet);
+  const dealNext = (lastConcept?: string) => {
+    const n = deal(list ?? [], readSet, sched, Date.now(), lastConcept);
     if (n) setSelKey(lessonKey(n));
     else setSelKey("");   // deck clear — the run says so rather than looping
   };
-  const startStudy = () => { setStudy(true); deal(); };
+  const startStudy = () => { setStudy(true); dealNext(); };
+  // One handler for all three verdicts: SKIP arrives from the quiz card (either
+  // mode), GOT IT / REVIEW only from a study run's footer.
+  const gradeCard = (v: "got" | "review" | "skip") => {
+    const last = sel ? (sel.concept || UNSORTED) : undefined;
+    if (selK) { setSched((s) => grade(s, selK, v, Date.now())); markRead(selK); }
+    if (study) dealNext(last);
+    else setRevealed(true);   // browse SKIP: retired, but stays on screen
+  };
 
   if (err) {
     return (
@@ -207,9 +225,9 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   }
   if (!list) return <div style={{ ...mono, color: "var(--txd)" }}>loading…</div>;
 
-  // Study runs on the unread of the *scope you are reading* — the run and the
-  // meter above it can never disagree about how many are left.
-  const studyDone = study && (!sel || readSet.has(selK)) && !unread.length;
+  // Done when the deal came up empty (selKey ""), not when the current card is
+  // read — every dealt review card is read by definition.
+  const studyDone = study && !selKey && !unread.length && !dueN;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
@@ -274,9 +292,10 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
         </div>
       ) : study ? (
         <StudyRun
-          left={unread.length} done={studyDone} sel={sel} body={body} gated={gated}
-          question={question} scope={scope}
-          onReveal={reveal} onNext={deal} onExit={() => setStudy(false)} />
+          left={unread.length} due={dueN} done={studyDone} sel={sel} body={body}
+          gated={gated} question={question} scope={scope}
+          onReveal={reveal} onGrade={(v) => gradeCard(v)}
+          onSkip={() => gradeCard("skip")} onExit={() => setStudy(false)} />
       ) : (
         <>
           <div style={{ flex: "none", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -288,10 +307,10 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
                 background: "color-mix(in srgb, var(--panel2) 45%, transparent)",
                 border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
                 outline: "none", padding: "6px 9px" }} />
-            {unread.length > 0 && (
+            {(unread.length > 0 || dueN > 0) && (
               <button onClick={startStudy} style={{ ...btnHero, padding: "6px 12px", flex: "none" }}
                 title="deal the unread lessons one at a time">
-                ▸ STUDY {unread.length}
+                ▸ STUDY {unread.length + dueN}
               </button>
             )}
           </div>
@@ -374,7 +393,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
               {body === null
                 ? <div style={{ ...mono, color: "var(--txd)" }}>loading…</div>
                 : gated
-                  ? <Quiz title={sel!.title} concept={sel!.concept} question={question} onReveal={reveal} />
+                  ? <Quiz title={sel!.title} concept={sel!.concept} question={question} onReveal={reveal} onSkip={() => gradeCard("skip")} />
                   : (
                     <>
                       <LessonHead sel={sel!} scope={scope} />
@@ -405,8 +424,9 @@ function LessonHead({ sel, scope }: { sel: Lesson; scope: string }) {
 /** An unread lesson, asked before it is answered. The question is the lesson's
  *  own closing line — it was always there, at the bottom, after the answer.
  *  Framed as a panel because it is the one thing on the tab worth stopping at. */
-function Quiz({ title, concept, question, onReveal, cta = "SHOW THE LESSON" }: {
-  title: string; concept: string; question: string; onReveal: () => void; cta?: string;
+function Quiz({ title, concept, question, onReveal, onSkip, cta = "SHOW THE LESSON" }: {
+  title: string; concept: string; question: string; onReveal: () => void;
+  onSkip: () => void; cta?: string;
 }) {
   return (
     <div className="panel" style={{ border: line, background: "color-mix(in srgb, var(--panel2) 40%, transparent)",
@@ -419,8 +439,9 @@ function Quiz({ title, concept, question, onReveal, cta = "SHOW THE LESSON" }: {
         <span style={{ ...label, color: "var(--txd)", display: "block", marginBottom: 8 }}>CAN YOU ANSWER THIS?</span>
         <span style={{ ...mono, fontSize: "var(--t13)", lineHeight: 1.6, color: "var(--tx)" }}>{question}</span>
       </div>
-      <div>
+      <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onReveal} style={btnHero}>{cta}</button>
+        <button onClick={onSkip} style={btn} title="I already know this — retire it">SKIP</button>
       </div>
     </div>
   );
@@ -428,16 +449,17 @@ function Quiz({ title, concept, question, onReveal, cta = "SHOW THE LESSON" }: {
 
 /** STUDY — the unread ones dealt one at a time. The list is what you use when
  *  you know which lesson you want; this is for the ninety you don't. */
-function StudyRun({ left, done, sel, body, gated, question, scope, onReveal, onNext, onExit }: {
-  left: number; done: boolean; sel?: Lesson; body: string | null; gated: boolean;
-  question: string; scope: string;
-  onReveal: () => void; onNext: () => void; onExit: () => void;
+function StudyRun({ left, due, done, sel, body, gated, question, scope, onReveal, onGrade, onSkip, onExit }: {
+  left: number; due: number; done: boolean; sel?: Lesson; body: string | null;
+  gated: boolean; question: string; scope: string;
+  onReveal: () => void; onGrade: (v: "got" | "review") => void;
+  onSkip: () => void; onExit: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 9 }}>
         <span style={{ ...label, color: "var(--acc)" }}>STUDY RUN</span>
-        <span style={{ ...mono, fontSize: "var(--t95)", color: "var(--txm)" }}>{left} LEFT</span>
+        <span style={{ ...mono, fontSize: "var(--t95)", color: "var(--txm)" }}>{due} DUE · {left} NEW</span>
         <span style={{ flex: 1 }} />
         <button onClick={onExit} style={{ ...btn, padding: "3px 9px" }}>✕ DONE</button>
       </div>
@@ -453,15 +475,14 @@ function StudyRun({ left, done, sel, body, gated, question, scope, onReveal, onN
         ) : body === null ? (
           <div style={{ ...mono, color: "var(--txd)" }}>dealing…</div>
         ) : gated ? (
-          <Quiz title={sel.title} concept={sel.concept} question={question} onReveal={onReveal} cta="REVEAL" />
+          <Quiz title={sel.title} concept={sel.concept} question={question} onReveal={onReveal} onSkip={onSkip} cta="REVEAL" />
         ) : (
           <div style={{ maxWidth: 720 }}>
             <LessonHead sel={sel} scope={scope} />
             <Markdown>{body}</Markdown>
-            <div style={{ marginTop: 18, paddingTop: 14, borderTop: line }}>
-              <button onClick={onNext} style={btnHero}>
-                {left > 0 ? `NEXT LESSON ▸ ${left} LEFT` : "FINISH RUN ▸"}
-              </button>
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: line, display: "flex", gap: 8 }}>
+              <button onClick={() => onGrade("got")} style={btnHero}>GOT IT ▸</button>
+              <button onClick={() => onGrade("review")} style={btn}>REVIEW AGAIN · 1D</button>
             </div>
           </div>
         )}
