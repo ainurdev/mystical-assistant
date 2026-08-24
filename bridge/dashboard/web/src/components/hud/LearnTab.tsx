@@ -207,12 +207,22 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
   };
   const startStudy = () => { setStudy(true); dealNext(); };
   // One handler for all three verdicts: SKIP arrives from the quiz card (either
-  // mode), GOT IT / REVIEW only from a study run's footer.
+  // mode), GOT IT / REVIEW only from a study run's footer. The next deal reads
+  // the post-grade state computed here — dealing from the render's sched/read
+  // would re-deal the card just graded.
   const gradeCard = (v: "got" | "review" | "skip") => {
     const last = sel ? (sel.concept || UNSORTED) : undefined;
-    if (selK) { setSched((s) => grade(s, selK, v, Date.now())); markRead(selK); }
-    if (study) dealNext(last);
-    else setRevealed(true);   // browse SKIP: retired, but stays on screen
+    if (selK) {
+      const nextSched = grade(sched, selK, v, Date.now());
+      setSched(nextSched);
+      markRead(selK);
+      if (study) {
+        const n = deal(list ?? [], new Set(readSet).add(selK), nextSched, Date.now(), last);
+        setSelKey(n ? lessonKey(n) : "");
+        return;
+      }
+    } else if (study) { dealNext(last); return; }
+    setRevealed(true);   // browse SKIP: retired, but stays on screen
   };
 
   if (err) {
