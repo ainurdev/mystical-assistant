@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
-  Search, Globe, Bot, ListChecks, Plug, Quote,
-  BookOpen, PenLine, GitCompare, Terminal, Wrench, Layers, Brain,
+  Search, Globe, Bot, Plug, Quote,
+  Terminal, Layers, Brain,
   GitBranch, FileText, FilePen, Trash2, FolderTree, Play, Package,
   FlaskConical, Cpu, Database, Container,
 } from "lucide-react";
@@ -10,14 +10,16 @@ import { api, type AnswerSelection, type RunEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { SteerIcon } from "./Composer";
 import { Markdown, type OpenFile } from "./Markdown";
-import { FileIcon } from "../lib/fileicon";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun } from "../lib/toolfold";
-import { cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, type CmdKind } from "../lib/tools";
+import {
+  cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTier,
+  type CmdKind, type Shape, type Tier,
+} from "../lib/tools";
 
 // Result blocks already "printed" this session — guards against re-typing when a
 // session is reopened or the transcript re-renders.
@@ -67,10 +69,6 @@ function Typewriter({
     </div>
   );
 }
-
-/** Tool kinds that draw a block of their own, so they never fold into a
- *  "N STEPS" chip with the quiet lookups. */
-const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
 
 /** Every tool card is drawn in its own accent (see lib/tools) — this is the two
  *  edges that accent draws: the card's hairline and the tag's box. */
@@ -174,23 +172,26 @@ function Lights({ accent, running }: { accent: string; running: boolean }) {
 
 type Cmd = { command: string; done?: Done };
 
-/** One command inside a terminal window: the prompt line is the toggle for its
- *  own output, so a long run reads as a list of commands until you open one.
- *  Stays shut by default; with AUTO-OPEN RESULTS on it opens itself while it
- *  runs, when it fails, and for the newest command. */
+/** One command as a row of the ledger: the phrase it amounts to, its own kind's
+ *  glyph in front of it, and its output behind the chevron. Inside a window it
+ *  wears no tag — the header already said BASH — and a lone command wears the
+ *  three lights itself, because a window around one line is all frame.
+ *  With AUTO-OPEN RESULTS on it opens itself while it runs, when it fails, and
+ *  for the newest command. */
 function CommandRow({
   command,
   done,
   newest,
   animate,
   autoOpen,
-  lights,
+  tag,
   onRerun,
 }: Cmd & {
   newest: boolean;
   animate: boolean;
   autoOpen: boolean;
-  lights?: boolean;
+  /** Set only for a lone command — inside a window the header carries it. */
+  tag?: string;
   onRerun?: (command: string) => void;
 }) {
   const running = !done;
@@ -199,109 +200,71 @@ function CommandRow({
   const exit = raw.match(EXIT_RE);
   const out = exit ? raw.slice(exit[0].length) : raw;
   const lines = out ? out.split("\n").length : 0;
-  const [open, setOpen] = useState(autoOpen && (running || failed || newest));
-  // Colour is for exceptions: a command that simply worked stays quiet.
-  const tint = failed ? "var(--err)" : running ? "var(--warn)" : "var(--muted-2)";
   const Icon = CMD_ICON[cmdKind(command)];
-  // What the command did, in words. Empty when nothing beats the line itself,
-  // and never while the row is open — reading output next to a paraphrase of
-  // the command that made it is worse than reading the command.
-  const said = open ? "" : cmdAbstract(command);
+  // What the command did, in words. Empty when nothing beats the line itself.
+  // A cut, not a cross-fade: two legible strings on one row is worse than any
+  // hard swap, and staggering them blanks the row instead.
+  const said = cmdAbstract(command);
 
   return (
-    <div
-      className="group/cmd border-t border-border first:border-t-0"
-      style={animate ? { animation: "termLine .3s cubic-bezier(.2,.8,.2,1) both" } : undefined}
-    >
-      <div className="flex items-start gap-1 px-2.5 py-1.5 transition-colors duration-200 hover:bg-[var(--ac-03)]">
-        {lights && (
-          <span className="mt-[6px] mr-1 flex-none">
-            <Lights accent={failed ? "var(--err)" : running ? "var(--warn)" : "var(--ok)"} running={running} />
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          title={open ? "hide output" : "show output"}
-          className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
-        >
-          <span
-            className={`mt-[3px] flex-none ${running ? "animate-pulse motion-reduce:animate-none" : ""}`}
-            aria-hidden
-            style={{ color: tint }}
-          >
-            <Icon size={12} />
-          </span>
-          <span
-            className={`min-w-0 flex-1 font-mono text-[length:var(--t12)] leading-relaxed text-foreground-bright ${
-              open ? "whitespace-pre-wrap break-all" : "truncate"
-            }`}
-          >
-            {said ? (
-              // A cut, not a fade. Cross-fading the two leaves ~70ms where both
-              // are legible on top of each other, which is worse than any hard
-              // swap; staggering them blanks the row instead, and a hover-intent
-              // delay makes the row feel unresponsive. The tint carries the
-              // smoothness — the text just changes.
+    <ActionRow
+      tier={failed ? "mark" : "reach"}
+      shape={tag ? "term" : undefined}
+      accent="var(--acc)"
+      tag={tag}
+      lead={<Icon size={12} />}
+      animate={animate}
+      running={running}
+      error={failed}
+      startOpen={autoOpen && (running || failed || newest)}
+      stat={
+        <>
+          {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
+          {slow(done?.ms) ? <span>{dur(done?.ms)}</span> : null}
+          {lines > 0 && <span>{lines}L</span>}
+        </>
+      }
+      drawer={
+        lines > 0 || running
+          ? () => (
               <>
-                <span className="font-sans group-hover/cmd:hidden">{said}</span>
-                <span className="hidden group-hover/cmd:inline">{command}</span>
+                <DrawerHead
+                  mark="$"
+                  text={command}
+                  onRerun={onRerun && (() => onRerun(command))}
+                />
+                {lines > 0 ? <DrawerText text={out} error={failed} /> : null}
+                <DrawerFoot>
+                  {exit ? <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span> : null}
+                  {done?.ms ? <span>{dur(done.ms)}</span> : null}
+                  {lines > 0 ? <span>{lines} LINES</span> : null}
+                </DrawerFoot>
               </>
-            ) : (
-              command
-            )}
-            {running && (
-              <span
-                className="ml-px inline-block h-[1em] w-[7px] translate-y-[2px] bg-primary align-middle"
-                style={{ animation: "caret 1s steps(1) infinite" }}
-              />
-            )}
-          </span>
-          <span className="mt-[3px] flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px] text-muted-2">
-            {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
-            {done?.ms ? (
-              <span className={slow(done.ms) ? "" : "opacity-0 transition-opacity group-hover/cmd:opacity-100"}>
-                {dur(done.ms)}
-              </span>
-            ) : null}
-            {lines > 0 && <span>{lines}L</span>}
-          </span>
-        </button>
-        <span className="mt-[2px] flex flex-none items-center gap-1.5 opacity-0 transition-opacity group-hover/cmd:opacity-100">
-          <CopyBtn text={command} title="copy command" />
-          {onRerun && (
-            <HeadBtn title="run this again in a terminal" onClick={() => onRerun(command)}>
-              <RotateCw size={12} aria-hidden />
-            </HeadBtn>
-          )}
-        </span>
-        <span className="mt-[2px] flex flex-none items-center">
-          <HeadBtn title={open ? "hide output" : "show output"} onClick={() => setOpen((o) => !o)}>
-            <ChevronDown
-              size={12}
-              aria-hidden
-              className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
-            />
-          </HeadBtn>
-        </span>
-      </div>
-      {open && lines > 0 && (
-        <pre
-          className="max-h-[280px] overflow-auto whitespace-pre-wrap break-all px-2.5 pb-2 pl-[30px] text-[length:var(--t115)] leading-[1.55]"
-          style={{
-            color: failed ? "var(--err)" : "var(--muted-foreground)",
-            animation: "termOpen .2s ease both",
-          }}
-        >
-          {out}
-        </pre>
+            )
+          : undefined
+      }
+    >
+      {said ? (
+        <>
+          <span className="font-sans group-hover/act:hidden">{said}</span>
+          <span className="hidden group-hover/act:inline">{command}</span>
+        </>
+      ) : (
+        command
       )}
-    </div>
+      {running && (
+        <span
+          className="ml-px inline-block h-[1em] w-[7px] translate-y-[2px] bg-primary align-middle"
+          style={{ animation: "caret 1s steps(1) infinite" }}
+        />
+      )}
+    </ActionRow>
   );
 }
 
-/** A run of Bash calls drawn as the one terminal they actually ran in: a single
- *  window, one prompt line per command, each opening its own output. */
+/** A run of Bash calls drawn as the one terminal they actually ran in. The box
+ *  is the one this file kept: it earns its frame by holding n commands, not one.
+ *  A single command is a ledger row like any other action. */
 function TerminalGroup({
   cmds,
   animate,
@@ -318,33 +281,43 @@ function TerminalGroup({
   const ms = cmds.reduce((t, c) => t + (c.done?.ms ?? 0), 0);
   const accent = failed ? "var(--err)" : running ? "var(--warn)" : "var(--ok)";
 
+  if (cmds.length === 1)
+    return (
+      <CommandRow
+        command={cmds[0].command}
+        done={cmds[0].done}
+        tag="BASH"
+        newest
+        animate={animate}
+        autoOpen={autoOpen}
+        onRerun={onRerun}
+      />
+    );
+
   return (
     <div
-      className="my-1.5 ml-[18px] border bg-[var(--code-bg)]"
+      className="ax-window"
       style={{
-        borderColor: failed ? "color-mix(in srgb, var(--err) 32%, transparent)" : "var(--border)",
+        borderColor: failed ? "color-mix(in srgb, var(--err) 32%, transparent)" : undefined,
         ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      {cmds.length > 1 && (
-        <div className="flex items-center gap-2 border-b border-border bg-[var(--ac-03)] px-2.5 py-1">
-          <Lights accent={accent} running={running} />
-          <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
-            <Terminal size={11} aria-hidden />
-            BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
-          </span>
-          <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {cmds.length} CMDS</span>
-          {slow(ms) && (
-            <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-2 border-b border-border bg-[var(--ac-03)] px-2.5 py-1">
+        <Lights accent={accent} running={running} />
+        <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
+          <Terminal size={11} aria-hidden />
+          BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
+        </span>
+        <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {cmds.length} CMDS</span>
+        {slow(ms) && (
+          <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>
+        )}
+      </div>
       {cmds.map((c, k) => (
         <CommandRow
           key={k}
           command={c.command}
           done={c.done}
-          lights={cmds.length === 1}
           newest={k === cmds.length - 1}
           animate={animate}
           autoOpen={autoOpen}
@@ -363,9 +336,11 @@ function diffColor(line: string): string {
 }
 
 /** An edit shown as the diff Claude Code already computed for it, so a turn says
- *  what changed instead of just which file was touched. The header is the toggle
- *  for its own body: `shownMax` is 0 (shut, the default), a preview, or all of
- *  it — one state instead of a collapsed flag plus an expanded one. */
+ *  what changed instead of just which file was touched. A mark row like any
+ *  other write — the patch lives in its drawer, where the row's `+n −n` is the
+ *  promise of what you'll find. `shownMax` is a preview or the lot; a diff can
+ *  run to hundreds of lines and the drawer is the wrong place for all of them
+ *  by default. */
 function DiffBlock({
   name,
   path,
@@ -381,88 +356,116 @@ function DiffBlock({
   animate: boolean;
   autoOpen: boolean;
 }) {
-  const [shownMax, setShownMax] = useState(autoOpen ? DIFF_PREVIEW : 0);
-  const shown = patch.slice(0, shownMax);
-  const hidden = patch.length - shown.length;
+  const [shownMax, setShownMax] = useState(DIFF_PREVIEW);
   const add = patch.filter((l) => l.startsWith("+")).length;
   const del = patch.filter((l) => l.startsWith("-")).length;
 
   return (
-    <div
-      className="my-1.5 ml-[18px] border border-[color-mix(in_srgb,var(--ok)_24%,transparent)] bg-[var(--code-bg)]"
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+    <ActionRow
+      tier="mark"
+      shape={toolShape(name)}
+      accent={toolAccent(name)}
+      tag={name.toUpperCase()}
+      animate={animate}
+      startOpen={autoOpen}
+      stat={
+        <>
+          <span style={{ color: "var(--ok)" }}>+{add}</span>
+          <span style={{ color: "var(--err)" }}>−{del}</span>
+          {slow(ms) ? <span>{dur(ms)}</span> : null}
+        </>
+      }
+      drawer={() => {
+        const shown = patch.slice(0, shownMax);
+        const hidden = patch.length - shown.length;
+        return (
+          <>
+            <DrawerHead mark="@" text={path} />
+            <div
+              className="max-h-[180px] overflow-auto border-l border-[var(--ac-08)] pl-2.5 leading-[1.55]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {shown.map((line, i) => (
+                <div key={i} className="whitespace-pre" style={{ color: diffColor(line) }}>
+                  {line || " "}
+                </div>
+              ))}
+            </div>
+            <DrawerFoot>
+              <span>{add} ADDED · {del} REMOVED</span>
+              {ms ? <span>{dur(ms)}</span> : null}
+              {hidden > 0 && (
+                <HeadBtn title="show the whole diff" onClick={() => setShownMax(patch.length)}>
+                  +{hidden} LINES ⌄
+                </HeadBtn>
+              )}
+            </DrawerFoot>
+          </>
+        );
+      }}
     >
-      <div className="flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--ok)_16%,transparent)] bg-[var(--ac-03)] px-2.5 py-1 hover:bg-[var(--ac-03)]">
-        <button
-          type="button"
-          onClick={() => setShownMax((m) => (m ? 0 : DIFF_PREVIEW))}
-          title={shownMax ? "hide the diff" : "show the diff"}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        >
-          <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px] text-success">
-            <GitCompare size={11} aria-hidden />
-            {name.toUpperCase()} //
-          </span>
-          <FileIcon name={path} size={12} />
-          <span className="min-w-0 truncate font-mono text-[length:var(--t11)] text-foreground-bright">{path}</span>
-          {slow(ms) ? (
-            <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>
-          ) : null}
-          <ChevronDown
-            size={12}
-            aria-hidden
-            className={`ml-auto flex-none text-muted-2 transition-transform duration-200 ${shownMax ? "" : "-rotate-90"}`}
-          />
-        </button>
-        <span className="flex flex-none items-center gap-1.5">
-          <span className="text-[length:var(--t95)] tracking-[1px]">
-            <span style={{ color: "var(--ok)" }}>+{add}</span>{" "}
-            <span style={{ color: "var(--err)" }}>−{del}</span>
-          </span>
-          {shownMax > 0 && hidden > 0 && (
-            <HeadBtn title="show the whole diff" onClick={() => setShownMax(patch.length)}>
-              +{hidden} LINES ⌄
-            </HeadBtn>
-          )}
-        </span>
-      </div>
-      <div className="overflow-x-auto px-2.5 py-1.5 font-mono text-[length:var(--t115)] leading-[1.55] empty:hidden">
-        {shown.map((line, i) => (
-          <div key={i} className="whitespace-pre" style={{ color: diffColor(line) }}>
-            {line || " "}
-          </div>
-        ))}
-      </div>
-    </div>
+      <FilePath path={path} />
+    </ActionRow>
   );
 }
 
-/** The directory takes the truncation, the filename never gets cut. */
+/** A path in the form a reader uses: the filename, and just enough directory in
+ *  front of it to place the file. The head of an absolute path is a mount point
+ *  nobody reads — and it is exactly what a plain truncation keeps, cutting off
+ *  the one part that identifies the file. */
+function shortDir(dir: string): string {
+  const parts = dir.split("/").filter(Boolean);
+  return parts.length > 2 ? `\u2026/${parts.slice(-2).join("/")}/` : dir;
+}
+
+/** The directory takes the truncation, the filename never gets cut. A flex row,
+ *  not one truncating line: `text-overflow` cuts the tail, and the tail is the
+ *  filename — so the directory is the part allowed to shrink. */
 function FilePath({ path }: { path: string }) {
   const cut = path.lastIndexOf("/");
+  const dir = cut >= 0 ? path.slice(0, cut + 1) : "";
+  const short = shortDir(dir);
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[length:var(--t12)]" title={path}>
-      <FileIcon name={path} size={12} />
-      <span className="truncate text-muted-2">{cut >= 0 ? path.slice(0, cut + 1) : ""}</span>
-      <span className="flex-none text-foreground-bright">{path.slice(cut + 1)}</span>
+    <span className="ax-path" title={path}>
+      {/* Resting, the path shows the tail that identifies the file; hovering
+          swaps in the real one, head and all. Both are rendered and toggled in
+          CSS — the same hard cut a command's phrase makes. */}
+      <span className="d text-muted-2">
+        {short === dir ? dir : (
+          <>
+            <span className="group-hover/act:hidden">{short}</span>
+            <span className="hidden group-hover/act:inline">{dir}</span>
+          </>
+        )}
+      </span>
+      <span className="n text-foreground-bright">{path.slice(cut + 1)}</span>
     </span>
   );
 }
 
-/** The right-hand end of a tool card: what came back, then how long it took.
- *  Both are optional — an unfinished call has neither. */
+/** The ruled lines of the page a read looked at but never showed you. */
+function PageLines() {
+  return (
+    <span className="ax-page" aria-hidden>
+      {[13, 8, 11].map((w) => <i key={w} style={{ width: w }} />)}
+    </span>
+  );
+}
+
+/** What came back, then how long it took — the ledger's consequence cell. Both
+ *  are optional; an unfinished call has neither. Under a second nothing was
+ *  slow, so the figure is noise on every row and only the waits are printed. */
 function Took({ ms, stat, error }: { ms?: number; stat?: string; error?: boolean }) {
   if (!slow(ms) && !stat) return null;
   return (
-    <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[1px]">
+    <>
       {stat && (
         <span className="max-w-[220px] truncate" style={error ? { color: "var(--err)" } : undefined} title={stat}>
           {stat}
         </span>
       )}
-      {stat && slow(ms) ? <span className="text-muted-2" aria-hidden>·</span> : null}
-      {slow(ms) ? <span className="text-muted-2">{dur(ms)}</span> : null}
-    </span>
+      {slow(ms) ? <span>{dur(ms)}</span> : null}
+    </>
   );
 }
 
@@ -525,7 +528,7 @@ function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animat
   const peek = (text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
   const head = (
     <>
-      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[2px]">
+      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1.5px]">
         <Brain size={11} aria-hidden />
         THOUGHT
       </span>
@@ -546,7 +549,7 @@ function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animat
   );
   return (
     <div
-      className="my-1.5 ml-[18px] text-muted-2"
+      className="ml-[18px] text-muted-2"
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       {text ? (
@@ -581,7 +584,7 @@ function LogRow({ src, label, text, error, animate }:
   const color = error ? "var(--err)" : undefined;
   return (
     <div
-      className="my-1.5 ml-[18px] text-muted-2"
+      className="ml-[18px] text-muted-2"
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <button
@@ -604,263 +607,343 @@ function LogRow({ src, label, text, error, animate }:
   );
 }
 
-/** A read is a page glanced at: no box at all — a hairline gutter, the path, and
- *  the page's own ruled lines at the end, with a scanline crossing it once. The
- *  quietest card in a turn, because looking at a file changed nothing. */
-function ReadCard({ path, ms, stat, error, animate }:
-  { path: string; ms?: number; stat?: string; error?: boolean; animate: boolean }) {
-  const accent = toolAccent("Read");
-  return (
-    <div
-      className="relative my-1.5 ml-[18px] flex items-center gap-2.5 overflow-hidden py-1 pl-2.5 pr-2.5"
-      style={{
-        background: `linear-gradient(90deg, color-mix(in srgb, ${accent} 8%, transparent), transparent 55%)`,
-        ...(animate ? { animation: "readIn .3s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
-    >
-      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[2px]" style={{ color: accent }}>
-        <BookOpen size={11} aria-hidden />
-        READ
-      </span>
-      <span aria-hidden className="h-3 w-px flex-none" style={{ background: tagEdge(accent) }} />
-      <FilePath path={path} />
-      {/* the lines of the page we read but don't show */}
-      <span aria-hidden className="flex flex-none flex-col gap-[2px] opacity-45">
-        {[14, 9, 12].map((w) => (
-          <i key={w} className="block h-px" style={{ width: w, background: accent }} />
-        ))}
-      </span>
-      <Took ms={ms} stat={stat} error={error} />
-      {animate && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 h-px"
-          style={{ background: accent, boxShadow: `0 0 8px ${accent}`, animation: "scanread .6s ease-out both" }}
-        />
-      )}
-    </div>
-  );
-}
+/** One thing the model did, as a row of the ledger: a bar in the tool's accent,
+ *  a tag wearing that kind's shape, what it acted on, what came back — and, when
+ *  there is a payload worth reading, a drawer that opens under it in place.
+ *
+ *  The row replaces the nine bordered cards this file used to draw. Those cards
+ *  each had their own frame, their own left edge and their own height, and a
+ *  turn of seven of them read as seven grey slabs: the shapes told them apart
+ *  only once you stopped to look. So the frames went and the shapes moved onto
+ *  the tag, whose cell is a fixed width for every kind — alignment from the
+ *  cell, character from what's drawn inside it.
+ *
+ *  `drawer` is a thunk: a shut row must not build a body it isn't showing, and
+ *  most rows in a long turn are shut. */
+/** A row telling the rest of its block to match it. Shift-click is one gesture
+ *  for "open all of these", and a block is exactly a run of adjacent rows in the
+ *  DOM — so the rows talk to each other through it rather than through a context
+ *  that would have to know what a block is. */
+const BULK = "ax-bulk";
 
-/** A write is a file changed: boxed, a solid bar down the side and the tag filled
- *  in rather than outlined — the loudest one-line card, because it did something.
- *  Written on left to right. */
-function WriteCard({
-  name,
-  path,
-  ms,
-  stat,
-  error,
-  animate,
-}: {
-  name: string;
-  path: string;
-  ms?: number;
-  stat?: string;
-  error?: boolean;
-  animate: boolean;
-}) {
-  const accent = toolAccent(name);
-  return (
-    <div
-      className="relative my-1.5 ml-[18px] flex items-center gap-2.5 overflow-hidden border border-l-[3px] bg-[var(--ac-03)] py-1.5 pl-2.5 pr-2.5"
-      style={{
-        borderColor: edge(accent),
-        borderLeftColor: accent,
-        ...(animate ? { animation: "writeOn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
-    >
-      <span
-        className="flex flex-none items-center gap-1.5 px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
-        style={{ background: accent, color: "var(--acc-on)" }}
-      >
-        <PenLine size={11} aria-hidden />
-        {name.toUpperCase()}
-      </span>
-      <FilePath path={path} />
-      <Took ms={ms} stat={stat} error={error} />
-    </div>
-  );
-}
-
-/** The shell the one-line tool cards share: a hairline box in the tool's accent,
- *  an icon + tag, that tool's own line, then how long it took. */
-function ToolBox({
+function ActionRow({
+  tier,
+  shape,
   accent,
   tag,
-  icon,
-  ms,
+  lead,
   stat,
-  error,
+  drawer,
   animate,
+  running,
+  error,
+  startOpen = false,
   children,
 }: {
+  tier: Tier;
+  shape?: Shape;
   accent: string;
-  tag: string;
-  icon: React.ReactNode;
-  ms?: number;
-  stat?: string;
-  error?: boolean;
+  /** Omitted inside a terminal window — its header already said BASH. */
+  tag?: string;
+  /** A glyph in front of the object, where it says something the tag can't. */
+  lead?: ReactNode;
+  stat?: ReactNode;
+  drawer?: () => ReactNode;
   animate: boolean;
-  children: React.ReactNode;
+  running?: boolean;
+  error?: boolean;
+  startOpen?: boolean;
+  children: ReactNode;
 }) {
+  const [open, setOpen] = useState(startOpen);
+  const ref = useRef<HTMLDivElement>(null);
+  const hasDrawer = !!drawer;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !hasDrawer) return;
+    const on = (e: Event) => setOpen((e as CustomEvent<boolean>).detail);
+    el.addEventListener(BULK, on);
+    return () => el.removeEventListener(BULK, on);
+  }, [hasDrawer]);
+
+  const toggle = hasDrawer
+    ? (e?: React.MouseEvent | React.KeyboardEvent) => {
+        const next = !open;
+        setOpen(next);
+        // Shift takes the block with it. A drawer exists to save you opening
+        // rows one at a time; on a turn that ran nine commands, doing it nine
+        // times is the thing it was meant to spare you.
+        if (!e?.shiftKey || !ref.current) return;
+        for (const dir of ["previousElementSibling", "nextElementSibling"] as const) {
+          let n = ref.current[dir];
+          while (n instanceof HTMLElement &&
+                 (n.classList.contains("actrow") || n.classList.contains("ax-drawer"))) {
+            if (n.classList.contains("actrow"))
+              n.dispatchEvent(new CustomEvent(BULK, { detail: next }));
+            n = n[dir];
+          }
+        }
+      }
+    : undefined;
   return (
-    <div
-      className="my-1.5 ml-[18px] flex items-center gap-2.5 border bg-[var(--ac-03)] px-2.5 py-1.5"
-      style={{
-        borderColor: edge(accent),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
-    >
-      <span
-        className="flex flex-none items-center gap-1.5 border px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
-        style={{ color: accent, borderColor: tagEdge(accent) }}
+    <>
+      <div
+        ref={ref}
+        className="actrow group/act"
+        data-tier={tier}
+        data-err={error ? "" : undefined}
+        data-run={running ? "" : undefined}
+        style={{
+          ...({ "--h": accent } as React.CSSProperties),
+          ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
+        }}
+        role={toggle ? "button" : undefined}
+        tabIndex={toggle ? 0 : undefined}
+        aria-expanded={toggle ? open : undefined}
+        title={hasDrawer ? "click to open · shift-click for the whole block" : undefined}
+        onClick={toggle}
+        onKeyDown={
+          toggle &&
+          ((e: React.KeyboardEvent) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggle(e);
+            }
+          })
+        }
       >
-        {icon}
-        {tag}
-      </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-muted-foreground">
-        {children}
-      </span>
-      <Took ms={ms} stat={stat} error={error} />
-    </div>
+        <i className="ax-bar" aria-hidden />
+        <span className="ax-tagcell">
+          {tag !== undefined && (
+            <span className="ax-tag" data-shape={shape}>
+              {shape === "term" && (
+                <span className="ax-lights" aria-hidden>
+                  <i /><i /><i />
+                </span>
+              )}
+              {tag}
+            </span>
+          )}
+        </span>
+        <span className="ax-obj">
+          {lead ? <span className="ax-lead" aria-hidden>{lead}</span> : null}
+          {children}
+        </span>
+        <span className="ax-stat">{stat}</span>
+        <span className="ax-chev">
+          {drawer && (
+            <ChevronDown
+              size={12}
+              aria-hidden
+              className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
+            />
+          )}
+        </span>
+      </div>
+      {open && drawer ? <div className="ax-drawer">{drawer()}</div> : null}
+    </>
   );
 }
 
-/** A lookup is a query typed into a field: everything dashed, because nothing here
- *  is committed yet — the pattern sits in its own inset box, as entered. */
-function SearchCard({
-  name,
-  summary,
-  ms,
-  stat,
-  error,
-  animate,
+/** The head of a drawer: the exact thing that ran, and the two things you might
+ *  want to do with it. Selectable — the row above it is a button, this isn't. */
+function DrawerHead({
+  mark,
+  text,
+  onRerun,
+  children,
 }: {
-  name: string;
-  summary: string;
-  ms?: number;
-  stat?: string;
-  error?: boolean;
-  animate: boolean;
+  mark: string;
+  text: string;
+  onRerun?: () => void;
+  children?: ReactNode;
 }) {
-  const accent = toolAccent(name);
   return (
     <div
-      className="my-1.5 ml-[18px] flex items-center gap-2.5 border border-dashed px-2.5 py-1.5"
-      style={{
-        borderColor: tagEdge(accent),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
+      className="flex items-start gap-2 break-all pb-1.5 text-[var(--txm)]"
+      onClick={(e) => e.stopPropagation()}
     >
-      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1px]" style={{ color: accent }}>
-        <Search size={11} aria-hidden />
-        {name.toUpperCase()}
-      </span>
-      <span
-        className="min-w-0 flex-1 truncate border border-dashed px-1.5 py-px font-mono text-[length:var(--t12)] text-foreground-bright"
-        style={{ borderColor: edge(accent) }}
-      >
-        {summary}
-      </span>
-      <Took ms={ms} stat={stat} error={error} />
-    </div>
-  );
-}
-
-/** The one round card in a square UI, because the web is not this machine: a
- *  browser's address bar, host first, the rest of the URL dimmed behind it. */
-function WebCard({
-  name,
-  summary,
-  ms,
-  stat,
-  error,
-  animate,
-}: {
-  name: string;
-  summary: string;
-  ms?: number;
-  stat?: string;
-  error?: boolean;
-  animate: boolean;
-}) {
-  const accent = toolAccent(name);
-  const host = hostOf(summary);
-  return (
-    <div
-      className="my-1.5 ml-[18px] flex items-center gap-2 rounded-full border bg-[var(--ac-03)] py-1 pl-1.5 pr-3"
-      style={{
-        borderColor: edge(accent),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
-    >
-      <span
-        className="flex flex-none items-center gap-1.5 rounded-full px-2 py-px text-[length:var(--t10)] tracking-[1px]"
-        style={{ color: accent, background: `color-mix(in srgb, ${accent} 14%, transparent)` }}
-      >
-        <Globe size={11} aria-hidden />
-        {name === "WebSearch" ? "SEARCH" : "FETCH"}
-      </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-muted-foreground">
-        {host ? (
-          <>
-            <span className="text-foreground-bright">{host}</span>
-            <span className="text-muted-2">{summary.slice(summary.indexOf(host) + host.length)}</span>
-          </>
-        ) : (
-          `“${summary}”`
+      <span className="flex-none text-[var(--txg)]" aria-hidden>{mark}</span>
+      <span className="min-w-0 flex-1">{children ?? text}</span>
+      <span className="ml-auto flex flex-none gap-2">
+        <CopyBtn text={text} title="copy" />
+        {onRerun && (
+          <HeadBtn title="run this again in a terminal" onClick={onRerun}>
+            <RotateCw size={12} aria-hidden />
+          </HeadBtn>
         )}
       </span>
-      <Took ms={ms} stat={stat} error={error} />
     </div>
   );
 }
 
-/** A call out of this process and into another one: no side edges, a patch cable
- *  running from the server's tag across to the tool it reached, then what it was
- *  called with — "get task" alone never said which task. */
-function McpCard({
-  name,
-  summary,
-  ms,
-  stat,
-  error,
-  animate,
-}: {
-  name: string;
-  summary: string;
-  ms?: number;
-  stat?: string;
-  error?: boolean;
-  animate: boolean;
+/** The body of a drawer that is just text — output, a response, a brief. */
+function DrawerText({ text, error }: { text: string; error?: boolean }) {
+  return (
+    <pre
+      className="max-h-[180px] overflow-auto whitespace-pre-wrap break-all border-l pl-2.5 leading-[1.55]"
+      style={{
+        color: error ? "var(--err)" : "var(--txd)",
+        borderColor: error ? "color-mix(in srgb, var(--err) 30%, transparent)" : "var(--ac-08)",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {text}
+    </pre>
+  );
+}
+
+/** The foot of a drawer: the numbers, in the HUD's own voice. */
+function DrawerFoot({ children }: { children: ReactNode }) {
+  return (
+    <div className="mt-1.5 flex gap-3.5 font-[family-name:var(--font-display)] text-[length:var(--t95)] uppercase tracking-[1.5px] text-[var(--txf)]">
+      {children}
+    </div>
+  );
+}
+
+/** A read only looked at a page, so it wears no frame at all and ends in the
+ *  ruled lines of what it read. The quietest row there is. */
+function ReadCard({ path, ms, stat, error, animate }:
+  { path: string; ms?: number; stat?: string; error?: boolean; animate: boolean }) {
+  return (
+    <ActionRow
+      tier="glance"
+      shape={toolShape("Read")}
+      accent={toolAccent("Read")}
+      tag="READ"
+      animate={animate}
+      error={error}
+      stat={<><PageLines /><Took ms={ms} stat={stat} error={error} /></>}
+    >
+      <FilePath path={path} />
+    </ActionRow>
+  );
+}
+
+/** A write is filled in — dark text on solid hue, the loudest a tag gets —
+ *  because something on disk is different now. */
+function WriteCard({ name, path, ms, stat, error, animate }: {
+  name: string; path: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
 }) {
-  const accent = toolAccent(name);
+  return (
+    <ActionRow
+      tier="mark"
+      shape={toolShape(name)}
+      accent={toolAccent(name)}
+      tag={name.toUpperCase()}
+      animate={animate}
+      error={error}
+      stat={<Took ms={ms} stat={stat} error={error} />}
+    >
+      <FilePath path={path} />
+    </ActionRow>
+  );
+}
+
+/** A lookup is a query as entered: the pattern sits in its own dashed inset,
+ *  because nothing here is committed yet. */
+function SearchCard({ name, summary, ms, stat, error, animate }: {
+  name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+}) {
+  return (
+    <ActionRow
+      tier="glance"
+      shape={toolShape(name)}
+      accent={toolAccent(name)}
+      tag={name.toUpperCase()}
+      animate={animate}
+      error={error}
+      stat={<Took ms={ms} stat={stat} error={error} />}
+    >
+      <span className="ax-q">{summary}</span>
+    </ActionRow>
+  );
+}
+
+/** The one round tag in a square UI, because the web is not this machine: the
+ *  host reads bright, the rest of the URL dims behind it. */
+function WebCard({ name, summary, ms, stat, error, animate }: {
+  name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+}) {
+  const host = hostOf(summary);
+  return (
+    <ActionRow
+      tier="reach"
+      shape={toolShape(name)}
+      accent={toolAccent(name)}
+      tag={name === "WebSearch" ? "SEARCH" : "FETCH"}
+      animate={animate}
+      error={error}
+      // Round at both ends: the tag and what came back. There is no status code
+      // to show — the stream carries a size, not a response — so the pill holds
+      // the real figure rather than a fabricated 200.
+      stat={
+        stat && !error
+          ? <><span className="ax-pill">{stat}</span>{slow(ms) ? <span>{dur(ms)}</span> : null}</>
+          : <Took ms={ms} stat={stat} error={error} />
+      }
+    >
+      {host ? (
+        <>
+          <span className="text-foreground-bright">{host}</span>
+          <span className="text-muted-2">{summary.slice(summary.indexOf(host) + host.length)}</span>
+        </>
+      ) : (
+        <span className="ax-q">{summary}</span>
+      )}
+    </ActionRow>
+  );
+}
+
+/** A call out of this process and into another one, so the server's tag trails a
+ *  patch cable across to the tool it reached — "get task" alone never said which
+ *  task, so what it was called with follows. */
+function McpCard({ name, summary, ms, stat, error, animate }: {
+  name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+}) {
   const { server, tool } = mcpParts(name);
   return (
-    <div
-      className="my-1.5 ml-[18px] flex items-center gap-2 border-y bg-[var(--ac-03)] px-2.5 py-1.5"
-      style={{
-        borderColor: edge(accent),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
+    <ActionRow
+      tier="reach"
+      shape={toolShape(name)}
+      accent={toolAccent(name)}
+      tag={server.toUpperCase()}
+      animate={animate}
+      error={error}
+      stat={<Took ms={ms} stat={stat} error={error} />}
     >
-      <span
-        className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1px]"
-        style={{ color: accent }}
-      >
-        <Plug size={11} aria-hidden />
-        {server.toUpperCase()}
-      </span>
-      <span
-        aria-hidden
-        className="h-px w-5 flex-none"
-        style={{ backgroundImage: `repeating-linear-gradient(90deg, ${accent} 0 2px, transparent 2px 5px)` }}
-      />
-      <span className="flex-none font-mono text-[length:var(--t12)] text-foreground-bright">{tool}</span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-muted-2">{summary}</span>
-      <Took ms={ms} stat={stat} error={error} />
-    </div>
+      <span className="text-foreground-bright">{tool}</span>
+      {summary ? <span className="text-muted-2">{` · ${summary}`}</span> : null}
+    </ActionRow>
+  );
+}
+
+/** A delegated run: a rail down the tag's left, because it is a turn nested
+ *  inside your turn. The brief is a paragraph, so the drawer holds it whole. */
+function AgentCard({ name, summary, ms, stat, error, animate }: {
+  name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+}) {
+  return (
+    <ActionRow
+      tier="reach"
+      shape={toolShape(name)}
+      accent={toolAccent(name)}
+      tag={name.toUpperCase()}
+      animate={animate}
+      error={error}
+      stat={<Took ms={ms} stat={stat} error={error} />}
+      drawer={summary ? () => (
+        <>
+          <DrawerHead mark="›" text={summary} />
+          {stat ? <DrawerText text={stat} error={error} /> : null}
+          {slow(ms) ? <DrawerFoot><span>{dur(ms)}</span></DrawerFoot> : null}
+        </>
+      ) : undefined}
+    >
+      {summary}
+    </ActionRow>
   );
 }
 
@@ -874,7 +957,7 @@ function ToolImages({ paths }: { paths: string[] }) {
   const live = paths.filter((p) => !gone.has(p));
   if (!live.length) return null;
   return (
-    <div className="my-1.5 ml-[18px] flex flex-wrap gap-2">
+    <div className="mt-2 ml-[18px] flex flex-wrap gap-2">
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
       {live.map((p) => {
         const src = api.attachmentUrl(p);
@@ -901,9 +984,9 @@ function callLine(name: string, summary: string): string {
   return summary ? `${tool} · ${summary}` : tool;
 }
 
-/** A run of back-to-back calls of one kind drawn as one card, the way Bash calls
- *  share a terminal: the tag once in the header, a row per call. Eight MCP calls
- *  used to say the server's name eight times. */
+/** A run of back-to-back calls of one kind, drawn the way a run of commands is:
+ *  one window, the tag once in its header, a row per call. Eight MCP calls used
+ *  to say the server's name eight times. */
 function CallGroup({
   name,
   calls,
@@ -917,18 +1000,19 @@ function CallGroup({
   const accent = toolAccent(name);
   const tag = kind === "mcp" ? mcpParts(name).server : kind;
   const total = calls.reduce((t, c) => t + (c.ms ?? 0), 0);
+  const failed = calls.some((c) => c.error);
 
   return (
     <div
-      className="my-1.5 ml-[18px] border bg-[var(--ac-03)]"
+      className="ax-window"
       style={{
-        borderColor: edge(accent),
+        borderColor: failed ? "color-mix(in srgb, var(--err) 32%, transparent)" : undefined,
         ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
       <div
         className="flex items-center gap-2 border-b px-2.5 py-1 text-[length:var(--t95)] tracking-[2px]"
-        style={{ borderColor: edge(accent), color: accent }}
+        style={{ borderColor: edge(accent), color: failed ? "var(--err)" : accent }}
       >
         {kind === "mcp" ? <Plug size={11} aria-hidden /> : kind === "web" ? <Globe size={11} aria-hidden /> : <Bot size={11} aria-hidden />}
         <span className="truncate">{tag.toUpperCase()}</span>
@@ -936,66 +1020,25 @@ function CallGroup({
         {slow(total) && <span className="flex-none tracking-[1px] text-muted-2">· {dur(total)}</span>}
       </div>
       {calls.map((c, k) => (
-        <div key={k} className="border-t border-border first:border-t-0">
-          <div className="flex items-center gap-2.5 px-2.5 py-1">
-            <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--t12)] text-foreground-bright">
-              {callLine(c.name, c.summary)}
-            </span>
-            <Took ms={c.ms} stat={c.error ? undefined : c.stat} error={c.error} />
-          </div>
-          {c.error && c.stat ? (
-            <div className="px-2.5 pb-1.5"><ErrLine text={c.stat} /></div>
-          ) : null}
-        </div>
+        <ActionRow
+          key={k}
+          tier="reach"
+          accent={accent}
+          animate={false}
+          error={c.error}
+          stat={<Took ms={c.ms} stat={c.error ? undefined : c.stat} error={c.error} />}
+          drawer={c.error && c.stat ? () => <ErrLine text={c.stat as string} /> : undefined}
+        >
+          {callLine(c.name, c.summary)}
+        </ActionRow>
       ))}
     </div>
   );
 }
 
-/** A delegated run (Task / Skill): a rail down the side and the brief it was
- *  handed, which is a paragraph, not a path — so it wraps instead of truncating. */
-function AgentCard({
-  name,
-  summary,
-  ms,
-  stat,
-  error,
-  animate,
-}: {
-  name: string;
-  summary: string;
-  ms?: number;
-  stat?: string;
-  error?: boolean;
-  animate: boolean;
-}) {
-  const accent = toolAccent(name);
-  return (
-    <div
-      className="my-1.5 ml-[18px] flex items-start gap-2.5 border border-l-2 bg-[var(--ac-03)] px-2.5 py-1.5"
-      style={{
-        borderColor: edge(accent),
-        borderLeftColor: accent,
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
-    >
-      <span
-        className="mt-px flex flex-none items-center gap-1.5 border px-1.5 py-px text-[length:var(--t10)] tracking-[1px]"
-        style={{ color: accent, borderColor: tagEdge(accent) }}
-      >
-        <Bot size={11} aria-hidden />
-        {name.toUpperCase()}
-      </span>
-      <span className="min-w-0 flex-1 line-clamp-2 text-[length:var(--t12)] leading-relaxed text-muted-foreground">
-        {summary}
-      </span>
-      <span className="mt-[3px]"><Took ms={ms} stat={stat} error={error} /></span>
-    </div>
-  );
-}
-
-/** Everything that isn't a terminal, a file, or a diff — each family drawn as
- *  what it actually did: a lookup, a fetch, a delegated run, a plan, an MCP call. */
+/** Everything that isn't a terminal, a file or a diff — each family drawn as
+ *  what it actually did: a lookup, a fetch, a delegated run, a plan, an MCP
+ *  call. The shape it wears is its kind's, and its tier is its consequence. */
 function ToolCard({
   name,
   summary,
@@ -1018,27 +1061,19 @@ function ToolCard({
   if (kind === "mcp") return <McpCard name={name} summary={summary} {...rest} />;
   if (kind === "web") return <WebCard name={name} summary={summary} {...rest} />;
   if (kind === "search") return <SearchCard name={name} summary={summary} {...rest} />;
-  if (kind === "plan")
-    return (
-      <ToolBox
-        accent={toolAccent(name)}
-        tag="PLAN"
-        icon={<ListChecks size={11} aria-hidden />}
-        {...rest}
-      >
-        {summary || "checklist updated"}
-      </ToolBox>
-    );
 
   return (
-    <ToolBox
+    <ActionRow
+      tier={toolTier(name)}
+      shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={name.toUpperCase()}
-      icon={<Wrench size={11} aria-hidden />}
-      {...rest}
+      tag={kind === "plan" ? "PLAN" : name.toUpperCase()}
+      animate={animate}
+      error={error}
+      stat={<Took ms={ms} stat={stat} error={error} />}
     >
-      {summary}
-    </ToolBox>
+      {summary || (kind === "plan" ? "checklist updated" : "")}
+    </ActionRow>
   );
 }
 
@@ -1068,10 +1103,14 @@ function RailNode() {
 /** One block of the model's prose, drawn as the mirror of your prompt bubble —
  *  teal where yours is violet, the solid bar down the left where yours wears one
  *  down the right, shrink-wrapped to at most the same 78% — so the two sides of
- *  the conversation read as two sides. The two things you actually want to do
- *  with it float over the text on hover rather than taking a row of their own: a
- *  transcript is mostly prose, and a permanent toolbar per paragraph would read
- *  as chrome. */
+ *  the conversation read as two sides. Filling the turn's column instead was
+ *  tried and reverted: it squares the right edge against the tool cards, but a
+ *  message then reads as another card rather than as the other half of a
+ *  conversation, which is the distinction worth keeping. Its padding matches the
+ *  cards' so the prose still starts in their text column. The two things you
+ *  actually want to do with it float over the text on hover rather than taking a
+ *  row of their own: a transcript is mostly prose, and a permanent toolbar per
+ *  paragraph would read as chrome. */
 function MessageBlock({
   text, onQuote, children,
 }: {
@@ -1094,7 +1133,7 @@ function MessageBlock({
   return (
     <div
       ref={ref}
-      className="group/msg relative min-w-0 max-w-[78%] break-words border border-l-[3px] px-3 py-1.5 text-foreground-bright"
+      className="group/msg relative min-w-0 max-w-[78%] break-words border border-l-[3px] px-2.5 py-1.5 text-foreground-bright"
       style={{
         borderColor: "var(--ac-22)",
         borderLeftColor: "var(--acc)",
@@ -1129,26 +1168,42 @@ function MessageBlock({
   );
 }
 
-/** A run of plain lookups (reads, greps, globs) collapsed to one line, so the
- *  turn reads as the commands and edits that actually changed something. */
+/** A run of plain lookups (reads, greps, globs) collapsed to one line, so a turn
+ *  reads as the commands and edits that actually changed something. It wears the
+ *  bare tag too — folded or not, looking at a file is the quiet thing. */
 function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void }) {
   const counts = new Map<string, number>();
   for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
-  const label = [...counts].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(" · ");
+  const label = [...counts].map(([n, c]) => (c > 1 ? `${n} \u00d7${c}` : n)).join(" · ");
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
+      className="actrow"
+      data-tier="glance"
+      role="button"
+      tabIndex={0}
       title="show these steps"
-      className="my-1.5 ml-[18px] flex w-[calc(100%-18px)] items-center gap-2.5 border border-border bg-[var(--ac-03)] px-2.5 py-1.5 text-left hover:border-[var(--border-bright)]"
+      style={{ "--h": "var(--purple)" } as React.CSSProperties}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
-      <span className="flex flex-none items-center gap-1.5 border border-border px-1.5 py-px text-[length:var(--t10)] tracking-[1px] text-muted-foreground">
-        <Layers size={11} aria-hidden />
-        {names.length} STEPS
+      <i className="ax-bar" aria-hidden />
+      <span className="ax-tagcell">
+        <span className="ax-tag" data-shape="bare">
+          <Layers size={11} aria-hidden />
+          LOOKUPS
+        </span>
       </span>
-      <span className="min-w-0 truncate text-[length:var(--t12)] text-muted-2">{label}</span>
-      <span className="ml-auto flex-none text-[length:var(--t10)] text-muted-2">⌄</span>
-    </button>
+      <span className="ax-obj">{label}</span>
+      <span className="ax-stat">{names.length}</span>
+      <span className="ax-chev">
+        <ChevronDown size={12} aria-hidden className="-rotate-90" />
+      </span>
+    </div>
   );
 }
 
@@ -1220,7 +1275,7 @@ export const RunStream = memo(function RunStream({
   const { folds, headOf } = foldChips(events, (i) => {
     const e = events[i];
     if (e.type !== "tool") return false;
-    return BLOCK_KINDS.has(toolKind(e.name)) || !!doneOf(e)?.patch;
+    return toolTier(e.name) !== "glance" || !!doneOf(e)?.patch;
   });
   // Back-to-back calls of one kind share a card — Bash a terminal window, the
   // rest a CallGroup; the head draws them all, the rest render nothing. MCP
@@ -1231,7 +1286,7 @@ export const RunStream = memo(function RunStream({
     if (e.name === "Bash") return "bash";
     const kind = toolKind(e.name);
     if (kind === "mcp") return `mcp:${mcpParts(e.name).server}`;
-    return BLOCK_KINDS.has(kind) ? kind : null; // the quiet ones fold into chips
+    return toolTier(e.name) === "glance" ? null : kind; // the quiet ones fold into chips
   };
   const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
 
@@ -1397,7 +1452,7 @@ export const RunStream = memo(function RunStream({
                   animate={animate}
                 />
                 {done?.is_error && done.stat ? (
-                  <div className="my-1.5 ml-[18px]"><ErrLine text={done.stat} /></div>
+                  <div className="mt-2 ml-[18px]"><ErrLine text={done.stat} /></div>
                 ) : null}
                 {/* Screenshots the tool handed back — Playwright, chrome-devtools,
                     Figma. Drawn under whatever card the tool got, so every kind

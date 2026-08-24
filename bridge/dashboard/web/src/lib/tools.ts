@@ -37,6 +37,46 @@ export function toolAccent(name: string): string {
   return ACCENT[toolKind(name)];
 }
 
+/** How loud a tool's row is, which is its consequence and not its kind:
+ *  `mark` changed something on disk (or failed), `reach` left this process,
+ *  `glance` only looked. A glance is the only tier that folds away — a run of
+ *  reads is the noise a turn makes on its way to doing something. */
+export type Tier = "mark" | "reach" | "glance";
+
+const TIER: Record<ToolKind, Tier> = {
+  write: "mark", plan: "mark",
+  bash: "reach", agent: "reach", web: "reach", mcp: "reach",
+  read: "glance", search: "glance",
+  plain: "reach",
+};
+
+export function toolTier(name: string): Tier {
+  return TIER[toolKind(name)];
+}
+
+/** The silhouette a row's tag wears. Each is the motif that kind's card used to
+ *  carry as a whole box — a read has no frame because it only looked at a page,
+ *  a write is filled because something on disk is different now — moved onto the
+ *  tag, where it costs no height. The tag cell is one fixed width for every
+ *  kind, so shape varies without the objects falling out of their column. */
+export type Shape = "bare" | "fill" | "dash" | "round" | "cable" | "rail" | "box" | "term";
+
+const SHAPE: Record<ToolKind, Shape> = {
+  read: "bare",     // no frame at all — the quietest thing a row can be
+  search: "dash",   // a query: nothing is committed yet
+  web: "round",     // the one round thing in a square UI — the web is not this machine
+  mcp: "cable",     // out of this process, into another
+  agent: "rail",    // a turn nested inside your turn
+  bash: "term",     // three lights: a shell ran on your machine
+  plan: "box",
+  write: "fill",    // dark on solid hue: the loudest a row gets
+  plain: "box",
+};
+
+export function toolShape(name: string): Shape {
+  return SHAPE[toolKind(name)];
+}
+
 /** `mcp__github__list_issues` → { server: "github", tool: "list issues" }. The
  *  raw name is unreadable as a tag. */
 export function mcpParts(name: string): { server: string; tool: string } {
