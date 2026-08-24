@@ -210,5 +210,50 @@ def test_all_lessons_skips_repos_that_never_had_one(repo, monkeypatch):
     assert learn.all_lessons() == []
 
 
+# --- topics: the free grouping inside a concept shelf ------------------------
+
+TOPIC_LESSON = ("# Streaming Turns Over SSE\n> concept: protocols & apis\n"
+                "> topic: server push\n\n**The idea** — one-way text frames.\n")
+
+
+def test_a_topic_line_rides_with_the_lesson(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(TOPIC_LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    got = learn.lessons(repo)[0]
+    assert got["topic"] == "server push"
+    assert got["concept"] == "protocols & apis"    # both header lines parse
+
+
+def test_a_topic_without_a_concept_still_parses(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub("# A Title\n> topic: server push\n\n**The idea** — x.\n")
+    learn.generate_after_turn(1, sess, tid)
+
+    got = learn.lessons(repo)[0]
+    assert got["topic"] == "server push"
+    assert got["concept"] == ""
+
+
+def test_prompt_asks_for_a_topic_and_feeds_prior_ones(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(TOPIC_LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    captured = {}
+
+    def cap(chat, prompt, **k):
+        captured["p"] = prompt
+        return ("SKIP", None, 0.0, False)
+
+    runner.run_blocking = cap
+    sess, tid = _session_with_turn(repo)
+    learn.generate_after_turn(1, sess, tid)
+
+    assert "> topic:" in captured["p"]              # the format asks for one
+    assert "server push" in captured["p"]           # prior topics are fed back
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
