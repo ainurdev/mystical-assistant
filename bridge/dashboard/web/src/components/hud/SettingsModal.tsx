@@ -1453,7 +1453,7 @@ function FlowsPanel() {
       setCat(r);
       // The picker elsewhere reads the shared store; keep it in step.
       void refreshFlows();
-    } catch { setCat({ enabled: false, flows: [] }); }
+    } catch { setCat({ enabled: false, auto: false, flows: [] }); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 

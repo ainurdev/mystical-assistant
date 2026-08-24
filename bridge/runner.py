@@ -450,6 +450,9 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
+        if is_new:
+            from bridge import flowtype  # local import: runner<->* cycle
+            flowtype.kick(session, prompt)
         result, sid, cost, is_error = run_blocking(
             chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
             flow_section=flow.section_for(session))
@@ -533,6 +536,7 @@ class Job:
         self.resume_id: str | None = None         # claude session id for this run
         self.new_session = False                  # True -> --session-id, else --resume
         self.fork = False                # duplicated session: --resume + --fork-session
+        self.flow_stage: str | None = None  # stage this turn was composed under
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
         # What this turn is waiting on before its first token, or None once the
@@ -1638,6 +1642,13 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         from bridge import toolsets  # local: toolsets imports runner
         if job.store_session_id and not toolsets.ready():
             job.boot = "checking configured MCP servers"
+        fsess = (store.get_session(job.store_session_id)
+                 if job.store_session_id else None)
+        flow_section = flow.section_for(fsess) if fsess else ""
+        # Stamp what this turn was composed under; flow.after_turn validates
+        # against this, so a classify verdict landing mid-turn never gets the
+        # in-flight turn nudged for a card it was never asked to produce.
+        job.flow_stage = fsess.get("stage") if flow_section else None
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
@@ -1646,9 +1657,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         if job.store_session_id else None,
                         autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None,
-                        flow_section=flow.section_for(
-                            store.get_session(job.store_session_id))
-                        if job.store_session_id else "")
+                        flow_section=flow_section)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1913,8 +1922,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime, sha=git.head_sha(cwd))
-        from bridge import titler  # local import: runner<->* cycle
+        from bridge import flowtype, titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
+        if job.new_session:
+            flowtype.kick(session, prompt)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,

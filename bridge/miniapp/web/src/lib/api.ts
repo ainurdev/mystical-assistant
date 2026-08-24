@@ -102,6 +102,7 @@ export interface FlowShape {
 }
 export interface FlowCatalog {
   enabled: boolean;
+  auto: boolean; // AUTO TYPE switch: first message classifies, pickers hide
   flows: FlowShape[];
 }
 

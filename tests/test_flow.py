@@ -174,9 +174,12 @@ def test_resolve_stage_action():
 # --- what the runner calls: per-turn injection and post-turn settlement ------
 
 class _StubJob:
-    """Duck-typed stand-in for runner.Job — after_turn reads only these."""
+    """Duck-typed stand-in for runner.Job — after_turn reads only these.
+    flow_stage is the stage the turn was COMPOSED under (runner stamps it);
+    None means the turn ran before any stage contract existed."""
 
-    def __init__(self, sid, turn_id, result, status="done", chat_id=555):
+    def __init__(self, sid, turn_id, result, status="done", chat_id=555,
+                 flow_stage="fix"):
         self.store_session_id = sid
         self.id = turn_id
         self.result = result
@@ -184,6 +187,7 @@ class _StubJob:
         self.status = status
         self.interrupted = False
         self.chat_id = chat_id
+        self.flow_stage = flow_stage
         self.added = []
 
     def add(self, ev):
@@ -223,7 +227,7 @@ def test_after_turn_gated_stage_does_not_advance():
     body = "```hud-card\n" + json.dumps(
         {"stage": "rootcause", "summary": "found it",
          "fields": {"cause": "c", "fix_plan": "p"}, "advance": True}) + "\n```"
-    flow.after_turn(_StubJob(s["id"], "flow-j3", body))
+    flow.after_turn(_StubJob(s["id"], "flow-j3", body, flow_stage="rootcause"))
     assert store.get_session(s["id"])["stage"] == "rootcause"   # the gate holds
 
 
@@ -239,6 +243,19 @@ def test_after_turn_missing_card_nudges_once(monkeypatch):
     store.start_turn(s["id"], "flow-j5", calls[0]["prompt"], [])
     flow.after_turn(_StubJob(s["id"], "flow-j5", "still prose"))
     assert len(calls) == 1
+
+
+def test_after_turn_skips_turns_composed_before_the_type_landed(monkeypatch):
+    """An auto-classify verdict can type the session mid-turn; the turn already
+    in flight was composed without a contract and must not be nudged."""
+    calls = []
+    from bridge import queue_manager
+    monkeypatch.setattr(queue_manager, "enqueue",
+                        lambda sid, **kw: calls.append(kw) or True)
+    s = _typed(turn="flow-j8")                       # typed by the time it ends
+    j = _StubJob(s["id"], "flow-j8", "prose only", flow_stage=None)
+    flow.after_turn(j)
+    assert j.added == [] and calls == []
 
 
 def test_after_turn_is_a_noop_for_plain_chat_and_bad_turns():

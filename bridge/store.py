@@ -690,6 +690,12 @@ def set_session_stage(session_id: str, stage: "str | None") -> None:
         c.execute("UPDATE sessions SET stage=? WHERE id=?", (stage, session_id))
 
 
+def set_session_stype(session_id: str, stype: "str | None") -> None:
+    """Type a session after creation (the auto-classifier's write path)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET stype=? WHERE id=?", (stype, session_id))
+
+
 def set_turn_stage(turn_id: str, stage: "str | None") -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE turns SET stage=? WHERE id=?", (stage, turn_id))

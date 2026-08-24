@@ -166,7 +166,8 @@ def on_message(msg: dict):
     if text == "/new":
         key = state.project_key(chat_id)
         cat = flow.catalog()
-        if cat["enabled"] and cat["flows"]:
+        # Auto-type on: no picker anywhere — the first message types the session.
+        if cat["enabled"] and cat["flows"] and not cat["auto"]:
             # A type is a choice, so it is buttons; CHAT is the same fresh
             # session /new always made.
             rows = [[{"text": f["label"], "callback_data": f"flow:{f['stype']}"}]

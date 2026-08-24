@@ -5,7 +5,7 @@ import { api, needsYou, type SessionState } from "../lib/api";
 import { useChat } from "../lib/chat";
 import { FolderNavigator } from "./FolderNavigator";
 import { SurfaceBadge } from "./SurfaceBadge";
-import { useFlows } from "../lib/flows";
+import { useFlows, useFlowsAuto } from "../lib/flows";
 
 function ago(sec: number | null): string {
   if (!sec) return "";
@@ -60,6 +60,7 @@ export function ChatSwitcher() {
   const [folders, setFolders] = useState(false);
   const { sessions, sessionId, selectSession, openSessionInProject, newChat } = useChat();
   const flows = useFlows();
+  const flowsAuto = useFlowsAuto();
   // Both queries share the header's caches — no extra polling.
   const { data } = useQuery({
     queryKey: ["running"],
@@ -245,7 +246,7 @@ export function ChatSwitcher() {
               thing you type. The labelled start form is the dashboard's — on a
               phone, one tap and a sentence beats six fields.
               ponytail: no start form here; add if labelled briefs matter on mobile. */}
-          {flows.length > 0 && (
+          {flows.length > 0 && !flowsAuto && (
             <div className="flex flex-wrap gap-1.5 px-3">
               {flows.map((f) => (
                 <button

@@ -55,6 +55,18 @@ FEATURES = (
               "pre-titled session instead, and you can still send it where it was. "
               "Short follow-ups and new sessions never pay for a check, and any "
               "failure lets the prompt through."},
+    {"key": "flowtype", "env": "FLOWTYPE_ENABLE", "label": "AUTO TYPE",
+     "hint": "reads a new session's first message and starts the matching flow",
+     "cost": "1 haiku call per new session",
+     "tokens": "~33k tokens",
+     "about": "Classifies the first message of a fresh session — build, fix, "
+              "probe, ops, review, design, or plain chat — and a match starts "
+              "that flow at its first stage: stage rail, hud-cards, structured "
+              "replies. The message itself is never rewritten, and the verdict "
+              "lands beside the first turn, not in front of it. While this is "
+              "on the NEW SESSION type picker and its forms are hidden "
+              "everywhere; off, they come back. Chat verdicts leave the "
+              "session untyped."},
     {"key": "nextup", "env": "NEXTUP_ENABLE", "label": "NEXT-UP BOARD",
      "hint": "ranked next steps across the repos you touched recently",
      "cost": "1 scout per changed repo, free rung first",
