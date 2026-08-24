@@ -1271,6 +1271,34 @@ export function App() {
     } catch { setLoadingSession(false); }
   }
 
+  /** Start a session that knows what it is for: the type picks the flow, the
+   *  form's fields are its first prompt. */
+  async function typedSession(project: string, stype: string, prompt: string) {
+    openBlank();
+    try {
+      const { session } = await api.createSession(project, undefined, undefined, stype);
+      setSessions((prev) => [session, ...prev]);
+      openSession(session.id);
+      setView("chat");
+      await send(prompt, [], { sessionId: session.id, project, force: true });
+    } catch (e) {
+      setLoadingSession(false);
+      notify("error", (e as Error).message);
+    }
+  }
+
+  /** Approve a gated stage, or move by hand from the rail. The server owns the
+   *  move; this asks for it and takes the answer it gives back. */
+  async function setStage(action: "advance" | "back" | "set", stage?: string) {
+    if (!sessionId) return;
+    try {
+      const r = await api.setStage(sessionId, action, stage);
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, stage: r.stage } : s)));
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
                                  firstPrompt?: string) {
     openBlank();
@@ -1918,6 +1946,7 @@ export function App() {
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
+                  onTypedSession={(rel, stype, prompt) => void typedSession(rel, stype, prompt)}
                 />
               </div>
 
@@ -1949,6 +1978,7 @@ export function App() {
                     void api.dismissAsk(sessionId);
                   } else void send(text, []);
                 }}
+                onStage={(action, stage) => void setStage(action, stage)}
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
                 composer={

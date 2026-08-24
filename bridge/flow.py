@@ -287,6 +287,7 @@ def apply_stage(session_id: str, to_stage: str, by: str, turn_id: str = "") -> N
     append to the store for history, publish for the live stream."""
     from bridge import pubsub
     sess = store.get_session(session_id) or {}
+    turn_id = turn_id or store.latest_turn_id(session_id) or ""
     ev = {"type": "stage", "from": sess.get("stage"), "to": to_stage, "by": by}
     store.set_session_stage(session_id, to_stage)
     seq = store.append_event(session_id, turn_id, ev)
@@ -335,7 +336,8 @@ def after_turn(job, model=None, effort=None) -> None:
         card = parse_card(text)
         errs = validate_card(f, stage, card) if card else ["no hud-card block"]
         if not errs:
-            job.add({"type": "card", "card": card, "stage": stage})
+            job.add({"type": "card", "card": card, "stage": stage,
+                     "gated": bool(stage_by_id(f, stage).get("gate"))})
             store.set_turn_stage(job.id, stage)
             if card.get("advance") is True and not stage_by_id(f, stage).get("gate"):
                 apply_stage(sid, next_stage(f, stage), "auto", turn_id=job.id)

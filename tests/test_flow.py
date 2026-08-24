@@ -155,6 +155,7 @@ def test_apply_stage_writes_and_journals():
     assert st, "a stage transition must be journaled"
     assert st[-1]["from"] == "reproduce" and st[-1]["to"] == "rootcause"
     assert st[-1]["by"] == "user"
+    assert st[-1]["turn_id"] == "flow-ts1"
 
 
 def test_resolve_stage_action():
@@ -211,6 +212,7 @@ def test_after_turn_valid_card_emits_and_advances():
     j = _StubJob(s["id"], "flow-j2", CARD)
     flow.after_turn(j)
     assert [e["type"] for e in j.added] == ["card"]
+    assert j.added[0]["gated"] is False        # the browser draws APPROVE off this
     assert store.get_session(s["id"])["stage"] == "verify"     # advance, no gate
     assert store.transcript(s["id"])["turns"][-1]["stage"] == "fix"
 

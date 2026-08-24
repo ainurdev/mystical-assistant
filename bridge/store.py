@@ -677,6 +677,13 @@ def archive(session_id: str, archived: bool = True) -> None:
             (1 if archived else 0, time.time(), 1 if archived else 0, session_id))
 
 
+def latest_turn_id(session_id: str) -> "str | None":
+    with closing(_connect()) as c:
+        row = c.execute("SELECT id FROM turns WHERE session_id=? "
+                        "ORDER BY seq DESC LIMIT 1", (session_id,)).fetchone()
+    return row["id"] if row else None
+
+
 def set_session_stage(session_id: str, stage: "str | None") -> None:
     """Move a typed session's stage. Server-owned: the model asks, this decides."""
     with closing(_connect()) as c:

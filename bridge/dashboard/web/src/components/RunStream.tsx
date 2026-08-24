@@ -13,8 +13,10 @@ import { Markdown, type OpenFile } from "./Markdown";
 import { FileIcon } from "../lib/fileicon";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+import { FlowCard } from "./FlowCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
+import { stripHudCard } from "../lib/hudcard";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun } from "../lib/toolfold";
 import { cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, type CmdKind } from "../lib/tools";
@@ -1171,6 +1173,7 @@ export const RunStream = memo(function RunStream({
   onQuote,
   onOpenFile,
   onAnswer,
+  onStageAdvance,
   ended = false,
   showAll = false,
   boot = null,
@@ -1191,6 +1194,9 @@ export const RunStream = memo(function RunStream({
   /** Send a reply to a question the model asked in prose. Only the last, finished
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
+  /** Approve a gated stage's requested move. Server-owned: the card can ask,
+   *  only this puts the session there. */
+  onStageAdvance?: () => void;
   ended?: boolean;
   /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
    *  browser's find is about to look for. */
@@ -1245,7 +1251,9 @@ export const RunStream = memo(function RunStream({
   // as the run's result — so the same words used to print twice, the second time
   // in the RESULT box. Only the box is drawn. A native session emits no result
   // event, so its final text keeps rendering as text.
-  const resultText = events.find((e) => e.type === "result")?.result?.trim();
+  const resultText = stripHudCard(
+    events.find((e) => e.type === "result")?.result ?? "",
+  ).trim();
 
   // A turn that ends on an AskUserQuestion emits no result event, so the prose
   // explaining the card used to render as bare text while every other answer got
@@ -1254,7 +1262,8 @@ export const RunStream = memo(function RunStream({
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking" || t === "log") continue;
+          || t === "thinking" || t === "log" || t === "card" || t === "stage"
+          || t === "card_missing") continue;
       return t === "question";
     }
     return false;
@@ -1280,13 +1289,15 @@ export const RunStream = memo(function RunStream({
       {events.slice(from).map((event, k) => {
         const i = k + from;
         switch (event.type) {
-          case "text":
-            if (resultText && event.text.trim() === resultText) return null;
+          case "text": {
+            const text = stripHudCard(event.text);
+            if (!text) return null;
+            if (resultText && text.trim() === resultText) return null;
             if (asksNext(i))
               return (
                 <FinalResult
                   key={i}
-                  result={event.text}
+                  result={text}
                   label="RESULT // ASK"
                   animate={animate}
                   idKey={`${turnId}:${i}`}
@@ -1303,11 +1314,12 @@ export const RunStream = memo(function RunStream({
                     the one thing in a turn with nothing to catch a scrolling eye —
                     and it is the part worth reading — so it gets a bubble of its
                     own (MessageBlock) and a node on the rail where it starts. */}
-                <MessageBlock text={event.text} onQuote={onQuote}>
-                  <Markdown className="leading-relaxed" onOpenFile={onOpenFile}>{event.text}</Markdown>
+                <MessageBlock text={text} onQuote={onQuote}>
+                  <Markdown className="leading-relaxed" onOpenFile={onOpenFile}>{text}</Markdown>
                 </MessageBlock>
               </div>
             );
+          }
           case "tool": {
             const head = headOf.get(i);
             if (head !== undefined && !openFolds.has(head)) return null;
@@ -1457,7 +1469,7 @@ export const RunStream = memo(function RunStream({
             return (
               <FinalResult
                 key={i}
-                result={event.result}
+                result={stripHudCard(event.result)}
                 elapsed={event.elapsed}
                 tokens={tokens}
                 isError={event.is_error}
@@ -1521,6 +1533,31 @@ export const RunStream = memo(function RunStream({
                 <span>Stopped — send a message to continue.</span>
               </div>
             );
+          case "card":
+            return (
+              <FlowCard
+                key={i}
+                card={event.card}
+                gated={!!event.gated}
+                // onAnswer reaches only the last finished turn, which is exactly
+                // when a card is still something to act on rather than history.
+                isCurrent={!!onAnswer}
+                onAction={(send) => onAnswer?.(send)}
+                onApprove={() => onStageAdvance?.()}
+              />
+            );
+          case "stage":
+            return (
+              <div
+                key={i}
+                className="ml-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2"
+              >
+                STAGE ▸ {(event.to === "done" ? "COMPLETE" : event.to).toUpperCase()}
+                {event.by === "user" ? " (approved)" : ""}
+              </div>
+            );
+          // The nudge that follows says it better than a broken-card row would.
+          case "card_missing":
           case "permission_resolved":
           case "question_answered":
             return null; // shown inside the relevant card
