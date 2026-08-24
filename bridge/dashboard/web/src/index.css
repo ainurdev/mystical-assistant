@@ -1281,12 +1281,15 @@ input {
 
 /* A run of commands is the one thing that still earns a box: it holds n
    commands, not one. Inside it the tag cell goes empty — the header already
-   said BASH — and each line leads with its own command-kind icon instead. */
+   said BASH — and each line leads with its own command-kind icon instead. The
+   empty cell collapses to its own padding (max-content), so commands don't
+   inherit the 92px gutter the tag column exists for. */
 .ax-window { margin-left: 18px; border: 1px solid var(--ac-16); background: var(--code-bg); }
-.ax-window > .actrow { margin-left: 0; background: none; }
+.ax-window > .actrow { margin-left: 0; background: none; grid-template-columns: 3px max-content minmax(0, 1fr) max-content 18px; }
 .ax-window > .actrow:hover { background: var(--ac-03); }
 .ax-window > .actrow > .ax-bar { background: none; }
-.ax-window > .ax-drawer { margin-left: 0; }
+/* 17px = bar 3px + the collapsed cell's 8+6px padding — the object column. */
+.ax-window > .ax-drawer { margin-left: 0; padding-left: 17px; }
 /* A path shrinks from its directory, never from its filename. */
 .ax-path { display: flex; max-width: 100%; min-width: 0; align-items: baseline; }
 .ax-path > .d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

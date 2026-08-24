@@ -113,15 +113,14 @@ function BootRow({ text }: { text: string }) {
   );
 }
 
-/** A pause with nothing recorded but its length: too small for a row of its own,
- *  so it rides the top edge of whatever ran next. */
+/** A pause with nothing recorded but its length — a hairline seam with the
+ *  figure at its right edge. It used to be a zero-height overlay riding the
+ *  next card's top edge, which put the figure on top of that row's numbers. */
 function GapMark({ ms }: { ms: number }) {
   return (
-    <div aria-hidden className="pointer-events-none relative z-10 -mt-2 h-0"
-         style={{ contentVisibility: "visible" }}>
-      <span className="absolute right-1 -top-[3px] text-[9.5px] tracking-[1px] text-[var(--muted-2)]">
-        +{dur(ms)}
-      </span>
+    <div aria-hidden className="flex items-center gap-2 pr-1 text-[9.5px] tracking-[1px] text-[var(--muted-2)]">
+      <span className="h-px min-w-0 flex-1 bg-[var(--muted-2)] opacity-25" />
+      <span className="flex-none">+{dur(ms)}</span>
     </div>
   );
 }

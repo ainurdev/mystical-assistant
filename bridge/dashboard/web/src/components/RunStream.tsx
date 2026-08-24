@@ -504,21 +504,15 @@ function BootRow({ text }: { text: string }) {
   );
 }
 
-/** A pause with nothing recorded but its length. A row of its own said only
- *  "there was a gap" four times a turn, so it rides the top edge of whatever ran
- *  next instead — a hairline slot of its own, right edge in the same column as
- *  the rows' chevrons, so it lines up instead of floating over the card.
- *  contentVisibility has to be inline: `.vskip-card > *` hands every child
- *  `content-visibility: auto`, a zero-height child reads as off-screen to the
- *  skipper, and its label never paints. A utility class ties on specificity and
- *  loses, being layered. */
+/** A pause with nothing recorded but its length — a hairline seam with the
+ *  figure at its right edge, in the same column as the rows' stats. It used to
+ *  be a zero-height overlay riding the next card's top edge, which put the
+ *  figure on top of that row's own numbers. */
 function GapMark({ ms }: { ms: number }) {
   return (
-    <div aria-hidden className="pointer-events-none relative z-10 h-0"
-         style={{ contentVisibility: "visible" }}>
-      <span className="absolute right-[11px] -top-[6px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
-        +{dur(ms)}
-      </span>
+    <div aria-hidden className="ml-[18px] flex items-center gap-2 pr-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
+      <span className="h-px min-w-0 flex-1 bg-border" />
+      <span className="flex-none">+{dur(ms)}</span>
     </div>
   );
 }
