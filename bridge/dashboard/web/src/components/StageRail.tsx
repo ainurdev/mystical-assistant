@@ -16,7 +16,7 @@ export function StageRail({
   const done = current === "done";
 
   return (
-    <div className="flex flex-wrap items-center gap-1 text-[10px] tracking-[0.12em]">
+    <div className="flex items-center gap-1 overflow-x-auto text-[10px] tracking-[0.12em]">
       {stages.map((s, i) => {
         const isCurrent = s.id === current;
         const isPast = done || (at >= 0 && i < at);
@@ -36,11 +36,11 @@ export function StageRail({
               if (window.confirm(`Move this session to ${s.label}?`)) onSet(s.id);
             }}
             className={
-              isCurrent
+              "shrink-0 " + (isCurrent
                 ? "rounded px-1.5 py-0.5 bg-primary text-primary-foreground"
                 : isPast
                   ? "rounded px-1.5 py-0.5 text-muted-foreground"
-                  : "rounded px-1.5 py-0.5 text-muted-foreground opacity-50"
+                  : "rounded px-1.5 py-0.5 text-muted-foreground opacity-50")
             }
           >
             {s.label}

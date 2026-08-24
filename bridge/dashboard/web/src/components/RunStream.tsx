@@ -1174,6 +1174,7 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   onStageAdvance,
+  stage = null,
   ended = false,
   showAll = false,
   boot = null,
@@ -1197,6 +1198,10 @@ export const RunStream = memo(function RunStream({
   /** Approve a gated stage's requested move. Server-owned: the card can ask,
    *  only this puts the session there. */
   onStageAdvance?: () => void;
+  /** The session's current stage, so a card whose stage has already been left
+   *  reads as history rather than offering an approval that would move the
+   *  wrong stage on. */
+  stage?: string | null;
   ended?: boolean;
   /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
    *  browser's find is about to look for. */
@@ -1539,9 +1544,10 @@ export const RunStream = memo(function RunStream({
                 key={i}
                 card={event.card}
                 gated={!!event.gated}
-                // onAnswer reaches only the last finished turn, which is exactly
-                // when a card is still something to act on rather than history.
-                isCurrent={!!onAnswer}
+                // Both have to hold: the turn is the last finished one (onAnswer
+                // reaches no other), and the session still stands where the card
+                // was written.
+                isCurrent={!!onAnswer && event.stage === stage}
                 onAction={(send) => onAnswer?.(send)}
                 onApprove={() => onStageAdvance?.()}
               />

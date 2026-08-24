@@ -366,16 +366,18 @@ export function Terminal({
             <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {selected?.title || "new session"}
             </span>
-            {/* Where a typed session stands. Untyped sessions have no rail —
-                there is nothing to stand in. */}
-            {view === "chat" && flowShape && (
-              <StageRail
-                stages={flowShape.stages}
-                current={selected?.stage ?? null}
-                onSet={(stage) => onStage?.("set", stage)}
-              />
-            )}
           </div>
+          {/* Where a typed session stands. Its own line: the row above is one
+              line of ellipsised text, and a rail wrapped inside it stacked
+              vertically and pushed the title out. Untyped sessions have no
+              rail — there is nothing to stand in. */}
+          {view === "chat" && flowShape && (
+            <StageRail
+              stages={flowShape.stages}
+              current={selected?.stage ?? null}
+              onSet={(stage) => onStage?.("set", stage)}
+            />
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
           {view === "chat" && onOpenDesign && <DesignBtn onClick={onOpenDesign} />}
@@ -419,7 +421,7 @@ export function Terminal({
                 ) : empty && loading ? null : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
+                  <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} stage={selected?.stage ?? null} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
                 )}
               </div>
             </div>

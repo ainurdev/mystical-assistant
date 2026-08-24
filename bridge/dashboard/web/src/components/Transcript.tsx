@@ -122,7 +122,7 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, isActive, isLast, promptIdx, hud, liveTurns, showAll, boot,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, onStageAdvance,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, onStageAdvance, stage,
 }: {
   turn: Turn;
   isActive: boolean;
@@ -142,6 +142,8 @@ function TurnBlock({
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
   onStageAdvance?: () => void;
+  /** The open session's current stage (typed sessions only). */
+  stage?: string | null;
 }) {
   const working = isActive && turn.status === "running" && turn.pending.length === 0;
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
@@ -182,6 +184,7 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               onStageAdvance={isLast ? onStageAdvance : undefined}
+              stage={stage}
               ended={turn.status !== "running"}
               showAll={showAll}
             />
@@ -222,6 +225,7 @@ export function Transcript({
   onOpenFile,
   onAnswer,
   onStageAdvance,
+  stage,
   hasOlder,
   olderLoading,
   onLoadOlder,
@@ -244,6 +248,8 @@ export function Transcript({
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
   onStageAdvance?: () => void;
+  /** The open session's current stage (typed sessions only). */
+  stage?: string | null;
   hasOlder?: boolean;
   olderLoading?: boolean;
   onLoadOlder?: () => void;
@@ -408,6 +414,7 @@ export function Transcript({
         onOpenFile={onOpenFile}
         onAnswer={onAnswer}
         onStageAdvance={onStageAdvance}
+        stage={stage}
       />
     ) : (
       <WorkingIndicator hud={hud} />
