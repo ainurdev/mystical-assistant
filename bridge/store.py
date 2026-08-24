@@ -910,7 +910,7 @@ def history(chat_id: int, include_archived: bool = False,
     subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
     a session that predates the columns is unknown, not free."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, "
+         "s.lifecycle, s.stype, s.stage, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "

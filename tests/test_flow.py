@@ -312,3 +312,10 @@ def test_stage_endpoint_moves_and_refuses():
     plain = store.create_session(555, "/p")
     _stage_action(h, 555, plain["id"], {"action": "advance"})
     assert h.sent == ({"error": "not a typed session"}, 400)
+
+
+def test_history_rows_carry_the_type():
+    s = store.create_session(556, "/hp", stype="probe", stage="dig")
+    store.start_turn(s["id"], "flow-h1", "q", [])
+    row = next(r for r in store.history(556) if r["id"] == s["id"])
+    assert row["stype"] == "probe" and row["stage"] == "dig"

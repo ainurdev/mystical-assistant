@@ -5,6 +5,7 @@ import { api, needsYou, type SessionState } from "../lib/api";
 import { useChat } from "../lib/chat";
 import { FolderNavigator } from "./FolderNavigator";
 import { SurfaceBadge } from "./SurfaceBadge";
+import { useFlows } from "../lib/flows";
 
 function ago(sec: number | null): string {
   if (!sec) return "";
@@ -58,6 +59,7 @@ export function ChatSwitcher() {
   const [open, setOpen] = useState(false);
   const [folders, setFolders] = useState(false);
   const { sessions, sessionId, selectSession, openSessionInProject, newChat } = useChat();
+  const flows = useFlows();
   // Both queries share the header's caches — no extra polling.
   const { data } = useQuery({
     queryKey: ["running"],
@@ -239,6 +241,27 @@ export function ChatSwitcher() {
             <Section label={`RUNNING · ${running.length}`} rows={running} />
             <Section label="RECENT" rows={recent} />
           </div>
+          {/* A type starts the session in its flow; the brief is the first
+              thing you type. The labelled start form is the dashboard's — on a
+              phone, one tap and a sentence beats six fields.
+              ponytail: no start form here; add if labelled briefs matter on mobile. */}
+          {flows.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-3">
+              {flows.map((f) => (
+                <button
+                  key={f.stype}
+                  title={f.blurb}
+                  onClick={() => {
+                    setOpen(false);
+                    void newChat(f.stype);
+                  }}
+                  className="border border-border px-2.5 py-1.5 text-[10px] tracking-[1.5px] text-[var(--tg-hint)] active:opacity-70"
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={() => {
               setOpen(false);
