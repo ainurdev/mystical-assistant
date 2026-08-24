@@ -255,5 +255,49 @@ def test_prompt_asks_for_a_topic_and_feeds_prior_ones(repo):
     assert "server push" in captured["p"]           # prior topics are fed back
 
 
+# --- backfill: tagging the lessons written before topics existed -------------
+
+def test_backfill_tags_untagged_lessons_once(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(LESSON)                                   # no concept, no topic
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("> concept: protocols & apis\n> topic: server push")
+    assert learn.backfill(1, repo) == 1
+    got = learn.lessons(repo)[0]
+    assert got["concept"] == "protocols & apis"
+    assert got["topic"] == "server push"
+    body = learn.read(repo, got["file"])
+    assert body.startswith("# Streaming Turns Over SSE\n> concept:")
+
+    def boom(*a, **k):
+        raise AssertionError("a tagged lesson must not be re-sent to the model")
+
+    runner.run_blocking = boom
+    assert learn.backfill(1, repo) == 0             # second run is a no-op
+
+
+def test_backfill_keeps_an_existing_concept(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(CONCEPT_LESSON)                           # concept present, no topic
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("> concept: testing\n> topic: server push")   # tries to flip the shelf
+    learn.backfill(1, repo)
+    got = learn.lessons(repo)[0]
+    assert got["concept"] == "protocols & apis"     # the original survives
+    assert got["topic"] == "server push"
+
+
+def test_backfill_ignores_a_malformed_reply(repo):
+    sess, tid = _session_with_turn(repo)
+    _stub(LESSON)
+    learn.generate_after_turn(1, sess, tid)
+
+    _stub("Sure! I think the concept is probably vibes.")
+    assert learn.backfill(1, repo) == 0
+    assert learn.lessons(repo)[0]["topic"] == ""    # file untouched
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
