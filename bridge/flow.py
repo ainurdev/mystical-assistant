@@ -291,3 +291,63 @@ def apply_stage(session_id: str, to_stage: str, by: str, turn_id: str = "") -> N
     store.set_session_stage(session_id, to_stage)
     seq = store.append_event(session_id, turn_id, ev)
     pubsub.publish(f"session:{session_id}", {**ev, "seq": seq, "turn_id": turn_id})
+
+
+# --- what the runner calls --------------------------------------------------
+
+def section_for(session: "dict | None") -> str:
+    """The flow block for a session's current stage; "" for a plain chat."""
+    f = get_flow((session or {}).get("stype"))
+    return compose_section(f, session.get("stage")) if f else ""
+
+
+def permission_for(session: "dict | None", fallback: "str | None") -> "str | None":
+    """The stage's permission mode when it sets one, else the session's own.
+    This is what gives a gate teeth: OPS states before it executes, FIX only
+    accepts edits once its diagnosis has been approved."""
+    f = get_flow((session or {}).get("stype"))
+    return (stage_permission(f, session.get("stage")) or fallback) if f else fallback
+
+
+_NUDGE_PREFIX = "⟲ flow:"
+_NUDGE = (_NUDGE_PREFIX + " your last reply carried no usable hud-card block "
+          "({why}). End the reply with the hud-card block for stage {stage}, "
+          "restating what that turn already did. Do not redo the work.")
+
+
+def after_turn(job, model=None, effort=None) -> None:
+    """Called once per finished turn, next to goals.continue_after_turn.
+
+    Parses the reply's card, journals it, stamps the turn with the stage it ran
+    under, and advances ungated stages the model asked to leave. A missing or
+    malformed card costs one nudge turn — never the work: a second failure just
+    renders as prose. Best-effort throughout; a flow must not break a run."""
+    try:
+        sid = getattr(job, "store_session_id", None)
+        if not sid or job.status != "done" or getattr(job, "interrupted", False):
+            return
+        sess = store.get_session(sid) or {}
+        f = get_flow(sess.get("stype"))
+        stage = sess.get("stage")
+        if not f or not stage or not stage_by_id(f, stage):
+            return
+        text = job.result or (job.texts[-1] if job.texts else "")
+        card = parse_card(text)
+        errs = validate_card(f, stage, card) if card else ["no hud-card block"]
+        if not errs:
+            job.add({"type": "card", "card": card, "stage": stage})
+            store.set_turn_stage(job.id, stage)
+            if card.get("advance") is True and not stage_by_id(f, stage).get("gate"):
+                apply_stage(sid, next_stage(f, stage), "auto", turn_id=job.id)
+            return
+        job.add({"type": "card_missing", "errors": errs[:4]})
+        if (store.turn_prompt(job.id) or "").startswith(_NUDGE_PREFIX):
+            return                      # the nudge itself missed: let it be prose
+        from bridge import queue_manager   # local import: runner<->* cycle
+        text = _NUDGE.format(why="; ".join(errs[:2]), stage=stage)
+        queue_manager.enqueue(
+            sid, text=text, prompt=text, images=[], model=model, effort=effort,
+            permission_mode=sess.get("permission_mode"), width=None, sel=[],
+            surface="flow", chat_id=job.chat_id, project=sess.get("project") or "")
+    except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
+        print(f"[flow] after_turn failed: {e}", file=sys.stderr)

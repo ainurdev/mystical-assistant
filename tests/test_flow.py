@@ -4,6 +4,8 @@ Env is pinned in conftest (config freezes settings at import) — nothing here
 touches os.environ.
 """
 
+import json
+
 from bridge import flow, store
 
 store.init()
@@ -166,3 +168,84 @@ def test_resolve_stage_action():
     assert flow.resolve_stage_action(f, "reproduce", "back", None) is None
     assert flow.resolve_stage_action(f, "reproduce", "set", "nope") is None
     assert flow.resolve_stage_action(f, "reproduce", "sideways", None) is None
+
+
+# --- what the runner calls: per-turn injection and post-turn settlement ------
+
+class _StubJob:
+    """Duck-typed stand-in for runner.Job — after_turn reads only these."""
+
+    def __init__(self, sid, turn_id, result, status="done", chat_id=555):
+        self.store_session_id = sid
+        self.id = turn_id
+        self.result = result
+        self.texts = [result] if result else []
+        self.status = status
+        self.interrupted = False
+        self.chat_id = chat_id
+        self.added = []
+
+    def add(self, ev):
+        self.added.append(ev)
+
+
+def _typed(stage="fix", turn="flow-j1"):
+    s = store.create_session(555, "/p", stype="fix", stage=stage)
+    store.start_turn(s["id"], turn, "work", [])
+    return s
+
+
+def test_section_and_permission_for_session():
+    s = store.create_session(555, "/p", stype="fix", stage="fix")
+    assert "FIX" in flow.section_for(s)
+    assert flow.permission_for(s, "default") == "acceptEdits"   # stage override
+    s2 = store.create_session(555, "/p", stype="fix", stage="reproduce")
+    assert flow.permission_for(s2, "default") == "default"      # no override
+    plain = store.create_session(555, "/p")
+    assert flow.section_for(plain) == ""
+    assert flow.permission_for(plain, "plan") == "plan"
+
+
+def test_after_turn_valid_card_emits_and_advances():
+    s = _typed(turn="flow-j2")
+    j = _StubJob(s["id"], "flow-j2", CARD)
+    flow.after_turn(j)
+    assert [e["type"] for e in j.added] == ["card"]
+    assert store.get_session(s["id"])["stage"] == "verify"     # advance, no gate
+    assert store.transcript(s["id"])["turns"][-1]["stage"] == "fix"
+
+
+def test_after_turn_gated_stage_does_not_advance():
+    s = store.create_session(555, "/p", stype="fix", stage="rootcause")
+    store.start_turn(s["id"], "flow-j3", "work", [])
+    body = "```hud-card\n" + json.dumps(
+        {"stage": "rootcause", "summary": "found it",
+         "fields": {"cause": "c", "fix_plan": "p"}, "advance": True}) + "\n```"
+    flow.after_turn(_StubJob(s["id"], "flow-j3", body))
+    assert store.get_session(s["id"])["stage"] == "rootcause"   # the gate holds
+
+
+def test_after_turn_missing_card_nudges_once(monkeypatch):
+    calls = []
+    from bridge import queue_manager
+    monkeypatch.setattr(queue_manager, "enqueue",
+                        lambda sid, **kw: calls.append(kw) or True)
+    s = _typed(turn="flow-j4")
+    flow.after_turn(_StubJob(s["id"], "flow-j4", "prose only, no card"))
+    assert len(calls) == 1 and calls[0]["surface"] == "flow"
+    # the nudge turn itself failing must not nudge again
+    store.start_turn(s["id"], "flow-j5", calls[0]["prompt"], [])
+    flow.after_turn(_StubJob(s["id"], "flow-j5", "still prose"))
+    assert len(calls) == 1
+
+
+def test_after_turn_is_a_noop_for_plain_chat_and_bad_turns():
+    s = store.create_session(555, "/p")
+    store.start_turn(s["id"], "flow-j6", "x", [])
+    j = _StubJob(s["id"], "flow-j6", CARD)
+    flow.after_turn(j)
+    assert j.added == []
+    t = _typed(turn="flow-j7")
+    err = _StubJob(t["id"], "flow-j7", CARD, status="error")
+    flow.after_turn(err)
+    assert err.added == []                    # a failed turn settles nothing
