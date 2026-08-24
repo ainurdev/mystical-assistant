@@ -67,9 +67,10 @@ Built-in flows ship as one JSON file per type in `bridge/flows/`. User
 customizations live in the existing `settings` table and are overlaid at load
 time:
 
-- `flows_enabled` — master toggle for the whole feature (default `"1"`).
-  Off: type picker and flow catalog hidden, but **in-flight typed sessions
-  keep their engine** — the toggle gates creation, never strands work.
+- Master toggle: a `flows` entry in the `aifeatures` registry (env
+  `FLOWS_ENABLE`, default on). Off: type picker and flow catalog hidden, but
+  **in-flight typed sessions keep their engine** — the toggle gates creation,
+  never strands work.
 - `flow:<stype>` — a full flow JSON that replaces the built-in of the same
   stype, or defines a brand-new user type. A `"disabled": true` key inside
   the JSON hides that type from the picker (built-ins can't be deleted, only
@@ -198,12 +199,16 @@ Served by both HTTP servers (`bridge/miniapp/server.py`,
   (id, label, gate), plus `enabled` (master toggle) and per-flow
   `source: "builtin" | "custom"` / `disabled`. Creation UIs use the shape
   fields; the settings editor fetches the full JSON.
-- `PUT /api/flows/{stype}` — upsert a customized or new flow. Body is the
+- `POST /local/flows/{stype}` — upsert a customized or new flow (dashboard
+  only; both servers speak only GET/POST, so writes are POST). Body is the
   full flow JSON; the server validates (shape, stage ids unique, gates
   boolean, known permission modes) and returns field-level errors on 400.
-- `DELETE /api/flows/{stype}` — remove a custom flow (built-in of the same
-  name resurfaces) ; disabling a built-in is a PUT with `"disabled": true`.
-- `PUT /api/flows-enabled` — the master toggle (settings-backed).
+- `POST /local/flows/{stype}/delete` — remove a custom flow (built-in of the
+  same name resurfaces); disabling a built-in is an upsert with
+  `"disabled": true`.
+- The master toggle is a `flows` entry in the existing `aifeatures` registry
+  (env `FLOWS_ENABLE`, ships on) — which puts the switch in the dashboard's
+  AI settings for free, alongside every other priced feature.
 - `POST /api/sessions` — gains optional `stype`. Unknown stype → 400.
   The **first prompt is composed by the surface** (web composer, or dispatch
   for the bot) from the form as labeled lines, e.g. `[FIX] WHAT BROKE: …`,
@@ -211,8 +216,9 @@ Served by both HTTP servers (`bridge/miniapp/server.py`,
   prompts stay plain text end to end.
 - `POST /api/sessions/{id}/stage` — `{action: "advance" | "back" | "set",
   stage?}`. Emits the `stage` event; next turn composes at the new stage.
-- Session payloads (list + detail) gain `stype` and `stage`; the list endpoint
-  accepts a `stype` filter.
+- Session payloads (list + detail) gain `stype` and `stage` via the shared
+  `_session_brief` serializer; type filtering happens client-side (the lists
+  already carry every session's brief).
 - New event types on the existing stream: `card`, `stage`.
 
 ## Surfaces (per bridge-feature-slice)
