@@ -546,7 +546,21 @@ def log_graph(cwd: str, limit: int = 200) -> list[dict]:
 # --- branches & worktrees (powers the unified projects+sessions view) ---
 
 def current_branch(cwd: str) -> str:
+    """The name to show for where a checkout is. Detached HEAD answers "HEAD",
+    which names nothing and is what every branch chip ended up drawing, so
+    resolve it: a ref pointing at this exact commit (a `git checkout origin/foo`
+    or a tag, sorted so a local branch wins), else the short sha — git's own
+    "HEAD detached at 1383914"."""
     rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+    name = out.strip() if rc == 0 else ""
+    if name != "HEAD":
+        return name
+    rc, out, _ = _run(cwd, "for-each-ref", "--points-at", "HEAD", "--count=1",
+                      "--exclude=refs/remotes/*/HEAD", "--format=%(refname:short)",
+                      "refs/heads", "refs/remotes", "refs/tags")
+    if rc == 0 and out.strip():
+        return out.strip().splitlines()[0]
+    rc, out, _ = _run(cwd, "rev-parse", "--short", "HEAD")
     return out.strip() if rc == 0 else ""
 
 

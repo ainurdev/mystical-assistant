@@ -413,3 +413,22 @@ def test_merged_branches_reports_only_contained_branches():
     # no base given → the repo's default branch, same answer here
     assert g.merged_branches(d) == merged
     assert g.merged_branches(tempfile.mkdtemp()) == []
+
+
+def test_current_branch_detached_names_something_useful():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    assert base and base != "HEAD"
+    # detached at a commit a branch points at → that branch, not "HEAD"
+    _run(d, "checkout", "-q", "--detach", "HEAD")
+    assert g.current_branch(d) == base
+    # detached at a commit nothing points at → the short sha
+    _write(d, "a.txt", "two\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "loose")
+    sha = subprocess.run(["git", "-C", d, "rev-parse", "--short", "HEAD"],
+                         capture_output=True, text=True).stdout.strip()
+    assert g.current_branch(d) == sha
