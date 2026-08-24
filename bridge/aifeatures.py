@@ -144,6 +144,18 @@ FEATURES = (
               "Finished work syncs back up, one component at a time, on a "
               "press. Off, the link row and the SYNC action leave the "
               "dashboard; a skill already pulled stays on disk."},
+    {"key": "flows", "env": "FLOWS_ENABLE", "label": "TYPED FLOWS",
+     "hint": "typed sessions: a form in, stage gates, a card out",
+     "cost": "no extra call, a stage contract per turn",
+     "tokens": "~1k tokens",
+     "about": "A session can start as BUILD, FIX, PROBE, OPS, REVIEW or DESIGN "
+              "instead of plain chat: a short form shapes the first prompt, the "
+              "server walks the session stage by stage, every reply ends in a "
+              "card with tappable next actions, and a gated stage waits for your "
+              "approval before the work moves on. Templates are yours to edit in "
+              "the FLOWS settings. Off, the type picker and that editor are "
+              "hidden and every new session is a plain chat — a session already "
+              "mid-flow keeps its stages, so nothing in flight is stranded."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}
