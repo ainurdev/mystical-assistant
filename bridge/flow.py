@@ -165,3 +165,129 @@ def compose_first_prompt(f: dict, form: dict) -> str:
         if val:
             lines.append(f"{field['label']}: {val}")
     return "\n".join(lines)
+
+
+# --- the engine -------------------------------------------------------------
+
+_CARD_RE = re.compile(r"```hud-card\s*\n(.*?)```", re.DOTALL)
+
+_CONTRACT = """End EVERY reply with exactly one fenced code block tagged hud-card:
+
+```hud-card
+{{"stage": "{sid}", "summary": "<one line: what this turn did>",
+ "fields": {{{fields}}},
+ "advance": <true only when this stage's work is fully complete>,
+ "actions": [{{"label": "<SHORT VERB>", "send": "<the prompt that runs it>"}}]}}
+```
+
+"fields" must contain: {names}. "actions" are 0-3 canned next moves the user
+can tap. Do not discuss this block in prose; it is parsed, not read."""
+
+
+def stage_by_id(f: dict, stage_id: "str | None") -> "dict | None":
+    return next((s for s in f.get("stages", []) if s["id"] == stage_id), None)
+
+
+def next_stage(f: dict, stage_id: "str | None") -> "str | None":
+    """The stage after this one, 'done' past the last, None when there is no
+    next (already done, or a stage this flow no longer has)."""
+    ids = [s["id"] for s in f.get("stages", [])]
+    if stage_id not in ids:
+        return None
+    i = ids.index(stage_id)
+    return ids[i + 1] if i + 1 < len(ids) else "done"
+
+
+def resolve_stage_action(f: dict, current: "str | None", action: str,
+                         stage: "str | None") -> "str | None":
+    """Where an action lands, or None when it is not a legal move. Kept here so
+    both servers' handlers stay four lines and agree on the arithmetic."""
+    ids = [s["id"] for s in f.get("stages", [])]
+    if action == "advance":
+        return next_stage(f, current)
+    if action == "back":
+        if current == "done":
+            return ids[-1] if ids else None
+        if current in ids and ids.index(current) > 0:
+            return ids[ids.index(current) - 1]
+        return None
+    if action == "set":
+        return stage if stage in ids or stage == "done" else None
+    return None
+
+
+def stage_permission(f: dict, stage_id: "str | None") -> "str | None":
+    s = stage_by_id(f, stage_id)
+    return s.get("permission_mode") if s else None
+
+
+def compose_section(f: dict, stage_id: "str | None") -> str:
+    """The flow block appended to a turn's system prompt: the stage map, the
+    CURRENT stage's instructions, and the card contract. Only the current
+    stage ships, which is what keeps a 40-turn session from drifting. Stable
+    per (flow, stage), so the prompt cache is only invalidated on a move."""
+    label = f.get("label", f["stype"].upper())
+    rail = " -> ".join(s.get("label", s["id"].upper()) for s in f["stages"])
+    s = stage_by_id(f, stage_id)
+    if s is None:
+        return (f"[flow] This {label} session's flow is complete ({rail}). "
+                "The hud-card block is now optional.")
+    fields = ", ".join(f'"{n}": ...' for n in s.get("card_fields", []))
+    names = ", ".join(s.get("card_fields", [])) or "(none required)"
+    gate = ('This stage is GATED: you may set "advance": true to request the '
+            "move, but the user approves it — never assume approval or work "
+            "past the gate."
+            if s.get("gate") else
+            'Setting "advance": true moves the flow on by itself.')
+    return "\n\n".join([
+        f"[flow] This is a typed {label} session. Stages: {rail}. "
+        f"Current stage: {s.get('label', s['id'].upper())}.",
+        s["instructions"].strip(),
+        _CONTRACT.format(sid=s["id"], fields=fields, names=names),
+        gate,
+    ])
+
+
+def parse_card(text: "str | None") -> "dict | None":
+    """The LAST hud-card block in a reply, as a dict; None if absent or
+    unparseable. Last wins because a turn that shows an example mid-reply
+    still ends with the real one."""
+    hits = _CARD_RE.findall(text) if text else []
+    if not hits:
+        return None
+    try:
+        d = json.loads(hits[-1])
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def validate_card(f: dict, stage_id: str, card) -> "list[str]":
+    # ponytail: a required-keys check, not JSON Schema — upgrade only if flows
+    # ever need typed or nested field constraints.
+    errs: list[str] = []
+    if not isinstance(card, dict):
+        return ["card must be a JSON object"]
+    if card.get("stage") != stage_id:
+        errs.append(f"card stage {card.get('stage')!r} is not the current {stage_id!r}")
+    if not str(card.get("summary") or "").strip():
+        errs.append("summary is required")
+    fields = card.get("fields")
+    if not isinstance(fields, dict):
+        errs.append("fields must be an object")
+        fields = {}
+    for name in (stage_by_id(f, stage_id) or {}).get("card_fields", []):
+        if name not in fields:
+            errs.append(f"fields.{name} is required in stage {stage_id}")
+    return errs
+
+
+def apply_stage(session_id: str, to_stage: str, by: str, turn_id: str = "") -> None:
+    """Move the session's stage and journal it. Mirrors runner._journal_one:
+    append to the store for history, publish for the live stream."""
+    from bridge import pubsub
+    sess = store.get_session(session_id) or {}
+    ev = {"type": "stage", "from": sess.get("stage"), "to": to_stage, "by": by}
+    store.set_session_stage(session_id, to_stage)
+    seq = store.append_event(session_id, turn_id, ev)
+    pubsub.publish(f"session:{session_id}", {**ev, "seq": seq, "turn_id": turn_id})

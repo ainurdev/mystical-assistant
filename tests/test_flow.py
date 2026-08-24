@@ -97,3 +97,72 @@ def test_compose_first_prompt():
     assert p.startswith("[FIX]")
     assert "WHAT BROKE: boom" in p and "REPRO STEPS: run x" in p
     assert "WHERE SEEN" not in p        # empty fields are omitted
+
+
+# --- engine: contract composition, card parsing, transitions -----------------
+
+CARD = """Did the work.
+
+```hud-card
+{"stage": "fix", "summary": "patched", "fields": {"changed": ["a.py"]},
+ "advance": true, "actions": [{"label": "TEST", "send": "run tests"}]}
+```"""
+
+
+def test_parse_card_last_block_wins():
+    two = CARD + '\n\n```hud-card\n{"stage": "verify", "summary": "s", "fields": {}}\n```'
+    assert flow.parse_card(two)["stage"] == "verify"
+    assert flow.parse_card("no card here") is None
+    assert flow.parse_card("```hud-card\nnot json\n```") is None
+    assert flow.parse_card(None) is None
+
+
+def test_validate_card_required_fields():
+    f = flow.get_flow("fix")
+    assert flow.validate_card(f, "fix", flow.parse_card(CARD)) == []
+    assert flow.validate_card(f, "verify", flow.parse_card(CARD))     # wrong stage
+    bare = {"stage": "fix", "summary": "s", "fields": {}}
+    assert any("changed" in e for e in flow.validate_card(f, "fix", bare))
+
+
+def test_compose_section_has_only_current_stage():
+    f = flow.get_flow("fix")
+    s = flow.compose_section(f, "rootcause")
+    assert "ROOT-CAUSE" in s and "hud-card" in s
+    assert "Trace the failure" in s                       # this stage's instructions
+    assert "Apply the approved fix" not in s              # not the other stages'
+    assert "approve" in s.lower()                         # the gate rule
+    assert len(flow.compose_section(f, "done")) < 200     # a light note only
+
+
+def test_next_stage_and_permission():
+    f = flow.get_flow("fix")
+    assert flow.next_stage(f, "reproduce") == "rootcause"
+    assert flow.next_stage(f, "verify") == "done"
+    assert flow.next_stage(f, "done") is None
+    assert flow.stage_permission(f, "fix") == "acceptEdits"
+    assert flow.stage_permission(f, "reproduce") is None
+
+
+def test_apply_stage_writes_and_journals():
+    s = store.create_session(555, "/p", stype="fix", stage="reproduce")
+    store.start_turn(s["id"], "flow-ts1", "x", [])
+    flow.apply_stage(s["id"], "rootcause", "user", turn_id="flow-ts1")
+    assert store.get_session(s["id"])["stage"] == "rootcause"
+    st = [e for e in store.transcript(s["id"])["events"] if e["type"] == "stage"]
+    assert st, "a stage transition must be journaled"
+    assert st[-1]["from"] == "reproduce" and st[-1]["to"] == "rootcause"
+    assert st[-1]["by"] == "user"
+
+
+def test_resolve_stage_action():
+    f = flow.get_flow("fix")
+    assert flow.resolve_stage_action(f, "reproduce", "advance", None) == "rootcause"
+    assert flow.resolve_stage_action(f, "rootcause", "back", None) == "reproduce"
+    assert flow.resolve_stage_action(f, "reproduce", "set", "verify") == "verify"
+    assert flow.resolve_stage_action(f, "verify", "advance", None) == "done"
+    assert flow.resolve_stage_action(f, "done", "advance", None) is None
+    assert flow.resolve_stage_action(f, "done", "back", None) == "verify"
+    assert flow.resolve_stage_action(f, "reproduce", "back", None) is None
+    assert flow.resolve_stage_action(f, "reproduce", "set", "nope") is None
+    assert flow.resolve_stage_action(f, "reproduce", "sideways", None) is None
