@@ -353,3 +353,21 @@ def after_turn(job, model=None, effort=None) -> None:
             surface="flow", chat_id=job.chat_id, project=sess.get("project") or "")
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[flow] after_turn failed: {e}", file=sys.stderr)
+
+
+# --- plain text, for the surface without cards ------------------------------
+
+def strip_card(text: "str | None") -> str:
+    """The reply without its hud-card block. The bot has nowhere to render a
+    card, so it gets the prose and a rendering of the card underneath."""
+    return _CARD_RE.sub("", text or "").strip()
+
+
+def render_card(card: dict) -> str:
+    """A card as Telegram-safe sections: the summary, then a line per field."""
+    lines = [f"▸ {str(card.get('summary') or '').strip()}"]
+    for name, val in (card.get("fields") or {}).items():
+        if isinstance(val, list):
+            val = ", ".join(str(v) for v in val)
+        lines.append(f"{name.upper()}: {val}")
+    return "\n".join(lines)

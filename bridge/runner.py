@@ -489,11 +489,25 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         if not is_error:
             _graph_refresh_after_turn(chat_id, None)
         footer = f"\n\n— {int(time.time() - started)}s"
-        answer = ("⚠️ " if is_error else "") + (result or "(no result)") + footer
+        # A typed session's card has nowhere to render here, so the chat gets the
+        # prose with the card as plain sections under it — and, when a gated
+        # stage is asking to move, the button that approves it.
+        body = result or "(no result)"
+        card = flow.parse_card(body) if session.get("stype") else None
+        approve_kb = None
+        if card:
+            fresh = store.get_session(session["id"]) or session
+            f = flow.get_flow(fresh.get("stype"))
+            stage = flow.stage_by_id(f, fresh.get("stage")) if f else None
+            body = (flow.strip_card(body) + "\n\n" + flow.render_card(card)).strip()
+            if stage and stage.get("gate") and card.get("advance") is True:
+                approve_kb = {"inline_keyboard": [[
+                    {"text": "APPROVE ▸", "callback_data": f"flowadv:{session['id']}"}]]}
+        answer = ("⚠️ " if is_error else "") + body + footer
         # A button under every reply would be noise; under one that errored or is
         # too long to read in a chat bubble, it's the way out.
-        kb = (_session_kb(chat_id, session["id"], "🛠 Open session")
-              if is_error or len(answer) > config.TG_MAX - 512 else None)
+        kb = approve_kb or (_session_kb(chat_id, session["id"], "🛠 Open session")
+                            if is_error or len(answer) > config.TG_MAX - 512 else None)
         send(chat_id, answer, kb)
         if not is_error:
             titler.kick(chat_id, session, job_id)   # retry if the start call missed

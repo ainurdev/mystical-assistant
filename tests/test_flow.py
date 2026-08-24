@@ -319,3 +319,27 @@ def test_history_rows_carry_the_type():
     store.start_turn(s["id"], "flow-h1", "q", [])
     row = next(r for r in store.history(556) if r["id"] == s["id"])
     assert row["stype"] == "probe" and row["stage"] == "dig"
+
+
+# --- bot: a type picked from a keyboard, cards as plain text ----------------
+
+def test_bot_form_fill_uses_the_primary_field():
+    f = flow.get_flow("fix")
+    p = flow.compose_first_prompt(f, {"what": "it crashes on save"})
+    assert p == "[FIX]\nWHAT BROKE: it crashes on save"
+
+
+def test_render_card_is_plain_text():
+    card = {"stage": "fix", "summary": "patched a.py",
+            "fields": {"changed": ["a.py", "b.py"], "pass": True}, "advance": True}
+    txt = flow.render_card(card)
+    assert "patched a.py" in txt
+    assert "a.py, b.py" in txt                 # a list reads as a list
+    assert "PASS: True" in txt
+    assert "hud-card" not in txt and "{" not in txt
+
+
+def test_strip_card_leaves_the_prose():
+    body = "Fixed it.\n\n```hud-card\n{\"stage\": \"fix\"}\n```"
+    assert flow.strip_card(body) == "Fixed it."
+    assert flow.strip_card("no card") == "no card"
