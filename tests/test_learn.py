@@ -336,5 +336,20 @@ def test_backfill_feeds_a_coined_topic_to_the_next_file(repo):
     assert "drift guards" in seen[1]                # coined, then offered
 
 
+def test_backfill_skips_a_lesson_with_no_heading(repo):
+    """A file with no '# ' line has nowhere to put the tags — it must not be
+    counted as tagged, or every future run re-sends it to the model."""
+    d = os.path.join(repo, ".mystical", "learn")
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, "0001-no-heading.md")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("just prose, no heading.\n")
+
+    _stub("> concept: testing\n> topic: server push")
+    assert learn.backfill(1, repo) == 0
+    with open(p, encoding="utf-8") as f:
+        assert f.read() == "just prose, no heading.\n"    # untouched
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

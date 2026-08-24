@@ -367,6 +367,8 @@ def backfill(chat_id: int, cwd: str) -> int:
                                    {a.split(":", 1)[1].strip().lower()
                                     for a in add if a.lower().startswith("> topic:")})
                     add = []
+            if add:            # no '# ' line to insert under — nothing was tagged
+                continue
             with open(path, "w", encoding="utf-8") as f:
                 f.writelines(out)
             done += 1
