@@ -478,7 +478,10 @@ export function App() {
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
     seqRef.current = 0;
-    setOlder({ has: false, seq: null, from: null, loading: false });
+    // `older` is NOT reset here: the outgoing session's turns stay on screen
+    // (dimmed) until the new transcript lands, and zeroing `from` now would
+    // lift their render cut — every pre-tail prompt mounts above the viewport
+    // and the held frame visibly jumps. The landing fetch resets it.
     // Back to where you were reading this session, if we know — otherwise the
     // bottom, which is where a session you've never opened starts.
     const was = recall(id);
@@ -605,13 +608,22 @@ export function App() {
         setTurns((prev) => mergeDelta(held ? [] : prev, t));
         setBoot(t.boot ?? null);
         seqRef.current = t.next_cursor;
-        if (first && t.has_older !== undefined)
-          setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
+        // Every first fetch resets `older` — including to the zero state when
+        // the server doesn't speak tail — because openSession left the previous
+        // session's values in place to keep the held frame's cut stable.
+        if (first)
+          setOlder(t.has_older !== undefined
+            ? { has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false }
+            : { has: false, seq: null, from: null, loading: false });
         markBoot("chat", "ok", bootCount(t.turns.length, "TURN"));
       } catch {
         // Never landed: drop the previous session's turns rather than pass them
         // off as this one's.
-        if (live && staleTurns.current) { staleTurns.current = false; setTurns([]); }
+        if (live && staleTurns.current) {
+          staleTurns.current = false;
+          setTurns([]);
+          setOlder({ has: false, seq: null, from: null, loading: false });
+        }
         markBoot("chat", "fail", "NO TRANSCRIPT");
       }
       finally { if (live) setLoadingSession(false); }
@@ -634,7 +646,9 @@ export function App() {
   // next_cursor is the live head, not a forward delta marker.
   const loadOlder = useCallback(async () => {
     const o = olderRef.current;
-    if (!sessionId || !o.has || o.loading || o.seq == null) return;
+    // staleTurns: mid-swap `older` still describes the session being left —
+    // paging with its seq against the new session id would merge nonsense.
+    if (!sessionId || staleTurns.current || !o.has || o.loading || o.seq == null) return;
     setOlder({ ...o, loading: true });
     try {
       const t = await api.transcript(sessionId, 0, { tail: TAIL_TURNS, before: o.seq });
@@ -704,7 +718,9 @@ export function App() {
     const sync = () => {
       // Keep `prev` fresh through a glide or a restore, or the first flick up
       // afterwards still reads as "scrolled down" against a stale mark.
-      if (glideRef.current || restoreTo.current) { prev = el.scrollTop; return; }
+      // staleTurns: what's on screen belongs to the session being left — a
+      // move there must not flip stick or be remembered under the new id.
+      if (glideRef.current || restoreTo.current || staleTurns.current) { prev = el.scrollTop; return; }
       const stick = stickToBottom(el, prev, stickRef.current);
       prev = el.scrollTop;
       stickRef.current = stick;
@@ -715,6 +731,11 @@ export function App() {
     // Content grew/shrank: pull to the bottom if we were parked there, otherwise
     // re-check (a shrink can land us back at the bottom on its own).
     const ro = new ResizeObserver(() => {
+      // The held frame during a session swap is not ours to move — no follow,
+      // no restore-aiming against rows that belong to the session being left.
+      // The landing commit repositions (stick or restore) once the new turns
+      // are what's on screen.
+      if (staleTurns.current) { prev = el.scrollTop; return; }
       // Still on our way back to where you were reading: re-aim, and let none of
       // the follow policy below see the half-settled positions on the way.
       if (restoreTo.current) { applyRestore(); prev = el.scrollTop; return; }
