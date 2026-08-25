@@ -11,8 +11,7 @@
 [![Dependencies 0](https://img.shields.io/badge/dependencies-0-b9a6ff?style=flat-square&labelColor=060a0a)](#)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-required-7fe9d8?style=flat-square&labelColor=060a0a)](https://claude.com/claude-code)
 
-[mystical-assistant.pages.dev](https://mystical-assistant.pages.dev)
-
+[mystical-assistant.pages.dev](https://assistant.ainurhq.cloud/)
 </div>
 
 <!-- DEMO_GIF: 45–60s screen recording (marketing track) goes here -->
