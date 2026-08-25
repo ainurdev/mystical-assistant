@@ -30,14 +30,15 @@ export function StageHint({ stage, onPaste }: {
   const [busy, setBusy] = useState(false);
   if (!stage?.input) return null;
   return (
-    <div className="flex items-center gap-2 px-1 pb-1 text-[10px] tracking-[0.1em] text-muted-foreground">
-      <span className="shrink-0">{stage.label}{stage.gate ? " ◆" : ""}</span>
-      <span className="min-w-0 truncate">{WANTS[stage.input] ?? ""}</span>
+    <div className="flh" data-gate={stage.gate ? "" : undefined}>
+      <i className="flh-mark" aria-hidden>{stage.gate ? "◈" : "◇"}</i>
+      <span className="flh-stage">{stage.label}</span>
+      <span className="flh-want">{WANTS[stage.input] ?? ""}</span>
       {stage.input === "evidence" && (
         <button
           type="button"
+          className="flh-btn"
           disabled={busy}
-          className="ml-auto shrink-0 border border-border px-1.5 py-0.5 hover:bg-accent"
           title="paste the clipboard into the prompt as a code block"
           onClick={async () => {
             setBusy(true);

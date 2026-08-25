@@ -1459,3 +1459,216 @@ input {
   .agb[data-run] > .agb-rail,
   .agb-fan[data-state="run"] > .agb-dot { animation: none; }
 }
+
+/* ── FLOW CARD ─────────────────────────────────────────────────────────────
+   A typed stage's settled result, framed like the agent block: both are a
+   turn's own structure surfacing in the stream, and the stream keeps one idiom
+   for that. The hue says who is waiting — accent while the flow moves itself,
+   amber the moment the card asks you to approve something. */
+.flc {
+  position: relative; margin-left: 18px; padding-left: 10px;
+  border: 1px solid var(--ac-16); background: var(--panel3);
+}
+.flc::before,
+.flc::after { border-color: color-mix(in srgb, var(--h) 55%, transparent); }
+.flc[data-await] { border-color: color-mix(in srgb, var(--h) 30%, transparent); }
+.flc-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--h); }
+.flc-rail::after {
+  content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px;
+  background: color-mix(in srgb, var(--h) 30%, transparent);
+}
+/* Only the card that is asking pulses. A settled card is furniture. */
+.flc[data-await] > .flc-rail { animation: agbpulse 1.4s ease-in-out infinite; }
+
+.flc-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0 9px; }
+.flc-mark {
+  flex: none; line-height: 1; font-size: 11px; color: var(--h); font-style: normal;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--h) 55%, transparent);
+}
+.flc-stage {
+  flex: none; font-size: var(--t95); letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--h);
+}
+.flc-gate {
+  flex: none; font-size: var(--t8); letter-spacing: 1.4px; line-height: 13px;
+  padding: 0 4px; color: color-mix(in srgb, var(--h) 80%, var(--txd));
+  border: 1px solid color-mix(in srgb, var(--h) 34%, transparent);
+}
+.flc-rule {
+  flex: 1; min-width: 8px; height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--h) 22%, transparent), transparent);
+}
+.flc-wait { flex: none; font-size: var(--t95); letter-spacing: 1.2px; color: var(--h); }
+
+/* The model speaking about the turn it just closed — the oracle register the
+   agent block's brief wears, for the same reason. */
+.flc-sum {
+  padding: 5px 12px 0 9px;
+  font-family: var(--mono); font-size: var(--t115); line-height: 1.5;
+  font-style: italic; color: var(--txm);
+}
+
+.flc-fields { display: flex; flex-direction: column; gap: 7px; padding: 8px 12px 0 9px; }
+.flc-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.flc-f[data-inline] { flex-direction: row; align-items: baseline; gap: 8px; }
+.flc-lab {
+  flex: none; font-size: var(--t95); letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--txf);
+}
+.flc-val { min-width: 0; font-size: var(--t105); color: var(--tx); overflow-wrap: anywhere; }
+.flc-wide { min-width: 0; }
+
+/* Checks: the one row worth touching on a verify card is the failing one, so
+   that is the only row that is a button. */
+.flc-checks, .flc-cmds { display: flex; flex-direction: column; gap: 2px; }
+.flc-checks > li, .flc-cmds > li {
+  display: flex; align-items: baseline; gap: 7px; min-width: 0;
+  font-family: var(--mono); font-size: var(--t105); color: var(--tx);
+}
+.flc-glyph { flex: none; font-style: normal; color: var(--ok); }
+.flc-checks > li[data-bad] > .flc-glyph,
+.flc-cmds > li[data-state="fail"] > .flc-glyph { color: var(--err); }
+.flc-cmds > li[data-state="pending"] > .flc-glyph { color: var(--txl); }
+.flc-cmd { min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.flc-again {
+  appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; color: var(--err);
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.flc-again:hover { color: var(--err-hi); }
+.flc-note { color: var(--txf); font-size: var(--t95); }
+.flc-n { flex: none; font-style: normal; color: var(--txl); }
+
+/* Files: the tag shape ActionRow uses, holding a path instead of a tool name. */
+.flc-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.flc-chip {
+  display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
+  appearance: none; cursor: default; padding: 1px 5px;
+  border: 1px solid var(--ac-16); background: color-mix(in srgb, var(--panel2) 60%, transparent);
+  font-family: var(--mono); font-size: var(--t95); color: var(--txh);
+}
+button.flc-chip { cursor: pointer; }
+button.flc-chip:hover { border-color: var(--ac-22); color: var(--txb); background: var(--ac-03); }
+.flc-path { min-width: 0; overflow-wrap: anywhere; }
+.flc-stat { flex: none; font-variant-numeric: tabular-nums; }
+.flc-stat > b { font-weight: 400; color: var(--ok); }
+.flc-stat > i { font-style: normal; color: var(--err); margin-left: 4px; }
+
+/* Findings: severity, where, then the note on its own line — a note wrapped
+   beside a path breaks into a ragged column that reads as a layout fault. */
+.flc-finds { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.flc-finds > ul { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.flc-finds li[data-off] { opacity: 0.4; text-decoration: line-through; }
+.flc-findhead { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.flc-drop {
+  appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
+  flex: none; width: 12px; font: inherit; font-size: var(--t105); color: var(--txl);
+}
+.flc-drop:hover { color: var(--txb); }
+.flc-sev { flex: none; font-size: var(--t8); letter-spacing: 1.4px; color: var(--txd); }
+li[data-sev="high"] .flc-sev { color: var(--err); }
+li[data-sev="med"]  .flc-sev { color: var(--warn); }
+.flc-at {
+  appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
+  min-width: 0; text-align: left; overflow-wrap: anywhere;
+  font-family: var(--mono); font-size: var(--t95); color: var(--txh);
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.flc-at:disabled { cursor: default; text-decoration: none; }
+.flc-at:not(:disabled):hover { color: var(--acc); }
+.flc-findnote { padding-left: 19px; font-size: var(--t105); color: var(--txm); }
+.flc-finds li:not([data-off]) .flc-findnote { color: var(--tx); }
+
+/* Screens: contact sheet, each with the note that answers it. */
+.flc-gal { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.flc-shots { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 9px; }
+.flc-shots figure { display: flex; flex-direction: column; gap: 4px; max-width: 200px; }
+.flc-shots img {
+  display: block; height: 112px; width: auto; max-width: 200px;
+  object-fit: cover; border: 1px solid var(--ac-16);
+}
+.flc-shots figcaption { font-size: var(--t8); letter-spacing: .6px; color: var(--txf); }
+.flc-gone { font-family: var(--mono); font-size: var(--t8); color: var(--txl); }
+
+/* Confidence: lamps, the readout this HUD already uses for a fraction. */
+.flc-meter { display: flex; align-items: center; gap: 8px; }
+.flc-meter .seg { display: flex; gap: 2px; }
+.flc-meter .seg i {
+  display: block; width: 7px; height: 9px;
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+}
+.flc-meter .seg i[data-on] { background: var(--acc); box-shadow: 0 0 6px var(--ac-22); }
+.flc-meter > b {
+  font-weight: 400; font-size: var(--t95); letter-spacing: 1.2px; color: var(--txd);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The verdict: one word, and the colour it deserves. */
+.flc-verd {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px;
+  font-size: var(--t105); letter-spacing: 1.6px; text-transform: uppercase;
+  border-left: 2px solid var(--txl); color: var(--txm);
+  background: color-mix(in srgb, var(--panel2) 70%, transparent);
+}
+.flc-verd > i { font-style: normal; }
+.flc-verd[data-tone="good"] { border-left-color: var(--ok); color: var(--ok); }
+.flc-verd[data-tone="bad"] { border-left-color: var(--err); color: var(--err); }
+
+/* A draft you edit before it lands, in the terminal's own input idiom. */
+.flc-draft { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.flc-in {
+  width: 100%; max-width: 520px; padding: 6px 8px; resize: vertical;
+  border: 1px solid var(--ac-22); background: var(--panel2); color: var(--txb);
+  font-family: var(--mono); font-size: var(--t105); line-height: 1.5;
+}
+.flc-in:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 1px var(--ac-16); }
+.flc-in::placeholder { color: var(--txl); }
+.flc-shots .flc-in { max-width: 200px; padding: 2px 5px; font-size: var(--t95); }
+.flc-pre {
+  white-space: pre-wrap; font-family: var(--mono); font-size: var(--t105); color: var(--txm);
+}
+
+.flc-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 12px 10px 9px; }
+.flc-fields + .flc-acts { padding-top: 10px; }
+.flc-btn {
+  position: relative; overflow: hidden; appearance: none; cursor: pointer;
+  padding: 3px 10px; line-height: 16px;
+  font-family: inherit; font-size: var(--t95); letter-spacing: 1.4px; text-transform: uppercase;
+  border: 1px solid var(--ac-22); background: color-mix(in srgb, var(--panel2) 60%, transparent);
+  color: var(--txm); transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.flc-btn:hover:not(:disabled) { color: var(--txb); border-color: var(--acc); background: var(--ac-06); }
+.flc-btn:disabled { cursor: default; opacity: .45; }
+/* The move the card is asking for wears the accent; the rest are alternatives. */
+.flc-btn[data-go] { color: var(--h); border-color: color-mix(in srgb, var(--h) 45%, transparent); }
+.flc-btn[data-go]:hover:not(:disabled) { background: color-mix(in srgb, var(--h) 12%, transparent); }
+.flc-btn > span { position: relative; }
+/* The one honest progress bar in the system: it is how much longer you hold. */
+.flc-fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+  background: color-mix(in srgb, var(--h) 28%, transparent);
+}
+.flc-hold[data-held] > .flc-fill { width: 100%; transition: width var(--hold) linear; }
+
+/* ── STAGE HINT ───────────────────────────────────────────────────────────
+   One line above the prompt box naming what this stage is waiting for. */
+.flh {
+  display: flex; align-items: center; gap: 8px; padding: 0 2px 6px;
+  font-size: var(--t95); letter-spacing: 1.2px; color: var(--txf);
+}
+.flh-mark { flex: none; font-style: normal; color: var(--acc); }
+.flh[data-gate] .flh-mark { color: var(--warn); }
+.flh-stage { flex: none; text-transform: uppercase; color: var(--txd); }
+.flh-want { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flh-btn {
+  margin-left: auto; flex: none; appearance: none; cursor: pointer;
+  padding: 1px 7px; font-family: inherit; font-size: var(--t95); letter-spacing: 1.4px;
+  border: 1px solid var(--ac-16); background: transparent; color: var(--txd);
+}
+.flh-btn:hover:not(:disabled) { color: var(--txb); border-color: var(--ac-22); background: var(--ac-03); }
+.flh-btn:disabled { cursor: default; opacity: .5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flc[data-await] > .flc-rail { animation: none; }
+  .flc-hold[data-held] > .flc-fill { transition: none; }
+}

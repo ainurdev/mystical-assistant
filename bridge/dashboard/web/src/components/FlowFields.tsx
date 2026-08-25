@@ -4,7 +4,6 @@ import {
   asChecks, asCommands, asConfidence, asFiles, asFindings, asScreens,
   flatten, triagePrompt, type Finding,
 } from "../lib/cardfields";
-import { Button } from "./ui";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 
 // The widgets a typed stage's card is made of. Which one draws is the flow's
@@ -13,11 +12,14 @@ import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 // through to text — the turn's work is still good, and a half-drawn board is
 // worse than a sentence.
 //
+// Styling lives in index.css under .flc-*, the way .agb-* does: these are HUD
+// instruments, not cards with utility classes on them, and the two surfaces
+// share the markup while each stylesheet gives it its own idiom (square and
+// bracketed on the desktop, rounded on the phone).
+//
 // Mirrors bridge/miniapp/web/src/components/FlowFields.tsx (the ONE difference
 // is Shot: this side can put a URL in an <img>, the Mini App's auth lives in a
 // header). Keep them in sync.
-
-const LABEL = "text-[10px] tracking-[0.15em] text-muted-foreground";
 
 /** One field of a card. `send` is absent on a card the session has already moved
  *  past — history stays readable, but you can't act on it twice. */
@@ -29,18 +31,20 @@ export function CardField({ name, type, value, send, onOpenFile }: {
   onOpenFile?: (path: string, line?: number) => void;
 }) {
   const widget = draw(type, value, send, onOpenFile);
+  // A one-liner keeps its label beside it; an instrument gets the label above
+  // and the full width under it.
   if (!widget) {
     return (
-      <div className="flex gap-2 text-xs">
-        <dt className={"shrink-0 " + LABEL}>{name.toUpperCase()}</dt>
-        <dd className="min-w-0 break-words">{flatten(value)}</dd>
+      <div className="flc-f" data-inline="">
+        <dt className="flc-lab">{name.toUpperCase()}</dt>
+        <dd className="flc-val">{flatten(value)}</dd>
       </div>
     );
   }
   return (
-    <div className="space-y-1">
-      <div className={LABEL}>{name.toUpperCase()}</div>
-      {widget}
+    <div className="flc-f">
+      <dt className="flc-lab">{name.toUpperCase()}</dt>
+      <dd className="flc-wide">{widget}</dd>
     </div>
   );
 }
@@ -91,25 +95,23 @@ function draw(
  *  a verify card worth touching, so it — and only it — is a button. */
 function CheckBoard({ rows, send }: { rows: { cmd: string; ok: boolean; note?: string }[]; send?: (t: string) => void }) {
   return (
-    <ul className="space-y-0.5 font-mono text-xs">
+    <ul className="flc-checks">
       {rows.map((r, i) => (
-        <li key={i} className="flex items-baseline gap-1.5">
-          <span className={r.ok ? "text-[var(--ok,#6c9)]" : "text-destructive"} aria-hidden>
-            {r.ok ? "✓" : "✗"}
-          </span>
+        <li key={i} data-ok={r.ok ? "" : undefined} data-bad={r.ok ? undefined : ""}>
+          <i className="flc-glyph" aria-hidden>{r.ok ? "✓" : "✗"}</i>
           {r.ok || !send ? (
-            <span className="min-w-0 break-all">{r.cmd}</span>
+            <span className="flc-cmd">{r.cmd}</span>
           ) : (
             <button
               type="button"
-              className="min-w-0 break-all text-left underline decoration-dotted underline-offset-2"
+              className="flc-cmd flc-again"
               title="send this back to be fixed"
               onClick={() => send(`\`${r.cmd}\` is still failing. Fix the cause and run it again.`)}
             >
               {r.cmd}
             </button>
           )}
-          {r.note && <span className="text-muted-foreground">— {r.note}</span>}
+          {r.note && <span className="flc-note">{r.note}</span>}
         </li>
       ))}
     </ul>
@@ -121,16 +123,12 @@ function CheckBoard({ rows, send }: { rows: { cmd: string; ok: boolean; note?: s
 function CommandManifest({ rows }: { rows: { cmd: string; status?: string }[] }) {
   const glyph: Record<string, string> = { ok: "✓", fail: "✗", pending: "·" };
   return (
-    <ol className="space-y-0.5 font-mono text-xs">
+    <ol className="flc-cmds">
       {rows.map((r, i) => (
-        <li key={i} className="flex items-baseline gap-1.5">
-          <span className="w-3 shrink-0 text-right text-muted-foreground">{i + 1}</span>
-          <span className="min-w-0 break-all">{r.cmd}</span>
-          {r.status && (
-            <span className={r.status === "fail" ? "text-destructive" : "text-muted-foreground"}>
-              {glyph[r.status]}
-            </span>
-          )}
+        <li key={i} data-state={r.status ?? "none"}>
+          <i className="flc-n" aria-hidden>{String(i + 1).padStart(2, "0")}</i>
+          <span className="flc-cmd">{r.cmd}</span>
+          {r.status && <i className="flc-glyph" aria-hidden>{glyph[r.status]}</i>}
         </li>
       ))}
     </ol>
@@ -142,33 +140,26 @@ function FileChips({ rows, onOpenFile }: {
   onOpenFile?: (path: string, line?: number) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flc-chips">
       {rows.map((f) => {
-        const stat = f.add !== undefined || f.del !== undefined;
         const body = (
           <>
-            <span className="break-all">{f.path}</span>
-            {stat && (
-              <span className="ml-1 tabular-nums text-muted-foreground">
-                {f.add ? `+${f.add}` : ""}{f.del ? ` −${f.del}` : ""}
+            <span className="flc-path">{f.path}</span>
+            {(f.add !== undefined || f.del !== undefined) && (
+              <span className="flc-stat">
+                {f.add ? <b>+{f.add}</b> : null}
+                {f.del ? <i>−{f.del}</i> : null}
               </span>
             )}
           </>
         );
         return onOpenFile ? (
-          <button
-            key={f.path}
-            type="button"
-            title="open in the editor"
-            onClick={() => onOpenFile(f.path)}
-            className="border border-border px-1.5 py-0.5 font-mono text-[11px] hover:bg-accent"
-          >
+          <button key={f.path} type="button" className="flc-chip" title="open in the editor"
+                  onClick={() => onOpenFile(f.path)}>
             {body}
           </button>
         ) : (
-          <span key={f.path} className="border border-border px-1.5 py-0.5 font-mono text-[11px]">
-            {body}
-          </span>
+          <span key={f.path} className="flc-chip">{body}</span>
         );
       })}
     </div>
@@ -185,57 +176,52 @@ function FindingsTriage({ rows, send, onOpenFile }: {
 }) {
   const [dropped, setDropped] = useState<Set<number>>(new Set());
   const [sent, setSent] = useState(false);
-  const sev: Record<string, string> = {
-    high: "text-destructive", med: "text-[var(--warn,#c96)]", low: "text-muted-foreground",
-  };
   return (
-    <div className="space-y-1">
-      <ul className="space-y-1">
+    <div className="flc-finds">
+      <ul>
         {rows.map((f, i) => {
           const off = dropped.has(i);
           return (
-            <li key={i} className={"text-xs " + (off ? "opacity-40 line-through" : "")}>
-              <div className="flex items-baseline gap-1.5">
+            <li key={i} data-sev={f.severity} data-off={off ? "" : undefined}>
+              <div className="flc-findhead">
                 {send && (
                   <button
                     type="button"
+                    className="flc-drop"
                     title={off ? "keep this one" : "drop this one"}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
                     onClick={() => setDropped((d) => {
                       const n = new Set(d);
                       if (!n.delete(i)) n.add(i);
                       return n;
                     })}
                   >
-                    {off ? "＋" : "×"}
+                    {off ? "+" : "×"}
                   </button>
                 )}
-                <span className={"shrink-0 text-[10px] tracking-[0.1em] " + sev[f.severity]}>
-                  {f.severity.toUpperCase()}
-                </span>
+                <span className="flc-sev">{f.severity.toUpperCase()}</span>
                 <button
                   type="button"
+                  className="flc-at"
                   disabled={!onOpenFile}
                   onClick={() => onOpenFile?.(f.file, f.line)}
-                  className={"min-w-0 break-all text-left font-mono text-[11px] " + (onOpenFile ? "underline decoration-dotted underline-offset-2" : "")}
                 >
                   {f.file}{f.line ? `:${f.line}` : ""}
                 </button>
               </div>
-              <div className={"break-words " + (send ? "pl-5" : "pl-1")}>{f.note}</div>
+              <div className="flc-findnote">{f.note}</div>
             </li>
           );
         })}
       </ul>
       {send && dropped.size > 0 && (
-        <Button
-          size="sm"
-          variant="outline"
+        <button
+          type="button"
+          className="flc-btn"
           disabled={sent}
           onClick={() => { setSent(true); send(triagePrompt(rows, dropped)); }}
         >
           KEEP {rows.length - dropped.size} · DROP {dropped.size} ▸
-        </Button>
+        </button>
       )}
     </div>
   );
@@ -250,30 +236,28 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
   const [sent, setSent] = useState(false);
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
-    <div className="space-y-1.5">
+    <div className="flc-gal">
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
-      <div className="flex flex-wrap gap-2">
+      <div className="flc-shots">
         {rows.map((s, i) => (
-          <figure key={i} className="space-y-1">
+          <figure key={i}>
             <Shot path={s.path} onZoom={setZoom} />
-            <figcaption className="max-w-[200px] text-[10px] text-muted-foreground">
-              {s.caption ?? s.path.split("/").pop()}
-            </figcaption>
+            <figcaption>{s.caption ?? s.path.split("/").pop()}</figcaption>
             {send && (
               <input
+                className="flc-in"
                 value={notes[i] ?? ""}
                 onChange={(e) => setNotes((n) => ({ ...n, [i]: e.target.value }))}
                 placeholder="note…"
-                className="w-full max-w-[200px] border border-border bg-transparent px-1 py-0.5 text-[11px]"
               />
             )}
           </figure>
         ))}
       </div>
       {send && written.length > 0 && (
-        <Button
-          size="sm"
-          variant="outline"
+        <button
+          type="button"
+          className="flc-btn"
           disabled={sent}
           onClick={() => {
             setSent(true);
@@ -282,7 +266,7 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
           }}
         >
           SEND {written.length} NOTE{written.length > 1 ? "S" : ""} ▸
-        </Button>
+        </button>
       )}
     </div>
   );
@@ -293,27 +277,25 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
 function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void }) {
   const [gone, setGone] = useState(false);
   const src = api.attachmentUrl(path);
-  if (gone) return <span className="font-mono text-[10px] text-muted-foreground">{path.split("/").pop()}</span>;
+  if (gone) return <span className="flc-gone">{path.split("/").pop()}</span>;
   return (
     <ZoomButton onOpen={() => onZoom(src)}>
-      <img
-        src={src}
-        alt={path}
-        onError={() => setGone(true)}
-        className="h-28 w-auto max-w-[200px] border border-border object-cover"
-      />
+      <img src={src} alt={path} onError={() => setGone(true)} />
     </ZoomButton>
   );
 }
 
+/** How sure the answer is, in lamps — the readout this HUD already uses for a
+ *  fraction (the composer's context meter), never a progress bar. */
 function ConfidenceMeter({ value }: { value: number }) {
   const pct = Math.round(value * 100);
+  const lit = Math.round(value * 10);
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 w-24 border border-border" role="meter" aria-valuenow={pct}>
-        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="tabular-nums text-xs text-muted-foreground">{pct}%</span>
+    <div className="flc-meter" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <span className="seg" aria-hidden>
+        {Array.from({ length: 10 }, (_, i) => <i key={i} data-on={i < lit ? "" : undefined} />)}
+      </span>
+      <b>{pct}%</b>
     </div>
   );
 }
@@ -325,12 +307,9 @@ function VerdictBanner({ value }: { value: string | boolean }) {
   const bad = ["fail", "failed", "no", "broken", "needs_work", "blocked"].includes(w);
   const good = ["pass", "passed", "yes", "ok", "green", "shipped", "reproduced", "done"].includes(w);
   return (
-    <div
-      className={"px-2 py-1 text-xs tracking-[0.1em] " + (bad
-        ? "bg-destructive/15 text-destructive"
-        : good ? "bg-primary/15 text-foreground" : "bg-muted text-muted-foreground")}
-    >
-      {(bad ? "✗ " : good ? "✓ " : "") + word.toUpperCase()}
+    <div className="flc-verd" data-tone={bad ? "bad" : good ? "good" : "flat"}>
+      <i aria-hidden>{bad ? "✗" : good ? "✓" : "▸"}</i>
+      {word.toUpperCase()}
     </div>
   );
 }
@@ -340,23 +319,23 @@ function VerdictBanner({ value }: { value: string | boolean }) {
 function DraftBox({ text, send }: { text: string; send?: (t: string) => void }) {
   const [draft, setDraft] = useState(text);
   const [sent, setSent] = useState(false);
-  if (!send) return <pre className="whitespace-pre-wrap font-mono text-xs">{text}</pre>;
+  if (!send) return <pre className="flc-pre">{text}</pre>;
   return (
-    <div className="space-y-1">
+    <div className="flc-draft">
       <textarea
+        className="flc-in"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         rows={Math.min(6, draft.split("\n").length + 1)}
-        className="w-full resize-y border border-border bg-transparent p-1.5 font-mono text-xs"
       />
-      <Button
-        size="sm"
-        variant="outline"
+      <button
+        type="button"
+        className="flc-btn"
         disabled={sent || !draft.trim()}
         onClick={() => { setSent(true); send(`Use this exactly:\n\n${draft.trim()}`); }}
       >
         {draft.trim() === text.trim() ? "USE IT ▸" : "USE MY EDIT ▸"}
-      </Button>
+      </button>
     </div>
   );
 }

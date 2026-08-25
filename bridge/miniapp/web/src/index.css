@@ -429,3 +429,188 @@ input {
   .agb[data-run] > .agb-rail,
   .agb-fan[data-state="run"] > .agb-dot { animation: none; }
 }
+
+/* ── FLOW CARD ─────────────────────────────────────────────────────────────
+   The phone's copy of the dashboard's .flc block: same markup, same hue rule
+   (accent while the flow moves itself, amber when it is asking you), rounded
+   and finger-sized because that is this surface's idiom. */
+.flc {
+  position: relative; border-radius: 10px; overflow: hidden; padding-left: 9px;
+  border: 1px solid var(--border); background: var(--panel3);
+}
+.flc[data-await] { border-color: color-mix(in srgb, var(--h) 30%, transparent); }
+.flc-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--h); }
+.flc-rail::after {
+  content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 1px;
+  background: color-mix(in srgb, var(--h) 28%, transparent);
+}
+.flc[data-await] > .flc-rail { animation: agbpulse 1.4s ease-in-out infinite; }
+
+.flc-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px 0 8px; }
+.flc-mark {
+  flex: none; line-height: 1; font-size: 11px; font-style: normal; color: var(--h);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--h) 55%, transparent);
+}
+.flc-stage { flex: none; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--h); }
+.flc-gate {
+  flex: none; font-size: 8.5px; letter-spacing: 1.3px; line-height: 13px; padding: 0 4px;
+  border-radius: 4px; color: color-mix(in srgb, var(--h) 80%, var(--txd));
+  border: 1px solid color-mix(in srgb, var(--h) 32%, transparent);
+}
+.flc-rule {
+  flex: 1; min-width: 6px; height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--h) 20%, transparent), transparent);
+}
+.flc-wait { flex: none; font-size: 9.5px; letter-spacing: 1.2px; color: var(--h); }
+
+.flc-sum {
+  padding: 5px 10px 0 8px;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5; font-style: italic; color: var(--txm);
+}
+
+.flc-fields { display: flex; flex-direction: column; gap: 8px; padding: 9px 10px 0 8px; }
+.flc-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.flc-f[data-inline] { flex-direction: row; align-items: baseline; gap: 8px; }
+.flc-lab { flex: none; font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--txf); }
+.flc-val { min-width: 0; font-size: 12px; color: var(--tx); overflow-wrap: anywhere; }
+.flc-wide { min-width: 0; }
+
+.flc-checks, .flc-cmds { display: flex; flex-direction: column; gap: 4px; }
+.flc-checks > li, .flc-cmds > li {
+  display: flex; align-items: baseline; gap: 7px; min-width: 0;
+  font-family: var(--mono); font-size: 11.5px; color: var(--tx);
+}
+.flc-glyph { flex: none; font-style: normal; color: var(--ok); }
+.flc-checks > li[data-bad] > .flc-glyph,
+.flc-cmds > li[data-state="fail"] > .flc-glyph { color: var(--err); }
+.flc-cmds > li[data-state="pending"] > .flc-glyph { color: var(--txl); }
+.flc-cmd { min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.flc-again {
+  appearance: none; border: 0; background: none; padding: 0; font: inherit; color: var(--err);
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.flc-note { color: var(--txf); font-size: 10px; }
+.flc-n { flex: none; font-style: normal; color: var(--txl); }
+
+.flc-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.flc-chip {
+  display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
+  padding: 3px 7px; border-radius: 6px;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--panel2) 60%, transparent);
+  font-family: var(--mono); font-size: 10.5px; color: var(--txh);
+}
+.flc-path { min-width: 0; overflow-wrap: anywhere; }
+.flc-stat { flex: none; font-variant-numeric: tabular-nums; }
+.flc-stat > b { font-weight: 400; color: var(--ok); }
+.flc-stat > i { font-style: normal; color: var(--err); margin-left: 4px; }
+
+.flc-finds { display: flex; flex-direction: column; gap: 9px; align-items: flex-start; }
+.flc-finds > ul { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+.flc-finds li[data-off] { opacity: 0.4; text-decoration: line-through; }
+.flc-findhead { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+/* A drop is a tap target, not a glyph: 24px is the smallest thing a thumb hits
+   reliably beside text this size. */
+.flc-drop {
+  appearance: none; border: 0; background: none; flex: none;
+  width: 24px; margin: -6px 0 -6px -6px; padding: 6px 0;
+  font: inherit; font-size: 13px; line-height: 1; color: var(--txd);
+}
+.flc-sev { flex: none; font-size: 9px; letter-spacing: 1.4px; color: var(--txd); }
+li[data-sev="high"] .flc-sev { color: var(--err); }
+li[data-sev="med"]  .flc-sev { color: var(--warn); }
+.flc-at {
+  appearance: none; border: 0; background: none; padding: 0; min-width: 0; text-align: left;
+  overflow-wrap: anywhere; font-family: var(--mono); font-size: 10.5px; color: var(--txh);
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.flc-at:disabled { text-decoration: none; }
+.flc-findnote { padding-left: 24px; font-size: 12px; color: var(--txm); }
+.flc-finds li:not([data-off]) .flc-findnote { color: var(--tx); }
+
+.flc-gal { display: flex; flex-direction: column; gap: 9px; align-items: flex-start; }
+.flc-shots { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 9px; }
+.flc-shots figure { display: flex; flex-direction: column; gap: 4px; max-width: 150px; }
+.flc-zoom { appearance: none; border: 0; background: none; padding: 0; display: block; }
+.flc-shots img {
+  display: block; height: 96px; width: auto; max-width: 150px;
+  object-fit: cover; border-radius: 8px; border: 1px solid var(--border);
+}
+.flc-shots figcaption { font-size: 9px; letter-spacing: .6px; color: var(--txf); }
+.flc-gone { font-family: var(--mono); font-size: 9px; color: var(--txl); }
+
+.flc-meter { display: flex; align-items: center; gap: 8px; }
+.flc-meter .seg { display: flex; gap: 2px; }
+.flc-meter .seg i {
+  display: block; width: 8px; height: 10px; border-radius: 1px;
+  background: color-mix(in srgb, var(--acc) 12%, transparent);
+}
+.flc-meter .seg i[data-on] { background: var(--acc); }
+.flc-meter > b {
+  font-weight: 400; font-size: 9.5px; letter-spacing: 1.2px; color: var(--txd);
+  font-variant-numeric: tabular-nums;
+}
+
+.flc-verd {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 9px; border-radius: 6px;
+  font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase;
+  border-left: 2px solid var(--txl); color: var(--txm);
+  background: color-mix(in srgb, var(--panel2) 70%, transparent);
+}
+.flc-verd > i { font-style: normal; }
+.flc-verd[data-tone="good"] { border-left-color: var(--ok); color: var(--ok); }
+.flc-verd[data-tone="bad"] { border-left-color: var(--err); color: var(--err); }
+
+.flc-draft { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; width: 100%; }
+.flc-in {
+  width: 100%; padding: 8px; border-radius: 8px; resize: vertical;
+  border: 1px solid var(--border); background: var(--panel2); color: var(--txb);
+  font-family: var(--mono); font-size: 12px; line-height: 1.5;
+}
+.flc-in:focus { outline: none; border-color: var(--acc); }
+.flc-in::placeholder { color: var(--txl); }
+.flc-shots .flc-in { max-width: 150px; padding: 4px 6px; font-size: 10.5px; }
+.flc-pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; color: var(--txm); }
+
+.flc-acts { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 10px 11px 8px; }
+.flc-btn {
+  position: relative; overflow: hidden; appearance: none;
+  padding: 7px 12px; border-radius: 8px; line-height: 15px;
+  font-family: inherit; font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--panel2) 60%, transparent);
+  color: var(--txm);
+}
+.flc-btn:active:not(:disabled) { opacity: .7; }
+.flc-btn:disabled { opacity: .45; }
+.flc-btn[data-go] {
+  color: var(--h); border-color: color-mix(in srgb, var(--h) 45%, transparent);
+  background: color-mix(in srgb, var(--h) 10%, transparent);
+}
+.flc-btn > span { position: relative; }
+.flc-fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+  background: color-mix(in srgb, var(--h) 30%, transparent);
+}
+.flc-hold[data-held] > .flc-fill { width: 100%; transition: width var(--hold) linear; }
+
+/* ── STAGE HINT ───────────────────────────────────────────────────────────
+   One line above the composer naming what this stage is waiting for. */
+.flh {
+  display: flex; align-items: center; gap: 7px; padding: 0 12px 7px;
+  font-size: 9.5px; letter-spacing: 1.2px; color: var(--txf);
+}
+.flh-mark { flex: none; font-style: normal; color: var(--acc); }
+.flh[data-gate] .flh-mark { color: var(--warn); }
+.flh-stage { flex: none; text-transform: uppercase; color: var(--txd); }
+.flh-want { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flh-btn {
+  margin-left: auto; flex: none; appearance: none; padding: 4px 9px; border-radius: 6px;
+  font-family: inherit; font-size: 9.5px; letter-spacing: 1.4px;
+  border: 1px solid var(--border); background: transparent; color: var(--txd);
+}
+.flh-btn:active:not(:disabled) { opacity: .7; }
+.flh-btn:disabled { opacity: .5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flc[data-await] > .flc-rail { animation: none; }
+  .flc-hold[data-held] > .flc-fill { transition: none; }
+}
