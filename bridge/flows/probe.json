@@ -33,9 +33,12 @@
       "id": "report",
       "label": "REPORT",
       "gate": false,
-      "instructions": "Answer the question directly, then the evidence (file:line, command output). End with a recommendation and how confident you are.",
+      "instructions": "Answer the question directly, then the evidence (file:line, command output). End with a recommendation and how confident you are. State `answer` as one claim per line, each citing the findings it rests on by number.",
       "card_fields": [
-        "answer",
+        {
+          "name": "answer",
+          "type": "claims"
+        },
         "recommendation",
         {
           "name": "confidence",

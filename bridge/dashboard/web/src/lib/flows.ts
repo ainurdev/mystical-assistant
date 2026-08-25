@@ -45,3 +45,24 @@ export function useFlows(): FlowShape[] {
 export function useFlowsAuto(): boolean {
   return useSyncExternalStore(subscribe, () => auto);
 }
+
+/** How much a stage is asking of you, on the ladder the flow gallery draws:
+ *  L0 you watch it run, L5 you shape the artifact with it. The number is the
+ *  useful part — it says, before you read the card, whether this one wants a
+ *  glance or a decision. Derived from the stage's declared `input` rather than
+ *  stored, so a flow author picks the interaction and the level follows.
+ *
+ *  Mirrors the twin under the other surface. Keep them in sync. */
+const LADDER: Record<string, { level: number; verb: string }> = {
+  approve:  { level: 1, verb: "TAP" },
+  arm:      { level: 1, verb: "ARM" },
+  pick:     { level: 2, verb: "PICK" },
+  evidence: { level: 3, verb: "EVIDENCE" },
+  answer:   { level: 3, verb: "ANSWER" },
+  triage:   { level: 4, verb: "TRIAGE" },
+  annotate: { level: 5, verb: "CO-EDIT" },
+};
+
+export function engagement(input?: string | null): { level: number; verb: string } {
+  return (input && LADDER[input]) || { level: 0, verb: "WATCH" };
+}

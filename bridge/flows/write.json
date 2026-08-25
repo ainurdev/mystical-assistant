@@ -1,0 +1,45 @@
+{
+  "stype": "write",
+  "label": "WRITING",
+  "blurb": "Write or rework a piece of prose: release notes, a README, a post.",
+  "form": [
+    { "key": "piece", "label": "WHAT TO WRITE", "required": true, "multiline": true },
+    { "key": "audience", "label": "AUDIENCE", "required": false, "multiline": false },
+    { "key": "length", "label": "LENGTH", "required": false, "multiline": false }
+  ],
+  "stages": [
+    {
+      "id": "outline",
+      "label": "OUTLINE",
+      "gate": false,
+      "instructions": "Say what the piece has to cover and in what order, before writing a sentence of it. Read whatever it is about — the diff, the code, the notes — so the outline is about the real thing.",
+      "card_fields": [
+        "covers",
+        { "name": "sources", "type": "files" }
+      ]
+    },
+    {
+      "id": "draft",
+      "label": "DRAFT",
+      "gate": false,
+      "instructions": "Write it. Plain sentences, no throat-clearing, no adjectives doing work a verb should. Then list what you cut and why, so the trim is reviewable.",
+      "card_fields": [
+        { "name": "draft", "type": "draft" },
+        { "name": "changes", "type": "plan" }
+      ],
+      "input": "annotate"
+    },
+    {
+      "id": "revise",
+      "label": "REVISE",
+      "gate": false,
+      "instructions": "Apply the notes exactly — do not take the opportunity to rewrite what wasn't questioned. Show the final text and what this pass changed.",
+      "card_fields": [
+        { "name": "draft", "type": "draft" },
+        { "name": "changes", "type": "plan" },
+        { "name": "ready", "type": "verdict" }
+      ],
+      "input": "annotate"
+    }
+  ]
+}

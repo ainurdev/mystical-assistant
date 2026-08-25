@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type CompareFile, type GitCommit } from "../api";
+import { diffColor } from "../lib/cardfields";
 import { ROW_H, laneColor, layout } from "../lib/gitgraph";
 import { ago } from "../lib/surfaces";
 import { Skeleton } from "./ui";
@@ -21,16 +22,6 @@ function chip(r: string): { label: string; kind: "head" | "tag" | "remote" | "lo
 const MARK_COLOR: Record<string, string> = {
   A: "var(--ok)", D: "var(--err)", R: "var(--info)", C: "var(--info)",
 };
-
-// Unified-diff line → its color. Headers (---/+++) would otherwise read as a
-// whole-file add/delete, so they stay muted.
-function diffColor(l: string): string {
-  if (l.startsWith("@@")) return "var(--acc)";
-  if (/^(\+\+\+|---|diff |index |new file|deleted file|similarity|rename )/.test(l)) return "var(--txl)";
-  if (l.startsWith("+")) return "var(--ok)";
-  if (l.startsWith("-")) return "var(--err)";
-  return "var(--txd)";
-}
 
 const CHIP_CLASS: Record<string, string> = {
   head: "border-primary text-foreground-bright bg-[var(--ac-12)]",
