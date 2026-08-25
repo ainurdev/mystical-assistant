@@ -64,10 +64,23 @@ export interface FlowField {
   required?: boolean;
   multiline?: boolean;
 }
+// A field's type is a rendering contract the flow declares (bridge/flow.py
+// _SHAPES): the card draws the matching widget, or falls back to text when the
+// model emitted something else.
+export interface FlowFieldShape {
+  name: string;
+  type: string;
+}
 export interface FlowStageShape {
   id: string;
   label: string;
   gate: boolean;
+  fields: FlowFieldShape[];
+  /** How this stage wants to be engaged: approve | arm | evidence | triage |
+   *  annotate. "" for a stage that only wants a message. */
+  input: string;
+  /** Flows a card on this stage can open as a fresh session. */
+  handoff: string[];
 }
 // The catalog carries shape, never stage instructions: a picker needs the form
 // and the rail, not the prompts behind them (bridge/flow.py catalog()).

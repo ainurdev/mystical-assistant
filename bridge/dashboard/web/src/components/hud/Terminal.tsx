@@ -173,7 +173,7 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking, boot,
-  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, onStage, onRetype,
+  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, onStage, onRetype, onHandoff,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
   onOpenDesign,
 }: {
@@ -220,6 +220,8 @@ export function Terminal({
   /** Move a typed session's stage — the rail's jumps and a gate's APPROVE. */
   onStage?: (action: "advance" | "back" | "set", stage?: string) => void;
   onRetype?: (stype: string | null) => void;
+  /** Open a fresh typed session from a report card (PROBE -> FIX, and friends). */
+  onHandoff?: (stype: string, prompt: string) => void;
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;
 }) {
@@ -427,7 +429,7 @@ export function Terminal({
                 ) : empty && loading ? null : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} stage={selected?.stage ?? null} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
+                  <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} stage={selected?.stage ?? null} stype={selected?.stype ?? null} onHandoff={onHandoff} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
                 )}
               </div>
             </div>

@@ -1447,6 +1447,8 @@ export const RunStream = memo(function RunStream({
   onAnswer,
   onStageAdvance,
   stage = null,
+  stype = null,
+  onHandoff,
   ended = false,
   showAll = false,
   boot = null,
@@ -1474,6 +1476,11 @@ export const RunStream = memo(function RunStream({
    *  reads as history rather than offering an approval that would move the
    *  wrong stage on. */
   stage?: string | null;
+  /** The session's flow: what names each card field's type, and so which widget
+   *  draws it. */
+  stype?: string | null;
+  /** Open a fresh typed session from a report card. */
+  onHandoff?: (stype: string, prompt: string) => void;
   ended?: boolean;
   /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
    *  browser's find is about to look for. */
@@ -1834,6 +1841,7 @@ export const RunStream = memo(function RunStream({
               <FlowCard
                 key={i}
                 card={event.card}
+                stype={stype}
                 gated={!!event.gated}
                 // Both have to hold: the turn is the last finished one (onAnswer
                 // reaches no other), and the session still stands where the card
@@ -1841,6 +1849,8 @@ export const RunStream = memo(function RunStream({
                 isCurrent={!!onAnswer && event.stage === stage}
                 onAction={(send) => onAnswer?.(send)}
                 onApprove={() => onStageAdvance?.()}
+                onOpenFile={onOpenFile}
+                onHandoff={onHandoff}
               />
             );
           case "stage":

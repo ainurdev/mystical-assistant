@@ -209,3 +209,40 @@ per-turn, engine changes are not.
 - No new flow-editor UI — custom flows keep editing raw JSON; the new keys
   validate on save.
 - No changes to AUTO TYPE / classification.
+
+## As built (2026-08-25)
+
+Seven deviations from the design above, all small:
+
+1. **A `draft` field type** carries the editable-text idea instead of a
+   build-specific commit box: any flow can declare one (commit message, PR
+   body), and the widget is a textarea plus a USE IT / USE MY EDIT send.
+2. **The contract states shapes inside the card skeleton** rather than as extra
+   lines beneath it — the model copies the JSON it is shown, so the shape
+   belongs in the JSON.
+3. **Handoff targets are checked for existence in `save_custom`, not
+   `validate_flow`** — `load_flows()` calls `validate_flow`, so resolving other
+   flows there would recurse. `validate_flow` checks the id's shape; the
+   surfaces hide a button whose target isn't in the catalog.
+4. **The engagement affordances live on the card, not in the composer.** The
+   findings, the screens and the commit message are on the card, and a second
+   APPROVE under the prompt box would be the same button twice. What sits above
+   the composer is `StageHint`: one line naming what the stage wants, plus the
+   one thing a card cannot offer — PASTE LOG, which fences the clipboard.
+5. **Mini App file chips are not clickable** — its `/repo` route has no
+   deep-link to a path. The dashboard's open in the editor, at the finding's
+   line.
+6. **The bot's gate button already shipped** (`bridge/runner.py:507`), so §7 was
+   only re-verified. `render_card` grew a flattener, because typed fields arrive
+   as rows and the bot has no widgets.
+7. **`design.verify` gained a `shots` screens field** so the built screens sit
+   beside the approved mockups, which §6 described but the field list omitted.
+
+Verified: 1223 backend tests pass; both apps typecheck (`tsc -p
+tsconfig.app.json`) and build;
+`cardfields.check.ts` passes in both; every widget was driven headlessly against
+a scratch bridge (dashboard and Mini App) — check board, file chips with a
+diffstat, findings triage through a drop to `KEEP 1 · DROP 2`, screens gallery
+including a pruned image, confidence meter, verdict banner, command manifest
+with hold-to-run, and the draft box. `POST /local/sessions {stype: "fix"}`
+returns `stage: reproduce`, which is the handoff's server contract.

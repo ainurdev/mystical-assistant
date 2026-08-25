@@ -122,7 +122,7 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, isActive, isLast, promptIdx, hud, liveTurns, showAll, boot,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, onStageAdvance, stage,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, onStageAdvance, stage, stype, onHandoff,
 }: {
   turn: Turn;
   isActive: boolean;
@@ -144,6 +144,9 @@ function TurnBlock({
   onStageAdvance?: () => void;
   /** The open session's current stage (typed sessions only). */
   stage?: string | null;
+  /** The open session's flow, which names its cards' field types. */
+  stype?: string | null;
+  onHandoff?: (stype: string, prompt: string) => void;
 }) {
   const working = isActive && turn.status === "running" && turn.pending.length === 0;
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
@@ -185,6 +188,8 @@ function TurnBlock({
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               onStageAdvance={isLast ? onStageAdvance : undefined}
               stage={stage}
+              stype={stype}
+              onHandoff={isLast ? onHandoff : undefined}
               ended={turn.status !== "running"}
               showAll={showAll}
             />
@@ -226,6 +231,8 @@ export function Transcript({
   onAnswer,
   onStageAdvance,
   stage,
+  stype,
+  onHandoff,
   hasOlder,
   olderLoading,
   onLoadOlder,
@@ -250,6 +257,9 @@ export function Transcript({
   onStageAdvance?: () => void;
   /** The open session's current stage (typed sessions only). */
   stage?: string | null;
+  /** The open session's flow, which names its cards' field types. */
+  stype?: string | null;
+  onHandoff?: (stype: string, prompt: string) => void;
   hasOlder?: boolean;
   olderLoading?: boolean;
   onLoadOlder?: () => void;
@@ -415,6 +425,8 @@ export function Transcript({
         onAnswer={onAnswer}
         onStageAdvance={onStageAdvance}
         stage={stage}
+        stype={stype}
+        onHandoff={onHandoff}
       />
     ) : (
       <WorkingIndicator hud={hud} />

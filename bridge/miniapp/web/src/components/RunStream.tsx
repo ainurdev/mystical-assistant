@@ -940,6 +940,8 @@ export const RunStream = memo(function RunStream({
   onAnswer,
   onWrite,
   onStageAdvance,
+  stype = null,
+  onHandoff,
   tokens = null,
   ended = false,
   boot = null,
@@ -958,6 +960,11 @@ export const RunStream = memo(function RunStream({
   onWrite?: (question: string) => void;
   /** Approve a gated stage's requested move (server-owned; the card can ask). */
   onStageAdvance?: () => void;
+  /** The session's flow: what names each card field's type, and so which widget
+   *  draws it. */
+  stype?: string | null;
+  /** Open a fresh typed session from a report card. */
+  onHandoff?: (stype: string, prompt: string) => void;
   ended?: boolean;
   /** Is this the turn streaming into the chat right now? Only it may run a
    *  clock — on an older turn the figure would start when you scrolled to it. */
@@ -1253,12 +1260,14 @@ export const RunStream = memo(function RunStream({
                 <RailNode />
                 <FlowCard
                   card={event.card}
+                  stype={stype}
                   gated={!!event.gated}
                   // onAnswer reaches only the last finished turn — exactly when a
                   // card is still something to act on rather than history.
                   isCurrent={!!onAnswer}
                   onAction={(send) => onAnswer?.(send)}
                   onApprove={() => onStageAdvance?.()}
+                  onHandoff={onHandoff}
                 />
               </div>
             );

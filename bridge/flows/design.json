@@ -15,10 +15,14 @@
       "id": "draft",
       "label": "DRAFT",
       "gate": true,
-      "instructions": "Invoke the /design-first skill with the brief and follow it: brand-system mockups, screenshots into the transcript, push to the linked design project. Stop for approval — that approval is this stage's gate.",
+      "instructions": "Invoke the /design-first skill with the brief and follow it: brand-system mockups, screenshots into the transcript, push to the linked design project. Stop for approval \u2014 that approval is this stage's gate.",
       "card_fields": [
-        "screens"
-      ]
+        {
+          "name": "screens",
+          "type": "screens"
+        }
+      ],
+      "input": "annotate"
     },
     {
       "id": "implement",
@@ -27,17 +31,30 @@
       "permission_mode": "acceptEdits",
       "instructions": "Implement the approved design in the repo. List every file changed.",
       "card_fields": [
-        "changed"
+        {
+          "name": "changed",
+          "type": "files"
+        }
       ]
     },
     {
       "id": "verify",
       "label": "VERIFY",
       "gate": false,
-      "instructions": "Screenshot the built UI (bridge-eyes) and compare against the approved draft. Run the frontend typecheck and build. Report results with evidence.",
+      "instructions": "Run the checks, then screenshot the built screens (bridge-eyes) so they sit beside the approved mockups. Report exact commands and results; never claim pass without output.",
       "card_fields": [
-        "checks",
-        "pass"
+        {
+          "name": "checks",
+          "type": "checks"
+        },
+        {
+          "name": "pass",
+          "type": "verdict"
+        },
+        {
+          "name": "shots",
+          "type": "screens"
+        }
       ],
       "next_allowed": [
         "implement"

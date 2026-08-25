@@ -225,6 +225,8 @@ export interface ChatContextValue {
   /** Jump to a turn, auto-loading older pages until it exists. */
   jumpToTurn: (turnId: string) => Promise<void>;
   newChat: (stype?: string) => Promise<void>;
+  /** Open a fresh typed session on a card's brief — a report becoming the work. */
+  handoff: (stype: string, prompt: string) => Promise<void>;
   /** Move the open session's stage — a gate's APPROVE. */
   setStage: (action: "advance" | "back" | "set", stage?: string) => Promise<void>;
   retype: (stype: string | null) => Promise<void>;
@@ -649,6 +651,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /** A report card handed to a new typed session: the same mint-then-run path
+   *  newChat and the composer already use, with the card's brief as the first
+   *  message. A preset stype skips the classifier (bridge/flowtype.py). */
+  async function handoff(stype: string, prompt: string) {
+    if (!project) return;
+    setSendError(null);
+    sessionIdRef.current = null;
+    setSessionId(null);
+    setTurns([]);
+    setResolving(true);
+    try {
+      const { session } = await api.createSession(project, undefined, undefined, stype);
+      setSessions((prev) => [session, ...prev]);
+      openSession(session.id);
+      await runPrompt(prompt, [], undefined, { sessionId: session.id, force: true });
+    } catch {
+      /* the poll reconciles */
+    } finally {
+      setResolving(false);
+    }
+  }
+
   async function setStage(action: "advance" | "back" | "set", stage?: string) {
     const sid = sessionIdRef.current;
     if (!sid) return;
@@ -715,6 +739,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     respond,
     loadingSession,
     newChat,
+    handoff,
     setStage,
     retype,
     held,

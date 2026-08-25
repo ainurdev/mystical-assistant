@@ -23,7 +23,10 @@
       "gate": false,
       "instructions": "Investigate. Read the code, run read-only commands, follow the evidence. Avoid mutating anything. Note findings as you go; advance when you can answer.",
       "card_fields": [
-        "findings"
+        {
+          "name": "findings",
+          "type": "findings"
+        }
       ]
     },
     {
@@ -34,7 +37,14 @@
       "card_fields": [
         "answer",
         "recommendation",
-        "confidence"
+        {
+          "name": "confidence",
+          "type": "confidence"
+        }
+      ],
+      "handoff": [
+        "fix",
+        "build"
       ]
     }
   ]

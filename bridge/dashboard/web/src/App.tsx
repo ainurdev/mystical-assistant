@@ -55,6 +55,8 @@ import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
+import { StageHint } from "./components/StageHint";
+import { useFlows } from "./lib/flows";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Strip } from "./components/hud/Strip";
@@ -1437,6 +1439,11 @@ export function App() {
 
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
+  const flowCatalog = useFlows();
+  // Where the open session stands, as the flow declared it — what the strip
+  // above the prompt box reads to say what this stage wants from you.
+  const stageShape = flowCatalog.find((f) => f.stype === selected?.stype)
+    ?.stages.find((st) => st.id === selected?.stage) ?? null;
   const sessionBranch = selected?.branch;
 
   // Footer git state for that tree. Same 10s cadence as the project badges;
@@ -1998,6 +2005,10 @@ export function App() {
                 }}
                 onStage={(action, stage) => void setStage(action, stage)}
                 onRetype={(stype) => void retypeSession(stype)}
+                // A report card opening as work: same path as starting a typed
+                // session by hand, with the card restated as the first message.
+                onHandoff={(stype, prompt) =>
+                  sessionProject && void typedSession(sessionProject, stype, prompt)}
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
                 composer={
@@ -2017,6 +2028,10 @@ export function App() {
                         onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
+                    <StageHint
+                      stage={stageShape}
+                      onPaste={(text) => setInject((p) => ({ text, nonce: p.nonce + 1 }))}
+                    />
                     <Composer
                       pills={
                         // Inside the composer's box, not on the bare panel above

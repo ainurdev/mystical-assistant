@@ -24,6 +24,39 @@ FLOWS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flows")
 _ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,23}$")
 _PERM_MODES = ("default", "acceptEdits", "plan", "bypassPermissions")
 
+# What a stage's card field can be. The type is a rendering contract, not a
+# storage one: it tells the model what shape to emit and the surfaces which
+# widget to draw. A bare string in card_fields is still a text field, so every
+# flow written before types existed keeps working untouched.
+_SHAPES = {
+    "text": "...",
+    "draft": "<the text, ready for the user to edit and send>",
+    "files": '["path/to/file", ...]',
+    "checks": '[{"cmd": "<command>", "ok": true}]',
+    "screens": '[{"path": "<image path>", "caption": "..."}]',
+    "findings": ('[{"file": "path", "line": 0, "severity": "high|med|low", '
+                 '"note": "..."}]'),
+    "commands": '[{"cmd": "<command>", "status": "ok|fail|pending"}]',
+    "confidence": "0.0-1.0",
+    "verdict": '"<one word>"',
+}
+# How the user is meant to engage with a stage, which is what the composer
+# reads to lead with taps instead of a blank box. The text box never leaves.
+_INPUTS = ("approve", "arm", "evidence", "triage", "annotate")
+
+
+def fields_of(stage: dict) -> "list[dict]":
+    """A stage's card_fields as {name, type}. Anything unreadable is dropped and
+    an unknown type degrades to text — a stale template must still render."""
+    out = []
+    for f in stage.get("card_fields", []) or []:
+        if isinstance(f, str) and f:
+            out.append({"name": f, "type": "text"})
+        elif isinstance(f, dict) and isinstance(f.get("name"), str) and f["name"]:
+            t = f.get("type") or "text"
+            out.append({"name": f["name"], "type": t if t in _SHAPES else "text"})
+    return out
+
 
 def enabled() -> bool:
     """Master switch, shared with every other priced feature in the AI tab."""
@@ -70,8 +103,27 @@ def validate_flow(d) -> "list[str]":
             errs.append(f"stages[{i}].gate must be true or false")
         if not (s.get("instructions") or "").strip():
             errs.append(f"stages[{i}].instructions is required")
-        if not isinstance(s.get("card_fields", []), list):
+        cf = s.get("card_fields", [])
+        if not isinstance(cf, list):
             errs.append(f"stages[{i}].card_fields must be a list")
+        else:
+            for j, fl in enumerate(cf):
+                if isinstance(fl, str) and fl:
+                    continue
+                if not (isinstance(fl, dict) and isinstance(fl.get("name"), str)
+                        and fl["name"]):
+                    errs.append(f"stages[{i}].card_fields[{j}] must be a name "
+                                "or an object with name and type")
+                elif fl.get("type", "text") not in _SHAPES:
+                    errs.append(f"stages[{i}].card_fields[{j}].type must be one "
+                                f"of {tuple(_SHAPES)}")
+        inp = s.get("input")
+        if inp is not None and inp not in _INPUTS:
+            errs.append(f"stages[{i}].input must be one of {_INPUTS}")
+        ho = s.get("handoff", [])
+        if not isinstance(ho, list) or any(
+                not isinstance(t, str) or not _ID_RE.match(t) for t in ho):
+            errs.append(f"stages[{i}].handoff must be a list of flow ids")
         pm = s.get("permission_mode")
         if pm is not None and pm not in _PERM_MODES:
             errs.append(f"stages[{i}].permission_mode must be one of {_PERM_MODES}")
@@ -140,7 +192,13 @@ def catalog() -> dict:
             "source": "custom" if f.get("_custom") else "builtin",
             "form": f.get("form", []),
             "stages": [{"id": s["id"], "label": s.get("label", s["id"].upper()),
-                        "gate": bool(s.get("gate"))} for s in f["stages"]],
+                        "gate": bool(s.get("gate")), "fields": fields_of(s),
+                        "input": s.get("input") or "",
+                        # Raw, not filtered against this catalog: a target whose
+                        # flow is disabled or gone simply has no button drawn.
+                        "handoff": [t for t in s.get("handoff", [])
+                                    if isinstance(t, str)]}
+                       for s in f["stages"]],
         })
     return {"enabled": enabled(), "flows": out,
             "auto": aifeatures.enabled("flowtype")}
@@ -151,6 +209,12 @@ def save_custom(stype: str, d) -> "list[str]":
     errs = validate_flow(d)
     if not errs and d.get("stype") != stype:
         errs.append("stype in the body must match the one being saved")
+    if not errs:
+        known = set(load_flows()) | {stype}
+        for s_ in d.get("stages", []):
+            for t in s_.get("handoff", []) or []:
+                if t not in known:
+                    errs.append(f"stage {s_['id']} hands off to unknown flow {t!r}")
     if errs:
         return errs
     store.set_setting(f"flow:{stype}", json.dumps(
@@ -251,8 +315,9 @@ def compose_section(f: dict, stage_id: "str | None") -> str:
     if s is None:
         return (f"[flow] This {label} session's flow is complete ({rail}). "
                 "The hud-card block is now optional.")
-    fields = ", ".join(f'"{n}": ...' for n in s.get("card_fields", []))
-    names = ", ".join(s.get("card_fields", [])) or "(none required)"
+    ff = fields_of(s)
+    fields = ", ".join(f'"{x["name"]}": {_SHAPES[x["type"]]}' for x in ff)
+    names = ", ".join(x["name"] for x in ff) or "(none required)"
     gate = ('This stage is GATED: you may set "advance": true to request the '
             "move, but the user approves it — never assume approval or work "
             "past the gate."
@@ -344,9 +409,9 @@ def validate_card(f: dict, stage_id: str, card) -> "list[str]":
         errs.append("fields must be an object")
         fields = {}
     st = stage_by_id(f, stage_id) or {}
-    for name in st.get("card_fields", []):
-        if name not in fields:
-            errs.append(f"fields.{name} is required in stage {stage_id}")
+    for x in fields_of(st):
+        if x["name"] not in fields:
+            errs.append(f"fields.{x['name']} is required in stage {stage_id}")
     # "next" is only ever offered to a stage that declares targets, so a value
     # off that list is a real miss. A stage with no branch ignores the key.
     nxt, allowed = card.get("next"), st.get("next_allowed", [])
@@ -470,7 +535,17 @@ def render_card(card: dict) -> str:
     """A card as Telegram-safe sections: the summary, then a line per field."""
     lines = [f"▸ {str(card.get('summary') or '').strip()}"]
     for name, val in (card.get("fields") or {}).items():
-        if isinstance(val, list):
-            val = ", ".join(str(v) for v in val)
-        lines.append(f"{name.upper()}: {val}")
+        lines.append(f"{name.upper()}: {_flat(val)}")
     return "\n".join(lines)
+
+
+def _flat(v) -> str:
+    """A card value as one line. Typed fields arrive as lists of objects, so a
+    row prints its own values rather than its JSON — the bot has no widgets."""
+    if isinstance(v, bool):
+        return "✓" if v else "✗"
+    if isinstance(v, list):
+        return ", ".join(_flat(x) for x in v)
+    if isinstance(v, dict):
+        return " ".join(_flat(x) for x in v.values() if x not in (None, ""))
+    return str(v)

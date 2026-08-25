@@ -30,9 +30,13 @@
       "instructions": "Read the code this touches and produce a short plan: approach, files, risks, how it will be verified. Do not write code in this stage.",
       "card_fields": [
         "approach",
-        "files",
+        {
+          "name": "files",
+          "type": "files"
+        },
         "risks"
-      ]
+      ],
+      "input": "approve"
     },
     {
       "id": "implement",
@@ -41,7 +45,10 @@
       "permission_mode": "acceptEdits",
       "instructions": "Execute the approved plan. Match the surrounding code's style. List every file changed as you go.",
       "card_fields": [
-        "changed"
+        {
+          "name": "changed",
+          "type": "files"
+        }
       ]
     },
     {
@@ -50,8 +57,14 @@
       "gate": false,
       "instructions": "Run the tests and any 'done when' checks from the brief. Report exact commands and results; never claim pass without output.",
       "card_fields": [
-        "checks",
-        "pass"
+        {
+          "name": "checks",
+          "type": "checks"
+        },
+        {
+          "name": "pass",
+          "type": "verdict"
+        }
       ],
       "next_allowed": [
         "implement"
@@ -61,10 +74,15 @@
       "id": "ship",
       "label": "SHIP",
       "gate": true,
-      "instructions": "Summarize what shipped and what the user should look at. Commit if the repo's conventions call for it; state the commit sha.",
+      "instructions": "State what shipping means here and prepare it \u2014 commit message, branch, push. Put the proposed commit message in commit_msg; the user may edit it before approving. Do not push past the gate.",
       "card_fields": [
-        "shipped"
-      ]
+        "shipped",
+        {
+          "name": "commit_msg",
+          "type": "draft"
+        }
+      ],
+      "input": "approve"
     }
   ]
 }

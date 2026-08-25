@@ -15,11 +15,15 @@
       "id": "state",
       "label": "STATE",
       "gate": true,
-      "instructions": "State exactly what will be executed and what it affects — commands, targets, blast radius, rollback. Execute nothing in this stage.",
+      "instructions": "State exactly what will be executed and what it affects \u2014 commands, targets, blast radius, rollback. Execute nothing in this stage.",
       "card_fields": [
-        "will_do",
+        {
+          "name": "will_do",
+          "type": "commands"
+        },
         "blast_radius"
-      ]
+      ],
+      "input": "arm"
     },
     {
       "id": "execute",
@@ -27,7 +31,10 @@
       "gate": false,
       "instructions": "Run exactly what was approved, nothing more. Capture the output of each command.",
       "card_fields": [
-        "ran"
+        {
+          "name": "ran",
+          "type": "commands"
+        }
       ]
     },
     {
@@ -36,8 +43,14 @@
       "gate": false,
       "instructions": "Verify the world is in the intended state (service up, config live, files gone). Show the checks and their output.",
       "card_fields": [
-        "checks",
-        "ok"
+        {
+          "name": "checks",
+          "type": "checks"
+        },
+        {
+          "name": "ok",
+          "type": "verdict"
+        }
       ]
     }
   ]

@@ -352,7 +352,7 @@ def test_render_card_is_plain_text():
     txt = flow.render_card(card)
     assert "patched a.py" in txt
     assert "a.py, b.py" in txt                 # a list reads as a list
-    assert "PASS: True" in txt
+    assert "PASS: ✓" in txt                    # a bool reads as a glyph
     assert "hud-card" not in txt and "{" not in txt
 
 
@@ -463,3 +463,107 @@ def test_retype_endpoint_guards_ownership_and_the_type():
     assert h.sent[1] == 400 and store.get_session(s["id"])["stype"] == "probe"
     _retype_action(h, 555, s["id"], {"stype": ""})            # "" clears to chat
     assert h.sent == ({"ok": True, "stype": None, "stage": None}, 200)
+
+
+# --- typed card fields, input hints, handoffs -------------------------------
+
+def _flow_with(stage_extra: dict) -> dict:
+    return {"stype": "t1", "label": "T1", "stages": [
+        {"id": "one", "label": "ONE", "gate": False,
+         "instructions": "do it", **stage_extra}]}
+
+
+def test_fields_of_normalizes_strings_objects_and_junk():
+    st = {"card_fields": ["a", {"name": "b", "type": "checks"},
+                          {"name": "c", "type": "nope"}, {"type": "files"}, 7, ""]}
+    assert flow.fields_of(st) == [
+        {"name": "a", "type": "text"},              # bare string: still text
+        {"name": "b", "type": "checks"},
+        {"name": "c", "type": "text"},              # unknown type degrades
+    ]                                                # nameless and junk dropped
+
+
+def test_validate_flow_accepts_typed_fields_and_rejects_unknown_ones():
+    assert flow.validate_flow(_flow_with(
+        {"card_fields": ["a", {"name": "b", "type": "findings"}]})) == []
+    for bad, needle in [
+        ({"card_fields": [{"name": "b", "type": "nope"}]}, "type must be one of"),
+        ({"card_fields": [{"type": "files"}]}, "must be a name"),
+        ({"card_fields": ["a"], "input": "shout"}, "input must be one of"),
+        ({"card_fields": ["a"], "handoff": "fix"}, "handoff must be a list"),
+        ({"card_fields": ["a"], "handoff": ["NOPE"]}, "handoff must be a list"),
+    ]:
+        errs = flow.validate_flow(_flow_with(bad))
+        assert any(needle in e for e in errs), (bad, errs)
+
+
+def test_validate_flow_accepts_the_hints_the_surfaces_read():
+    assert flow.validate_flow(_flow_with(
+        {"card_fields": ["a"], "input": "triage", "handoff": ["fix"]})) == []
+
+
+def test_builtins_carry_the_shapes_the_widgets_need():
+    flows = flow.load_flows()
+    types = {(st, s["id"], x["name"]): x["type"]
+             for st, f in flows.items() for s in f["stages"]
+             for x in flow.fields_of(s)}
+    assert types[("build", "verify", "checks")] == "checks"
+    assert types[("build", "plan", "files")] == "files"
+    assert types[("build", "ship", "commit_msg")] == "draft"
+    assert types[("review", "sweep", "findings")] == "findings"
+    assert types[("ops", "state", "will_do")] == "commands"
+    assert types[("probe", "report", "confidence")] == "confidence"
+    assert types[("design", "draft", "screens")] == "screens"
+    inputs = {(st, s["id"]): s.get("input")
+              for st, f in flows.items() for s in f["stages"]}
+    assert inputs[("ops", "state")] == "arm"
+    assert inputs[("fix", "reproduce")] == "evidence"
+    assert inputs[("review", "sweep")] == "triage"
+    assert flow.stage_by_id(flows["review"], "report")["handoff"] == ["fix"]
+    assert flow.stage_by_id(flows["probe"], "report")["handoff"] == ["fix", "build"]
+
+
+def test_catalog_carries_fields_input_and_handoff():
+    cat = flow.catalog()
+    review = next(f for f in cat["flows"] if f["stype"] == "review")
+    sweep = next(s for s in review["stages"] if s["id"] == "sweep")
+    assert sweep["fields"] == [{"name": "findings", "type": "findings"}]
+    assert sweep["input"] == "triage"
+    report = next(s for s in review["stages"] if s["id"] == "report")
+    assert report["handoff"] == ["fix"] and report["input"] == ""
+
+
+def test_contract_states_each_fields_shape():
+    sec = flow.compose_section(flow.get_flow("build"), "verify")
+    assert '"checks": [{"cmd": "<command>", "ok": true}]' in sec
+    assert "checks, pass" in sec                     # the names line still holds
+    sec = flow.compose_section(flow.get_flow("build"), "plan")
+    assert '"files": ["path/to/file", ...]' in sec
+    assert '"approach": ...' in sec                  # text stays a bare slot
+
+
+def test_typed_fields_are_required_by_name_not_shape():
+    f = flow.get_flow("build")
+    card = {"stage": "verify", "summary": "ran them",
+            "fields": {"checks": "pytest passed", "pass": "yes"}}
+    assert flow.validate_card(f, "verify", card) == []   # wrong shape: renders
+    card["fields"].pop("checks")                          # missing: nudged
+    assert any("fields.checks" in e for e in flow.validate_card(f, "verify", card))
+
+
+def test_save_custom_rejects_a_handoff_to_a_flow_that_does_not_exist():
+    d = {"stype": "t2", "label": "T2", "stages": [
+        {"id": "one", "label": "ONE", "gate": False, "instructions": "go",
+         "card_fields": ["a"], "handoff": ["ghost"]}]}
+    assert any("unknown flow" in e for e in flow.save_custom("t2", d))
+    d["stages"][0]["handoff"] = ["build"]
+    assert flow.save_custom("t2", d) == []
+    assert "t2" in flow.load_flows()
+    flow.delete_custom("t2")
+
+
+def test_render_card_flattens_typed_rows_for_the_bot():
+    txt = flow.render_card({"stage": "verify", "summary": "ran",
+                            "fields": {"checks": [{"cmd": "pytest -q", "ok": True},
+                                                  {"cmd": "tsc", "ok": False}]}})
+    assert "CHECKS: pytest -q ✓, tsc ✗" in txt
