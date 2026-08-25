@@ -2070,7 +2070,7 @@ export function App() {
               ctxWindow={selected?.ctx_window ?? null}
               sessionId={sessionId}
               branch={sessionBranch}
-              onPushed={() => setGitNonce((n) => n + 1)}
+              onSynced={() => setGitNonce((n) => n + 1)}
               onPalette={() => setPaletteOpen(true)}
               agents={agentOpts} onPickAgent={setAgent}
             />

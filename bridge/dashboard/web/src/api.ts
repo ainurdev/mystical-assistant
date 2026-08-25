@@ -1303,6 +1303,11 @@ export const api = {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
     }),
+  gitPull: (project: string, branch?: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/pull", {
+      method: "POST",
+      body: { project, ...(branch ? { branch } : {}) },
+    }),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
   filesTree: (project: string, branch?: string) =>
     req<{ files: string[]; ignored?: string[] }>(

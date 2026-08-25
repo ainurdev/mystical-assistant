@@ -48,9 +48,9 @@ export interface StatusBarProps {
   // The worktree the footer is reporting on, so PUBLISH pushes that tree and
   // not the project checkout. Same value the git status was fetched with.
   branch?: string | null;
-  // Push landed — the footer's git poll is 10s, too slow to watch a chip you
-  // just changed, so the owner of that poll re-reads it now.
-  onPushed?: () => void;
+  // Push or pull landed — the footer's git poll is 10s, too slow to watch a
+  // chip you just changed, so the owner of that poll re-reads it now.
+  onSynced?: () => void;
   onPalette: () => void;
   // Same action as the composer's AGENT picker, so the footer switches who runs
   // the turn rather than only reporting it. Takes an agent option id.
@@ -59,7 +59,7 @@ export interface StatusBarProps {
 
 export function StatusBar(props: StatusBarProps) {
   const { mount, usedPct, resetLabel, accounts = [], agent, agents = [], repo, changes,
-          git, ctxTokens, ctxWindow, sessionId, branch, onPushed, onPalette, onPickAgent } = props;
+          git, ctxTokens, ctxWindow, sessionId, branch, onSynced, onPalette, onPickAgent } = props;
   // Window fill of the open session. Unmeasured (no turn yet under the meter)
   // shows nothing rather than 0%, which would read as "plenty of room".
   const ctxPct = ctxTokens && ctxWindow ? Math.round((ctxTokens / ctxWindow) * 100) : null;
@@ -90,24 +90,46 @@ export function StatusBar(props: StatusBarProps) {
   // between them, since inline styles can't say :first-child.
   const seg = { padding: "2px 9px", display: "inline-block" } as const;
 
-  // Sending the branch to the remote — offered where the chain already reports
-  // that it isn't there. git.push() publishes with -u when there's no upstream.
+  // Moving commits either direction, offered only where a plain command can
+  // succeed: push when the remote is missing commits (or the whole branch),
+  // pull when this checkout is strictly behind (git.pull is --ff-only).
+  // Diverged offers neither — that needs a merge/rebase decision, not a tap.
   const canPush = !!git?.is_repo && repo !== "—" && !git.behind &&
     git.upstream !== undefined && (git.upstream === "" || git.ahead > 0);
-  const [pushing, setPushing] = useState(false);
-  const [pushErr, setPushErr] = useState("");
-  const [pushHov, setPushHov] = useState(false);
-  async function doPush() {
-    if (repo === "—" || pushing) return;
-    setPushing(true);
-    setPushErr("");
+  const canPull = !!git?.is_repo && repo !== "—" && !!git.upstream &&
+    git.behind > 0 && !git.ahead;
+  const [busy, setBusy] = useState(false);
+  const [syncErr, setSyncErr] = useState("");
+  const [actHov, setActHov] = useState(false);
+  async function doSync(kind: "push" | "pull") {
+    if (repo === "—" || busy) return;
+    setBusy(true);
+    setSyncErr("");
     try {
-      const r = await api.gitPush(repo, branch || undefined);
-      if (!r.ok) setPushErr(r.output || "push failed");
-      else onPushed?.();
-    } catch (e) { setPushErr((e as Error).message); }
-    finally { setPushing(false); }
+      const r = kind === "push"
+        ? await api.gitPush(repo, branch || undefined)
+        : await api.gitPull(repo, branch || undefined);
+      if (!r.ok) setSyncErr(r.output || `${kind} failed`);
+      else onSynced?.();
+    } catch (e) { setSyncErr((e as Error).message); }
+    finally { setBusy(false); }
   }
+  // The one button the chain earns right now. canPush and canPull are mutually
+  // exclusive (each requires the other's count to be zero), so this is a slot,
+  // not a row of buttons.
+  const action = canPush
+    ? { kind: "push" as const,
+        label: git?.upstream ? "↑ PUSH" : "↑ PUBLISH",
+        busyLabel: "SENDING…",
+        title: git?.upstream
+          ? `Push ${git.ahead} commit${git.ahead === 1 ? "" : "s"} to ${git.upstream}`
+          : `Publish ${git?.branch} to origin — it exists only in this checkout` }
+    : canPull
+    ? { kind: "pull" as const,
+        label: "↓ PULL",
+        busyLabel: "PULLING…",
+        title: `Fast-forward ${git?.behind} commit${git?.behind === 1 ? "" : "s"} from ${git?.upstream}` }
+    : null;
   const free = agent?.free ?? false;
   const pct = !agent || agent.def ? usedPct
     : agent.left === null ? null : 100 - agent.left;
@@ -287,32 +309,40 @@ export function StatusBar(props: StatusBarProps) {
             {sync.text}
           </span>
         )}
-        <span key={`chg:${changes}`} style={{ ...seg, ...swap, color: "var(--warn)" }}>{changes} CHANGES</span>
-        {/* VS Code's "publish branch", in the link of the chain the state it
-            fixes lives in. Only where a plain push can succeed: a branch the
-            remote has never seen, or commits it hasn't got. Diverged needs a
-            pull first, which this button doesn't do. */}
-        {canPush && (
+        {/* A clean tree is the quiet norm, not a warning — it only speaks up
+            (amber, a count) once there is something uncommitted. */}
+        <span key={`chg:${changes}`}
+              title={changes
+                ? `${changes} uncommitted file${changes === 1 ? "" : "s"} in the working tree`
+                : "Working tree clean"}
+              style={{ ...seg, ...swap, color: changes ? "var(--warn)" : "var(--txd)" }}>
+          {changes ? `${changes} CHANGES` : "CLEAN"}
+        </span>
+        {/* VS Code's "publish branch" / "sync", in the link of the chain the
+            state it fixes lives in. Tinted so it reads as the one pressable
+            segment; FAILED keeps git's message in the tooltip and retries on
+            click. */}
+        {action && (
           <button
             type="button"
-            disabled={pushing}
-            onClick={() => void doPush()}
-            title={pushErr || (git?.upstream
-              ? `Push ${git.ahead} commit${git.ahead === 1 ? "" : "s"} to ${git.upstream}`
-              : `Publish ${git?.branch} to origin — it exists only in this checkout`)}
+            disabled={busy}
+            onClick={() => void doSync(action.kind)}
+            title={syncErr || action.title}
             style={{
               ...seg,
               font: "inherit",
               letterSpacing: "inherit",
               border: 0,
-              background: pushHov && !pushing ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
-              color: pushErr ? "var(--err)" : pushing ? "var(--txd)" : "var(--acc)",
-              cursor: pushing ? "default" : "pointer",
+              background: syncErr ? "color-mix(in srgb, var(--err) 10%, transparent)"
+                : busy ? "transparent"
+                : `color-mix(in srgb, var(--acc) ${actHov ? 18 : 9}%, transparent)`,
+              color: syncErr ? "var(--err)" : busy ? "var(--txd)" : "var(--acc)",
+              cursor: busy ? "default" : "pointer",
             }}
-            onMouseEnter={() => setPushHov(true)}
-            onMouseLeave={() => setPushHov(false)}
+            onMouseEnter={() => setActHov(true)}
+            onMouseLeave={() => setActHov(false)}
           >
-            {pushing ? "SENDING…" : pushErr ? "FAILED" : git?.upstream ? "↑ PUSH" : "↑ PUBLISH"}
+            {busy ? action.busyLabel : syncErr ? "FAILED" : action.label}
           </button>
         )}
       </span>

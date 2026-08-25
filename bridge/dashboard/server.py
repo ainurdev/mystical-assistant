@@ -1083,6 +1083,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             ok, output = git.push(cwd)
             return self._json({"ok": ok, "output": output})
+        if path == "/local/git/pull":
+            # fast-forward only — a diverged or dirty tree fails with git's
+            # own message rather than merging behind the user's back.
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            ok, output = git.pull(cwd)
+            return self._json({"ok": ok, "output": output})
         if path == "/local/update":
             # pull the platform's new commits; on success the bridge restarts
             # shortly after this response flushes.
