@@ -50,7 +50,7 @@ def _save(state: dict) -> None:
     try:
         with open(_cache_path(), "w") as f:
             json.dump(state, f)
-    except OSError:
+    except (OSError, TypeError, ValueError):
         pass
 
 
@@ -83,7 +83,8 @@ def render(key: str, ctx: dict, force: bool = False) -> dict:
     prev = state.get(slot) or {}
     try:
         mark = spec["watermark"](ctx)
-    except Exception:  # noqa: BLE001 — a watermark is a convenience, not a contract
+    except Exception as e:  # noqa: BLE001 — a watermark is a convenience, not a contract
+        print(f"[cards] {key} watermark failed: {e}", file=sys.stderr)
         mark = ""
     if not force and mark and prev.get("mark") == mark:
         return {**out, "body": prev.get("body"), "generated": prev.get("at", 0)}

@@ -90,3 +90,31 @@ def test_a_corrupt_cache_file_does_not_take_the_card_down(tmp_path, monkeypatch)
 
 def test_unknown_key_returns_none():
     assert cards.card("nope") is None
+
+
+def test_non_json_serializable_facts_render_without_raising(tmp_path, monkeypatch):
+    """A card's facts may contain datetime or other non-JSON values; _save catches it."""
+    import datetime
+    monkeypatch.setattr(cards, "_cache_path", lambda: str(tmp_path / "cards.json"))
+    _reg(monkeypatch, facts=lambda ctx: {"last_at": datetime.datetime(2026, 8, 25)})
+    # render() must not raise, even though json.dump() would fail on datetime
+    out = cards.render("t", {"id": "s1"})
+    assert out["body"] == {"last_at": datetime.datetime(2026, 8, 25)}
+    assert out["stale"] is False
+
+
+def test_watermark_failure_logs_and_still_renders(tmp_path, monkeypatch, capsys):
+    """A watermark that raises logs the error and renders from facts anyway."""
+    monkeypatch.setattr(cards, "_cache_path", lambda: str(tmp_path / "cards.json"))
+
+    def watermark_boom(ctx):
+        raise ValueError("no git repo")
+
+    _reg(monkeypatch, watermark=watermark_boom)
+    out = cards.render("t", {"id": "s1"})
+    assert out["body"] == {"n": 1}
+    assert out["stale"] is False
+    # Verify the error was logged to stderr
+    captured = capsys.readouterr()
+    assert "[cards] t watermark failed:" in captured.err
+    assert "no git repo" in captured.err
