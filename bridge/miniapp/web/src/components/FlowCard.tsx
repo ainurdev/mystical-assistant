@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Card } from "./ui";
 import type { HudCard } from "../lib/api";
 import { useFlows } from "../lib/flows";
 import { CardField } from "./FlowFields";
@@ -9,6 +8,12 @@ import { handoffPrompt } from "../lib/cardfields";
 // way QuestionCard already does. A typed turn's settled result: what it did,
 // the fields its stage owes, and the moves you can take from here — so the
 // answer is a thing you act on rather than a wall to read.
+//
+// It wears the same frame as the agent block (.agb): a hue rail and a tracked
+// header, rounded here the way every block on the phone is. That is deliberate — both are a turn's own
+// structure surfacing in the stream, and the stream has exactly one idiom for
+// that. The hue says who is waiting: accent while the flow is running itself,
+// amber when the card is asking you to approve something.
 //
 // How each field draws is the flow's declaration, not this component's: the
 // stage names a type, flow.catalog() ships it, FlowFields draws it. That is
@@ -53,16 +58,26 @@ export function FlowCard({
     : [];
 
   return (
-    <Card className="space-y-2 border border-[var(--tg-button)]/30">
-      <div className="flex items-baseline gap-2">
-        <span className="text-[10px] tracking-[0.15em] text-muted-foreground">
-          {card.stage.toUpperCase()}
-        </span>
-        <span className="text-sm">{card.summary}</span>
+    <div
+      className="flc"
+      data-await={awaitingApproval ? "" : undefined}
+      style={{ "--h": awaitingApproval ? "var(--warn)" : "var(--acc)" } as React.CSSProperties}
+    >
+      <i className="flc-rail" aria-hidden />
+      <div className="flc-head">
+        <i className="flc-mark" aria-hidden>{gated ? "◈" : "◇"}</i>
+        <span className="flc-stage">{card.stage.toUpperCase()}</span>
+        {gated && <span className="flc-gate" title="this stage waits for you">GATE</span>}
+        <i className="flc-rule" aria-hidden />
+        {awaitingApproval && <span className="flc-wait">AWAITING YOU</span>}
       </div>
 
+      {/* The summary is the model speaking about the turn it just finished —
+          the oracle register the agent block's brief already wears. */}
+      <div className="flc-sum">{card.summary}</div>
+
       {fields.length > 0 && (
-        <dl className="space-y-1.5">
+        <dl className="flc-fields">
           {fields.map(([name, value]) => (
             <CardField
               key={name}
@@ -77,17 +92,17 @@ export function FlowCard({
       )}
 
       {(awaitingApproval || handoffs.length > 0 || (card.actions?.length ?? 0) > 0) && (
-        <div className="flex flex-wrap gap-1.5 pt-0.5">
+        <div className="flc-acts">
           {awaitingApproval && (
             shape?.input === "arm"
               ? <HoldToApprove onApprove={onApprove} />
-              : <Button size="sm" onClick={onApprove}>APPROVE ▸</Button>
+              : <button type="button" className="flc-btn" data-go="" onClick={onApprove}>APPROVE ▸</button>
           )}
           {handoffs.map((t) => (
-            <Button
+            <button
               key={t}
-              size="sm"
-              variant="outline"
+              type="button"
+              className="flc-btn"
               disabled={sent === t}
               onClick={() => {
                 setSent(t);
@@ -95,33 +110,32 @@ export function FlowCard({
               }}
             >
               OPEN AS {(flows.find((f) => f.stype === t)?.label ?? t).toUpperCase()} ▸
-            </Button>
+            </button>
           ))}
           {(card.actions ?? []).slice(0, 3).map((a) => (
-            <Button
+            <button
               key={a.label}
-              size="sm"
-              variant="outline"
+              type="button"
+              className="flc-btn"
               disabled={sent === a.label}
-              onClick={() => {
-                setSent(a.label);
-                onAction(a.send);
-              }}
+              onClick={() => { setSent(a.label); onAction(a.send); }}
             >
               {a.label}
-            </Button>
+            </button>
           ))}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
 const HOLD_MS = 1000;
 
 /** Approval for a stage that will do something to the machine. A tap is one
- *  finger's width from a scroll on a phone; a held second is not. Keyboard gets
- *  a confirm instead — holding a key is not a thing anyone should have to do. */
+ *  finger's width from a scroll on a phone; a held second is not. The fill
+ *  crossing the button is the only progress bar in the system, and it is the
+ *  one place a bar means what it says: this is how much longer you hold.
+ *  Keyboard gets a confirm — holding a key is not a thing anyone should do. */
 function HoldToApprove({ onApprove }: { onApprove: () => void }) {
   const [held, setHeld] = useState(false);
   const timer = useRef<number | null>(null);
@@ -132,10 +146,13 @@ function HoldToApprove({ onApprove }: { onApprove: () => void }) {
   };
   useEffect(() => stop, []);
   return (
-    <Button
-      size="sm"
+    <button
+      type="button"
+      className="flc-btn flc-hold"
+      data-go=""
+      data-held={held ? "" : undefined}
       title="hold to run"
-      className={held ? "opacity-70" : ""}
+      style={{ "--hold": `${HOLD_MS}ms` } as React.CSSProperties}
       onPointerDown={() => {
         setHeld(true);
         timer.current = window.setTimeout(() => { stop(); onApprove(); }, HOLD_MS);
@@ -149,7 +166,8 @@ function HoldToApprove({ onApprove }: { onApprove: () => void }) {
         if (window.confirm("Run this stage's commands?")) onApprove();
       }}
     >
-      {held ? "HOLD…" : "HOLD TO RUN ◆"}
-    </Button>
+      <i className="flc-fill" aria-hidden />
+      <span>{held ? "HOLD…" : "HOLD TO RUN ◆"}</span>
+    </button>
   );
 }
