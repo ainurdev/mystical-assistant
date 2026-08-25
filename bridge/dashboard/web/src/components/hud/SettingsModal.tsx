@@ -10,6 +10,7 @@ import {
   ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
   Upload, Volume2, Workflow, X, type LucideIcon,
 } from "lucide-react";
+import { ago } from "../../lib/surfaces";
 import {
   api,
   type AccountInfo,
@@ -18,6 +19,7 @@ import {
   type EnvSetting,
   type FlowCatalog,
   type FreeAgentInfo,
+  type HooksInfo,
   type FreeAgents,
   type McpInfo,
   type StartupState,
@@ -111,7 +113,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "indicator" | "ambient" | "notifications"
-  | "session" | "tags" | "flows" | "ai" | "agentconfig" | "mcp" | "accounts" | "system";
+  | "session" | "tags" | "flows" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system";
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -132,6 +134,7 @@ const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: st
   { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK" },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK" },
   { key: "mcp", label: "MCP", hint: "servers · auth", icon: Plug, group: "THE WORK" },
+  { key: "hooks", label: "HOOKS", hint: "inbound events", icon: Radio, group: "THE WORK" },
   { key: "accounts", label: "ACCOUNTS", hint: "logins · fallback", icon: KeyRound, group: "THE WORK" },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK" },
 ];
@@ -165,6 +168,9 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
   { tab: "mcp", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "mcp", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
+  { tab: "hooks", sec: "INBOUND HOOKS", terms: "webhook hook inbound event github sentry ci deploy trigger notify token revoke url" },
+  { tab: "hooks", sec: "ADD A HOOK", terms: "webhook hook new mint token secret signature source github sentry ci generic" },
+  { tab: "hooks", sec: "RECENT EVENTS", terms: "webhook feed received events history inbound log" },
   { tab: "accounts", sec: "ON USAGE LIMIT", terms: "policy wait switch fallback reset quota" },
   { tab: "accounts", sec: "CLAUDE LOGINS", terms: "account add sign in oauth profile" },
   { tab: "accounts", sec: "FREE AGENTS", terms: "api key gemini openai provider fallback handover" },
@@ -2359,6 +2365,249 @@ function McpPanel() {
   );
 }
 
+/* HOOKS — the one door into this machine that isn't a person typing. Each row is
+   a URL you paste into GitHub, a CI job, an error monitor or your own script;
+   anything that POSTs to it lands in Telegram and in the feed below.
+
+   Every hook here only notifies. Nothing on this panel can make an inbound POST
+   start a run, because a POST that spawns Claude on this machine is remote code
+   execution and the default has to be the harmless one. See bridge/hooks.py. */
+function HooksPanel() {
+  const [info, setInfo] = useState<HooksInfo | null>(null);
+  // Same client-newer-than-bridge case McpPanel handles: a dashboard built from
+  // this commit against a process that started before it gets a 404, not a panel.
+  const [stale, setStale] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState("");
+  const [label, setLabel] = useState("");
+  const [source, setSource] = useState("github");
+  const [secret, setSecret] = useState("");
+
+  const load = () =>
+    api
+      .hooks()
+      .then((r) => {
+        setInfo(r);
+        setStale(false);
+      })
+      .catch((e) => setStale(e instanceof Error && e.message.includes("404")));
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function add() {
+    if (busy) return;
+    setBusy("+");
+    setErr(null);
+    try {
+      const r = await api.hookAction("create", {
+        label: label.trim() || source,
+        source,
+        secret: secret.trim(),
+      });
+      if (r.error) setErr(r.error);
+      else {
+        setLabel("");
+        setSecret("");
+        await load();
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function drop(token: string) {
+    setBusy(token);
+    setErr(null);
+    try {
+      await api.hookAction("delete", { token });
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function copy(h: { token: string; url: string }) {
+    void navigator.clipboard.writeText(h.url).then(() => {
+      setCopied(h.token);
+      setTimeout(() => setCopied(""), 1500);
+    });
+  }
+
+  const rows = info?.hooks ?? [];
+  const events = info?.events ?? [];
+
+  return (
+    <>
+      <Section
+        title="INBOUND HOOKS"
+        info={
+          <>
+            A URL that anything on the internet can POST to, which pushes what it receives to
+            Telegram. Paste one into a GitHub repo&apos;s webhook settings, a CI job&apos;s
+            notification step, or your own script. The token in the URL is the whole credential, so
+            treat it like a password and REVOKE any you have pasted somewhere you regret. Setting a
+            secret when you mint one adds a signature check on top — GitHub and Sentry both sign,
+            and a hook with a secret refuses anything unsigned.
+          </>
+        }
+      >
+        <div style={CARD}>
+          <div style={{ ...KV, marginBottom: rows.length ? 12 : 0 }}>
+            <span style={KEY_TX}>
+              {stale ? "NEEDS A RESTART" : info === null ? "READING…" : `${rows.length} HOOK${rows.length === 1 ? "" : "S"}`}
+            </span>
+          </div>
+
+          {stale && (
+            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
+              the bridge needs a restart before it can answer this
+            </div>
+          )}
+          {!stale && info !== null && rows.length === 0 && (
+            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
+              Nothing can reach this machine yet. Mint one below.
+            </div>
+          )}
+          {!stale && info !== null && !info.public && rows.length > 0 && (
+            <div style={{ fontSize: "var(--t105)", color: "var(--txl)", marginBottom: 10 }}>
+              No tunnel configured (PREVIEW_HOSTNAME), so these are paths, not addresses — nothing
+              outside can reach them until the Mini App has a public host.
+            </div>
+          )}
+
+          {rows.map((h) => (
+            <div
+              key={h.token}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                padding: "8px 0", borderTop: "1px solid var(--line)",
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>{h.label}</span>
+              <span style={{ color: "var(--txd)", fontSize: "var(--t95)" }}>{h.source}</span>
+              {h.signed && (
+                <span style={{ color: "var(--txd)", fontSize: "var(--t95)" }}>· signed</span>
+              )}
+              <span style={{ color: "var(--txl)", fontSize: "var(--t95)" }}>
+                · {h.hits} hit{h.hits === 1 ? "" : "s"}
+                {!h.last_seen ? " · never fired" : ago(h.last_seen) === "now" ? " · just now" : ` · ${ago(h.last_seen)} ago`}
+              </span>
+              <span style={{ flex: 1 }} />
+              <MiniBtn onClick={() => copy(h)}>{copied === h.token ? "COPIED" : "COPY URL"}</MiniBtn>
+              <MiniBtn disabled={busy === h.token} onClick={() => void drop(h.token)}>
+                {busy === h.token ? "…" : "REVOKE"}
+              </MiniBtn>
+            </div>
+          ))}
+          {err && (
+            <div style={{ marginTop: 10, fontSize: "var(--t105)", color: "var(--bad)" }}>{err}</div>
+          )}
+        </div>
+      </Section>
+
+      <Section
+        title="ADD A HOOK"
+        top
+        info={
+          <>
+            SOURCE only labels the row and picks which signature header is checked; any sender can
+            post to any hook. Leave SECRET empty and the token alone authorises the caller — fine
+            for a script you control, worth filling in for anything public. GitHub calls it the
+            webhook secret, Sentry calls it the client secret.
+          </>
+        }
+      >
+        <div style={CARD}>
+          <div style={{ ...LINE, marginTop: 0 }}>
+            <Cell label="SOURCE" grow="1 1 260px">
+              <Segmented
+                options={(info?.sources ?? ["github", "sentry", "ci", "generic"]).map((sc) => ({
+                  label: sc.toUpperCase(),
+                  value: sc,
+                }))}
+                value={source}
+                onPick={setSource}
+              />
+            </Cell>
+          </div>
+          <div style={{ ...ROW, gap: 8 }}>
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="label"
+              style={{ ...FIELD, flex: "none", width: 130 }}
+            />
+            <input
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void add()}
+              placeholder="signing secret (optional)"
+              style={FIELD}
+            />
+            <MiniBtn disabled={!!busy || stale} onClick={() => void add()}>
+              {busy === "+" ? "…" : "MINT"}
+            </MiniBtn>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="RECENT EVENTS"
+        top
+        info={
+          <>
+            The last few hundred events any hook received, newest first. The line is a best-effort
+            summary — the bridge stores the whole payload but does not try to understand each
+            sender&apos;s shape, so a source it cannot read still shows up, just without a title.
+          </>
+        }
+      >
+        <div style={CARD}>
+          {events.length === 0 ? (
+            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
+              Nothing received yet.
+            </div>
+          ) : (
+            events.map((e, i) => (
+              <div
+                key={e.id}
+                style={{
+                  display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap",
+                  padding: "6px 0",
+                  borderTop: i ? "1px solid var(--line)" : "none",
+                }}
+              >
+                <span style={{ color: "var(--txd)", fontSize: "var(--t95)", minWidth: 34 }}>
+                  {ago(e.received)}
+                </span>
+                <span style={{ fontWeight: 600 }}>{e.label ?? e.source}</span>
+                <span style={{ color: "var(--txl)" }}>{e.title ?? "(no summary)"}</span>
+                {e.url && (
+                  <a
+                    href={e.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "var(--txd)", fontSize: "var(--t95)" }}
+                  >
+                    open
+                  </a>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </Section>
+    </>
+  );
+}
+
 function AccountsPanel() {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
   const [policy, setPolicy] = useState("ask");
@@ -3460,6 +3709,7 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "agentconfig" && <AgentConfigPanel />}
 
             {shown === "mcp" && <McpPanel />}
+            {shown === "hooks" && <HooksPanel />}
             {shown === "accounts" && <AccountsPanel />}
 
             {shown === "system" && (

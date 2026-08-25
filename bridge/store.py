@@ -76,6 +76,27 @@ CREATE TABLE IF NOT EXISTS shares (
 );
 CREATE INDEX IF NOT EXISTS ix_shares_session ON shares(session_id);
 
+CREATE TABLE IF NOT EXISTS hooks (
+  token     TEXT PRIMARY KEY,
+  label     TEXT NOT NULL,
+  source    TEXT NOT NULL,
+  secret    TEXT,
+  created   REAL NOT NULL,
+  last_seen REAL,
+  hits      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS hook_events (
+  id       TEXT PRIMARY KEY,
+  token    TEXT NOT NULL,
+  source   TEXT NOT NULL,
+  title    TEXT,
+  url      TEXT,
+  payload  TEXT NOT NULL,
+  received REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_hook_events_recv ON hook_events(received);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -547,6 +568,88 @@ def prune_shares() -> int:
     with closing(_connect()) as c:
         cur = c.execute("DELETE FROM shares WHERE expires<=?", (time.time(),))
     return cur.rowcount or 0
+
+
+# --- Inbound hooks -----------------------------------------------------------
+# The token is the row's identity *and* its password (bridge/hooks.py explains
+# why), so it is generated here and never derived from anything the caller sent.
+
+# Events are kept for the feed panel, not forever: a chatty CI hook would grow
+# this table without bound, and an event nobody read in a thousand pushes is not
+# one anybody is going to.
+HOOK_EVENTS_KEEP = 1000
+
+
+def create_hook(label: str, source: str, secret: str = "") -> dict:
+    """Mint a hook. `secret` empty means the path token is the only credential."""
+    row = {"token": secrets.token_urlsafe(24), "label": (label or "hook").strip()[:60],
+           "source": source, "secret": secret or None, "created": time.time(),
+           "last_seen": None, "hits": 0}
+    with closing(_connect()) as c:
+        c.execute("INSERT INTO hooks(token,label,source,secret,created,hits) "
+                  "VALUES(?,?,?,?,?,0)",
+                  (row["token"], row["label"], source, row["secret"], row["created"]))
+    return row
+
+
+def get_hook(token: str) -> "dict | None":
+    if not token:
+        return None
+    with closing(_connect()) as c:
+        r = c.execute("SELECT * FROM hooks WHERE token=?", (token,)).fetchone()
+    return dict(r) if r else None
+
+
+def list_hooks() -> list[dict]:
+    """Every hook, newest first. Secrets are replaced by a bool — the panel needs
+    to show whether one is set, never what it is."""
+    with closing(_connect()) as c:
+        rows = c.execute("SELECT * FROM hooks ORDER BY created DESC").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["signed"] = bool(d.pop("secret"))
+        out.append(d)
+    return out
+
+
+def delete_hook(token: str) -> int:
+    """Revoke. Its events go too — they are unreadable without the hook's label,
+    and keeping them would make a revoked token look live in the feed."""
+    with closing(_connect()) as c:
+        c.execute("DELETE FROM hook_events WHERE token=?", (token,))
+        cur = c.execute("DELETE FROM hooks WHERE token=?", (token,))
+    return cur.rowcount or 0
+
+
+def record_hook_event(token: str, source: str, title: "str | None",
+                      url: "str | None", payload: str) -> dict:
+    """Store one event, bump its hook's counters, trim the tail. One connection:
+    a hook that fires in a burst should not queue behind its own bookkeeping."""
+    row = {"id": uuid.uuid4().hex, "token": token, "source": source,
+           "title": title, "url": url, "payload": payload, "received": time.time()}
+    with closing(_connect()) as c:
+        c.execute("INSERT INTO hook_events(id,token,source,title,url,payload,received) "
+                  "VALUES(?,?,?,?,?,?,?)",
+                  (row["id"], token, source, title, url, payload, row["received"]))
+        c.execute("UPDATE hooks SET last_seen=?, hits=hits+1 WHERE token=?",
+                  (row["received"], token))
+        c.execute("DELETE FROM hook_events WHERE id NOT IN "
+                  "(SELECT id FROM hook_events ORDER BY received DESC LIMIT ?)",
+                  (HOOK_EVENTS_KEEP,))
+    return row
+
+
+def list_hook_events(limit: int = 50) -> list[dict]:
+    """Recent events, newest first, with their hook's label joined in. The raw
+    payload is excluded — the feed shows a line, and nothing reads it yet."""
+    with closing(_connect()) as c:
+        rows = c.execute(
+            "SELECT e.id,e.token,e.source,e.title,e.url,e.received,h.label "
+            "FROM hook_events e LEFT JOIN hooks h ON h.token=e.token "
+            "ORDER BY e.received DESC LIMIT ?", (max(1, min(200, int(limit))),)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 DEFAULT_TOOLS_KEY = "default_disabled_tools"

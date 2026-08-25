@@ -647,6 +647,16 @@ class Handler(BaseHTTPRequestHandler):
                                "pending": mcpmod.pending(),
                                "scopes": list(mcpmod.SCOPES),
                                "transports": list(mcpmod.TRANSPORTS)})
+        if path == "/local/hooks":
+            # Secrets never leave the DB — list_hooks turns each into a bool, so
+            # the panel can say "signed" without being able to re-show it.
+            from bridge import hooks
+            return self._json({
+                "hooks": [dict(h, url=hooks.hook_url(h["token"]))
+                          for h in store.list_hooks()],
+                "events": store.list_hook_events(_qs_int(qs, "limit") or 50),
+                "sources": list(hooks.SOURCES),
+                "public": bool(config.PREVIEW_HOSTNAME)})
         if path == "/local/tags":
             return self._json({"tags": store.tag_counts()})
         if path == "/local/prompts":
@@ -789,6 +799,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
+            return self._json({"error": f"unknown action {action!r}"}, 400)
+        if path == "/local/hooks":
+            from bridge import hooks
+            action = (body.get("action") or "").strip()
+            if action == "create":
+                source = (body.get("source") or "generic").strip()
+                if source not in hooks.SOURCES:
+                    return self._json({"error": f"unknown source {source!r}"}, 400)
+                # The token is shown once, on this response. Re-reading the list
+                # gives you the row but never a second look at the secret you set.
+                row = store.create_hook(str(body.get("label") or "")[:60], source,
+                                        str(body.get("secret") or "")[:200])
+                return self._json({"ok": True, "hook": dict(row, url=hooks.hook_url(row["token"]))})
+            if action == "delete":
+                return self._json({"ok": bool(store.delete_hook(
+                    str(body.get("token") or "")))})
             return self._json({"error": f"unknown action {action!r}"}, 400)
         if path == "/local/mcp":
             # Every mutation is `claude mcp`, which owns validation and state;

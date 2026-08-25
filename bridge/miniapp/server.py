@@ -19,8 +19,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, flow, git, github,
-                    httpgz, models, native, project_config, relevance, runner,
-                    state, store, transcript_jsonl, transcript_page, usage)
+                    hooks, httpgz, models, native, project_config, relevance,
+                    runner, state, store, transcript_jsonl, transcript_page,
+                    usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -295,6 +296,29 @@ class Handler(BaseHTTPRequestHandler):
     def _auth(self) -> int | None:
         return validate_init_data(self.headers.get("X-Telegram-Init-Data", ""))
 
+    def _hook(self, token: str):
+        """Receive one inbound event.
+
+        404 covers every reason we won't accept it, so a probe cannot tell an
+        unknown token from a correct one that failed its signature. A genuine
+        crash answers 500 instead: telling a sender "wrong token" when the fault
+        was ours sends whoever configured it to debug the wrong end.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            return self._json({"error": "not found"}, 404)
+        if length > hooks.MAX_BODY:
+            return self._json({"error": "too large"}, 413)
+        raw = self.rfile.read(length) if length else b""
+        try:
+            ev = hooks.receive(unquote(token), raw, self.headers)
+        except Exception:
+            return self._json({"error": "error"}, 500)
+        if ev is None:
+            return self._json({"error": "not found"}, 404)
+        return self._json({"ok": True, "id": ev["id"]})
+
     def log_message(self, *args):  # silence default stderr logging
         pass
 
@@ -357,6 +381,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             path = urlparse(self.path).path
+            # Inbound hooks answer above the initData gate: a webhook sender
+            # cannot produce one, so the token in the path is the credential
+            # instead. See bridge/hooks.py for what that does and doesn't buy.
+            if path.startswith("/hook/"):
+                return self._hook(path[len("/hook/"):])
             if not path.startswith("/api/"):
                 return self._json({"error": "not found"}, 404)
             chat_id = self._auth()
