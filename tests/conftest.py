@@ -43,3 +43,9 @@ os.environ["FREEAGENTS_FILE"] = os.path.join(tempfile.mkdtemp(), "freeagents.jso
 # very sessions running it. Empty temp dir; a test that wants rows writes them there.
 from bridge import machine  # noqa: E402
 machine.SESSIONS_DIR = tempfile.mkdtemp()
+
+# Same story for ~/.claude.json: toolsets merges other projects' local-scope MCP
+# servers straight from it, and the path is frozen at import with no env knob.
+# Point it at a file that doesn't exist so the suite never reads the real one.
+from bridge import toolsets  # noqa: E402
+toolsets.CLAUDE_JSON = os.path.join(tempfile.mkdtemp(), "claude.json")

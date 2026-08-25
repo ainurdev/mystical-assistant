@@ -10,10 +10,14 @@ https://code.claude.com/docs/en/permissions); `claude mcp list` prints those as
 `plugin:<plugin>:<server>`, so the two forms are translated here.
 """
 
+import json
+import os
 import re
 import subprocess
 import threading
 import time
+
+CLAUDE_JSON = os.path.expanduser("~/.claude.json")
 
 # The built-ins worth a switch. Not the full tool list on purpose: Read/Grep/Glob
 # are how the agent sees anything at all, and denying them makes a session that
@@ -40,7 +44,8 @@ _filling = False   # a background refresh is already in flight
 # "name: rest - ✔ Connected" / "name: rest - ! Needs authentication". The name is
 # matched lazily rather than as "no colons": a plugin server is called
 # `plugin:cloudflare:cloudflare-api`, and only the `: ` before the URL ends it.
-_LINE = re.compile(r"^(?P<name>\S+?):\s+(?P<rest>.*?)\s+-\s+(?P<status>.+)$")
+# It can also carry spaces — a claude.ai connector is `claude.ai Slack`.
+_LINE = re.compile(r"^(?P<name>\S.*?):\s+(?P<rest>.*?)\s+-\s+(?P<status>.+)$")
 
 
 def rule_for(name: str) -> str:
@@ -78,6 +83,35 @@ def _parse(out: str) -> list[dict]:
     return servers
 
 
+def _project_locals(have: "set[str]") -> list[dict]:
+    """Servers scoped `local` to some other project, read straight out of
+    ~/.claude.json. `claude mcp list` only reports the project it runs in, and
+    the bridge runs it in its own checkout — so every other project's local
+    servers never made the list at all. These rows aren't health-checked (that
+    would be one multi-second CLI call per project); `dir` names the one project
+    whose sessions can actually load them, which runner._external_mcp uses to
+    skip them everywhere else without giving up --strict-mcp-config."""
+    try:
+        with open(CLAUDE_JSON, encoding="utf-8") as f:
+            projects = json.load(f).get("projects") or {}
+    except (OSError, ValueError, AttributeError):
+        return []
+    found = []
+    for dir_ in sorted(projects):
+        entries = projects[dir_].get("mcpServers") if isinstance(projects[dir_], dict) else None
+        if not isinstance(entries, dict):
+            continue
+        for name, spec in entries.items():
+            if name in have or not isinstance(spec, dict):
+                continue
+            have.add(name)
+            target = spec.get("url") or " ".join(
+                [str(spec.get("command") or ""), *map(str, spec.get("args") or [])]).strip()
+            found.append({"name": name, "rule": rule_for(name), "target": target,
+                          "ok": False, "status": f"! local to {dir_}", "dir": dir_})
+    return found
+
+
 def _fill() -> list[dict]:
     """Run the health check and store it. Empty on any failure — a settings panel
     with no servers beats a 500."""
@@ -89,6 +123,7 @@ def _fill() -> list[dict]:
         found = _parse(p.stdout)
     except (OSError, subprocess.SubprocessError):
         found = []
+    found += _project_locals({s["name"] for s in found})
     with _lock:
         _cache = (time.time(), found)
         _filling = False
