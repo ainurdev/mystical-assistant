@@ -1,7 +1,9 @@
 // Run: node bridge/miniapp/web/src/lib/cardfields.check.ts
 import {
-  asChecks, asCommands, asConfidence, asFiles, asFindings, asScreens,
-  flatten, handoffPrompt, triagePrompt,
+  asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
+  asFindings, asGraph, asIdeas, asIntake, asMeters, asOutput, asPlan, asScreens,
+  asSources, asStats, asTable,
+  diffColor, flatten, handoffPrompt, triagePrompt,
 } from "./cardfields.ts";
 
 // --- guards: the promised shape, or null so the field renders as text -------
@@ -49,5 +51,71 @@ const tri = triagePrompt(
 );
 console.assert(tri.includes("keeping 1, dropping 1"), `triage counts: ${tri}`);
 console.assert(tri.includes("- a.py:3 — leak") && tri.includes("- b.py — nit"), "both sides are named");
+
+// --- the widget grammar ----------------------------------------------------
+console.assert(asDiff([{ file: "a.py", add: 4, del: 1 }])?.[0].add === 4, "a diff row keeps its stat");
+console.assert(asDiff([{ path: "a.py" }])?.[0].file === "a.py", "path is accepted for file");
+console.assert(asDiff([{ add: 2 }]) === null, "a fileless diff row drops the widget");
+console.assert(asDiff([{ file: "a.py", hunk: "@@ x\n- a\n+ b" }])?.[0].hunk?.includes("+ b"), "the hunk survives");
+
+console.assert(diffColor("+ added") === "var(--ok)", "an add is green");
+console.assert(diffColor("- gone") === "var(--err)", "a delete is red");
+console.assert(diffColor("--- a/x.py") === "var(--txl)", "a header is not a whole-file delete");
+console.assert(diffColor("@@ ctx") === "var(--acc)", "a hunk header leads");
+
+console.assert(asOutput("41 passed")?.text === "41 passed", "a bare string is output");
+console.assert(asOutput({ cmd: "pytest", text: "ok", ok: true })?.ok === true, "the lamp survives");
+console.assert(asOutput({ cmd: "pytest" }) === null, "a command with no output has nothing to draw");
+console.assert(asOutput("   ") === null, "whitespace is not output");
+
+const g = asGraph({
+  nodes: [{ id: "a", label: "TELEGRAM", state: "ok" }, { id: "b", label: "BRIDGE" }],
+  edges: [{ from: "a", to: "b", label: "34ms" }, { from: "a", to: "ghost" }],
+});
+console.assert(g?.nodes.length === 2 && g.edges.length === 1, "an edge into nowhere is dropped");
+console.assert(g?.nodes[0].state === "ok" && g.nodes[1].state === undefined, "only a known state survives");
+console.assert(asGraph({ nodes: [] }) === null, "a map needs nodes");
+console.assert(asGraph({ nodes: [{ label: "LONE" }] })?.nodes[0].id === "LONE", "a label stands in for an id");
+
+console.assert(asChain([{ label: "SYMPTOM", body: "boom", tone: "bad" }])?.[0].tone === "bad", "a step keeps its tone");
+console.assert(asChain([{ label: "CAUSE", body: "x", tone: "spicy" }])?.[0].tone === "flat", "an unknown tone is flat");
+console.assert(asChain([{ body: "no label" }]) === null, "a step needs a label");
+
+console.assert(asChart([{ label: "08-22", value: 96.4 }])?.[0].value === 96.4, "a bar reads");
+console.assert(asChart([{ label: "08-22", value: "96.4" }]) === null, "a stringy value is not a number");
+console.assert(asStats([{ label: "AVG", value: "61.4M" }])?.[0].value === "61.4M", "the model's formatting survives");
+console.assert(asStats([{ label: "TURNS", value: 56 }])?.[0].value === "56", "a numeric stat still prints");
+
+const t = asTable({ cols: ["DAY", "TOK"], rows: [["08-22", "96.4M"], ["08-23"]] });
+console.assert(t?.rows[1][1] === "", "a short row is padded, not dropped");
+console.assert(asTable({ cols: [], rows: [[1]] }) === null, "a table needs columns");
+console.assert(asTable({ cols: ["A"], rows: ["nope"] }) === null, "a row must be a row");
+
+console.assert(asIdeas([{ title: "Gallery", picked: true }])?.[0].picked === true, "a picked idea stays picked");
+console.assert(asIdeas([{ note: "no title" }]) === null, "an idea needs a title");
+
+console.assert(asMeters([{ label: "CPU", pct: 12 }])?.[0].pct === 12, "a meter reads");
+console.assert(asMeters([{ label: "MEM", pct: "63%" }])?.[0].pct === 63, "a percentage string scales");
+console.assert(asMeters([{ label: "DISK", pct: 140 }])?.[0].pct === 100, "over full is full");
+console.assert(asMeters([{ label: "X", pct: -1 }]) === null, "a negative is not a meter");
+
+console.assert(asPlan([{ op: "+", text: "unit" }])?.[0].op === "add", "a sign is a verb");
+console.assert(asPlan([{ op: "REMOVE", text: "cron" }])?.[0].op === "drop", "a word is the same verb");
+console.assert(asPlan([{ op: "maybe", text: "x" }]) === null, "an unknown verb drops the plan");
+
+console.assert(asSources([{ title: "core.telegram.org", badge: "official" }])?.[0].badge === "official", "a badge survives");
+console.assert(asSources([{ url: "https://x.dev" }])?.[0].title === "https://x.dev", "a url stands in for a title");
+console.assert(asSources([{ title: "old", stale: true }])?.[0].stale === true, "dated is flagged");
+
+console.assert(asClaims([{ text: "webhooks win", cites: [1, 2] }])?.[0].cites.length === 2, "citations carry");
+console.assert(asClaims([{ text: "no source" }])?.[0].cites.length === 0, "an uncited claim still draws");
+console.assert(asClaims([{ text: "x", cites: [0, "2", "nope"] }])?.[0].cites.join() === "2", "only real keys cite");
+console.assert(asClaims([{ cites: [1] }]) === null, "a claim needs text");
+
+const q = asIntake([{ topic: "AUDIENCE", ask: "who is this for?", options: ["new", "returning"] }]);
+console.assert(q?.[0].options.length === 2, "options carry");
+console.assert(asIntake([{ question: "where?" }])?.[0].ask === "where?", "question is accepted for ask");
+console.assert(asIntake([{ topic: "X" }]) === null, "a question needs something asked");
+console.assert(asIntake([{ ask: "depth?", answer: "guided" }])?.[0].answer === "guided", "an answer is kept");
 
 console.log("cardfields: ok");

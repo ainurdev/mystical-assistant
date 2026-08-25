@@ -39,10 +39,31 @@ _SHAPES = {
     "commands": '[{"cmd": "<command>", "status": "ok|fail|pending"}]',
     "confidence": "0.0-1.0",
     "verdict": '"<one word>"',
+    # Below: the widget grammar from the Canvas v3 gallery — one shape per kind
+    # of work, so a terminal is never mistaken for a read. Each is the smallest
+    # JSON a model emits reliably; anything richer is a shape it gets wrong.
+    "diff": ('[{"file": "path", "add": 0, "del": 0, '
+             '"hunk": "@@ context\\n- removed\\n+ added"}]'),
+    "output": '{"cmd": "<command>", "text": "<what it printed>", "ok": true}',
+    "map": ('{"nodes": [{"id": "a", "label": "TELEGRAM", "state": "ok|warn|bad"}], '
+            '"edges": [{"from": "a", "to": "b", "label": "34ms"}]}'),
+    "chain": ('[{"label": "SYMPTOM", "body": "...", "meta": "how you know", '
+              '"tone": "bad|warn|good|flat"}]'),
+    "chart": '[{"label": "08-22", "value": 96.4}]',
+    "stats": '[{"label": "AVG / DAY", "value": "61.4M"}]',
+    "table": '{"cols": ["DAY", "TOK"], "rows": [["08-22", "96.4M"]]}',
+    "ideas": '[{"title": "...", "note": "...", "picked": false}]',
+    "meters": '[{"label": "CPU", "pct": 12}]',
+    "plan": '[{"op": "add|change|drop", "text": "..."}]',
+    "sources": ('[{"title": "core.telegram.org", "url": "https://...", '
+                '"badge": "OFFICIAL", "stale": false}]'),
+    "claims": '[{"text": "...", "cites": [1, 2]}]',
+    "intake": ('[{"topic": "AUDIENCE", "ask": "who is this for?", '
+               '"options": ["new users", "returning"], "answer": ""}]'),
 }
 # How the user is meant to engage with a stage, which is what the composer
 # reads to lead with taps instead of a blank box. The text box never leaves.
-_INPUTS = ("approve", "arm", "evidence", "triage", "annotate")
+_INPUTS = ("approve", "arm", "evidence", "triage", "annotate", "pick", "answer")
 
 
 def fields_of(stage: dict) -> "list[dict]":

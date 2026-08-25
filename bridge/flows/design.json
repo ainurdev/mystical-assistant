@@ -15,7 +15,7 @@
       "id": "draft",
       "label": "DRAFT",
       "gate": true,
-      "instructions": "Invoke the /design-first skill with the brief and follow it: brand-system mockups, screenshots into the transcript, push to the linked design project. Stop for approval \u2014 that approval is this stage's gate.",
+      "instructions": "Invoke the /design-first skill with the brief and follow it: brand-system mockups, screenshots into the transcript, push to the linked design project. Stop for approval — that approval is this stage's gate.",
       "card_fields": [
         {
           "name": "screens",
@@ -29,11 +29,11 @@
       "label": "IMPLEMENT",
       "gate": false,
       "permission_mode": "acceptEdits",
-      "instructions": "Implement the approved design in the repo. List every file changed.",
+      "instructions": "Implement the approved design in the repo. List every file changed. Show the hunk for each file you changed.",
       "card_fields": [
         {
           "name": "changed",
-          "type": "files"
+          "type": "diff"
         }
       ]
     },

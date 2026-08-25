@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { FlowStageShape } from "../../api";
 import type { PanelTab } from "../RightPanel";
+import { engagement } from "../../lib/flows";
 import { ORIGIN_X, ORIGIN_Y, fitBoard, zoomAt, type Viewport } from "../../lib/viewport";
 
 /* CANVAS — the transcript as a board rather than a page.
@@ -328,11 +329,22 @@ export function FlowMap({ stages, current, turnCount }: {
   const at = stages.findIndex((s) => s.id === current);
   const rows: FlowStageShape[][] = [];
   for (let i = 0; i < stages.length; i += 3) rows.push(stages.slice(i, i + 3));
+  // What the stage you are standing on wants of you, on the map rather than
+  // only on the hint line — the map is what stays pinned when the composer has
+  // scrolled away, and "how much is this asking" is the reason to glance at it.
+  const eng = engagement(at >= 0 ? stages[at].input : null);
   return (
     <PinCard
       title="FLOW MAP"
       note={`auto-synced from turn ${turnCount}`}
-      right={<span style={{ color: "var(--purple)" }}>★ PINNED</span>}
+      right={
+        <span
+          title={`engagement L${eng.level} — ${eng.verb.toLowerCase()}`}
+          style={{ color: eng.level > 0 ? "var(--purple)" : "var(--txf)" }}
+        >
+          L{eng.level} · {eng.verb}
+        </span>
+      }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 12px" }}>
         {rows.map((row, ri) => (

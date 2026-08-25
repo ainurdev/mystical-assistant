@@ -1,0 +1,35 @@
+{
+  "stype": "clarify",
+  "label": "CLARIFY",
+  "blurb": "The brief is too thin to act on — settle the unknowns before any work starts.",
+  "form": [
+    { "key": "brief", "label": "THE BRIEF SO FAR", "required": true, "multiline": true }
+  ],
+  "stages": [
+    {
+      "id": "intake",
+      "label": "INTAKE",
+      "gate": false,
+      "instructions": "Find what the brief leaves genuinely undecided — the answers that would change what gets built, not trivia. One question per concept, each with the few likely answers as options. Ask nothing you could settle by reading the repo; read it first.",
+      "card_fields": [
+        { "name": "questions", "type": "intake" },
+        "why_each",
+        "if_you_skip"
+      ],
+      "input": "answer"
+    },
+    {
+      "id": "brief",
+      "label": "BRIEF",
+      "gate": true,
+      "instructions": "Restate the work as a brief someone could act on, folding in the answers. Where a question was skipped, choose the default, say which default you chose, and mark it — a skip is a decision and gets logged like one.",
+      "card_fields": [
+        "brief",
+        { "name": "decided", "type": "intake" },
+        { "name": "defaulted", "type": "plan" }
+      ],
+      "input": "approve",
+      "handoff": ["build", "design", "ideas"]
+    }
+  ]
+}

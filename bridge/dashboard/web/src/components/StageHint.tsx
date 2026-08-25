@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FlowStageShape } from "../api";
+import { engagement } from "../lib/flows";
 
 // What the stage you are standing in wants from you, on the line above the
 // prompt box. A stage that only wants a message says nothing — the strip exists
@@ -19,6 +20,8 @@ const WANTS: Record<string, string> = {
   evidence: "paste the log or attach a screenshot",
   triage: "drop the findings that aren't real, on the card above",
   annotate: "note what to change, per screen on the card above",
+  pick: "star the ones worth keeping, on the card above",
+  answer: "answer what it asked — one question per concept",
 };
 
 export function StageHint({ stage, onPaste }: {
@@ -29,10 +32,16 @@ export function StageHint({ stage, onPaste }: {
 }) {
   const [busy, setBusy] = useState(false);
   if (!stage?.input) return null;
+  // How much this stage is asking of you, before you read what it wants — the
+  // ladder the flow gallery draws, L0 watch through L5 co-edit.
+  const eng = engagement(stage.input);
   return (
     <div className="flh" data-gate={stage.gate ? "" : undefined}>
       <i className="flh-mark" aria-hidden>{stage.gate ? "◈" : "◇"}</i>
       <span className="flh-stage">{stage.label}</span>
+      <span className="flh-lvl" title={`engagement L${eng.level} — ${eng.verb.toLowerCase()}`}>
+        L{eng.level} · {eng.verb}
+      </span>
       <span className="flh-want">{WANTS[stage.input] ?? ""}</span>
       {stage.input === "evidence" && (
         <button

@@ -1650,6 +1650,220 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
 }
 .flc-hold[data-held] > .flc-fill { width: 100%; transition: width var(--hold) linear; }
 
+
+/* ── THE WIDGET GRAMMAR ───────────────────────────────────────────────────
+   One shape per kind of work, so a terminal is never mistaken for a read and a
+   topology never for a table. Shape carries the kind: every one of these stays
+   legible in grayscale, and colour only ever repeats what the layout said. */
+
+.flc-stat > em { font-style: normal; color: var(--warn); margin-left: 4px; }
+
+/* Diff: the hunk is the evidence. A "+38" nobody can check is a claim. */
+.flc-diff { display: flex; flex-direction: column; gap: 6px; }
+.flc-diffhead, .flc-dfhead, .flc-planhead { display: flex; align-items: baseline; gap: 8px; }
+.flc-dfile { display: flex; flex-direction: column; gap: 4px; }
+.flc-hunk {
+  margin: 0; padding: 5px 8px; overflow-x: auto;
+  border-left: 2px solid color-mix(in srgb, var(--ok) 45%, transparent);
+  background: var(--panel3);
+  font-family: var(--mono); font-size: var(--t95); line-height: 1.55; white-space: pre;
+}
+
+/* Output: the one place the HUD lets type go unwrapped. */
+.flc-out {
+  border-left: 2px solid var(--txl); background: var(--panel3); padding: 5px 8px;
+}
+.flc-out[data-ok] { border-left-color: var(--ok); }
+.flc-out[data-bad] { border-left-color: var(--err); }
+.flc-outhead {
+  display: flex; align-items: baseline; gap: 6px; padding-bottom: 4px;
+  font-family: var(--mono); font-size: var(--t95); color: var(--txd);
+}
+.flc-out > .flc-pre { max-height: 15em; overflow: auto; white-space: pre; }
+
+/* Map: columns are reach, not geography — the only question a map is asked. */
+.flc-map { display: flex; flex-direction: column; gap: 7px; }
+.flc-mapcols { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.flc-mapcol { display: flex; flex-direction: column; gap: 5px; }
+.flc-mapcol:not(:first-child)::before {
+  content: ""; align-self: center; width: 16px; height: 1px; margin: 0 7px;
+  background: color-mix(in srgb, var(--acc) 30%, transparent);
+}
+.flc-mapcol:not(:first-child) { flex-direction: row; align-items: center; }
+.flc-node {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
+  border: 1px solid var(--ac-16); background: color-mix(in srgb, var(--panel2) 70%, transparent);
+  font-family: var(--mono); font-size: var(--t95); letter-spacing: .6px; color: var(--txh);
+  white-space: nowrap;
+}
+.flc-lamp { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--txl); }
+.flc-node[data-state="ok"] > .flc-lamp { background: var(--ok); }
+.flc-node[data-state="warn"] { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.flc-node[data-state="warn"] > .flc-lamp { background: var(--warn); }
+.flc-node[data-state="bad"] { border-color: color-mix(in srgb, var(--err) 45%, transparent); }
+.flc-node[data-state="bad"] > .flc-lamp { background: var(--err); }
+.flc-hops { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--t95); color: var(--txf); }
+.flc-hops > li { display: flex; align-items: baseline; gap: 5px; }
+.flc-hops i { font-style: normal; color: var(--txl); }
+.flc-hops b { font-weight: 400; color: var(--txd); font-variant-numeric: tabular-nums; }
+
+/* Chain: the rail IS the argument — each step earns the next. */
+.flc-chain { display: flex; flex-direction: column; }
+.flc-chain > li { position: relative; display: flex; gap: 10px; padding: 0 0 9px 0; }
+.flc-chain > li::before {
+  content: ""; position: absolute; left: 3px; top: 6px; bottom: -3px; width: 1px;
+  background: color-mix(in srgb, var(--txl) 70%, transparent);
+}
+.flc-chain > li:last-child { padding-bottom: 0; }
+.flc-chain > li:last-child::before { display: none; }
+.flc-dot {
+  position: relative; z-index: 1; flex: none; margin-top: 4px;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--txl);
+}
+.flc-chain > li[data-tone="good"] > .flc-dot { background: var(--ok); }
+.flc-chain > li[data-tone="warn"] > .flc-dot { background: var(--warn); }
+.flc-chain > li[data-tone="bad"] > .flc-dot { background: var(--err); }
+.flc-step { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.flc-stephead { display: flex; align-items: baseline; gap: 7px; }
+.flc-stephead > b { font-weight: 400; font-size: var(--t95); color: var(--txl); }
+.flc-steplab { flex: none; font-size: var(--t95); letter-spacing: 1.4px; color: var(--txd); }
+.flc-chain > li[data-tone="good"] .flc-steplab { color: var(--ok); }
+.flc-chain > li[data-tone="warn"] .flc-steplab { color: var(--warn); }
+.flc-chain > li[data-tone="bad"] .flc-steplab { color: var(--err); }
+.flc-stepbody { font-size: var(--t105); color: var(--tx); overflow-wrap: anywhere; }
+
+/* Chart: bars, not a line — a line would imply values in the gaps. */
+.flc-chart { display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
+.flc-bars { display: flex; align-items: flex-end; gap: 2px; height: 64px; }
+.flc-bar {
+  flex: 1; min-width: 3px; background: color-mix(in srgb, var(--info) 28%, transparent);
+}
+.flc-bar[data-peak] { background: var(--info); }
+.flc-axis {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--t8); letter-spacing: .8px; color: var(--txf);
+}
+
+/* Tiles: the one place a value outranks its label. */
+.flc-tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+.flc-tile {
+  display: flex; flex-direction: column; gap: 2px; padding: 5px 10px; min-width: 88px;
+  border: 1px solid var(--ac-16); background: color-mix(in srgb, var(--panel2) 60%, transparent);
+}
+.flc-tile > b {
+  font-weight: 400; font-family: var(--mono); font-size: var(--t13); color: var(--txb);
+  font-variant-numeric: tabular-nums;
+}
+
+.flc-table { border-collapse: collapse; font-family: var(--mono); font-size: var(--t95); }
+.flc-table th {
+  padding: 2px 12px 4px 0; text-align: left; font-weight: 400;
+  letter-spacing: 1.2px; color: var(--txf);
+  border-bottom: 1px solid var(--ac-16);
+}
+.flc-table td { padding: 3px 12px 3px 0; color: var(--tx); font-variant-numeric: tabular-nums; }
+.flc-table th[data-n], .flc-table td[data-n] { text-align: right; padding-right: 0; padding-left: 14px; }
+.flc-table tbody tr:hover td { color: var(--txb); }
+
+/* Ideas: the point of asking for four is throwing away three. */
+.flc-ideas { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.flc-stickies { display: flex; flex-wrap: wrap; gap: 8px; }
+.flc-sticky {
+  position: relative; display: flex; flex-direction: column; gap: 3px;
+  width: 168px; padding: 9px 10px 8px;
+  border: 1px solid var(--ac-16); background: color-mix(in srgb, var(--panel2) 75%, transparent);
+}
+.flc-sticky[data-on] {
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  background: color-mix(in srgb, var(--warn) 7%, transparent);
+}
+.flc-pin {
+  position: absolute; top: -3px; left: 50%; width: 5px; height: 5px; margin-left: -2px;
+  border-radius: 50%; background: var(--txl);
+}
+.flc-sticky[data-on] > .flc-pin { background: var(--warn); }
+.flc-stickyhead { display: flex; align-items: baseline; justify-content: space-between; }
+.flc-sticky > b { font-weight: 400; font-size: var(--t105); color: var(--txb); }
+.flc-star {
+  appearance: none; cursor: pointer; padding: 0; border: 0; background: none;
+  font-family: inherit; font-size: var(--t105); color: var(--txl);
+}
+.flc-sticky[data-on] .flc-star { color: var(--warn); }
+button.flc-star:hover { color: var(--warn); }
+
+/* Meters: "how full" is the actual question, so the bar is honest. */
+.flc-bank { display: flex; flex-direction: column; gap: 4px; max-width: 340px; }
+.flc-bank > li { display: flex; align-items: center; gap: 8px; }
+.flc-bank .flc-lab { flex: none; width: 42px; }
+.flc-track { flex: 1; height: 5px; background: var(--ac-06); }
+.flc-track > i { display: block; height: 100%; background: var(--ok); }
+.flc-bank > li[data-warm] .flc-track > i { background: var(--warn); }
+.flc-bank > li[data-hot] .flc-track > i { background: var(--err); }
+.flc-bank > li > b {
+  flex: none; width: 34px; text-align: right; font-weight: 400;
+  font-size: var(--t95); color: var(--txd); font-variant-numeric: tabular-nums;
+}
+
+/* Plan: the verb is the glyph, so blast radius reads before the text does. */
+.flc-plan { display: flex; flex-direction: column; gap: 4px; }
+.flc-plan > ul { display: flex; flex-direction: column; gap: 2px; }
+.flc-plan li {
+  display: flex; gap: 7px; font-family: var(--mono); font-size: var(--t95); color: var(--txm);
+}
+.flc-plan li[data-op="add"] > .flc-glyph { color: var(--ok); }
+.flc-plan li[data-op="change"] > .flc-glyph { color: var(--warn); }
+.flc-plan li[data-op="drop"] > .flc-glyph { color: var(--err); }
+
+/* Sources: the number is the citation key, so it leads the row. */
+.flc-srcs { display: flex; flex-direction: column; gap: 3px; }
+.flc-srcs > li { display: flex; align-items: baseline; gap: 7px; font-size: var(--t105); }
+.flc-srcs > li[data-stale] { opacity: .65; }
+.flc-cite {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 15px; height: 14px; padding: 0 3px; margin-left: 4px;
+  border: 1px solid var(--ac-22); font-style: normal;
+  font-family: var(--mono); font-size: var(--t8); color: var(--txd);
+}
+.flc-srcs .flc-cite { margin-left: 0; }
+a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid var(--ac-22); }
+a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
+.flc-badge {
+  flex: none; font-size: var(--t8); letter-spacing: 1.2px; color: var(--txf);
+}
+.flc-badge[data-warn] { color: var(--warn); }
+
+.flc-claims { display: flex; flex-direction: column; gap: 4px; }
+.flc-claims > li {
+  display: flex; align-items: baseline; gap: 7px; font-size: var(--t105); color: var(--tx);
+}
+.flc-claims .flc-glyph { color: var(--acc); }
+
+/* Intake: a run paused on a thin brief. Options are taps because the answer is
+   usually one of a few words, and typing is the slowest way to point. */
+.flc-intake { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.flc-intake > ul { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.flc-intake > ul > li {
+  display: flex; flex-direction: column; gap: 5px; padding: 5px 8px;
+  border-left: 2px solid var(--ac-16);
+}
+.flc-intake > ul > li[data-done] { border-left-color: var(--ok); }
+.flc-qhead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.flc-topic {
+  flex: none; padding: 0 5px; border: 1px solid var(--ac-22);
+  font-size: var(--t8); letter-spacing: 1.4px; color: var(--txd);
+}
+.flc-intake li[data-done] .flc-topic { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
+.flc-ask { min-width: 0; font-size: var(--t105); color: var(--txb); }
+.flc-ans { margin-left: auto; font-size: var(--t95); letter-spacing: 1.2px; color: var(--ok); }
+.flc-opts { display: flex; flex-wrap: wrap; gap: 5px; }
+.flc-opt {
+  appearance: none; cursor: pointer; padding: 2px 9px;
+  font-family: inherit; font-size: var(--t95); letter-spacing: 1.2px; text-transform: uppercase;
+  border: 1px solid var(--ac-16); background: color-mix(in srgb, var(--panel2) 60%, transparent);
+  color: var(--txm);
+}
+.flc-opt:hover { color: var(--txb); border-color: var(--acc); background: var(--ac-06); }
+
 /* ── STAGE HINT ───────────────────────────────────────────────────────────
    One line above the prompt box naming what this stage is waiting for. */
 .flh {
@@ -1659,6 +1873,11 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
 .flh-mark { flex: none; font-style: normal; color: var(--acc); }
 .flh[data-gate] .flh-mark { color: var(--warn); }
 .flh-stage { flex: none; text-transform: uppercase; color: var(--txd); }
+.flh-lvl {
+  flex: none; padding: 0 5px; border: 1px solid var(--ac-22);
+  font-size: var(--t8); letter-spacing: 1.4px; color: var(--txd);
+}
+.flh[data-gate] .flh-lvl { border-color: color-mix(in srgb, var(--warn) 40%, transparent); color: var(--warn); }
 .flh-want { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .flh-btn {
   margin-left: auto; flex: none; appearance: none; cursor: pointer;

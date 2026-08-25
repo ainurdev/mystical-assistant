@@ -1,0 +1,34 @@
+{
+  "stype": "web",
+  "label": "WEB RESEARCH",
+  "blurb": "Answer a question the codebase can't: docs, prior art, what others do.",
+  "form": [
+    { "key": "question", "label": "QUESTION", "required": true, "multiline": true },
+    { "key": "constraints", "label": "CONSTRAINTS (recency, stack)", "required": false, "multiline": false }
+  ],
+  "stages": [
+    {
+      "id": "gather",
+      "label": "GATHER",
+      "gate": false,
+      "instructions": "Find sources that actually address the question and rank them by how much weight they deserve — official docs over a forum, recent over dated. Flag anything old enough to be wrong now. Do not conclude yet.",
+      "card_fields": [
+        { "name": "sources", "type": "sources" }
+      ],
+      "input": "triage"
+    },
+    {
+      "id": "conclude",
+      "label": "CONCLUDE",
+      "gate": false,
+      "instructions": "Say what the sources amount to, one claim per line, each citing the sources it rests on by number. Where sources disagree, say so and say which one wins and why — an averaged answer is a wrong answer. Rate your confidence honestly.",
+      "card_fields": [
+        { "name": "sources", "type": "sources" },
+        { "name": "conclusions", "type": "claims" },
+        "disagreement",
+        { "name": "confidence", "type": "confidence" }
+      ],
+      "handoff": ["build", "fix", "probe"]
+    }
+  ]
+}

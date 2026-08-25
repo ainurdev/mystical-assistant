@@ -43,11 +43,11 @@
       "label": "IMPLEMENT",
       "gate": false,
       "permission_mode": "acceptEdits",
-      "instructions": "Execute the approved plan. Match the surrounding code's style. List every file changed as you go.",
+      "instructions": "Execute the approved plan. Match the surrounding code's style. List every file changed as you go. Show the hunk for each file you changed — a diffstat nobody can check is a claim, not a change.",
       "card_fields": [
         {
           "name": "changed",
-          "type": "files"
+          "type": "diff"
         }
       ]
     },
@@ -74,7 +74,7 @@
       "id": "ship",
       "label": "SHIP",
       "gate": true,
-      "instructions": "State what shipping means here and prepare it \u2014 commit message, branch, push. Put the proposed commit message in commit_msg; the user may edit it before approving. Do not push past the gate.",
+      "instructions": "State what shipping means here and prepare it — commit message, branch, push. Put the proposed commit message in commit_msg; the user may edit it before approving. Do not push past the gate.",
       "card_fields": [
         "shipped",
         {
