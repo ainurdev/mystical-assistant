@@ -426,13 +426,13 @@ def test_current_branch_detached_names_something_useful():
     _run(d, "checkout", "-q", "--detach", "HEAD")
     assert g.current_branch(d) == base
     # detached behind a branch (a worktree whose branch moved to another
-    # checkout) → the branch-relative name, not a bare sha
+    # checkout) → that branch, without name-rev's "~1" distance
     _run(d, "checkout", "-q", base)
     _write(d, "a.txt", "two\n")
     _run(d, "add", "-A")
     _run(d, "commit", "-qm", "ahead")
     _run(d, "checkout", "-q", "--detach", "HEAD~1")
-    assert g.current_branch(d) == f"{base}~1"
+    assert g.current_branch(d) == base
     # detached at a commit no branch contains → the short sha
     _write(d, "a.txt", "three\n")
     _run(d, "add", "-A")
@@ -440,6 +440,24 @@ def test_current_branch_detached_names_something_useful():
     sha = subprocess.run(["git", "-C", d, "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
     assert g.current_branch(d) == sha
+
+
+def test_worktree_name_only_names_a_linked_tree():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    # the main checkout is not a worktree anyone needs disambiguated
+    assert g.worktree_name(d) == ""
+    assert g.worktree_name(os.path.join(d, "sub")) == ""  # a path that isn't there
+    wt = os.path.join(tempfile.mkdtemp(), "side-tree")
+    _run(d, "worktree", "add", "-q", "-b", "side", wt)
+    assert g.worktree_name(wt) == "side-tree"
+    # a subdir of the worktree still answers the tree's name
+    os.makedirs(os.path.join(wt, "deep", "er"), exist_ok=True)
+    assert g.worktree_name(os.path.join(wt, "deep", "er")) == "side-tree"
+    assert g.worktree_name(tempfile.mkdtemp()) == ""  # outside any repo
+    assert g.worktree_name("") == ""
 
 
 def test_current_branch_detached_on_remote_ref_drops_the_remote():

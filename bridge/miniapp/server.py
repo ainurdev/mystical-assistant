@@ -117,6 +117,11 @@ def _session_brief(s: dict) -> dict:
     # can no longer see.
     wt = s.get("work_cwd") or ""
     wt_branch = git.current_branch_cached(wt) if wt else ""
+    # …and which tree that branch is checked out in, when it isn't the project's
+    # own checkout. A session created onto a worktree has that path as its cwd —
+    # work_cwd only catches a shell that *moved* — so the name comes from the
+    # working path either way.
+    work = wt if wt_branch else (cwd or "")
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
@@ -130,6 +135,7 @@ def _session_brief(s: dict) -> dict:
             "tags": store.parse_tags(s.get("tags")),
             "stype": s.get("stype"), "stage": s.get("stage"),
             "work_cwd": wt if wt_branch else None,
+            "worktree": git.worktree_name(work),
             "branch": wt_branch or (git.current_branch_cached(cwd) if cwd else "")}
 
 

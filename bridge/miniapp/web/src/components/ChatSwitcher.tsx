@@ -111,7 +111,11 @@ export function ChatSwitcher() {
   const current = rows.find((r) => r.id === sessionId);
   // The checkout this chat runs in — a worktree session is not on the repo's
   // current branch, and that difference is worth a word in the header.
-  const branch = sessions.find((s) => s.id === sessionId)?.branch ?? "";
+  const me = sessions.find((s) => s.id === sessionId);
+  const branch = me?.branch ?? "";
+  // Two worktrees can sit on one branch, so the branch alone doesn't say which
+  // tree this chat is committing into. The name only shows for a linked one.
+  const worktree = me?.worktree ?? "";
   const waiting = rows.filter((r) => needsYou(r.state));
   const running = rows.filter((r) => r.state === "working" || r.state === "checking" || r.state === "live");
   const recent = rows.filter((r) => r.state === "idle");
@@ -191,6 +195,7 @@ export function ChatSwitcher() {
           <span className="truncate text-[10px] tracking-wider text-[var(--tg-hint)]">
             {(projectName ?? "NO PROJECT").toUpperCase()}
             {branch ? ` · ${branch.toUpperCase()}` : ""}
+            {worktree ? ` ⧉${worktree.toUpperCase()}` : ""}
             {running.length > 0 ? ` · ${running.length} LIVE` : ""}
             {waiting.length > 0 ? ` · ${waiting.length} WAITING` : ""}
           </span>

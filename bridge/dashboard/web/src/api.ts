@@ -34,6 +34,7 @@ export interface SessionBrief {
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
   branch?: string; // the branch the session is working on (its worktree's, else its checkout's)
   work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there
+  worktree?: string; // the linked worktree it runs in ("" = the project checkout)
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
   ctx_tokens?: number | null; // window fill at the end of the last turn (null = unmeasured)
   ctx_window?: number; // what ctx_tokens is a fraction of (config.CONTEXT_WINDOW)

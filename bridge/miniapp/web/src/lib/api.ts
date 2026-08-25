@@ -63,6 +63,7 @@ export interface SessionBrief {
   autocompact?: string | null; // compact at: "auto" | token count | null (claude's default)
   branch?: string; // the branch it is working on ("" when unknown)
   work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there
+  worktree?: string; // the linked worktree it runs in ("" = the project checkout)
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
   stype?: string | null; // the flow this session runs (null = a plain chat)
   stage?: string | null; // where in that flow it is ("done" = finished)

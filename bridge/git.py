@@ -549,12 +549,15 @@ def current_branch(cwd: str) -> str:
     """The name to show for where a checkout is. Detached HEAD answers "HEAD",
     which names nothing and is what every branch chip ended up drawing, so
     resolve it: a ref pointing at this exact commit (a `git checkout origin/foo`
-    or a tag, sorted so a local branch wins), else a branch-relative name from
-    name-rev ("staging~1" — a worktree whose branch was carried off to another
-    checkout sits exactly here), else the short sha — git's own "HEAD detached
-    at 1383914". A remote-tracking ref drops its remote: the chip names a
-    branch, and "origin/" says where the ref is stored, not which branch this
-    is — the local one is gone (deleted after merge) as often as not."""
+    or a tag, sorted so a local branch wins), else the branch name-rev found this
+    commit under (a worktree whose branch was carried off to another checkout
+    sits exactly here), else the short sha — git's own "HEAD detached at
+    1383914". name-rev's distance suffix is dropped: "staging~1" is a revision,
+    not a branch, and a chip has room for one name — worktree_name is what tells
+    two trees on the same branch apart. A remote-tracking ref drops its remote:
+    the chip names a branch, and "origin/" says where the ref is stored, not
+    which branch this is — the local one is gone (deleted after merge) as often
+    as not."""
     rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
     name = out.strip() if rc == 0 else ""
     if name != "HEAD":
@@ -569,9 +572,29 @@ def current_branch(cwd: str) -> str:
     rc, out, _ = _run(cwd, "name-rev", "--name-only", "--refs=refs/heads/*", "HEAD")
     name = out.strip() if rc == 0 else ""
     if name and name != "undefined":
-        return name
+        return re.split(r"[~^]", name)[0]
     rc, out, _ = _run(cwd, "rev-parse", "--short", "HEAD")
     return out.strip() if rc == 0 else ""
+
+
+def worktree_name(cwd: str) -> str:
+    """The directory name of the linked worktree `cwd` sits in, "" when it is the
+    repo's main checkout (or no repo at all). A branch alone doesn't say where a
+    session's commits land — two trees can answer "staging", one of them detached
+    because the branch moved to the other — so the chip needs this next to it.
+    A linked worktree's `.git` is a *file* pointing at the main repo's admin dir,
+    which makes the whole test one stat: no `git worktree list` subprocess per
+    session per poll, and no cache to keep warm."""
+    d = os.path.abspath(cwd) if cwd else ""
+    while d:
+        g = os.path.join(d, ".git")
+        if os.path.exists(g):
+            return os.path.basename(d) if os.path.isfile(g) else ""
+        parent = os.path.dirname(d)
+        if parent == d:
+            return ""
+        d = parent
+    return ""
 
 
 def head_sha(cwd: str) -> str:
