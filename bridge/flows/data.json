@@ -3,8 +3,18 @@
   "label": "DATA",
   "blurb": "Answer a question about the numbers: usage, spend, counts over time.",
   "form": [
-    { "key": "question", "label": "QUESTION", "required": true, "multiline": true },
-    { "key": "range", "label": "RANGE (e.g. 14d)", "required": false, "multiline": false }
+    {
+      "key": "question",
+      "label": "QUESTION",
+      "required": true,
+      "multiline": true
+    },
+    {
+      "key": "range",
+      "label": "RANGE (e.g. 14d)",
+      "required": false,
+      "multiline": false
+    }
   ],
   "stages": [
     {
@@ -14,7 +24,10 @@
       "instructions": "Find where the numbers actually live and read them — a query, a log, a table. Say which source you used and over what range. Do not estimate a number you could count.",
       "card_fields": [
         "source",
-        { "name": "rows", "type": "table" }
+        {
+          "name": "rows",
+          "type": "table"
+        }
       ]
     },
     {
@@ -23,13 +36,25 @@
       "gate": false,
       "instructions": "Show the shape over time, the headline numbers, and the one sentence the data actually supports. Name what would change the answer. If the numbers don't answer the question, say that instead of decorating them.",
       "card_fields": [
-        { "name": "over_time", "type": "chart" },
-        { "name": "headline", "type": "stats" },
-        { "name": "rows", "type": "table" },
+        {
+          "name": "over_time",
+          "type": "chart"
+        },
+        {
+          "name": "headline",
+          "type": "stats"
+        },
+        {
+          "name": "rows",
+          "type": "table"
+        },
         "reading"
       ],
-      "input": "answer",
-      "handoff": ["ops", "build"]
+      "input": "refine",
+      "handoff": [
+        "ops",
+        "build"
+      ]
     }
   ]
 }

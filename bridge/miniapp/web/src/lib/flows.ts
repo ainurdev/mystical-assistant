@@ -55,6 +55,7 @@ const LADDER: Record<string, { level: number; verb: string }> = {
   approve:  { level: 1, verb: "TAP" },
   arm:      { level: 1, verb: "ARM" },
   pick:     { level: 2, verb: "PICK" },
+  refine:   { level: 2, verb: "REFINE" },
   evidence: { level: 3, verb: "EVIDENCE" },
   answer:   { level: 3, verb: "ANSWER" },
   triage:   { level: 4, verb: "TRIAGE" },

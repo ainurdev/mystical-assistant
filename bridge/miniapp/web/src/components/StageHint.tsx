@@ -22,6 +22,7 @@ const WANTS: Record<string, string> = {
   annotate: "note what to change, per screen on the card above",
   pick: "star the ones worth keeping, on the card above",
   answer: "answer what it asked — one question per concept",
+  refine: "narrow it or regroup — the card's buttons re-query in place",
 };
 
 export function StageHint({ stage, onPaste }: {

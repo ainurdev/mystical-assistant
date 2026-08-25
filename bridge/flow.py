@@ -63,7 +63,8 @@ _SHAPES = {
 }
 # How the user is meant to engage with a stage, which is what the composer
 # reads to lead with taps instead of a blank box. The text box never leaves.
-_INPUTS = ("approve", "arm", "evidence", "triage", "annotate", "pick", "answer")
+_INPUTS = ("approve", "arm", "evidence", "triage", "annotate", "pick",
+           "answer", "refine")
 
 
 def fields_of(stage: dict) -> "list[dict]":
