@@ -19,7 +19,7 @@ import { stripHudCard } from "../lib/hudcard";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import {
-  cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTier,
+  cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
   type CmdKind, type Shape, type Tier,
 } from "../lib/tools";
 
@@ -378,7 +378,7 @@ function DiffBlock({
       tier="mark"
       shape={bare ? undefined : toolShape(name)}
       accent={toolAccent(name)}
-      tag={bare ? undefined : name.toUpperCase()}
+      tag={bare ? undefined : toolTag(name)}
       animate={animate}
       error={error}
       startOpen={autoOpen}
@@ -793,7 +793,7 @@ function ActionRow({
                   <i /><i /><i />
                 </span>
               )}
-              {tag}
+              <span className="ax-tagtext">{tag}</span>
             </span>
           )}
         </span>
@@ -903,7 +903,7 @@ function WriteCard({ name, path, ms, stat, error, animate }: {
       tier="mark"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={name.toUpperCase()}
+      tag={toolTag(name)}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
@@ -923,7 +923,7 @@ function SearchCard({ name, summary, ms, stat, error, animate }: {
       tier="glance"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={name.toUpperCase()}
+      tag={toolTag(name)}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
@@ -944,7 +944,7 @@ function WebCard({ name, summary, ms, stat, error, animate }: {
       tier="reach"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={name === "WebSearch" ? "SEARCH" : "FETCH"}
+      tag={toolTag(name)}
       animate={animate}
       error={error}
       // Round at both ends: the tag and what came back. There is no status code
@@ -974,13 +974,13 @@ function WebCard({ name, summary, ms, stat, error, animate }: {
 function McpCard({ name, summary, ms, stat, error, animate }: {
   name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
 }) {
-  const { server, tool } = mcpParts(name);
+  const { tool } = mcpParts(name);
   return (
     <ActionRow
       tier="reach"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={server.toUpperCase()}
+      tag={toolTag(name)}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
@@ -1212,7 +1212,7 @@ function CallGroup({
 }) {
   const kind = toolKind(name);
   const accent = toolAccent(name);
-  const tag = kind === "mcp" ? mcpParts(name).server : kind;
+  const tag = kind === "mcp" ? toolTag(name) : kind.toUpperCase();
   const total = calls.reduce((t, c) => t + (c.ms ?? 0), 0);
   const failed = calls.some((c) => c.error);
 
@@ -1229,7 +1229,7 @@ function CallGroup({
         style={{ borderColor: edge(accent), color: failed ? "var(--err)" : accent }}
       >
         {kind === "mcp" ? <Plug size={11} aria-hidden /> : kind === "web" ? <Globe size={11} aria-hidden /> : <Bot size={11} aria-hidden />}
-        <span className="truncate">{tag.toUpperCase()}</span>
+        <span className="truncate">{tag}</span>
         <span className="flex-none tracking-[1px] text-muted-2">· {calls.length} CALLS</span>
         {slow(total) && <span className="flex-none tracking-[1px] text-muted-2">· {dur(total)}</span>}
       </div>
@@ -1280,7 +1280,7 @@ function ToolCard({
       tier={toolTier(name)}
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={kind === "plan" ? "PLAN" : name.toUpperCase()}
+      tag={toolTag(name)}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}

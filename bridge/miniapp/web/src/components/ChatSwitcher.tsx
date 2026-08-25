@@ -114,8 +114,9 @@ export function ChatSwitcher() {
   const me = sessions.find((s) => s.id === sessionId);
   const branch = me?.branch ?? "";
   // Two worktrees can sit on one branch, so the branch alone doesn't say which
-  // tree this chat is committing into. The name only shows for a linked one.
-  const worktree = me?.worktree ?? "";
+  // tree this chat is committing into. The name only shows for a linked one —
+  // and only when it differs from the branch, or it just repeats it.
+  const worktree = me?.worktree && me.worktree !== branch ? me.worktree : "";
   const waiting = rows.filter((r) => needsYou(r.state));
   const running = rows.filter((r) => r.state === "working" || r.state === "checking" || r.state === "live");
   const recent = rows.filter((r) => r.state === "idle");

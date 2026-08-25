@@ -13,9 +13,10 @@ import type { OpenFile } from "../Markdown";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
-import { CanvasView, FlowMapCard } from "./CanvasView";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
+import { Canvas, FlowMap, PanelPin, PinPicker } from "./Canvas";
+import { scopeKey, type PanelTab } from "../RightPanel";
 
 /** Height of the sticky prompt bar. The observer insets the scroller's top by
  *  it, and `scroll-mt-[44px]` on the transcript's anchors clears it. */
@@ -176,13 +177,10 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, onStage, onRetype, onHandoff,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, canvas, onCanvas,
+  onOpenDesign, focus, onFocus, panels, pinned, onPin,
 }: {
   view: View;
   onView: (v: View) => void;
-  /** Lay the chat view's turns out as a board instead of a scroller. */
-  canvas?: boolean;
-  onCanvas?: (on: boolean) => void;
   selected: SessionBrief | null;
   activeProject?: string | null;
   branch?: string | null;
@@ -228,6 +226,16 @@ export function Terminal({
   onHandoff?: (stype: string, prompt: string) => void;
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;
+  /** CANVAS focus mode: the board alone, both sidebars folded away. Owned by
+   *  App, which is the only thing that can hide them. */
+  focus?: boolean;
+  onFocus?: () => void;
+  /** The right sidebar's tabs, offered to the board: any of them can stand
+   *  beside the conversation as a pinned card. `pinned` holds the ids, in the
+   *  order they were pinned; `onPin` toggles one. */
+  panels?: PanelTab[];
+  pinned?: string[];
+  onPin?: (id: string) => void;
 }) {
   const flows = useFlows();
   const flowShape = flows.find((f) => f.stype === selected?.stype) ?? null;
@@ -235,7 +243,11 @@ export function Terminal({
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
   const projectLabel = basename(sessionProject);
-  const empty = view === "chat" && turns.length === 0;
+  // CANVAS is the same transcript stood on a board, so everything the chat view
+  // does — the empty state, the session-swap animations, the header's own
+  // controls — has to hold there too. Only HIST and NEXT are other content.
+  const isChat = view === "chat" || view === "canvas";
+  const empty = isChat && turns.length === 0;
 
   // The sticky peek names the turn you are *inside*: the last prompt that has
   // slid under the bar, not the session's last one. Two things fall out of that.
@@ -247,7 +259,7 @@ export function Terminal({
   const [peekIdx, setPeekIdx] = useState<number | null>(null);
   useEffect(() => {
     const root = scrollRef.current;
-    if (view !== "chat" || empty || !root) { setPeekIdx(null); return; }
+    if (!isChat || empty || !root) { setPeekIdx(null); return; }
     let raf = 0;
     // Re-queried every measure rather than observed once: with the transcript
     // virtualized, prompts mount and unmount under you, and an observer bound to
@@ -303,7 +315,7 @@ export function Terminal({
   // effect: on the landing commit this one bails whichever runs first.
   const swapRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
-    if (view !== "chat" || !loading || empty) return; // empty: nothing worth holding
+    if (!isChat || !loading || empty) return; // empty: nothing worth holding
     const wrap = swapRef.current;
     if (wrap) wrap.dataset.swapping = "1";
   }, [sessionId, view, loading, empty]);
@@ -316,7 +328,7 @@ export function Terminal({
   const tunedFor = useRef<string | null>(null);
   const firstTune = useRef(true);
   useLayoutEffect(() => {
-    if (view !== "chat" || loading) return; // wait until the new transcript has landed
+    if (!isChat || loading) return; // wait until the new transcript has landed
     // Release the hold in the same commit the new turns render in, so the dim
     // lifting and the fade-up below read as one motion.
     const wrap = swapRef.current;
@@ -336,134 +348,187 @@ export function Terminal({
     );
   }, [sessionId, loading, view, scrollRef]);
 
-  // Everything the transcript needs either way. The scroller adds scrollRef and
-  // the checkpoint refs on top; the board deliberately leaves scrollRef off,
-  // which is what puts Transcript into its full-mount branch.
-  const transcriptProps = {
-    turns, activeId, boot, onRespond, liveTurns, trailingWorking, hud,
-    onRunCommand, onQuote, onOpenFile, onAnswer,
-    onStageAdvance: onStage ? () => onStage("advance") : undefined,
-    stage: selected?.stage ?? null, stype: selected?.stype ?? null, onHandoff,
-    hasOlder, olderLoading, onLoadOlder, renderFrom, sessionKey: sessionId,
-  };
-
-  // Which session you're looking at, in three chips. Shared so the board's
-  // floating strip says the same thing as the panel header it replaces.
-  const headRow = (
-    <>
-      <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
-        <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
-        {projectLabel || "—"}
-      </span>
-      {branch && (
-        // The chat's one session affordance. data-ctx-* makes right-click open
-        // the session menu (the SESSIONS list's own), and the click re-fires it
-        // as a contextmenu anchored under the chip so it isn't right-click-only
-        // — that menu is where "move to a new worktree" lives, and the branch
-        // you're on is where you notice you want it.
-        <button
-          title={sessionId ? "session branch — session actions" : "session branch"}
-          data-ctx-type={sessionId ? "session" : undefined}
-          data-ctx-id={sessionId ?? undefined}
-          data-ctx-label={branch}
-          disabled={!sessionId}
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
-              { bubbles: true, clientX: r.left, clientY: r.bottom }));
-          }}
-          style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px", appearance: "none", background: "transparent", fontFamily: "inherit", cursor: sessionId ? "pointer" : "default" }}>
-          <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
-        </button>
-      )}
-      <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {selected?.title || "new session"}
-      </span>
-    </>
-  );
-
-  // The board. It owns the whole panel body — its strip replaces the header and
-  // it floats the composer — because the point of a canvas is that the surface
-  // runs edge to edge and the chrome sits on top of it.
-  if (view === "chat" && canvas) {
-    return (
-      <div
-        className="panel"
-        data-ctx-type="terminal"
-        style={{ border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
-      >
-        <CanvasView
-          header={
-            <>
-              {headRow}
-              <span style={{ flex: 1 }} />
-              <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txf)", whiteSpace: "nowrap" }}>
-                ≡ {turns.length}
-              </span>
-              <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px", flex: "none" }}>
-                {surf.label.toUpperCase()}
-              </span>
-              <ViewTabs view={view} onView={onView} canvas={canvas} onCanvas={onCanvas} />
-            </>
-          }
-          rail={flowShape && <FlowMapCard flow={flowShape} stage={selected?.stage ?? null} />}
-          composer={composer}
-        >
+  // The transcript itself, so both readings of it — the page and the board —
+  // render the same scroller, the same virtualiser and the same rails.
+  const body = (
+    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div aria-hidden className="swapline" />
+      {/* data-canvas-scroll: on the board, a plain wheel here is still a scroll.
+          Canvas reads it to know not to pan out from under someone reading. */}
+      <div ref={scrollRef} data-canvas-scroll className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
+        {/* Top padding clears the bar so the first prompt starts below
+            it: parked at the top there is nothing under the bar, so no
+            bar — the transcript opens on its first message, not on a
+            header repeating it. */}
+        <div ref={contentRef} style={{ padding: `${PEEK_H + 8}px 0 16px` }}>
+          {/* A switch that lands inside the delay renders neither: no
+              scanline for a load that's already over, and no FreshState
+              flashing in front of a transcript that's about to arrive. */}
           {empty && slowLoad ? (
             <ChannelTuning step={boot} />
           ) : empty && loading ? null : empty ? (
             <FreshState project={sessionProject} />
           ) : (
-            <Transcript {...transcriptProps} />
+            <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} stage={selected?.stage ?? null} stype={selected?.stype ?? null} onHandoff={onHandoff} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
           )}
-        </CanvasView>
+        </div>
       </div>
-    );
-  }
-
-  return (
-    <div
-      className="panel"
-      data-ctx-type="terminal"
-      style={{ border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
-    >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, overflow: "hidden" }}>
-            {headRow}
-          </div>
-          {/* Where a typed session stands. Its own line: the row above is one
-              line of ellipsised text, and a rail wrapped inside it stacked
-              vertically and pushed the title out. Untyped sessions have no
-              rail — there is nothing to stand in. */}
-          {view === "chat" && selected && onRetype && flows.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <TypePicker flows={flows} current={selected.stype ?? null} onRetype={onRetype} />
-              {flowShape && (
-                <StageRail
-                  stages={flowShape.stages}
-                  current={selected?.stage ?? null}
-                  onSet={(stage) => onStage?.("set", stage)}
-                />
-              )}
+      {/* Overlay, not a sticky child of the scroller: in-flow it added ~68px
+          to the content the instant it toggled, so the first scroll down from
+          the top lurched everything you were reading (and back up on the way
+          out). An absolute layer costs the scroll range nothing. */}
+      {/* Stays mounted and fades: mounting it on the crossing popped a
+          bar into place mid-scroll. One line tall, always — a fixed height
+          is what lets the observer margin and the anchors' scroll-margin
+          agree on where it ends. */}
+      {!empty && (
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", height: PEEK_H, boxSizing: "border-box", padding: "0 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "center", gap: 9, backdropFilter: "blur(3px)", opacity: showPeek ? 1 : 0, transform: showPeek ? "none" : "translateY(-7px)", visibility: showPeek ? "visible" : "hidden", transition: "opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility .26s" }}>
+          {held.current && (
+            // Keyed on the text so moving to another turn crossfades the
+            // line instead of swapping it under you.
+            <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
+              <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", fontVariantNumeric: "tabular-nums" }}>{held.current.label}</span>
+              <span style={{ color: "var(--purple)", flex: "none", fontSize: "var(--t12)" }}>~ ❯</span>
+              <span style={{ color: "var(--txh)", fontSize: "var(--t12)", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{held.current.text}</span>
             </div>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
-          {view === "chat" && onOpenDesign && <DesignBtn onClick={onOpenDesign} />}
-          {view === "chat" && (
-            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
-          )}
-          {view === "chat" && (
-            <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
-          )}
-          <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
-            {surf.label.toUpperCase()}
+      )}
+      {!empty && <ScrollRail turns={turns} scrollRef={scrollRef} />}
+      {/* Scrolled off the tail — the way back down. Hidden while parked at
+          the bottom, where new output already follows on its own. Stays
+          mounted and fades, so a toggle mid-scroll never pops or replays
+          the mount animation. visibility drops it from the tab order and
+          hit-testing while hidden. */}
+      {!empty && (
+        <button
+          type="button" onClick={onJumpBottom} title="jump to latest"
+          style={{
+            position: "absolute", right: 20, bottom: 14, zIndex: 6,
+            display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+            padding: "5px 10px", fontFamily: "'JetBrains Mono',monospace",
+            fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--acc)",
+            background: "color-mix(in srgb, var(--panel2) 92%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--acc) 34%, transparent)",
+            boxShadow: "0 6px 20px rgba(0,0,0,.45), 0 0 14px color-mix(in srgb, var(--acc) 14%, transparent)",
+            backdropFilter: "blur(6px)",
+            opacity: atBottom ? 0 : 1,
+            transform: atBottom ? "translateY(5px)" : "none",
+            visibility: atBottom ? "hidden" : "visible",
+            transition: "opacity .22s ease, transform .22s ease, visibility .22s",
+          }}
+        >
+          <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST
+        </button>
+      )}
+      {/* Last, so the whole outgoing session recedes behind it — transcript,
+          LAST peek and rail alike. Only .swapline sits above. */}
+      <div aria-hidden className="swapscrim" />
+    </div>
+  );
+
+  // What stands beside the conversation on the board: the session's own flow,
+  // then whichever sidebar panels have been pinned — in pin order, not tab
+  // order, because the order you pinned them in is the one you meant. A typed
+  // session has a flow worth drawing; an untyped one has nothing to map, so it
+  // gets the picker alone rather than an empty frame.
+  const pinnedPanels = (pinned ?? [])
+    .map((id) => panels?.find((t) => t.id === id))
+    .filter((t): t is PanelTab => !!t);
+  const pins = (
+    <>
+      {flowShape && (
+        <FlowMap stages={flowShape.stages} current={selected?.stage ?? null} turnCount={turns.length} />
+      )}
+      {/* Above the pins, not below them: pinning appends, so a picker underneath
+          would walk down the board and off the screen as you used it. */}
+      {panels && onPin && <PinPicker tabs={panels} pinned={pinned ?? []} onPin={onPin} />}
+      {/* Keyed by scope like the sidebar's own body, so a pinned worktree panel
+          remounts when you open a session in another tree instead of showing
+          the last one's files under the new session's header. */}
+      {pinnedPanels.map((t) => (
+        <PanelPin key={scopeKey(t, sessionProject, branch)} tab={t} />
+      ))}
+    </>
+  );
+
+  // The session's own header. In CHAT it sits above the transcript; on the
+  // board it floats over it, so the grid runs edge to edge underneath.
+  const header = (
+    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, overflow: "hidden" }}>
+          <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
+            {projectLabel || "—"}
           </span>
-          <ViewTabs view={view} onView={onView} canvas={canvas} onCanvas={onCanvas} />
+          {branch && (
+            // The chat's one session affordance. data-ctx-* makes right-click open
+            // the session menu (the SESSIONS list's own), and the click re-fires it
+            // as a contextmenu anchored under the chip so it isn't right-click-only
+            // — that menu is where "move to a new worktree" lives, and the branch
+            // you're on is where you notice you want it.
+            <button
+              title={sessionId ? "session branch — session actions" : "session branch"}
+              data-ctx-type={sessionId ? "session" : undefined}
+              data-ctx-id={sessionId ?? undefined}
+              data-ctx-label={branch}
+              disabled={!sessionId}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
+                  { bubbles: true, clientX: r.left, clientY: r.bottom }));
+              }}
+              style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px", appearance: "none", background: "transparent", fontFamily: "inherit", cursor: sessionId ? "pointer" : "default" }}>
+              <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
+            </button>
+          )}
+          <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {selected?.title || "new session"}
+          </span>
         </div>
+        {/* Where a typed session stands. Its own line: the row above is one
+            line of ellipsised text, and a rail wrapped inside it stacked
+            vertically and pushed the title out. Untyped sessions have no
+            rail — there is nothing to stand in. */}
+        {isChat && selected && onRetype && flows.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <TypePicker flows={flows} current={selected.stype ?? null} onRetype={onRetype} />
+            {flowShape && (
+              <StageRail
+                stages={flowShape.stages}
+                current={selected?.stage ?? null}
+                onSet={(stage) => onStage?.("set", stage)}
+              />
+            )}
+          </div>
+        )}
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
+        {isChat && onOpenDesign && <DesignBtn onClick={onOpenDesign} />}
+        {isChat && (
+          <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
+        )}
+        {isChat && (
+          <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
+        )}
+        <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
+          {surf.label.toUpperCase()}
+        </span>
+        <ViewTabs view={view} onView={onView} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      data-ctx-type="terminal"
+      // The centre column carries no frame of its own: the sidebars' hairlines
+      // already say where it starts, and a border here would draw them twice.
+      style={{ background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+    >
+      {view !== "canvas" && header}
+      {view !== "canvas" && <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
@@ -473,80 +538,11 @@ export function Terminal({
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
           <NextView onStart={onStartNext} />
         </div>
+      ) : view === "canvas" ? (
+        <Canvas chat={body} pins={pins} footer={composer} header={header} focus={focus} onFocus={onFocus} />
       ) : (
         <>
-          <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-            <div aria-hidden className="swapline" />
-            <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
-              {/* Top padding clears the bar so the first prompt starts below
-                  it: parked at the top there is nothing under the bar, so no
-                  bar — the transcript opens on its first message, not on a
-                  header repeating it. */}
-              <div ref={contentRef} style={{ padding: `${PEEK_H + 8}px 0 16px` }}>
-                {/* A switch that lands inside the delay renders neither: no
-                    scanline for a load that's already over, and no FreshState
-                    flashing in front of a transcript that's about to arrive. */}
-                {empty && slowLoad ? (
-                  <ChannelTuning step={boot} />
-                ) : empty && loading ? null : empty ? (
-                  <FreshState project={sessionProject} />
-                ) : (
-                  <Transcript {...transcriptProps} scrollRef={scrollRef} navRef={navRef} restoringRef={restoringRef} />
-                )}
-              </div>
-            </div>
-            {/* Overlay, not a sticky child of the scroller: in-flow it added ~68px
-                to the content the instant it toggled, so the first scroll down from
-                the top lurched everything you were reading (and back up on the way
-                out). An absolute layer costs the scroll range nothing. */}
-            {/* Stays mounted and fades: mounting it on the crossing popped a
-                bar into place mid-scroll. One line tall, always — a fixed height
-                is what lets the observer margin and the anchors' scroll-margin
-                agree on where it ends. */}
-            {!empty && (
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", height: PEEK_H, boxSizing: "border-box", padding: "0 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "center", gap: 9, backdropFilter: "blur(3px)", opacity: showPeek ? 1 : 0, transform: showPeek ? "none" : "translateY(-7px)", visibility: showPeek ? "visible" : "hidden", transition: "opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility .26s" }}>
-                {held.current && (
-                  // Keyed on the text so moving to another turn crossfades the
-                  // line instead of swapping it under you.
-                  <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
-                    <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", fontVariantNumeric: "tabular-nums" }}>{held.current.label}</span>
-                    <span style={{ color: "var(--purple)", flex: "none", fontSize: "var(--t12)" }}>~ ❯</span>
-                    <span style={{ color: "var(--txh)", fontSize: "var(--t12)", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{held.current.text}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            {!empty && <ScrollRail turns={turns} scrollRef={scrollRef} />}
-            {/* Scrolled off the tail — the way back down. Hidden while parked at
-                the bottom, where new output already follows on its own. Stays
-                mounted and fades, so a toggle mid-scroll never pops or replays
-                the mount animation. visibility drops it from the tab order and
-                hit-testing while hidden. */}
-            {!empty && (
-              <button
-                type="button" onClick={onJumpBottom} title="jump to latest"
-                style={{
-                  position: "absolute", right: 20, bottom: 14, zIndex: 6,
-                  display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
-                  padding: "5px 10px", fontFamily: "'JetBrains Mono',monospace",
-                  fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--acc)",
-                  background: "color-mix(in srgb, var(--panel2) 92%, transparent)",
-                  border: "1px solid color-mix(in srgb, var(--acc) 34%, transparent)",
-                  boxShadow: "0 6px 20px rgba(0,0,0,.45), 0 0 14px color-mix(in srgb, var(--acc) 14%, transparent)",
-                  backdropFilter: "blur(6px)",
-                  opacity: atBottom ? 0 : 1,
-                  transform: atBottom ? "translateY(5px)" : "none",
-                  visibility: atBottom ? "hidden" : "visible",
-                  transition: "opacity .22s ease, transform .22s ease, visibility .22s",
-                }}
-              >
-                <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST
-              </button>
-            )}
-            {/* Last, so the whole outgoing session recedes behind it — transcript,
-                LAST peek and rail alike. Only .swapline sits above. */}
-            <div aria-hidden className="swapscrim" />
-          </div>
+          {body}
           {composer}
         </>
       )}
