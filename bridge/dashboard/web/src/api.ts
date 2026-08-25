@@ -656,6 +656,38 @@ export interface McpInfo {
   scopes: string[];
   transports: string[];
 }
+/** One inbound hook. The secret never comes back from the bridge — the list
+ *  carries `signed` instead, so the panel can say one is set without being able
+ *  to re-show it. The token does come back: it is inside `url`, which you have
+ *  to be able to copy again. */
+export interface HookRow {
+  token: string;
+  label: string;
+  source: string;
+  created: number;
+  last_seen: number | null;
+  hits: number;
+  signed?: boolean;
+  url: string;
+}
+/** One received event. `label` is its hook's, joined in by the server. */
+export interface HookEvent {
+  id: string;
+  token: string;
+  source: string;
+  title: string | null;
+  url: string | null;
+  received: number;
+  label: string | null;
+}
+export interface HooksInfo {
+  hooks: HookRow[];
+  events: HookEvent[];
+  sources: string[];
+  /** false when no tunnel is configured — the URLs shown are then bare paths
+   *  nothing outside can reach, and the panel has to say so. */
+  public: boolean;
+}
 export interface AccountsInfo {
   accounts: AccountInfo[];
   default_policy: string;
@@ -1079,6 +1111,11 @@ export const api = {
   mcpAction: (action: string, name?: string, extra?: Record<string, unknown>) =>
     req<{ ok: boolean; error?: string | null; servers?: McpServer[]; url?: string }>(
       "/local/mcp", { method: "POST", body: { action, name, ...extra } }),
+  hooks: () => req<HooksInfo>("/local/hooks"),
+  /** create · delete. A create is the only response that carries a new token. */
+  hookAction: (action: string, extra?: Record<string, unknown>) =>
+    req<{ ok?: boolean; hook?: HookRow; error?: string }>(
+      "/local/hooks", { method: "POST", body: { action, ...extra } }),
   inspector: () => req<InspectorState>("/local/inspector"),
   inspectorAction: (action: "on" | "off" | "clear") =>
     req<{ ok: boolean; on: boolean }>("/local/inspector", {
