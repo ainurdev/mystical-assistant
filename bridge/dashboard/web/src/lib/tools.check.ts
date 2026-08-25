@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/tools.check.ts
-import { cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind } from "./tools.ts";
+import { cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolTag } from "./tools.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -70,3 +70,14 @@ ok(abs("cd /home/me/projects/mystical-assistant") === "enter mystical-assistant"
 ok(cmdKind("cd bridge/dashboard/web") === "fs", "a lone cd wears the folder icon");
 ok(abs("cd /x/web && for d in /proc/*; do echo $d; done") === "enter web +1 more", `a cd before an echo loop owns up to the loop, once: ${abs("cd /x/web && for d in /proc/*; do echo $d; done")}`);
 ok(abs('cd "$(git rev-parse --show-toplevel)"') === "", "a cd into a substitution has no name to give, so the row keeps the line");
+
+// The tag cell holds ten characters. A name that fits keeps its own; the ones
+// that don't say the short word instead of losing their tail to an ellipsis.
+ok(toolTag("Bash") === "BASH" && toolTag("ToolSearch") === "TOOLSEARCH", "a name that fits is the name");
+ok(toolTag("ScheduleWakeup") === "WAKEUP" && toolTag("SendMessage") === "SEND", "the long ones are said short");
+ok(toolTag("WebFetch") === "FETCH" && toolTag("TodoWrite") === "PLAN", "the labels the cards used to hardcode");
+ok(toolTag("mcp__goals__UpdateGoal") === "GOALS", "an MCP row wears its server, not its tool");
+ok(toolTag("mcp__railway-mcp-server__list_services") === "RAILWAY", `-mcp-server is what every server is: ${toolTag("mcp__railway-mcp-server__list_services")}`);
+ok(toolTag("mcp__plugin_cloudflare_cloudflare-api__execute") === "CLOUDFLARE-API",
+   `a plugin says its vendor twice: ${toolTag("mcp__plugin_cloudflare_cloudflare-api__execute")}`);
+ok(toolTag("mcp__chrome-devtools__new_page") === "DEVTOOLS", "the one server nothing can be stripped from");

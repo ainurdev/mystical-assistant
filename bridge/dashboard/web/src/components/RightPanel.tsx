@@ -19,14 +19,26 @@ export interface PanelTab {
 
 const TAB_ANIM = "enterRight .55s cubic-bezier(.2,.8,.2,1) both";
 
+/** What a tab's body belongs to, as one string. Remount on a change and the
+ *  previous session's rows go with it — which is the whole point of `scope`.
+ *  Shared with the CANVAS pins, so a pinned panel and the sidebar's own copy
+ *  agree on when they are looking at something else. */
+export function scopeKey(tab: PanelTab, project?: string | null, branch?: string | null): string {
+  const scope = tab.scope === "worktree" ? `${project ?? ""}@${branch ?? ""}`
+    : tab.scope === "project" ? project ?? ""
+    : "";
+  return `${tab.id}:${scope}`;
+}
+
 /** Right sidebar: the panel body plus a VS Code-style activity bar of icons on
  *  the outer edge. The bar is always visible — clicking the active icon
  *  collapses the body, any other icon opens on that tab.
  *
- *  The body's width is fixed rather than fluid (329px = App's 372px column
- *  minus the 30px rail and the 13px gap) and the row clips: while the column
- *  animates shut, the body holds its open width and slides off the left edge
- *  (justify-end overflows at the start), so only the transcript reflows. */
+ *  The body states its own width rather than filling the column — the same
+ *  clamp App's grid track uses, so the two agree — and the row clips: while
+ *  the column animates shut the body holds that width and slides off the left
+ *  edge (justify-end overflows at the start), so only the transcript reflows.
+ *  Collapsed, the track is the rail's 44px alone. */
 export function RightPanel({
   tabs,
   activeId,
@@ -44,9 +56,6 @@ export function RightPanel({
   branch?: string | null;
 }) {
   const current = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  const scope = current?.scope === "worktree" ? `${project ?? ""}@${branch ?? ""}`
-    : current?.scope === "project" ? project ?? ""
-    : "";
   // Two different events land on the same element and must not look alike. A
   // TAB change is the panel arriving from the rail, so the panel slides in. A
   // SCOPE change is the same panel already sitting there, now showing another
@@ -57,28 +66,28 @@ export function RightPanel({
   // inline animation-name flips and replays on a panel that has sat still for
   // seconds.
   const tabId = current?.id ?? "";
-  const bodyKey = `${tabId}:${scope}`;
+  const bodyKey = current ? scopeKey(current, project, branch) : "";
   const shown = useRef({ tab: "", key: "", swap: false });
   if (shown.current.key !== bodyKey) {
     shown.current = { tab: tabId, key: bodyKey, swap: shown.current.key !== "" && shown.current.tab === tabId };
   }
   return (
-    <div className="flex min-h-0 min-w-0 justify-end gap-[13px] overflow-hidden">
+    <div className="flex min-h-0 min-w-0 justify-end overflow-hidden">
       {open && (
         // ponytail: the key is what replays the entry — remounting also drops
         // the previous session's rows, so nothing stale survives the swap.
         <div
           key={bodyKey}
           data-swap={shown.current.swap ? "" : undefined}
-          className={`flex min-h-0 w-[329px] flex-none flex-col gap-[13px] pr-0.5 ${current?.ownScroll ? "" : "mscroll"}`}
-          style={{ animation: shown.current.swap ? undefined : TAB_ANIM }}
+          className={`shellcol flex min-h-0 flex-none flex-col border-l border-border ${current?.ownScroll ? "" : "mscroll"}`}
+          style={{ width: "clamp(230px,20vw,296px)", animation: shown.current.swap ? undefined : TAB_ANIM }}
         >
           {current?.render()}
         </div>
       )}
       <div
-        className="panel flex w-[30px] flex-none flex-col items-stretch gap-1 border border-border bg-panel py-1.5"
-        style={{ animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .12s" }}
+        className="flex w-[44px] flex-none flex-col items-stretch gap-1.5 border-l border-border py-2.5"
+        style={{ background: "var(--panel3)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .12s" }}
       >
         {tabs.map((t) => {
           const on = open && t.id === current?.id;

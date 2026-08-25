@@ -170,7 +170,10 @@ function SessionRow({
                 title={s.work_cwd ? `working in ${s.work_cwd}` : s.worktree ? `worktree ${s.worktree}` : "branch"}>
             <span style={{ color: inWorktree ? "var(--acc)" : "var(--txf)", flex: "none" }}>⎇</span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
-            {s.worktree && (
+            {/* A worktree usually carries the branch of the same name, and then
+                the chip would say it twice. Only a tree named something else
+                earns the second word. */}
+            {s.worktree && s.worktree !== branch && (
               <span style={{ color: "var(--txd)", maxWidth: 96, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⧉{s.worktree}</span>
             )}
           </span>

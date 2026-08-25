@@ -84,6 +84,34 @@ export function mcpParts(name: string): { server: string; tool: string } {
   return { server, tool: rest.join("__").replace(/_/g, " ") };
 }
 
+/** The word a row's tag wears, which is not always the tool's own name: the tag
+ *  cell holds ten characters (--axtag in index.css) and cuts short what runs
+ *  past, so the names longer than that get the short one you'd say out loud.
+ *  Only those are here — a label for every tool would rot the first time one
+ *  is renamed, and a name that already fits is the honest thing to show. */
+const TAG: Record<string, string> = {
+  WebSearch: "SEARCH", WebFetch: "FETCH",  // the round shape already said "web"
+  TodoWrite: "PLAN", ExitPlanMode: "PLAN", EnterPlanMode: "PLAN",
+  SendMessage: "SEND", ScheduleWakeup: "WAKEUP", ReportFindings: "FINDINGS",
+  NotebookEdit: "NOTEBOOK",
+  "chrome-devtools": "DEVTOOLS",
+};
+
+/** An MCP server is named for a config file, not for a tag: `-mcp-server` is
+ *  what every one of them is, and a plugin's `plugin_<vendor>_` prefix says the
+ *  vendor twice over. Both are scaffolding around the name — with them off,
+ *  `railway-mcp-server` is RAILWAY. */
+const serverName = (s: string) =>
+  s.replace(/^plugin_[^_]+_/, "").replace(/[-_]mcp([-_]server)?$/, "");
+
+export function toolTag(name: string): string {
+  if (toolKind(name) === "mcp") {
+    const s = serverName(mcpParts(name).server);
+    return (TAG[s] ?? s).toUpperCase();
+  }
+  return TAG[name] ?? name.toUpperCase();
+}
+
 /** The host of a URL, so a fetch reads as the site it hit and the rest of the
  *  URL can be dimmed. Empty for a search query (WebSearch) — not a URL. */
 export function hostOf(url: string): string {

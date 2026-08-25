@@ -212,6 +212,15 @@ export function App() {
   // carries, not a recorded event, so it clears itself when the child speaks.
   const [boot, setBoot] = useState<string | null>(null);
   const [view, setView] = useState<View>("chat");
+  // "Show me the conversation" — from history, a jump, or a session you just
+  // opened. CANVAS is a way of reading that same conversation, so landing there
+  // stays there; only HIST and NEXT are somewhere else to come back from.
+  const toChat = () => setView((v) => (v === "canvas" ? v : "chat"));
+  // Focus mode is a way of looking at the board, so it only applies there:
+  // leaving CANVAS brings the sidebars back on its own, and there is no way
+  // to end up in CHAT with both panels gone and no switch to bring them back.
+  const [focus, setFocus] = useState(false);
+  const focused = focus && view === "canvas";
   // Which model-spending extras are on: each one owns a tab and a palette entry
   // that don't exist while it's off.
   const ai = useAiFeatures();
@@ -1181,7 +1190,7 @@ export function App() {
   function quote(text: string) {
     const q = text.trim().split("\n").map((l) => `> ${l}`).join("\n");
     setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${q}\n\n` : `${q}\n\n`);
-    setView("chat");
+    toChat();
   }
 
   async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) {
@@ -1209,7 +1218,7 @@ export function App() {
       return;
     }
     setInject((p) => ({ text, nonce: p.nonce + 1 }));
-    setView("chat");
+    toChat();
   }
 
   // New session in `project`, then run `prompt` in it. The explicit sessionId is
@@ -1223,7 +1232,7 @@ export function App() {
     setSessionId(null);
     setTurns([]);
     setLoadingSession(true);
-    setView("chat");
+    toChat();
   }
 
   async function startIn(
@@ -1235,7 +1244,7 @@ export function App() {
       const { session } = await api.createSession(project, opts?.cwd, opts?.title);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
-      setView("chat");
+      toChat();
       await send(prompt, opts?.images ?? [],
                  { sessionId: session.id, project, force: opts?.force });
     } catch (e) {
@@ -1284,7 +1293,7 @@ export function App() {
       const { session } = await api.createSession(project, undefined, undefined, stype);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
-      setView("chat");
+      toChat();
       await send(prompt, [], { sessionId: session.id, project, force: true });
     } catch (e) {
       setLoadingSession(false);
@@ -1343,7 +1352,7 @@ export function App() {
       await selectProject(r.project.rel);
       await loadSessions();
       if (r.session) openSession(r.session.id);
-      setView("chat");
+      toChat();
     } catch (e) { notify("error", (e as Error).message); }
   }
 
@@ -1352,7 +1361,7 @@ export function App() {
     // does; loadSessions keeps the open one even when the backend list omits it.
     setSessions((prev) => prev.some((x) => x.id === s.id) ? prev : [s, ...prev]);
     openSession(s.id);
-    setView("chat");
+    toChat();
     if (s.project !== activeProject) selectProjectBg(s.project);
   }
 
@@ -1538,6 +1547,15 @@ export function App() {
     { id: "queue", label: "Queue", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];
 
+  // Stand a sidebar panel on the CANVAS board, or take it back. Appended, not
+  // sorted: the gutter shows them in the order they were pinned, which is the
+  // order they were wanted in.
+  const togglePanelPin = (id: string) => patchSettings({
+    canvasPins: settings.canvasPins.includes(id)
+      ? settings.canvasPins.filter((x) => x !== id)
+      : [...settings.canvasPins, id],
+  });
+
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
   // No usage payload (no token / upstream down long enough that the bridge's
   // last-good copy went stale) reads as unknown — not as a real 0%.
@@ -1594,7 +1612,7 @@ export function App() {
   // sitting there would strand you on a screen with no way back to it. (The MEM
   // and TEACH panel tabs need no guard — RightPanel falls back to its first tab.)
   useEffect(() => {
-    if (view === "next" && !ai.nextup) setView("chat");
+    if (view === "next" && !ai.nextup) toChat();
   }, [view, ai]);
 
   const commands: Command[] = [
@@ -1607,6 +1625,9 @@ export function App() {
       catch { notify("error", "Clipboard refused the copy."); }
     } },
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
+    { id: "view-canvas", label: "Go to Canvas", group: "View", icon: "▦", run: () => setView("canvas") },
+    { id: "canvas-focus", label: focused ? "Leave canvas focus mode" : "Canvas focus mode", group: "View", icon: "◱",
+      run: () => { setView("canvas"); setFocus((f) => !f); } },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
     // Gated exactly like the tabs: an extra that's off has no way in at all.
     ...(ai.nextup
@@ -1955,12 +1976,17 @@ export function App() {
               onFeed={feed}
             />
 
+            {/* Three flush columns, each divided from the next by one hairline —
+                the shell is a single surface, not three cards floating on a
+                fourth. Widths are the mock's: the sidebars give ground back to
+                the transcript on a narrow window instead of holding a fixed
+                px and squeezing it. */}
             <div
-              className="hudgrid grid min-h-0 flex-1 gap-[13px] p-[13px]"
-              style={{ gridTemplateColumns: `360px minmax(0,1fr) ${settings.rightOpen ? "372px" : "30px"}`, minWidth: 0 }}
+              className="hudgrid grid min-h-0 flex-1"
+              style={{ gridTemplateColumns: focused ? "minmax(0,1fr)" : `clamp(260px,22vw,340px) minmax(0,1fr) ${settings.rightOpen ? "calc(clamp(230px,20vw,296px) + 44px)" : "44px"}`, minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
-              <div className="flex min-h-0 min-w-0 flex-col gap-[13px] pr-0.5">
+              <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)", ...(focused ? { display: "none" } : null) }}>
                 <SessionsPanel
                   sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
@@ -2011,6 +2037,8 @@ export function App() {
                   sessionProject && void typedSession(sessionProject, stype, prompt)}
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
+                focus={focused} onFocus={() => setFocus((f) => !f)}
+                panels={rightTabs} pinned={settings.canvasPins} onPin={togglePanelPin}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2067,11 +2095,14 @@ export function App() {
 
               {/* RIGHT — activity bar of icons; clicking the active one collapses
                   the body and unmounts the panel (which stops its polling). */}
-              <RightPanel
-                tabs={rightTabs} activeId={settings.rightTab}
-                open={settings.rightOpen} onTab={pickRightTab}
-                project={sessionProject} branch={sessionBranch}
-              />
+              {/* display:contents keeps RightPanel itself the grid item. */}
+              <div style={{ display: focused ? "none" : "contents" }}>
+                <RightPanel
+                  tabs={rightTabs} activeId={settings.rightTab}
+                  open={settings.rightOpen} onTab={pickRightTab}
+                  project={sessionProject} branch={sessionBranch}
+                />
+              </div>
             </div>
 
             <StatusBar
@@ -2101,7 +2132,7 @@ export function App() {
                 initialTab={analyzeTab} initialCommand={analyzeCommand}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
-                onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); setView("chat"); }}
+                onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); toChat(); }}
                 onWorktreeSession={(rel, branch, create, parent, firstPrompt) => { void worktreeSession(rel, branch, create, parent, firstPrompt); setAnalyzeProject(null); }}
               />
             )}

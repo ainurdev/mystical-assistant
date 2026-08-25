@@ -361,6 +361,18 @@ body {
 .hudgrid {
   transition: grid-template-columns 0.26s var(--ease-hud);
 }
+/* A shell column is one flush surface, divided from its neighbour by a single
+   hairline — so the panel that fills a column must not draw a second box
+   inside it. This outranks the panels' own inline border on purpose: the same
+   components still float, framed and bracketed, everywhere they are a card
+   rather than a whole column. */
+.shellcol > .panel {
+  border: 0 !important;
+}
+.shellcol > .panel::before,
+.shellcol > .panel::after {
+  display: none;
+}
 
 /* The transcript draws its own bar (CheckpointRail) over this edge — one rail,
    not two. Everything else keeps the native scrollbar. */
@@ -1188,16 +1200,27 @@ input {
 }
 
 /* === THE ACTION LEDGER =====================================================
-   One row per thing the model did, on a five-column grid. The tag cell is a
-   fixed 92px for every kind, so every object starts in the same column — the
+   One row per thing the model did, on a five-column grid. The tag cell is one
+   width for every kind, so every object starts in the same column — the
    alignment comes from the cell, the character from the shape drawn inside it
    (see toolShape in lib/tools). The box each card used to carry is gone; what
    is left is a bar in the tool's own accent, and stacked, those bars are the
    turn's summary: a green one means a file changed.
    `--h` is the row's hue, set inline from toolAccent. */
+:root {
+  /* The one column here whose job is to hold a word, so it follows --fs like
+     the word does. Fixed at 92px it was ten characters at --fs:12 and eight at
+     14, and a tag that outgrew it bled across the object beside it (TOOLSEARCH,
+     TASKUPDATE, DESIGNSYNC are all ten). This is the same 92px at 12 and ten
+     characters at every size — the padding inside the tag and around it doesn't
+     scale, hence the flat 32px rather than a bigger multiplier. Longer names
+     (SCHEDULEWAKEUP, CHROME-DEVTOOLS) are cut short instead: widening the column
+     for them would spend the room on every row in the session. */
+  --axtag: calc(var(--t95) * 6.3 + 32px);
+}
 .actrow {
   display: grid;
-  grid-template-columns: 3px 92px minmax(0, 1fr) max-content 18px;
+  grid-template-columns: 3px var(--axtag) minmax(0, 1fr) max-content 18px;
   align-items: center;
   min-height: 24px;
   margin-left: 18px;
@@ -1224,10 +1247,15 @@ input {
 .ax-tagcell { display: flex; align-items: center; padding-left: 8px; padding-right: 6px; min-width: 0; }
 .ax-tag {
   display: inline-flex; align-items: center; gap: 4px;
-  height: 14px; padding: 0 4px; line-height: 1; white-space: nowrap;
+  height: calc(var(--t95) + 4.5px); padding: 0 4px; line-height: 1; white-space: nowrap;
   font-size: var(--t95); letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--h);
+  max-width: 100%; min-width: 0;
 }
+/* The name itself gives way first: the shape around it (the lights, the cable)
+   is what tells the row's kind apart, so it keeps its width and the word loses
+   its tail. */
+.ax-tagtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ax-tag[data-shape="bare"]  { padding: 0; color: color-mix(in srgb, var(--h) 72%, transparent); }
 .ax-tag[data-shape="fill"]  { background: var(--h); color: var(--acc-on); }
 .ax-tag[data-shape="dash"]  { border: 1px dashed color-mix(in srgb, var(--h) 50%, transparent); }
@@ -1273,7 +1301,7 @@ input {
 /* The drawer: the payload, opened in place. Its text column starts where the
    object's does, so opening a row never moves the eye sideways. */
 .ax-drawer {
-  margin-left: 18px; padding: 7px 12px 8px 95px;
+  margin-left: 18px; padding: 7px 12px 8px calc(var(--axtag) + 3px);
   border-top: 1px solid var(--ac-06); background: var(--panel3);
   font-family: var(--mono); font-size: var(--t115); line-height: 1.55;
 }
@@ -1284,7 +1312,7 @@ input {
    commands, not one. Inside it the tag cell goes empty — the header already
    said BASH — and each line leads with its own command-kind icon instead. The
    empty cell collapses to its own padding (max-content), so commands don't
-   inherit the 92px gutter the tag column exists for. */
+   inherit the gutter the tag column exists for. */
 .ax-window { margin-left: 18px; border: 1px solid var(--ac-16); background: var(--code-bg); }
 .ax-window > .actrow { margin-left: 0; background: none; grid-template-columns: 3px max-content minmax(0, 1fr) max-content 18px; }
 .ax-window > .actrow:hover { background: var(--ac-03); }
