@@ -212,6 +212,10 @@ export function App() {
   // carries, not a recorded event, so it clears itself when the child speaks.
   const [boot, setBoot] = useState<string | null>(null);
   const [view, setView] = useState<View>("chat");
+  // Chat-view layout: scroller or board. Held apart from `view` on purpose —
+  // opening a session resets the view to "chat", and the board you chose should
+  // survive that.
+  const [canvas, setCanvas] = useState(false);
   // Which model-spending extras are on: each one owns a tab and a palette entry
   // that don't exist while it's off.
   const ai = useAiFeatures();
@@ -1606,7 +1610,8 @@ export function App() {
       try { void navigator.clipboard?.writeText(md); notify("info", "Chat copied as markdown."); }
       catch { notify("error", "Clipboard refused the copy."); }
     } },
-    { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
+    { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => { setView("chat"); setCanvas(false); } },
+    { id: "view-canvas", label: canvas ? "Leave the canvas" : "Lay the chat out on a canvas", group: "View", icon: "◳", run: () => { setView("chat"); setCanvas(!canvas); } },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
     // Gated exactly like the tabs: an extra that's off has no way in at all.
     ...(ai.nextup
@@ -1977,7 +1982,8 @@ export function App() {
 
               {/* CENTER */}
               <Terminal
-                view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
+                view={view} onView={setView} canvas={canvas} onCanvas={setCanvas}
+                selected={selected} sessionId={sessionId} activeProject={activeProject}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
                 activeId={active?.id ?? null} onRespond={respond}
                 scrollRef={scrollRef} contentRef={contentRef}

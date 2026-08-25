@@ -13,6 +13,7 @@ import type { OpenFile } from "../Markdown";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
+import { CanvasView, FlowMapCard } from "./CanvasView";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
 
@@ -175,10 +176,13 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, onStage, onRetype, onHandoff,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign,
+  onOpenDesign, canvas, onCanvas,
 }: {
   view: View;
   onView: (v: View) => void;
+  /** Lay the chat view's turns out as a board instead of a scroller. */
+  canvas?: boolean;
+  onCanvas?: (on: boolean) => void;
   selected: SessionBrief | null;
   activeProject?: string | null;
   branch?: string | null;
@@ -332,6 +336,91 @@ export function Terminal({
     );
   }, [sessionId, loading, view, scrollRef]);
 
+  // Everything the transcript needs either way. The scroller adds scrollRef and
+  // the checkpoint refs on top; the board deliberately leaves scrollRef off,
+  // which is what puts Transcript into its full-mount branch.
+  const transcriptProps = {
+    turns, activeId, boot, onRespond, liveTurns, trailingWorking, hud,
+    onRunCommand, onQuote, onOpenFile, onAnswer,
+    onStageAdvance: onStage ? () => onStage("advance") : undefined,
+    stage: selected?.stage ?? null, stype: selected?.stype ?? null, onHandoff,
+    hasOlder, olderLoading, onLoadOlder, renderFrom, sessionKey: sessionId,
+  };
+
+  // Which session you're looking at, in three chips. Shared so the board's
+  // floating strip says the same thing as the panel header it replaces.
+  const headRow = (
+    <>
+      <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
+        {projectLabel || "—"}
+      </span>
+      {branch && (
+        // The chat's one session affordance. data-ctx-* makes right-click open
+        // the session menu (the SESSIONS list's own), and the click re-fires it
+        // as a contextmenu anchored under the chip so it isn't right-click-only
+        // — that menu is where "move to a new worktree" lives, and the branch
+        // you're on is where you notice you want it.
+        <button
+          title={sessionId ? "session branch — session actions" : "session branch"}
+          data-ctx-type={sessionId ? "session" : undefined}
+          data-ctx-id={sessionId ?? undefined}
+          data-ctx-label={branch}
+          disabled={!sessionId}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
+              { bubbles: true, clientX: r.left, clientY: r.bottom }));
+          }}
+          style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px", appearance: "none", background: "transparent", fontFamily: "inherit", cursor: sessionId ? "pointer" : "default" }}>
+          <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
+        </button>
+      )}
+      <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {selected?.title || "new session"}
+      </span>
+    </>
+  );
+
+  // The board. It owns the whole panel body — its strip replaces the header and
+  // it floats the composer — because the point of a canvas is that the surface
+  // runs edge to edge and the chrome sits on top of it.
+  if (view === "chat" && canvas) {
+    return (
+      <div
+        className="panel"
+        data-ctx-type="terminal"
+        style={{ border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      >
+        <CanvasView
+          header={
+            <>
+              {headRow}
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txf)", whiteSpace: "nowrap" }}>
+                ≡ {turns.length}
+              </span>
+              <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px", flex: "none" }}>
+                {surf.label.toUpperCase()}
+              </span>
+              <ViewTabs view={view} onView={onView} canvas={canvas} onCanvas={onCanvas} />
+            </>
+          }
+          rail={flowShape && <FlowMapCard flow={flowShape} stage={selected?.stage ?? null} />}
+          composer={composer}
+        >
+          {empty && slowLoad ? (
+            <ChannelTuning step={boot} />
+          ) : empty && loading ? null : empty ? (
+            <FreshState project={sessionProject} />
+          ) : (
+            <Transcript {...transcriptProps} />
+          )}
+        </CanvasView>
+      </div>
+    );
+  }
+
   return (
     <div
       className="panel"
@@ -341,34 +430,7 @@ export function Terminal({
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, overflow: "hidden" }}>
-            <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
-              {projectLabel || "—"}
-            </span>
-            {branch && (
-              // The chat's one session affordance. data-ctx-* makes right-click open
-              // the session menu (the SESSIONS list's own), and the click re-fires it
-              // as a contextmenu anchored under the chip so it isn't right-click-only
-              // — that menu is where "move to a new worktree" lives, and the branch
-              // you're on is where you notice you want it.
-              <button
-                title={sessionId ? "session branch — session actions" : "session branch"}
-                data-ctx-type={sessionId ? "session" : undefined}
-                data-ctx-id={sessionId ?? undefined}
-                data-ctx-label={branch}
-                disabled={!sessionId}
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
-                    { bubbles: true, clientX: r.left, clientY: r.bottom }));
-                }}
-                style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px", appearance: "none", background: "transparent", fontFamily: "inherit", cursor: sessionId ? "pointer" : "default" }}>
-                <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
-              </button>
-            )}
-            <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {selected?.title || "new session"}
-            </span>
+            {headRow}
           </div>
           {/* Where a typed session stands. Its own line: the row above is one
               line of ellipsised text, and a rail wrapped inside it stacked
@@ -398,7 +460,7 @@ export function Terminal({
           <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
             {surf.label.toUpperCase()}
           </span>
-          <ViewTabs view={view} onView={onView} />
+          <ViewTabs view={view} onView={onView} canvas={canvas} onCanvas={onCanvas} />
         </div>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
@@ -429,7 +491,7 @@ export function Terminal({
                 ) : empty && loading ? null : empty ? (
                   <FreshState project={sessionProject} />
                 ) : (
-                  <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} stage={selected?.stage ?? null} stype={selected?.stype ?? null} onHandoff={onHandoff} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
+                  <Transcript {...transcriptProps} scrollRef={scrollRef} navRef={navRef} restoringRef={restoringRef} />
                 )}
               </div>
             </div>
