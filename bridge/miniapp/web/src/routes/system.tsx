@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { rootRoute } from "./root";
 import { api } from "../lib/api";
 import { ThemeCards } from "../components/ThemePicker";
+import { TOOL_STYLES, useToolStyle } from "../lib/toolwidget";
 
 /* SYSTEM — the controls that belong to the app rather than to one chat: the
    palette, and what's left of the Claude limits this phone is spending. */
@@ -77,6 +78,11 @@ function SystemPage() {
       </div>
 
       <div className="space-y-2">
+        <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">OUTPUT STYLE</div>
+        <OutputStyleCards />
+      </div>
+
+      <div className="space-y-2">
         <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">THEME</div>
         <ThemeCards />
       </div>
@@ -94,3 +100,30 @@ export const systemRoute = createRoute({
   path: "/system",
   component: SystemPage,
 });
+
+/** How a tool result's structure is drawn in the transcript. A card list rather
+ *  than a <select>: the same shape ThemeCards uses two sections down, and each
+ *  row says what the style actually does instead of making you try it. */
+function OutputStyleCards() {
+  const [style, setStyle] = useToolStyle();
+  return (
+    <div className="space-y-1">
+      {TOOL_STYLES.map((o) => (
+        <button
+          key={o.key}
+          onClick={() => setStyle(o.key)}
+          className={`flex w-full items-center gap-2.5 bg-[var(--tg-secondary-bg)] px-3 py-2.5 text-left active:opacity-70 ${
+            style === o.key ? "ring-1 ring-[var(--brand-soft)]" : ""}`}
+        >
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[11px] tracking-[1.5px]">{o.label}</div>
+            <div className="truncate text-[10px] text-[var(--tg-hint)]">{o.hint}</div>
+          </div>
+          {style === o.key && (
+            <span className="shrink-0 text-[var(--brand-soft)]" aria-hidden>&#10003;</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}

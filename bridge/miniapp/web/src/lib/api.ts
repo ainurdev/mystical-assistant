@@ -155,6 +155,9 @@ export type RunEvent =
       stat?: string;
       // Screenshots a tool returned, as upload-dir paths (see /api/attachment).
       images?: string[];
+      // The pages a web tool actually reached (transcript_jsonl.web_sources).
+      // Present instead of `stat` when the result was shaped as expected.
+      sources?: { url: string; title?: string; code?: number }[];
     }
   // A message folded into the turn while it was already running; `images` are
   // upload-dir paths like tool_done's.

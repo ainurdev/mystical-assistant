@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type CompareFile, type GitCommit } from "../api";
-import { diffColor } from "../lib/cardfields";
+import { diffColor } from "../lib/resultfields";
 import { ROW_H, laneColor, layout } from "../lib/gitgraph";
 import { ago } from "../lib/surfaces";
 import { Skeleton } from "./ui";

@@ -110,6 +110,9 @@ export type RunEvent =
       stat?: string;
       // Screenshots a tool returned, as upload-dir paths (see /local/attachment).
       images?: string[];
+      // The pages a web tool actually reached (transcript_jsonl.web_sources).
+      // Present instead of `stat` when the result was shaped as expected.
+      sources?: { url: string; title?: string; code?: number }[];
     }
   // `is_error` landed later — turns recorded before it read as OK.
   | { type: "result"; result: string; cost: number; elapsed: number; is_error?: boolean }

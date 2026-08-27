@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
-import { api } from "../api";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { api } from "../lib/api";
+import type { ToolStyle, ToolWidgetSpec } from "../lib/toolwidget";
 import {
   asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
   asFindings, asGraph, asIdeas, asIntake, asMeters, asOutput, asPlan, asScreens,
@@ -8,8 +9,8 @@ import {
   type Bar, type Claim, type ChainStep, type DiffFile, type Finding, type Graph,
   type Idea, type Meter, type Output, type PlanRow, type Question, type Source,
   type Stat, type Table,
-} from "../lib/cardfields";
-import { ImageLightbox, ZoomButton } from "./ImageLightbox";
+} from "../lib/resultfields";
+import { ImageLightbox } from "./ImageLightbox";
 
 // The widgets a typed stage's card is made of. Which one draws is the flow's
 // call, not this file's: bridge/flows/*.json declares a field's type and
@@ -22,20 +23,20 @@ import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 // share the markup while each stylesheet gives it its own idiom (square and
 // bracketed on the desktop, rounded on the phone).
 //
-// Mirrors bridge/miniapp/web/src/components/FlowFields.tsx (the ONE difference
-// is Shot: this side can put a URL in an <img>, the Mini App's auth lives in a
-// header). Keep them in sync.
+// Mirrors bridge/dashboard/web/src/components/ResultWidgets.tsx (the ONE difference
+// is Shot: the dashboard can put a URL in an <img>, here the auth lives in a
+// header so the bytes come through the API). Keep them in sync.
 
 /** One field of a card. `send` is absent on a card the session has already moved
  *  past — history stays readable, but you can't act on it twice. */
-export function CardField({ name, type, value, send, onOpenFile }: {
+export function ResultField({ name, type, value, send, onOpenFile }: {
   name: string;
   type: string;
   value: unknown;
   send?: (text: string) => void;
   onOpenFile?: (path: string, line?: number) => void;
 }) {
-  const widget = draw(type, value, send, onOpenFile);
+  const widget = drawWidget(type, value, send, onOpenFile);
   // A one-liner keeps its label beside it; an instrument gets the label above
   // and the full width under it.
   if (!widget) {
@@ -54,7 +55,11 @@ export function CardField({ name, type, value, send, onOpenFile }: {
   );
 }
 
-function draw(
+/** Draw one widget for a declared type, with no label or frame around it — the
+ *  caller owns the chrome (ToolWidget draws the instrument frame; ResultField
+ *  draws a labelled row). Null when the value isn't the shape the type promised,
+ *  which is the caller's cue to fall back to text. */
+export function drawWidget(
   type: string,
   value: unknown,
   send?: (text: string) => void,
@@ -294,7 +299,7 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
     <div className="flc-gal">
-      {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} alt="screen" onClose={() => setZoom(null)} />}
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>
@@ -329,16 +334,29 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
   );
 }
 
-/** The one thing this file does differently from its Mini App twin: the
- *  dashboard is same-origin, so the URL goes straight in an <img>. */
+/** The one thing this file does differently from its dashboard twin: the Mini
+ *  App's auth lives in a header, so the bytes come through the API as a blob
+ *  (same shape as RunStream's ToolImage — inlined rather than imported, because
+ *  RunStream already imports this file's card). */
 function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void }) {
+  const [src, setSrc] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
-  const src = api.attachmentUrl(path);
+  useEffect(() => {
+    let url: string | null = null;
+    let dead = false;
+    api.attachmentUrl(path).then((u) => {
+      url = u;
+      if (dead) URL.revokeObjectURL(u);
+      else setSrc(u);
+    }).catch(() => { if (!dead) setGone(true); });
+    return () => { dead = true; if (url) URL.revokeObjectURL(url); };
+  }, [path]);
   if (gone) return <span className="flc-gone">{path.split("/").pop()}</span>;
+  if (!src) return null;
   return (
-    <ZoomButton onOpen={() => onZoom(src)}>
-      <img src={src} alt={path} onError={() => setGone(true)} />
-    </ZoomButton>
+    <button type="button" className="flc-zoom" onClick={() => onZoom(src)} aria-label={`Open ${path}`}>
+      <img src={src} alt={path} />
+    </button>
   );
 }
 
@@ -807,6 +825,36 @@ function IntakeGrid({ rows, send }: { rows: Question[]; send?: (t: string) => vo
           {done === rows.length ? `ANSWER ALL ${done} ▸` : `ANSWER ${done} / ${rows.length} ▸`}
         </button>
       )}
+    </div>
+  );
+}
+
+/** The instrument frame: a rail in the tool's own hue, a tracked name, a count,
+ *  and a rule running out to nothing. One frame for every widget — what changes
+ *  between them is the body, never the chrome. The style variants are CSS off
+ *  `data-tw`; only `plain` is a decision this side, because it means "draw no
+ *  widget at all" and the caller has to fall back before it gets here. */
+export function ToolWidget({ spec, accent, style, children }: {
+  spec: ToolWidgetSpec;
+  /** The tool's hue (lib/tools toolAccent), so a widget reads as that tool's
+   *  output rather than as a generic card. */
+  accent: string;
+  style: ToolStyle;
+  /** Overrides the widget body — used where the caller already has a richer
+   *  renderer (a multi-file edit run) and only wants the frame. */
+  children?: ReactNode;
+}) {
+  const body = children ?? drawWidget(spec.type, spec.value);
+  if (!body) return null;
+  return (
+    <div className="tw" data-tw={style} style={{ "--h": accent } as CSSProperties}>
+      <span className="tw-rail" aria-hidden />
+      <div className="tw-head">
+        <span className="tw-name">{spec.label}</span>
+        {spec.meta && <span className="tw-meta">{spec.meta}</span>}
+        <span className="tw-line" aria-hidden />
+      </div>
+      <div className="tw-body">{body}</div>
     </div>
   );
 }

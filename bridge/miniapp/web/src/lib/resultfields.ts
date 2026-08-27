@@ -4,7 +4,7 @@
 // in that turn is still good. So every guard here answers "is this the shape it
 // promised?" and a `null` means one thing: render it as text instead.
 //
-// Mirrors bridge/miniapp/web/src/lib/cardfields.ts. Keep them in sync.
+// Mirrors bridge/dashboard/web/src/lib/resultfields.ts. Keep them in sync.
 
 export type Check = { cmd: string; ok: boolean; note?: string };
 export type Finding = {

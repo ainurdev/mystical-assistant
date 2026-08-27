@@ -1,10 +1,10 @@
-// Run: node bridge/miniapp/web/src/lib/cardfields.check.ts
+// Run: node bridge/dashboard/web/src/lib/resultfields.check.ts
 import {
   asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
   asFindings, asGraph, asIdeas, asIntake, asMeters, asOutput, asPlan, asScreens,
   asSources, asStats, asTable,
   diffColor, flatten, triagePrompt,
-} from "./cardfields.ts";
+} from "./resultfields.ts";
 
 // --- guards: the promised shape, or null so the field renders as text -------
 console.assert(asChecks([{ cmd: "pytest -q", ok: true }])?.[0].ok === true, "a check row reads");
@@ -30,7 +30,7 @@ console.assert(asConfidence(80) === 0.8, "a bare percentage scales down");
 console.assert(asConfidence("high") === null, "a word is not a meter");
 console.assert(asConfidence(140) === null, "over 100 is not a confidence");
 
-// --- flatten: the text fallback, matching flow._flat -----------------------
+// --- flatten: the text fallback -----------------------
 console.assert(flatten(true) === "✓" && flatten(false) === "✗", "bools are glyphs");
 console.assert(flatten(["a.py", "b.py"]) === "a.py, b.py", "a list reads as a list");
 console.assert(flatten([{ cmd: "pytest -q", ok: true }]) === "pytest -q ✓", "a row prints its values, not its JSON");
@@ -111,4 +111,4 @@ console.assert(asIntake([{ question: "where?" }])?.[0].ask === "where?", "questi
 console.assert(asIntake([{ topic: "X" }]) === null, "a question needs something asked");
 console.assert(asIntake([{ ask: "depth?", answer: "guided" }])?.[0].answer === "guided", "an answer is kept");
 
-console.log("cardfields: ok");
+console.log("resultfields: ok");

@@ -16,6 +16,8 @@ import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
+import { ToolWidget } from "./ResultWidgets";
+import { widgetFor, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
   cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
   type CmdKind, type Shape, type Tier,
@@ -75,7 +77,8 @@ function Typewriter({
 const edge = (accent: string) => `color-mix(in srgb, ${accent} 24%, transparent)`;
 const tagEdge = (accent: string) => `color-mix(in srgb, ${accent} 35%, transparent)`;
 
-type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]; stat?: string; images?: string[] };
+type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[];
+  stat?: string; images?: string[]; sources?: WebSource[] };
 
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
@@ -1439,6 +1442,7 @@ export const RunStream = memo(function RunStream({
   turnId = "",
   tokens = null,
   openResults = false,
+  toolStyle = "instrument",
   onRunCommand,
   onQuote,
   onOpenFile,
@@ -1457,6 +1461,9 @@ export const RunStream = memo(function RunStream({
   /** This turn's token spend; null = never reported (unknown, not free). */
   tokens?: number | null;
   openResults?: boolean;
+  /** How a structured result is drawn — the transcript's OUTPUT STYLE setting.
+   *  "plain" draws no widget at all (see lib/toolwidget). */
+  toolStyle?: ToolStyle;
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
@@ -1599,6 +1606,9 @@ export const RunStream = memo(function RunStream({
                 />
               );
             const done = doneOf(event);
+            // What structure this result carried, if any. Null keeps the plain
+            // row — which is every tool without a table entry.
+            const spec = widgetFor(done);
             if (groupOf.has(i)) return null; // drawn by the run's head
             const run = groups.get(i) ?? [i];
             // A delegation is a turn nested inside this one, so it is drawn as
@@ -1693,10 +1703,17 @@ export const RunStream = memo(function RunStream({
                 {done?.is_error && done.stat ? (
                   <div className="mt-2 ml-[18px]"><ErrLine text={done.stat} /></div>
                 ) : null}
-                {/* Screenshots the tool handed back — Playwright, chrome-devtools,
-                    Figma. Drawn under whatever card the tool got, so every kind
-                    gets them without each card learning about images. */}
-                {done?.images?.length ? <ToolImages paths={done.images} /> : null}
+                {/* Whatever structure the result carried — the pages a search
+                    reached, the screenshots a tool handed back. Drawn under the
+                    card the tool got, so every kind gets it without each card
+                    learning about sources or images. PLAIN keeps the thumbnails
+                    it always had rather than nothing: an image has no plainer
+                    form than itself. */}
+                {spec && toolStyle !== "plain" ? (
+                  <div className="ml-[18px]">
+                    <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
+                  </div>
+                ) : done?.images?.length ? <ToolImages paths={done.images} /> : null}
               </div>
             );
           }

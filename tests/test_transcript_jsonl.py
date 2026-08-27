@@ -422,3 +422,49 @@ def test_turn_carries_its_summed_token_usage():
 def test_turn_without_usage_reports_no_tokens():
     turn = T.parse_jsonl(_write(FIXTURE))["turns"][0]
     assert turn.get("tokens") is None
+
+
+def test_web_search_results_become_sources_not_a_line_count():
+    # The one structured thing a web tool hands back. Before this it was
+    # flattened to "N lines"; SOURCES renders the pages themselves.
+    recs = [
+        {"type": "user", "uuid": "t1", "message": {"role": "user", "content": "go"}},
+        {"type": "assistant", "uuid": "a1", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "w1", "name": "WebSearch",
+             "input": {"query": "gil atomic pop"}}]}},
+        {"type": "user", "uuid": "tr", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "w1", "content": "some prose"}]},
+         "toolUseResult": {"query": "gil atomic pop", "searchCount": 1, "results": [
+             {"tool_use_id": "srv1", "content": [
+                 {"title": "queue — synchronized queue", "url": "https://docs.python.org/3/library/queue.html"},
+                 {"title": "Is list.pop atomic?", "url": "https://stackoverflow.com/q/1"}]}]}},
+    ]
+    out = T.parse_jsonl(_write(recs))
+    done = next(e for e in out["events"] if e["type"] == "tool_done")
+    assert done["sources"] == [
+        {"url": "https://docs.python.org/3/library/queue.html",
+         "title": "queue — synchronized queue"},
+        {"url": "https://stackoverflow.com/q/1", "title": "Is list.pop atomic?"},
+    ]
+    # sources replaces the stat line — two readouts of the same thing is one too many.
+    assert "stat" not in done
+
+
+def test_web_fetch_carries_the_one_page_it_reached():
+    got = T.tool_done("f1", "WebFetch", 0, {"content": "body"},
+                      {"url": "https://example.com/a", "code": 301,
+                       "codeText": "Moved Permanently", "bytes": 785})
+    assert got["sources"] == [{"url": "https://example.com/a",
+                               "title": "Moved Permanently", "code": 301}]
+
+
+def test_a_web_result_of_the_wrong_shape_falls_back_to_a_stat():
+    # Never a half-drawn widget: an unrecognised payload keeps the old readout.
+    got = T.tool_done("w2", "WebSearch", 0, {"content": "a\nb\nc"}, {"results": "nope"})
+    assert "sources" not in got and got["stat"] == "3 lines"
+
+
+def test_sources_are_capped():
+    many = [{"title": f"t{i}", "url": f"https://e.com/{i}"} for i in range(40)]
+    got = T.web_sources("WebSearch", {"results": [{"content": many}]})
+    assert len(got) == T._SOURCES_MAX

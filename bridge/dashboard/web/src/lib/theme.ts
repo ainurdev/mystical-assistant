@@ -11,6 +11,7 @@ import { TONES, type ToneKey } from "./push";
 import { PUSH_EVENT_KEYS, type PushEvent, type SoundChoice } from "./sounds";
 import { VOICE_KEYS, type VoiceKey } from "./piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "./songs";
+import { isToolStyle, type ToolStyle } from "./toolwidget";
 
 export type ThemeKey =
   | "aqua"
@@ -364,6 +365,9 @@ export interface HudSettings {
   // sound, or "off". An event missing here has never been assigned and rings
   // pushTone, so an install that never opens this panel sounds unchanged.
   pushSounds: Partial<Record<PushEvent, SoundChoice>>;
+  // How a tool result's structure is drawn in the transcript. "plain" opts out
+  // of widgets entirely and keeps the raw payload (see lib/toolwidget).
+  toolStyle: ToolStyle;
 }
 
 const KEY = "hud-settings";
@@ -375,7 +379,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, pushSounds: {},
+  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "instrument",
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -485,6 +489,7 @@ export function loadSettings(): HudSettings {
         pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
         pushVolume: clamp01(p.pushVolume, 0.6),
         pushSounds: soundChoices(p.pushSounds),
+        toolStyle: isToolStyle(p.toolStyle) ? p.toolStyle : "instrument",
       };
     }
   } catch {

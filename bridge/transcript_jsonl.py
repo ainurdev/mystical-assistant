@@ -61,6 +61,9 @@ THINK_MIN_MS = 4000
 _PATCH_MAX = 120
 # Tools whose result carries a structuredPatch we can render as a diff.
 PATCH_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+# Max web results kept per search — a SOURCES widget you scroll is a search
+# engine, and you already have one of those.
+_SOURCES_MAX = 12
 # Tools whose result is a fixed confirmation ("Todos have been modified
 # successfully…") — measuring it would dress up boilerplate as information.
 _NO_STAT = ("TodoWrite", "ExitPlanMode", "EnterPlanMode", "Skill", "AskUserQuestion")
@@ -302,6 +305,32 @@ def patch_lines(result) -> list:
     return out
 
 
+def web_sources(name: str, result) -> list:
+    """The pages a web tool actually reached, as [{url, title}] — the one
+    structured thing Claude Code hands back that we used to flatten into a count.
+    WebSearch nests them under results[].content[]; WebFetch is the single page
+    it went to. Anything not shaped that way yields nothing and the caller falls
+    back to a stat line."""
+    r = result if isinstance(result, dict) else {}
+    out: list = []
+    if name == "WebSearch":
+        for group in r.get("results") or []:
+            items = group.get("content") if isinstance(group, dict) else None
+            for it in items or []:
+                url = isinstance(it, dict) and str(it.get("url") or "").strip()
+                if not url:
+                    continue
+                out.append({"url": url, "title": str(it.get("title") or "").strip()})
+                if len(out) >= _SOURCES_MAX:
+                    return out
+    elif name == "WebFetch":
+        url = str(r.get("url") or "").strip()
+        if url:
+            out.append({"url": url, "title": str(r.get("codeText") or "").strip(),
+                        "code": r.get("code") if isinstance(r.get("code"), int) else None})
+    return out
+
+
 def tool_done(rid, name, ms: int, block: dict, result) -> dict:
     """The tool_done event for one tool_result. Bash keeps its output, an edit
     keeps its diff, everything else stays a bare marker. Shared by the live
@@ -321,9 +350,11 @@ def tool_done(rid, name, ms: int, block: dict, result) -> dict:
         lines = patch_lines(result)
         if lines:
             ev["patch"] = lines
-    if not ev.get("patch"):
-        # No diff and no terminal to show: say how big the answer was instead of
-        # leaving the card as a bare "it ran".
+    if (srcs := web_sources(name, result)):
+        ev["sources"] = srcs
+    if not ev.get("patch") and not ev.get("sources"):
+        # No diff, no terminal and no pages to show: say how big the answer was
+        # instead of leaving the card as a bare "it ran".
         stat = result_stat(name, block, result)
         if stat:
             ev["stat"] = stat

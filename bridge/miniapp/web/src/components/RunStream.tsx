@@ -31,6 +31,8 @@ import {
   Database,
   Container,
 } from "lucide-react";
+import { ToolWidget } from "./ResultWidgets";
+import { useToolStyle, widgetFor, type WebSource } from "../lib/toolwidget";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
@@ -587,7 +589,7 @@ function ToolImages({ paths }: { paths: string[] }) {
 const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
 
 type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[];
-               stat?: string; images?: string[] };
+               stat?: string; images?: string[]; sources?: WebSource[] };
 
 // Output/diff lines shown before a block folds — a turn can hold dozens.
 const OUT_PREVIEW = 6;
@@ -958,6 +960,9 @@ export const RunStream = memo(function RunStream({
    *  clock — on an older turn the figure would start when you scrolled to it. */
   live?: boolean;
 }) {
+  // Read here rather than threaded down: the Mini App has no settings blob
+  // to ride along with (the dashboard passes it as a prop from HudSettings).
+  const [toolStyle] = useToolStyle();
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
   // Derived from the length rather than stored as an index, so a running turn's
   // window slides with its tail instead of freezing where it was opened.
@@ -1085,6 +1090,9 @@ export const RunStream = memo(function RunStream({
                 />
               );
             const done = doneOf(event);
+            // What structure this result carried, if any. Null keeps the plain
+            // row — which is every tool without a table entry.
+            const spec = widgetFor(done);
             if (event.name === "Bash")
               return <TerminalBlock key={i} command={event.summary} done={done} />;
             if (groupOf.has(i)) return null;   // drawn by the run's head
@@ -1138,9 +1146,14 @@ export const RunStream = memo(function RunStream({
                   error={done?.is_error}
                 />
                 {done?.is_error && done.stat ? <ErrLine text={done.stat} /> : null}
-                {/* Screenshots the tool handed back — drawn under whatever card it
-                    got, so every kind gets them without each card knowing. */}
-                {done?.images?.length ? <ToolImages paths={done.images} /> : null}
+                {/* Whatever structure the result carried — the pages a search
+                    reached, the screenshots a tool handed back. Drawn under the
+                    card the tool got, so every kind gets it without each card
+                    knowing. PLAIN keeps the thumbnails: an image has no plainer
+                    form than itself. */}
+                {spec && toolStyle !== "plain" ? (
+                  <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
+                ) : done?.images?.length ? <ToolImages paths={done.images} /> : null}
               </div>
             );
           }

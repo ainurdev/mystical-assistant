@@ -1460,6 +1460,65 @@ input {
   .agb-fan[data-state="run"] > .agb-dot { animation: none; }
 }
 
+/* ── TOOL WIDGET ───────────────────────────────────────────────────────────
+   A tool result's own structure, surfacing in the stream: the pages a search
+   reached, the screenshots a run handed back. One frame for every widget —
+   what changes between them is the body, never the chrome — and the hue is the
+   tool's own (--h, set inline from lib/tools toolAccent), so a widget reads as
+   THAT tool's output rather than as a generic card.
+
+   Four styles, picked in settings (OUTPUT STYLE). Only PLAIN is decided in JS,
+   because it means "draw no widget at all"; the other three are this file. */
+.tw { position: relative; margin: 2px 0 8px; }
+.tw-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: color-mix(in srgb, var(--h) 70%, transparent); }
+.tw-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px 4px 11px; }
+.tw-name { flex: none; font-size: var(--t9); letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--h); }
+.tw-meta { flex: none; font-family: var(--mono); font-size: var(--t9);
+  color: var(--txf); font-variant-numeric: tabular-nums; }
+.tw-line { flex: 1; min-width: 8px; height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--h) 20%, transparent), transparent); }
+.tw-body { padding: 2px 11px 9px 11px; min-width: 0; }
+
+/* INSTRUMENT — the default. Bracketed like .panel, because a widget is a
+   readout and every readout in this HUD wears corners. */
+.tw[data-tw="instrument"] {
+  border: 1px solid color-mix(in srgb, var(--h) 16%, transparent);
+  background: var(--panel3);
+}
+.tw[data-tw="instrument"]::before,
+.tw[data-tw="instrument"]::after {
+  content: ""; position: absolute; width: 7px; height: 7px; pointer-events: none;
+  border-color: color-mix(in srgb, var(--h) 42%, transparent);
+}
+.tw[data-tw="instrument"]::before { left: -1px; top: -1px; border-left: 1px solid; border-top: 1px solid; }
+.tw[data-tw="instrument"]::after { right: -1px; bottom: -1px; border-right: 1px solid; border-bottom: 1px solid; }
+
+/* BARE — the data and nothing else. No frame, no fill; the rail alone says
+   which tool it belongs to, and the header shrinks to a label. */
+.tw[data-tw="bare"] { margin: 1px 0 7px; }
+.tw[data-tw="bare"] > .tw-rail { background: color-mix(in srgb, var(--h) 34%, transparent); }
+.tw[data-tw="bare"] > .tw-head { padding: 1px 0 2px 11px; }
+.tw[data-tw="bare"] .tw-line { display: none; }
+.tw[data-tw="bare"] > .tw-body { padding: 0 0 0 11px; }
+
+/* CARD — rounded and roomier, the Mini App's idiom brought to the desktop for
+   anyone who reads the transcript rather than scanning it. */
+.tw[data-tw="card"] {
+  border: 1px solid color-mix(in srgb, var(--h) 22%, transparent);
+  background: var(--panel3); border-radius: 12px; overflow: hidden;
+}
+.tw[data-tw="card"] > .tw-rail { width: 3px; }
+.tw[data-tw="card"] > .tw-head { padding: 8px 13px 5px 15px; }
+.tw[data-tw="card"] > .tw-body { padding: 2px 14px 12px 15px; }
+.tw[data-tw="card"] .flc-chip,
+.tw[data-tw="card"] .flc-badge { border-radius: 999px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tw { animation: termIn .34s cubic-bezier(.2,.8,.2,1) both; }
+}
+
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    A typed stage's settled result, framed like the agent block: both are a
    turn's own structure surfacing in the stream, and the stream keeps one idiom
