@@ -1474,14 +1474,30 @@ input {
 }
 
 /* ── TOOL WIDGET ───────────────────────────────────────────────────────────
-   A tool result's own structure, surfacing in the stream: the pages a search
-   reached, the screenshots a run handed back. One frame for every widget —
-   what changes between them is the body, never the chrome — and the hue is the
-   tool's own (--h, set inline from lib/tools toolAccent), so a widget reads as
-   THAT tool's output rather than as a generic card.
+   A result's own structure, surfacing in the stream: the pages a search
+   reached, the shots a run handed back, a board the model drew itself. The hue
+   is the tool's own (--h, set inline from lib/tools toolAccent), so a widget
+   reads as THAT tool's output rather than as a generic card.
 
-   Four styles, picked in settings (OUTPUT STYLE). Only PLAIN is decided in JS,
-   because it means "draw no widget at all"; the other three are this file. */
+   TWO axes, and they are orthogonal on purpose:
+
+   - OUTPUT STYLE (`data-tw`) picks the MATERIAL — instrument / terminal / note.
+     Four styles, picked in settings. Only PLAIN is decided in JS, because it
+     means "draw no widget at all"; the other three are this file.
+   - IDIOM (`data-idiom`) picks the WEIGHT, from the payload's shape rather than
+     the tool's name (lib/toolwidget `Idiom`). It sets how much chrome there is
+     AND the x it hangs at:
+
+       trace   never reaches here — the caller draws it in the row's stat cell
+       strip   0 chrome: a hairline and a band, at the text column
+       ledger  0 chrome: the action grid again, flush left
+       plate   a framed well, inset to its own gutter
+       field   a stage: breaks the column, bleeds right, wears the brackets
+
+     That varying x is the feature. A turn's left edge goes ragged, and the
+     ragged edge reads as a graph of how much each step produced before you
+     read a word of it. --axtag is the action row's tag cell, so a strip lines
+     up with the objects in the rows above it rather than with their tags. */
 .tw { position: relative; margin: 2px 0 8px; }
 .tw-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
   background: color-mix(in srgb, var(--h) 70%, transparent); }
@@ -1543,6 +1559,90 @@ input {
 .tw[data-tw="note"] > .tw-body { padding: 0 16px 14px 16px; }
 .tw[data-tw="note"] .flc-chip,
 .tw[data-tw="note"] .flc-badge { border-radius: 999px; }
+
+/* ── IDIOM: the weight, and the x ──────────────────────────────────────────
+   Written after the three style blocks so it wins on attachment while leaving
+   each style's material alone: a NOTE plate is still rounded and raised, a
+   TERMINAL plate still has no fill — they just hang where the idiom says. */
+
+/* STRIP — a band of atoms. No frame; the hairline and the text column are all
+   it takes to say "these belong to the row above". A label here would double
+   the height of a two-chip band, so the head is not drawn (ToolWidget). */
+.tw[data-idiom="strip"] {
+  margin: 0 0 2px calc(var(--axtag) + 3px);
+  border-top: 1px solid var(--ac-06);
+}
+.tw[data-idiom="strip"] > .tw-body { padding: 5px 0 6px 0; }
+/* MERGE — two strips in a row are one band split by a dashed hairline, not two
+   bands. Chrome repeats; content does not. */
+.tw[data-idiom="strip"] + .tw[data-idiom="strip"] { border-top-style: dashed; }
+
+/* LEDGER — rows with a state, so it reuses the grid the action rows above it
+   already use. Flush left is the point: it reads as a continuation of the turn
+   rather than as a card dropped into it. */
+.tw[data-idiom="ledger"] {
+  margin: 0 0 3px 0;
+  background: var(--ac-03);
+  border-top: 1px solid var(--ac-08);
+}
+.tw[data-idiom="ledger"] > .tw-head { padding: 3px 10px 2px 3px; }
+.tw[data-idiom="ledger"] > .tw-body { padding: 1px 8px 5px 3px; }
+
+/* PLATE — something to read, so it earns a boundary and a scroll cap. Inset to
+   its own gutter, which is why a plate never starts at the same x as a ledger:
+   the eye knows which one it is before it reads. */
+.tw[data-idiom="plate"] {
+  margin: 5px 0 4px calc(var(--axtag) - 11px);
+}
+.tw[data-idiom="plate"] > .tw-body { max-height: 184px; overflow: auto; }
+
+/* FIELD — pictures and geometry do not fit a text column, so they stop
+   pretending to. The only idiom that bleeds right and wears the brackets,
+   which is what keeps them rare enough to mean something. */
+.tw[data-idiom="field"] {
+  margin: 6px -14px 5px 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--h) 5%, transparent), transparent 40%),
+    var(--panel3);
+  border-top: 1px solid color-mix(in srgb, var(--h) 18%, transparent);
+  border-bottom: 1px solid var(--ac-08);
+}
+.tw[data-idiom="field"]::before,
+.tw[data-idiom="field"]::after {
+  content: ""; position: absolute; width: 9px; height: 9px;
+  border-color: color-mix(in srgb, var(--h) 30%, transparent); pointer-events: none;
+}
+.tw[data-idiom="field"]::before { left: 0; top: 0; border-left: 1px solid; border-top: 1px solid; }
+.tw[data-idiom="field"]::after { right: 0; bottom: 0; border-right: 1px solid; border-bottom: 1px solid; }
+.tw[data-idiom="field"] > .tw-head { padding: 5px 12px 3px 12px; }
+.tw[data-idiom="field"] > .tw-body { padding: 0 12px 11px 12px; }
+/* CAP — a field is the only idiom that can swallow a viewport, so a turn gets
+   one at full height; a second folds to its head and opens on click. */
+.tw[data-idiom="field"] ~ .tw[data-idiom="field"] > .tw-body { max-height: 132px; overflow: auto; }
+
+/* The two zero-chrome idioms opt out of whatever box the MATERIAL would draw.
+   A strip wearing INSTRUMENT's border and corner brackets is a box, and "not a
+   box" is the one thing a strip is defined to be — the hairline and the text
+   column do all the work. The material still shows through in the body:
+   TERMINAL's mono, a NOTE's roomier padding. It just has no frame to show it
+   in. Written after the style blocks so it wins at equal specificity. */
+.tw[data-idiom="strip"],
+.tw[data-idiom="ledger"] {
+  border-left: 0; border-right: 0; border-bottom: 0;
+  border-radius: 0; box-shadow: none;
+}
+.tw[data-idiom="strip"]::before, .tw[data-idiom="strip"]::after,
+.tw[data-idiom="ledger"]::before, .tw[data-idiom="ledger"]::after { content: none; }
+.tw[data-idiom="strip"] { background: none; }
+/* A field bleeds off the right edge, so it must not carry a border there —
+   the brackets are what close it, not a rule the content runs into. */
+.tw[data-idiom="field"] { border-right: 0; border-radius: 0; }
+
+/* A widget the model wrote into its own prose rather than one a tool carried.
+   It sits inside the reply, so it does not hang off the turn's rail and does
+   not get the tag-cell inset — the bubble already indented it. */
+.tw[data-said] { margin-left: 0; margin-right: 0; }
+.tw[data-said][data-idiom="field"] { margin-right: -10px; }
 
 @media (prefers-reduced-motion: no-preference) {
   .tw { animation: termIn .34s cubic-bezier(.2,.8,.2,1) both; }

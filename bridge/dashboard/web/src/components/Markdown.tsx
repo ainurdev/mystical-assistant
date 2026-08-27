@@ -4,6 +4,8 @@ import remarkGfm from "remark-gfm";
 import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
 import { FileIcon } from "../lib/fileicon";
+import { widgetLang, widgetValue } from "../lib/widgetblock";
+import { BlockWidget, drawWidget } from "./ResultWidgets";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
 // `.md` block in index.css. Links open in a new tab.
@@ -154,8 +156,23 @@ export const Markdown = memo(function Markdown({
           pre: ({ children }) => {
             const el = (Array.isArray(children) ? children[0] : children) as
               { props?: { className?: string; children?: unknown } } | undefined;
-            const lang = /language-([\w+-]+)/.exec(el?.props?.className ?? "")?.[1] ?? "";
-            return <CodeBlock code={textOf(el?.props?.children).replace(/\n$/, "")} lang={lang} />;
+            // `:` is in the class because a widget fence is written
+            // ```widget:table — the tag arrives verbatim from remark.
+            const lang = /language-([\w:+-]+)/.exec(el?.props?.className ?? "")?.[1] ?? "";
+            const code = textOf(el?.props?.children).replace(/\n$/, "");
+            // A typed block the model drew on purpose (lib/widgetblock). Every
+            // step here can decline — an unknown type, a body still streaming
+            // in, a payload that isn't the shape its type promised — and each
+            // declines to the same place: the code block this always drew.
+            const wtype = widgetLang(lang);
+            if (wtype) {
+              const value = widgetValue(code);
+              if (value !== null) {
+                const drawn = <BlockWidget type={wtype} value={value} />;
+                if (drawWidget(wtype, value)) return drawn;
+              }
+            }
+            return <CodeBlock code={code} lang={lang} />;
           },
         }}
       >
