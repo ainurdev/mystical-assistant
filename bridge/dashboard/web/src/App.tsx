@@ -1625,9 +1625,6 @@ export function App() {
       catch { notify("error", "Clipboard refused the copy."); }
     } },
     { id: "view-chat", label: "Go to Chat", group: "View", icon: "▣", run: () => setView("chat") },
-    { id: "view-canvas", label: "Go to Canvas", group: "View", icon: "▦", run: () => setView("canvas") },
-    { id: "canvas-focus", label: focused ? "Leave canvas focus mode" : "Canvas focus mode", group: "View", icon: "◱",
-      run: () => { setView("canvas"); setFocus((f) => !f); } },
     { id: "view-history", label: "Go to History", group: "View", icon: "◷", run: () => setView("history") },
     // Gated exactly like the tabs: an extra that's off has no way in at all.
     ...(ai.nextup

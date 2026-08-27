@@ -12,8 +12,8 @@ approvals and discussion of the work underway read as the current kind, and a
 wrong switches throw away stage progress.
 
 Fail-open by construction, like the relevance guard: disabled, timed out,
-unparseable, an unknown kind, a flow nudge — every path leaves the session
-exactly as it was, and the turn starts anyway."""
+unparseable, an unknown kind — every path leaves the session exactly as it
+was, and the turn starts anyway."""
 
 import json
 import re
@@ -50,8 +50,6 @@ def check(session: "dict | None", prompt: str, *, run=None) -> None:
     never hold up or reshape a turn."""
     if not session or not aifeatures.enabled("flowtype"):
         return
-    if (prompt or "").lstrip().startswith(flow.NUDGE_PREFIX):
-        return                      # flow machinery talking, not the user
     cur = session.get("stype")
     try:
         st = decide(prompt, current=cur,

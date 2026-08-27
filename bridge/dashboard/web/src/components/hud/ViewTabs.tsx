@@ -2,14 +2,16 @@ export type View = "chat" | "canvas" | "history" | "next";
 
 const LABELS: Record<View, string> = { chat: "CHAT", canvas: "CANVAS", history: "HIST", next: "NEXT" };
 
-/* CHAT / CANVAS switcher in the Terminal header — the same transcript, read as
-   a page or as a board. HIST and NEXT are reachable from the command palette,
-   not from here: they are places you go, not ways to read the session you are
-   already in. */
+/* View switcher in the Terminal header. HIST and NEXT are reachable from the
+   command palette, not from here: they are places you go, not ways to read the
+   session you are already in.
+   ponytail: CANVAS is disabled — the board only ever re-showed panels the
+   dashboard already has. Code kept (Canvas.tsx, view === "canvas" branches);
+   re-enable by putting "canvas" back in this array and the palette entries. */
 export function ViewTabs({ view, onView }: { view: View; onView: (v: View) => void }) {
   return (
     <div style={{ display: "flex" }}>
-      {(["chat", "canvas"] as const).map((v) => (
+      {(["chat"] as const).map((v) => (
         <button key={v} onClick={() => onView(v)}
           style={{ appearance: "none", cursor: "pointer", border: `1px solid ${view === v ? "var(--acc)" : "color-mix(in srgb, var(--acc) 16%, transparent)"}`, background: view === v ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: view === v ? "var(--txb)" : "var(--txl)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "3px 8px" }}>
           {LABELS[v]}

@@ -1808,7 +1808,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             resumed = goals.continue_after_turn(job, model, effort) or resumed
         # A typed session settles its turn: card out, stage stamped, ungated
         # moves applied. Independent of resumption, so it runs either way.
-        flow.after_turn(job, model, effort)
+        flow.after_turn(job)
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:

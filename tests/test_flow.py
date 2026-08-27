@@ -238,18 +238,20 @@ def test_after_turn_gated_stage_does_not_advance():
     assert store.get_session(s["id"])["stage"] == "rootcause"   # the gate holds
 
 
-def test_after_turn_missing_card_nudges_once(monkeypatch):
+def test_after_turn_missing_card_costs_nothing(monkeypatch):
+    """A card that never arrives journals the miss and stops. Re-asking for it
+    used to cost a whole turn to recover a rendering — the work was already
+    done and said, so the reply just stands as prose."""
     calls = []
     from bridge import queue_manager
     monkeypatch.setattr(queue_manager, "enqueue",
                         lambda sid, **kw: calls.append(kw) or True)
     s = _typed(turn="flow-j4")
-    flow.after_turn(_StubJob(s["id"], "flow-j4", "prose only, no card"))
-    assert len(calls) == 1 and calls[0]["surface"] == "flow"
-    # the nudge turn itself failing must not nudge again
-    store.start_turn(s["id"], "flow-j5", calls[0]["prompt"], [])
-    flow.after_turn(_StubJob(s["id"], "flow-j5", "still prose"))
-    assert len(calls) == 1
+    j = _StubJob(s["id"], "flow-j4", "prose only, no card")
+    flow.after_turn(j)
+    assert calls == []                                   # no turn spent
+    assert [e["type"] for e in j.added] == ["card_missing"]
+    assert store.get_session(s["id"])["stage"] == "fix"  # and the stage holds
 
 
 def test_after_turn_skips_turns_composed_before_the_type_landed(monkeypatch):

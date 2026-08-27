@@ -115,11 +115,10 @@ def test_check_a_manual_retype_mid_classify_wins(autotype_on):
     assert row["stype"] == "build" and row["stage"] == "plan"
 
 
-def test_check_skips_nudges_off_switch_and_no_session(autotype_on):
+def test_check_skips_off_switch_and_no_session(autotype_on):
     boom = lambda p: (_ for _ in ()).throw(AssertionError("called the model"))
     s = store.create_session(555, "/p")
     flowtype.check(None, "x", run=boom)
-    flowtype.check(s, flow.NUDGE_PREFIX + " your last reply…", run=boom)
     aifeatures.set_enabled("flowtype", None)
     flowtype.check(s, "x", run=boom)
     assert store.get_session(s["id"])["stype"] is None

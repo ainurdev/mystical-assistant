@@ -554,20 +554,17 @@ def permission_for(session: "dict | None", fallback: "str | None") -> "str | Non
     return (stage_permission(f, session.get("stage")) or fallback) if f else fallback
 
 
-# Public: flowtype.check reads it to leave the engine's own prompts unclassified.
-NUDGE_PREFIX = "⟲ flow:"
-_NUDGE = (NUDGE_PREFIX + " your last reply carried no usable hud-card block "
-          "({why}). End the reply with the hud-card block for stage {stage}, "
-          "restating what that turn already did. Do not redo the work.")
-
-
-def after_turn(job, model=None, effort=None) -> None:
+def after_turn(job) -> None:
     """Called once per finished turn, next to goals.continue_after_turn.
 
     Parses the reply's card, journals it, stamps the turn with the stage it ran
-    under, and advances ungated stages the model asked to leave. A missing or
-    malformed card costs one nudge turn — never the work: a second failure just
-    renders as prose. Best-effort throughout; a flow must not break a run."""
+    under, and advances ungated stages the model asked to leave.
+
+    A missing or malformed card costs NOTHING: it journals the miss and the
+    turn renders as ordinary prose. Re-asking for it used to cost a whole turn
+    (~$1.26 each, on 38% of typed turns) to recover a *rendering*, which is
+    never worth a turn — the work was already done and said.
+    Best-effort throughout; a flow must not break a run."""
     try:
         sid = getattr(job, "store_session_id", None)
         if not sid or job.status != "done" or getattr(job, "interrupted", False):
@@ -576,7 +573,7 @@ def after_turn(job, model=None, effort=None) -> None:
         # The flow and stage the turn was COMPOSED under, not where the session
         # sits now: sessions re-type per prompt (bridge/flowtype.py) and a
         # manual move can land mid-turn, and a turn that never saw a stage's
-        # contract must not be nudged for missing its card.
+        # contract must not be judged against it.
         f = get_flow(getattr(job, "flow_stype", None) or sess.get("stype"))
         stage = getattr(job, "flow_stage", None)
         if not f or not stage or not stage_by_id(f, stage):
@@ -603,15 +600,9 @@ def after_turn(job, model=None, effort=None) -> None:
             elif card.get("advance") is True:
                 apply_stage(sid, next_stage(f, stage), "auto", turn_id=job.id)
             return
+        # Journalled for the record (the surfaces draw nothing for it) and the
+        # reply stands as prose. ponytail: no retry — a widget is not worth a turn.
         job.add({"type": "card_missing", "errors": errs[:4]})
-        if (store.turn_prompt(job.id) or "").startswith(NUDGE_PREFIX):
-            return                      # the nudge itself missed: let it be prose
-        from bridge import queue_manager   # local import: runner<->* cycle
-        text = _NUDGE.format(why="; ".join(errs[:2]), stage=stage)
-        queue_manager.enqueue(
-            sid, text=text, prompt=text, images=[], model=model, effort=effort,
-            permission_mode=sess.get("permission_mode"), width=None, sel=[],
-            surface="flow", chat_id=job.chat_id, project=sess.get("project") or "")
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[flow] after_turn failed: {e}", file=sys.stderr)
 
