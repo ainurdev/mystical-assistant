@@ -116,7 +116,7 @@ export interface FlowShape {
 }
 export interface FlowCatalog {
   enabled: boolean;
-  auto: boolean; // AUTO TYPE switch: first message classifies, pickers hide
+  auto: boolean; // AUTO TYPE switch: every prompt classifies, pickers hide
   flows: FlowShape[];
 }
 
@@ -216,8 +216,12 @@ export type RunEvent =
   | { type: "question"; request_id: string; questions: Question[] }
   // A typed session's settled turn: the parsed hud-card (the raw fence is
   // stripped from the text above it) and every move between stages.
-  | { type: "card"; card: HudCard; stage: string; gated?: boolean }
+  // stype: the flow the card was written under — absent on cards from before
+  // sessions re-typed per prompt, which render against the session's flow.
+  | { type: "card"; card: HudCard; stage: string; stype?: string; gated?: boolean }
   | { type: "stage"; from: string | null; to: string; by: "auto" | "user" }
+  | { type: "retype"; from: string | null; to: string | null;
+      stage: string | null; by: "auto" | "user" }
   | { type: "card_missing"; errors?: string[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };

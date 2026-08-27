@@ -309,6 +309,7 @@ mystical            start in the background (logs → ~/.bridge_state/mystical.l
 mystical stop       graceful stop
 mystical restart    stop, then start
 mystical status     running? + ports, dashboard URL, public link
+mystical status --json   the same, as one line of JSON for scripts
 mystical doctor     check prerequisites
 mystical logs       follow the log
 mystical run        run in the foreground (Ctrl-C to quit)

@@ -23,7 +23,7 @@ import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
 
 /* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
-   530–1258): header with editable short tag, tab bar (EDITOR / GIT /
+   530–1258): header with an editable project colour, tab bar (EDITOR / GIT /
    WORKTREES / TERMINAL / ISSUES), and per-tab bodies. */
 
 export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "design" | "issues" | "map" | "learn";
@@ -54,7 +54,7 @@ interface Props {
 
 const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
 
-/* tag-edit swatches (design TAG_COLORS + extended range) */
+/* project-colour swatches (design TAG_COLORS + extended range) */
 const TAG_COLORS = [
   "var(--acc)", "var(--purple)", "var(--ok)", "var(--warn)", "var(--info)", "var(--err)",
   "#ff7ad9", "#ffab6b", "#c8ef6a", "#7fd8ff", "#ff8ba7", "#b8c9d4",
@@ -94,14 +94,12 @@ export function AnalyzeModal(props: Props) {
   // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
   const [selectedBranch, setSelectedBranch] = useState(props.initialBranch ?? "");
 
-  // editable short tag + color — persisted per project via setProjectTint, so
-  // the strip, panels and future opens all reflect it.
-  const [tagEditOpen, setTagEditOpen] = useState(false);
-  const [tagDraft, setTagDraft] = useState("");
-  const [tagColorDraft, setTagColorDraft] = useState("");
-  const tag = tint.tag;
-  const tagColor = tint.color;
-  const tagBd = tint.border;
+  // editable project colour — persisted per project via setProjectTint, so the
+  // strip, panels and future opens all reflect it.
+  const [colorEditOpen, setColorEditOpen] = useState(false);
+  const [colorDraft, setColorDraft] = useState("");
+  const tintColor = tint.color;
+  const tintBd = tint.border;
 
   const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
   const refreshWt = () => {
@@ -115,7 +113,7 @@ export function AnalyzeModal(props: Props) {
 
   useEffect(() => {
     setSelectedBranch(props.initialBranch ?? "");
-    setTagEditOpen(false);
+    setColorEditOpen(false);
     refreshGit();
     void api.issues(project).then(setIssues).catch(() => {});
     refreshBranches();
@@ -132,15 +130,13 @@ export function AnalyzeModal(props: Props) {
     setTimeout(props.onClose, 260);
   }
 
-  function openTagEdit() {
-    setTagDraft(tag);
-    setTagColorDraft(tagColor);
-    setTagEditOpen((o) => !o);
+  function openColorEdit() {
+    setColorDraft(tintColor);
+    setColorEditOpen((o) => !o);
   }
-  function saveTagEdit() {
-    const t = (tagDraft.trim() || tag).toUpperCase().slice(0, 5);
-    setProjectTint(project, { tag: t, color: tagColorDraft || tagColor });
-    setTagEditOpen(false);
+  function saveColorEdit() {
+    setProjectTint(project, { color: colorDraft || tintColor });
+    setColorEditOpen(false);
   }
 
   const cur = git?.branch || badge?.branch || "";
@@ -181,34 +177,31 @@ export function AnalyzeModal(props: Props) {
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: tagColor }} />
-          <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>{name(project)}</span>
-          <span style={{ position: "relative", flex: "none" }}>
-            <button onClick={openTagEdit} title="edit short tag & color" {...hp("tag")}
-              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: "var(--t9)", letterSpacing: ".5px", color: tagColor, border: `1px solid ${tagBd}`, background: hov === "tag" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", fontFamily: "inherit", padding: "3px 7px" }}>
-              {tag}<span style={{ fontSize: "var(--t8)", color: "var(--txd)" }}>✎</span>
+          {/* No short tag to edit any more — the dot itself is the colour picker. */}
+          <span style={{ position: "relative", flex: "none", display: "flex", alignItems: "center" }}>
+            <button onClick={openColorEdit} title="project colour" {...hp("tag")}
+              style={{ appearance: "none", cursor: "pointer", display: "grid", placeItems: "center", width: 18, height: 18, borderRadius: "50%", border: `1px solid ${hov === "tag" || colorEditOpen ? tintBd : "transparent"}`, background: "transparent", padding: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: tintColor }} />
             </button>
-            {tagEditOpen && (
+            {colorEditOpen && (
               <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 224, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", padding: 12, animation: "mslide .16s ease both" }}>
-                <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 7 }}>SHORT TAG</div>
-                <input value={tagDraft} onChange={(e) => setTagDraft(e.target.value)} placeholder="MYST" maxLength={5}
-                  style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", letterSpacing: 2, textAlign: "center", padding: 7, textTransform: "uppercase" }} />
-                <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", margin: "11px 0 7px" }}>COLOR</div>
+                <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 7 }}>COLOR</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {TAG_COLORS.map((c) => (
-                    <button key={c} onClick={() => setTagColorDraft(c)}
-                      style={{ width: 20, height: 20, borderRadius: "50%", border: 0, cursor: "pointer", background: c, boxShadow: tagColorDraft === c ? `0 0 0 2px #060a0a, 0 0 0 3px ${c}` : "0 0 0 0 transparent", padding: 0, flex: "none" }} />
+                    <button key={c} onClick={() => setColorDraft(c)}
+                      style={{ width: 20, height: 20, borderRadius: "50%", border: 0, cursor: "pointer", background: c, boxShadow: colorDraft === c ? `0 0 0 2px #060a0a, 0 0 0 3px ${c}` : "0 0 0 0 transparent", padding: 0, flex: "none" }} />
                   ))}
                 </div>
                 <div style={{ display: "flex", gap: 7, marginTop: 13 }}>
-                  <button onClick={saveTagEdit} {...hp("tagsave")}
+                  <button onClick={saveColorEdit} {...hp("tagsave")}
                     style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "tagsave" ? "color-mix(in srgb, var(--acc) 24%, transparent)" : "color-mix(in srgb, var(--acc) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: 7 }}>SAVE</button>
-                  <button onClick={() => setTagEditOpen(false)} {...hp("tagcancel")}
+                  <button onClick={() => setColorEditOpen(false)} {...hp("tagcancel")}
                     style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "tagcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "7px 11px" }}>CANCEL</button>
                 </div>
               </div>
             )}
           </span>
+          <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>{name(project)}</span>
           <span style={{ fontSize: "var(--t11)", color: "var(--txd)", display: "flex", gap: 9, fontFamily: "'JetBrains Mono',monospace" }}>
             <span style={{ color: "var(--ok)" }}>↑{git?.ahead ?? badge?.ahead ?? 0}</span>
             <span>↓{git?.behind ?? badge?.behind ?? 0}</span>

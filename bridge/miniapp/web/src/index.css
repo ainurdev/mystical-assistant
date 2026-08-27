@@ -581,15 +581,38 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
 }
 .flc-btn:active:not(:disabled) { opacity: .7; }
 .flc-btn:disabled { opacity: .45; }
+/* Exactly one filled control per card — the move the card is asking for; the
+   rest are alternatives to it. Same ladder as the dashboard, this surface's
+   idiom: round corners and a thumb-sized target. */
 .flc-btn[data-go] {
-  color: var(--h); border-color: color-mix(in srgb, var(--h) 45%, transparent);
-  background: color-mix(in srgb, var(--h) 10%, transparent);
+  padding: 8px 15px; letter-spacing: 1.8px;
+  border-color: var(--h); background: var(--h); color: var(--acc-on);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--h) 16%, transparent);
+}
+/* Sent, it stops shouting — the move already happened. Not the shared
+   opacity: a washed-out fill still reads as a live button, dimmed. */
+.flc-btn[data-go]:disabled {
+  opacity: 1; background: transparent; color: var(--txl); box-shadow: none;
+  border-color: color-mix(in srgb, var(--h) 20%, transparent);
+}
+/* A departure opens a new typed session — a different kind of move rather
+   than a weaker one, so it gives up the box instead of dimming inside one.
+   It keeps the full padding here: on a phone the tap target is the point. */
+.flc-btn[data-away] {
+  border-color: transparent; background: none; color: var(--txd);
+}
+.flc-fence {
+  flex: none; align-self: center; width: 1px; height: 16px; margin: 0 2px;
+  background: var(--border);
 }
 .flc-btn > span { position: relative; }
 .flc-fill {
   position: absolute; left: 0; top: 0; bottom: 0; width: 0;
   background: color-mix(in srgb, var(--h) 30%, transparent);
 }
+/* On the filled primary the hue would be invisible against its own fill, so
+   the bar becomes the dark ink: the button charging rather than lighting up. */
+.flc-btn[data-go] > .flc-fill { background: color-mix(in srgb, var(--acc-on) 55%, transparent); }
 .flc-hold[data-held] > .flc-fill { width: 100%; transition: width var(--hold) linear; }
 
 

@@ -42,7 +42,6 @@
       "id": "implement",
       "label": "IMPLEMENT",
       "gate": false,
-      "permission_mode": "acceptEdits",
       "instructions": "Execute the approved plan. Match the surrounding code's style. List every file changed as you go. Show the hunk for each file you changed — a diffstat nobody can check is a claim, not a change.",
       "card_fields": [
         {

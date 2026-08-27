@@ -150,15 +150,16 @@ RELEVANCE_CONTEXT_TURNS = int(os.environ.get("RELEVANCE_CONTEXT_TURNS", "3"))
 # doc guessed. At a tighter timeout every check fails open and the guardrail is a
 # silent no-op, so this is deliberately generous; it only runs on long prompts.
 RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
-# Auto-type new sessions: a one-shot reads the first message and starts the
-# matching flow (bridge/flowtype.py). While on, creation UIs drop their type
-# picker — the session types itself; "chat" verdicts leave it untyped.
+# Auto-type sessions per prompt: a one-shot reads each message and moves the
+# session to the matching flow (bridge/flowtype.py). While on, creation UIs
+# drop their type picker — sessions follow their prompts; "chat" verdicts and
+# continuations change nothing.
 FLOWTYPE_ENABLE = os.environ.get("FLOWTYPE_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 FLOWTYPE_MODEL = os.environ.get("FLOWTYPE_MODEL", "haiku")
-# Same cold-start reality as RELEVANCE_TIMEOUT, and it never blocks a turn —
-# the classify runs beside the first turn, not in front of it.
-FLOWTYPE_TIMEOUT = int(os.environ.get("FLOWTYPE_TIMEOUT", "25"))
+# Unlike RELEVANCE_TIMEOUT this one runs IN FRONT of every turn, so its worst
+# case is user-facing latency: tight, and a timeout just fails open to no move.
+FLOWTYPE_TIMEOUT = int(os.environ.get("FLOWTYPE_TIMEOUT", "12"))
 
 # --- Next-up board -----------------------------------------------------------
 # Ranked next steps across the repos with recent session activity. One read-only

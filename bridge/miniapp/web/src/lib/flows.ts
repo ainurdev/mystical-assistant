@@ -38,8 +38,8 @@ export function useFlows(): FlowShape[] {
   return useSyncExternalStore(subscribe, () => snapshot);
 }
 
-/** AUTO TYPE on: the picker hides — sessions type themselves off the first
- *  message. The catalog itself stays published for rails and chips. */
+/** AUTO TYPE on: the picker hides — every prompt classifies itself and the
+ *  session follows. The catalog itself stays published for rails and chips. */
 export function useFlowsAuto(): boolean {
   return useSyncExternalStore(subscribe, () => auto);
 }

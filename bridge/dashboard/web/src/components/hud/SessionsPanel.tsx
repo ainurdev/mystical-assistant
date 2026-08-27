@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FlowShape, SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
-import { ago, projectTint } from "../../lib/surfaces";
+import { ago, projectName, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
 import { useFlows, useFlowsAuto } from "../../lib/flows";
 import { Rows2, Rows4, Tag, TagX } from "lucide-react";
@@ -158,8 +158,8 @@ function SessionRow({
             <button
               onClick={(e) => { e.stopPropagation(); onAnalyzeProj(); }} title="analyze project"
               onMouseEnter={() => setTagHov(true)} onMouseLeave={() => setTagHov(false)}
-              style={{ appearance: "none", cursor: "pointer", flex: "none", fontSize: "var(--t85)", letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 5, background: tagHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
-            >{tint.tag}</button>
+              style={{ appearance: "none", cursor: "pointer", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "var(--t85)", letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 5, background: tagHov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", fontFamily: "inherit", padding: "1px 6px" }}
+            >{projectName(s.project)}</button>
           )}
           {/* The branch is normally the checkout's, and reads as background. When
               the session runs in a worktree the branch is that one's — lit, so a
@@ -177,15 +177,9 @@ function SessionRow({
               <span style={{ color: "var(--txd)", maxWidth: 96, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⧉{s.worktree}</span>
             )}
           </span>
-          {/* What kind of work this is, when it is any kind at all. */}
-          {s.stype && (
-            <span
-              title={`${s.stype} session${s.stage ? ` · ${s.stage}` : ""}`}
-              style={{ flex: "none", fontSize: "var(--t85)", letterSpacing: 1,
-                       color: "var(--acc)", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
-                       borderRadius: 5, padding: "0 5px", whiteSpace: "nowrap" }}
-            >{s.stype.toUpperCase()}</span>
-          )}
+          {/* No kind-of-work chip: a session runs many flows over its life
+              (one per prompt), so a single tag here would just be whatever it
+              did last. The open chat's StageRail names the current flow. */}
           {showTags && (s.tags ?? []).slice(0, 2).map((t) => (
             <span
               key={t}
@@ -329,9 +323,6 @@ export function SessionsPanel(props: Props) {
   const flows = useFlows();
   const flowsAuto = useFlowsAuto();
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  // Which kind of work to show. "chat" is the untyped bucket — every session
-  // that predates flows lands there, so the filter never hides history.
-  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [sessionQ, setSessionQ] = useState("");
   // Tags off — rows and the filter strip both go. Stored inverted so the default
   // (nothing in localStorage) keeps tags on.
@@ -408,20 +399,12 @@ export function SessionsPanel(props: Props) {
   // The active tag rides first so it stays visible in the collapsed one-row strip.
   const allTags = [...new Set(sessions.flatMap((s) => s.tags ?? []))]
     .sort((a, b) => Number(b === tagFilter) - Number(a === tagFilter) || a.localeCompare(b));
-  // Types actually in play, CHAT first. One kind alone needs no filter — the
-  // strip would just be a label for "everything".
-  const allTypes = (() => {
-    const seen = new Set(sessions.map((s) => s.stype ?? "chat"));
-    const order = ["chat", ...flows.map((f) => f.stype)];
-    return [...seen].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  })();
   const sq = sessionQ.trim().toLowerCase();
   // Pinned first, then newest-first. Every list below slices this one, so a pin
   // holds the top of the RECENT list and of its own project's rows alike — and the
   // tag filter + search applied here reach RECENT and BY PROJECT from one place.
   const sorted = [...sessions]
     .filter((s) => !tagFilter || (s.tags ?? []).includes(tagFilter))
-    .filter((s) => !typeFilter || (s.stype ?? "chat") === typeFilter)
     .filter((s) => !sq || `${s.title ?? ""} ${(s.tags ?? []).join(" ")} ${branchFor(s)}`.toLowerCase().includes(sq))
     .sort((a, b) =>
       Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
@@ -438,7 +421,7 @@ export function SessionsPanel(props: Props) {
   // Group headers come from `groups`, which the tag filter and search never
   // touched — so without this a filtered BY PROJECT shows headers with nothing
   // under them and reads as broken. `sorted` is already filtered, so ask it.
-  const ordered = tagFilter || typeFilter || sq
+  const ordered = tagFilter || sq
     ? orderedAll.filter((g) => sorted.some((s) => s.project === g.rel))
     : orderedAll;
   // BY PROJECT rows: every session that's actually doing something (WORK/WAIT/
@@ -451,7 +434,7 @@ export function SessionsPanel(props: Props) {
   // every match shows, and nothing hides behind SHOW MORE.
   const rowsFor = (rel: string) => {
     const all = sorted.filter((s) => s.project === rel);
-    if (sq || tagFilter || typeFilter) return all;
+    if (sq || tagFilter) return all;
     const busy = all.filter((s) => s.id === selectedSessionId || pins.has(s.id)
       || statusView(status.get(s.id), done.has(s.id)).l !== "IDLE" || flags.has(s.id));
     return busy.length ? busy : all.slice(0, 1);
@@ -648,8 +631,8 @@ export function SessionsPanel(props: Props) {
         )}
       </div>
       </>)}
-      {/* AUTO TYPE on: no picker, no forms — the first message classifies the
-          session (bridge/flowtype.py) and the type chip lands on its card. */}
+      {/* AUTO TYPE on: no picker, no forms — every prompt classifies itself
+          (bridge/flowtype.py) and the session follows its work. */}
       {flows.length > 0 && !flowsAuto && (<>
       <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "12px 0 6px" }}>
         <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>TYPE</span>
@@ -848,29 +831,10 @@ export function SessionsPanel(props: Props) {
             >/</span>
           )}
         </div>
+        {/* No filter by kind of work: a session's flows change per prompt, so
+            "show only FIX" would key on whatever each session did last. */}
         {/* Tag filter. Only appears once something is tagged, so an untagged
             machine never pays for a control it can't use. */}
-        {allTypes.length > 1 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-            {allTypes.map((t) => {
-              const on = typeFilter === t;
-              const label = t === "chat"
-                ? "CHAT" : (flows?.find((f) => f.stype === t)?.label ?? t.toUpperCase());
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTypeFilter(on ? null : t)}
-                  title={on ? `showing only ${label} — click to clear` : `show only ${label}`}
-                  style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit",
-                           fontSize: "var(--t10)", letterSpacing: 1, padding: "2px 10px", borderRadius: 999,
-                           border: `1px solid color-mix(in srgb, var(--acc) ${on ? 60 : 22}%, transparent)`,
-                           background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent",
-                           color: on ? "var(--txb)" : "var(--txd)", transition: "all .15s ease" }}
-                >{label}</button>
-              );
-            })}
-          </div>
-        )}
         {!noTags && allTags.length > 0 && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 5, marginTop: 6 }}>
             {/* Expanded caps at ~4 rows and scrolls: 60+ tags otherwise push the
@@ -936,8 +900,8 @@ export function SessionsPanel(props: Props) {
                 onMouseEnter={() => setBackHov(true)} onMouseLeave={() => setBackHov(false)}
                 style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: backHov ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "5px 10px" }}
               ><span style={{ fontSize: "var(--t13)", lineHeight: 0 }}>←</span>BACK</button>
-              <span style={{ fontSize: "var(--t85)", letterSpacing: 0.5, color: drillTint.color, border: `1px solid ${drillTint.border}`, padding: "1px 6px", flex: "none" }}>{drillTint.tag}</span>
-              <span style={{ fontSize: "var(--t105)", color: "var(--txh)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{drillGroup?.name ?? drill}</span>
+              <span style={{ fontSize: "var(--t85)", letterSpacing: 0.5, color: drillTint.color, border: `1px solid ${drillTint.border}`, padding: "1px 6px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{drillGroup?.name ?? drill}</span>
+              <span style={{ flex: 1 }} />
               <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txf)", flex: "none" }}>{drillSessions.length} SESS</span>
               <PlusBtn on={nsOpen && nsScoped && nsProject === drill} onClick={() => openFor(drill)} />
             </div>
@@ -1004,7 +968,7 @@ export function SessionsPanel(props: Props) {
                   const shown = rowsFor(g.rel);
                   // Filtered rows are already the whole match set, and g.sessionCount
                   // counts the unfiltered project — so there is nothing more to show.
-                  const more = sq || tagFilter || typeFilter ? 0 : g.sessionCount - shown.length;
+                  const more = sq || tagFilter ? 0 : g.sessionCount - shown.length;
                   const hidden = shut.has(g.rel);
                   const dragging = dragRel === g.rel;
                   const dropHere = !!dragRel && overRel === g.rel && !dragging;
@@ -1038,8 +1002,9 @@ export function SessionsPanel(props: Props) {
                           title={hidden ? "expand" : "collapse"}
                           style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0, background: "transparent", color: "var(--txf)", fontFamily: "inherit", fontSize: "var(--t9)", lineHeight: 1, padding: "3px 2px" }}
                         >{hidden ? "▸" : "▾"}</button>
-                        <span style={{ fontSize: "var(--t10)", letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 6, padding: "2px 7px", flex: "none" }}>{tint.tag}</span>
-                        <span style={{ fontSize: "var(--t125)", fontWeight: 600, color: "var(--txb)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                        {/* The 4-char tag said the same thing as the name next to
+                            it — so the name wears the tag's chip instead. */}
+                        <span style={{ fontSize: "var(--t10)", letterSpacing: 0.5, color: tint.color, border: `1px solid ${tint.border}`, borderRadius: 6, padding: "2px 7px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
                         <span style={{ flex: 1 }} />
                         {(activeBy.get(g.rel) ?? 0) > 0 && (
                           <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "var(--t10)", color: "var(--ok)", flex: "none" }} title="sessions working, waiting on you, or being checked">
@@ -1075,9 +1040,9 @@ export function SessionsPanel(props: Props) {
             {booting ? "LOADING SESSIONS…" : "No projects with sessions yet."}
           </div>
         )}
-        {groups.length > 0 && (sq || tagFilter || typeFilter) && sorted.length === 0 && (
+        {groups.length > 0 && (sq || tagFilter) && sorted.length === 0 && (
           <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "10px 4px" }}>
-            no session matches {sq ? `“${sessionQ.trim()}”` : tagFilter ? `tag “${tagFilter}”` : `type “${typeFilter}”`}
+            no session matches {sq ? `“${sessionQ.trim()}”` : `tag “${tagFilter}”`}
           </div>
         )}
       </div>

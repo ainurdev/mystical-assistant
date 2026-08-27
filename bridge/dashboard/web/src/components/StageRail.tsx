@@ -1,8 +1,8 @@
 import type { FlowShape, FlowStageShape } from "../api";
 
-// What kind of work this session is. AUTO TYPE guesses it from the first
-// message, so it can be wrong — a native select is the whole escape hatch:
-// keyboard, phone and screen reader for free, no popover to manage.
+// What kind of work this session is doing NOW. AUTO TYPE re-reads every
+// prompt, so this moves with the work — and can be wrong; a native select is
+// the whole escape hatch: keyboard, phone and screen reader for free.
 export function TypePicker({
   flows,
   current,

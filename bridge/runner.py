@@ -450,9 +450,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
-        if is_new:
-            from bridge import flowtype  # local import: runner<->* cycle
-            flowtype.kick(session, prompt)
+        from bridge import flowtype  # local import: runner<->* cycle
+        flowtype.check(session, prompt)   # blocking; mutates session on a move
         result, sid, cost, is_error = run_blocking(
             chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
             flow_section=flow.section_for(session))
@@ -537,6 +536,7 @@ class Job:
         self.new_session = False                  # True -> --session-id, else --resume
         self.fork = False                # duplicated session: --resume + --fork-session
         self.flow_stage: str | None = None  # stage this turn was composed under
+        self.flow_stype: str | None = None  # and the flow that stage belongs to
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
         # What this turn is waiting on before its first token, or None once the
@@ -1639,19 +1639,27 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             _consume_free_agent(job, prompt, cwd)
             return
         full_prompt = _with_images(prompt, image_paths)
+        fsess = (store.get_session(job.store_session_id)
+                 if job.store_session_id else None)
+        if fsess:
+            # Every prompt is classified in front of its turn, so the turn
+            # composes under the flow this prompt actually opens. Blocking is
+            # the point; the boot label keeps the wait legible.
+            from bridge import flowtype  # local import: runner<->* cycle
+            job.boot = "deciding what kind of work this is"
+            flowtype.check(fsess, prompt)
         # The gap before the first token is two waits, and an empty stream makes
         # both read as a hang. Name whichever one we are actually in: the health
         # check only blocks while the cache is still cold (see toolsets.warm).
         from bridge import toolsets  # local: toolsets imports runner
-        if job.store_session_id and not toolsets.ready():
-            job.boot = "checking configured MCP servers"
-        fsess = (store.get_session(job.store_session_id)
-                 if job.store_session_id else None)
+        job.boot = ("checking configured MCP servers"
+                    if job.store_session_id and not toolsets.ready() else None)
         flow_section = flow.section_for(fsess) if fsess else ""
         # Stamp what this turn was composed under; flow.after_turn validates
-        # against this, so a classify verdict landing mid-turn never gets the
+        # against this, so a manual move landing mid-turn never gets the
         # in-flight turn nudged for a card it was never asked to produce.
         job.flow_stage = fsess.get("stage") if flow_section else None
+        job.flow_stype = fsess.get("stype") if flow_section else None
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
@@ -1879,9 +1887,8 @@ def _finalize_run_context(session: dict, project_dir: str, *,
         cwd = project_dir
     if not session.get("cwd"):
         store.set_cwd(session["id"], cwd)
-    # A stage may tighten or loosen the posture for its own turns (FIX only
-    # accepts edits after its diagnosis was approved) — that is what gives a
-    # gate teeth rather than just a prompt asking nicely.
+    # A stage may tighten or loosen the posture for its own turns. No built-in
+    # flow does (see flow.permission_for) — only a custom one.
     return session, cwd, flow.permission_for(
         session, permission_mode or session.get("permission_mode"))
 
@@ -1925,10 +1932,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime, sha=git.head_sha(cwd))
-        from bridge import flowtype, titler  # local import: runner<->* cycle
+        from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
-        if job.new_session:
-            flowtype.kick(session, prompt)
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,

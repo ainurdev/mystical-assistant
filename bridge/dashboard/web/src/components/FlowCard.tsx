@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { HudCard } from "../api";
 import { useFlows } from "../lib/flows";
 import { CardField } from "./FlowFields";
@@ -56,6 +56,14 @@ export function FlowCard({
   const handoffs = isCurrent && onHandoff
     ? (shape?.handoff ?? []).filter((t) => flows.some((f) => f.stype === t))
     : [];
+  const acts = (card.actions ?? []).slice(0, 3);
+  // Exactly one filled control per card — the move it is asking for. The gate
+  // owns it while the card waits to be let through; otherwise it is the first
+  // action, because the model writes them in the order it would take them.
+  // A departure gives up its box from here on: it opens a new session rather
+  // than answering this one. Index 1 when there is nothing else on the row —
+  // a lone ghost control is one nobody finds.
+  const awayFrom = awaitingApproval || acts.length > 0 ? 0 : 1;
 
   return (
     <div
@@ -91,37 +99,41 @@ export function FlowCard({
         </dl>
       )}
 
-      {(awaitingApproval || handoffs.length > 0 || (card.actions?.length ?? 0) > 0) && (
+      {(awaitingApproval || handoffs.length > 0 || acts.length > 0) && (
         <div className="flc-acts">
           {awaitingApproval && (
             shape?.input === "arm"
               ? <HoldToApprove onApprove={onApprove} />
               : <button type="button" className="flc-btn" data-go="" onClick={onApprove}>APPROVE ▸</button>
           )}
-          {handoffs.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className="flc-btn"
-              disabled={sent === t}
-              onClick={() => {
-                setSent(t);
-                onHandoff?.(t, handoffPrompt(card, flow?.label ?? (stype ?? "").toUpperCase()));
-              }}
-            >
-              OPEN AS {(flows.find((f) => f.stype === t)?.label ?? t).toUpperCase()} ▸
-            </button>
-          ))}
-          {(card.actions ?? []).slice(0, 3).map((a) => (
+          {acts.map((a, i) => (
             <button
               key={a.label}
               type="button"
               className="flc-btn"
+              data-go={!awaitingApproval && i === 0 ? "" : undefined}
               disabled={sent === a.label}
               onClick={() => { setSent(a.label); onAction(a.send); }}
             >
               {a.label}
             </button>
+          ))}
+          {handoffs.map((t, i) => (
+            <Fragment key={t}>
+              {i === awayFrom && <i className="flc-fence" aria-hidden />}
+              <button
+                type="button"
+                className="flc-btn"
+                data-away={i >= awayFrom ? "" : undefined}
+                disabled={sent === t}
+                onClick={() => {
+                  setSent(t);
+                  onHandoff?.(t, handoffPrompt(card, flow?.label ?? (stype ?? "").toUpperCase()));
+                }}
+              >
+                ↗ OPEN AS {(flows.find((f) => f.stype === t)?.label ?? t).toUpperCase()}
+              </button>
+            </Fragment>
           ))}
         </div>
       )}

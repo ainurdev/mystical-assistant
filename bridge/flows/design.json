@@ -28,7 +28,6 @@
       "id": "implement",
       "label": "IMPLEMENT",
       "gate": false,
-      "permission_mode": "acceptEdits",
       "instructions": "Implement the approved design in the repo. List every file changed. Show the hunk for each file you changed.",
       "card_fields": [
         {

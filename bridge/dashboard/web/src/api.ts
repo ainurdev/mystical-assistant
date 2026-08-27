@@ -94,7 +94,7 @@ export interface FlowShape {
 }
 export interface FlowCatalog {
   enabled: boolean; // the TYPED FLOWS switch in the AI tab
-  auto: boolean; // AUTO TYPE switch: first message classifies, pickers hide
+  auto: boolean; // AUTO TYPE switch: every prompt classifies, pickers hide
   flows: FlowShape[];
   full?: Record<string, unknown>; // raw templates — dashboard only, for the editor
   all?: { stype: string; label: string; source: string; disabled: boolean }[];
@@ -179,8 +179,12 @@ export type RunEvent =
   // A typed session's settled turn: the parsed hud-card block (the raw fence is
   // stripped from the text above it), the stage it ran under, and the server's
   // record of every move between stages.
-  | { type: "card"; card: HudCard; stage: string; gated?: boolean }
+  // stype: the flow the card was written under — absent on cards from before
+  // sessions re-typed per prompt, which render against the session's flow.
+  | { type: "card"; card: HudCard; stage: string; stype?: string; gated?: boolean }
   | { type: "stage"; from: string | null; to: string; by: "auto" | "user" }
+  | { type: "retype"; from: string | null; to: string | null;
+      stage: string | null; by: "auto" | "user" }
   | { type: "card_missing"; errors?: string[] };
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };

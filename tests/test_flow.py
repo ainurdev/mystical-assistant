@@ -106,7 +106,8 @@ def test_compose_first_prompt():
 CARD = """Did the work.
 
 ```hud-card
-{"stage": "fix", "summary": "patched", "fields": {"changed": ["a.py"]},
+{"stage": "fix", "summary": "patched",
+ "fields": {"changed": [{"file": "a.py", "add": 3, "del": 1}]},
  "advance": true, "actions": [{"label": "TEST", "send": "run tests"}]}
 ```"""
 
@@ -142,8 +143,9 @@ def test_next_stage_and_permission():
     assert flow.next_stage(f, "reproduce") == "rootcause"
     assert flow.next_stage(f, "verify") == "done"
     assert flow.next_stage(f, "done") is None
-    assert flow.stage_permission(f, "fix") == "acceptEdits"
-    assert flow.stage_permission(f, "reproduce") is None
+    assert flow.stage_permission(f, "fix") is None    # no built-in pins one
+    assert flow.stage_permission(
+        {"stages": [{"id": "fix", "permission_mode": "plan"}]}, "fix") == "plan"
 
 
 def test_apply_stage_writes_and_journals():
@@ -203,7 +205,12 @@ def _typed(stage="fix", turn="flow-j1"):
 def test_section_and_permission_for_session():
     s = store.create_session(555, "/p", stype="fix", stage="fix")
     assert "FIX" in flow.section_for(s)
-    assert flow.permission_for(s, "default") == "acceptEdits"   # stage override
+    assert flow.permission_for(s, "default") == "default"       # no built-in pins one
+    custom = json.loads(json.dumps(flow.load_flows()["fix"]))
+    next(st for st in custom["stages"] if st["id"] == "fix")["permission_mode"] = "plan"
+    assert flow.save_custom("fix", custom) == []
+    assert flow.permission_for(s, "default") == "plan"          # stage override
+    flow.delete_custom("fix")
     s2 = store.create_session(555, "/p", stype="fix", stage="reproduce")
     assert flow.permission_for(s2, "default") == "default"      # no override
     plain = store.create_session(555, "/p")
@@ -385,7 +392,7 @@ def test_card_branch_loops_back_instead_of_advancing():
     store.start_turn(s["id"], "flow-b1", "work", [])
     body = "```hud-card\n" + json.dumps(
         {"stage": "verify", "summary": "two checks failed",
-         "fields": {"checks": ["a"], "pass": False},
+         "fields": {"checks": [{"cmd": "pytest", "ok": False}], "pass": False},
          "advance": True, "next": "fix"}) + "\n```"
     flow.after_turn(_StubJob(s["id"], "flow-b1", body, flow_stage="verify"))
     assert store.get_session(s["id"])["stage"] == "fix"   # back, not on to done
@@ -542,13 +549,53 @@ def test_contract_states_each_fields_shape():
     assert '"approach": ...' in sec                  # text stays a bare slot
 
 
-def test_typed_fields_are_required_by_name_not_shape():
+def test_typed_fields_are_checked_by_name_and_shape():
     f = flow.get_flow("build")
     card = {"stage": "verify", "summary": "ran them",
             "fields": {"checks": "pytest passed", "pass": "yes"}}
-    assert flow.validate_card(f, "verify", card) == []   # wrong shape: renders
+    assert any("fields.checks" in e for e in flow.validate_card(f, "verify", card))
+    card["fields"]["checks"] = [{"cmd": "pytest", "ok": True}]
+    assert flow.validate_card(f, "verify", card) == []
     card["fields"].pop("checks")                          # missing: nudged
     assert any("fields.checks" in e for e in flow.validate_card(f, "verify", card))
+
+
+def test_shape_check_allows_empty_and_partial_but_not_the_wrong_container():
+    f = flow.get_flow("data")
+    ok = {"stage": "read", "summary": "read it", "fields": {
+        "over_time": [], "headline": None, "reading": "flat",
+        "rows": {"cols": ["DAY"], "rows": [["08-22"]]}}}
+    assert flow.validate_card(f, "read", ok) == []        # empty/null draw fine
+    ok["fields"]["over_time"] = [{"label": "08-22"}]      # missing value: draws
+    assert flow.validate_card(f, "read", ok) == []
+    ok["fields"]["rows"] = {"cols": ["DAY"]}              # no rows: cannot draw
+    assert any("rows" in e for e in flow.validate_card(f, "read", ok))
+
+
+def test_shape_check_leaves_text_fields_alone():
+    f = flow.get_flow("probe")
+    card = {"stage": "report", "summary": "done", "fields": {
+        "answer": [{"text": "it is the lock", "cites": [1]}],
+        "recommendation": {"anything": "goes"},          # text: never checked
+        "confidence": 0.8}}
+    assert flow.validate_card(f, "report", card) == []
+    card["fields"]["confidence"] = "high"                 # num: checked
+    assert any("confidence" in e for e in flow.validate_card(f, "report", card))
+
+
+def test_shape_check_never_rejects_what_the_widget_would_draw():
+    """The safety property: every loose form the as*() coercers in
+    web/src/lib/cardfields.ts accept has to survive validation."""
+    drawable = {
+        "confidence": ["0.8", 80, 0.8],                  # asConfidence
+        "verdict": ["PASS", True],                       # VerdictBanner
+        "output": ["it printed this", {"text": "x", "cmd": "pytest"}],  # asOutput
+        "files": [["a.py"], [{"path": "a.py", "add": 3}]],             # asFiles
+        "checks": [[], [{"cmd": "pytest", "ok": True}]],
+    }
+    for t, values in drawable.items():
+        for v in values:
+            assert flow._shape_error("f", t, v) is None, (t, v)
 
 
 def test_save_custom_rejects_a_handoff_to_a_flow_that_does_not_exist():

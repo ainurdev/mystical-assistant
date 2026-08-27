@@ -108,8 +108,7 @@ export function ManageProjectsModal(props: Props) {
                 <div key={r.rel}
                   style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 7%, transparent)", opacity: isHidden ? 0.5 : 1 }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: r.dot, flex: "none" }} />
-                  <span style={{ fontSize: "var(--t125)", color: "var(--txb)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
-                  <span style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", flex: "none" }}>{tint.tag}</span>
+                  <span style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
                   {isHidden && (
                     <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", padding: "1px 5px", flex: "none" }}>HIDDEN</span>
                   )}

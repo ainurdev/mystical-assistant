@@ -1542,6 +1542,11 @@ export const RunStream = memo(function RunStream({
     events.find((e) => e.type === "result")?.result ?? "",
   ).trim();
 
+  // A turn that settled into a card leads with the card: the prose demotes to
+  // a folded DETAILS bar under it, so a typed session reads as process, not
+  // chat. The card is the abstract; the box is still one tap away.
+  const hasCard = events.some((e) => e.type === "card");
+
   // A turn that ends on an AskUserQuestion emits no result event, so the prose
   // explaining the card used to render as bare text while every other answer got
   // the RESULT box. This is the text that belongs to the card below it.
@@ -1550,7 +1555,7 @@ export const RunStream = memo(function RunStream({
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
           || t === "thinking" || t === "log" || t === "card" || t === "stage"
-          || t === "card_missing") continue;
+          || t === "retype" || t === "card_missing") continue;
       return t === "question";
     }
     return false;
@@ -1776,6 +1781,7 @@ export const RunStream = memo(function RunStream({
                 elapsed={event.elapsed}
                 tokens={tokens}
                 isError={event.is_error}
+                demoted={hasCard}
                 animate={animate}
                 idKey={`${turnId}:${i}`}
                 onAnswer={onAnswer}
@@ -1840,13 +1846,17 @@ export const RunStream = memo(function RunStream({
             return (
               <FlowCard
                 key={i}
+                // The flow the card was written under, not whatever the session
+                // is now — flows change per prompt, and an old card must keep
+                // drawing its own widgets. Old events carry no stype.
+                stype={event.stype ?? stype}
                 card={event.card}
-                stype={stype}
                 gated={!!event.gated}
-                // Both have to hold: the turn is the last finished one (onAnswer
-                // reaches no other), and the session still stands where the card
-                // was written.
-                isCurrent={!!onAnswer && event.stage === stage}
+                // All have to hold: the turn is the last finished one (onAnswer
+                // reaches no other), and the session still stands in the flow
+                // and on the stage the card was written under.
+                isCurrent={!!onAnswer && event.stage === stage
+                  && (event.stype == null || event.stype === stype)}
                 onAction={(send) => onAnswer?.(send)}
                 onApprove={() => onStageAdvance?.()}
                 onOpenFile={onOpenFile}
@@ -1861,6 +1871,19 @@ export const RunStream = memo(function RunStream({
               >
                 STAGE ▸ {(event.to === "done" ? "COMPLETE" : event.to).toUpperCase()}
                 {event.by === "user" ? " (approved)" : ""}
+              </div>
+            );
+          // The session changed kind here — the classifier read the prompt
+          // (auto) or the user overrode it. The one visible seam between one
+          // piece of work and the next.
+          case "retype":
+            return (
+              <div
+                key={i}
+                className="ml-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2"
+              >
+                FLOW ▸ {(event.from ?? "chat").toUpperCase()} → {(event.to ?? "chat").toUpperCase()}
+                {event.by === "user" ? " (you)" : ""}
               </div>
             );
           // The nudge that follows says it better than a broken-card row would.
@@ -1958,6 +1981,7 @@ function FinalResult({
   elapsed,
   tokens,
   isError,
+  demoted,
   animate,
   idKey,
   label,
@@ -1968,6 +1992,9 @@ function FinalResult({
   elapsed?: number;
   tokens?: number | null;
   isError?: boolean;
+  /** A flow card settled this turn: the card is the face, this box folds to a
+   *  slim DETAILS bar under it — the prose is one tap away, never the lead. */
+  demoted?: boolean;
   animate: boolean;
   idKey: string;
   /** Overrides "RESULT // OK" — the accent-toned box drawn above a question card. */
@@ -1983,8 +2010,11 @@ function FinalResult({
   const body = ask ? ask.body : result;
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
-  // the session arrive folded.
-  const [open, setOpen] = useState(flash || lines <= RESULT_FOLD_LINES);
+  // the session arrive folded; a demoted one arrives closed however short.
+  const [open, setOpen] = useState(demoted ? false : flash || lines <= RESULT_FOLD_LINES);
+  // Live turns: the card lands a beat after the prose. The box was open while
+  // the words printed; the card arriving is what folds it away.
+  useEffect(() => { if (demoted) setOpen(false); }, [demoted]);
   return (
     <div className="relative my-2 pl-[18px]">
       <RailNode />
@@ -2015,7 +2045,9 @@ function FinalResult({
             <CopyBtn text={result} title="copy result" />
           </span>
         </div>
-        {body && (
+        {/* Demoted + closed hides the body outright: the card above already
+            says what happened, so even a 380px preview would be chat again. */}
+        {body && (open || !demoted) && (
           <div className="relative px-3 py-2.5">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
               <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
@@ -2030,7 +2062,7 @@ function FinalResult({
           </div>
         )}
         {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
-        {lines > RESULT_FOLD_LINES && (
+        {body && (lines > RESULT_FOLD_LINES || demoted) && (
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -2038,7 +2070,7 @@ function FinalResult({
             style={{ borderColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
           >
             <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
-            {open ? "FOLD" : `SHOW ALL // ${lines} LINES`}
+            {open ? "FOLD" : demoted ? `DETAILS // ${lines} LINES` : `SHOW ALL // ${lines} LINES`}
           </button>
         )}
       </div>

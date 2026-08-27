@@ -58,7 +58,6 @@
       "id": "fix",
       "label": "FIX",
       "gate": false,
-      "permission_mode": "acceptEdits",
       "instructions": "Apply the approved fix. Smallest diff that kills the root cause. List every file you changed. Show the hunk for each file you changed.",
       "card_fields": [
         {

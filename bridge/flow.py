@@ -280,7 +280,8 @@ _CONTRACT = """End EVERY reply with exactly one fenced code block tagged hud-car
 ```
 
 "fields" must contain: {names}. "actions" are 0-3 canned next moves the user
-can tap. Do not discuss this block in prose; it is parsed, not read."""
+can tap; the first one is drawn as the primary move, so put the likeliest
+first. Do not discuss this block in prose; it is parsed, not read."""
 
 # Only stages that declare next_allowed get this line: a stage with one way out
 # should not be told it has choices, and the prompt stays stable per stage.
@@ -416,9 +417,67 @@ def parse_card(text: "str | None") -> "dict | None":
     return None
 
 
+# What a typed field must look like on the wire, so the type is a contract in
+# both directions: the surfaces already drop a wrong shape back to text, and
+# this is what tells the model it happened.
+#
+# Every predicate here is deliberately LOOSER than the matching as*() coercer in
+# web/src/lib/cardfields.ts. That direction is the whole safety property: a card
+# the widget can draw must never be nudged, so the check only catches values no
+# coercer could ever accept — prose where a chart goes. Per-item keys are the
+# renderer's business; a half-filled row still draws something.
+#
+# "text" is absent on purpose, and with it every untyped flow stays untouched.
+
+def _is_rows(v) -> bool:
+    return isinstance(v, list) and all(isinstance(x, dict) for x in v)
+
+
+def _is_num(v) -> bool:
+    """0.8, "0.8" and "80%" all reach the meter; a bool and a word do not."""
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, (int, float)):
+        return True
+    try:
+        float(str(v).strip().rstrip("%"))
+        return True
+    except ValueError:
+        return False
+
+
+_ROWS = ("checks", "screens", "findings", "commands", "diff", "chain", "chart",
+         "stats", "ideas", "meters", "plan", "sources", "claims", "intake")
+_SHAPE_CHECK = {t: (_is_rows, "a list of objects") for t in _ROWS}
+_SHAPE_CHECK.update({
+    # A path list takes bare strings or {path, add, del} diffstat objects.
+    "files": (lambda v: isinstance(v, list)
+              and all(isinstance(x, (str, dict)) for x in v), "a list of paths"),
+    "draft": (lambda v: isinstance(v, str), "text"),
+    "verdict": (lambda v: isinstance(v, (str, bool)), "a word or a boolean"),
+    "confidence": (_is_num, "a number"),
+    "output": (lambda v: isinstance(v, str) or (isinstance(v, dict) and "text" in v),
+               "the output as text, or an object with text"),
+    "map": (lambda v: isinstance(v, dict) and "nodes" in v, "an object with nodes"),
+    "table": (lambda v: isinstance(v, dict) and "cols" in v and "rows" in v,
+              "an object with cols and rows"),
+})
+
+
+def _shape_error(name: str, t: str, v) -> "str | None":
+    """Why this value could never render as its declared widget, or None. A null
+    field is exempt: nothing to draw is a valid turn, and whether the field had
+    to be there at all is the required-keys check's call."""
+    chk = _SHAPE_CHECK.get(t)
+    if not chk or v is None:
+        return None
+    ok, want = chk
+    return None if ok(v) else f"fields.{name} must be {want} for type {t}"
+
+
 def validate_card(f: dict, stage_id: str, card) -> "list[str]":
-    # ponytail: a required-keys check, not JSON Schema — upgrade only if flows
-    # ever need typed or nested field constraints.
+    # ponytail: required keys plus a shallow shape check, not JSON Schema —
+    # upgrade only if flows ever need nested or per-item field constraints.
     errs: list[str] = []
     if not isinstance(card, dict):
         return ["card must be a JSON object"]
@@ -434,6 +493,10 @@ def validate_card(f: dict, stage_id: str, card) -> "list[str]":
     for x in fields_of(st):
         if x["name"] not in fields:
             errs.append(f"fields.{x['name']} is required in stage {stage_id}")
+        else:
+            err = _shape_error(x["name"], x["type"], fields[x["name"]])
+            if err:
+                errs.append(err)
     # "next" is only ever offered to a stage that declares targets, so a value
     # off that list is a real miss. A stage with no branch ignores the key.
     nxt, allowed = card.get("next"), st.get("next_allowed", [])
@@ -454,9 +517,10 @@ def apply_stage(session_id: str, to_stage: str, by: str, turn_id: str = "") -> N
     pubsub.publish(f"session:{session_id}", {**ev, "seq": seq, "turn_id": turn_id})
 
 
-def retype(session_id: str, stype: "str | None") -> bool:
+def retype(session_id: str, stype: "str | None", by: str = "user") -> bool:
     """Change (or clear) a session's type, starting the new flow at stage one.
-    The classifier reads one message and can be wrong; this is the way out.
+    The user's escape from a wrong verdict, and the per-prompt classifier's own
+    move (by="auto") when a prompt opens a different kind of work.
     False when the stype names no flow. Clearing is CHAT: no type, no stage."""
     from bridge import pubsub
     f = get_flow(stype) if stype else None
@@ -465,7 +529,7 @@ def retype(session_id: str, stype: "str | None") -> bool:
     sess = store.get_session(session_id) or {}
     to = first_stage(f) if f else None
     ev = {"type": "retype", "from": sess.get("stype"), "to": stype,
-          "stage": to, "by": "user"}
+          "stage": to, "by": by}
     store.set_session_stype(session_id, stype)
     store.set_session_stage(session_id, to)
     turn_id = store.latest_turn_id(session_id) or ""
@@ -484,14 +548,15 @@ def section_for(session: "dict | None") -> str:
 
 def permission_for(session: "dict | None", fallback: "str | None") -> "str | None":
     """The stage's permission mode when it sets one, else the session's own.
-    This is what gives a gate teeth: OPS states before it executes, FIX only
-    accepts edits once its diagnosis has been approved."""
+    No built-in flow sets one — the pins were dropped because they made every
+    Bash call on an implement stage ask; a custom flow can still tighten a stage."""
     f = get_flow((session or {}).get("stype"))
     return (stage_permission(f, session.get("stage")) or fallback) if f else fallback
 
 
-_NUDGE_PREFIX = "⟲ flow:"
-_NUDGE = (_NUDGE_PREFIX + " your last reply carried no usable hud-card block "
+# Public: flowtype.check reads it to leave the engine's own prompts unclassified.
+NUDGE_PREFIX = "⟲ flow:"
+_NUDGE = (NUDGE_PREFIX + " your last reply carried no usable hud-card block "
           "({why}). End the reply with the hud-card block for stage {stage}, "
           "restating what that turn already did. Do not redo the work.")
 
@@ -508,11 +573,11 @@ def after_turn(job, model=None, effort=None) -> None:
         if not sid or job.status != "done" or getattr(job, "interrupted", False):
             return
         sess = store.get_session(sid) or {}
-        f = get_flow(sess.get("stype"))
-        # The stage the turn was COMPOSED under, not where the session sits
-        # now: an auto-classify verdict (bridge/flowtype.py) or a manual stage
-        # move can land mid-turn, and a turn that never saw a stage's contract
-        # must not be nudged for missing its card.
+        # The flow and stage the turn was COMPOSED under, not where the session
+        # sits now: sessions re-type per prompt (bridge/flowtype.py) and a
+        # manual move can land mid-turn, and a turn that never saw a stage's
+        # contract must not be nudged for missing its card.
+        f = get_flow(getattr(job, "flow_stype", None) or sess.get("stype"))
         stage = getattr(job, "flow_stage", None)
         if not f or not stage or not stage_by_id(f, stage):
             return
@@ -520,9 +585,15 @@ def after_turn(job, model=None, effort=None) -> None:
         card = parse_card(text)
         errs = validate_card(f, stage, card) if card else ["no hud-card block"]
         if not errs:
+            # The flow the card was written under rides along: a session's
+            # flows change per prompt now, so rendering must never resolve an
+            # old card against whatever the session happens to be today.
             job.add({"type": "card", "card": card, "stage": stage,
+                     "stype": f["stype"],
                      "gated": bool(stage_by_id(f, stage).get("gate"))})
             store.set_turn_stage(job.id, stage)
+            if sess.get("stype") != f["stype"]:
+                return       # the session moved on mid-turn: journal, don't steer
             st = stage_by_id(f, stage)
             if st.get("gate"):
                 return                       # gated: only the user moves this
@@ -533,7 +604,7 @@ def after_turn(job, model=None, effort=None) -> None:
                 apply_stage(sid, next_stage(f, stage), "auto", turn_id=job.id)
             return
         job.add({"type": "card_missing", "errors": errs[:4]})
-        if (store.turn_prompt(job.id) or "").startswith(_NUDGE_PREFIX):
+        if (store.turn_prompt(job.id) or "").startswith(NUDGE_PREFIX):
             return                      # the nudge itself missed: let it be prose
         from bridge import queue_manager   # local import: runner<->* cycle
         text = _NUDGE.format(why="; ".join(errs[:2]), stage=stage)

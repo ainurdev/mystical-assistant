@@ -46,3 +46,24 @@ os.environ["FREEAGENTS_FILE"] = os.path.join(tempfile.mkdtemp(), "freeagents.jso
 # very sessions running it. Empty temp dir; a test that wants rows writes them there.
 from bridge import machine  # noqa: E402
 machine.SESSIONS_DIR = tempfile.mkdtemp()
+
+
+# An empty selection is not a failure. pytest counts session.testscollected AFTER
+# -k/-m deselection (_pytest/main.py:870), so a filter that matches nothing lands
+# on the same `testscollected == 0` branch as a bad path or a file with no tests
+# and exits 5 (main.py:376). Only the second kind is worth failing over. Counting
+# deselections tells them apart, and wrap_session returns session.exitstatus
+# *after* pytest_sessionfinish runs, so reassigning it here is honoured.
+# ponytail: any deselection counts, so --lf/--stepwise with nothing left to re-run
+# also exits 0. Gate on config.option.keyword/markexpr if that ever bites.
+_deselected = 0
+
+
+def pytest_deselected(items):
+    global _deselected
+    _deselected += len(items)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if exitstatus == 5 and _deselected:      # 5 == ExitCode.NO_TESTS_COLLECTED
+        session.exitstatus = 0

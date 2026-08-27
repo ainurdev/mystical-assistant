@@ -46,16 +46,15 @@ const PROJ_PALETTE = ["var(--acc)", "var(--purple)", "var(--ok)", "var(--info)",
 export interface ProjectTint {
   color: string;
   border: string;
-  tag: string;
 }
 
-// User-picked tag/colour overrides (analyze modal's tag editor), keyed by
+// User-picked colour overrides (analyze modal's colour picker), keyed by
 // project basename — the same key the hash tints by, so every projectTint()
 // caller (strip, panels, terminal, modals) picks them up.
 // ponytail: localStorage = per-browser like every other HUD pref; move to a
 // bridge endpoint if cross-device sync ever matters.
 const TINT_KEY = "hud-project-tints";
-type TintOverride = { tag?: string; color?: string };
+type TintOverride = { color?: string };
 let tintOverrides: Record<string, TintOverride> = {};
 try {
   tintOverrides = (JSON.parse(localStorage.getItem(TINT_KEY) || "{}") as Record<string, TintOverride>) || {};
@@ -64,20 +63,23 @@ try {
 let tintVersion = 0;
 const tintSubs = new Set<() => void>();
 
-function tintBase(name: string | null | undefined): string {
+/** A project's display name: the basename of its rel path. The same key
+ *  projectTint() hashes and stores overrides by, so a name and its colour
+ *  always agree — panels print this where a 4-char tag used to go. */
+export function projectName(name: string | null | undefined): string {
   const clean = (name ?? "").replace(/\/+$/, "");
   return clean.split("/").pop() || clean || "proj";
 }
 
 export function setProjectTint(name: string | null | undefined, ov: TintOverride): void {
-  tintOverrides[tintBase(name)] = ov;
+  tintOverrides[projectName(name)] = ov;
   try { localStorage.setItem(TINT_KEY, JSON.stringify(tintOverrides)); } catch { /* ignore */ }
   tintVersion++;
   tintSubs.forEach((fn) => fn());
 }
 
 /** Subscribe to tint-override changes — call once near the root so a saved
- *  tag/colour re-renders every projectTint() consumer immediately. */
+ *  colour re-renders every projectTint() consumer immediately. */
 export function useProjectTints(): number {
   return useSyncExternalStore(
     (fn) => { tintSubs.add(fn); return () => { tintSubs.delete(fn); }; },
@@ -86,16 +88,15 @@ export function useProjectTints(): number {
 }
 
 export function projectTint(name: string | null | undefined): ProjectTint {
-  const base = tintBase(name);
+  const base = projectName(name);
   const ov = tintOverrides[base];
   let h = 0;
   for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
   const color = ov?.color || PROJ_PALETTE[h % PROJ_PALETTE.length];
-  const tag = ov?.tag || (base.replace(/[^a-z0-9]/gi, "").slice(0, 4) || "proj").toUpperCase();
   // Translucent border. Most palette entries are CSS var() strings, so hex-slicing
   // them yielded rgba(NaN,NaN,NaN,.45) (dropped by the browser); color-mix works
   // for both var() and literal hex.
-  return { color, border: `color-mix(in srgb, ${color} 45%, transparent)`, tag };
+  return { color, border: `color-mix(in srgb, ${color} 45%, transparent)` };
 }
 
 export function ago(sec: number | null): string {

@@ -47,7 +47,7 @@ ${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the brid
   ${c_b}■${c_0}  mystical ${c_c}stop${c_0}      graceful stop (SIGINT -> clean shutdown, then SIGKILL)
   ${c_b}↻${c_0}  mystical ${c_c}restart${c_0}   stop, then start
   ${c_b}🔨${c_0} mystical ${c_c}build${c_0}     rebuild every web bundle now (start does it when stale)
-  ${c_b}📊${c_0} mystical ${c_c}status${c_0}    is it running? ports, dashboard and Mini App URLs
+  ${c_b}📊${c_0} mystical ${c_c}status${c_0}    is it running? ports, dashboard and Mini App URLs (${c_c}--json${c_0} for scripts)
   ${c_b}🩺${c_0} mystical ${c_c}doctor${c_0}    check prerequisites, and what each missing one costs you
   ${c_b}📜${c_0} mystical ${c_c}logs${c_0}      follow the log (Ctrl-C to stop following)
   ${c_b}⚡${c_0} mystical ${c_c}run${c_0}       run in the foreground (live logs, Ctrl-C to quit)
@@ -230,15 +230,20 @@ cmd_stop() {
 health() { case "$1" in 2*|3*) printf '%sHTTP %s%s' "$c_g" "$1" "$c_0";; *) printf '%sHTTP %s%s' "$c_r" "$1" "$c_0";; esac; }
 
 cmd_status() {
+  local json=""
+  case "${1:-}" in
+    "")     : ;;
+    --json) json=1 ;;
+    *)      die "unknown option for status: $1 — the only one is --json" ;;
+  esac
   local pid; pid="$(bridge_pid || true)"
   if [ -z "$pid" ]; then
+    if [ -n "$json" ]; then printf '{"running":false,"pid":null,"log":"%s"}\n' "$LOG"; return 0; fi
     say ""
     say "  ${c_r}●${c_0} ${c_b}stopped${c_0}"
     say "  ${c_d}start it with:${c_0}  ${c_c}mystical${c_0}"
     return 0
   fi
-  say ""
-  say "  ${c_g}●${c_0} ${c_b}running${c_0} ${c_d}(pid $pid)${c_0}"
   local d m l dport mport lport
   dport="$(env_port DASH_PORT 8790)"; mport="$(env_port MINIAPP_PORT 8787)"
   lport="$(env_port LANDING_PORT 8791)"
@@ -247,8 +252,23 @@ cmd_status() {
   d="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dport/" 2>/dev/null || true)"
   m="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$mport/" 2>/dev/null || true)"
   l="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$lport/" 2>/dev/null || true)"
-  row 🌐 dashboard "$c_d:$dport$c_0  $(health "$d")  $(dash_url)"
   local purl; purl="$(panel_url)"
+  if [ -n "$json" ]; then
+    # Same facts as the block below, one line, no colour. 10# normalises curl's
+    # 000 (nothing listening) to 0 — leading zeros aren't valid JSON numbers.
+    # ponytail: printf, not jq — every value here is a port, a status code, a URL
+    # or a path, so there is nothing to escape. Add escaping when that changes.
+    local sup=null; if unit_active; then sup='"systemd"'; elif unit_enabled; then sup='"hand-launched"'; fi
+    local murl=null; [ -n "$purl" ] && murl="\"$purl\""
+    printf '{"running":true,"pid":%s,"supervised":%s,"log":"%s"' "$pid" "$sup" "$LOG"
+    printf ',"dashboard":{"port":%s,"http":%s,"url":"%s"}' "$dport" "$((10#${d:-0}))" "$(dash_url)"
+    printf ',"miniapp":{"port":%s,"http":%s,"url":%s}' "$mport" "$((10#${m:-0}))" "$murl"
+    printf ',"landing":{"port":%s,"http":%s,"url":"http://127.0.0.1:%s/"}}\n' "$lport" "$((10#${l:-0}))" "$lport"
+    return 0
+  fi
+  say ""
+  say "  ${c_g}●${c_0} ${c_b}running${c_0} ${c_d}(pid $pid)${c_0}"
+  row 🌐 dashboard "$c_d:$dport$c_0  $(health "$d")  $(dash_url)"
   if [ -n "$purl" ]; then row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  $purl"
   else row 📱 "mini app" "$c_d:$mport$c_0  $(health "$m")  ${c_d}localhost only — no tunnel this run${c_0}"; fi
   row 🛬 landing "$c_d:$lport$c_0  $(health "$l")  http://127.0.0.1:$lport/"
@@ -271,7 +291,7 @@ case "${1:-start}" in
   stop)             cmd_stop ;;
   restart)          cmd_stop; cmd_start ;;
   build)            web_build force ;;
-  status)           cmd_status ;;
+  status)           cmd_status "${2:-}" ;;
   logs)             cmd_logs ;;
   run|fg)           cmd_run ;;
   doctor)           cmd_doctor ;;

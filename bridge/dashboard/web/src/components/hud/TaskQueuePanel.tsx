@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { projectTint } from "../../lib/surfaces";
+import { projectName, projectTint } from "../../lib/surfaces";
 
 export type TaskQueuePanelProps = {
   projects: string[];
@@ -227,7 +227,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                           background: color,
                         }}
                       />
-                      {projectTint(t.project).tag}
+                      {projectName(t.project)}
                     </button>
                   )}
                   {t.sent && (
@@ -295,7 +295,7 @@ export function TaskQueuePanel(props: TaskQueuePanelProps) {
                 flex: "none",
               }}
             >
-              {projectTint(newProject).tag}
+              {projectName(newProject)}
             </button>
           )}
           <input

@@ -1639,15 +1639,50 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
 }
 .flc-btn:hover:not(:disabled) { color: var(--txb); border-color: var(--acc); background: var(--ac-06); }
 .flc-btn:disabled { cursor: default; opacity: .45; }
-/* The move the card is asking for wears the accent; the rest are alternatives. */
-.flc-btn[data-go] { color: var(--h); border-color: color-mix(in srgb, var(--h) 45%, transparent); }
-.flc-btn[data-go]:hover:not(:disabled) { background: color-mix(in srgb, var(--h) 12%, transparent); }
+/* Exactly one filled control per card — the move the card is asking for. The
+   same ladder the composer's action cluster keeps (one primary, alternatives
+   outlined beside it), hued by --h so the fill still says who is waiting:
+   teal while the flow runs itself, amber when it is waiting on you. Padding
+   and tracking carry the tier too, so the primary reads first in grayscale
+   and colour only repeats what the shape already said. */
+.flc-btn[data-go] {
+  padding: 4px 13px; letter-spacing: 1.8px;
+  border-color: var(--h); background: var(--h); color: var(--acc-on);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--h) 16%, transparent);
+}
+.flc-btn[data-go]:hover:not(:disabled) {
+  color: var(--acc-on); border-color: var(--h);
+  background: color-mix(in srgb, var(--h) 86%, var(--txb));
+}
+/* Sent, it stops shouting — the move already happened. Not the shared
+   opacity: a washed-out fill still reads as a live button, dimmed. */
+.flc-btn[data-go]:disabled {
+  opacity: 1; background: transparent; color: var(--txl); box-shadow: none;
+  border-color: color-mix(in srgb, var(--h) 20%, transparent);
+}
+/* A departure opens a new typed session — a different kind of move rather
+   than a weaker one, so it gives up the box instead of dimming inside one,
+   and stands behind a fence at the end of the row. */
+.flc-btn[data-away] {
+  padding: 3px 2px; border-color: transparent; background: none; color: var(--txd);
+}
+.flc-btn[data-away]:hover:not(:disabled) {
+  border-color: transparent; background: none; color: var(--acc);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.flc-fence {
+  flex: none; align-self: center; width: 1px; height: 14px; margin: 0 3px;
+  background: var(--ac-16);
+}
 .flc-btn > span { position: relative; }
 /* The one honest progress bar in the system: it is how much longer you hold. */
 .flc-fill {
   position: absolute; left: 0; top: 0; bottom: 0; width: 0;
   background: color-mix(in srgb, var(--h) 28%, transparent);
 }
+/* On the filled primary the hue would be invisible against its own fill, so
+   the bar becomes the dark ink: the button charging rather than lighting up. */
+.flc-btn[data-go] > .flc-fill { background: color-mix(in srgb, var(--acc-on) 55%, transparent); }
 .flc-hold[data-held] > .flc-fill { width: 100%; transition: width var(--hold) linear; }
 
 

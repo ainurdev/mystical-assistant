@@ -856,19 +856,39 @@ function FinalResult({
   result,
   elapsed,
   tokens,
+  demoted,
   onAnswer,
   onWrite,
 }: {
   result: string;
   elapsed?: number;
   tokens?: number | null;
+  /** A flow card settled this turn: the card is the face, the prose waits
+   *  behind a DETAILS bar — a typed session reads as process, not chat. */
+  demoted?: boolean;
   onAnswer?: (text: string) => void;
   onWrite?: (question: string) => void;
 }) {
   const [sent, setSent] = useState<string | null>(null);
+  const [open, setOpen] = useState(!demoted);
+  // Live turns: the card lands a beat after the prose printed — its arrival is
+  // what folds the prose away.
+  useEffect(() => { if (demoted) setOpen(false); }, [demoted]);
   // The model asked in prose instead of using a question card: lift the question
   // out of the body so it reads as an ask, and offer the answers it expected.
   const ask = onAnswer ? askBack(result) : null;
+  if (demoted && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center rounded-xl border border-[var(--tg-button)]/20 px-3 py-1.5 text-[11px] tracking-[1px] text-[var(--tg-hint)] active:opacity-70"
+      >
+        <span>DETAILS // {result.split("\n").length} LINES</span>
+        <span className="ml-auto">⌄</span>
+      </button>
+    );
+  }
   return (
     <Card className="space-y-2 border border-[var(--tg-button)]/30">
       {(ask ? ask.body : result) && (
@@ -921,6 +941,15 @@ function FinalResult({
             ? ` · ${tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`} tok`
             : ""}
         </div>
+      )}
+      {demoted && (
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="w-full text-center text-[11px] tracking-[1px] text-[var(--tg-hint)] active:opacity-70"
+        >
+          FOLD ⌃
+        </button>
       )}
     </Card>
   );
@@ -1025,13 +1054,17 @@ export const RunStream = memo(function RunStream({
     events.find((e) => e.type === "result")?.result ?? "",
   ).trim();
 
+  // A turn that settled into a card leads with the card: the prose demotes to
+  // a folded DETAILS bar, so a typed session reads as process, not chat.
+  const hasCard = events.some((e) => e.type === "card");
+
   // Is the next thing the model does asking a question card?
   const asksNext = (i: number): boolean => {
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
           || t === "thinking" || t === "log" || t === "card" || t === "stage"
-          || t === "card_missing") continue;
+          || t === "retype" || t === "card_missing") continue;
       return t === "question";
     }
     return false;
@@ -1198,6 +1231,7 @@ export const RunStream = memo(function RunStream({
                   result={stripHudCard(event.result)}
                   elapsed={event.elapsed}
                   tokens={tokens}
+                  demoted={hasCard}
                   onAnswer={onAnswer}
                   onWrite={onWrite}
                 />
@@ -1260,11 +1294,15 @@ export const RunStream = memo(function RunStream({
                 <RailNode />
                 <FlowCard
                   card={event.card}
-                  stype={stype}
+                  // The flow the card was written under, not whatever the
+                  // session is now — flows change per prompt, and an old card
+                  // must keep drawing its own widgets.
+                  stype={event.stype ?? stype}
                   gated={!!event.gated}
                   // onAnswer reaches only the last finished turn — exactly when a
-                  // card is still something to act on rather than history.
-                  isCurrent={!!onAnswer}
+                  // card is still something to act on rather than history — and
+                  // the session must still be in the flow the card was written under.
+                  isCurrent={!!onAnswer && (event.stype == null || event.stype === stype)}
                   onAction={(send) => onAnswer?.(send)}
                   onApprove={() => onStageAdvance?.()}
                   onHandoff={onHandoff}
@@ -1276,6 +1314,15 @@ export const RunStream = memo(function RunStream({
               <div key={i} className="pl-3 text-[10px] tracking-[1px] text-[var(--tg-hint)]">
                 STAGE ▸ {(event.to === "done" ? "COMPLETE" : event.to).toUpperCase()}
                 {event.by === "user" ? " (approved)" : ""}
+              </div>
+            );
+          // The session changed kind here — the classifier read the prompt
+          // (auto) or the user overrode it.
+          case "retype":
+            return (
+              <div key={i} className="pl-3 text-[10px] tracking-[1px] text-[var(--tg-hint)]">
+                FLOW ▸ {(event.from ?? "chat").toUpperCase()} → {(event.to ?? "chat").toUpperCase()}
+                {event.by === "user" ? " (you)" : ""}
               </div>
             );
           case "card_missing":
