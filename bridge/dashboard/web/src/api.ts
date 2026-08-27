@@ -43,62 +43,8 @@ export interface SessionBrief {
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   tags?: string[]; // topic tags, written by the titler's existing one-shot
-  stype?: string | null; // the flow this session runs (null = a plain chat)
-  stage?: string | null; // where in that flow it is ("done" = finished)
 }
 
-export interface HudCardAction {
-  label: string;
-  send: string;
-} // a canned next move; tapping it sends `send` as the next prompt
-export interface HudCard {
-  stage: string;
-  summary: string;
-  fields: Record<string, unknown>;
-  advance?: boolean; // the model asking to move on — gated stages still wait for you
-  actions?: HudCardAction[];
-}
-export interface FlowField {
-  key: string;
-  label: string;
-  required?: boolean;
-  multiline?: boolean;
-}
-// A field's type is a rendering contract the flow declares (bridge/flow.py
-// _SHAPES): the card draws the matching widget, or falls back to text when the
-// model emitted something else.
-export interface FlowFieldShape {
-  name: string;
-  type: string;
-}
-export interface FlowStageShape {
-  id: string;
-  label: string;
-  gate: boolean;
-  fields: FlowFieldShape[];
-  /** How this stage wants to be engaged: approve | arm | evidence | triage |
-   *  annotate. "" for a stage that only wants a message. */
-  input: string;
-  /** Flows a card on this stage can open as a fresh session. */
-  handoff: string[];
-}
-// The catalog carries shape, never stage instructions: a picker needs the form
-// and the rail, not the prompts behind them (bridge/flow.py catalog()).
-export interface FlowShape {
-  stype: string;
-  label: string;
-  blurb: string;
-  source: "builtin" | "custom";
-  form: FlowField[];
-  stages: FlowStageShape[];
-}
-export interface FlowCatalog {
-  enabled: boolean; // the TYPED FLOWS switch in the AI tab
-  auto: boolean; // AUTO TYPE switch: every prompt classifies, pickers hide
-  flows: FlowShape[];
-  full?: Record<string, unknown>; // raw templates — dashboard only, for the editor
-  all?: { stype: string; label: string; source: string; disabled: boolean }[];
-}
 export interface StoreTurn {
   id: string;
   seq: number;
@@ -175,17 +121,7 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
-  // A typed session's settled turn: the parsed hud-card block (the raw fence is
-  // stripped from the text above it), the stage it ran under, and the server's
-  // record of every move between stages.
-  // stype: the flow the card was written under — absent on cards from before
-  // sessions re-typed per prompt, which render against the session's flow.
-  | { type: "card"; card: HudCard; stage: string; stype?: string; gated?: boolean }
-  | { type: "stage"; from: string | null; to: string; by: "auto" | "user" }
-  | { type: "retype"; from: string | null; to: string | null;
-      stage: string | null; by: "auto" | "user" }
-  | { type: "card_missing"; errors?: string[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
 
 export type StoreEvent = RunEvent & { seq: number; turn_id: string };
 
@@ -1027,38 +963,15 @@ export const api = {
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>
     `/local/attachment?path=${encodeURIComponent(path)}`,
-  createSession: (project: string, cwd?: string, title?: string, stype?: string) =>
+  createSession: (project: string, cwd?: string, title?: string) =>
     req<{ session: SessionBrief }>("/local/sessions", {
       method: "POST",
       body: {
         project,
         ...(cwd ? { cwd } : {}),
         ...(title ? { title } : {}),
-        ...(stype ? { stype } : {}),
       },
     }),
-  flows: () => req<FlowCatalog>("/local/flows"),
-  // Templates are the user's: save edits a built-in or defines a new type,
-  // delete drops an override (the built-in underneath resurfaces).
-  saveFlow: (stype: string, body: unknown) =>
-    req<{ ok: boolean }>(`/local/flows/${encodeURIComponent(stype)}`, { method: "POST", body }),
-  deleteFlow: (stype: string) =>
-    req<{ ok: boolean }>(`/local/flows/${encodeURIComponent(stype)}/delete`, {
-      method: "POST",
-      body: {},
-    }),
-  // The move is the server's to make — this asks for it.
-  setStage: (sid: string, action: "advance" | "back" | "set", stage?: string) =>
-    req<{ ok: boolean; stage: string }>(`/local/sessions/${encodeURIComponent(sid)}/stage`, {
-      method: "POST",
-      body: { action, ...(stage ? { stage } : {}) },
-    }),
-  // AUTO TYPE reads one message and can be wrong; this is the way out.
-  // stype null clears the session back to a plain chat.
-  retypeSession: (sid: string, stype: string | null) =>
-    req<{ ok: boolean; stype: string | null; stage: string | null }>(
-      `/local/sessions/${encodeURIComponent(sid)}/stype`,
-      { method: "POST", body: { stype } }),
   // Copy a session's whole transcript into a new one. The copy forks its claude
   // session on first run, so continuing it never appends to the original.
   duplicateSession: (id: string) =>

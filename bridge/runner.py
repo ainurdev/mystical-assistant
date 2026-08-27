@@ -23,7 +23,7 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, agents, aifeatures, config, devserver, flow, git,
+from bridge import (accounts, agents, aifeatures, config, devserver, git,
                     inspector, ladder, limits, machine, native_activity,
                     pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
@@ -97,17 +97,15 @@ def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
         pass
 
 
-def _compose_system_prompt(graph: str = "", flow_section: str = "") -> str:
-    """ASK prompt + dev-log note, then the graph pack, then the flow stage.
+def _compose_system_prompt(graph: str = "") -> str:
+    """ASK prompt + dev-log note, then the graph pack.
 
     Ordering does NOT protect the cache: the whole string lands in
     --append-system-prompt, which sits after the last cache breakpoint, so any
     change re-writes all of it. What protects the cache is only sending the
-    volatile packs once per session — see _base_cmd. The flow section is the
-    exception that pays for itself: it is stable per stage, so it re-writes
-    only when the session actually moves on (bridge/flow.py)."""
+    volatile packs once per session — see _base_cmd."""
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE,
-                         graph.strip(), flow_section.strip()) if p]
+                         graph.strip()) if p]
     return "\n\n".join(parts)
 
 
@@ -283,7 +281,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               claude_session_id: str | None = None, cwd: str | None = None,
               skip_pack: bool = False, new_session: bool = False,
               fork: bool = False, disabled_tools: list[str] | None = None,
-              autocompact: str | None = None, flow_section: str = "") -> list[str]:
+              autocompact: str | None = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -345,7 +343,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         graph = _graph_pack_for(chat_id, cwd)
         if claude_session_id:
             _packed_sessions.add(claude_session_id)
-    cmd += ["--append-system-prompt", _compose_system_prompt(graph, flow_section)]
+    cmd += ["--append-system-prompt", _compose_system_prompt(graph)]
     if skip_pack and not (permission_mode and not interactive):
         # Internal one-shots (titler/commit-msg) are pure text transforms
         # whose prompts embed untrusted conversation text. No tools and no
@@ -409,11 +407,11 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  model: str | None = None, skip_pack: bool = False,
                  permission_mode: str | None = None,
                  ponytail: str | None = None, new_session: bool = False,
-                 fork: bool = False, flow_section: str = ""):
+                 fork: bool = False):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
                     cwd=cwd, model=model, skip_pack=skip_pack,
                     permission_mode=permission_mode, new_session=new_session,
-                    fork=fork, flow_section=flow_section)
+                    fork=fork)
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
@@ -450,11 +448,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
-        from bridge import flowtype  # local import: runner<->* cycle
-        flowtype.check(session, prompt)   # blocking; mutates session on a move
         result, sid, cost, is_error = run_blocking(
-            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
-            flow_section=flow.section_for(session))
+            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork)
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,
@@ -491,25 +486,11 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         if not is_error:
             _graph_refresh_after_turn(chat_id, None)
         footer = f"\n\n— {int(time.time() - started)}s"
-        # A typed session's card has nowhere to render here, so the chat gets the
-        # prose with the card as plain sections under it — and, when a gated
-        # stage is asking to move, the button that approves it.
-        body = result or "(no result)"
-        card = flow.parse_card(body) if session.get("stype") else None
-        approve_kb = None
-        if card:
-            fresh = store.get_session(session["id"]) or session
-            f = flow.get_flow(fresh.get("stype"))
-            stage = flow.stage_by_id(f, fresh.get("stage")) if f else None
-            body = (flow.strip_card(body) + "\n\n" + flow.render_card(card)).strip()
-            if stage and stage.get("gate") and card.get("advance") is True:
-                approve_kb = {"inline_keyboard": [[
-                    {"text": "APPROVE ▸", "callback_data": f"flowadv:{session['id']}"}]]}
-        answer = ("⚠️ " if is_error else "") + body + footer
+        answer = ("⚠️ " if is_error else "") + (result or "(no result)") + footer
         # A button under every reply would be noise; under one that errored or is
         # too long to read in a chat bubble, it's the way out.
-        kb = approve_kb or (_session_kb(chat_id, session["id"], "🛠 Open session")
-                            if is_error or len(answer) > config.TG_MAX - 512 else None)
+        kb = (_session_kb(chat_id, session["id"], "🛠 Open session")
+              if is_error or len(answer) > config.TG_MAX - 512 else None)
         send(chat_id, answer, kb)
         if not is_error:
             titler.kick(chat_id, session, job_id)   # retry if the start call missed
@@ -535,8 +516,6 @@ class Job:
         self.resume_id: str | None = None         # claude session id for this run
         self.new_session = False                  # True -> --session-id, else --resume
         self.fork = False                # duplicated session: --resume + --fork-session
-        self.flow_stage: str | None = None  # stage this turn was composed under
-        self.flow_stype: str | None = None  # and the flow that stage belongs to
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
         # What this turn is waiting on before its first token, or None once the
@@ -1639,27 +1618,12 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             _consume_free_agent(job, prompt, cwd)
             return
         full_prompt = _with_images(prompt, image_paths)
-        fsess = (store.get_session(job.store_session_id)
-                 if job.store_session_id else None)
-        if fsess:
-            # Every prompt is classified in front of its turn, so the turn
-            # composes under the flow this prompt actually opens. Blocking is
-            # the point; the boot label keeps the wait legible.
-            from bridge import flowtype  # local import: runner<->* cycle
-            job.boot = "deciding what kind of work this is"
-            flowtype.check(fsess, prompt)
         # The gap before the first token is two waits, and an empty stream makes
         # both read as a hang. Name whichever one we are actually in: the health
         # check only blocks while the cache is still cold (see toolsets.warm).
         from bridge import toolsets  # local: toolsets imports runner
         job.boot = ("checking configured MCP servers"
                     if job.store_session_id and not toolsets.ready() else None)
-        flow_section = flow.section_for(fsess) if fsess else ""
-        # Stamp what this turn was composed under; flow.after_turn validates
-        # against this, so a manual move landing mid-turn never gets the
-        # in-flight turn nudged for a card it was never asked to produce.
-        job.flow_stage = fsess.get("stage") if flow_section else None
-        job.flow_stype = fsess.get("stype") if flow_section else None
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
@@ -1667,8 +1631,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         disabled_tools=store.get_disabled_tools(job.store_session_id)
                         if job.store_session_id else None,
                         autocompact=store.get_autocompact(job.store_session_id)
-                        if job.store_session_id else None,
-                        flow_section=flow_section)
+                        if job.store_session_id else None)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1806,9 +1769,6 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # a nudge that would run against the same exhausted account.
             from bridge import goals  # local import: runner<->* cycle
             resumed = goals.continue_after_turn(job, model, effort) or resumed
-        # A typed session settles its turn: card out, stage stamped, ungated
-        # moves applied. Independent of resumption, so it runs either way.
-        flow.after_turn(job)
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
@@ -1887,10 +1847,7 @@ def _finalize_run_context(session: dict, project_dir: str, *,
         cwd = project_dir
     if not session.get("cwd"):
         store.set_cwd(session["id"], cwd)
-    # A stage may tighten or loosen the posture for its own turns. No built-in
-    # flow does (see flow.permission_for) — only a custom one.
-    return session, cwd, flow.permission_for(
-        session, permission_mode or session.get("permission_mode"))
+    return session, cwd, permission_mode or session.get("permission_mode")
 
 
 def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],

@@ -5,8 +5,6 @@ import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
 import { surfaceFor, projectTint } from "../../lib/surfaces";
 import { useLoadingPhase } from "../../lib/loadingPhase";
-import { useFlows } from "../../lib/flows";
-import { StageRail, TypePicker } from "../StageRail";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
 import type { OpenFile } from "../Markdown";
@@ -15,8 +13,6 @@ import { NextView } from "../NextView";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
-import { Canvas, FlowMap, PanelPin, PinPicker } from "./Canvas";
-import { scopeKey, type PanelTab } from "../RightPanel";
 
 /** Height of the sticky prompt bar. The observer insets the scroller's top by
  *  it, and `scroll-mt-[44px]` on the transcript's anchors clears it. */
@@ -175,9 +171,9 @@ export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking, boot,
-  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, onStage, onRetype, onHandoff,
+  loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, focus, onFocus, panels, pinned, onPin,
+  onOpenDesign,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -220,33 +216,15 @@ export function Terminal({
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
   /** Move a typed session's stage — the rail's jumps and a gate's APPROVE. */
-  onStage?: (action: "advance" | "back" | "set", stage?: string) => void;
-  onRetype?: (stype: string | null) => void;
   /** Open a fresh typed session from a report card (PROBE -> FIX, and friends). */
-  onHandoff?: (stype: string, prompt: string) => void;
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;
-  /** CANVAS focus mode: the board alone, both sidebars folded away. Owned by
-   *  App, which is the only thing that can hide them. */
-  focus?: boolean;
-  onFocus?: () => void;
-  /** The right sidebar's tabs, offered to the board: any of them can stand
-   *  beside the conversation as a pinned card. `pinned` holds the ids, in the
-   *  order they were pinned; `onPin` toggles one. */
-  panels?: PanelTab[];
-  pinned?: string[];
-  onPin?: (id: string) => void;
 }) {
-  const flows = useFlows();
-  const flowShape = flows.find((f) => f.stype === selected?.stype) ?? null;
   const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
   const projectLabel = basename(sessionProject);
-  // CANVAS is the same transcript stood on a board, so everything the chat view
-  // does — the empty state, the session-swap animations, the header's own
-  // controls — has to hold there too. Only HIST and NEXT are other content.
-  const isChat = view === "chat" || view === "canvas";
+  const isChat = view === "chat";
   const empty = isChat && turns.length === 0;
 
   // The sticky peek names the turn you are *inside*: the last prompt that has
@@ -353,9 +331,7 @@ export function Terminal({
   const body = (
     <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
-      {/* data-canvas-scroll: on the board, a plain wheel here is still a scroll.
-          Canvas reads it to know not to pan out from under someone reading. */}
-      <div ref={scrollRef} data-canvas-scroll className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
+      <div ref={scrollRef} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
         {/* Top padding clears the bar so the first prompt starts below
             it: parked at the top there is nothing under the bar, so no
             bar — the transcript opens on its first message, not on a
@@ -369,7 +345,7 @@ export function Terminal({
           ) : empty && loading ? null : empty ? (
             <FreshState project={sessionProject} />
           ) : (
-            <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} onStageAdvance={onStage ? () => onStage("advance") : undefined} stage={selected?.stage ?? null} stype={selected?.stype ?? null} onHandoff={onHandoff} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
+            <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
           )}
         </div>
       </div>
@@ -427,31 +403,6 @@ export function Terminal({
     </div>
   );
 
-  // What stands beside the conversation on the board: the session's own flow,
-  // then whichever sidebar panels have been pinned — in pin order, not tab
-  // order, because the order you pinned them in is the one you meant. A typed
-  // session has a flow worth drawing; an untyped one has nothing to map, so it
-  // gets the picker alone rather than an empty frame.
-  const pinnedPanels = (pinned ?? [])
-    .map((id) => panels?.find((t) => t.id === id))
-    .filter((t): t is PanelTab => !!t);
-  const pins = (
-    <>
-      {flowShape && (
-        <FlowMap stages={flowShape.stages} current={selected?.stage ?? null} turnCount={turns.length} />
-      )}
-      {/* Above the pins, not below them: pinning appends, so a picker underneath
-          would walk down the board and off the screen as you used it. */}
-      {panels && onPin && <PinPicker tabs={panels} pinned={pinned ?? []} onPin={onPin} />}
-      {/* Keyed by scope like the sidebar's own body, so a pinned worktree panel
-          remounts when you open a session in another tree instead of showing
-          the last one's files under the new session's header. */}
-      {pinnedPanels.map((t) => (
-        <PanelPin key={scopeKey(t, sessionProject, branch)} tab={t} />
-      ))}
-    </>
-  );
-
   // The session's own header. In CHAT it sits above the transcript; on the
   // board it floats over it, so the grid runs edge to edge underneath.
   const header = (
@@ -487,22 +438,6 @@ export function Terminal({
             {selected?.title || "new session"}
           </span>
         </div>
-        {/* Where a typed session stands. Its own line: the row above is one
-            line of ellipsised text, and a rail wrapped inside it stacked
-            vertically and pushed the title out. Untyped sessions have no
-            rail — there is nothing to stand in. */}
-        {isChat && selected && onRetype && flows.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <TypePicker flows={flows} current={selected.stype ?? null} onRetype={onRetype} />
-            {flowShape && (
-              <StageRail
-                stages={flowShape.stages}
-                current={selected?.stage ?? null}
-                onSet={(stage) => onStage?.("set", stage)}
-              />
-            )}
-          </div>
-        )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
         {isChat && onOpenDesign && <DesignBtn onClick={onOpenDesign} />}
@@ -527,8 +462,8 @@ export function Terminal({
       // already say where it starts, and a border here would draw them twice.
       style={{ background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
-      {view !== "canvas" && header}
-      {view !== "canvas" && <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />}
+      {header}
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
@@ -538,8 +473,6 @@ export function Terminal({
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
           <NextView onStart={onStartNext} />
         </div>
-      ) : view === "canvas" ? (
-        <Canvas chat={body} pins={pins} footer={composer} header={header} focus={focus} onFocus={onFocus} />
       ) : (
         <>
           {body}

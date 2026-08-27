@@ -364,10 +364,6 @@ export interface HudSettings {
   // sound, or "off". An event missing here has never been assigned and rings
   // pushTone, so an install that never opens this panel sounds unchanged.
   pushSounds: Partial<Record<PushEvent, SoundChoice>>;
-  // Which right-sidebar panels stand on the CANVAS board, in pin order. Ids
-  // are RightPanel tab ids; one that no longer exists is dropped when the pins
-  // are matched against the live tab list, so no migration is needed here.
-  canvasPins: string[];
 }
 
 const KEY = "hud-settings";
@@ -379,7 +375,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, canvasPins: [],
+  pushTone: "blip", pushVolume: 0.6, pushSounds: {},
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -489,7 +485,6 @@ export function loadSettings(): HudSettings {
         pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
         pushVolume: clamp01(p.pushVolume, 0.6),
         pushSounds: soundChoices(p.pushSounds),
-        canvasPins: Array.isArray(p.canvasPins) ? p.canvasPins.filter((x) => typeof x === "string") : [],
       };
     }
   } catch {

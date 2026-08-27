@@ -12,10 +12,8 @@ import { SteerIcon } from "./Composer";
 import { Markdown, type OpenFile } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
-import { FlowCard } from "./FlowCard";
 import { ImageLightbox, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
-import { stripHudCard } from "../lib/hudcard";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import {
@@ -1445,10 +1443,6 @@ export const RunStream = memo(function RunStream({
   onQuote,
   onOpenFile,
   onAnswer,
-  onStageAdvance,
-  stage = null,
-  stype = null,
-  onHandoff,
   ended = false,
   showAll = false,
   boot = null,
@@ -1469,18 +1463,6 @@ export const RunStream = memo(function RunStream({
   /** Send a reply to a question the model asked in prose. Only the last, finished
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
-  /** Approve a gated stage's requested move. Server-owned: the card can ask,
-   *  only this puts the session there. */
-  onStageAdvance?: () => void;
-  /** The session's current stage, so a card whose stage has already been left
-   *  reads as history rather than offering an approval that would move the
-   *  wrong stage on. */
-  stage?: string | null;
-  /** The session's flow: what names each card field's type, and so which widget
-   *  draws it. */
-  stype?: string | null;
-  /** Open a fresh typed session from a report card. */
-  onHandoff?: (stype: string, prompt: string) => void;
   ended?: boolean;
   /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
    *  browser's find is about to look for. */
@@ -1538,14 +1520,7 @@ export const RunStream = memo(function RunStream({
   // as the run's result — so the same words used to print twice, the second time
   // in the RESULT box. Only the box is drawn. A native session emits no result
   // event, so its final text keeps rendering as text.
-  const resultText = stripHudCard(
-    events.find((e) => e.type === "result")?.result ?? "",
-  ).trim();
-
-  // A turn that settled into a card leads with the card: the prose demotes to
-  // a folded DETAILS bar under it, so a typed session reads as process, not
-  // chat. The card is the abstract; the box is still one tap away.
-  const hasCard = events.some((e) => e.type === "card");
+  const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
 
   // A turn that ends on an AskUserQuestion emits no result event, so the prose
   // explaining the card used to render as bare text while every other answer got
@@ -1554,8 +1529,7 @@ export const RunStream = memo(function RunStream({
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking" || t === "log" || t === "card" || t === "stage"
-          || t === "retype" || t === "card_missing") continue;
+          || t === "thinking" || t === "log") continue;
       return t === "question";
     }
     return false;
@@ -1582,7 +1556,7 @@ export const RunStream = memo(function RunStream({
         const i = k + from;
         switch (event.type) {
           case "text": {
-            const text = stripHudCard(event.text);
+            const text = event.text;
             if (!text) return null;
             if (resultText && text.trim() === resultText) return null;
             if (asksNext(i))
@@ -1777,11 +1751,10 @@ export const RunStream = memo(function RunStream({
             return (
               <FinalResult
                 key={i}
-                result={stripHudCard(event.result)}
+                result={event.result}
                 elapsed={event.elapsed}
                 tokens={tokens}
                 isError={event.is_error}
-                demoted={hasCard}
                 animate={animate}
                 idKey={`${turnId}:${i}`}
                 onAnswer={onAnswer}
@@ -1842,52 +1815,6 @@ export const RunStream = memo(function RunStream({
                 <span>Stopped — send a message to continue.</span>
               </div>
             );
-          case "card":
-            return (
-              <FlowCard
-                key={i}
-                // The flow the card was written under, not whatever the session
-                // is now — flows change per prompt, and an old card must keep
-                // drawing its own widgets. Old events carry no stype.
-                stype={event.stype ?? stype}
-                card={event.card}
-                gated={!!event.gated}
-                // All have to hold: the turn is the last finished one (onAnswer
-                // reaches no other), and the session still stands in the flow
-                // and on the stage the card was written under.
-                isCurrent={!!onAnswer && event.stage === stage
-                  && (event.stype == null || event.stype === stype)}
-                onAction={(send) => onAnswer?.(send)}
-                onApprove={() => onStageAdvance?.()}
-                onOpenFile={onOpenFile}
-                onHandoff={onHandoff}
-              />
-            );
-          case "stage":
-            return (
-              <div
-                key={i}
-                className="ml-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2"
-              >
-                STAGE ▸ {(event.to === "done" ? "COMPLETE" : event.to).toUpperCase()}
-                {event.by === "user" ? " (approved)" : ""}
-              </div>
-            );
-          // The session changed kind here — the classifier read the prompt
-          // (auto) or the user overrode it. The one visible seam between one
-          // piece of work and the next.
-          case "retype":
-            return (
-              <div
-                key={i}
-                className="ml-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2"
-              >
-                FLOW ▸ {(event.from ?? "chat").toUpperCase()} → {(event.to ?? "chat").toUpperCase()}
-                {event.by === "user" ? " (you)" : ""}
-              </div>
-            );
-          // The nudge that follows says it better than a broken-card row would.
-          case "card_missing":
           case "permission_resolved":
           case "question_answered":
             return null; // shown inside the relevant card
@@ -1981,7 +1908,6 @@ function FinalResult({
   elapsed,
   tokens,
   isError,
-  demoted,
   animate,
   idKey,
   label,
@@ -1992,9 +1918,6 @@ function FinalResult({
   elapsed?: number;
   tokens?: number | null;
   isError?: boolean;
-  /** A flow card settled this turn: the card is the face, this box folds to a
-   *  slim DETAILS bar under it — the prose is one tap away, never the lead. */
-  demoted?: boolean;
   animate: boolean;
   idKey: string;
   /** Overrides "RESULT // OK" — the accent-toned box drawn above a question card. */
@@ -2010,11 +1933,8 @@ function FinalResult({
   const body = ask ? ask.body : result;
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
-  // the session arrive folded; a demoted one arrives closed however short.
-  const [open, setOpen] = useState(demoted ? false : flash || lines <= RESULT_FOLD_LINES);
-  // Live turns: the card lands a beat after the prose. The box was open while
-  // the words printed; the card arriving is what folds it away.
-  useEffect(() => { if (demoted) setOpen(false); }, [demoted]);
+  // the session arrive folded.
+  const [open, setOpen] = useState(flash || lines <= RESULT_FOLD_LINES);
   return (
     <div className="relative my-2 pl-[18px]">
       <RailNode />
@@ -2045,9 +1965,7 @@ function FinalResult({
             <CopyBtn text={result} title="copy result" />
           </span>
         </div>
-        {/* Demoted + closed hides the body outright: the card above already
-            says what happened, so even a 380px preview would be chat again. */}
-        {body && (open || !demoted) && (
+        {body && (
           <div className="relative px-3 py-2.5">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
               <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
@@ -2062,7 +1980,7 @@ function FinalResult({
           </div>
         )}
         {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
-        {body && (lines > RESULT_FOLD_LINES || demoted) && (
+        {body && lines > RESULT_FOLD_LINES && (
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -2070,7 +1988,7 @@ function FinalResult({
             style={{ borderColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
           >
             <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
-            {open ? "FOLD" : demoted ? `DETAILS // ${lines} LINES` : `SHOW ALL // ${lines} LINES`}
+            {open ? "FOLD" : `SHOW ALL // ${lines} LINES`}
           </button>
         )}
       </div>

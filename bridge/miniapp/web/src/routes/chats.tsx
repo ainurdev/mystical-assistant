@@ -179,8 +179,6 @@ function ChatsPage() {
                     {s.title || "New chat"}
                     {s.archived ? " (archived)" : ""}
                   </span>
-                  {/* No kind-of-work chip: a session runs many flows over its
-                      life (one per prompt), so a tag would just be its last. */}
                   <SurfaceBadge origin={s.origin} />
                 </div>
                 <div className="flex gap-1.5 text-[11px] text-[var(--tg-hint)]">

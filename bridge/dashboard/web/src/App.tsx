@@ -55,8 +55,6 @@ import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
-import { StageHint } from "./components/StageHint";
-import { useFlows } from "./lib/flows";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Strip } from "./components/hud/Strip";
@@ -213,14 +211,8 @@ export function App() {
   const [boot, setBoot] = useState<string | null>(null);
   const [view, setView] = useState<View>("chat");
   // "Show me the conversation" — from history, a jump, or a session you just
-  // opened. CANVAS is a way of reading that same conversation, so landing there
-  // stays there; only HIST and NEXT are somewhere else to come back from.
-  const toChat = () => setView((v) => (v === "canvas" ? v : "chat"));
-  // Focus mode is a way of looking at the board, so it only applies there:
-  // leaving CANVAS brings the sidebars back on its own, and there is no way
-  // to end up in CHAT with both panels gone and no switch to bring them back.
-  const [focus, setFocus] = useState(false);
-  const focused = focus && view === "canvas";
+  // opened. HIST and NEXT are somewhere else to come back from.
+  const toChat = () => setView("chat");
   // Which model-spending extras are on: each one owns a tab and a palette entry
   // that don't exist while it's off.
   const ai = useAiFeatures();
@@ -1285,47 +1277,6 @@ export function App() {
     } catch { setLoadingSession(false); }
   }
 
-  /** Start a session that knows what it is for: the type picks the flow, the
-   *  form's fields are its first prompt. */
-  async function typedSession(project: string, stype: string, prompt: string) {
-    openBlank();
-    try {
-      const { session } = await api.createSession(project, undefined, undefined, stype);
-      setSessions((prev) => [session, ...prev]);
-      openSession(session.id);
-      toChat();
-      await send(prompt, [], { sessionId: session.id, project, force: true });
-    } catch (e) {
-      setLoadingSession(false);
-      notify("error", (e as Error).message);
-    }
-  }
-
-  /** Approve a gated stage, or move by hand from the rail. The server owns the
-   *  move; this asks for it and takes the answer it gives back. */
-  async function setStage(action: "advance" | "back" | "set", stage?: string) {
-    if (!sessionId) return;
-    try {
-      const r = await api.setStage(sessionId, action, stage);
-      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, stage: r.stage } : s)));
-    } catch (e) {
-      notify("error", (e as Error).message);
-    }
-  }
-
-  /** The way out of a wrong AUTO TYPE verdict: re-type the session, or clear
-   *  it back to a plain chat. The new flow restarts at its first stage. */
-  async function retypeSession(stype: string | null) {
-    if (!sessionId) return;
-    try {
-      const r = await api.retypeSession(sessionId, stype);
-      setSessions((prev) => prev.map((s) =>
-        (s.id === sessionId ? { ...s, stype: r.stype, stage: r.stage } : s)));
-    } catch (e) {
-      notify("error", (e as Error).message);
-    }
-  }
-
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
                                  firstPrompt?: string) {
     openBlank();
@@ -1448,11 +1399,6 @@ export function App() {
 
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
-  const flowCatalog = useFlows();
-  // Where the open session stands, as the flow declared it — what the strip
-  // above the prompt box reads to say what this stage wants from you.
-  const stageShape = flowCatalog.find((f) => f.stype === selected?.stype)
-    ?.stages.find((st) => st.id === selected?.stage) ?? null;
   const sessionBranch = selected?.branch;
 
   // Footer git state for that tree. Same 10s cadence as the project badges;
@@ -1546,15 +1492,6 @@ export function App() {
     },
     { id: "queue", label: "Queue", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];
-
-  // Stand a sidebar panel on the CANVAS board, or take it back. Appended, not
-  // sorted: the gutter shows them in the order they were pinned, which is the
-  // order they were wanted in.
-  const togglePanelPin = (id: string) => patchSettings({
-    canvasPins: settings.canvasPins.includes(id)
-      ? settings.canvasPins.filter((x) => x !== id)
-      : [...settings.canvasPins, id],
-  });
 
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
   // No usage payload (no token / upstream down long enough that the bridge's
@@ -1980,10 +1917,10 @@ export function App() {
                 px and squeezing it. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
-              style={{ gridTemplateColumns: focused ? "minmax(0,1fr)" : `clamp(260px,22vw,340px) minmax(0,1fr) ${settings.rightOpen ? "calc(clamp(230px,20vw,296px) + 44px)" : "44px"}`, minWidth: 0 }}
+              style={{ gridTemplateColumns: `clamp(260px,22vw,340px) minmax(0,1fr) ${settings.rightOpen ? "calc(clamp(230px,20vw,296px) + 44px)" : "44px"}`, minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
-              <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)", ...(focused ? { display: "none" } : null) }}>
+              <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
                 <SessionsPanel
                   sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
@@ -1994,7 +1931,6 @@ export function App() {
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
-                  onTypedSession={(rel, stype, prompt) => void typedSession(rel, stype, prompt)}
                 />
               </div>
 
@@ -2026,16 +1962,8 @@ export function App() {
                     void api.dismissAsk(sessionId);
                   } else void send(text, []);
                 }}
-                onStage={(action, stage) => void setStage(action, stage)}
-                onRetype={(stype) => void retypeSession(stype)}
-                // A report card opening as work: same path as starting a typed
-                // session by hand, with the card restated as the first message.
-                onHandoff={(stype, prompt) =>
-                  sessionProject && void typedSession(sessionProject, stype, prompt)}
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
-                focus={focused} onFocus={() => setFocus((f) => !f)}
-                panels={rightTabs} pinned={settings.canvasPins} onPin={togglePanelPin}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2053,10 +1981,6 @@ export function App() {
                         onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
-                    <StageHint
-                      stage={stageShape}
-                      onPaste={(text) => setInject((p) => ({ text, nonce: p.nonce + 1 }))}
-                    />
                     <Composer
                       pills={
                         // Inside the composer's box, not on the bare panel above
@@ -2092,14 +2016,11 @@ export function App() {
 
               {/* RIGHT — activity bar of icons; clicking the active one collapses
                   the body and unmounts the panel (which stops its polling). */}
-              {/* display:contents keeps RightPanel itself the grid item. */}
-              <div style={{ display: focused ? "none" : "contents" }}>
-                <RightPanel
-                  tabs={rightTabs} activeId={settings.rightTab}
-                  open={settings.rightOpen} onTab={pickRightTab}
-                  project={sessionProject} branch={sessionBranch}
-                />
-              </div>
+              <RightPanel
+                tabs={rightTabs} activeId={settings.rightTab}
+                open={settings.rightOpen} onTab={pickRightTab}
+                project={sessionProject} branch={sessionBranch}
+              />
             </div>
 
             <StatusBar

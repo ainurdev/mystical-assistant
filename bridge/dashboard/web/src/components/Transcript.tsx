@@ -122,7 +122,7 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, isActive, isLast, promptIdx, hud, liveTurns, showAll, boot,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, onStageAdvance, stage, stype, onHandoff,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer,
 }: {
   turn: Turn;
   isActive: boolean;
@@ -141,12 +141,6 @@ function TurnBlock({
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
-  onStageAdvance?: () => void;
-  /** The open session's current stage (typed sessions only). */
-  stage?: string | null;
-  /** The open session's flow, which names its cards' field types. */
-  stype?: string | null;
-  onHandoff?: (stype: string, prompt: string) => void;
 }) {
   const working = isActive && turn.status === "running" && turn.pending.length === 0;
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
@@ -186,10 +180,6 @@ function TurnBlock({
               // Only the last finished turn can be replied to — a chip on an
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
-              onStageAdvance={isLast ? onStageAdvance : undefined}
-              stage={stage}
-              stype={stype}
-              onHandoff={isLast ? onHandoff : undefined}
               ended={turn.status !== "running"}
               showAll={showAll}
             />
@@ -229,10 +219,6 @@ export function Transcript({
   onQuote,
   onOpenFile,
   onAnswer,
-  onStageAdvance,
-  stage,
-  stype,
-  onHandoff,
   hasOlder,
   olderLoading,
   onLoadOlder,
@@ -254,12 +240,6 @@ export function Transcript({
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
-  onStageAdvance?: () => void;
-  /** The open session's current stage (typed sessions only). */
-  stage?: string | null;
-  /** The open session's flow, which names its cards' field types. */
-  stype?: string | null;
-  onHandoff?: (stype: string, prompt: string) => void;
   hasOlder?: boolean;
   olderLoading?: boolean;
   onLoadOlder?: () => void;
@@ -423,10 +403,6 @@ export function Transcript({
         onQuote={onQuote}
         onOpenFile={onOpenFile}
         onAnswer={onAnswer}
-        onStageAdvance={onStageAdvance}
-        stage={stage}
-        stype={stype}
-        onHandoff={onHandoff}
       />
     ) : (
       <WorkingIndicator hud={hud} />

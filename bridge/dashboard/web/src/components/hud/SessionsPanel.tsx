@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { FlowShape, SessionBrief, SessionStatus } from "../../api";
+import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
-import { useFlows, useFlowsAuto } from "../../lib/flows";
 import { Rows2, Rows4, Tag, TagX } from "lucide-react";
 import type { ProjectGroup } from "./ProjectsPanel";
 
@@ -35,25 +34,12 @@ interface Props {
   onAnalyze: (rel: string) => void;
   onNewSession: (rel: string) => void;
   /** Start a typed session: the form's fields, already composed into a prompt. */
-  onTypedSession?: (rel: string, stype: string, prompt: string) => void;
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
 }
 
 type OrderMode = "recent" | "alpha" | "custom";
 
 const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
-
-/** The opening prompt of a typed session — mirrors flow.compose_first_prompt in
- *  bridge/flow.py, which the bot uses for the same job. Empty optional fields
- *  are dropped, so skipping one costs nothing. */
-export function composeFirstPrompt(f: FlowShape, values: Record<string, string>): string {
-  const lines = [`[${f.label}]`];
-  for (const field of f.form) {
-    const v = (values[field.key] ?? "").trim();
-    if (v) lines.push(`${field.label}: ${v}`);
-  }
-  return lines.join("\n");
-}
 
 const ORDER_LABEL: Record<OrderMode, string> = {
   recent: "RECENTLY USED", alpha: "A → Z", custom: "CUSTOM",
@@ -177,9 +163,6 @@ function SessionRow({
               <span style={{ color: "var(--txd)", maxWidth: 96, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⧉{s.worktree}</span>
             )}
           </span>
-          {/* No kind-of-work chip: a session runs many flows over its life
-              (one per prompt), so a single tag here would just be whatever it
-              did last. The open chat's StageRail names the current flow. */}
           {showTags && (s.tags ?? []).slice(0, 2).map((t) => (
             <span
               key={t}
@@ -286,7 +269,6 @@ export function SessionsPanel(props: Props) {
   const {
     sessions, groups, status, done, flags, pins, selectedSessionId, activeProject, booting,
     onTogglePin, onSelectSession, onAnalyze, onNewSession, onWorktreeSession,
-  onTypedSession,
   } = props;
 
   // New-session form.
@@ -297,10 +279,6 @@ export function SessionsPanel(props: Props) {
   const [nsBranch, setNsBranch] = useState("");
   const [nsNewOpen, setNsNewOpen] = useState(false);
   const [nsNewBranch, setNsNewBranch] = useState("");
-  // The flow to start in, and its start form. null = CHAT, which is what every
-  // session was before this existed.
-  const [nsType, setNsType] = useState<string | null>(null);
-  const [nsFields, setNsFields] = useState<Record<string, string>>({});
   const [nsParent, setNsParent] = useState("");
   const [nsScoped, setNsScoped] = useState(false); // opened from a project header — project is fixed
   const [projQ, setProjQ] = useState("");
@@ -320,8 +298,6 @@ export function SessionsPanel(props: Props) {
   // Projects you collapsed with the caret. ponytail: not persisted — a collapse
   // is a "get this out of my way right now", not a preference.
   const [shut, setShut] = useState<Set<string>>(new Set());
-  const flows = useFlows();
-  const flowsAuto = useFlowsAuto();
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [sessionQ, setSessionQ] = useState("");
   // Tags off — rows and the filter strip both go. Stored inverted so the default
@@ -475,7 +451,6 @@ export function SessionsPanel(props: Props) {
   function resetForm() {
     setBranches([]); setCurrent(""); setNsBranch(""); setNsParent("");
     setNsNewOpen(false); setNsNewBranch(""); setBranchQ("");
-    setNsType(null); setNsFields({});
   }
 
   function toggleForm() {
@@ -506,15 +481,6 @@ export function SessionsPanel(props: Props) {
   function start() {
     if (!nsProject) return;
     const nb = nsNewOpen ? nsNewBranch.trim().replace(/\s+/g, "-") : "";
-    const typed = flows.find((f) => f.stype === nsType);
-    // A type owns the whole start: the form becomes the first prompt, so the
-    // session opens already knowing what it is for.
-    if (typed && onTypedSession) {
-      if (typed.form.some((f) => f.required && !(nsFields[f.key] ?? "").trim())) return;
-      onTypedSession(nsProject, typed.stype, composeFirstPrompt(typed, nsFields));
-      setNsOpen(false); setNsNewOpen(false); setNsNewBranch("");
-      return;
-    }
     // Same routing as the old per-project picker: new branch → create worktree,
     // other existing branch → attach worktree, current branch → plain session.
     if (nb) onWorktreeSession(nsProject, nb, true, nsParent || undefined);
@@ -539,8 +505,6 @@ export function SessionsPanel(props: Props) {
       onAnalyzeProj={() => onAnalyze(s.project)}
     />
   );
-
-  const nsTypeShape = flows.find((f) => f.stype === nsType) ?? null;
 
   // Form pickers: searchable, and long lists stay collapsed until asked for.
   const q = projQ.trim().toLowerCase();
@@ -631,62 +595,6 @@ export function SessionsPanel(props: Props) {
         )}
       </div>
       </>)}
-      {/* AUTO TYPE on: no picker, no forms — every prompt classifies itself
-          (bridge/flowtype.py) and the session follows its work. */}
-      {flows.length > 0 && !flowsAuto && (<>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "12px 0 6px" }}>
-        <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>TYPE</span>
-        {nsTypeShape && (
-          <span style={{ fontSize: "var(--t95)", color: "var(--txm)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            · {nsTypeShape.blurb}
-          </span>
-        )}
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {[null, ...flows].map((f) => {
-          const st = f?.stype ?? null;
-          const on = st === nsType;
-          const hov = chipHov === `t:${st ?? "chat"}`;
-          return (
-            <button
-              key={st ?? "chat"} onClick={() => { setNsType(st); setNsFields({}); }}
-              onMouseEnter={() => setChipHov(`t:${st ?? "chat"}`)} onMouseLeave={() => setChipHov("")}
-              title={f ? f.blurb : "a plain chat — no stages, no card"}
-              style={{
-                appearance: "none", cursor: "pointer",
-                border: `1px solid ${on || hov ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
-                background: on ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "color-mix(in srgb, var(--panel2) 40%, transparent)",
-                color: on ? "var(--txb)" : "var(--txm)",
-                fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", letterSpacing: 1, padding: "4px 9px",
-              }}
-            >{f?.label ?? "CHAT"}</button>
-          );
-        })}
-      </div>
-      {nsTypeShape?.form.map((f) => (
-        <div key={f.key} style={{ marginTop: 8 }}>
-          <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 4 }}>
-            {f.label}{f.required ? " *" : ""}
-          </div>
-          {f.multiline ? (
-            <textarea
-              value={nsFields[f.key] ?? ""} onChange={(e) => setNsFields((v) => ({ ...v, [f.key]: e.target.value }))}
-              rows={2}
-              style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "6px 8px" }}
-            />
-          ) : (
-            <input
-              value={nsFields[f.key] ?? ""} onChange={(e) => setNsFields((v) => ({ ...v, [f.key]: e.target.value }))}
-              onKeyDown={(e) => { if (e.key === "Enter") start(); }}
-              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "6px 8px" }}
-            />
-          )}
-        </div>
-      ))}
-      </>)}
-      {/* A typed session starts in the project's own checkout: its stages are
-          the structure, a worktree is a separate decision. */}
-      {!nsType && (<>
       <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "12px 0 6px" }}>
         <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>WORKTREE</span>
         {branches.length > 5 && (
@@ -743,7 +651,6 @@ export function SessionsPanel(props: Props) {
           />
         </>
       )}
-      </>)}
       <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
         <button
           onClick={start}
@@ -831,8 +738,6 @@ export function SessionsPanel(props: Props) {
             >/</span>
           )}
         </div>
-        {/* No filter by kind of work: a session's flows change per prompt, so
-            "show only FIX" would key on whatever each session did last. */}
         {/* Tag filter. Only appears once something is tagged, so an untagged
             machine never pays for a control it can't use. */}
         {!noTags && allTags.length > 0 && (

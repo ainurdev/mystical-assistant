@@ -284,8 +284,8 @@ export const asIntake = (v: unknown): Question[] | null =>
     };
   });
 
-/** Any card value as one line — the text fallback, and what the handoff prompt
- *  and the bot's render_card both need. Mirrors flow._flat in Python. */
+/** Any widget value as one line — the text fallback when a value isn't the
+ *  shape its type promised. */
 export function flatten(v: unknown): string {
   if (typeof v === "boolean") return v ? "✓" : "✗";
   if (v === null || v === undefined) return "—";
@@ -297,21 +297,6 @@ export function flatten(v: unknown): string {
       .join(" ");
   }
   return String(v);
-}
-
-/** The first prompt of a handed-off session: a report card, restated as a brief.
- *  Composed here rather than server-side because the card is already in the
- *  client's hands, and the new session must open on a plain message like any
- *  other (bridge/flowtype.py classifies the first one — a preset stype skips it). */
-export function handoffPrompt(
-  card: { stage: string; summary: string; fields?: Record<string, unknown> },
-  fromLabel: string,
-): string {
-  const lines = [`[from ${fromLabel} ${card.stage.toUpperCase()}] ${card.summary}`];
-  for (const [name, value] of Object.entries(card.fields ?? {})) {
-    lines.push(`${name.toUpperCase()}: ${flatten(value)}`);
-  }
-  return lines.join("\n");
 }
 
 /** What a triage sends back: the findings worth acting on, and the ones the

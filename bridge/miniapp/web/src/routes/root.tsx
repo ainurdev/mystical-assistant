@@ -5,51 +5,18 @@ import { ChatSwitcher } from "../components/ChatSwitcher";
 import { CheckpointsButton } from "../components/CheckpointsSheet";
 import { SpendButton } from "../components/SpendSheet";
 import { TabBar } from "../components/TabBar";
-import { useFlows } from "../lib/flows";
 
 /** The chat's own header: who you're talking to (ChatSwitcher), the marks in
  *  this conversation (checkpoints), and a fresh start. The other tabs title
  *  themselves — a shared bar would just repeat what the tab already says. */
 function ChatHeader() {
-  const { newChat, isRunning, sessionId, sessions, retype } = useChat();
-  const flows = useFlows();
-  // Where a typed session stands, in the one line the phone can spare. The rail
-  // with its jumps is the dashboard's; here it is a label that says what this
-  // session is and what it is doing.
-  const open = sessions.find((s) => s.id === sessionId);
-  const shape = flows.find((f) => f.stype === open?.stype);
-  const stage = shape?.stages.find((st) => st.id === open?.stage);
+  const { newChat, isRunning, sessionId } = useChat();
   return (
     // z-30 beats the fixed composer's z-10: the chat sheet renders inside this
     // header, so its own z-50 is scoped to whatever this row wins.
     <header className="sticky top-0 z-30 border-b border-border bg-[var(--tg-bg)] px-3 py-1.5">
       <div className="flex items-center gap-1">
         <ChatSwitcher />
-        {open && flows.length > 0 && (
-          <label className="relative shrink-0">
-            {/* The chip IS the picker: an invisible select over it, so one tap
-                opens the phone's own wheel and a wrong verdict costs a second. */}
-            <span
-              title={`${shape?.label ?? "CHAT"} session${stage ? ` · ${stage.label}${stage.gate ? " (gated)" : ""}` : ""}`}
-              className={"block border border-border px-1.5 py-0.5 text-[9px] tracking-[1px] "
-                + (shape ? "text-[var(--brand-soft)]" : "text-[var(--tg-hint)]")}
-            >
-              {shape?.label ?? "CHAT"}
-              {stage ? ` ▸ ${stage.label}` : open.stage === "done" ? " ▸ DONE" : ""}
-            </span>
-            <select
-              aria-label="session type"
-              value={open.stype ?? ""}
-              onChange={(e) => void retype(e.target.value || null)}
-              className="absolute inset-0 h-full w-full opacity-0"
-            >
-              <option value="">CHAT</option>
-              {flows.map((f) => (
-                <option key={f.stype} value={f.stype}>{f.label}</option>
-              ))}
-            </select>
-          </label>
-        )}
         <CheckpointsButton />
         <SpendButton sessionId={sessionId} running={isRunning} />
         <button

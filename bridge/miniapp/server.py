@@ -18,7 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (agents, browser, config, devserver, flow, git, github,
+from bridge import (agents, browser, config, devserver, git, github,
                     hooks, httpgz, models, native, project_config, relevance,
                     runner, state, store, transcript_jsonl, transcript_page,
                     usage)
@@ -134,52 +134,9 @@ def _session_brief(s: dict) -> dict:
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
             "tags": store.parse_tags(s.get("tags")),
-            "stype": s.get("stype"), "stage": s.get("stage"),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),
             "branch": wt_branch or (git.current_branch_cached(cwd) if cwd else "")}
-
-
-def _resolve_stype(raw) -> tuple:
-    """(stype, first stage, error) for a create body's requested type. Shared
-    with the dashboard's create, so both refuse the same things."""
-    stype = (raw or "").strip() or None
-    if not stype:
-        return None, None, None
-    f = flow.get_flow(stype)
-    if not f or f.get("disabled") or not flow.enabled():
-        return None, None, "unknown flow type"
-    return stype, flow.first_stage(f), None
-
-
-def _stage_action(handler, chat_id: int, sid: str, body: dict):
-    """POST {surface}/sessions/<id>/stage. The move is the server's to make:
-    the model can ask in its card, only this puts the session there."""
-    s = store.get_session(sid)
-    if not s or s["chat_id"] != chat_id:
-        return handler._json({"error": "not found"}, 404)
-    f = flow.get_flow(s.get("stype"))
-    if not f:
-        return handler._json({"error": "not a typed session"}, 400)
-    to = flow.resolve_stage_action(f, s.get("stage"), body.get("action") or "",
-                                  body.get("stage"))
-    if to is None:
-        return handler._json({"error": "invalid stage action"}, 400)
-    flow.apply_stage(sid, to, "user")
-    return handler._json({"ok": True, "stage": to})
-
-
-def _retype_action(handler, chat_id: int, sid: str, body: dict):
-    """POST {surface}/sessions/<id>/stype. The way out of a wrong verdict:
-    AUTO TYPE reads one message, and one message is sometimes not enough."""
-    s = store.get_session(sid)
-    if not s or s["chat_id"] != chat_id:
-        return handler._json({"error": "not found"}, 404)
-    stype = (body.get("stype") or "").strip().lower() or None
-    if not flow.retype(sid, stype):
-        return handler._json({"error": "unknown type"}, 400)
-    return handler._json({"ok": True, "stype": stype,
-                          "stage": (store.get_session(sid) or {}).get("stage")})
 
 
 def _pre_title(s: dict, title) -> dict:
@@ -370,8 +327,6 @@ class Handler(BaseHTTPRequestHandler):
                                                     qs.get("path", [""])[0]))
                 if path == "/api/attachment":
                     return self._api_attachment(qs.get("path", [""])[0])
-                if path == "/api/flows":
-                    return self._json(flow.catalog())
                 if path == "/api/sessions":
                     return self._api_sessions_list(chat_id, qs)
                 if path.startswith("/api/sessions/"):
@@ -411,12 +366,6 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/sessions/") and path.endswith("/dismiss-ask"):
                 return self._json({"ok": runner.dismiss_ask(
                     path[len("/api/sessions/"):-len("/dismiss-ask")])})
-            if path.startswith("/api/sessions/") and path.endswith("/stage"):
-                return _stage_action(
-                    self, chat_id, path[len("/api/sessions/"):-len("/stage")], body)
-            if path.startswith("/api/sessions/") and path.endswith("/stype"):
-                return _retype_action(
-                    self, chat_id, path[len("/api/sessions/"):-len("/stype")], body)
             if path.startswith("/api/sessions/") and path.endswith("/policy"):
                 return self._api_session_policy(
                     chat_id, path[len("/api/sessions/"):-len("/policy")], body)
@@ -600,12 +549,8 @@ class Handler(BaseHTTPRequestHandler):
                  os.path.join(config.BASE_PATH, project.lstrip("/"))) if p]
         cwd = next((p for p in cand if browser.within_base(p) and os.path.isdir(p)),
                    state.project_dir(chat_id))
-        stype, stage, err = _resolve_stype(body.get("stype"))
-        if err:
-            return self._json({"error": err}, 400)
         s = store.create_session(chat_id, project, origin="miniapp", cwd=cwd,
-                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE,
-                                 stype=stype, stage=stage)
+                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE)
         self._json({"session": _session_brief(_pre_title(s, body.get("title")))})
 
     def _api_session_get(self, chat_id: int, rest: str, qs):

@@ -3,7 +3,7 @@ import {
   asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
   asFindings, asGraph, asIdeas, asIntake, asMeters, asOutput, asPlan, asScreens,
   asSources, asStats, asTable,
-  diffColor, flatten, handoffPrompt, triagePrompt,
+  diffColor, flatten, triagePrompt,
 } from "./cardfields.ts";
 
 // --- guards: the promised shape, or null so the field renders as text -------
@@ -37,13 +37,6 @@ console.assert(flatten([{ cmd: "pytest -q", ok: true }]) === "pytest -q ✓", "a
 console.assert(flatten(undefined) === "—", "nothing reads as nothing");
 
 // --- prompts ---------------------------------------------------------------
-const brief = handoffPrompt(
-  { stage: "report", summary: "the queue drops jobs", fields: { answer: "a race", confidence: 0.8 } },
-  "PROBE",
-);
-console.assert(brief.startsWith("[from PROBE REPORT] the queue drops jobs"), `handoff header: ${brief}`);
-console.assert(brief.includes("ANSWER: a race"), "fields carry into the brief");
-
 const tri = triagePrompt(
   [{ file: "a.py", line: 3, severity: "high", note: "leak" },
    { file: "b.py", severity: "low", note: "nit" }],

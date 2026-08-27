@@ -1,13 +1,10 @@
-export type View = "chat" | "canvas" | "history" | "next";
+export type View = "chat" | "history" | "next";
 
-const LABELS: Record<View, string> = { chat: "CHAT", canvas: "CANVAS", history: "HIST", next: "NEXT" };
+const LABELS: Record<View, string> = { chat: "CHAT", history: "HIST", next: "NEXT" };
 
 /* View switcher in the Terminal header. HIST and NEXT are reachable from the
    command palette, not from here: they are places you go, not ways to read the
-   session you are already in.
-   ponytail: CANVAS is disabled — the board only ever re-showed panels the
-   dashboard already has. Code kept (Canvas.tsx, view === "canvas" branches);
-   re-enable by putting "canvas" back in this array and the palette entries. */
+   session you are already in. */
 export function ViewTabs({ view, onView }: { view: View; onView: (v: View) => void }) {
   return (
     <div style={{ display: "flex" }}>

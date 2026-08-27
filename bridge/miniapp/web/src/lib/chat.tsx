@@ -224,12 +224,7 @@ export interface ChatContextValue {
   transcriptNav: MutableRefObject<{ jumpToTurn: (turnId: string) => boolean } | null>;
   /** Jump to a turn, auto-loading older pages until it exists. */
   jumpToTurn: (turnId: string) => Promise<void>;
-  newChat: (stype?: string) => Promise<void>;
-  /** Open a fresh typed session on a card's brief — a report becoming the work. */
-  handoff: (stype: string, prompt: string) => Promise<void>;
-  /** Move the open session's stage — a gate's APPROVE. */
-  setStage: (action: "advance" | "back" | "set", stage?: string) => Promise<void>;
-  retype: (stype: string | null) => Promise<void>;
+  newChat: () => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
   checking: boolean;
@@ -627,7 +622,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     refresh();
   }
 
-  async function newChat(stype?: string) {
+  async function newChat() {
     if (!project) return;
     setSendError(null);
     // The empty chat opens now and the session is minted behind it: over the
@@ -639,61 +634,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setTurns([]);
     setResolving(true);
     try {
-      // A type starts the flow; the brief is whatever you type first, so the
-      // phone never has to fill a labelled form (the dashboard's job).
-      const { session } = await api.createSession(project, undefined, undefined, stype);
+      const { session } = await api.createSession(project);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
     } catch {
       /* ignore */
     } finally {
       setResolving(false);
-    }
-  }
-
-  /** A report card handed to a new typed session: the same mint-then-run path
-   *  newChat and the composer already use, with the card's brief as the first
-   *  message. A preset stype skips the classifier (bridge/flowtype.py). */
-  async function handoff(stype: string, prompt: string) {
-    if (!project) return;
-    setSendError(null);
-    sessionIdRef.current = null;
-    setSessionId(null);
-    setTurns([]);
-    setResolving(true);
-    try {
-      const { session } = await api.createSession(project, undefined, undefined, stype);
-      setSessions((prev) => [session, ...prev]);
-      openSession(session.id);
-      await runPrompt(prompt, [], undefined, { sessionId: session.id, force: true });
-    } catch {
-      /* the poll reconciles */
-    } finally {
-      setResolving(false);
-    }
-  }
-
-  async function setStage(action: "advance" | "back" | "set", stage?: string) {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      const r = await api.setStage(sid, action, stage);
-      setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, stage: r.stage } : s)));
-    } catch {
-      /* the poll reconciles */
-    }
-  }
-
-  /** Out of a wrong AUTO TYPE verdict, or into a type the guess missed. */
-  async function retype(stype: string | null) {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      const r = await api.retypeSession(sid, stype);
-      setSessions((prev) => prev.map((s) =>
-        (s.id === sid ? { ...s, stype: r.stype, stage: r.stage } : s)));
-    } catch {
-      /* the poll reconciles */
     }
   }
 
@@ -739,9 +686,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     respond,
     loadingSession,
     newChat,
-    handoff,
-    setStage,
-    retype,
     held,
     heldBusy,
     checking,

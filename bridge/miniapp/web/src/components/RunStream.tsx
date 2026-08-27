@@ -38,8 +38,6 @@ import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
-import { FlowCard } from "./FlowCard";
-import { stripHudCard } from "../lib/hudcard";
 import { askBack } from "../lib/askback";
 import { hostOf, mcpParts, toolAccent, toolKind, cmdKind, type CmdKind } from "../lib/tools";
 
@@ -856,39 +854,19 @@ function FinalResult({
   result,
   elapsed,
   tokens,
-  demoted,
   onAnswer,
   onWrite,
 }: {
   result: string;
   elapsed?: number;
   tokens?: number | null;
-  /** A flow card settled this turn: the card is the face, the prose waits
-   *  behind a DETAILS bar — a typed session reads as process, not chat. */
-  demoted?: boolean;
   onAnswer?: (text: string) => void;
   onWrite?: (question: string) => void;
 }) {
   const [sent, setSent] = useState<string | null>(null);
-  const [open, setOpen] = useState(!demoted);
-  // Live turns: the card lands a beat after the prose printed — its arrival is
-  // what folds the prose away.
-  useEffect(() => { if (demoted) setOpen(false); }, [demoted]);
   // The model asked in prose instead of using a question card: lift the question
   // out of the body so it reads as an ask, and offer the answers it expected.
   const ask = onAnswer ? askBack(result) : null;
-  if (demoted && !open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center rounded-xl border border-[var(--tg-button)]/20 px-3 py-1.5 text-[11px] tracking-[1px] text-[var(--tg-hint)] active:opacity-70"
-      >
-        <span>DETAILS // {result.split("\n").length} LINES</span>
-        <span className="ml-auto">⌄</span>
-      </button>
-    );
-  }
   return (
     <Card className="space-y-2 border border-[var(--tg-button)]/30">
       {(ask ? ask.body : result) && (
@@ -942,15 +920,6 @@ function FinalResult({
             : ""}
         </div>
       )}
-      {demoted && (
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="w-full text-center text-[11px] tracking-[1px] text-[var(--tg-hint)] active:opacity-70"
-        >
-          FOLD ⌃
-        </button>
-      )}
     </Card>
   );
 }
@@ -968,9 +937,6 @@ export const RunStream = memo(function RunStream({
   onRespond,
   onAnswer,
   onWrite,
-  onStageAdvance,
-  stype = null,
-  onHandoff,
   tokens = null,
   ended = false,
   boot = null,
@@ -987,13 +953,6 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   onWrite?: (question: string) => void;
-  /** Approve a gated stage's requested move (server-owned; the card can ask). */
-  onStageAdvance?: () => void;
-  /** The session's flow: what names each card field's type, and so which widget
-   *  draws it. */
-  stype?: string | null;
-  /** Open a fresh typed session from a report card. */
-  onHandoff?: (stype: string, prompt: string) => void;
   ended?: boolean;
   /** Is this the turn streaming into the chat right now? Only it may run a
    *  clock — on an older turn the figure would start when you scrolled to it. */
@@ -1050,21 +1009,14 @@ export const RunStream = memo(function RunStream({
   // The turn's closing text arrives twice — streamed as a text block, then again
   // as the run's result — so only the result card draws it. A native session
   // emits no result event, so its final text keeps rendering as text.
-  const resultText = stripHudCard(
-    events.find((e) => e.type === "result")?.result ?? "",
-  ).trim();
-
-  // A turn that settled into a card leads with the card: the prose demotes to
-  // a folded DETAILS bar, so a typed session reads as process, not chat.
-  const hasCard = events.some((e) => e.type === "card");
+  const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
 
   // Is the next thing the model does asking a question card?
   const asksNext = (i: number): boolean => {
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking" || t === "log" || t === "card" || t === "stage"
-          || t === "retype" || t === "card_missing") continue;
+          || t === "thinking" || t === "log") continue;
       return t === "question";
     }
     return false;
@@ -1090,7 +1042,7 @@ export const RunStream = memo(function RunStream({
         const i = k + from;
         switch (event.type) {
           case "text": {
-            const text = stripHudCard(event.text);
+            const text = event.text;
             if (!text) return null;
             if (resultText && text.trim() === resultText) return null;
             // A turn ending on an AskUserQuestion emits no result event, so the
@@ -1228,10 +1180,9 @@ export const RunStream = memo(function RunStream({
               <div key={i} className="relative -ml-3 pl-3">
                 <RailNode />
                 <FinalResult
-                  result={stripHudCard(event.result)}
+                  result={event.result}
                   elapsed={event.elapsed}
                   tokens={tokens}
-                  demoted={hasCard}
                   onAnswer={onAnswer}
                   onWrite={onWrite}
                 />
@@ -1288,44 +1239,6 @@ export const RunStream = memo(function RunStream({
                 <span>Stopped — send a message to continue.</span>
               </div>
             );
-          case "card":
-            return (
-              <div key={i} className="relative -ml-3 pl-3">
-                <RailNode />
-                <FlowCard
-                  card={event.card}
-                  // The flow the card was written under, not whatever the
-                  // session is now — flows change per prompt, and an old card
-                  // must keep drawing its own widgets.
-                  stype={event.stype ?? stype}
-                  gated={!!event.gated}
-                  // onAnswer reaches only the last finished turn — exactly when a
-                  // card is still something to act on rather than history — and
-                  // the session must still be in the flow the card was written under.
-                  isCurrent={!!onAnswer && (event.stype == null || event.stype === stype)}
-                  onAction={(send) => onAnswer?.(send)}
-                  onApprove={() => onStageAdvance?.()}
-                  onHandoff={onHandoff}
-                />
-              </div>
-            );
-          case "stage":
-            return (
-              <div key={i} className="pl-3 text-[10px] tracking-[1px] text-[var(--tg-hint)]">
-                STAGE ▸ {(event.to === "done" ? "COMPLETE" : event.to).toUpperCase()}
-                {event.by === "user" ? " (approved)" : ""}
-              </div>
-            );
-          // The session changed kind here — the classifier read the prompt
-          // (auto) or the user overrode it.
-          case "retype":
-            return (
-              <div key={i} className="pl-3 text-[10px] tracking-[1px] text-[var(--tg-hint)]">
-                FLOW ▸ {(event.from ?? "chat").toUpperCase()} → {(event.to ?? "chat").toUpperCase()}
-                {event.by === "user" ? " (you)" : ""}
-              </div>
-            );
-          case "card_missing":
           case "permission_resolved":
           case "question_answered":
             return null; // shown inside the relevant card

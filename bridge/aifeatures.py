@@ -55,18 +55,6 @@ FEATURES = (
               "pre-titled session instead, and you can still send it where it was. "
               "Short follow-ups and new sessions never pay for a check, and any "
               "failure lets the prompt through."},
-    {"key": "flowtype", "env": "FLOWTYPE_ENABLE", "label": "AUTO TYPE",
-     "hint": "reads a new session's first message and starts the matching flow",
-     "cost": "1 haiku call per new session",
-     "tokens": "~33k tokens",
-     "about": "Classifies the first message of a fresh session — build, fix, "
-              "probe, ops, review, design, or plain chat — and a match starts "
-              "that flow at its first stage: stage rail, hud-cards, structured "
-              "replies. The message itself is never rewritten, and the verdict "
-              "lands beside the first turn, not in front of it. While this is "
-              "on the NEW SESSION type picker and its forms are hidden "
-              "everywhere; off, they come back. Chat verdicts leave the "
-              "session untyped."},
     {"key": "nextup", "env": "NEXTUP_ENABLE", "label": "NEXT-UP BOARD",
      "hint": "ranked next steps across the repos you touched recently",
      "cost": "1 scout per changed repo, free rung first",
@@ -156,18 +144,6 @@ FEATURES = (
               "Finished work syncs back up, one component at a time, on a "
               "press. Off, the link row and the SYNC action leave the "
               "dashboard; a skill already pulled stays on disk."},
-    {"key": "flows", "env": "FLOWS_ENABLE", "label": "TYPED FLOWS",
-     "hint": "typed sessions: a form in, stage gates, a card out",
-     "cost": "no extra call, a stage contract per turn",
-     "tokens": "~1k tokens",
-     "about": "A session can start as BUILD, FIX, PROBE, OPS, REVIEW or DESIGN "
-              "instead of plain chat: a short form shapes the first prompt, the "
-              "server walks the session stage by stage, every reply ends in a "
-              "card with tappable next actions, and a gated stage waits for your "
-              "approval before the work moves on. Templates are yours to edit in "
-              "the FLOWS settings. Off, the type picker and that editor are "
-              "hidden and every new session is a plain chat — a session already "
-              "mid-flow keeps its stages, so nothing in flight is stranded."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}

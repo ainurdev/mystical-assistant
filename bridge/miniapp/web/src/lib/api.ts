@@ -65,60 +65,10 @@ export interface SessionBrief {
   work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there
   worktree?: string; // the linked worktree it runs in ("" = the project checkout)
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
-  stype?: string | null; // the flow this session runs (null = a plain chat)
-  stage?: string | null; // where in that flow it is ("done" = finished)
 }
 
 // Mirrors bridge/dashboard/web/src/api.ts (the two clients are separate apps
 // with hand-kept copies — keep them in sync).
-export interface HudCardAction {
-  label: string;
-  send: string;
-}
-export interface HudCard {
-  stage: string;
-  summary: string;
-  fields: Record<string, unknown>;
-  advance?: boolean; // the model asking to move on — gated stages still wait for you
-  actions?: HudCardAction[];
-}
-export interface FlowField {
-  key: string;
-  label: string;
-  required?: boolean;
-  multiline?: boolean;
-}
-// A field's type is a rendering contract the flow declares (bridge/flow.py
-// _SHAPES): the card draws the matching widget, or falls back to text when the
-// model emitted something else.
-export interface FlowFieldShape {
-  name: string;
-  type: string;
-}
-export interface FlowStageShape {
-  id: string;
-  label: string;
-  gate: boolean;
-  fields: FlowFieldShape[];
-  /** How this stage wants to be engaged: approve | arm | evidence | triage |
-   *  annotate. "" for a stage that only wants a message. */
-  input: string;
-  /** Flows a card on this stage can open as a fresh session. */
-  handoff: string[];
-}
-export interface FlowShape {
-  stype: string;
-  label: string;
-  blurb: string;
-  source: "builtin" | "custom";
-  form: FlowField[];
-  stages: FlowStageShape[];
-}
-export interface FlowCatalog {
-  enabled: boolean;
-  auto: boolean; // AUTO TYPE switch: every prompt classifies, pickers hide
-  flows: FlowShape[];
-}
 
 export interface StoreTurn {
   id: string;
@@ -214,15 +164,6 @@ export type RunEvent =
   | { type: "stopped" }
   | { type: "permission"; request_id: string; tool_name: string; summary: string }
   | { type: "question"; request_id: string; questions: Question[] }
-  // A typed session's settled turn: the parsed hud-card (the raw fence is
-  // stripped from the text above it) and every move between stages.
-  // stype: the flow the card was written under — absent on cards from before
-  // sessions re-typed per prompt, which render against the session's flow.
-  | { type: "card"; card: HudCard; stage: string; stype?: string; gated?: boolean }
-  | { type: "stage"; from: string | null; to: string; by: "auto" | "user" }
-  | { type: "retype"; from: string | null; to: string | null;
-      stage: string | null; by: "auto" | "user" }
-  | { type: "card_missing"; errors?: string[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
 
@@ -359,8 +300,6 @@ export interface EnrichedSession {
   total_tokens: number | null; // null = no turn reported usage (unknown, not free)
   last_activity: number;
   models: string[];
-  stype?: string | null; // the flow this session runs (null = a plain chat)
-  stage?: string | null;
 }
 
 /** One tool's share of a session's wall clock. `union_s` counts overlapping calls
@@ -636,30 +575,15 @@ export const api = {
       `/api/sessions?project=${encodeURIComponent(project)}`,
     ),
 
-  createSession: (project: string, title?: string, cwd?: string, stype?: string) =>
+  createSession: (project: string, title?: string, cwd?: string) =>
     request<{ session: SessionBrief }>("/api/sessions", {
       method: "POST",
       body: {
         project,
         ...(title ? { title } : {}),
         ...(cwd ? { cwd } : {}),
-        ...(stype ? { stype } : {}),
       },
     }),
-
-  flows: () => request<FlowCatalog>("/api/flows"),
-  // AUTO TYPE reads one message and can be wrong; null clears back to chat.
-  retypeSession: (sid: string, stype: string | null) =>
-    request<{ ok: boolean; stype: string | null; stage: string | null }>(
-      `/api/sessions/${encodeURIComponent(sid)}/stype`,
-      { method: "POST", body: { stype } }),
-
-  // The move is the server's to make — this asks for it.
-  setStage: (sid: string, action: "advance" | "back" | "set", stage?: string) =>
-    request<{ ok: boolean; stage: string }>(
-      `/api/sessions/${encodeURIComponent(sid)}/stage`,
-      { method: "POST", body: { action, ...(stage ? { stage } : {}) } },
-    ),
 
   getSession: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
     request<Transcript>(`/api/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +

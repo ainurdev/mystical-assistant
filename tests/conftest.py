@@ -26,9 +26,6 @@ os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "bridge-test.db")
 # the shells it hosts, so an unpinned value flips that default under the very
 # sessions that run this suite (tests patch config.MCP_SERVERS when they want one).
 os.environ["MCP_SERVERS"] = ""
-# Typed flows ship on; pin it so the suite is deterministic whatever the shell
-# that launched pytest exports (config freezes this at import, like the rest).
-os.environ["FLOWS_ENABLE"] = "1"
 # Hard-pin a canonical project root before config freezes it, so within_base()
 # is deterministic suite-wide (config.BASE_PATH is read once, at first import).
 # Tests that assert on containment should build fixtures under config.BASE_PATH.

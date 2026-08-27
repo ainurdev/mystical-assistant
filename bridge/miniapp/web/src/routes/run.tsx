@@ -10,8 +10,6 @@ import { useLoadingPhase } from "../lib/loadingPhase";
 import { anchorAt, recall, remember, type Anchor } from "../lib/scrollmem";
 import { RunStream, ToolImage, TURN_TAIL } from "../components/RunStream";
 import { Composer } from "../components/Composer";
-import { StageHint } from "../components/StageHint";
-import { useFlows } from "../lib/flows";
 import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
@@ -61,15 +59,10 @@ function TranscriptSkeleton() {
 function RunPage() {
   const {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession, boot,
-    runPrompt, setDraft, setStage, handoff,
+    runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
     hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav,
   } = useChat();
-  // Where the open session stands, as the flow declared it — what the strip
-  // above the prompt box reads to say what this stage wants from you.
-  const session = sessions.find((s) => s.id === sessionId) ?? null;
-  const stageShape = useFlows().find((f) => f.stype === session?.stype)
-    ?.stages.find((st) => st.id === session?.stage) ?? null;
   // A cached session has its turns already, so this never fires for one; only a
   // transcript that is genuinely still coming gets a skeleton.
   const slowLoad = useLoadingPhase(loadingSession);
@@ -406,15 +399,6 @@ function RunPage() {
                       : undefined
                   }
                   onWrite={setDraft}
-                  onStageAdvance={
-                    i === visibleTurns.length - 1 ? () => void setStage("advance") : undefined
-                  }
-                  stype={session?.stype ?? null}
-                  onHandoff={
-                    i === visibleTurns.length - 1
-                      ? (stype, prompt) => void handoff(stype, prompt)
-                      : undefined
-                  }
                   ended={turn.status !== "running"}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
@@ -482,7 +466,6 @@ function RunPage() {
         </div>
       )}
 
-      <StageHint stage={stageShape} onPaste={(text) => setDraft(text)} />
       <Composer />
     </div>
   );

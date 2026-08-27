@@ -150,17 +150,6 @@ RELEVANCE_CONTEXT_TURNS = int(os.environ.get("RELEVANCE_CONTEXT_TURNS", "3"))
 # doc guessed. At a tighter timeout every check fails open and the guardrail is a
 # silent no-op, so this is deliberately generous; it only runs on long prompts.
 RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
-# Auto-type sessions per prompt: a one-shot reads each message and moves the
-# session to the matching flow (bridge/flowtype.py). While on, creation UIs
-# drop their type picker — sessions follow their prompts; "chat" verdicts and
-# continuations change nothing.
-FLOWTYPE_ENABLE = os.environ.get("FLOWTYPE_ENABLE", "0").lower() \
-    not in ("0", "false", "no", "")
-FLOWTYPE_MODEL = os.environ.get("FLOWTYPE_MODEL", "haiku")
-# Unlike RELEVANCE_TIMEOUT this one runs IN FRONT of every turn, so its worst
-# case is user-facing latency: tight, and a timeout just fails open to no move.
-FLOWTYPE_TIMEOUT = int(os.environ.get("FLOWTYPE_TIMEOUT", "12"))
-
 # --- Next-up board -----------------------------------------------------------
 # Ranked next steps across the repos with recent session activity. One read-only
 # scout per changed repo, free-agent rung first. See the next-up-board design.
@@ -176,12 +165,6 @@ NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback p
 # .mystical/learn/. Read (and opted out of, per repo) in the dashboard's LEARN
 # tab. Automatic — nobody clicks it — so it defaults OFF.
 LEARN_ENABLE = os.environ.get("LEARN_ENABLE", "0").lower() \
-    not in ("0", "false", "no", "")
-
-# Typed sessions: a picked type walks the session through that flow's stages,
-# each turn ending in a parsed card. Nothing fires until a type is picked — a
-# plain chat pays nothing — so it defaults ON.
-FLOWS_ENABLE = os.environ.get("FLOWS_ENABLE", "1").lower() \
     not in ("0", "false", "no", "")
 
 # Decide whether a turn that ENDED on a question is waiting on you or just being
