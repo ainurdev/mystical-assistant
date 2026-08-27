@@ -62,7 +62,7 @@ function SystemPage() {
     <div className="space-y-4 pb-6">
       <div className="flex items-baseline gap-2.5">
         <span className="text-[13px] tracking-[3px] text-foreground-bright">SYSTEM</span>
-        <span className="text-[10px] tracking-wider text-[var(--tg-hint)]">THEME · LIMITS</span>
+        <span className="text-[10px] tracking-wider text-[var(--tg-hint)]">OUTPUT · THEME · LIMITS</span>
       </div>
 
       <div className="space-y-2">
