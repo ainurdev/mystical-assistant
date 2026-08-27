@@ -4,7 +4,7 @@
 // result it doesn't recognise keeps the plain row it always had. That is what
 // this checks — not how the widgets look.
 
-import { isToolStyle, widgetFor, TOOL_STYLES } from "./toolwidget.ts";
+import { isToolStyle, toToolStyle, widgetFor, TOOL_STYLES } from "./toolwidget.ts";
 
 // --- the table --------------------------------------------------------------
 const src = widgetFor({ sources: [{ url: "https://a.dev", title: "A" }] });
@@ -38,5 +38,11 @@ console.assert(TOOL_STYLES[0].key === "instrument", "instrument is the default, 
 for (const s of TOOL_STYLES) console.assert(isToolStyle(s.key), `${s.key} is a style`);
 console.assert(!isToolStyle("fancy"), "an unknown style is rejected (a stale localStorage value)");
 console.assert(!isToolStyle(undefined), "a missing style is rejected");
+// The redraw renamed two of them; a pick made before it still means what it meant.
+console.assert(toToolStyle("bare") === "terminal", "BARE was redrawn as TERMINAL");
+console.assert(toToolStyle("card") === "note", "CARD was redrawn as NOTE");
+console.assert(toToolStyle("note") === "note", "a current style passes through");
+console.assert(toToolStyle("fancy") === "instrument", "an unknown style falls back");
+console.assert(toToolStyle(undefined) === "instrument", "a missing style falls back");
 
 console.log("toolwidget: ok");

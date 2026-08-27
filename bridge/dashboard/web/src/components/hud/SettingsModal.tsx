@@ -5,12 +5,15 @@ import {
 import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
   Ellipsis, FileCog, FolderTree, Gauge, GitBranch, Handshake, Hourglass, KeyRound,
-  ListMusic, LoaderCircle, Lock, MessageCircleQuestion, Monitor, MonitorPlay,
+  ListMusic, ListTree, LoaderCircle, Lock, MessageCircleQuestion, Monitor, MonitorPlay,
   Moon, Network, Palette, Play, Plug, Power, Radio, ScanLine, ScrollText, Search, Server,
   ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
   Upload, Volume2, X, type LucideIcon,
 } from "lucide-react";
-import { TOOL_STYLES, type ToolStyle } from "../../lib/toolwidget";
+import { TOOL_STYLES, type ToolStyle, type ToolWidgetSpec } from "../../lib/toolwidget";
+import { ToolWidget } from "../ResultWidgets";
+import { ToolCard } from "../RunStream";
+import { toolAccent } from "../../lib/tools";
 
 import { ago } from "../../lib/surfaces";
 import {
@@ -112,7 +115,7 @@ export interface SettingsModalProps {
 // is there; likewise the prompt-box and transcript switches sat under SESSION
 // among the model/mode/effort knobs they have nothing to do with.
 
-type Tab = "appearance" | "indicator" | "ambient" | "notifications"
+type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
   | "session" | "tags" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system";
 
 // The rail carries the same three-way split the comment above describes, but
@@ -125,6 +128,7 @@ type Tab = "appearance" | "indicator" | "ambient" | "notifications"
 // ten unrelated things rather than two groups of five.
 const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: string }[] = [
   { key: "appearance", label: "APPEARANCE", hint: "theme · type · CRT", icon: Palette, group: "THE HUD" },
+  { key: "transcript", label: "TRANSCRIPT", hint: "how a result draws", icon: ScrollText, group: "THE HUD" },
   { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD" },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
@@ -152,7 +156,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
   { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
   { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
-  { tab: "appearance", sec: "TRANSCRIPT", terms: "auto-open results bash output edit diffs tool widget output style instrument bare card plain sources screens" },
+  { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style instrument terminal note plain bare card sources screens preview" },
   { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
   { tab: "ambient", sec: "CLAUDE·FM", terms: "radio station music volume ambient" },
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
@@ -330,7 +334,8 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   TYPE: Type,
   "BOOT SEQUENCE": MonitorPlay,
   "WORKING INDICATOR": AudioLines,
-  TRANSCRIPT: ScrollText,
+  "OUTPUT STYLE": ScrollText,
+  RESULTS: ListTree,
   "WEATHER · header clock": CloudSun,
   "CLAUDE·FM": Radio,
   DESKTOP: Monitor,
@@ -979,6 +984,93 @@ function ThemeCardGrid({
               </div>
             )}
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** OUTPUT STYLE, drawn as itself. A dropdown listing INSTRUMENT · TERMINAL ·
+ *  NOTE asks you to picture three things you have never seen, and the first cut
+ *  of these styles was three borders apart, so nobody could. Each tile renders
+ *  the REAL ToolWidget under the real CSS — a tile cannot drift from the
+ *  transcript the way a mockup would — and PLAIN renders the real ToolCard,
+ *  because "no widget" only means something next to the row you get instead.
+ *  The wells are `inert`: a preview is a picture, so its links neither take a
+ *  click nor a tab stop away from the tile that owns them. */
+const STYLE_PREVIEW: ToolWidgetSpec = {
+  label: "SOURCES",
+  type: "sources",
+  meta: "3",
+  value: [
+    { url: "https://docs.claude.com/en/docs/claude-code", title: "Claude Code — overview", code: 200 },
+    { url: "https://github.com/anthropics/claude-code", title: "anthropics/claude-code", code: 200 },
+    { url: "https://developer.mozilla.org/en-US/docs/Web/CSS", title: "CSS reference — MDN", code: 200 },
+  ],
+};
+
+function OutputStylePicker({
+  value,
+  onPick,
+}: {
+  value: ToolStyle;
+  onPick: (s: ToolStyle) => void;
+}) {
+  const hue = toolAccent("WebSearch");
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
+      {TOOL_STYLES.map((o) => {
+        const on = value === o.key;
+        return (
+          <button
+            key={o.key}
+            onClick={() => onPick(o.key)}
+            aria-pressed={on}
+            style={{
+              appearance: "none",
+              cursor: "pointer",
+              textAlign: "left",
+              fontFamily: "inherit",
+              padding: 0,
+              overflow: "hidden",
+              border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
+              background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "var(--panel3)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px 7px" }}>
+              <span style={{ flex: "none", fontSize: "var(--t10)", letterSpacing: 1.6, color: on ? "var(--txb)" : "var(--txh)" }}>
+                {o.label}
+              </span>
+              {on && (
+                <span style={{ flex: "none", fontSize: "var(--t7)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "1px 5px" }}>
+                  ON
+                </span>
+              )}
+              <span
+                style={{
+                  flex: 1, minWidth: 0, textAlign: "right", fontSize: "var(--t9)",
+                  color: "var(--txl)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                }}
+              >
+                {o.hint}
+              </span>
+            </div>
+            <div
+              inert
+              style={{
+                borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
+                background: "var(--panel)",
+                padding: "11px 13px",
+                minHeight: 124,
+              }}
+            >
+              {o.key === "plain" ? (
+                <ToolCard name="WebSearch" summary="claude code bridge" stat="3 sources" animate={false} />
+              ) : (
+                <ToolWidget spec={STYLE_PREVIEW} accent={hue} style={o.key} />
+              )}
+            </div>
+          </button>
         );
       })}
     </div>
@@ -3297,41 +3389,6 @@ export function SettingsModal(props: SettingsModalProps) {
                   </div>
                 </Section>
 
-                {/* Its own tab until it held exactly one switch and 700px of
-                    void. It is a reading preference, so it sits with the rest
-                    of how the HUD reads rather than under the run knobs. The
-                    PONYTAIL and GRAPH switches that used to keep it company
-                    only hid their chips while the features kept running; they
-                    are AI-tab switches now, where off means off. */}
-                <Section title="TRANSCRIPT" top>
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="AUTO-OPEN RESULTS"
-                      info="Bash output and edit diffs draw themselves open. Off, a turn reads as the list of commands and files it touched — click one to see its result."
-                    >
-                      <Switch
-                        on={settings.openResults}
-                        onClick={() => onPatch({ openResults: !settings.openResults })}
-                      />
-                    </Row>
-                    <Row
-                      label="OUTPUT STYLE"
-                      info="How a tool result's own structure is drawn — the pages a search reached, the screenshots a run handed back. INSTRUMENT frames each one like the rest of the HUD; BARE drops the frame and keeps the data; CARD is roomier; PLAIN draws no widget at all and leaves the raw output. A tool with nothing structured to show keeps its one-line row whatever this says."
-                    >
-                      <select
-                        value={settings.toolStyle}
-                        onChange={(e) => onPatch({ toolStyle: e.target.value as ToolStyle })}
-                        style={{ ...field, minWidth: 176 }}
-                      >
-                        {TOOL_STYLES.map((o) => (
-                          <option key={o.key} value={o.key}>{o.label} — {o.hint}</option>
-                        ))}
-                      </select>
-                    </Row>
-                  </div>
-                </Section>
-
                 <Section title="BOOT SEQUENCE" top>
                   <div style={CARD}>
                     <Row first label="INTRO" desc="Replay the intro this dashboard boots with.">
@@ -3354,6 +3411,40 @@ export function SettingsModal(props: SettingsModalProps) {
                       >
                         ▸ REPLAY
                       </button>
+                    </Row>
+                  </div>
+                </Section>
+              </>
+            )}
+
+            {shown === "transcript" && (
+              <>
+                {/* Its own tab, again. It was folded into APPEARANCE when it
+                    held one switch and a dropdown and left 700px of void; the
+                    dropdown is now four previews, which is the page that void
+                    was waiting for. Still a reading preference, so it stays
+                    under THE HUD rather than with the run knobs. */}
+                <Section
+                  title="OUTPUT STYLE"
+                  info="How a tool result's own structure is drawn — the pages a search reached, the screenshots a run handed back. Each tile below is the real widget, so what you see is what the transcript does. A tool with nothing structured to show keeps its one-line row whatever this says."
+                >
+                  <OutputStylePicker
+                    value={settings.toolStyle}
+                    onPick={(toolStyle) => onPatch({ toolStyle })}
+                  />
+                </Section>
+
+                <Section title="RESULTS" top>
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="AUTO-OPEN RESULTS"
+                      info="Bash output and edit diffs draw themselves open. Off, a turn reads as the list of commands and files it touched — click one to see its result."
+                    >
+                      <Switch
+                        on={settings.openResults}
+                        onClick={() => onPatch({ openResults: !settings.openResults })}
+                      />
                     </Row>
                   </div>
                 </Section>

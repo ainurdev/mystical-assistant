@@ -16,19 +16,32 @@
 /** The wire shape `transcript_jsonl.web_sources` emits. */
 export type WebSource = { url: string; title?: string; code?: number };
 
-/** How a tool result's structure is drawn. `plain` opts out entirely: the raw
- *  payload, the way a terminal would print it. */
-export type ToolStyle = "instrument" | "bare" | "card" | "plain";
+/** How a tool result's structure is drawn — three idioms, not three borders.
+ *  The first cut (BARE, CARD) differed from INSTRUMENT by a radius and some
+ *  padding, so nobody could tell them apart in the picker or the transcript.
+ *  These are three different things a result can BE: a HUD readout, a
+ *  terminal's own printout, a paper note. `plain` opts out entirely. */
+export type ToolStyle = "instrument" | "terminal" | "note" | "plain";
 
 export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
-  { key: "instrument", label: "INSTRUMENT", hint: "framed · rail · tracked header" },
-  { key: "bare", label: "BARE", hint: "the data, no chrome" },
-  { key: "card", label: "CARD", hint: "rounded · roomier" },
-  { key: "plain", label: "PLAIN", hint: "no widgets — raw output" },
+  { key: "instrument", label: "INSTRUMENT", hint: "bracketed readout, hue rail" },
+  { key: "terminal", label: "TERMINAL", hint: "printed, not framed — mono, no chrome" },
+  { key: "note", label: "NOTE", hint: "paper — rounded, raised, roomy" },
+  { key: "plain", label: "PLAIN", hint: "no widget — the one-line row" },
 ];
+
+/** What the two redrawn styles used to be called. A stored pick keeps meaning
+ *  what it meant instead of silently snapping back to the default. */
+const LEGACY: Record<string, ToolStyle> = { bare: "terminal", card: "note" };
 
 export function isToolStyle(v: unknown): v is ToolStyle {
   return TOOL_STYLES.some((s) => s.key === v);
+}
+
+/** A stored value → a style that exists. Anything unrecognised is the default. */
+export function toToolStyle(v: unknown): ToolStyle {
+  if (isToolStyle(v)) return v;
+  return (typeof v === "string" && LEGACY[v]) || "instrument";
 }
 
 /** The structured part of a `tool_done` event — only the fields the mapping

@@ -11,7 +11,7 @@ import { TONES, type ToneKey } from "./push";
 import { PUSH_EVENT_KEYS, type PushEvent, type SoundChoice } from "./sounds";
 import { VOICE_KEYS, type VoiceKey } from "./piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "./songs";
-import { isToolStyle, type ToolStyle } from "./toolwidget";
+import { toToolStyle, type ToolStyle } from "./toolwidget";
 
 export type ThemeKey =
   | "aqua"
@@ -489,7 +489,7 @@ export function loadSettings(): HudSettings {
         pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
         pushVolume: clamp01(p.pushVolume, 0.6),
         pushSounds: soundChoices(p.pushSounds),
-        toolStyle: isToolStyle(p.toolStyle) ? p.toolStyle : "instrument",
+        toolStyle: toToolStyle(p.toolStyle),
       };
     }
   } catch {

@@ -453,19 +453,35 @@ input {
   border: 1px solid color-mix(in srgb, var(--h) 20%, transparent);
   background: var(--panel3); border-radius: 12px; overflow: hidden;
 }
-/* BARE — the data and nothing else; the rail alone says whose it is. */
-.tw[data-tw="bare"] > .tw-rail { background: color-mix(in srgb, var(--h) 34%, transparent); }
-.tw[data-tw="bare"] > .tw-head { padding: 1px 0 2px 11px; }
-.tw[data-tw="bare"] .tw-line { display: none; }
-.tw[data-tw="bare"] > .tw-body { padding: 0 0 0 11px; }
-/* CARD — roomier still, for reading rather than scanning. */
-.tw[data-tw="card"] {
-  border: 1px solid color-mix(in srgb, var(--h) 24%, transparent);
-  background: var(--panel3); border-radius: 16px; overflow: hidden;
+/* TERMINAL — printed, not framed: no border, no fill, no rail, mono
+   throughout. The phone rounds everything else, which is exactly why this one
+   reads as a different thing rather than as the same card with less padding. */
+.tw[data-tw="terminal"] { margin: 1px 0 9px; font-family: var(--mono); }
+.tw[data-tw="terminal"] > .tw-rail { display: none; }
+.tw[data-tw="terminal"] > .tw-head { gap: 6px; padding: 0 0 3px 0; }
+.tw[data-tw="terminal"] .tw-name { letter-spacing: 1px; }
+.tw[data-tw="terminal"] .tw-name::before { content: "▸ "; color: var(--txf); }
+.tw[data-tw="terminal"] .tw-meta::before { content: "· "; }
+.tw[data-tw="terminal"] .tw-line { display: none; }
+.tw[data-tw="terminal"] > .tw-body { padding: 0 0 0 14px; }
+/* NOTE — paper: neutral frame, raised, roomy, and the hue down to a dot. */
+.tw[data-tw="note"] {
+  margin: 7px 0 13px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  border-radius: 18px; overflow: hidden;
+  box-shadow: 0 2px 14px rgb(0 0 0 / 0.38);
 }
-.tw[data-tw="card"] > .tw-rail { width: 3px; }
-.tw[data-tw="card"] > .tw-head { padding: 9px 14px 6px 16px; }
-.tw[data-tw="card"] > .tw-body { padding: 2px 15px 13px 16px; }
+.tw[data-tw="note"] > .tw-rail { display: none; }
+.tw[data-tw="note"] > .tw-head { padding: 13px 17px 5px 17px; }
+.tw[data-tw="note"] .tw-name { letter-spacing: .8px; }
+.tw[data-tw="note"] .tw-name::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px;
+  border-radius: 50%; background: var(--h); vertical-align: middle;
+}
+.tw[data-tw="note"] .tw-meta { margin-left: auto; }
+.tw[data-tw="note"] .tw-line { display: none; }
+.tw[data-tw="note"] > .tw-body { padding: 0 17px 15px 17px; }
 
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    The phone's copy of the dashboard's .flc block: same markup, same hue rule

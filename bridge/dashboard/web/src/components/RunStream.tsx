@@ -1253,8 +1253,10 @@ function CallGroup({
 
 /** Everything that isn't a terminal, a file or a diff — each family drawn as
  *  what it actually did: a lookup, a fetch, a delegated run, a plan, an MCP
- *  call. The shape it wears is its kind's, and its tier is its consequence. */
-function ToolCard({
+ *  call. The shape it wears is its kind's, and its tier is its consequence.
+ *  Exported for the OUTPUT STYLE previews: PLAIN means "this row and nothing
+ *  else", which is only legible next to the row itself. */
+export function ToolCard({
   name,
   summary,
   ms,
