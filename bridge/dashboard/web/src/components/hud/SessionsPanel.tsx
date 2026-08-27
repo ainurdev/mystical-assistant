@@ -357,7 +357,6 @@ export function SessionsPanel(props: Props) {
     return () => { live = false; };
   }, [nsOpen, nsProject]);
 
-  const sessionTotal = groups.reduce((n, g) => n + g.sessionCount, 0);
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
   // One resolution of "which branch is this session on", so the row label and
   // the search box can never disagree about it.
@@ -671,7 +670,6 @@ export function SessionsPanel(props: Props) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", flex: "none" }}>
         <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>SESSIONS</span>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--acc)" }}>{groups.length} PROJ · {sessionTotal} SESS</span>
           {/* Compact drops each row to its dot and its title. On a phone that's
               the difference between four sessions on screen and nine. */}
           <button

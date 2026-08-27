@@ -38,7 +38,8 @@ export function scopeKey(tab: PanelTab, project?: string | null, branch?: string
  *  clamp App's grid track uses, so the two agree — and the row clips: while
  *  the column animates shut the body holds that width and slides off the left
  *  edge (justify-end overflows at the start), so only the transcript reflows.
- *  Collapsed, the track is the rail's 44px alone. */
+ *  Collapsed, the track is the rail's 48px alone (App's grid track hardcodes
+ *  the same number — change both). */
 export function RightPanel({
   tabs,
   activeId,
@@ -86,7 +87,7 @@ export function RightPanel({
         </div>
       )}
       <div
-        className="flex w-[44px] flex-none flex-col items-stretch gap-1.5 border-l border-border py-2.5"
+        className="flex w-[48px] flex-none flex-col items-stretch gap-1 border-l border-border py-2.5"
         style={{ background: "var(--panel3)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .12s" }}
       >
         {tabs.map((t) => {
@@ -98,17 +99,22 @@ export function RightPanel({
               title={on ? `${t.label} — click to collapse` : t.label}
               aria-label={t.label}
               aria-current={on}
-              className={`relative flex h-[30px] items-center justify-center border-l-2 text-[length:var(--t13)] hover:bg-accent ${
+              className={`relative flex h-[38px] items-center justify-center border-l-2 text-[length:var(--t13)] hover:bg-accent ${
                 on
                   ? "border-primary bg-[var(--ac-06)] text-foreground-bright"
                   : "border-transparent text-muted-2 hover:text-primary"
               }`}
             >
               {t.icon}
-              {/* The badge is drawn as given — a dot for "is there anything",
-                  a number when the count is the point (unread lessons). */}
+              {/* A filled pill, not bare text in the corner: at --t7 on the
+                  scanlined rail an accent-on-panel digit was invisible, and
+                  anchored at right-0/top-0 a two-digit count clipped on the
+                  window edge. Callers cap the string (see railCount). */}
               {t.badge ? (
-                <span className="absolute right-0 top-0 text-[length:var(--t7)] leading-none text-primary">{t.badge}</span>
+                <span
+                  className="absolute right-[3px] top-[1px] h-[15px] min-w-[15px] rounded-full px-[3px] text-center text-[length:var(--t7)] leading-[15px]"
+                  style={{ background: "var(--acc)", color: "var(--acc-on)" }}
+                >{t.badge}</span>
               ) : null}
             </button>
           );

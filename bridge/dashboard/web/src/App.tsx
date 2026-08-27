@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FileDiff, FolderGit2, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
+  Boxes, FileDiff, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
 } from "lucide-react";
 import {
   api,
@@ -97,8 +97,14 @@ function fmtReset(iso: string | null | undefined): string {
   return `${h}H${String(m).padStart(2, "0")}M`;
 }
 
-// One size for every right-rail icon — the rail's buttons are 30px.
-const RAIL = { size: 15, strokeWidth: 1.6 } as const;
+// One size for every right-rail icon — the rail's buttons are 38px. At 15px
+// these read as grey smudges on the scanlined panel; 18px with a heavier
+// stroke is the smallest that stays a recognisable glyph.
+const RAIL = { size: 18, strokeWidth: 1.8 } as const;
+
+// A rail badge is ~20px wide. Three digits (200 unread lessons) spill over the
+// icon next to it, and past ~99 the exact number stopped being the point.
+const railCount = (n: number) => (n > 99 ? "99+" : String(n));
 
 // Manage-projects choices survive a reload / bridge restart. HIDE is owned by
 // the bridge (project_config.json, GET/POST /local/project*), so it syncs across
@@ -1438,12 +1444,15 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [ai.learn]);
   const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
-  // Uncommitted files in the session's repo — the CHANGES tab badges the count.
-  const dirtyFiles = gitBadges.get(sessionProject ?? "")?.dirty ?? 0;
+  // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
+  // and what its rail badge counts. sessionGit is per-worktree, so two branches
+  // of the same repo get their own number; gitBadges is only keyed by project,
+  // so it's the fallback for the tick before sessionGit lands.
+  const dirtyFiles = sessionGit?.dirty ?? gitBadges.get(sessionProject ?? "")?.dirty ?? 0;
 
   const rightTabs: PanelTab[] = [
     {
-      id: "projects", label: "Projects", icon: <FolderGit2 {...RAIL} />,
+      id: "projects", label: "Projects", icon: <Boxes {...RAIL} />,
       render: () => (
         <ProjectsPanel
           groups={visibleGroups} activeProject={activeProject} booting={!booted}
@@ -1465,7 +1474,7 @@ export function App() {
     },
     {
       id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: <FileDiff {...RAIL} />, ownScroll: true, scope: "worktree",
-      badge: dirtyFiles ? String(dirtyFiles) : null,
+      badge: dirtyFiles ? railCount(dirtyFiles) : null,
       render: () => (
         <FilesPanel
           project={sessionProject} branch={sessionBranch} changedOnly
@@ -1475,7 +1484,6 @@ export function App() {
     },
     {
       id: "git", label: "Source Control", icon: <GitBranch {...RAIL} />, scope: "project",
-      badge: dirtyFiles ? "●" : null,
       render: () => <GitTab project={sessionProject} />,
     },
     {
@@ -1484,7 +1492,7 @@ export function App() {
     },
     {
       id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true,
-      badge: unreadLessons ? String(unreadLessons) : null,
+      badge: unreadLessons ? railCount(unreadLessons) : null,
       render: () => (
         <LearnPanel project={sessionProject} read={lessonsRead}
           onRead={(k) => setLessonsRead((r) => new Set(r).add(k))} />
@@ -1917,7 +1925,7 @@ export function App() {
                 px and squeezing it. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
-              style={{ gridTemplateColumns: `clamp(260px,22vw,340px) minmax(0,1fr) ${settings.rightOpen ? "calc(clamp(230px,20vw,296px) + 44px)" : "44px"}`, minWidth: 0 }}
+              style={{ gridTemplateColumns: `clamp(260px,22vw,340px) minmax(0,1fr) ${settings.rightOpen ? "calc(clamp(230px,20vw,296px) + 48px)" : "48px"}`, minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
