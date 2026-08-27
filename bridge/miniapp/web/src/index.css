@@ -499,41 +499,136 @@ input {
   background: linear-gradient(90deg, color-mix(in srgb, var(--h) 20%, transparent), transparent); }
 .tw-body { padding: 2px 12px 10px 12px; min-width: 0; }
 
-/* INSTRUMENT — the default: framed, but rounded, because everything on this
-   surface is (a square panel here reads as a rendering bug, not as a HUD). */
+/* ══ THE FOUR MATERIALS ═════════════════════════════════════════════════════
+   Mirrors the dashboard's block, with the phone's one standing rule applied:
+   this surface rounds everything, because a square panel here reads as a
+   rendering bug rather than as a HUD. So INSTRUMENT rounds and TERMINAL stays
+   square on purpose — that contrast is doing the work the dashboard gets from
+   its brackets. Each style is a different SURFACE, not a different border. */
+
+/* ── INSTRUMENT ── a gauge, rounded for the phone ──────────────────────────
+   The tick ruler and the scanline on the readout carry across; the corner
+   brackets do not, because a bracket on a 12px radius is a smudge. */
 .tw[data-tw="instrument"] {
   border: 1px solid color-mix(in srgb, var(--h) 20%, transparent);
   background: var(--panel3); border-radius: 12px; overflow: hidden;
 }
-/* TERMINAL — printed, not framed: no border, no fill, no rail, mono
-   throughout. The phone rounds everything else, which is exactly why this one
-   reads as a different thing rather than as the same card with less padding. */
-.tw[data-tw="terminal"] { margin: 1px 0 9px; font-family: var(--mono); }
+.tw[data-tw="instrument"] > .tw-rail { box-shadow: 0 0 7px color-mix(in srgb, var(--h) 45%, transparent); }
+.tw[data-tw="instrument"] > .tw-head {
+  border-bottom: 1px solid color-mix(in srgb, var(--h) 10%, transparent);
+  padding-bottom: 5px;
+}
+.tw[data-tw="instrument"] .tw-name::before {
+  content: "◈ "; color: color-mix(in srgb, var(--h) 65%, transparent);
+}
+.tw[data-tw="instrument"] .tw-line {
+  height: 5px; align-self: center; background:
+    repeating-linear-gradient(90deg,
+      color-mix(in srgb, var(--h) 26%, transparent) 0 1px, transparent 1px 6px);
+}
+.tw[data-tw="instrument"] .tw-meta {
+  border: 1px solid color-mix(in srgb, var(--h) 18%, transparent);
+  border-radius: 999px; padding: 0 7px; color: var(--txd);
+}
+.tw[data-tw="instrument"] > .tw-body { position: relative; }
+.tw[data-tw="instrument"] > .tw-body::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.20) 0 1px, transparent 1px 3px);
+  opacity: .55;
+}
+
+/* ── TERMINAL ── a printout, and the one square thing on this surface ──────
+   Sprocket margin instead of a frame, a real prompt line for a header, a block
+   cursor at the end. Square corners are the point here: on a phone that rounds
+   everything, square reads as "this was printed, not drawn". */
+.tw[data-tw="terminal"] {
+  margin: 1px 0 11px; font-family: var(--mono);
+  padding-left: 15px; position: relative; border-radius: 0;
+}
 .tw[data-tw="terminal"] > .tw-rail { display: none; }
-.tw[data-tw="terminal"] > .tw-head { gap: 6px; padding: 0 0 3px 0; }
-.tw[data-tw="terminal"] .tw-name { letter-spacing: 1px; }
-.tw[data-tw="terminal"] .tw-name::before { content: "▸ "; color: var(--txf); }
+.tw[data-tw="terminal"]::before {
+  content: ""; position: absolute; left: 2px; top: 3px; bottom: 3px; width: 3px;
+  background: repeating-linear-gradient(180deg,
+    color-mix(in srgb, var(--txl) 60%, transparent) 0 3px, transparent 3px 9px);
+}
+.tw[data-tw="terminal"] > .tw-head { gap: 6px; padding: 0 0 2px 0; }
+.tw[data-tw="terminal"] .tw-name {
+  letter-spacing: 1px; color: var(--txm); text-transform: lowercase;
+}
+.tw[data-tw="terminal"] .tw-name::before { content: "~ ❯ "; color: var(--purple); }
 .tw[data-tw="terminal"] .tw-meta::before { content: "· "; }
+.tw[data-tw="terminal"] .tw-meta { color: var(--txf); }
 .tw[data-tw="terminal"] .tw-line { display: none; }
-.tw[data-tw="terminal"] > .tw-body { padding: 0 0 0 14px; }
-/* NOTE — paper: neutral frame, raised, roomy, and the hue down to a dot. */
+.tw[data-tw="terminal"] > .tw-body { padding: 0 0 0 14px; position: relative; }
+.tw[data-tw="terminal"] > .tw-body::after {
+  content: ""; display: inline-block; width: 6px; height: 11px; margin-left: 2px;
+  background: var(--h); vertical-align: -1px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tw[data-tw="terminal"] > .tw-body::after { animation: twBlink 1.1s steps(1) infinite; }
+}
+@keyframes twBlink { 50% { opacity: 0; } }
+
+/* ── NOTE ── paper, warm, taped down ───────────────────────────────────────
+   The anti-HUD, and the phone leans further into it than the desktop does: the
+   radius goes to 18, the tape is wider, the rules are further apart. This is
+   the one surface in the app that is not a screen. */
 .tw[data-tw="note"] {
-  margin: 7px 0 13px;
-  border: 1px solid var(--border);
-  background: var(--panel2);
-  border-radius: 18px; overflow: hidden;
-  box-shadow: 0 2px 14px rgb(0 0 0 / 0.38);
+  margin: 12px 0 15px;
+  border: 1px solid color-mix(in srgb, var(--warn) 15%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--warn) 5%, transparent), transparent 90px),
+    var(--panel2);
+  border-radius: 18px; overflow: visible;
+  box-shadow: 0 3px 18px rgb(0 0 0 / 0.42);
 }
 .tw[data-tw="note"] > .tw-rail { display: none; }
-.tw[data-tw="note"] > .tw-head { padding: 13px 17px 5px 17px; }
-.tw[data-tw="note"] .tw-name { letter-spacing: .8px; }
+.tw[data-tw="note"]::before {
+  content: ""; position: absolute; left: 20px; top: -6px; width: 52px; height: 11px;
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
+  transform: rotate(-2.5deg); pointer-events: none;
+}
+.tw[data-tw="note"] > .tw-head { padding: 16px 18px 3px 18px; }
+/* The one place the interface drops out of instrument voice. The brand keeps
+   UPPERCASE tracked labels for HUD chrome and lowercase for the oracle, and a
+   note is the one surface here that is not a screen — so it speaks in the
+   oracle's register: lowercase, untracked, warm, a size up. Sentence case was
+   tried first and cannot work: the label arrives uppercased, and ::first-letter
+   will not match through the dot that ::before puts in front of the text. */
+.tw[data-tw="note"] .tw-name {
+  letter-spacing: 0; text-transform: lowercase; font-size: var(--t115);
+  color: color-mix(in srgb, var(--warn) 45%, var(--txb));
+}
 .tw[data-tw="note"] .tw-name::before {
-  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px;
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px;
   border-radius: 50%; background: var(--h); vertical-align: middle;
 }
-.tw[data-tw="note"] .tw-meta { margin-left: auto; }
+.tw[data-tw="note"] .tw-meta { margin-left: auto; font-size: var(--t9); color: var(--txf); }
 .tw[data-tw="note"] .tw-line { display: none; }
-.tw[data-tw="note"] > .tw-body { padding: 0 17px 15px 17px; }
+.tw[data-tw="note"] > .tw-body {
+  padding: 4px 18px 18px 18px; line-height: 2.05;
+}
+.tw[data-tw="note"] .flc-chip,
+.tw[data-tw="note"] .flc-badge { border-radius: 999px; }
+
+/* ── PLAIN ── a ticker, and nothing else ───────────────────────────────────
+   Every result forced down to a TRACE: one dense line, no frame, no head. You
+   still get no widgets — you get the one line they would have said. */
+.tw[data-tw="plain"] {
+  margin: 0 0 3px 0; border: 0; background: none; box-shadow: none; border-radius: 0;
+  font-family: var(--mono); font-size: var(--t105);
+}
+.tw[data-tw="plain"]::before, .tw[data-tw="plain"]::after { content: none; }
+.tw[data-tw="plain"] > .tw-rail { display: none; }
+.tw[data-tw="plain"] > .tw-head { display: none; }
+.tw[data-tw="plain"] > .tw-body {
+  padding: 0; display: flex; align-items: baseline; gap: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--txd);
+}
+.tw[data-tw="plain"] .tw-tick { flex: none; color: var(--h); letter-spacing: 1.4px;
+  font-family: var(--ui); font-size: var(--t9); text-transform: uppercase; }
+.tw[data-tw="plain"] .tw-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    The phone's copy of the dashboard's .flc block: same markup, same hue rule
