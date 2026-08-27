@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "../api";
-import type { ToolStyle, ToolWidgetSpec } from "../lib/toolwidget";
+import { idiomFor, type ToolStyle, type ToolWidgetSpec } from "../lib/toolwidget";
 import {
   asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
   asFindings, asGraph, asIdeas, asIntake, asMeters, asOutput, asPlan, asScreens,
@@ -816,11 +816,28 @@ function IntakeGrid({ rows, send }: { rows: Question[]; send?: (t: string) => vo
   );
 }
 
-/** The instrument frame: a rail in the tool's own hue, a tracked name, a count,
- *  and a rule running out to nothing. One frame for every widget — what changes
- *  between them is the body, never the chrome. The style variants are CSS off
- *  `data-tw`; only `plain` is a decision this side, because it means "draw no
- *  widget at all" and the caller has to fall back before it gets here. */
+/** The frame a result wears — chosen by its payload's idiom, not by the tool.
+ *
+ *  This used to be one frame for every widget, "what changes between them is
+ *  the body, never the chrome", which made a four-shot gallery and a two-link
+ *  source list the same object at a glance. Now the idiom picks both how much
+ *  chrome there is and where it hangs (see lib/toolwidget `Idiom`):
+ *
+ *    trace   nothing at all — the caller draws it in the row's own stat cell
+ *    strip   a hairline and a band, at the text column
+ *    ledger  no box: the action grid again, flush left
+ *    plate   a framed well, inset to its own gutter
+ *    field   a stage that breaks the column and wears the corner brackets
+ *
+ *  The head is drawn for the three idioms that can carry one. A strip's label
+ *  would double the height of a two-chip band, and a trace has no box to put a
+ *  label on — both say what they are through the row above them, which already
+ *  names the tool.
+ *
+ *  The OUTPUT STYLE variants stay CSS off `data-tw` and stay orthogonal: style
+ *  picks the material (instrument / terminal / note), idiom picks the weight.
+ *  Only `plain` is a decision this side, because it means "draw no widget at
+ *  all" and the caller has to fall back before it gets here. */
 export function ToolWidget({ spec, accent, style, children }: {
   spec: ToolWidgetSpec;
   /** The tool's hue (lib/tools toolAccent), so a widget reads as that tool's
@@ -833,14 +850,47 @@ export function ToolWidget({ spec, accent, style, children }: {
 }) {
   const body = children ?? drawWidget(spec.type, spec.value);
   if (!body) return null;
+  const idiom = idiomFor(spec.type);
+  const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
   return (
-    <div className="tw" data-tw={style} style={{ "--h": accent } as CSSProperties}>
-      <span className="tw-rail" aria-hidden />
-      <div className="tw-head">
-        <span className="tw-name">{spec.label}</span>
-        {spec.meta && <span className="tw-meta">{spec.meta}</span>}
-        <span className="tw-line" aria-hidden />
-      </div>
+    <div className="tw" data-tw={style} data-idiom={idiom}
+         style={{ "--h": accent } as CSSProperties}>
+      {idiom === "plate" && <span className="tw-rail" aria-hidden />}
+      {head && (
+        <div className="tw-head">
+          <span className="tw-name">{spec.label}</span>
+          {spec.meta && <span className="tw-meta">{spec.meta}</span>}
+          <span className="tw-line" aria-hidden />
+        </div>
+      )}
+      <div className="tw-body">{body}</div>
+    </div>
+  );
+}
+
+/** A widget the model wrote into its own prose, as a ```widget:<type>``` fence
+ *  (lib/widgetblock). Same idiom frame as a tool's result, one difference: the
+ *  hue is the accent rather than a tool's, because no tool produced it — this
+ *  is the assistant speaking, and it is drawn inside the message bubble.
+ *
+ *  Returns null when the payload isn't the shape the type promised, which is
+ *  the caller's cue to draw the code block it would have drawn. That fallback
+ *  is the whole safety property: a malformed block costs a nicer rendering,
+ *  never the text. */
+export function BlockWidget({ type, value }: { type: string; value: unknown }) {
+  const body = drawWidget(type, value);
+  if (!body) return null;
+  const idiom = idiomFor(type);
+  const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
+  return (
+    <div className="tw" data-tw="instrument" data-idiom={idiom} data-said="">
+      {idiom === "plate" && <span className="tw-rail" aria-hidden />}
+      {head && (
+        <div className="tw-head">
+          <span className="tw-name">{type.toUpperCase()}</span>
+          <span className="tw-line" aria-hidden />
+        </div>
+      )}
       <div className="tw-body">{body}</div>
     </div>
   );

@@ -938,3 +938,94 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
   .flc[data-await] > .flc-rail { animation: none; }
   .flc-hold[data-held] > .flc-fill { transition: none; }
 }
+
+/* ── IDIOM: the weight, and the x ──────────────────────────────────────────
+   Mirrors the dashboard's idiom block. The one difference is the inset: the
+   dashboard hangs a strip and a plate off --axtag, the width of an action
+   row's tag cell, so they line up with the objects in the rows above. This
+   surface still draws per-tool cards rather than that grid (see
+   components/RunStream), so there is no tag cell to line up with and the
+   inset is a plain step instead — small enough that a 390px column keeps its
+   text width, big enough that the ladder's ragged edge still reads.
+
+   Same rule as there: idiom picks the WEIGHT, `data-tw` picks the MATERIAL,
+   and the two never negotiate. */
+.tw[data-idiom="strip"] {
+  margin: 0 0 2px 12px;
+  border-top: 1px solid var(--ac-06);
+}
+.tw[data-idiom="strip"] > .tw-body { padding: 6px 0 7px 0; }
+.tw[data-idiom="strip"] + .tw[data-idiom="strip"] { border-top-style: dashed; }
+
+.tw[data-idiom="ledger"] {
+  margin: 0 0 3px 0;
+  background: var(--ac-03);
+  border-top: 1px solid var(--ac-08);
+}
+.tw[data-idiom="ledger"] > .tw-head { padding: 4px 11px 3px 4px; }
+.tw[data-idiom="ledger"] > .tw-body { padding: 1px 9px 6px 4px; }
+
+.tw[data-idiom="plate"] { margin: 5px 0 4px 6px; }
+.tw[data-idiom="plate"] > .tw-body { max-height: 168px; overflow: auto; }
+
+.tw[data-idiom="field"] {
+  margin: 6px -10px 5px 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--h) 5%, transparent), transparent 40%),
+    var(--panel3);
+  border-top: 1px solid color-mix(in srgb, var(--h) 18%, transparent);
+  border-bottom: 1px solid var(--ac-08);
+}
+.tw[data-idiom="field"]::before,
+.tw[data-idiom="field"]::after {
+  content: ""; position: absolute; width: 9px; height: 9px;
+  border-color: color-mix(in srgb, var(--h) 30%, transparent); pointer-events: none;
+}
+.tw[data-idiom="field"]::before { left: 0; top: 0; border-left: 1px solid; border-top: 1px solid; }
+.tw[data-idiom="field"]::after { right: 0; bottom: 0; border-right: 1px solid; border-bottom: 1px solid; }
+.tw[data-idiom="field"] > .tw-head { padding: 6px 12px 4px 12px; }
+.tw[data-idiom="field"] > .tw-body { padding: 0 12px 12px 12px; }
+.tw[data-idiom="field"] ~ .tw[data-idiom="field"] > .tw-body { max-height: 128px; overflow: auto; }
+
+/* The two zero-chrome idioms opt out of whatever box the MATERIAL would draw.
+   A strip wearing INSTRUMENT's border and corner brackets is a box, and "not a
+   box" is the one thing a strip is defined to be — the hairline and the text
+   column do all the work. The material still shows through in the body:
+   TERMINAL's mono, a NOTE's roomier padding. It just has no frame to show it
+   in. Written after the style blocks so it wins at equal specificity. */
+.tw[data-idiom="strip"],
+.tw[data-idiom="ledger"] {
+  border-left: 0; border-right: 0; border-bottom: 0;
+  border-radius: 0; box-shadow: none;
+}
+.tw[data-idiom="strip"]::before, .tw[data-idiom="strip"]::after,
+.tw[data-idiom="ledger"]::before, .tw[data-idiom="ledger"]::after { content: none; }
+.tw[data-idiom="strip"] { background: none; }
+/* A field bleeds off the right edge, so it must not carry a border there —
+   the brackets are what close it, not a rule the content runs into. */
+.tw[data-idiom="field"] { border-right: 0; border-radius: 0; }
+
+/* A widget the model wrote into its own prose: already inside the bubble, so
+   it takes no inset of its own. */
+.tw[data-said] { margin-left: 0; margin-right: 0; }
+.tw[data-said][data-idiom="field"] { margin-right: -8px; }
+
+/* ── MARKDOWN parity with the dashboard ────────────────────────────────────
+   A fenced block and a `> [!NOTE]` callout render on both surfaces now
+   (components/Markdown). Unhighlighted here on purpose — colouring it would
+   pull the editor's grammars into a phone bundle. */
+.md-code { margin: 0.7em 0; background: var(--code-bg, var(--panel3)); border: 1px solid var(--border, var(--ac-12)); }
+.md-code-lang {
+  padding: 3px 10px; font-size: var(--t8); letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--txf); border-bottom: 1px solid var(--ac-08);
+}
+.md-code > pre { margin: 0; padding: 8px 10px; overflow-x: auto; }
+.md-code code { font-family: var(--mono); font-size: var(--t105); color: var(--txm); }
+.md-admonition {
+  margin: 0.7em 0; padding: 7px 11px; border-left: 2px solid var(--adm);
+  background: color-mix(in srgb, var(--adm) 7%, transparent);
+}
+.md-admonition-label {
+  font-size: var(--t8); letter-spacing: 1.8px; color: var(--adm); margin-bottom: 3px;
+}
+.md-admonition > :last-child { margin-bottom: 0; }

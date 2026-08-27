@@ -1,11 +1,57 @@
-import { memo } from "react";
+import { cloneElement, isValidElement, memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { widgetLang, widgetValue } from "../lib/widgetblock";
+import { BlockWidget, drawWidget } from "./ResultWidgets";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
 // `.md` block in index.css. Links open in a new tab.
 // Memoized: re-parsing every past text block on each poll of a long, streaming
 // turn is the single most expensive thing the transcript does.
+//
+// Mirrors bridge/dashboard/web/src/components/Markdown.tsx. Two things are
+// deliberately NOT carried across, because they name something this surface
+// does not have rather than something it renders differently:
+//   - the file-ref link, which opens the dashboard's editor (there is none here)
+//   - syntax highlighting, which would pull the editor's grammars (lib/hl) into
+//     a phone bundle to colour a block you mostly scroll past
+// A fenced block still gets the same frame and the same language rail, so a
+// reply reads as the same reply on both surfaces.
+
+/** Everything inside a react-markdown node, flattened back to plain text. */
+function textOf(n: unknown): string {
+  if (typeof n === "string") return n;
+  if (Array.isArray(n)) return n.map(textOf).join("");
+  if (n && typeof n === "object" && "props" in n)
+    return textOf((n as { props: { children?: unknown } }).props.children);
+  return "";
+}
+
+/** GitHub-flavoured callouts: `> [!NOTE]` and friends. */
+const ADMONITIONS: Record<string, { label: string; color: string }> = {
+  note: { label: "NOTE", color: "var(--acc)" },
+  tip: { label: "TIP", color: "var(--ok)" },
+  important: { label: "IMPORTANT", color: "var(--purple)" },
+  warning: { label: "WARNING", color: "var(--warn)" },
+  caution: { label: "CAUTION", color: "var(--err)" },
+};
+const ADMONITION_RE = /^\s*\[!(note|tip|important|warning|caution)\]\s*\n?/i;
+
+/** The same tree with the `[!NOTE]` marker cut out of its first text node. */
+function stripMarker(node: unknown): unknown {
+  if (typeof node === "string") return node.replace(ADMONITION_RE, "");
+  if (Array.isArray(node)) {
+    const i = node.findIndex((n) => n !== null && n !== undefined && n !== "");
+    return i < 0 ? node : node.map((n, k) => (k === i ? stripMarker(n) : n));
+  }
+  if (isValidElement(node)) {
+    const props = node.props as { children?: unknown };
+    if (props.children === undefined) return node;
+    return cloneElement(node, undefined, stripMarker(props.children) as ReactNode);
+  }
+  return node;
+}
+
 export const Markdown = memo(function Markdown({ children, className = "" }: { children: string; className?: string }) {
   return (
     <div className={`md ${className}`}>
@@ -18,6 +64,41 @@ export const Markdown = memo(function Markdown({ children, className = "" }: { c
           table: ({ node, ...props }) => (
             <div className="md-tablewrap"><table {...props} /></div>
           ),
+          blockquote: ({ children }) => {
+            const kind = ADMONITION_RE.exec(textOf(children))?.[1]?.toLowerCase();
+            const spec = kind ? ADMONITIONS[kind] : undefined;
+            if (!spec) return <blockquote>{children}</blockquote>;
+            return (
+              <div className="md-admonition" style={{ ["--adm" as string]: spec.color }}>
+                <div className="md-admonition-label">{spec.label}</div>
+                {stripMarker(children) as ReactNode}
+              </div>
+            );
+          },
+          pre: ({ children }) => {
+            const el = (Array.isArray(children) ? children[0] : children) as
+              { props?: { className?: string; children?: unknown } } | undefined;
+            // `:` is in the class because a widget fence is written
+            // ```widget:table — the tag arrives verbatim from remark.
+            const lang = /language-([\w:+-]+)/.exec(el?.props?.className ?? "")?.[1] ?? "";
+            const code = textOf(el?.props?.children).replace(/\n$/, "");
+            // A typed block the model drew on purpose (lib/widgetblock). Every
+            // step here can decline — an unknown type, a body still streaming
+            // in, a payload that isn't the shape its type promised — and each
+            // declines to the same place: the code block this always drew.
+            const wtype = widgetLang(lang);
+            if (wtype) {
+              const value = widgetValue(code);
+              if (value !== null && drawWidget(wtype, value))
+                return <BlockWidget type={wtype} value={value} />;
+            }
+            return (
+              <div className="md-code">
+                {lang && <div className="md-code-lang">{lang}</div>}
+                <pre><code>{code}</code></pre>
+              </div>
+            );
+          },
         }}
       >
         {children}

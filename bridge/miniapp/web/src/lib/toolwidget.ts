@@ -53,6 +53,46 @@ export function toToolStyle(v: unknown): ToolStyle {
   return (typeof v === "string" && LEGACY[v]) || "instrument";
 }
 
+/** How much chrome a result wears, and at what x it hangs off the turn.
+ *
+ *  The old answer was "one frame for every widget — what changes between them
+ *  is the body, never the chrome", which made a four-shot gallery and a
+ *  two-link source list the same object at a glance. The new answer is that
+ *  chrome is a function of the payload's SHAPE, not the tool's name:
+ *
+ *    trace   one scalar          no chrome at all; rides the row's stat cell
+ *    strip   a flat list         a band at the text column, hairline, no box
+ *    ledger  rows with a state   the action grid again, flush left
+ *    plate   a blob to read      a framed well inset to its own gutter
+ *    field   spatial / visual    a stage: breaks the column, bleeds right
+ *
+ *  The attachment x is the point: quiet results hug the turn's rail and loud
+ *  ones break out of it, so a turn's ragged left edge reads as a graph of how
+ *  much each step produced — before you read a word of it. */
+export type Idiom = "trace" | "strip" | "ledger" | "plate" | "field";
+
+/** Which idiom each widget type draws in. Keyed by the `type` drawWidget already
+ *  understands, so adding a widget is still a table entry rather than a
+ *  component — the idiom just decides its frame instead of every widget sharing
+ *  one. Anything missing falls back to `strip`, which is the idiom that assumes
+ *  the least about a payload it has never seen. */
+const IDIOM: Record<string, Idiom> = {
+  verdict: "trace", confidence: "trace",
+  files: "strip", sources: "strip", stats: "strip", claims: "strip", meters: "strip",
+  checks: "ledger", commands: "ledger", plan: "ledger", findings: "ledger",
+  chain: "ledger", intake: "ledger",
+  output: "plate", draft: "plate", diff: "plate", table: "plate",
+  screens: "field", map: "field", chart: "field", ideas: "field",
+};
+
+export function idiomFor(type: string): Idiom {
+  return IDIOM[type] ?? "strip";
+}
+
+/** Every widget type that has a drawing, in ladder order. The settings preview
+ *  and the check file both want this list; neither should hand-maintain it. */
+export const WIDGET_TYPES = Object.keys(IDIOM);
+
 /** The structured part of a `tool_done` event — only the fields the mapping
  *  reads, so this doesn't have to track the whole union. */
 type Structured = { images?: string[]; sources?: WebSource[] };
