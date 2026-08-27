@@ -1093,6 +1093,14 @@ export const RunStream = memo(function RunStream({
             // What structure this result carried, if any. Null keeps the plain
             // row — which is every tool without a table entry.
             const spec = widgetFor(done);
+            // Hung under whichever card this tool got, not just the default one:
+            // a run of Reads collapses into a CallGroup, and a Read of a PNG is
+            // how almost every image result in this store arrives.
+            const extra = spec && toolStyle !== "plain" ? (
+              <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
+            ) : done?.images?.length ? <ToolImages paths={done.images} /> : null;
+            const withExtra = (node: ReactNode) =>
+              extra ? <div key={i} className="space-y-2">{node}{extra}</div> : node;
             if (event.name === "Bash")
               return <TerminalBlock key={i} command={event.summary} done={done} />;
             if (groupOf.has(i)) return null;   // drawn by the run's head
@@ -1124,7 +1132,7 @@ export const RunStream = memo(function RunStream({
                 />
               );
             if (run)
-              return (
+              return withExtra(
                 <CallGroup
                   key={i}
                   name={event.name}
@@ -1146,14 +1154,7 @@ export const RunStream = memo(function RunStream({
                   error={done?.is_error}
                 />
                 {done?.is_error && done.stat ? <ErrLine text={done.stat} /> : null}
-                {/* Whatever structure the result carried — the pages a search
-                    reached, the screenshots a tool handed back. Drawn under the
-                    card the tool got, so every kind gets it without each card
-                    knowing. PLAIN keeps the thumbnails: an image has no plainer
-                    form than itself. */}
-                {spec && toolStyle !== "plain" ? (
-                  <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
-                ) : done?.images?.length ? <ToolImages paths={done.images} /> : null}
+                {extra}
               </div>
             );
           }

@@ -1609,6 +1609,17 @@ export const RunStream = memo(function RunStream({
             // What structure this result carried, if any. Null keeps the plain
             // row — which is every tool without a table entry.
             const spec = widgetFor(done);
+            // Hung under whichever card this tool got, not just the default one:
+            // a Read of a PNG returns an image and takes the ReadCard branch, and
+            // that is 715 of the 729 image results in this store — a widget only
+            // the default branch could show would be one almost nobody sees.
+            const extra = spec && toolStyle !== "plain" ? (
+              <div className="ml-[18px]">
+                <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
+              </div>
+            ) : done?.images?.length ? <ToolImages paths={done.images} /> : null;
+            const withExtra = (node: ReactNode) =>
+              extra ? <div key={i}>{node}{extra}</div> : node;
             if (groupOf.has(i)) return null; // drawn by the run's head
             const run = groups.get(i) ?? [i];
             // A delegation is a turn nested inside this one, so it is drawn as
@@ -1653,7 +1664,7 @@ export const RunStream = memo(function RunStream({
                 />
               );
             if (run.length > 1)
-              return (
+              return withExtra(
                 <CallGroup
                   key={i}
                   name={event.name}
@@ -1668,7 +1679,7 @@ export const RunStream = memo(function RunStream({
               );
             const kind = toolKind(event.name);
             if (kind === "read" && event.summary)
-              return (
+              return withExtra(
                 <ReadCard
                   key={i}
                   path={event.summary}
@@ -1679,7 +1690,7 @@ export const RunStream = memo(function RunStream({
                 />
               );
             if (kind === "write" && event.summary)
-              return (
+              return withExtra(
                 <WriteCard
                   key={i}
                   name={event.name}
@@ -1703,17 +1714,7 @@ export const RunStream = memo(function RunStream({
                 {done?.is_error && done.stat ? (
                   <div className="mt-2 ml-[18px]"><ErrLine text={done.stat} /></div>
                 ) : null}
-                {/* Whatever structure the result carried — the pages a search
-                    reached, the screenshots a tool handed back. Drawn under the
-                    card the tool got, so every kind gets it without each card
-                    learning about sources or images. PLAIN keeps the thumbnails
-                    it always had rather than nothing: an image has no plainer
-                    form than itself. */}
-                {spec && toolStyle !== "plain" ? (
-                  <div className="ml-[18px]">
-                    <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
-                  </div>
-                ) : done?.images?.length ? <ToolImages paths={done.images} /> : null}
+                {extra}
               </div>
             );
           }
