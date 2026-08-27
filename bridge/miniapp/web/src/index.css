@@ -300,30 +300,82 @@ input {
 }
 .md hr { margin: 1em 0; border: none; border-top: 1px solid var(--border); }
 /* On a phone a table wider than the screen gets squeezed to one word per line
-   and a row goes six lines tall. Let it keep its natural width and scroll
-   instead (GitHub's rule). */
-.md table {
-  display: block;
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  margin: 0.6em 0;
-  border-collapse: collapse;
-  font-size: 0.85em;
-}
+   and a row goes six lines tall. It keeps its natural width and scrolls in its
+   own box instead (GitHub's rule) — the box is the wrapper, so the table keeps
+   its own column widths.
+
+   Ruled, not gridded: a border on every cell is graph paper, and on 390px of
+   glass it is the borders you end up reading. */
+.md-tablewrap { margin: 0.6em 0; overflow-x: auto; }
+.md table { width: max-content; max-width: 100%; border-collapse: collapse; font-size: 0.85em; }
 /* Inside a cell the chip border is what pushes a phrase onto the next line —
    the tint alone reads as code. */
 .md td code, .md th code { border-color: transparent; padding: 0 0.2em; }
-/* …but cap a column so a prose-heavy cell wraps at a readable measure instead
-   of becoming one endless line you have to swipe through. */
-.md th, .md td {
-  border: 1px solid var(--border);
-  padding: 0.3em 0.55em;
-  text-align: left;
-  max-width: min(58vw, 40ch);
+/* Cap a column so a prose-heavy cell wraps at a readable measure instead of
+   becoming one endless line you have to swipe through. */
+.md th, .md td { text-align: left; max-width: min(58vw, 40ch); }
+.md th {
+  font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; font-size: 0.92em;
+  color: var(--foreground-bright); white-space: nowrap;
+  padding: 0 0.9em 0.3em 0; border-bottom: 1px solid var(--border);
 }
-.md th { background: var(--muted); font-weight: 600; }
+.md td {
+  padding: 0.28em 0.9em 0.28em 0; border-bottom: 1px solid var(--ac-06);
+  vertical-align: top; font-variant-numeric: tabular-nums;
+}
+.md th:last-child, .md td:last-child { padding-right: 0; }
+.md tbody tr:last-child td { border-bottom: 0; }
 .md img { max-width: 100%; border-radius: 8px; }
+
+/* === THE SESSION'S IDIOM ===================================================
+   OUTPUT STYLE is how a whole session reads, not just how a tool widget draws.
+   `data-style` sits on the transcript root (routes/run.tsx); everything with a
+   name below answers to it — both bubbles, the agent block, the widgets, and
+   the reply with its tables and code.
+
+   The phone's transcript is mostly Tailwind utilities, which have no name to
+   hook: what a style can reach here is what carries a class. That is the
+   reading surface, which is the part you are looking at on a phone anyway.
+
+   INSTRUMENT is the authored default and has no rules. PLAIN means "draw no
+   widget" — an opt-out, not a look — so it has none either. */
+
+/* -- TERMINAL: printed, not framed. The bubbles lose their fills, the reply
+   sits flush on the page, and colour carries what a border used to. */
+[data-style="terminal"] .pbub {
+  border-radius: 0; background: none; padding: 0 10px 0 0;
+  color: var(--txb); border-right: 2px solid var(--tg-button);
+}
+[data-style="terminal"] .md {
+  border-color: transparent; background: none; border-radius: 0;
+  padding-left: 0; padding-right: 0; line-height: 1.5;
+}
+[data-style="terminal"] .md code { background: none; border-color: transparent; padding: 0; }
+[data-style="terminal"] .md pre { border: 0; background: none; border-radius: 0; border-left: 1px solid var(--border); }
+[data-style="terminal"] .md blockquote { border-left-style: dashed; }
+[data-style="terminal"] .md th { border-bottom-style: dashed; }
+[data-style="terminal"] .md td { border-bottom-color: transparent; }
+[data-style="terminal"] .agb { border: 0; background: none; border-radius: 0; }
+[data-style="terminal"] .flc { border: 0; background: none; border-radius: 0; }
+
+/* -- NOTE: paper. Rounder than the phone's own idiom and roomy enough to sit
+   with — the reply is the page here, so it gets the air. */
+[data-style="note"] .pbub { border-radius: 20px 20px 6px 20px; padding: 10px 14px; }
+[data-style="note"] .md {
+  border-radius: 20px; border-bottom-left-radius: 8px;
+  padding: 11px 15px; line-height: 1.72;
+}
+[data-style="note"] .md p { margin: 0.6em 0; }
+[data-style="note"] .md li { margin: 0.3em 0; }
+[data-style="note"] .md pre { border-radius: 14px; }
+[data-style="note"] .md code { border-radius: 6px; }
+[data-style="note"] .md blockquote { border-radius: 10px; padding: 0.4em 0.9em; background: var(--ac-03); }
+[data-style="note"] .md-tablewrap {
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel2); padding: 9px 13px 10px;
+}
+[data-style="note"] .agb { border-radius: 18px; }
+[data-style="note"] .flc { border-radius: 16px; }
 
 /* === THE AGENT BLOCK ======================================================
    A delegated run — Task, Agent, Skill. The one card that keeps a frame,

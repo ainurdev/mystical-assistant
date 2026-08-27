@@ -4,11 +4,12 @@ import {
 } from "react";
 import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
-  Ellipsis, FileCog, FolderTree, Gauge, GitBranch, Handshake, Hourglass, KeyRound,
-  ListMusic, ListTree, LoaderCircle, Lock, MessageCircleQuestion, Monitor, MonitorPlay,
-  Moon, Network, Palette, Play, Plug, Power, Radio, ScanLine, ScrollText, Search, Server,
+  Ellipsis, FileCog, FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
+  Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
+  MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
+  Power, Radio, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
   ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
-  Upload, Volume2, X, type LucideIcon,
+  Upload, Volume2, Waypoints, X, type LucideIcon,
 } from "lucide-react";
 import { TOOL_STYLES, type ToolStyle, type ToolWidgetSpec } from "../../lib/toolwidget";
 import { ToolWidget } from "../ResultWidgets";
@@ -128,7 +129,7 @@ type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notification
 // ten unrelated things rather than two groups of five.
 const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: string }[] = [
   { key: "appearance", label: "APPEARANCE", hint: "theme · type · CRT", icon: Palette, group: "THE HUD" },
-  { key: "transcript", label: "TRANSCRIPT", hint: "how a result draws", icon: ScrollText, group: "THE HUD" },
+  { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD" },
   { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD" },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
@@ -1033,6 +1034,11 @@ function OutputStylePicker({
               fontFamily: "inherit",
               padding: 0,
               overflow: "hidden",
+              // A button centres its content in whatever height the grid row
+              // gives it; these have to start at the top or the four tiles read
+              // as four different layouts.
+              display: "flex",
+              flexDirection: "column",
               border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
               background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "var(--panel3)",
             }}
@@ -1055,13 +1061,20 @@ function OutputStylePicker({
                 {o.hint}
               </span>
             </div>
+            {/* data-style, not just data-tw: the style governs the whole
+                stream now, so the well has to be a slice of one — a result and
+                a piece of a reply — or the tile would preview a quarter of what
+                the pick actually does. */}
             <div
               inert
+              data-style={o.key}
               style={{
                 borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
                 background: "var(--panel)",
                 padding: "11px 13px",
                 minHeight: 124,
+                flex: 1,
+                width: "100%",
               }}
             >
               {o.key === "plain" ? (
@@ -1069,6 +1082,17 @@ function OutputStylePicker({
               ) : (
                 <ToolWidget spec={STYLE_PREVIEW} accent={hue} style={o.key} />
               )}
+              <div className="md" style={{ marginTop: 9, fontSize: "var(--t11)" }}>
+                <div className="md-tablewrap">
+                  <table>
+                    <thead><tr><th>Tool</th><th>Share</th></tr></thead>
+                    <tbody>
+                      <tr><td>Bash</td><td>70%</td></tr>
+                      <tr><td>Read</td><td>10%</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </button>
         );
@@ -1515,10 +1539,74 @@ function TagsPanel() {
   );
 }
 
+// One icon per extra: a grid of ten cards is scanned by shape long before it is
+// read, and these are otherwise ten identical rectangles.
+const AI_ICONS: Record<string, LucideIcon> = {
+  title: PenLine,
+  relevance: ShieldQuestion,
+  nextup: ListTodo,
+  preview: Play,
+  learn: GraduationCap,
+  tailstate: MessageCircleQuestion,
+  ponytail: Scissors,
+  graph: Waypoints,
+  commitmsg: GitCommitVertical,
+  design: Shapes,
+};
+
+/** One extra as its own card: icon, name, what it does, what it costs, its
+ *  switch. As ruled rows in a single card these read as a list you go down
+ *  line by line; as cards, which ones are spending is visible from across the
+ *  grid — the question this tab exists to answer. The cost line sits on the
+ *  card's floor (marginTop:auto) so it lines up across a row whatever the
+ *  hints do. */
+function AiCard({ f, busy, err, onToggle }: {
+  f: AiFeature; busy: boolean; err?: string; onToggle: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const Icon = AI_ICONS[f.key] ?? Sparkles;
+  return (
+    <div style={{
+      ...CARD,
+      display: "flex",
+      flexDirection: "column",
+      gap: 7,
+      border: `1px solid color-mix(in srgb, var(--acc) ${f.enabled ? 34 : 12}%, transparent)`,
+      background: f.enabled ? "color-mix(in srgb, var(--acc) 7%, var(--panel))" : CARD.background,
+      opacity: busy ? 0.55 : 1,
+      transition: "border-color .15s, background .15s, opacity .15s",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Icon size={13} strokeWidth={1.7} aria-hidden
+          style={{ flex: "none", color: f.enabled ? "var(--acc)" : "var(--txd)" }} />
+        <span style={{ ...KEY_TX, color: f.enabled ? "var(--txb)" : "var(--txd)" }}>{f.label}</span>
+        {f.about && <InfoDot on={open} about={f.label} onClick={() => setOpen(!open)} />}
+        <span style={{ flex: 1, minWidth: 8 }} />
+        <Switch on={f.enabled} onClick={() => (busy ? null : onToggle())} />
+      </div>
+      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", lineHeight: 1.6 }}>{f.hint}</div>
+      {open && f.about && <div style={{ ...ASIDE, marginTop: 0 }}>{f.about}</div>}
+      {err && <div style={{ fontSize: "var(--t95)", color: "var(--err)" }}>{err}</div>}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6, marginTop: "auto", paddingTop: 8,
+        borderTop: RULE, fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txd)",
+      }}>
+        <span>{f.cost}</span>
+        {f.tokens && <>
+          <span style={{ opacity: 0.5 }}>·</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txm)" }}>{f.tokens}</span>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 function AiPanel() {
   const [rows, setRows] = useState<AiFeature[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  // Keyed by feature: a failure belongs on the card whose switch just refused
+  // to move, not in a line under ten of them.
+  const [err, setErr] = useState<{ key: string; msg: string } | null>(null);
 
   useEffect(() => {
     void api
@@ -1540,7 +1628,7 @@ function AiPanel() {
       // fresh answer to the shared store so it appears/disappears right now.
       setAiFeatures(fresh);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "could not save");
+      setErr({ key: f.key, msg: e instanceof Error ? e.message : "could not save" });
     } finally {
       setBusy(null);
     }
@@ -1550,29 +1638,26 @@ function AiPanel() {
   if (!rows.length)
     return <Placeholder icon={TriangleAlert}>This bridge is running a build without the AI tab. Restart it.</Placeholder>;
 
+  const on = rows.filter((f) => f.enabled).length;
   return (
     <Section
       title="MODEL-SPENDING EXTRAS"
       info="Anything that runs without you pressing something is off by default. A switch here beats the matching environment setting and applies to the next turn — nothing to restart. Everything a feature adds to the dashboard is hidden again the moment you switch it off. The next-up board also prefers a free provider (ACCOUNTS tab) over spending Claude quota. The token figure is what one unit burns, in and out together, as a median of real runs. Even the smallest one-shot costs tens of thousands: every headless run carries the CLI's own system prompt and tool schemas before it reads a word of yours. Most of that is read from cache, so it is cheaper than the number looks — but it is not free, and the ones that fire on their own are the ones that add up."
     >
-      <div style={CARD}>
-        {/* One line each: what it is, what it costs in calls and in tokens, its
-            switch. The paragraph about how it works is `about`, the ⓘ's job. */}
-        {rows.map((f, i) => (
-          <Row
+      <div style={{ fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txd)", marginBottom: 11 }}>
+        {on} OF {rows.length} SPENDING
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(258px,1fr))", gap: 9 }}>
+        {rows.map((f) => (
+          <AiCard
             key={f.key}
-            first={!i}
-            label={f.label}
-            desc={<>{f.hint} <span style={{ color: "var(--txd)" }}>· costs {f.cost}</span>
-              {f.tokens && <><span style={{ color: "var(--txd)" }}> · </span>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txm)" }}>{f.tokens}</span></>}</>}
-            info={f.about || undefined}
-          >
-            <Switch on={f.enabled} onClick={() => void (busy ? null : toggle(f))} />
-          </Row>
+            f={f}
+            busy={busy === f.key}
+            err={err?.key === f.key ? err.msg : undefined}
+            onToggle={() => void toggle(f)}
+          />
         ))}
       </div>
-      {err && <div style={{ ...NOTE, color: "var(--err)" }}>{err}</div>}
     </Section>
   );
 }
@@ -3426,7 +3511,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     under THE HUD rather than with the run knobs. */}
                 <Section
                   title="OUTPUT STYLE"
-                  info="How a tool result's own structure is drawn — the pages a search reached, the screenshots a run handed back. Each tile below is the real widget, so what you see is what the transcript does. A tool with nothing structured to show keeps its one-line row whatever this says."
+                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does. PLAIN is the exception: it turns tool widgets off and leaves everything else as it was."
                 >
                   <OutputStylePicker
                     value={settings.toolStyle}

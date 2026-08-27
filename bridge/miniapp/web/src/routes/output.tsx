@@ -6,9 +6,10 @@ import { toolAccent } from "../lib/tools";
 import { TOOL_STYLES, useToolStyle, type ToolWidgetSpec } from "../lib/toolwidget";
 
 /* OUTPUT STYLE — its own page, because the choice is a look and a list of four
-   words is not one. Each row draws the REAL ToolWidget under the real CSS, so
-   what you tap is what the transcript does; PLAIN draws the one-line row you
-   get instead, since "no widget" only means something next to it.
+   words is not one. Each row draws the REAL widgets and the REAL markdown under
+   the real CSS, so what you tap is what the transcript does; PLAIN draws the
+   one-line row you get instead, since "no widget" only means something next to
+   it.
 
    The previews are `inert`: a picture, not a document — their links take
    neither a tap nor a tab stop from the row that owns them. */
@@ -41,9 +42,9 @@ function OutputPage() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-[var(--tg-hint)]">
-        How a tool result&apos;s own structure is drawn — the pages a search reached, the
-        screenshots a run handed back. A tool with nothing structured to show keeps its
-        one-line row whatever this says.
+        How the whole session draws — your messages, the reply, its tables and its code,
+        and the structure a tool handed back. PLAIN is the exception: it turns the
+        widgets off and leaves everything else as it was.
       </p>
 
       <div className="space-y-2.5">
@@ -63,8 +64,21 @@ function OutputPage() {
                 {on && <span className="shrink-0 text-[var(--brand-soft)]" aria-hidden>&#10003;</span>}
                 <span className="ml-auto min-w-0 truncate text-[10px] text-[var(--tg-hint)]">{o.hint}</span>
               </div>
-              <div inert className="border-t border-border bg-[var(--tg-bg)] px-3 py-3">
+              {/* data-style, not just the widget's own data-tw: the pick
+                  governs the whole stream, so the well is a slice of one. */}
+              <div inert data-style={o.key} className="border-t border-border bg-[var(--tg-bg)] px-3 py-3">
                 {o.key === "plain" ? <PlainRow /> : <ToolWidget spec={PREVIEW} accent={hue} style={o.key} />}
+                <div className="md mt-2 text-[11px]">
+                  <div className="md-tablewrap">
+                    <table>
+                      <thead><tr><th>Tool</th><th>Share</th></tr></thead>
+                      <tbody>
+                        <tr><td>Bash</td><td>70%</td></tr>
+                        <tr><td>Read</td><td>10%</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </button>
           );

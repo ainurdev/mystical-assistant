@@ -16,6 +16,7 @@ import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox } from "../components/ImageLightbox";
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
+import { useToolStyle } from "../lib/toolwidget";
 
 // Shared empty list — a fresh `[]` per render would defeat RunStream's memo.
 const NO_PENDING: PendingRequest[] = [];
@@ -68,6 +69,7 @@ function RunPage() {
   const slowLoad = useLoadingPhase(loadingSession);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [style] = useToolStyle();
   const listRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [parked, setParked] = useState(true);
@@ -252,7 +254,10 @@ function RunPage() {
   }, [visibleTurns, virtualizer, transcriptNav]);
 
   return (
-    <div ref={contentRef} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
+    // OUTPUT STYLE is the whole session's idiom, not just its widgets — one
+    // attribute here and the bubbles, the agent block and the reply's own
+    // tables all answer to it (index.css, THE SESSION'S IDIOM).
+    <div ref={contentRef} data-style={style} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
       {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
 
       {/* What this session is for, and what a usage limit does to it. */}
@@ -353,7 +358,7 @@ function RunPage() {
                   </div>
                 )}
                 {turn.prompt && (
-                  <div className="whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
+                  <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
                     {turn.prompt}
                   </div>
                 )}

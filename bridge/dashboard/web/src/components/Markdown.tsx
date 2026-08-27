@@ -126,6 +126,12 @@ export const Markdown = memo(function Markdown({
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          // A wide table used to push the whole transcript column sideways.
+          // It scrolls in its own box instead — GitHub's rule, and the one the
+          // Mini App already had.
+          table: ({ node, ...props }) => (
+            <div className="md-tablewrap"><table {...props} /></div>
+          ),
           blockquote: ({ children }) => {
             const kind = ADMONITION_RE.exec(textOf(children))?.[1]?.toLowerCase();
             const spec = kind ? ADMONITIONS[kind] : undefined;

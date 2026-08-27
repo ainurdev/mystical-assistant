@@ -25,14 +25,18 @@ export type WebSource = { url: string; title?: string; code?: number };
  *  The first cut (BARE, CARD) differed from INSTRUMENT by a radius and some
  *  padding, so nobody could tell them apart in the picker or the transcript.
  *  These are three different things a result can BE: a HUD readout, a
- *  terminal's own printout, a paper note. `plain` opts out entirely. */
+ *  terminal's own printout, a paper note — and the pick governs the WHOLE
+ *  transcript (index.css, THE SESSION'S IDIOM), not just the widgets: the
+ *  bubbles, the ledger, the agent block, and the reply's tables and code all
+ *  answer to it. `plain` opts out of widgets, which is why it is the one style
+ *  with nothing to say about the rest of the stream. */
 export type ToolStyle = "instrument" | "terminal" | "note" | "plain";
 
 export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
-  { key: "instrument", label: "INSTRUMENT", hint: "bracketed readout, hue rail" },
-  { key: "terminal", label: "TERMINAL", hint: "printed, not framed — mono, no chrome" },
+  { key: "instrument", label: "INSTRUMENT", hint: "framed HUD — hard corners, hue rails" },
+  { key: "terminal", label: "TERMINAL", hint: "printed — nothing wears a box" },
   { key: "note", label: "NOTE", hint: "paper — rounded, raised, roomy" },
-  { key: "plain", label: "PLAIN", hint: "no widget — the one-line row" },
+  { key: "plain", label: "PLAIN", hint: "no widgets — the rows as they are" },
 ];
 
 /** What the two redrawn styles used to be called. A stored pick keeps meaning

@@ -80,12 +80,8 @@ function PromptBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
       <div
-        className="max-w-[78%] border border-r-[3px] px-3 py-1.5"
-        style={{
-          borderColor: "color-mix(in srgb, var(--purple) 26%, transparent)",
-          borderRightColor: "var(--purple)",
-          background: "color-mix(in srgb, var(--purple) 7%, transparent)",
-        }}
+        // Colours in .pbub (index.css) — see .abub for why not inline.
+        className="pbub max-w-[78%] border border-r-[3px] px-3 py-1.5"
       >
         <span className="block whitespace-pre-wrap break-words leading-relaxed text-foreground-bright">
           {text}

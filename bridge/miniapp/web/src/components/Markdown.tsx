@@ -13,6 +13,11 @@ export const Markdown = memo(function Markdown({ children, className = "" }: { c
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          // Its own scroll box, so a wide table swipes instead of squeezing the
+          // rest of the reply into a column of single words.
+          table: ({ node, ...props }) => (
+            <div className="md-tablewrap"><table {...props} /></div>
+          ),
         }}
       >
         {children}

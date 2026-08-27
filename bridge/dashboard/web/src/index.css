@@ -892,15 +892,28 @@ input {
   color: var(--muted-foreground);
 }
 .md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--border-bright); }
-.md table { margin: 0.6em 0; border-collapse: collapse; font-size: 0.92em; }
-.md th, .md td { border: 1px solid var(--border); padding: 0.35em 0.6em; text-align: left; }
+/* A table is columns, so it is ruled rather than gridded: a border on every
+   cell turns five rows into graph paper and buries the one thing worth seeing.
+   The header rules off, the rows hairline apart, the first column flush with
+   the prose above it. Numbers get tabular figures so a column of them lines up
+   on the digit instead of on the glyph. */
+.md-tablewrap { margin: 0.7em 0; overflow-x: auto; }
+.md table { border-collapse: collapse; width: max-content; max-width: 100%; font-size: 0.92em; }
 .md th {
-  background: var(--ac-06);
-  color: var(--foreground-bright);
-  font-weight: 600;
-  letter-spacing: 0.6px;
+  text-align: left; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+  font-size: 0.9em; color: var(--foreground-bright); white-space: nowrap;
+  padding: 0.1em 1.2em 0.35em 0; border-bottom: 1px solid var(--border-bright);
 }
-.md tbody tr:nth-child(even) { background: var(--ac-03); }
+.md td {
+  padding: 0.32em 1.2em 0.32em 0; border-bottom: 1px solid var(--ac-06);
+  vertical-align: top; font-variant-numeric: tabular-nums;
+}
+.md th:last-child, .md td:last-child { padding-right: 0; }
+.md tbody tr:last-child td { border-bottom: 0; }
+.md tbody tr:hover td { background: var(--ac-03); }
+/* The chip border inside a cell is what pushes a phrase onto a second line —
+   the tint alone already reads as code. */
+.md td code, .md th code { border-color: transparent; padding: 0 0.2em; }
 .md img { max-width: 100%; border-radius: 8px; }
 
 /* Session readouts (agents, goal) — one row at the top of the composer's own
@@ -1534,6 +1547,98 @@ input {
 @media (prefers-reduced-motion: no-preference) {
   .tw { animation: termIn .34s cubic-bezier(.2,.8,.2,1) both; }
 }
+
+/* The two bubbles: yours on the right with the bar on its right edge, the
+   agent's on the left with the bar on its left. Their colours are here rather
+   than inline so a style can take the fill off (see below). */
+.pbub {
+  border-color: color-mix(in srgb, var(--purple) 26%, transparent);
+  border-right-color: var(--purple);
+  background: color-mix(in srgb, var(--purple) 7%, transparent);
+}
+.abub {
+  border-color: var(--ac-22);
+  border-left-color: var(--acc);
+  background: var(--ac-06);
+}
+
+/* === THE SESSION'S IDIOM ===================================================
+   OUTPUT STYLE is how a whole session reads, not just how a tool widget draws.
+   `data-style` sits on the transcript scroller (hud/Terminal.tsx) and every
+   family below answers to it: your prompt, the action ledger, the run window,
+   the agent block, and the reply with its tables and its code.
+
+   INSTRUMENT is what the rest of this file already authors, so it needs no
+   rules here — the other two are overrides off it, and each is deliberately
+   short. A style is three or four decisions applied everywhere, not a second
+   stylesheet: frames on or off, corners hard or round, air tight or loose.
+
+   PLAIN is absent on purpose. It means "draw no widget" — an opt-out rather
+   than a look — so the stream around it keeps the instrument it always had. */
+
+/* ── TERMINAL — nothing in the stream wears a box. Fills go to nothing,
+   borders become rules, and the indent does the grouping a frame used to do.
+   What is left is what a terminal would have printed: text in columns, with
+   colour carrying the kind. */
+[data-style="terminal"] .pbub {
+  border: 0; border-right: 2px solid var(--purple);
+  background: none; padding: 0 10px 0 0;
+}
+[data-style="terminal"] .abub {
+  border: 0; border-left: 2px solid var(--acc); background: none; padding-left: 9px;
+}
+[data-style="terminal"] .actrow,
+[data-style="terminal"] .actrow[data-tier="mark"] { background: none; }
+[data-style="terminal"] .actrow + .actrow { border-top-color: transparent; }
+[data-style="terminal"] .ax-tag[data-shape="fill"] { background: none; color: var(--h); }
+[data-style="terminal"] .ax-tag[data-shape="box"],
+[data-style="terminal"] .ax-tag[data-shape="dash"],
+[data-style="terminal"] .ax-tag[data-shape="round"] {
+  border-color: transparent; background: none; padding: 0;
+}
+[data-style="terminal"] .ax-window,
+[data-style="terminal"] .ax-drawer { border: 0; background: none; }
+[data-style="terminal"] .agb { border: 0; background: none; }
+[data-style="terminal"] .agb::before,
+[data-style="terminal"] .agb::after { display: none; }
+[data-style="terminal"] .md { line-height: 1.5; }
+[data-style="terminal"] .md code { background: none; border-color: transparent; padding: 0; }
+[data-style="terminal"] .md-code { border: 0; background: none; border-left: 1px solid var(--border); }
+[data-style="terminal"] .md-code-lang { border: 0; background: none; padding-left: 9px; }
+[data-style="terminal"] .md blockquote { background: none; border-left-style: dashed; }
+[data-style="terminal"] .md h1,
+[data-style="terminal"] .md h2 { border-bottom-style: dashed; }
+[data-style="terminal"] .md th { border-bottom-style: dashed; }
+[data-style="terminal"] .md td { border-bottom-color: transparent; }
+[data-style="terminal"] .md-admonition { background: none; }
+
+/* ── NOTE — everything rounds, lifts and breathes. Same content, read rather
+   than scanned: the rows stop butting into one block and become cards, the
+   reply gets the line-height of something you sit with, and the table gets a
+   box of its own instead of hanging in the column. */
+[data-style="note"] .pbub { border-radius: 14px 14px 5px 14px; padding: 7px 13px; }
+[data-style="note"] .abub { border-radius: 5px 14px 14px 14px; padding: 7px 13px; }
+[data-style="note"] .actrow { border-radius: 10px; overflow: hidden; }
+[data-style="note"] .actrow + .actrow { margin-top: 3px; border-top: 0; }
+[data-style="note"] .actrow + .ax-drawer,
+[data-style="note"] .ax-drawer + .actrow { margin-top: 3px; }
+[data-style="note"] .ax-window { border-radius: 13px; overflow: hidden; }
+[data-style="note"] .ax-drawer { border-radius: 11px; }
+[data-style="note"] .agb { border-radius: 14px; }
+[data-style="note"] .agb::before,
+[data-style="note"] .agb::after { display: none; }
+[data-style="note"] .md { line-height: 1.75; }
+[data-style="note"] .md p { margin: 0.7em 0; }
+[data-style="note"] .md li { margin: 0.32em 0; }
+[data-style="note"] .md code { border-radius: 6px; }
+[data-style="note"] .md-code { border-radius: 12px; overflow: hidden; }
+[data-style="note"] .md blockquote { border-radius: 10px; border-left-width: 3px; }
+[data-style="note"] .md-admonition { border-radius: 10px; }
+[data-style="note"] .md-tablewrap {
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--panel2); padding: 9px 14px 10px;
+}
+[data-style="note"] .md img { border-radius: 12px; }
 
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    A typed stage's settled result, framed like the agent block: both are a

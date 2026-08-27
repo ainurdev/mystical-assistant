@@ -1354,12 +1354,9 @@ function MessageBlock({
     <>
       <div
         ref={ref}
-        className="min-w-0 max-w-[78%] break-words border border-l-[3px] px-2.5 py-1.5 text-foreground-bright"
-        style={{
-          borderColor: "var(--ac-22)",
-          borderLeftColor: "var(--acc)",
-          background: "var(--ac-06)",
-        }}
+        // Colours live in .abub (index.css) rather than inline: a style has to
+        // be able to take the fill off, and nothing overrides an inline rule.
+        className="abub min-w-0 max-w-[78%] break-words border border-l-[3px] px-2.5 py-1.5 text-foreground-bright"
       >
         {children}
       </div>
