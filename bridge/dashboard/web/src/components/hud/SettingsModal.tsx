@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { TOOL_STYLES, type ToolStyle, type ToolWidgetSpec } from "../../lib/toolwidget";
 import { ToolWidget } from "../ResultWidgets";
-import { ToolCard } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
 import { ago } from "../../lib/surfaces";
@@ -157,7 +156,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
   { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
   { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
-  { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style instrument terminal note plain bare card sources screens preview" },
+  { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style control plate stamp wire signal log ledger press halo instrument terminal note plain sources screens preview" },
   { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
   { tab: "ambient", sec: "CLAUDE·FM", terms: "radio station music volume ambient" },
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
@@ -991,12 +990,12 @@ function ThemeCardGrid({
   );
 }
 
-/** OUTPUT STYLE, drawn as itself. A dropdown listing INSTRUMENT · TERMINAL ·
- *  NOTE asks you to picture three things you have never seen, and the first cut
- *  of these styles was three borders apart, so nobody could. Each tile renders
- *  the REAL ToolWidget under the real CSS — a tile cannot drift from the
- *  transcript the way a mockup would — and PLAIN renders the real ToolCard,
- *  because "no widget" only means something next to the row you get instead.
+/** OUTPUT STYLE, drawn as itself. A dropdown listing CONTROL PLATE · WIRE ·
+ *  SIGNAL LOG asks you to picture five things you have never seen, and an
+ *  earlier cut of these styles was a few borders apart, so nobody could. Each
+ *  tile renders the REAL ToolWidget under the real CSS — a tile cannot drift
+ *  from the transcript the way a mockup would.
+ *
  *  The wells are `inert`: a preview is a picture, so its links neither take a
  *  click nor a tab stop away from the tile that owns them. */
 const STYLE_PREVIEW: ToolWidgetSpec = {
@@ -1077,11 +1076,7 @@ function OutputStylePicker({
                 width: "100%",
               }}
             >
-              {o.key === "plain" ? (
-                <ToolCard name="WebSearch" summary="claude code bridge" stat="3 sources" animate={false} />
-              ) : (
-                <ToolWidget spec={STYLE_PREVIEW} accent={hue} style={o.key} />
-              )}
+              <ToolWidget spec={STYLE_PREVIEW} accent={hue} style={o.key} />
               <div className="md" style={{ marginTop: 9, fontSize: "var(--t11)" }}>
                 <div className="md-tablewrap">
                   <table>
@@ -3506,12 +3501,12 @@ export function SettingsModal(props: SettingsModalProps) {
               <>
                 {/* Its own tab, again. It was folded into APPEARANCE when it
                     held one switch and a dropdown and left 700px of void; the
-                    dropdown is now four previews, which is the page that void
+                    dropdown is now five previews, which is the page that void
                     was waiting for. Still a reading preference, so it stays
                     under THE HUD rather than with the run knobs. */}
                 <Section
                   title="OUTPUT STYLE"
-                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does. PLAIN is the exception: it turns tool widgets off and leaves everything else as it was."
+                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Five languages, one per column of the Chat Elements sheet: each is a whole grammar rather than a border swap. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does."
                 >
                   <OutputStylePicker
                     value={settings.toolStyle}

@@ -365,8 +365,8 @@ export interface HudSettings {
   // sound, or "off". An event missing here has never been assigned and rings
   // pushTone, so an install that never opens this panel sounds unchanged.
   pushSounds: Partial<Record<PushEvent, SoundChoice>>;
-  // How a tool result's structure is drawn in the transcript. "plain" opts out
-  // of widgets entirely and keeps the raw payload (see lib/toolwidget).
+  // Which of the five languages the whole transcript reads in — not just the
+  // widgets, but the bubbles, the ledger and the reply (see lib/toolwidget).
   toolStyle: ToolStyle;
 }
 
@@ -379,7 +379,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "instrument",
+  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "stamp",
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */

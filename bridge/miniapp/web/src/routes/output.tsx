@@ -5,11 +5,9 @@ import { ToolWidget } from "../components/ResultWidgets";
 import { toolAccent } from "../lib/tools";
 import { TOOL_STYLES, useToolStyle, type ToolWidgetSpec } from "../lib/toolwidget";
 
-/* OUTPUT STYLE — its own page, because the choice is a look and a list of four
+/* OUTPUT STYLE — its own page, because the choice is a look and a list of five
    words is not one. Each row draws the REAL widgets and the REAL markdown under
-   the real CSS, so what you tap is what the transcript does; PLAIN draws the
-   one-line row you get instead, since "no widget" only means something next to
-   it.
+   the real CSS, so what you tap is what the transcript does.
 
    The previews are `inert`: a picture, not a document — their links take
    neither a tap nor a tab stop from the row that owns them. */
@@ -43,8 +41,8 @@ function OutputPage() {
 
       <p className="text-[11px] leading-relaxed text-[var(--tg-hint)]">
         How the whole session draws — your messages, the reply, its tables and its code,
-        and the structure a tool handed back. PLAIN is the exception: it turns the
-        widgets off and leaves everything else as it was.
+        and the structure a tool handed back. Five languages; each one is a whole
+        grammar, not a border swap.
       </p>
 
       <div className="space-y-2.5">
@@ -67,7 +65,7 @@ function OutputPage() {
               {/* data-style, not just the widget's own data-tw: the pick
                   governs the whole stream, so the well is a slice of one. */}
               <div inert data-style={o.key} className="border-t border-border bg-[var(--tg-bg)] px-3 py-3">
-                {o.key === "plain" ? <PlainRow /> : <ToolWidget spec={PREVIEW} accent={hue} style={o.key} />}
+                <ToolWidget spec={PREVIEW} accent={hue} style={o.key} />
                 <div className="md mt-2 text-[11px]">
                   <div className="md-tablewrap">
                     <table>
@@ -84,20 +82,6 @@ function OutputPage() {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-/** What PLAIN leaves you: the row the tool always had. The phone's transcript
- *  draws that row inside RunStream's own event switch, so this is a still of
- *  it rather than a second renderer to keep in sync. */
-function PlainRow() {
-  return (
-    <div className="flex items-center gap-2 text-[11px]">
-      <span className="text-[var(--brand-soft)]">▸</span>
-      <span className="tracking-[1.2px] text-[var(--brand-soft)]">WEBSEARCH</span>
-      <span className="min-w-0 truncate text-[var(--tg-hint)]">claude code bridge</span>
-      <span className="ml-auto shrink-0 font-mono text-[10px] text-[var(--muted-2)]">3 sources</span>
     </div>
   );
 }

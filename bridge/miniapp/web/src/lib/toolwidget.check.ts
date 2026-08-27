@@ -33,16 +33,21 @@ console.assert(
 );
 
 // --- the style setting ------------------------------------------------------
-console.assert(TOOL_STYLES.length === 4, `four styles, got ${TOOL_STYLES.length}`);
-console.assert(TOOL_STYLES[0].key === "instrument", "instrument is the default, and leads");
+console.assert(TOOL_STYLES.length === 5, `five styles, got ${TOOL_STYLES.length}`);
+console.assert(TOOL_STYLES[0].key === "stamp", "CONTROL PLATE is the default, and leads");
 for (const s of TOOL_STYLES) console.assert(isToolStyle(s.key), `${s.key} is a style`);
 console.assert(!isToolStyle("fancy"), "an unknown style is rejected (a stale localStorage value)");
 console.assert(!isToolStyle(undefined), "a missing style is rejected");
-// The redraw renamed two of them; a pick made before it still means what it meant.
-console.assert(toToolStyle("bare") === "terminal", "BARE was redrawn as TERMINAL");
-console.assert(toToolStyle("card") === "note", "CARD was redrawn as NOTE");
-console.assert(toToolStyle("note") === "note", "a current style passes through");
-console.assert(toToolStyle("fancy") === "instrument", "an unknown style falls back");
-console.assert(toToolStyle(undefined) === "instrument", "a missing style falls back");
+// The sheet replaced all four; a pick made before it lands on its nearest new
+// language rather than snapping back to the default.
+console.assert(toToolStyle("instrument") === "stamp", "INSTRUMENT was redrawn as CONTROL PLATE");
+console.assert(toToolStyle("terminal") === "wire", "TERMINAL was redrawn as WIRE");
+console.assert(toToolStyle("note") === "press", "NOTE was redrawn as LEDGER PRESS");
+console.assert(toToolStyle("plain") === "wire", "PLAIN had no column; it lands on the quietest");
+console.assert(toToolStyle("bare") === "wire", "BARE, two renames ago, still resolves");
+console.assert(toToolStyle("card") === "press", "CARD, two renames ago, still resolves");
+console.assert(toToolStyle("halo") === "halo", "a current style passes through");
+console.assert(toToolStyle("fancy") === "stamp", "an unknown style falls back");
+console.assert(toToolStyle(undefined) === "stamp", "a missing style falls back");
 
 console.log("toolwidget: ok");

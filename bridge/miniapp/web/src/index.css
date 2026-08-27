@@ -337,45 +337,88 @@ input {
    hook: what a style can reach here is what carries a class. That is the
    reading surface, which is the part you are looking at on a phone anyway.
 
-   INSTRUMENT is the authored default and has no rules. PLAIN means "draw no
-   widget" — an opt-out, not a look — so it has none either. */
+   CONTROL PLATE is the authored default and adds nothing here. The other four
+   are overrides off it, one column of the Chat Elements sheet each. */
 
-/* -- TERMINAL: printed, not framed. The bubbles lose their fills, the reply
-   sits flush on the page, and colour carries what a border used to. */
-[data-style="terminal"] .pbub {
+/* -- WIRE: nothing is a card. Fills go to nothing, frames become leads, and
+   what is left is colour carrying the kind — the phone's version of a
+   schematic, where the indent does the grouping a box used to. */
+[data-style="wire"] .pbub {
   border-radius: 0; background: none; padding: 0 10px 0 0;
-  color: var(--txb); border-right: 2px solid var(--tg-button);
+  color: var(--txb); border-right: 1px solid var(--tg-button);
 }
-[data-style="terminal"] .md {
+[data-style="wire"] .md {
   border-color: transparent; background: none; border-radius: 0;
-  padding-left: 0; padding-right: 0; line-height: 1.5;
+  padding-left: 0; padding-right: 0; line-height: 1.55;
 }
-[data-style="terminal"] .md code { background: none; border-color: transparent; padding: 0; }
-[data-style="terminal"] .md pre { border: 0; background: none; border-radius: 0; border-left: 1px solid var(--border); }
-[data-style="terminal"] .md blockquote { border-left-style: dashed; }
-[data-style="terminal"] .md th { border-bottom-style: dashed; }
-[data-style="terminal"] .md td { border-bottom-color: transparent; }
-[data-style="terminal"] .agb { border: 0; background: none; border-radius: 0; }
-[data-style="terminal"] .flc { border: 0; background: none; border-radius: 0; }
+[data-style="wire"] .md code { background: none; border-color: transparent; padding: 0; }
+[data-style="wire"] .md pre { border: 0; background: none; border-radius: 0; border-left: 1px solid var(--border); }
+[data-style="wire"] .md td { border-bottom-color: transparent; }
+[data-style="wire"] .agb { border: 0; background: none; border-radius: 0; }
+[data-style="wire"] .flc { border: 0; background: none; border-radius: 0; }
 
-/* -- NOTE: paper. Rounder than the phone's own idiom and roomy enough to sit
-   with — the reply is the page here, so it gets the air. */
-[data-style="note"] .pbub { border-radius: 20px 20px 6px 20px; padding: 10px 14px; }
-[data-style="note"] .md {
+/* -- SIGNAL LOG: a log viewer. Everything lands on one grid — the bubbles stop
+   being bubbles and become rows with a hairline under them, and nothing but a
+   payload body is allowed to break the line. */
+[data-style="signal"] .pbub {
+  border-radius: 0; background: none; border: 0;
+  border-bottom: 1px solid var(--ac-06); padding: 3px 0 6px 0; color: var(--txb);
+}
+[data-style="signal"] .md {
+  border-color: transparent; background: none; border-radius: 0;
+  padding-left: 0; padding-right: 0; line-height: 1.55;
+}
+[data-style="signal"] .md code, [data-style="signal"] .md pre { border-radius: 0; }
+[data-style="signal"] .agb { border-radius: 0; border-width: 0 0 0 2px; background: none; }
+[data-style="signal"] .flc { border-radius: 0; }
+
+/* -- LEDGER PRESS: type does the framing, so the frames go. Prose turns serif
+   because it is printed rather than rendered; the payload keeps its mono. Runs
+   warm, the way NOTE did before it — the one surface here that is not a
+   screen. */
+[data-style="press"] {
+  --press-rule: color-mix(in srgb, var(--warn) 20%, var(--border));
+  --press-serif: ui-serif, Georgia, "Times New Roman", serif;
+}
+[data-style="press"] .pbub {
+  border: 0; border-radius: 0; background: none; padding: 0 0 4px 0;
+  border-bottom: 1px solid var(--press-rule);
+  font-family: var(--press-serif); font-style: italic; color: var(--txb);
+}
+[data-style="press"] .md {
+  border-color: transparent; background: none; border-radius: 0;
+  padding-left: 0; padding-right: 0; line-height: 1.7;
+  font-family: var(--press-serif);
+}
+[data-style="press"] .md code, [data-style="press"] .md pre { font-family: var(--mono); }
+[data-style="press"] .md pre {
+  border: 0; border-left: 2px solid var(--press-rule); border-radius: 0; background: none;
+}
+[data-style="press"] .md blockquote { background: none; border-left-color: var(--warn); }
+[data-style="press"] .md th { border-bottom: 2px solid var(--press-rule); }
+[data-style="press"] .md td { border-bottom-color: var(--press-rule); }
+[data-style="press"] .agb { border: 0; background: none; border-radius: 0; }
+[data-style="press"] .flc { border: 0; background: none; border-radius: 0; }
+
+/* -- HALO: surfaces, not rules. Rounder than the phone's own idiom and roomy
+   enough to sit with — the reply is a surface here, so it gets the air and a
+   real shadow instead of a border. */
+[data-style="halo"] .pbub { border-radius: 20px 20px 6px 20px; padding: 10px 14px; }
+[data-style="halo"] .md {
   border-radius: 20px; border-bottom-left-radius: 8px;
   padding: 11px 15px; line-height: 1.72;
 }
-[data-style="note"] .md p { margin: 0.6em 0; }
-[data-style="note"] .md li { margin: 0.3em 0; }
-[data-style="note"] .md pre { border-radius: 14px; }
-[data-style="note"] .md code { border-radius: 6px; }
-[data-style="note"] .md blockquote { border-radius: 10px; padding: 0.4em 0.9em; background: var(--ac-03); }
-[data-style="note"] .md-tablewrap {
+[data-style="halo"] .md p { margin: 0.6em 0; }
+[data-style="halo"] .md li { margin: 0.3em 0; }
+[data-style="halo"] .md pre { border-radius: 14px; }
+[data-style="halo"] .md code { border-radius: 6px; }
+[data-style="halo"] .md blockquote { border-radius: 10px; padding: 0.4em 0.9em; background: var(--ac-03); }
+[data-style="halo"] .md-tablewrap {
   border: 1px solid var(--border); border-radius: 14px;
   background: var(--panel2); padding: 9px 13px 10px;
 }
-[data-style="note"] .agb { border-radius: 18px; }
-[data-style="note"] .flc { border-radius: 16px; }
+[data-style="halo"] .agb { border-radius: 18px; box-shadow: 0 5px 20px rgb(0 0 0 / 0.42); }
+[data-style="halo"] .flc { border-radius: 16px; }
 
 /* === THE AGENT BLOCK ======================================================
    A delegated run — Task, Agent, Skill. The one card that keeps a frame,
@@ -499,136 +542,139 @@ input {
   background: linear-gradient(90deg, color-mix(in srgb, var(--h) 20%, transparent), transparent); }
 .tw-body { padding: 2px 12px 10px 12px; min-width: 0; }
 
-/* ══ THE FOUR MATERIALS ═════════════════════════════════════════════════════
-   Mirrors the dashboard's block, with the phone's one standing rule applied:
-   this surface rounds everything, because a square panel here reads as a
-   rendering bug rather than as a HUD. So INSTRUMENT rounds and TERMINAL stays
-   square on purpose — that contrast is doing the work the dashboard gets from
-   its brackets. Each style is a different SURFACE, not a different border. */
+/* ══ THE FIVE LANGUAGES ═════════════════════════════════════════════════════
+   Mirrors the dashboard's block — one column of the Chat Elements sheet each —
+   with the phone's one standing rule applied: this surface rounds anything
+   that is a panel, because a square panel here reads as a rendering bug rather
+   than as a HUD. So CONTROL PLATE rounds and HALO rounds harder, while the
+   three languages that have no panel at all stay square, and that contrast is
+   doing the work the dashboard gets from its corner brackets. */
 
-/* ── INSTRUMENT ── a gauge, rounded for the phone ──────────────────────────
-   The tick ruler and the scanline on the readout carry across; the corner
-   brackets do not, because a bracket on a 12px radius is a smudge. */
-.tw[data-tw="instrument"] {
-  border: 1px solid color-mix(in srgb, var(--h) 20%, transparent);
+/* ── CONTROL PLATE ── a stamped plate, rounded for the phone ───────────────
+   The stamped header, the tick ruler and the scanline on the readout carry
+   across; the corner brackets do not, because a bracket on a 12px radius is a
+   smudge. Default, and the only one that is a panel by default. */
+.tw[data-tw="stamp"] {
+  border: 1px solid color-mix(in srgb, var(--h) 22%, transparent);
   background: var(--panel3); border-radius: 12px; overflow: hidden;
 }
-.tw[data-tw="instrument"] > .tw-rail { box-shadow: 0 0 7px color-mix(in srgb, var(--h) 45%, transparent); }
-.tw[data-tw="instrument"] > .tw-head {
-  border-bottom: 1px solid color-mix(in srgb, var(--h) 10%, transparent);
-  padding-bottom: 5px;
+.tw[data-tw="stamp"] > .tw-rail { box-shadow: 0 0 7px color-mix(in srgb, var(--h) 45%, transparent); }
+.tw[data-tw="stamp"] > .tw-head {
+  background: color-mix(in srgb, var(--h) 13%, var(--panel3));
+  border-bottom: 1px solid color-mix(in srgb, var(--h) 24%, transparent);
+  padding: 5px 12px;
 }
-.tw[data-tw="instrument"] .tw-name::before {
-  content: "◈ "; color: color-mix(in srgb, var(--h) 65%, transparent);
+.tw[data-tw="stamp"] .tw-name { color: var(--txb); }
+.tw[data-tw="stamp"] .tw-name::before {
+  content: ""; display: inline-block; width: 6px; height: 6px;
+  margin-right: 6px; background: var(--h);
 }
-.tw[data-tw="instrument"] .tw-line {
+.tw[data-tw="stamp"] .tw-line {
   height: 5px; align-self: center; background:
     repeating-linear-gradient(90deg,
       color-mix(in srgb, var(--h) 26%, transparent) 0 1px, transparent 1px 6px);
 }
-.tw[data-tw="instrument"] .tw-meta {
-  border: 1px solid color-mix(in srgb, var(--h) 18%, transparent);
-  border-radius: 999px; padding: 0 7px; color: var(--txd);
+.tw[data-tw="stamp"] .tw-meta {
+  border: 1px solid color-mix(in srgb, var(--h) 22%, transparent);
+  padding: 0 5px; color: var(--txd);
 }
-.tw[data-tw="instrument"] > .tw-body { position: relative; }
-.tw[data-tw="instrument"] > .tw-body::after {
+.tw[data-tw="stamp"] > .tw-body { position: relative; }
+.tw[data-tw="stamp"] > .tw-body::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(0deg, rgba(0,0,0,.20) 0 1px, transparent 1px 3px);
   opacity: .55;
 }
 
-/* ── TERMINAL ── a printout, and the one square thing on this surface ──────
-   Sprocket margin instead of a frame, a real prompt line for a header, a block
-   cursor at the end. Square corners are the point here: on a phone that rounds
-   everything, square reads as "this was printed, not drawn". */
-.tw[data-tw="terminal"] {
-  margin: 1px 0 11px; font-family: var(--mono);
-  padding-left: 15px; position: relative; border-radius: 0;
+/* ── WIRE ── a schematic, and the one node on this surface ─────────────────
+   A lead down the left with a diamond at its head, and nothing else. Square
+   corners are the point: on a phone that rounds everything, square reads as
+   "this was drawn, not framed". */
+.tw[data-tw="wire"] {
+  border: 0; border-left: 1px solid color-mix(in srgb, var(--h) 55%, transparent);
+  background: none; border-radius: 0; box-shadow: none;
+  margin: 3px 0 11px; padding-left: 12px; position: relative;
 }
-.tw[data-tw="terminal"] > .tw-rail { display: none; }
-.tw[data-tw="terminal"]::before {
-  content: ""; position: absolute; left: 2px; top: 3px; bottom: 3px; width: 3px;
-  background: repeating-linear-gradient(180deg,
-    color-mix(in srgb, var(--txl) 60%, transparent) 0 3px, transparent 3px 9px);
+.tw[data-tw="wire"]::before {
+  content: ""; position: absolute; left: -4.5px; top: 3px; width: 8px; height: 8px;
+  border: 1px solid var(--h); background: var(--panel); transform: rotate(45deg);
 }
-.tw[data-tw="terminal"] > .tw-head { gap: 6px; padding: 0 0 2px 0; }
-.tw[data-tw="terminal"] .tw-name {
-  letter-spacing: 1px; color: var(--txm); text-transform: lowercase;
+.tw[data-tw="wire"] > .tw-rail { display: none; }
+.tw[data-tw="wire"] > .tw-head { padding: 0 0 3px 0; gap: 7px; }
+.tw[data-tw="wire"] .tw-name {
+  font-size: var(--t8); letter-spacing: 2px;
+  color: color-mix(in srgb, var(--h) 62%, var(--txf));
 }
-.tw[data-tw="terminal"] .tw-name::before { content: "~ ❯ "; color: var(--purple); }
-.tw[data-tw="terminal"] .tw-meta::before { content: "· "; }
-.tw[data-tw="terminal"] .tw-meta { color: var(--txf); }
-.tw[data-tw="terminal"] .tw-line { display: none; }
-.tw[data-tw="terminal"] > .tw-body { padding: 0 0 0 14px; position: relative; }
-.tw[data-tw="terminal"] > .tw-body::after {
-  content: ""; display: inline-block; width: 6px; height: 11px; margin-left: 2px;
-  background: var(--h); vertical-align: -1px;
+.tw[data-tw="wire"] .tw-meta { border: 0; padding: 0; color: var(--txf); }
+.tw[data-tw="wire"] .tw-meta::before { content: "· "; }
+.tw[data-tw="wire"] .tw-line { height: 1px; background: var(--ac-08); }
+.tw[data-tw="wire"] > .tw-body { padding: 0 0 2px 0; }
+/* The lead is the language, not a frame, so the zero-chrome idioms keep it. */
+.tw[data-tw="wire"][data-idiom="strip"],
+.tw[data-tw="wire"][data-idiom="ledger"] {
+  border-left: 1px solid color-mix(in srgb, var(--h) 55%, transparent);
 }
-@media (prefers-reduced-motion: no-preference) {
-  .tw[data-tw="terminal"] > .tw-body::after { animation: twBlink 1.1s steps(1) infinite; }
-}
-@keyframes twBlink { 50% { opacity: 0; } }
+.tw[data-tw="wire"][data-idiom="strip"]::before,
+.tw[data-tw="wire"][data-idiom="ledger"]::before { content: ""; }
 
-/* ── NOTE ── paper, warm, taped down ───────────────────────────────────────
-   The anti-HUD, and the phone leans further into it than the desktop does: the
-   radius goes to 18, the tape is wider, the rules are further apart. This is
-   the one surface in the app that is not a screen. */
-.tw[data-tw="note"] {
-  margin: 12px 0 15px;
-  border: 1px solid color-mix(in srgb, var(--warn) 15%, var(--border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--warn) 5%, transparent), transparent 90px),
-    var(--panel2);
-  border-radius: 18px; overflow: visible;
-  box-shadow: 0 3px 18px rgb(0 0 0 / 0.42);
+/* ── SIGNAL LOG ── gutter, level, row ──────────────────────────────────────
+   The head becomes the row's own columns: a LEVEL chip where a log keeps
+   severity, the count right-aligned in the gutter it keeps for it. Rank is the
+   chip's saturation and nothing else. */
+.tw[data-tw="signal"] {
+  border: 0; border-radius: 0; box-shadow: none; background: none;
+  margin: 0 0 8px; font-family: var(--mono);
 }
-.tw[data-tw="note"] > .tw-rail { display: none; }
-.tw[data-tw="note"]::before {
-  content: ""; position: absolute; left: 20px; top: -6px; width: 52px; height: 11px;
-  background: color-mix(in srgb, var(--warn) 22%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
-  transform: rotate(-2.5deg); pointer-events: none;
+.tw[data-tw="signal"] > .tw-rail { display: none; }
+.tw[data-tw="signal"] > .tw-head {
+  gap: 8px; padding: 2px 0 3px 0; border-bottom: 1px solid var(--ac-06);
 }
-.tw[data-tw="note"] > .tw-head { padding: 16px 18px 3px 18px; }
-/* The one place the interface drops out of instrument voice. The brand keeps
-   UPPERCASE tracked labels for HUD chrome and lowercase for the oracle, and a
-   note is the one surface here that is not a screen — so it speaks in the
-   oracle's register: lowercase, untracked, warm, a size up. Sentence case was
-   tried first and cannot work: the label arrives uppercased, and ::first-letter
-   will not match through the dot that ::before puts in front of the text. */
-.tw[data-tw="note"] .tw-name {
-  letter-spacing: 0; text-transform: lowercase; font-size: var(--t115);
-  color: color-mix(in srgb, var(--warn) 45%, var(--txb));
+.tw[data-tw="signal"] .tw-name {
+  min-width: 62px; padding: 1px 6px; text-align: center;
+  background: color-mix(in srgb, var(--h) 20%, transparent);
+  color: color-mix(in srgb, var(--h) 85%, var(--txb));
+  font-size: var(--t8); letter-spacing: 1.4px;
 }
-.tw[data-tw="note"] .tw-name::before {
-  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px;
-  border-radius: 50%; background: var(--h); vertical-align: middle;
-}
-.tw[data-tw="note"] .tw-meta { margin-left: auto; font-size: var(--t9); color: var(--txf); }
-.tw[data-tw="note"] .tw-line { display: none; }
-.tw[data-tw="note"] > .tw-body {
-  padding: 4px 18px 18px 18px; line-height: 2.05;
-}
-.tw[data-tw="note"] .flc-chip,
-.tw[data-tw="note"] .flc-badge { border-radius: 999px; }
+.tw[data-tw="signal"] .tw-meta { color: var(--txd); }
+.tw[data-tw="signal"] > .tw-body { padding: 4px 0 2px 16px; }
 
-/* ── PLAIN ── a ticker, and nothing else ───────────────────────────────────
-   Every result forced down to a TRACE: one dense line, no frame, no head. You
-   still get no widgets — you get the one line they would have said. */
-.tw[data-tw="plain"] {
-  margin: 0 0 3px 0; border: 0; background: none; box-shadow: none; border-radius: 0;
-  font-family: var(--mono); font-size: var(--t105);
+/* ── LEDGER PRESS ── type does the framing ─────────────────────────────────
+   A rule above at the weight of the rank, the label in tracked caps, the count
+   set right in italic. The material that answers a frame with a typeface. */
+.tw[data-tw="press"] {
+  border: 0; border-top: 2px solid color-mix(in srgb, var(--h) 45%, transparent);
+  background: none; border-radius: 0; box-shadow: none; margin: 12px 0 14px;
 }
-.tw[data-tw="plain"]::before, .tw[data-tw="plain"]::after { content: none; }
-.tw[data-tw="plain"] > .tw-rail { display: none; }
-.tw[data-tw="plain"] > .tw-head { display: none; }
-.tw[data-tw="plain"] > .tw-body {
-  padding: 0; display: flex; align-items: baseline; gap: 8px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--txd);
+.tw[data-tw="press"] > .tw-rail { display: none; }
+.tw[data-tw="press"] > .tw-head { padding: 4px 0 3px 0; gap: 10px; align-items: baseline; }
+.tw[data-tw="press"] .tw-name { letter-spacing: 2.2px; color: var(--txd); }
+.tw[data-tw="press"] .tw-line { display: none; }
+.tw[data-tw="press"] .tw-meta {
+  margin-left: auto; border: 0; padding: 0; font-style: italic; color: var(--txd);
 }
-.tw[data-tw="plain"] .tw-tick { flex: none; color: var(--h); letter-spacing: 1.4px;
-  font-family: var(--ui); font-size: var(--t9); text-transform: uppercase; }
-.tw[data-tw="plain"] .tw-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tw[data-tw="press"] > .tw-body { padding: 3px 0 0 0; }
+
+/* ── HALO ── surfaces, not rules ───────────────────────────────────────────
+   The phone leans further into this one than the desktop does: the radius goes
+   to 18 and the shadow does the separating a border used to. No rule anywhere
+   in it — the label pill's fill is the only tinted thing. */
+.tw[data-tw="halo"] {
+  margin: 10px 0 14px;
+  border: 1px solid color-mix(in srgb, var(--h) 10%, transparent);
+  background: color-mix(in srgb, var(--h) 4%, var(--panel2));
+  border-radius: 18px; overflow: hidden;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.42);
+}
+.tw[data-tw="halo"] > .tw-rail { display: none; }
+.tw[data-tw="halo"] > .tw-head { padding: 11px 15px 5px 15px; }
+.tw[data-tw="halo"] .tw-name {
+  border-radius: 999px; padding: 1.5px 9px;
+  background: color-mix(in srgb, var(--h) 16%, transparent);
+  color: color-mix(in srgb, var(--h) 88%, var(--txb));
+  font-size: var(--t8); letter-spacing: 1.4px;
+}
+.tw[data-tw="halo"] .tw-line { display: none; }
+.tw[data-tw="halo"] .tw-meta { margin-left: auto; color: var(--txd); }
+.tw[data-tw="halo"] > .tw-body { padding: 2px 15px 13px 15px; }
 
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    The phone's copy of the dashboard's .flc block: same markup, same hue rule

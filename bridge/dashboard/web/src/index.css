@@ -1481,9 +1481,9 @@ input {
 
    TWO axes, and they are orthogonal on purpose:
 
-   - OUTPUT STYLE (`data-tw`) picks the MATERIAL — instrument / terminal / note.
-     Four styles, picked in settings. Only PLAIN is decided in JS, because it
-     means "draw no widget at all"; the other three are this file.
+   - OUTPUT STYLE (`data-tw`) picks the MATERIAL — one of the five languages,
+     picked in settings. All five are this file; none of them is a decision in
+     JS any more, which went away with PLAIN, the widget opt-out.
    - IDIOM (`data-idiom`) picks the WEIGHT, from the payload's shape rather than
      the tool's name (lib/toolwidget `Idiom`). It sets how much chrome there is
      AND the x it hangs at:
@@ -1510,166 +1510,187 @@ input {
   background: linear-gradient(90deg, color-mix(in srgb, var(--h) 20%, transparent), transparent); }
 .tw-body { padding: 2px 11px 9px 11px; min-width: 0; }
 
-/* ══ THE FOUR MATERIALS ═════════════════════════════════════════════════════
-   OUTPUT STYLE is not four borders on one card. Each is a different SURFACE a
-   result can be printed on, and they are meant to share as little as possible —
-   different header grammar, different texture, different reading rhythm, even a
-   different colour temperature. If two of them are ever telling apart by their
-   corner radius again, the redraw has failed.
+/* ══ THE FIVE LANGUAGES ═════════════════════════════════════════════════════
+   OUTPUT STYLE is not five borders on one card. Each is one whole language for
+   the transcript — one column of the Chat Elements sheet — and they are meant
+   to share as little as possible. What carries RANK differs in every one of
+   them (a fill, a stroke weight, a chip's saturation, a rule's weight, how far
+   a surface floats), so does whether anything is a box at all, and so does the
+   reading rhythm. If two of them are ever telling apart by their corner radius
+   again, the redraw has failed.
 
-   They stay orthogonal to IDIOM (below), which owns weight and attachment. A
-   material never moves a widget; an idiom never picks a texture. */
+   A language is authored in two places, and the split is the point:
 
-/* ── INSTRUMENT ── a gauge on a panel ──────────────────────────────────────
-   The cockpit reading. Corner brackets, a lit rail, and the two things a real
-   gauge has that a card does not: a tick ruler milled into the header, and the
-   phosphor scanline actually falling on the readout instead of only on the page
-   behind it. The label wears the aiming rune. Densest of the four. */
-.tw[data-tw="instrument"] {
-  border: 1px solid color-mix(in srgb, var(--h) 16%, transparent);
-  background: var(--panel3);
+     .tw[data-tw="X"]   the MATERIAL — the surface a tool result is printed on.
+                        This block.
+     [data-style="X"]   the SESSION — the same three or four decisions applied
+                        to the bubbles, the action ledger, the run window, the
+                        agent block and the reply. THE SESSION'S IDIOM, below.
+
+   Both stay orthogonal to IDIOM, which owns weight and attachment. A material
+   never moves a widget; an idiom never picks a texture.
+
+   CONTROL PLATE is what the rest of this file already authors, so it leads, is
+   the default, and adds least — the other four are overrides off it. */
+
+/* ── CONTROL PLATE ── chrome is the signal ─────────────────────────────────
+   Every element is a stamped plate: hard edges, no radius, no shadow softness,
+   and rank readable as fill weight from across the room. The header is not a
+   rule above the body, it IS the stamp — a solid bar with the label knocked
+   out of it and the hue as a swatch beside it — which is what keeps a plate
+   from reading as a card with a line in it. Keeps the gauge's corner brackets,
+   milled ruler and phosphor scanline: a plate on a HUD is still on a HUD. */
+.tw[data-tw="stamp"] {
+  border: 1px solid color-mix(in srgb, var(--h) 22%, transparent);
+  background: var(--panel3); border-radius: 0;
 }
-.tw[data-tw="instrument"]::before,
-.tw[data-tw="instrument"]::after {
+.tw[data-tw="stamp"]::before,
+.tw[data-tw="stamp"]::after {
   content: ""; position: absolute; width: 7px; height: 7px; pointer-events: none;
   border-color: color-mix(in srgb, var(--h) 42%, transparent);
 }
-.tw[data-tw="instrument"]::before { left: -1px; top: -1px; border-left: 1px solid; border-top: 1px solid; }
-.tw[data-tw="instrument"]::after { right: -1px; bottom: -1px; border-right: 1px solid; border-bottom: 1px solid; }
-.tw[data-tw="instrument"] > .tw-rail { box-shadow: 0 0 7px color-mix(in srgb, var(--h) 45%, transparent); }
-.tw[data-tw="instrument"] > .tw-head {
-  border-bottom: 1px solid color-mix(in srgb, var(--h) 10%, transparent);
-  padding-bottom: 5px;
+.tw[data-tw="stamp"]::before { left: -1px; top: -1px; border-left: 1px solid; border-top: 1px solid; }
+.tw[data-tw="stamp"]::after { right: -1px; bottom: -1px; border-right: 1px solid; border-bottom: 1px solid; }
+.tw[data-tw="stamp"] > .tw-rail { box-shadow: 0 0 7px color-mix(in srgb, var(--h) 45%, transparent); }
+.tw[data-tw="stamp"] > .tw-head {
+  background: color-mix(in srgb, var(--h) 13%, var(--panel3));
+  border-bottom: 1px solid color-mix(in srgb, var(--h) 24%, transparent);
+  padding: 4px 9px;
 }
-.tw[data-tw="instrument"] .tw-name::before {
-  content: "◈ "; color: color-mix(in srgb, var(--h) 65%, transparent);
+.tw[data-tw="stamp"] .tw-name { color: var(--txb); }
+/* the swatch — the one hue, carrying consequence, at plate scale */
+.tw[data-tw="stamp"] .tw-name::before {
+  content: ""; display: inline-block; width: 6px; height: 6px;
+  margin-right: 6px; background: var(--h);
 }
 /* the milled ruler: the rule the head already had, cut into ticks */
-.tw[data-tw="instrument"] .tw-line {
+.tw[data-tw="stamp"] .tw-line {
   height: 5px; align-self: center; background:
     repeating-linear-gradient(90deg,
       color-mix(in srgb, var(--h) 26%, transparent) 0 1px, transparent 1px 6px);
 }
-.tw[data-tw="instrument"] .tw-meta {
-  border: 1px solid color-mix(in srgb, var(--h) 18%, transparent);
+.tw[data-tw="stamp"] .tw-meta {
+  border: 1px solid color-mix(in srgb, var(--h) 22%, transparent);
   padding: 0 5px; color: var(--txd);
 }
 /* the tube's own scanline, on the readout itself */
-.tw[data-tw="instrument"] > .tw-body { position: relative; }
-.tw[data-tw="instrument"] > .tw-body::after {
+.tw[data-tw="stamp"] > .tw-body { position: relative; }
+.tw[data-tw="stamp"] > .tw-body::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(0deg, rgba(0,0,0,.20) 0 1px, transparent 1px 3px);
   opacity: .55;
 }
 
-/* ── TERMINAL ── a printout, on tractor-feed paper ─────────────────────────
-   Not a box at all: the thing a line printer would have handed you. A
-   perforated sprocket margin runs down the left where the frame used to be,
-   the header becomes a real prompt line in the prompt's own violet, and the
-   body ends in a block cursor — because a printout is something that was still
-   going a moment ago. No border, no fill, nothing to contain it. */
-.tw[data-tw="terminal"] {
-  margin: 1px 0 11px; font-family: var(--mono);
-  padding-left: 15px; position: relative;
+/* ── WIRE ── a schematic, one spine ────────────────────────────────────────
+   Nothing is a card. A result hangs off the turn as a node on a bus: a lead
+   runs down its left edge, a diamond straddles the top of the lead, and rank
+   is the lead's stroke weight rather than any fill. Hairlines only — the
+   payload is the one thing on screen allowed to be solid. */
+.tw[data-tw="wire"] {
+  border: 0; border-left: 1px solid color-mix(in srgb, var(--h) 55%, transparent);
+  background: none; border-radius: 0; box-shadow: none;
+  margin: 3px 0 11px; padding-left: 11px;
 }
-.tw[data-tw="terminal"] > .tw-rail { display: none; }
-/* the sprocket holes — the one piece of chrome this style keeps, and it is a
-   margin rather than a frame */
-.tw[data-tw="terminal"]::before {
-  content: ""; position: absolute; left: 2px; top: 3px; bottom: 3px; width: 3px;
-  background: repeating-linear-gradient(180deg,
-    color-mix(in srgb, var(--txl) 60%, transparent) 0 3px, transparent 3px 9px);
+/* the node */
+.tw[data-tw="wire"]::before {
+  content: ""; position: absolute; left: -4.5px; top: 3px; width: 8px; height: 8px;
+  border: 1px solid var(--h); background: var(--panel); transform: rotate(45deg);
 }
-.tw[data-tw="terminal"] > .tw-head { gap: 6px; padding: 0 0 2px 0; }
-.tw[data-tw="terminal"] .tw-name {
-  letter-spacing: 1px; color: var(--txm); text-transform: lowercase;
+.tw[data-tw="wire"]::after { content: none; }
+.tw[data-tw="wire"] > .tw-rail { display: none; }
+.tw[data-tw="wire"] > .tw-head { padding: 0 0 3px 0; gap: 7px; }
+.tw[data-tw="wire"] .tw-name {
+  font-size: var(--t8); letter-spacing: 2px;
+  color: color-mix(in srgb, var(--h) 62%, var(--txf));
 }
-.tw[data-tw="terminal"] .tw-name::before { content: "~ ❯ "; color: var(--purple); }
-.tw[data-tw="terminal"] .tw-meta::before { content: "· "; }
-.tw[data-tw="terminal"] .tw-meta { color: var(--txf); }
-.tw[data-tw="terminal"] .tw-line { display: none; }
-.tw[data-tw="terminal"] > .tw-body { padding: 0 0 0 14px; position: relative; }
-.tw[data-tw="terminal"] > .tw-body::after {
-  content: ""; display: inline-block; width: 6px; height: 11px; margin-left: 2px;
-  background: var(--h); vertical-align: -1px;
+.tw[data-tw="wire"] .tw-meta { border: 0; padding: 0; color: var(--txf); }
+.tw[data-tw="wire"] .tw-meta::before { content: "· "; }
+.tw[data-tw="wire"] .tw-line { height: 1px; background: var(--ac-08); }
+.tw[data-tw="wire"] > .tw-body { padding: 0 0 2px 0; }
+/* A lead is not a box, and the zero-chrome idioms below strip boxes. WIRE is
+   the one material whose frame IS its language, so it keeps its lead and node
+   where INSTRUMENT's border and brackets rightly came off. Higher specificity
+   than the idiom rules, so this holds wherever it sits in the file. */
+.tw[data-tw="wire"][data-idiom="strip"],
+.tw[data-tw="wire"][data-idiom="ledger"] {
+  border-left: 1px solid color-mix(in srgb, var(--h) 55%, transparent);
 }
-@media (prefers-reduced-motion: no-preference) {
-  .tw[data-tw="terminal"] > .tw-body::after { animation: twBlink 1.1s steps(1) infinite; }
-}
-@keyframes twBlink { 50% { opacity: 0; } }
+.tw[data-tw="wire"][data-idiom="strip"]::before,
+.tw[data-tw="wire"][data-idiom="ledger"]::before { content: ""; }
 
-/* ── NOTE ── paper, and the only warm thing in the app ─────────────────────
-   The anti-HUD. Everything else here is teal light on a void; this is a page
-   torn out and stuck on top of it, so it runs warm, rounds hard, casts a real
-   shadow, and rules its body like notepaper. The header drops UPPERCASE
-   tracking entirely — it is the one place the interface speaks in sentence
-   case, because you read a note instead of scanning it. */
-.tw[data-tw="note"] {
-  margin: 11px 0 15px;
-  border: 1px solid color-mix(in srgb, var(--warn) 15%, var(--border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--warn) 5%, transparent), transparent 90px),
-    var(--panel2);
-  border-radius: 14px; overflow: visible;
-  box-shadow: 0 3px 18px var(--shadow-pop);
+/* ── SIGNAL LOG ── gutter, level, row ──────────────────────────────────────
+   A log viewer, not a chat. The head stops being a caption and becomes the
+   row's own columns: a LEVEL chip where a log keeps severity, and the count
+   right-aligned in the gutter a log keeps for it. Rank is the chip's
+   saturation and nothing else — no border moves, no radius changes, no frame
+   appears. The body is the only thing allowed to break the row. */
+.tw[data-tw="signal"] {
+  border: 0; border-radius: 0; box-shadow: none; background: none;
+  margin: 0 0 7px; font-family: var(--mono);
 }
-.tw[data-tw="note"] > .tw-rail { display: none; }
-/* the tape holding it down */
-.tw[data-tw="note"]::before {
-  content: ""; position: absolute; left: 17px; top: -6px; width: 46px; height: 11px;
-  background: color-mix(in srgb, var(--warn) 22%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
-  transform: rotate(-2.5deg); pointer-events: none;
+.tw[data-tw="signal"]::before, .tw[data-tw="signal"]::after { content: none; }
+.tw[data-tw="signal"] > .tw-rail { display: none; }
+.tw[data-tw="signal"] > .tw-head {
+  gap: 8px; padding: 2px 0 3px 0; border-bottom: 1px solid var(--ac-06);
 }
-.tw[data-tw="note"] > .tw-head { padding: 15px 18px 3px 18px; }
-/* The one place the interface drops out of instrument voice. The brand keeps
-   UPPERCASE tracked labels for HUD chrome and lowercase for the oracle, and a
-   note is the one surface here that is not a screen — so it speaks in the
-   oracle's register: lowercase, untracked, warm, a size up. Sentence case was
-   tried first and cannot work: the label arrives uppercased, and ::first-letter
-   will not match through the dot that ::before puts in front of the text. */
-.tw[data-tw="note"] .tw-name {
-  letter-spacing: 0; text-transform: lowercase; font-size: var(--t115);
-  color: color-mix(in srgb, var(--warn) 45%, var(--txb));
+/* the level chip — one shape for every kind; saturation carries the rank */
+.tw[data-tw="signal"] .tw-name {
+  min-width: 62px; padding: 1px 6px; text-align: center;
+  background: color-mix(in srgb, var(--h) 20%, transparent);
+  color: color-mix(in srgb, var(--h) 85%, var(--txb));
+  font-size: var(--t8); letter-spacing: 1.4px;
 }
-.tw[data-tw="note"] .tw-name::before {
-  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px;
-  border-radius: 50%; background: var(--h); vertical-align: middle;
-}
-.tw[data-tw="note"] .tw-meta { margin-left: auto; font-size: var(--t9); color: var(--txf); }
-.tw[data-tw="note"] .tw-line { display: none; }
-/* ruled paper: the lines a note is written on, at the body's own leading */
-.tw[data-tw="note"] > .tw-body {
-  padding: 4px 18px 17px 18px; line-height: 2.05;
-}
-.tw[data-tw="note"] .flc-chip,
-.tw[data-tw="note"] .flc-badge { border-radius: 999px; }
+.tw[data-tw="signal"] .tw-meta { color: var(--txd); }
+.tw[data-tw="signal"] > .tw-body { padding: 4px 0 2px 70px; }
 
-/* ── PLAIN ── a ticker, and nothing else ───────────────────────────────────
-   The fourth material is the refusal of one. PLAIN used to mean "draw no
-   widget", which made it the only style with nothing to say — and a style you
-   cannot see is not one of four. It now means every result is forced down to a
-   TRACE: one dense line, no frame, no head, no padding, set in the row's own
-   voice. You still get no widgets. You get the one line they would have said. */
-.tw[data-tw="plain"] {
-  margin: 0 0 3px 0; border: 0; background: none; box-shadow: none;
-  font-family: var(--mono); font-size: var(--t105);
+/* ── LEDGER PRESS ── type does the framing ─────────────────────────────────
+   Not one box. A rule above set at the weight of the rank, the label in the
+   margin in tracked caps, the count set right in italic. Everything else is
+   type: this is the material that answers a frame with a typeface. */
+.tw[data-tw="press"] {
+  border: 0; border-top: 2px solid color-mix(in srgb, var(--h) 45%, transparent);
+  background: none; border-radius: 0; box-shadow: none; margin: 11px 0 13px;
 }
-.tw[data-tw="plain"]::before, .tw[data-tw="plain"]::after { content: none; }
-.tw[data-tw="plain"] > .tw-rail { display: none; }
-.tw[data-tw="plain"] > .tw-head { display: none; }
-.tw[data-tw="plain"] > .tw-body {
-  padding: 0; display: flex; align-items: baseline; gap: 8px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--txd);
+.tw[data-tw="press"]::before, .tw[data-tw="press"]::after { content: none; }
+.tw[data-tw="press"] > .tw-rail { display: none; }
+.tw[data-tw="press"] > .tw-head { padding: 4px 0 3px 0; gap: 10px; align-items: baseline; }
+.tw[data-tw="press"] .tw-name { letter-spacing: 2.2px; color: var(--txd); }
+.tw[data-tw="press"] .tw-line { display: none; }
+.tw[data-tw="press"] .tw-meta {
+  margin-left: auto; border: 0; padding: 0; font-style: italic; color: var(--txd);
 }
-.tw[data-tw="plain"] .tw-tick { flex: none; color: var(--h); letter-spacing: 1.4px;
-  font-family: var(--ui); font-size: var(--t9); text-transform: uppercase; }
-.tw[data-tw="plain"] .tw-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tw[data-tw="press"] > .tw-body { padding: 3px 0 0 0; }
+
+/* ── HALO ── surfaces, not rules ───────────────────────────────────────────
+   One radius language, and rank read as how far a surface floats rather than
+   as anything drawn on it. There is no rule anywhere in this material: the
+   head has no underline, the frame is a soft fill and a real shadow, and the
+   label is a pill whose fill is the only tinted thing in it. Quiet by default,
+   which is what keeps a loud one loud. */
+.tw[data-tw="halo"] {
+  border: 1px solid color-mix(in srgb, var(--h) 10%, transparent);
+  background: color-mix(in srgb, var(--h) 4%, var(--panel2));
+  border-radius: 14px; box-shadow: 0 6px 22px var(--shadow-pop);
+  margin: 9px 0 12px; overflow: hidden;
+}
+.tw[data-tw="halo"]::before, .tw[data-tw="halo"]::after { content: none; }
+.tw[data-tw="halo"] > .tw-rail { display: none; }
+.tw[data-tw="halo"] > .tw-head { padding: 9px 13px 5px 13px; }
+/* the pill: how filled it is, is the rank */
+.tw[data-tw="halo"] .tw-name {
+  border-radius: 999px; padding: 1.5px 9px;
+  background: color-mix(in srgb, var(--h) 16%, transparent);
+  color: color-mix(in srgb, var(--h) 88%, var(--txb));
+  font-size: var(--t8); letter-spacing: 1.4px;
+}
+.tw[data-tw="halo"] .tw-line { display: none; }
+.tw[data-tw="halo"] .tw-meta { margin-left: auto; color: var(--txd); }
+.tw[data-tw="halo"] > .tw-body { padding: 2px 13px 12px 13px; }
 
 /* ── IDIOM: the weight, and the x ──────────────────────────────────────────
-   Written after the three style blocks so it wins on attachment while leaving
-   each style's material alone: a NOTE plate is still rounded and raised, a
-   TERMINAL plate still has no fill — they just hang where the idiom says. */
+   Written after the five language blocks so it wins on attachment while
+   leaving each material alone: a HALO plate still floats, a WIRE plate still
+   has no fill — they just hang where the idiom says. */
 
 /* STRIP — a band of atoms. No frame; the hairline and the text column are all
    it takes to say "these belong to the row above". A label here would double
@@ -1774,77 +1795,183 @@ input {
    family below answers to it: your prompt, the action ledger, the run window,
    the agent block, and the reply with its tables and its code.
 
-   INSTRUMENT is what the rest of this file already authors, so it needs no
-   rules here — the other two are overrides off it, and each is deliberately
-   short. A style is three or four decisions applied everywhere, not a second
-   stylesheet: frames on or off, corners hard or round, air tight or loose.
+   CONTROL PLATE is what the rest of this file already authors — hard edges, a
+   fill for rank, no radius — so it adds only the two rules that press it
+   further than the base goes. The other four are overrides off it, and each is
+   deliberately short: a language is three or four decisions applied
+   everywhere, not a second stylesheet. */
 
-   PLAIN is absent on purpose. It means "draw no widget" — an opt-out rather
-   than a look — so the stream around it keeps the instrument it always had. */
+/* ── CONTROL PLATE — the base, stamped harder. Rank is fill weight, so a mark
+   row carries a real fill instead of a 4% wash, and the one tag shape with a
+   radius squares up: nothing on a plate is round. */
+[data-style="stamp"] .actrow[data-tier="mark"] { background: color-mix(in srgb, var(--h) 10%, transparent); }
+[data-style="stamp"] .actrow[data-tier="mark"]:hover { background: color-mix(in srgb, var(--h) 15%, transparent); }
+[data-style="stamp"] .ax-tag[data-shape="round"] { border-radius: 0; }
 
-/* ── TERMINAL — nothing in the stream wears a box. Fills go to nothing,
-   borders become rules, and the indent does the grouping a frame used to do.
-   What is left is what a terminal would have printed: text in columns, with
-   colour carrying the kind. */
-[data-style="terminal"] .pbub {
-  border: 0; border-right: 2px solid var(--purple);
-  background: none; padding: 0 10px 0 0;
+/* ── WIRE — nothing in the stream is a card. Every fill goes to nothing and
+   every frame becomes a lead, which moves rank entirely into stroke weight:
+   the row's bar is already 1px for a glance and 2px for a mark, so taking the
+   fills away is what makes that legible instead of decorative. */
+[data-style="wire"] .pbub {
+  border: 0; border-right: 1px solid var(--purple); background: none; padding: 0 10px 0 0;
 }
-[data-style="terminal"] .abub {
-  border: 0; border-left: 2px solid var(--acc); background: none; padding-left: 9px;
+[data-style="wire"] .abub {
+  border: 0; border-left: 1px solid var(--acc); background: none; padding-left: 10px;
 }
-[data-style="terminal"] .actrow,
-[data-style="terminal"] .actrow[data-tier="mark"] { background: none; }
-[data-style="terminal"] .actrow + .actrow { border-top-color: transparent; }
-[data-style="terminal"] .ax-tag[data-shape="fill"] { background: none; color: var(--h); }
-[data-style="terminal"] .ax-tag[data-shape="box"],
-[data-style="terminal"] .ax-tag[data-shape="dash"],
-[data-style="terminal"] .ax-tag[data-shape="round"] {
-  border-color: transparent; background: none; padding: 0;
+[data-style="wire"] .actrow,
+[data-style="wire"] .actrow[data-tier="mark"] { background: none; }
+[data-style="wire"] .actrow:hover,
+[data-style="wire"] .actrow[data-tier="mark"]:hover { background: var(--ac-03); }
+[data-style="wire"] .actrow + .actrow { border-top-color: transparent; }
+[data-style="wire"] .ax-tag[data-shape="fill"] { background: none; color: var(--h); }
+[data-style="wire"] .ax-tag[data-shape="round"] {
+  border-radius: 0; background: none;
+  border: 1px solid color-mix(in srgb, var(--h) 38%, transparent);
 }
-[data-style="terminal"] .ax-window,
-[data-style="terminal"] .ax-drawer { border: 0; background: none; }
-[data-style="terminal"] .agb { border: 0; background: none; }
-[data-style="terminal"] .agb::before,
-[data-style="terminal"] .agb::after { display: none; }
-[data-style="terminal"] .md { line-height: 1.5; }
-[data-style="terminal"] .md code { background: none; border-color: transparent; padding: 0; }
-[data-style="terminal"] .md-code { border: 0; background: none; border-left: 1px solid var(--border); }
-[data-style="terminal"] .md-code-lang { border: 0; background: none; padding-left: 9px; }
-[data-style="terminal"] .md blockquote { background: none; border-left-style: dashed; }
-[data-style="terminal"] .md h1,
-[data-style="terminal"] .md h2 { border-bottom-style: dashed; }
-[data-style="terminal"] .md th { border-bottom-style: dashed; }
-[data-style="terminal"] .md td { border-bottom-color: transparent; }
-[data-style="terminal"] .md-admonition { background: none; }
+[data-style="wire"] .ax-window,
+[data-style="wire"] .ax-drawer { border: 0; border-left: 1px solid var(--ac-16); background: none; }
+[data-style="wire"] .agb { border: 0; background: none; }
+[data-style="wire"] .agb::before,
+[data-style="wire"] .agb::after { display: none; }
+[data-style="wire"] .md { line-height: 1.55; }
+[data-style="wire"] .md code { background: none; border-color: transparent; padding: 0; }
+[data-style="wire"] .md-code { border: 0; background: none; border-left: 1px solid var(--border); }
+[data-style="wire"] .md-code-lang { border: 0; background: none; padding-left: 9px; }
+[data-style="wire"] .md blockquote { background: none; }
+[data-style="wire"] .md h1,
+[data-style="wire"] .md h2 { border-bottom-color: var(--ac-12); }
+[data-style="wire"] .md td { border-bottom-color: transparent; }
+[data-style="wire"] .md-admonition { background: none; }
 
-/* ── NOTE — everything rounds, lifts and breathes. Same content, read rather
-   than scanned: the rows stop butting into one block and become cards, the
-   reply gets the line-height of something you sit with, and the table gets a
-   box of its own instead of hanging in the column. */
-[data-style="note"] .pbub { border-radius: 14px 14px 5px 14px; padding: 7px 13px; }
-[data-style="note"] .abub { border-radius: 5px 14px 14px 14px; padding: 7px 13px; }
-[data-style="note"] .actrow { border-radius: 10px; overflow: hidden; }
-[data-style="note"] .actrow + .actrow { margin-top: 3px; border-top: 0; }
-[data-style="note"] .actrow + .ax-drawer,
-[data-style="note"] .ax-drawer + .actrow { margin-top: 3px; }
-[data-style="note"] .ax-window { border-radius: 13px; overflow: hidden; }
-[data-style="note"] .ax-drawer { border-radius: 11px; }
-[data-style="note"] .agb { border-radius: 14px; }
-[data-style="note"] .agb::before,
-[data-style="note"] .agb::after { display: none; }
-[data-style="note"] .md { line-height: 1.75; }
-[data-style="note"] .md p { margin: 0.7em 0; }
-[data-style="note"] .md li { margin: 0.32em 0; }
-[data-style="note"] .md code { border-radius: 6px; }
-[data-style="note"] .md-code { border-radius: 12px; overflow: hidden; }
-[data-style="note"] .md blockquote { border-radius: 10px; border-left-width: 3px; }
-[data-style="note"] .md-admonition { border-radius: 10px; }
-[data-style="note"] .md-tablewrap {
-  border: 1px solid var(--border); border-radius: 12px;
+/* ── SIGNAL LOG — a log viewer, not a chat. Everything collapses onto one
+   tabular grid: single-line rows, a hairline under each, and the tag column
+   becomes a column of level chips. The eight shapes survive but stop being
+   eight different objects — they are the same chip at different saturations,
+   because in a log the level is a field and not a picture. */
+[data-style="signal"] .pbub,
+[data-style="signal"] .abub {
+  border: 0; border-radius: 0; background: none;
+  border-bottom: 1px solid var(--ac-06); padding: 3px 0 6px 0;
+}
+[data-style="signal"] .actrow,
+[data-style="signal"] .actrow[data-tier="mark"] { background: none; }
+[data-style="signal"] .actrow + .actrow { border-top-color: var(--ac-06); }
+[data-style="signal"] .ax-tag {
+  min-width: 100%; justify-content: center; padding: 0 5px;
+  border: 0; border-radius: 0;
+  background: color-mix(in srgb, var(--h) 10%, transparent);
+}
+[data-style="signal"] .ax-tag[data-shape="bare"] { background: none; }
+[data-style="signal"] .ax-tag[data-shape="dash"] {
+  background: none; border-bottom: 1px dashed color-mix(in srgb, var(--h) 50%, transparent);
+}
+[data-style="signal"] .ax-tag[data-shape="round"] { background: color-mix(in srgb, var(--h) 18%, transparent); }
+[data-style="signal"] .ax-tag[data-shape="rail"] { background: color-mix(in srgb, var(--h) 26%, transparent); }
+[data-style="signal"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
+[data-style="signal"] .ax-window,
+[data-style="signal"] .ax-drawer { border-radius: 0; }
+[data-style="signal"] .agb { border-width: 0 0 0 2px; border-radius: 0; background: none; }
+[data-style="signal"] .agb::before,
+[data-style="signal"] .agb::after { display: none; }
+[data-style="signal"] .md { line-height: 1.55; }
+[data-style="signal"] .md code,
+[data-style="signal"] .md-code { border-radius: 0; }
+
+/* ── LEDGER PRESS — type does the framing, so the frames go. Not one box in
+   the stream: rank is a rule's weight, an indent, and whether the tag is set
+   in ink or in italic — a glance leans, a mark stands up in the hue. Prose
+   turns serif because it is printed rather than rendered; the payload keeps
+   the mono it was measured in. Runs warm, the way NOTE did before it: the
+   brand reserves that temperature for the surfaces that are not instruments,
+   and a printed page is not one. */
+[data-style="press"] {
+  --press-rule: color-mix(in srgb, var(--warn) 20%, var(--border));
+  --press-serif: ui-serif, Georgia, "Times New Roman", serif;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--warn) 4%, transparent), transparent 320px);
+}
+[data-style="press"] .md,
+[data-style="press"] .pbub,
+[data-style="press"] .abub { font-family: var(--press-serif); }
+[data-style="press"] .md code,
+[data-style="press"] .md-code,
+[data-style="press"] .md pre { font-family: var(--mono); }
+/* the prompt is an epigraph, the reply is body copy with a section mark */
+[data-style="press"] .pbub {
+  border: 0; border-bottom: 1px solid var(--press-rule);
+  background: none; padding: 0 0 4px 0; font-style: italic;
+}
+[data-style="press"] .abub { border: 0; background: none; padding: 3px 0 0 0; }
+[data-style="press"] .abub::before {
+  content: "§"; float: left; margin: 1px 9px 0 0;
+  color: color-mix(in srgb, var(--warn) 75%, transparent);
+}
+[data-style="press"] .actrow,
+[data-style="press"] .actrow[data-tier="mark"] { background: none; }
+[data-style="press"] .actrow + .actrow { border-top-color: var(--press-rule); }
+[data-style="press"] .ax-tag {
+  border: 0; border-radius: 0; padding: 0; background: none;
+  font-family: var(--press-serif); letter-spacing: 0; text-transform: lowercase;
+  font-size: var(--t105); color: var(--txd);
+}
+[data-style="press"] .actrow[data-tier="glance"] .ax-tag { font-style: italic; }
+[data-style="press"] .actrow[data-tier="mark"] .ax-tag { color: var(--h); font-weight: 600; }
+[data-style="press"] .ax-window,
+[data-style="press"] .ax-drawer {
+  border: 0; border-top: 1px solid var(--press-rule); border-radius: 0; background: none;
+}
+[data-style="press"] .agb { border: 0; background: none; border-radius: 0; }
+[data-style="press"] .agb::before,
+[data-style="press"] .agb::after { display: none; }
+[data-style="press"] .md { line-height: 1.7; }
+[data-style="press"] .md h1,
+[data-style="press"] .md h2 { border-bottom-color: var(--press-rule); }
+[data-style="press"] .md-code {
+  border: 0; border-left: 2px solid var(--press-rule); border-radius: 0; background: none;
+}
+[data-style="press"] .md-code-lang { border: 0; background: none; }
+[data-style="press"] .md blockquote { background: none; border-left-color: var(--warn); }
+[data-style="press"] .md-tablewrap { border: 0; background: none; }
+[data-style="press"] .md th { border-bottom: 2px solid var(--press-rule); }
+[data-style="press"] .md td { border-bottom-color: var(--press-rule); }
+
+/* ── HALO — surfaces, not rules. One radius everywhere, every hairline becomes
+   a soft fill, and the row that changed something is the only one that floats.
+   Same content, read rather than scanned: the ledger stops butting into one
+   block and becomes a stack of quiet cards with one loud one in it. */
+[data-style="halo"] .pbub { border-radius: 16px 16px 6px 16px; padding: 7px 13px; }
+[data-style="halo"] .abub { border-radius: 6px 16px 16px 16px; padding: 7px 13px; }
+[data-style="halo"] .actrow { border-radius: 12px; overflow: hidden; }
+[data-style="halo"] .actrow + .actrow { margin-top: 3px; border-top: 0; }
+[data-style="halo"] .actrow + .ax-drawer,
+[data-style="halo"] .ax-drawer + .actrow { margin-top: 3px; }
+/* the float, and the whole of what rank means here */
+[data-style="halo"] .actrow[data-tier="mark"] {
+  background: color-mix(in srgb, var(--h) 9%, var(--panel2));
+  box-shadow: 0 3px 14px var(--shadow-pop);
+}
+[data-style="halo"] .ax-tag {
+  border-radius: 999px; padding: 0 8px; border-color: transparent;
+  background: color-mix(in srgb, var(--h) 12%, transparent);
+}
+[data-style="halo"] .ax-tag[data-shape="bare"] { background: none; padding: 0 2px; }
+[data-style="halo"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
+[data-style="halo"] .ax-window { border-radius: 16px; overflow: hidden; }
+[data-style="halo"] .ax-drawer { border-radius: 12px; }
+[data-style="halo"] .agb { border-radius: 16px; box-shadow: 0 5px 20px var(--shadow-pop); }
+[data-style="halo"] .agb::before,
+[data-style="halo"] .agb::after { display: none; }
+[data-style="halo"] .md { line-height: 1.7; }
+[data-style="halo"] .md p { margin: 0.65em 0; }
+[data-style="halo"] .md li { margin: 0.3em 0; }
+[data-style="halo"] .md code { border-radius: 6px; }
+[data-style="halo"] .md-code { border-radius: 14px; overflow: hidden; }
+[data-style="halo"] .md blockquote { border-radius: 12px; border-left-width: 3px; }
+[data-style="halo"] .md-admonition { border-radius: 12px; }
+[data-style="halo"] .md-tablewrap {
+  border: 1px solid var(--border); border-radius: 14px;
   background: var(--panel2); padding: 9px 14px 10px;
 }
-[data-style="note"] .md img { border-radius: 12px; }
+[data-style="halo"] .md img { border-radius: 14px; }
 
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    A typed stage's settled result, framed like the agent block: both are a

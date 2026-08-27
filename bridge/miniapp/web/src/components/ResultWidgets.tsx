@@ -848,9 +848,9 @@ function IntakeGrid({ rows, send }: { rows: Question[]; send?: (t: string) => vo
  *  names the tool.
  *
  *  The OUTPUT STYLE variants stay CSS off `data-tw` and stay orthogonal: style
- *  picks the material (instrument / terminal / note), idiom picks the weight.
- *  Only `plain` is a decision this side, because it means "draw no widget at
- *  all" and the caller has to fall back before it gets here. */
+ *  picks the material (one of the five languages), idiom picks the weight. All
+ *  five are pure CSS — no style is a decision this side any more, which is what
+ *  went away when PLAIN, the widget opt-out, was replaced by a fifth look. */
 export function ToolWidget({ spec, accent, style, children }: {
   spec: ToolWidgetSpec;
   /** The tool's hue (lib/tools toolAccent), so a widget reads as that tool's
@@ -861,23 +861,6 @@ export function ToolWidget({ spec, accent, style, children }: {
    *  renderer (a multi-file edit run) and only wants the frame. */
   children?: ReactNode;
 }) {
-  // PLAIN is the fourth material, not the absence of one: every payload is
-  // forced down to a TRACE — one dense line, no frame, no head. It reads the
-  // spec rather than the drawn body on purpose, so a rich renderer handed in
-  // as `children` collapses too. You still get no widgets; you get the one
-  // line they would have said.
-  if (style === "plain") {
-    const said = flatten(spec.value);
-    if (!said) return null;
-    return (
-      <div className="tw" data-tw="plain" style={{ "--h": accent } as CSSProperties}>
-        <div className="tw-body">
-          <span className="tw-tick">{spec.label}{spec.meta ? ` · ${spec.meta}` : ""}</span>
-          <span className="tw-said">{said}</span>
-        </div>
-      </div>
-    );
-  }
   const body = children ?? drawWidget(spec.type, spec.value);
   if (!body) return null;
   const idiom = idiomFor(spec.type);
@@ -913,7 +896,10 @@ export function BlockWidget({ type, value }: { type: string; value: unknown }) {
   const idiom = idiomFor(type);
   const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
   return (
-    <div className="tw" data-tw="instrument" data-idiom={idiom} data-said="">
+    // ponytail: a model-typed block wears the default material, not the
+    // session's — Markdown has no style prop and four callers would have to
+    // grow one. Thread it through if the mismatch ever reads as a bug.
+    <div className="tw" data-tw="stamp" data-idiom={idiom} data-said="">
       {idiom === "plate" && <span className="tw-rail" aria-hidden />}
       {head && (
         <div className="tw-head">

@@ -1441,7 +1441,7 @@ export const RunStream = memo(function RunStream({
   turnId = "",
   tokens = null,
   openResults = false,
-  toolStyle = "instrument",
+  toolStyle = "stamp",
   onRunCommand,
   onQuote,
   onOpenFile,
@@ -1612,13 +1612,10 @@ export const RunStream = memo(function RunStream({
             // a Read of a PNG returns an image and takes the ReadCard branch, and
             // that is 715 of the 729 image results in this store — a widget only
             // the default branch could show would be one almost nobody sees.
-            // PLAIN draws a ticker now rather than nothing (lib/toolwidget
-            // TOOL_STYLES), so it no longer gates the widget out — with one
-            // exception kept deliberately: shots still render as shots there.
-            // "SCREENS · 3" is a truthful line and a useless one, and the
-            // picture was never the chrome anyone was opting out of.
-            const plainShots = toolStyle === "plain" && !!done?.images?.length;
-            const extra = spec && !plainShots ? (
+            // Every style draws its widget now: PLAIN, the one that opted out
+            // of them, has no column on the sheet and was replaced by a fifth
+            // look (lib/toolwidget TOOL_STYLES).
+            const extra = spec ? (
               <div className="ml-[18px]">
                 <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
               </div>

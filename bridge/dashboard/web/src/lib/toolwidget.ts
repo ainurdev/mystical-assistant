@@ -16,27 +16,39 @@
 /** The wire shape `transcript_jsonl.web_sources` emits. */
 export type WebSource = { url: string; title?: string; code?: number };
 
-/** How a tool result's structure is drawn — three idioms, not three borders.
- *  The first cut (BARE, CARD) differed from INSTRUMENT by a radius and some
- *  padding, so nobody could tell them apart in the picker or the transcript.
- *  These are three different things a result can BE: a HUD readout, a
- *  terminal's own printout, a paper note — and the pick governs the WHOLE
- *  transcript (index.css, THE SESSION'S IDIOM), not just the widgets: the
- *  bubbles, the ledger, the agent block, and the reply's tables and code all
- *  answer to it. `plain` opts out of widgets, which is why it is the one style
- *  with nothing to say about the rest of the stream. */
-export type ToolStyle = "instrument" | "terminal" | "note" | "plain";
+/** How a tool result's structure is drawn, and how the whole session reads.
+ *  Five languages, one per column of the Chat Elements sheet. Each is a whole
+ *  grammar rather than a border swap: they differ in what carries rank (a fill,
+ *  a stroke, a chip's saturation, a rule's weight, how far a surface floats),
+ *  in whether anything is a box at all, and in reading rhythm. If two of them
+ *  are ever telling apart by their corner radius, the redraw has failed.
+ *
+ *  The pick governs the WHOLE transcript (index.css, THE SESSION'S IDIOM), not
+ *  just the widgets: the bubbles, the action ledger, the run window, the agent
+ *  block, and the reply's tables and code all answer to it.
+ *
+ *  `stamp` leads and is the default because it is the one the HUD already
+ *  authors — the rest of index.css IS a control plate, so the other four are
+ *  overrides off it. It is keyed `stamp` rather than `plate` because `plate` is
+ *  already an Idiom below, and a material must never be readable as a weight. */
+export type ToolStyle = "stamp" | "wire" | "signal" | "press" | "halo";
 
 export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
-  { key: "instrument", label: "INSTRUMENT", hint: "a gauge — brackets, a milled ruler, scanlines on the readout" },
-  { key: "terminal", label: "TERMINAL", hint: "a printout — sprocket margin, a prompt, a live cursor" },
-  { key: "note", label: "NOTE", hint: "paper — warm, taped down, and the one label in the oracle's lowercase" },
-  { key: "plain", label: "PLAIN", hint: "a ticker — every result down to one dense line" },
+  { key: "stamp", label: "CONTROL PLATE", hint: "stamped plates — no radius, one hue for consequence, rank is fill weight" },
+  { key: "wire", label: "WIRE", hint: "a schematic — nothing is a card, every element is a node on one spine" },
+  { key: "signal", label: "SIGNAL LOG", hint: "a log viewer — elapsed time in the gutter, a level chip, one row per event" },
+  { key: "press", label: "LEDGER PRESS", hint: "print — not one box, rank is a rule's weight and whether a label is ink or italic" },
+  { key: "halo", label: "HALO", hint: "surfaces, not rules — one radius, quiet by default, loud only when something changed" },
 ];
 
-/** What the two redrawn styles used to be called. A stored pick keeps meaning
- *  what it meant instead of silently snapping back to the default. */
-const LEGACY: Record<string, ToolStyle> = { bare: "terminal", card: "note" };
+/** What the styles were called before the sheet replaced them. A stored pick
+ *  lands on its nearest new language instead of silently snapping to default.
+ *  PLAIN was the widget opt-out and has no column, so it maps to the quietest
+ *  one there is. */
+const LEGACY: Record<string, ToolStyle> = {
+  instrument: "stamp", terminal: "wire", note: "press", plain: "wire",
+  bare: "wire", card: "press",
+};
 
 export function isToolStyle(v: unknown): v is ToolStyle {
   return TOOL_STYLES.some((s) => s.key === v);
@@ -45,7 +57,7 @@ export function isToolStyle(v: unknown): v is ToolStyle {
 /** A stored value → a style that exists. Anything unrecognised is the default. */
 export function toToolStyle(v: unknown): ToolStyle {
   if (isToolStyle(v)) return v;
-  return (typeof v === "string" && LEGACY[v]) || "instrument";
+  return (typeof v === "string" && LEGACY[v]) || "stamp";
 }
 
 /** How much chrome a result wears, and at what x it hangs off the turn.

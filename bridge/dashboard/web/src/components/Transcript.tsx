@@ -170,7 +170,7 @@ function TurnBlock({
               turnId={turn.id}
               tokens={turn.tokens ?? null}
               openResults={hud?.openResults ?? false}
-              toolStyle={hud?.toolStyle ?? "instrument"}
+              toolStyle={hud?.toolStyle ?? "stamp"}
               onRunCommand={onRunCommand}
               onQuote={onQuote}
               onOpenFile={onOpenFile}
