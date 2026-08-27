@@ -1096,7 +1096,13 @@ export const RunStream = memo(function RunStream({
             // Hung under whichever card this tool got, not just the default one:
             // a run of Reads collapses into a CallGroup, and a Read of a PNG is
             // how almost every image result in this store arrives.
-            const extra = spec && toolStyle !== "plain" ? (
+            // PLAIN draws a ticker now rather than nothing (lib/toolwidget
+            // TOOL_STYLES), so it no longer gates the widget out — except for
+            // shots, which still render as shots: "SCREENS · 3" is a truthful
+            // line and a useless one, and a picture was never the chrome
+            // anyone was opting out of.
+            const plainShots = toolStyle === "plain" && !!done?.images?.length;
+            const extra = spec && !plainShots ? (
               <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
             ) : done?.images?.length ? <ToolImages paths={done.images} /> : null;
             const withExtra = (node: ReactNode) =>

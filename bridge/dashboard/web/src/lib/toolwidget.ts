@@ -28,10 +28,10 @@ export type WebSource = { url: string; title?: string; code?: number };
 export type ToolStyle = "instrument" | "terminal" | "note" | "plain";
 
 export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
-  { key: "instrument", label: "INSTRUMENT", hint: "framed HUD — hard corners, hue rails" },
-  { key: "terminal", label: "TERMINAL", hint: "printed — nothing wears a box" },
-  { key: "note", label: "NOTE", hint: "paper — rounded, raised, roomy" },
-  { key: "plain", label: "PLAIN", hint: "no widgets — the rows as they are" },
+  { key: "instrument", label: "INSTRUMENT", hint: "a gauge — brackets, a milled ruler, scanlines on the readout" },
+  { key: "terminal", label: "TERMINAL", hint: "a printout — sprocket margin, a prompt, a live cursor" },
+  { key: "note", label: "NOTE", hint: "paper — warm, taped down, and the one label in the oracle's lowercase" },
+  { key: "plain", label: "PLAIN", hint: "a ticker — every result down to one dense line" },
 ];
 
 /** What the two redrawn styles used to be called. A stored pick keeps meaning

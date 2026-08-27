@@ -861,6 +861,23 @@ export function ToolWidget({ spec, accent, style, children }: {
    *  renderer (a multi-file edit run) and only wants the frame. */
   children?: ReactNode;
 }) {
+  // PLAIN is the fourth material, not the absence of one: every payload is
+  // forced down to a TRACE — one dense line, no frame, no head. It reads the
+  // spec rather than the drawn body on purpose, so a rich renderer handed in
+  // as `children` collapses too. You still get no widgets; you get the one
+  // line they would have said.
+  if (style === "plain") {
+    const said = flatten(spec.value);
+    if (!said) return null;
+    return (
+      <div className="tw" data-tw="plain" style={{ "--h": accent } as CSSProperties}>
+        <div className="tw-body">
+          <span className="tw-tick">{spec.label}{spec.meta ? ` · ${spec.meta}` : ""}</span>
+          <span className="tw-said">{said}</span>
+        </div>
+      </div>
+    );
+  }
   const body = children ?? drawWidget(spec.type, spec.value);
   if (!body) return null;
   const idiom = idiomFor(spec.type);
