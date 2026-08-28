@@ -43,12 +43,18 @@ def project_exists(rel_path: str) -> bool:
     (a session may point at a since-deleted worktree checkout). A live Claude Code
     session started outside BASE_PATH is labelled with its own (~-collapsed) path
     instead — see native._index_running — so that form is checked literally when
-    the base-relative reading finds nothing."""
+    the base-relative reading finds nothing.
+
+    The two container dirs are never projects: BASE_PATH itself ('/') and your
+    home ('~') hold projects instead of being one, so a `claude` started in either
+    stops opening a phantom project group in the session lists. Those sessions are
+    still resumable and their transcripts still viewable by id."""
     p = os.path.realpath(os.path.join(config.BASE_PATH, (rel_path or "").lstrip("/")))
     if within_base(p) and os.path.isdir(p):
-        return True
+        return p != config.BASE_PATH
     out = os.path.expanduser(rel_path or "")
-    return os.path.isabs(out) and not within_base(out) and os.path.isdir(out)
+    return (os.path.isabs(out) and not within_base(out) and os.path.isdir(out)
+            and os.path.realpath(out) != os.path.realpath(os.path.expanduser("~")))
 
 
 def within_base(path: str) -> bool:

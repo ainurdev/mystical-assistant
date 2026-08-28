@@ -44,6 +44,7 @@ def test_project_exists_only_for_live_dirs_under_base(tmp_path, monkeypatch):
     _mk(base, "alive")
 
     assert browser.project_exists("/alive")
-    assert browser.project_exists("/")                  # BASE_PATH itself
+    assert not browser.project_exists("/")              # the root holds projects, is not one
+    assert not browser.project_exists("~")              # nor is your home dir
     assert not browser.project_exists("/gone")          # deleted worktree checkout
     assert not browser.project_exists("/../outside")    # escapes the workspace
