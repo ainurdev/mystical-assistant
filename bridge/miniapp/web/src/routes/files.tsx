@@ -5,6 +5,7 @@ import { ChevronLeft, Search, FileCode } from "lucide-react";
 import { rootRoute } from "./root";
 import { api, ApiError } from "../lib/api";
 import { Banner, Button, Skeleton } from "../components/ui";
+import { ImageLightbox } from "../components/ImageLightbox";
 
 const CodeEditor = lazy(() => import("../components/CodeEditor"));
 
@@ -15,6 +16,7 @@ const CodeEditor = lazy(() => import("../components/CodeEditor"));
 function MediaView({ src, mime, name }: { src: string; mime: string; name: string }) {
   const pdf = mime === "application/pdf";
   const [blob, setBlob] = useState("");
+  const [zoom, setZoom] = useState(false);
   useEffect(() => {
     if (!pdf) return;
     const bytes = Uint8Array.from(atob(src.slice(src.indexOf(",") + 1)), (c) => c.charCodeAt(0));
@@ -36,7 +38,22 @@ function MediaView({ src, mime, name }: { src: string; mime: string; name: strin
   }
   if (mime.startsWith("video/")) return <video src={src} controls className="max-h-[70vh] w-full rounded-xl" />;
   if (mime.startsWith("audio/")) return <audio src={src} controls className="w-full" />;
-  return <img src={src} alt={name} className="max-h-[70vh] w-full rounded-xl object-contain" />;
+  // Fit here, pinch-zoom there: tapping the image opens the same lightbox the
+  // transcript uses rather than growing a second viewer.
+  return (
+    <>
+      {zoom && <ImageLightbox src={src} alt={name} onClose={() => setZoom(false)} />}
+      <img
+        src={src}
+        alt={name}
+        role="button"
+        tabIndex={0}
+        onClick={() => setZoom(true)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setZoom(true); }}
+        className="max-h-[70vh] w-full rounded-xl object-contain"
+      />
+    </>
+  );
 }
 
 // A tree is fiddly to tap through on a phone, so this is a flat path list with

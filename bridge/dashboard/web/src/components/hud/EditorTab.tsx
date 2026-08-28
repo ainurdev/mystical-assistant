@@ -12,6 +12,7 @@ import { tags as t } from "@lezer/highlight";
 import { Vim, vim } from "@replit/codemirror-vim";
 import { api, type FileContent, type GrepHit } from "../../api";
 import { Markdown } from "../Markdown";
+import { ImageLightbox } from "../ImageLightbox";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { chord } from "../../lib/chord";
 import { cmpTreePath } from "../../lib/pathsort";
@@ -164,6 +165,7 @@ Vim.defineEx("fmt", "fmt", () => vimFmtRef.current());
 function MediaView({ src, mime, name }: { src: string; mime: string; name: string }) {
   const pdf = mime === "application/pdf";
   const [blob, setBlob] = useState("");
+  const [zoom, setZoom] = useState(false);
   useEffect(() => {
     if (!pdf) return;
     const bytes = Uint8Array.from(atob(src.slice(src.indexOf(",") + 1)), (c) => c.charCodeAt(0));
@@ -188,7 +190,22 @@ function MediaView({ src, mime, name }: { src: string; mime: string; name: strin
   }
   if (mime.startsWith("video/")) return <div style={box}><video src={src} controls style={{ maxWidth: "100%", maxHeight: "100%" }} /></div>;
   if (mime.startsWith("audio/")) return <div style={box}><audio src={src} controls style={{ width: "min(420px, 100%)" }} /></div>;
-  return <div className="mscroll" style={{ ...box, overflow: "auto" }}><img src={src} alt={name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>;
+  // The pane fits the image to the pane; the lightbox is where it can be read
+  // at size, so the image opens into it rather than growing a viewer of its own.
+  return (
+    <div className="mscroll" style={{ ...box, overflow: "auto" }}>
+      {zoom && <ImageLightbox src={src} onClose={() => setZoom(false)} />}
+      <img
+        src={src}
+        alt={name}
+        role="button"
+        tabIndex={0}
+        onClick={() => setZoom(true)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setZoom(true); }}
+        style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "zoom-in" }}
+      />
+    </div>
+  );
 }
 
 /* Put line `n` in the middle of the viewport with the cursor on it. */
