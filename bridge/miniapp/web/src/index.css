@@ -273,13 +273,28 @@ input {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+/* A short bold ending in a colon is a lead-in label, not emphasis — it gets
+   rank instead of a wash. See the `strong` handler in Markdown.tsx. */
+.md strong.md-lead {
+  background: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--acc);
+  margin-right: 0.15em;
+}
 .md strong code, .md h1 strong, .md h2 strong, .md h3 strong, .md h4 strong { background: none; padding: 0; }
 .md em { font-style: italic; }
+/* The tint alone already reads as code, and the border is what broke lines —
+   which costs most here, where a line is forty characters wide. */
 .md code {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--muted);
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 5px;
   padding: 0.08em 0.34em;
 }
@@ -298,7 +313,7 @@ input {
   border-left: 3px solid var(--border);
   color: var(--muted-foreground);
 }
-.md hr { margin: 1em 0; border: none; border-top: 1px solid var(--border); }
+.md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--ac-22); }
 /* On a phone a table wider than the screen gets squeezed to one word per line
    and a row goes six lines tall. It keeps its natural width and scrolls in its
    own box instead (GitHub's rule) — the box is the wrapper, so the table keeps
@@ -307,17 +322,17 @@ input {
    Ruled, not gridded: a border on every cell is graph paper, and on 390px of
    glass it is the borders you end up reading. */
 .md-tablewrap { margin: 0.6em 0; overflow-x: auto; }
-.md table { width: max-content; max-width: 100%; border-collapse: collapse; font-size: 0.85em; }
-/* Inside a cell the chip border is what pushes a phrase onto the next line —
-   the tint alone reads as code. */
-.md td code, .md th code { border-color: transparent; padding: 0 0.2em; }
+.md table { width: max-content; border-collapse: collapse; font-size: 0.85em; }
+/* A tinted chip inside an already-ruled row is noise: the cell is the box. */
+.md td code, .md th code { background: none; padding: 0 0.2em; }
 /* Cap a column so a prose-heavy cell wraps at a readable measure instead of
    becoming one endless line you have to swipe through. */
 .md th, .md td { text-align: left; max-width: min(58vw, 40ch); }
 .md th {
-  font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; font-size: 0.92em;
-  color: var(--foreground-bright); white-space: nowrap;
-  padding: 0 0.9em 0.3em 0; border-bottom: 1px solid var(--border);
+  font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase;
+  font-family: var(--font-mono); font-size: 0.8em;
+  color: var(--txm); white-space: nowrap;
+  padding: 0 0.9em 0.35em 0; border-bottom: 1px solid var(--ac-22);
 }
 .md td {
   padding: 0.28em 0.9em 0.28em 0; border-bottom: 1px solid var(--ac-06);
@@ -325,6 +340,10 @@ input {
 }
 .md th:last-child, .md td:last-child { padding-right: 0; }
 .md tbody tr:last-child td { border-bottom: 0; }
+/* Footnotes: the marker is a reference, the block at the bottom is apparatus. */
+.md sup a { font-family: var(--font-mono); font-size: 0.8em; color: var(--acc); text-decoration: none; }
+.md .footnotes { margin-top: 1em; border-top: 1px dashed var(--ac-22); font-size: 0.9em; color: var(--txm); }
+.md .footnotes h2 { display: none; }
 .md img { max-width: 100%; border-radius: 8px; }
 
 /* === THE SESSION'S IDIOM ===================================================
@@ -343,6 +362,73 @@ input {
    Colour and theme are the app's, not the sheet's — the sheet paints 2a navy,
    1a ink on cream, 1c slate on indigo; this has one token set and a hue per
    tool. What is copied is the structure. */
+
+/* === THE GROUND ============================================================
+   OUTPUT STYLE says how a turn is drawn; this says what it is drawn ON, and
+   the two are independent settings because they answer different questions.
+
+   All four grounds are one hairline family at `--txg` — the decorative ghost
+   tier the light palettes only clear 3.3:1 at, which is exactly the budget a
+   texture should have. They are tokens, not colours, so every one of the 177
+   themes gets its own version for free and none of them can out-shout the
+   text sitting on it.
+
+   `background-attachment` stays at its initial `scroll`, which on a scroll
+   CONTAINER pins the tile to the padding box: the pattern does not slide
+   under the words as the transcript moves. That is the whole reason a 26px
+   grid is readable at all — a texture that travels with the text is a texture
+   you keep re-focusing on.
+
+   Bubbles, plates and windows all carry their own opaque background, so the
+   ground shows in the margins and between the cards and nowhere else. */
+/* The four are NOT drawn at one alpha. Ink per square inch is what the eye
+   reads, not the alpha of a single hairline, and these four differ by an order
+   of magnitude in it — a grid is two families crossing, a weave at reading
+   pitch is dozens of lines where a rule is one. Each strength below is set so
+   the four are about equally quiet with text on them; matching the numbers
+   instead would make TOOTH a fabric swatch and MATRIX invisible. */
+/* The ground is a LAYER, not "the element's background". The language may have
+   already painted one — LEDGER PRESS washes its page warm — and two rules both
+   writing `background` on the scroller means the later one wins outright and
+   the other silently vanishes, which is exactly how the first cut of this shipped
+   four invisible grounds under one language. So both go through custom
+   properties and are composed once, here: the ground over the wash, the order
+   they would sit in on paper. */
+[data-style] { background-image: var(--ground, none), var(--wash, none); }
+
+[data-bg] { --gnd: color-mix(in srgb, var(--txg) 70%, transparent); }
+
+/* GRAPH — the drafting sheet. 26px, both axes, quieter for the crossing. */
+[data-bg="grid"] {
+  --gnd: color-mix(in srgb, var(--txg) 44%, transparent);
+  --ground:
+    repeating-linear-gradient(0deg, var(--gnd) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(90deg, var(--gnd) 0 1px, transparent 1px 26px);
+}
+/* MATRIX — the crossings without the lines, so nothing runs through a word.
+   The sparsest of the four, so the loudest single mark. */
+[data-bg="dots"] {
+  --ground: radial-gradient(circle at 1px 1px, var(--gnd) 1px, transparent 1.6px);
+  background-size: 22px 22px;
+}
+/* RULED — the pitch is the transcript's own line box (13px × 1.6 ≈ 21px), so
+   the rules sit between lines of prose rather than through them. */
+[data-bg="rule"] {
+  --gnd: color-mix(in srgb, var(--txg) 58%, transparent);
+  --ground: repeating-linear-gradient(0deg, var(--gnd) 0 1px, transparent 1px 21px);
+}
+/* TOOTH — paper grain. A 9px weave, at a fifth of the strength: this is the
+   densest pattern here by a long way, and at the others' alpha it stops being
+   a ground and becomes upholstery. */
+[data-bg="tooth"] {
+  --gnd: color-mix(in srgb, var(--txg) 20%, transparent);
+  --ground: repeating-linear-gradient(135deg, var(--gnd) 0 1px, transparent 1px 9px);
+}
+/* A pattern is a decoration, and a reader who has asked for less motion and
+   less noise has already said what to do with it. */
+@media (prefers-contrast: more) {
+  [data-bg] { --ground: none; }
+}
 
 /* ══ 1B · CONTROL PLATE ══ chrome is the signal ════════════════════════════
    A stamped plate: a 1.5px edge, a hard offset shadow that does not blur, and

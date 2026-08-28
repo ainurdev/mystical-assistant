@@ -11,8 +11,9 @@ import {
   ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, X, type LucideIcon,
 } from "lucide-react";
-import { TOOL_STYLES, type ToolStyle, type ToolWidgetSpec } from "../../lib/toolwidget";
-import { ToolWidget } from "../ResultWidgets";
+import { CHAT_BGS, TOOL_STYLES, type ChatBg, type ToolStyle } from "../../lib/toolwidget";
+import { AgentRail, PromptBubble } from "../Transcript";
+import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
 import { ago } from "../../lib/surfaces";
@@ -27,6 +28,7 @@ import {
   type FreeAgents,
   type McpInfo,
   type StartupState,
+  type TimedEvent,
   type UpdateInfo,
   type Weather,
 } from "../../api";
@@ -155,6 +157,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
   { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
   { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style control plate stamp wire signal log ledger press halo instrument terminal note plain sources screens preview" },
+  { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
   { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
   { tab: "ambient", sec: "CLAUDE·FM", terms: "radio station music volume ambient" },
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
@@ -988,118 +991,198 @@ function ThemeCardGrid({
 
 /** OUTPUT STYLE, drawn as itself. A dropdown listing CONTROL PLATE · WIRE ·
  *  SIGNAL LOG asks you to picture five things you have never seen, and an
- *  earlier cut of these styles was a few borders apart, so nobody could. Each
- *  tile renders the REAL ToolWidget under the real CSS — a tile cannot drift
- *  from the transcript the way a mockup would.
+ *  earlier cut of these styles was a few borders apart, so nobody could.
  *
- *  The wells are `inert`: a preview is a picture, so its links neither take a
- *  click nor a tab stop away from the tile that owns them. */
-/* Two payloads, not one: SOURCES draws in the zero-chrome STRIP idiom, which
-   is the idiom a material has no frame to show itself in. A tile that showed
-   only that would preview the language's typography and none of its chrome. */
-const STYLE_PREVIEW_PLATE: ToolWidgetSpec = {
-  label: "OUTPUT",
-  type: "output",
-  meta: "2 lines",
-  value: { cmd: "tsc -p tsconfig.app.json", ok: false, text: "lib/toolwidget.ts:41:12\nerror TS2322: not assignable to 'Idiom'" },
-};
+ *  Each tile is a whole TURN, rendered by the same PromptBubble, AgentRail and
+ *  RunStream the transcript uses, under the real stylesheet — so a tile cannot
+ *  drift from the thing it previews the way a mockup would. It has to be a
+ *  turn and not a widget or two: the loudest differences between the five
+ *  languages are in the parts an earlier cut of this preview left out entirely
+ *  — where your prompt sits, what an action row's tag is shaped like, and
+ *  whether there is a T+ gutter down the left at all. A preview that omits
+ *  those previews the quietest quarter of the choice.
+ *
+ *  The wells are `inert`: a preview is a picture, so its rows and links neither
+ *  take a click nor a tab stop away from the tile that owns them. */
+const STYLE_PREVIEW_TURN: TimedEvent[] = [
+  // One of each tier, because tier is what the ledger draws differently: a
+  // `mark` that changed a file, a `reach` that left the machine and came back
+  // with structure, then the reply and the answer.
+  { type: "tool", name: "Edit", summary: "lib/toolwidget.ts", id: "s1", at: 3 },
+  { type: "tool_done", id: "s1", ms: 240, stat: "1 edit", at: 3 },
+  { type: "tool", name: "WebSearch", summary: "css subgrid support", id: "s2", at: 5 },
+  {
+    type: "tool_done", id: "s2", ms: 1830, at: 7,
+    sources: [
+      { url: "https://docs.claude.com/en/docs/claude-code", title: "Claude Code — overview", code: 200 },
+      { url: "https://developer.mozilla.org/en-US/docs/Web/CSS", title: "CSS reference — MDN", code: 200 },
+    ],
+  },
+  {
+    type: "text", at: 8,
+    text: "`Idiom` gained a fifth member and the table still lists four:\n\n| Tool | Share |\n| --- | --- |\n| Bash | 70% |\n| Read | 10% |",
+  },
+  { type: "result", result: "Added `field` to the map. Typecheck is clean.", cost: 0.004, elapsed: 9, at: 9 },
+];
 
-const STYLE_PREVIEW: ToolWidgetSpec = {
-  label: "SOURCES",
-  type: "sources",
-  meta: "3",
-  value: [
-    { url: "https://docs.claude.com/en/docs/claude-code", title: "Claude Code — overview", code: 200 },
-    { url: "https://github.com/anthropics/claude-code", title: "anthropics/claude-code", code: 200 },
-    { url: "https://developer.mozilla.org/en-US/docs/Web/CSS", title: "CSS reference — MDN", code: 200 },
-  ],
-};
+/** One tile's well: the same turn, drawn in one language on one ground. Shared
+ *  by both pickers below, because "what does this pick look like" has exactly
+ *  one honest answer and it should not be written twice. */
+function TranscriptWell({ style, bg, children }: {
+  style: ToolStyle;
+  bg: ChatBg;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      inert
+      data-style={style}
+      data-bg={bg}
+      style={{
+        borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
+        // The transcript's own ground, not a panel's: a preview of a texture on
+        // the wrong surface is a preview of a different texture. backgroundColor
+        // and not the `background` shorthand — the shorthand resets
+        // background-image, which is the entire pattern.
+        backgroundColor: "var(--canvas)",
+        padding: "11px 13px",
+        // The transcript scroller's own type, which several of the languages
+        // are measured against (SIGNAL's gutter, PRESS's 74px margin).
+        fontFamily: "'JetBrains Mono',monospace",
+        fontSize: "var(--t12)",
+        lineHeight: 1.6,
+        flex: 1,
+        width: "100%",
+        // The tile is narrower than a transcript, so a long line would wrap
+        // into a different shape than the real thing. Kept short instead.
+        overflow: "hidden",
+      }}
+    >
+      {children ?? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <PromptBubble text="the fifth idiom isn't in the table" />
+          <div className="relative space-y-1.5">
+            <AgentRail />
+            <RunStream
+              events={STYLE_PREVIEW_TURN}
+              toolStyle={style}
+              turnStarted={0}
+              openResults
+              turnId={`prev:${style}:${bg}`}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function OutputStylePicker({
   value,
+  bg,
   onPick,
 }: {
   value: ToolStyle;
+  bg: ChatBg;
   onPick: (s: ToolStyle) => void;
 }) {
-  const hue = toolAccent("WebSearch");
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
-      {TOOL_STYLES.map((o) => {
-        const on = value === o.key;
-        return (
-          <button
-            key={o.key}
-            onClick={() => onPick(o.key)}
-            aria-pressed={on}
-            style={{
-              appearance: "none",
-              cursor: "pointer",
-              textAlign: "left",
-              fontFamily: "inherit",
-              padding: 0,
-              overflow: "hidden",
-              // A button centres its content in whatever height the grid row
-              // gives it; these have to start at the top or the four tiles read
-              // as four different layouts.
-              display: "flex",
-              flexDirection: "column",
-              border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
-              background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "var(--panel3)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px 7px" }}>
-              <span style={{ flex: "none", fontSize: "var(--t10)", letterSpacing: 1.6, color: on ? "var(--txb)" : "var(--txh)" }}>
-                {o.label}
-              </span>
-              {on && (
-                <span style={{ flex: "none", fontSize: "var(--t7)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "1px 5px" }}>
-                  ON
-                </span>
-              )}
-              <span
-                style={{
-                  flex: 1, minWidth: 0, textAlign: "right", fontSize: "var(--t9)",
-                  color: "var(--txl)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                }}
-              >
-                {o.hint}
-              </span>
-            </div>
-            {/* data-style, not just data-tw: the style governs the whole
-                stream now, so the well has to be a slice of one — a result and
-                a piece of a reply — or the tile would preview a quarter of what
-                the pick actually does. */}
-            <div
-              inert
-              data-style={o.key}
-              style={{
-                borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
-                background: "var(--panel)",
-                padding: "11px 13px",
-                minHeight: 124,
-                flex: 1,
-                width: "100%",
-              }}
-            >
-              <ToolWidget spec={STYLE_PREVIEW_PLATE} accent={hue} style={o.key} />
-              <ToolWidget spec={STYLE_PREVIEW} accent={hue} style={o.key} />
-              <div className="md" style={{ marginTop: 9, fontSize: "var(--t11)" }}>
-                <div className="md-tablewrap">
-                  <table>
-                    <thead><tr><th>Tool</th><th>Share</th></tr></thead>
-                    <tbody>
-                      <tr><td>Bash</td><td>70%</td></tr>
-                      <tr><td>Read</td><td>10%</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+      {TOOL_STYLES.map((o) => (
+        <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
+          <TranscriptWell style={o.key} bg={bg} />
+        </PickTile>
+      ))}
+    </div>
+  );
+}
+
+/** THE GROUND. Same tile, same turn — only the texture under it changes, which
+ *  is the only way to see whether a pattern is still readable with words on it.
+ *  A swatch of the pattern alone would show four handsome tiles and tell you
+ *  nothing about the thing you actually do with them. */
+function ChatBgPicker({
+  value,
+  style,
+  onPick,
+}: {
+  value: ChatBg;
+  style: ToolStyle;
+  onPick: (b: ChatBg) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
+      {CHAT_BGS.map((o) => (
+        <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
+          {/* Two lines of prose and one row, not the whole turn: a ground is
+              judged on the gaps between cards, and this is the shortest slice
+              that has any. */}
+          <TranscriptWell style={style} bg={o.key}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <PromptBubble text="does this still read?" />
+              <div className="relative space-y-1.5">
+                <AgentRail />
+                <RunStream
+                  events={STYLE_PREVIEW_TURN.slice(0, 2).concat(STYLE_PREVIEW_TURN.slice(4))}
+                  toolStyle={style}
+                  turnStarted={0}
+                  turnId={`bg:${o.key}`}
+                />
               </div>
             </div>
-          </button>
-        );
-      })}
+          </TranscriptWell>
+        </PickTile>
+      ))}
     </div>
+  );
+}
+
+/** The chrome both pickers wear: a name, a live badge, the one-line hint, and
+ *  the well underneath. */
+function PickTile({ label, hint, on, onPick, children }: {
+  label: string;
+  hint: string;
+  on: boolean;
+  onPick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onPick}
+      aria-pressed={on}
+      style={{
+        appearance: "none",
+        cursor: "pointer",
+        textAlign: "left",
+        fontFamily: "inherit",
+        padding: 0,
+        overflow: "hidden",
+        // A button centres its content in whatever height the grid row
+        // gives it; these have to start at the top or the tiles read as
+        // several different layouts.
+        display: "flex",
+        flexDirection: "column",
+        border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
+        background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "var(--panel3)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px 7px" }}>
+        <span style={{ flex: "none", fontSize: "var(--t10)", letterSpacing: 1.6, color: on ? "var(--txb)" : "var(--txh)" }}>
+          {label}
+        </span>
+        {on && (
+          <span style={{ flex: "none", fontSize: "var(--t7)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--acc)", padding: "1px 5px" }}>
+            ON
+          </span>
+        )}
+        {/* The hint wraps rather than truncating: these are the sentence that
+            tells the two quiet languages apart, and an ellipsis ate it. */}
+        <span style={{ flex: 1, minWidth: 0, textAlign: "right", fontSize: "var(--t9)", color: "var(--txl)", lineHeight: 1.35 }}>
+          {hint}
+        </span>
+      </div>
+      {children}
+    </button>
   );
 }
 
@@ -3413,7 +3496,20 @@ export function SettingsModal(props: SettingsModalProps) {
                 >
                   <OutputStylePicker
                     value={settings.toolStyle}
+                    bg={settings.chatBg}
                     onPick={(toolStyle) => onPatch({ toolStyle })}
+                  />
+                </Section>
+
+                <Section
+                  title="THE GROUND"
+                  top
+                  info="The texture the transcript is read on. Four grounds and none, all drawn at the ghost ink tier and pinned to the scroller so they don't slide under the words — a ground you keep re-focusing on is a ground you'd turn off by the second screen. Independent of the language above it."
+                >
+                  <ChatBgPicker
+                    value={settings.chatBg}
+                    style={settings.toolStyle}
+                    onPick={(chatBg) => onPatch({ chatBg })}
                   />
                 </Section>
 

@@ -41,11 +41,24 @@ export function liveSurfaceFor(
 // A stable accent per project (the design colours each repo distinctly). Hashes
 // the project name to a fixed phosphor palette so the same repo always looks the
 // same across the strip, sidebar, terminal header, and analyze modal.
-const PROJ_PALETTE = ["var(--acc)", "var(--purple)", "var(--ok)", "var(--info)", "var(--warn)", "#ff7ad9"];
+// The six theme inks, then six in-between hues mixed from them: twelve distinct
+// colours that still track the active theme's lightness, so a project name stays
+// legible on paper themes the way a literal hex would not.
+const PROJ_PALETTE = [
+  "var(--acc)", "var(--purple)", "var(--ok)", "var(--info)", "var(--warn)", "var(--err)",
+  "color-mix(in srgb, var(--purple), var(--err))",
+  "color-mix(in srgb, var(--ok), var(--info))",
+  "color-mix(in srgb, var(--warn), var(--err))",
+  "color-mix(in srgb, var(--info), var(--purple))",
+  "color-mix(in srgb, var(--ok), var(--warn))",
+  "color-mix(in srgb, var(--acc), var(--purple))",
+];
 
 export interface ProjectTint {
   color: string;
   border: string;
+  dim: string;   // same hue, half the voice — secondary marks (branch, open bar)
+  faint: string; // quieter still — a detail that only hints at its project
 }
 
 // User-picked colour overrides (analyze modal's colour picker), keyed by
@@ -96,7 +109,12 @@ export function projectTint(name: string | null | undefined): ProjectTint {
   // Translucent border. Most palette entries are CSS var() strings, so hex-slicing
   // them yielded rgba(NaN,NaN,NaN,.45) (dropped by the browser); color-mix works
   // for both var() and literal hex.
-  return { color, border: `color-mix(in srgb, ${color} 45%, transparent)` };
+  return {
+    color,
+    border: `color-mix(in srgb, ${color} 45%, transparent)`,
+    dim: `color-mix(in srgb, ${color} 55%, var(--txd))`,
+    faint: `color-mix(in srgb, ${color} 30%, var(--txd))`,
+  };
 }
 
 export function ago(sec: number | null): string {

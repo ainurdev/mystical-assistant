@@ -1443,7 +1443,7 @@ type RespondFn = (
 // Memoized: a long session's past turns keep the same `events`/`pending` arrays
 // across polls (see mergeDelta), so only the live turn re-renders.
 export const RunStream = memo(function RunStream({
-  events,
+  events: allEvents,
   pending = [],
   onRespond,
   animate = false,
@@ -1488,6 +1488,18 @@ export const RunStream = memo(function RunStream({
    *  browser's find is about to look for. */
   showAll?: boolean;
 }) {
+  // An ask is drawn by its question card and by nothing else. A live run also
+  // emits it as a tool: the bridge answers the control request with a `deny`
+  // carrying the user's choice (runner.py _format_answers), so the row lands as
+  // an empty ASKUSERQUESTION tag over a red "The user answered…" — the same
+  // exchange a second time, dressed as a failure. Dropped here rather than at
+  // the source because attribution.py reads those stored events for `waiting_s`,
+  // and dropped before folding/grouping so a phantom can't head a run — which
+  // also lets the prose above it see the question and earn its RESULT box.
+  // The native reader already omits the row (transcript_jsonl.py, tool_use).
+  const events = allEvents.filter(
+    (e) => !(e.type === "tool" && e.name === "AskUserQuestion"),
+  );
   // T+ for SIGNAL LOG's gutter. Every other language ignores `data-t`, so this
   // costs one subtraction per row and nothing else.
   const clockAt = (e: TimedEvent): string | undefined => {
@@ -1719,6 +1731,7 @@ export const RunStream = memo(function RunStream({
                   stat={done?.stat}
                   error={done?.is_error}
                   animate={animate}
+                  t={clockAt(event)}
                 />
               );
             if (kind === "write" && event.summary)
@@ -1731,6 +1744,7 @@ export const RunStream = memo(function RunStream({
                   stat={done?.stat}
                   error={done?.is_error}
                   animate={animate}
+                  t={clockAt(event)}
                 />
               );
             return (

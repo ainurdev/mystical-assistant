@@ -78,7 +78,7 @@ function RuntimeBadge({ runtime }: { runtime: string }) {
  *  reads it as the right-hand half of a two-sided conversation. So the row and
  *  the width live in `.pbub-row` / `.pbub` (index.css), and nothing here decides
  *  either. Colours are there too — see `.abub` for why not inline. */
-function PromptBubble({ text }: { text: string }) {
+export function PromptBubble({ text }: { text: string }) {
   return (
     <div className="pbub-row">
       <div
@@ -99,7 +99,7 @@ function PromptBubble({ text }: { text: string }) {
  *  Drawn in WIRE only: the Chat Elements sheet gives the spine to 2A alone, and
  *  the other four say the same thing their own way (a stamped edge, a 3px rule
  *  on the row, a §, or nothing). */
-function AgentRail() {
+export function AgentRail() {
   return (
     // Flat, not a gradient: a turn runs to thousands of pixels, so anything
     // that fades out is invisible for most of its own length.

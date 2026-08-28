@@ -2,69 +2,66 @@
    FILES panel draw. Add an extension to EXT (or a whole filename to NAME), then
    from bridge/dashboard/web: node src/lib/fileicons.build.mjs
 
-   Values are vscode-icons names minus the "file-type-" prefix; browse them at
-   icon-sets.iconify.design/vscode-icons. Bodies are inlined rather than pulled
-   from a package so the dashboard keeps working offline. */
+   Values are lucide icon names; browse them at lucide.dev/icons. Lucide because
+   that is the icon language the rest of the HUD already speaks — 24px grid,
+   currentColor stroke, round caps — so a file row sits next to the toolbar
+   glyphs without reading as an import from another app. Category, not language:
+   .py and .rs share file-code, and the extension in the filename right beside
+   it carries which one. Bodies are inlined rather than pulled from a package so
+   the dashboard keeps working offline. */
 import { writeFileSync } from "node:fs";
 
 const EXT = {
-  ts: "typescript", mts: "typescript", cts: "typescript", tsx: "reactts",
-  js: "js", mjs: "js", cjs: "js", jsx: "reactjs",
-  py: "python", rs: "rust", go: "go", rb: "ruby", php: "php", java: "java",
-  c: "c", h: "cheader", cpp: "cpp", cc: "cpp", hpp: "cppheader", cs: "csharp",
-  swift: "swift", kt: "kotlin", lua: "lua", dart: "dartlang",
-  vue: "vue", svelte: "svelte", astro: "astro", html: "html", htm: "html", xml: "xml",
-  json: "json", jsonc: "json",
-  css: "css", scss: "scss", sass: "sass", less: "less",
-  md: "markdown", mdx: "markdown", txt: "text", rst: "text", pdf: "pdf2",
-  yml: "yaml", yaml: "yaml", toml: "toml", ini: "config", cfg: "config", conf: "config",
-  editorconfig: "editorconfig", gitignore: "git", gitattributes: "git", gitmodules: "git",
-  dockerfile: "docker", makefile: "shell",
-  sh: "shell", bash: "shell", zsh: "shell", fish: "shell", ps1: "powershell",
-  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", bmp: "image",
-  avif: "image", ico: "favicon", svg: "svg",
-  zip: "zip", tar: "zip", gz: "zip", tgz: "zip", xz: "zip", bz2: "zip", "7z": "zip", rar: "zip",
-  sql: "sql", db: "sqlite", sqlite: "sqlite", sqlite3: "sqlite",
-  env: "dotenv",
-  license: "text", log: "log", todo: "todo",
-  xlsx: "excel", docx: "word", ipynb: "jupyter",
-  graphql: "graphql", gql: "graphql", prisma: "prisma", wasm: "wasm", proto: "protobuf", tex: "tex",
+  ts: "file-code", mts: "file-code", cts: "file-code", tsx: "file-code",
+  js: "file-code", mjs: "file-code", cjs: "file-code", jsx: "file-code",
+  py: "file-code", rs: "file-code", go: "file-code", rb: "file-code",
+  php: "file-code", java: "file-code", c: "file-code", h: "file-code",
+  cpp: "file-code", cc: "file-code", hpp: "file-code", cs: "file-code",
+  swift: "file-code", kt: "file-code", lua: "file-code", dart: "file-code",
+  vue: "file-code", svelte: "file-code", astro: "file-code",
+  graphql: "file-code", gql: "file-code", prisma: "file-code", proto: "file-code",
+  ipynb: "notebook",
+  html: "code-xml", htm: "code-xml", xml: "code-xml", svg: "code-xml",
+  css: "brush", scss: "brush", sass: "brush", less: "brush",
+  json: "braces", jsonc: "braces",
+  yml: "file-cog", yaml: "file-cog", toml: "file-cog", ini: "file-cog",
+  cfg: "file-cog", conf: "file-cog", editorconfig: "file-cog",
+  md: "file-text", mdx: "file-text", txt: "file-text", rst: "file-text",
+  license: "file-text", tex: "file-text", pdf: "file-text", docx: "file-text",
+  xlsx: "file-spreadsheet",
+  sh: "file-terminal", bash: "file-terminal", zsh: "file-terminal",
+  fish: "file-terminal", ps1: "file-terminal", makefile: "file-terminal",
+  dockerfile: "container",
+  gitignore: "git-branch", gitattributes: "git-branch", gitmodules: "git-branch",
+  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image",
+  bmp: "image", avif: "image", ico: "image",
+  zip: "file-archive", tar: "file-archive", gz: "file-archive", tgz: "file-archive",
+  xz: "file-archive", bz2: "file-archive", "7z": "file-archive", rar: "file-archive",
+  sql: "database", db: "database", sqlite: "database", sqlite3: "database",
+  env: "file-lock",
+  log: "scroll-text", todo: "list-todo", wasm: "binary",
 };
 const NAME = {
-  "package.json": "npm", "package-lock.json": "npm", "tsconfig.json": "tsconfig", "yarn.lock": "yarn",
+  "package.json": "package", "package-lock.json": "package", "yarn.lock": "package",
+  "tsconfig.json": "file-cog",
 };
 
-const known = new Set(await fetch("https://api.iconify.design/collection?prefix=vscode-icons")
-  .then((r) => r.json())
-  .then((d) => [...(d.uncategorized ?? []), ...(d.hidden ?? []), ...Object.keys(d.aliases ?? {})]));
+const all = [...new Set([...Object.values(EXT), ...Object.values(NAME), "file"])];
+const data = await fetch(`https://api.iconify.design/lucide.json?icons=${all.join(",")}`).then((r) => r.json());
 
-const wanted = [...new Set([...Object.values(EXT), ...Object.values(NAME)])].map((s) => `file-type-${s}`);
-const missing = wanted.filter((n) => !known.has(n));
+const missing = all.filter((n) => !data.icons?.[n] && !data.aliases?.[n]);
 if (missing.length) { console.error("MISSING:", missing.join(", ")); process.exit(1); }
 
-const all = [...wanted, "default-file"];
-const data = await fetch(`https://api.iconify.design/vscode-icons.json?icons=${all.join(",")}`).then((r) => r.json());
-
-// Aliases come back separately, pointing at a parent's body.
-const body = (n) => data.icons[n]?.body ?? data.icons[data.aliases?.[n]?.parent]?.body;
-const short = (n) => n.replace(/^file-type-/, "");
-const entries = all.map((n) => `  ${JSON.stringify(short(n))}: ${JSON.stringify(body(n))},`).join("\n");
+// Aliases come back separately, pointing at a parent's body. Lucide draws at
+// stroke-width 2; the HUD's own glyphs are 1.5–1.6, so thin them to match.
+const body = (n) => (data.icons[n]?.body ?? data.icons[data.aliases?.[n]?.parent]?.body)
+  .replaceAll('stroke-width="2"', 'stroke-width="1.6"');
+const entries = all.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(body(n))},`).join("\n");
 const map = (o) => Object.entries(o).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`).join("\n");
-
-// These render at 13px — a body over ~9KB is detail nobody can see, paid for on
-// every load. Pick a simpler stand-in in EXT instead of shipping it.
-const fat = all.filter((n) => (body(n)?.length ?? 0) > 9000);
-if (fat.length) console.error("TOO BIG, pick a simpler icon:", fat.map((n) => `${n} (${(body(n).length / 1024).toFixed(1)}K)`).join(", "));
-
-// Everything is 32x32 bar the odd import (the Go gopher); those carry their own.
-const boxes = Object.fromEntries(all
-  .map((n) => [short(n), data.icons[n] ?? data.icons[data.aliases?.[n]?.parent] ?? {}])
-  .filter(([, i]) => (i.width ?? data.width) !== 32 || (i.height ?? data.height) !== 32)
-  .map(([k, i]) => [k, `0 0 ${i.width ?? data.width} ${i.height ?? data.height}`]));
 
 writeFileSync(new URL("fileicons.gen.ts", import.meta.url), `\
 /* GENERATED by fileicons.build.mjs — edit the maps there and re-run it, not this.
-   Icon bodies are from the vscode-icons set (MIT), fetched via api.iconify.design. */
+   Icon bodies are from the lucide set (ISC), fetched via api.iconify.design. */
 
 /* Last dot-segment of the filename → icon. For an extensionless name like
    Dockerfile or Makefile that segment is the whole lowercased name, so those
@@ -80,11 +77,6 @@ ${map(NAME)}
 
 export const ICON_BODY: Record<string, string> = {
 ${entries}
-};
-
-/* Only for icons that aren't 32x32; everything else uses that default. */
-export const ICON_VIEWBOX: Record<string, string> = {
-${map(boxes)}
 };
 `);
 console.log(`ok — ${all.length} icons`);

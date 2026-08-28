@@ -4,7 +4,8 @@
 // result it doesn't recognise keeps the plain row it always had. That is what
 // this checks — not how the widgets look.
 
-import { isToolStyle, toToolStyle, widgetFor, widgetForRun, TOOL_STYLES } from "./toolwidget.ts";
+import { readFileSync } from "node:fs";
+import { CHAT_BGS, isToolStyle, toChatBg, toToolStyle, widgetFor, widgetForRun, TOOL_STYLES } from "./toolwidget.ts";
 
 // --- the table --------------------------------------------------------------
 const src = widgetFor({ sources: [{ url: "https://a.dev", title: "A" }] });
@@ -59,5 +60,24 @@ console.assert(toToolStyle("card") === "press", "CARD, two renames ago, still re
 console.assert(toToolStyle("halo") === "halo", "a current style passes through");
 console.assert(toToolStyle("fancy") === "stamp", "an unknown style falls back");
 console.assert(toToolStyle(undefined) === "stamp", "a missing style falls back");
+
+// --- the ground -------------------------------------------------------------
+// The one failure this can have is silent: a key with no CSS rule behind it is
+// a tile that draws nothing and reads exactly like NONE. So the list is checked
+// against the stylesheet, not against itself.
+console.assert(CHAT_BGS.length === 5, `four grounds and NONE, got ${CHAT_BGS.length}`);
+console.assert(CHAT_BGS[0].key === "none", "NONE is the default, and leads");
+console.assert(toChatBg("grid") === "grid", "a current ground passes through");
+console.assert(toChatBg("wallpaper") === "none", "an unknown ground falls back");
+console.assert(toChatBg(undefined) === "none", "a missing ground falls back");
+{
+  const css = readFileSync(new URL("../index.css", import.meta.url), "utf8");
+  for (const b of CHAT_BGS.slice(1))
+    console.assert(css.includes(`[data-bg="${b.key}"]`), `${b.key} has a rule in index.css`);
+  console.assert(
+    css.includes("background-image: var(--ground, none), var(--wash, none)"),
+    "the ground is composed as a layer, so a language's own wash cannot replace it",
+  );
+}
 
 console.log("toolwidget: ok");

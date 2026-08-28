@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
 
-const DOUBLE_TAP_MS = 300;
 /** How far a press may wander and still count as a tap rather than a pan. */
 const TAP_SLOP = 8;
 
 /** Full-size view of one attachment, and a zoom: wheel or pinch to scale, drag
- *  to pan, double-tap to toggle. Click the backdrop or press Esc to close.
+ *  to pan, click or tap the image to toggle fit ↔ 2.5x. The backdrop, the ✕ and
+ *  Esc close it.
  *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
  *  (virtualized rows are translateY'd), which would make position:fixed resolve
  *  against that ancestor instead of the viewport. */
@@ -19,7 +19,6 @@ export function ImageLightbox({ src, onClose }: { src: string; onClose: () => vo
   const spread = useRef(0);   // the previous two-finger distance, 0 = not pinching
   const down = useRef({ x: 0, y: 0 });
   const dragged = useRef(false);
-  const lastTap = useRef(0);
 
   // Every change goes through here, so no gesture can leave the image outside
   // its own overflow — a clamp needs the laid-out sizes, which only the DOM has.
@@ -93,16 +92,10 @@ export function ImageLightbox({ src, onClose }: { src: string; onClose: () => vo
     spread.current = 0;
     if (ptrs.current.size || dragged.current) return;   // still pinching, or that was a pan
 
-    const onImage = !!img.current?.contains(e.target as Node);
-    // The backdrop always dismisses, and a mouse keeps the old behaviour of
-    // closing on the image too — the wheel is its zoom. Touch has no wheel, so
-    // there the image owns the gesture: a single tap is inert (it would close
-    // before the second tap could land) and a double-tap toggles fit ↔ 2.5x.
-    if (!onImage || (e.pointerType === "mouse" && v.s === 1)) { onClose(); return; }
-    if (e.pointerType === "mouse") return;
-    const dbl = e.timeStamp - lastTap.current < DOUBLE_TAP_MS;
-    lastTap.current = dbl ? 0 : e.timeStamp;
-    if (!dbl) return;
+    // The image never dismisses: a tap or click on it toggles fit ↔ 2.5x at
+    // that point, the same as the old double-tap. Only the backdrop, the ✕ and
+    // Esc close.
+    if (!img.current?.contains(e.target as Node)) { onClose(); return; }
     const p = rel(e);
     move((cur) => (cur.s > 1 ? FIT : zoomAt(FIT, p.x, p.y, 2.5)));
   };
@@ -124,8 +117,14 @@ export function ImageLightbox({ src, onClose }: { src: string; onClose: () => vo
         src={src}
         alt=""
         draggable={false}
-        style={{ maxWidth: "92vw", maxHeight: "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-out", userSelect: "none" }}
+        style={{ maxWidth: "92vw", maxHeight: "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
       />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        style={{ position: "absolute", top: 12, right: 12, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "color-mix(in srgb, var(--panel3) 70%, transparent)", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 12px" }}
+      >ESC ✕</button>
     </div>,
     document.body,
   );

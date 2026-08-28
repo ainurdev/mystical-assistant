@@ -65,6 +65,9 @@ const ADMONITIONS: Record<string, { label: string; color: string }> = {
 };
 const ADMONITION_RE = /^\s*\[!(note|tip|important|warning|caution)\]\s*\n?/i;
 
+/** A bold that is really a label: short, one line, ending in a colon. */
+const LEAD_RE = /^[^\n]{2,24}:$/;
+
 /** The same tree with the `[!NOTE]` marker cut out of its first text node. The
  *  marker is always the leading text of the leading paragraph, so only the first
  *  branch needs rewriting. */
@@ -109,7 +112,7 @@ function FileRefSpan({
       title={`Open ${path}${line ? ` at line ${line}` : ""}`}
       className="md-fileref"
     >
-      <FileIcon name={path} size={11} />
+      <FileIcon name={path} size={13} />
       <code>{label}</code>
     </button>
   );
@@ -133,6 +136,19 @@ export const Markdown = memo(function Markdown({
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          // A short bold ending in a colon is a lead-in label ("Root cause:",
+          // "Fix:"), not emphasis — it gets rank instead of the wash. The bound
+          // is what keeps a bold *clause* out: `**72 passed, 1 failed**` has no
+          // colon, and a bold sentence is too long. Single line only, and the
+          // colon stays in the text so a copied reply reads back the same.
+          strong: ({ node, children, ...props }) => (
+            <strong
+              className={LEAD_RE.test(textOf(children)) ? "md-lead" : undefined}
+              {...props}
+            >
+              {children}
+            </strong>
+          ),
           // A wide table used to push the whole transcript column sideways.
           // It scrolls in its own box instead — GitHub's rule, and the one the
           // Mini App already had.

@@ -1006,7 +1006,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 {hitGroups.map(([path, list]) => (
                   <div key={path}>
                     <div title={path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px 3px", fontFamily: "'JetBrains Mono',monospace" }}>
-                      <FileIcon name={path} size={12} />
+                      <FileIcon name={path} size={14} />
                       <span style={{ fontSize: "var(--t105)", color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{path.split("/").pop()}</span>
                       <span style={{ fontSize: "var(--t9)", color: "var(--txl)", flex: "none" }}>{list.length}</span>
                     </div>
@@ -1091,7 +1091,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                 {...dragSourceProps(r.path)} {...dragTargetProps(r.path)}
                 style={{ width: "100%", appearance: "none", border: 0, background: dropDir === r.path ? "color-mix(in srgb, var(--acc) 16%, transparent)" : undefined, opacity: drag === r.path ? 0.45 : isIgnored(r.path) ? 0.5 : 1, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", paddingLeft: 8 + r.depth * 12 }}>
                 <span style={{ fontSize: "var(--t8)", color: "var(--txd)", width: 9, flex: "none", textAlign: "center" }}>{collapsed.has(r.path) ? "▸" : "▾"}</span>
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#7fa8a0" strokeWidth="1.7" style={{ flex: "none" }}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" style={{ flex: "none", color: "var(--txd)" }}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
                 <span style={{ fontSize: "var(--t11)", color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.name}</span>
               </button>
             ) : (
@@ -1127,7 +1127,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
                     onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); void closeTab(p); } }}
                     style={{ display: "flex", alignItems: "center", gap: 6, flex: "none", maxWidth: 190, padding: "5px 8px 5px 10px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderTop: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--panel3) 70%, transparent)" : hov === `tab:${p}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent" }}>
                     <span onClick={() => setOpen(p)} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <FileIcon name={name} size={13} />
+                      <FileIcon name={name} size={14} />
                       {/* italic = the preview tab, the one the next single click replaces */}
                       <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", fontStyle: p === peek ? "italic" : "normal", color: on ? "var(--txb)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
                     </span>

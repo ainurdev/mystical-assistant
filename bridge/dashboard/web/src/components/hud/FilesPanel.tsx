@@ -406,7 +406,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
               ) : (
                 <>
                   <span style={{ width: 9, flex: "none" }} />
-                  <FileIcon name={r.name} size={13} />
+                  <FileIcon name={r.name} size={15} />
                   {/* Full paths truncate from the left, so the filename survives. */}
                   <span style={{ color: st ? ST_COLOR(st) : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: changedOnly ? "rtl" : "ltr", textAlign: "left" }}>{r.name}</span>
                   {st && <span style={{ fontSize: "var(--t95)", fontWeight: 700, color: ST_COLOR(st), flex: "none" }}>{st}</span>}

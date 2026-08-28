@@ -1,15 +1,14 @@
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
 
-const DOUBLE_TAP_MS = 300;
 /** How far a press may wander and still count as a tap rather than a pan. */
 const TAP_SLOP = 8;
 
 /** Full-size view of one attachment, and a zoom: pinch (or wheel) to scale,
- *  drag to pan, double-tap to toggle fit ↔ 2.5x. Tap the backdrop or press Esc
- *  to close — a single tap on the image itself is inert, or it would dismiss
- *  before the second tap of a double-tap could land.
+ *  drag to pan, tap the image to toggle fit ↔ 2.5x. The backdrop, the ✕ and Esc
+ *  close it — the image itself never dismisses.
  *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
  *  (virtualized rows are translateY'd), which would make position:fixed resolve
  *  against that ancestor instead of the viewport. */
@@ -21,7 +20,6 @@ export function ImageLightbox({ src, alt, onClose }: { src: string; alt?: string
   const spread = useRef(0);   // the previous two-finger distance, 0 = not pinching
   const down = useRef({ x: 0, y: 0 });
   const dragged = useRef(false);
-  const lastTap = useRef(0);
 
   // Every change goes through here, so no gesture can leave the image outside
   // its own overflow — a clamp needs the laid-out sizes, which only the DOM has.
@@ -95,14 +93,10 @@ export function ImageLightbox({ src, alt, onClose }: { src: string; alt?: string
     spread.current = 0;
     if (ptrs.current.size || dragged.current) return;   // still pinching, or that was a pan
 
-    const onImage = !!img.current?.contains(e.target as Node);
-    // A mouse (the app opens in a desktop Telegram too) keeps the plain
-    // click-anywhere-to-dismiss, since the wheel is its zoom.
-    if (!onImage || (e.pointerType === "mouse" && v.s === 1)) { onClose(); return; }
-    if (e.pointerType === "mouse") return;
-    const dbl = e.timeStamp - lastTap.current < DOUBLE_TAP_MS;
-    lastTap.current = dbl ? 0 : e.timeStamp;
-    if (!dbl) return;
+    // The image never dismisses: a tap or click on it toggles fit ↔ 2.5x at
+    // that point, the same as the old double-tap. Only the backdrop, the ✕ and
+    // Esc close.
+    if (!img.current?.contains(e.target as Node)) { onClose(); return; }
     const p = rel(e);
     move((cur) => (cur.s > 1 ? FIT : zoomAt(FIT, p.x, p.y, 2.5)));
   };
@@ -129,6 +123,14 @@ export function ImageLightbox({ src, alt, onClose }: { src: string; alt?: string
         style={{ transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform" }}
         className="max-h-full max-w-full select-none rounded-lg object-contain"
       />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white/90"
+      >
+        <X size={18} />
+      </button>
     </div>,
     document.body,
   );

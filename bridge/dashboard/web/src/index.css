@@ -425,7 +425,7 @@ body {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--acc);
+  background: var(--openbar, var(--acc));
   transform: scaleY(0);
   transition: transform 0.18s var(--ease-hud);
 }
@@ -769,6 +769,17 @@ input {
 }
 
 /* Markdown rendering for assistant messages (react-markdown + remark-gfm). */
+/* A reply is prose, and prose read across a 170-character line is scanned, not
+   read. The measure caps the reading blocks only — a table or a fenced block is
+   a figure, so it runs to the wider bound and scrolls in place past that. Set in
+   `em` so both bounds ride --fs and hold in the mono and the sans theme voices. */
+:root {
+  --md-measure: 56em;
+  --md-wide: 76em;
+}
+.md p, .md ul, .md ol, .md h1, .md h2, .md h3, .md h4,
+.md blockquote, .md-admonition { max-width: var(--md-measure); }
+.md-tablewrap, .md-code { max-width: var(--md-wide); }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0.5em 0; }
@@ -796,18 +807,36 @@ input {
   font-weight: 600;
   color: var(--foreground-bright);
   background: var(--ac-12);
-  padding: 0.06em 0.28em;
+  padding: 0.03em 0.24em;
+  border-radius: 2px;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+/* A short bold ending in a colon is a lead-in label, not emphasis — it gets
+   rank (tracked, uppercase, accent) instead of a wash. See the `strong` handler
+   in Markdown.tsx for what qualifies. */
+.md strong.md-lead {
+  background: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t9);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--acc);
+  margin-right: 0.15em;
+}
 .md strong code, .md h1 strong, .md h2 strong, .md h3 strong, .md h4 strong { background: none; padding: 0; }
 .md em { font-style: italic; }
+/* The tint alone already reads as code, and the border is what broke lines: a
+   bordered chip mid-sentence is an atomic box the line has to break around. */
 .md code {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--muted);
-  border: 1px solid var(--border);
-  padding: 0.08em 0.34em;
+  border: 0;
+  border-radius: 3px;
+  padding: 0.07em 0.3em;
 }
 /* GitHub-style callouts (> [!NOTE]) — the type's colour on the rail and the
    label, a wash of it behind. See ADMONITIONS in Markdown.tsx. */
@@ -844,7 +873,11 @@ input {
   font: inherit;
   cursor: pointer;
 }
-.md-fileref > code { border-color: var(--ac-20); }
+/* A file ref is a control, so unlike every other chip it keeps a border — that
+   border IS the affordance. --ac-22, not the --ac-20 the rest of the HUD asks
+   for: that token has never been defined, so the colour was falling back to
+   currentColor, and folded into a shorthand it would kill the border outright. */
+.md-fileref > code { border: 1px solid var(--ac-22); }
 .md-fileref:hover > code { color: var(--acc); border-color: var(--acc); }
 .md-fileref svg { flex: none; }
 /* A fenced block is a panel, not a paragraph: sunken well, hairline edge, and
@@ -889,29 +922,39 @@ input {
   background: var(--ac-03);
   color: var(--muted-foreground);
 }
-.md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--border-bright); }
+.md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--ac-16); }
 /* A table is columns, so it is ruled rather than gridded: a border on every
    cell turns five rows into graph paper and buries the one thing worth seeing.
    The header rules off, the rows hairline apart, the first column flush with
    the prose above it. Numbers get tabular figures so a column of them lines up
    on the digit instead of on the glyph. */
 .md-tablewrap { margin: 0.7em 0; overflow-x: auto; }
-.md table { border-collapse: collapse; width: max-content; max-width: 100%; font-size: 0.92em; }
+/* No max-width on the table: capped at 100% it can never outgrow the wrapper,
+   so a wide table squeezed its cells into stacks of single words instead of
+   scrolling — which is the one thing the wrapper exists to let it do. */
+.md table { border-collapse: collapse; width: max-content; font-size: 0.92em; }
+/* The header names the columns; the data is what you came for. So the labels
+   are set as labels — mono, small, tracked, quiet — and the data keeps the
+   prose's own ink. */
 .md th {
-  text-align: left; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
-  font-size: 0.9em; color: var(--foreground-bright); white-space: nowrap;
-  padding: 0.1em 1.2em 0.35em 0; border-bottom: 1px solid var(--border-bright);
+  text-align: left; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase;
+  font-family: var(--font-mono); font-size: var(--t9); color: var(--txm); white-space: nowrap;
+  padding: 0 1.6em 0.45em 0; border-bottom: 1px solid var(--ac-22);
 }
 .md td {
-  padding: 0.32em 1.2em 0.32em 0; border-bottom: 1px solid var(--ac-06);
+  padding: 0.42em 1.6em 0.42em 0; border-bottom: 1px solid var(--ac-08);
   vertical-align: top; font-variant-numeric: tabular-nums;
 }
 .md th:last-child, .md td:last-child { padding-right: 0; }
 .md tbody tr:last-child td { border-bottom: 0; }
 .md tbody tr:hover td { background: var(--ac-03); }
-/* The chip border inside a cell is what pushes a phrase onto a second line —
-   the tint alone already reads as code. */
-.md td code, .md th code { border-color: transparent; padding: 0 0.2em; }
+/* A tinted chip inside an already-ruled row is noise: the cell is the box. */
+.md td code, .md th code { background: none; padding: 0 0.2em; }
+/* Footnotes, as remark-gfm emits them: the marker is a reference, so it is set
+   like one, and the block at the bottom is apparatus rather than prose. */
+.md sup a { font-family: var(--font-mono); font-size: var(--t9); color: var(--acc); text-decoration: none; }
+.md .footnotes { margin-top: 1em; border-top: 1px dashed var(--ac-16); font-size: 0.9em; color: var(--txm); }
+.md .footnotes h2 { display: none; }
 .md img { max-width: 100%; border-radius: 8px; }
 
 /* Session readouts (agents, goal) — one row at the top of the composer's own
@@ -1369,7 +1412,6 @@ input {
 .ax-window[data-err] .ax-winlights > i { background: var(--err); }
 .ax-window > .actrow { background: none; }
 .ax-window > .actrow:hover { background: var(--ac-03); }
-.ax-window > .actrow > .ax-bar { background: none; }
 /* 3px = past the bar, where the object cell now starts (the empty tag cell
    collapsed, see .ax-tagcell:empty). */
 .ax-window > .ax-drawer { margin-left: 0; padding-left: 3px; }
@@ -1890,6 +1932,85 @@ input {
   background: var(--ac-06);
 }
 
+/* === THE GROUND ============================================================
+   OUTPUT STYLE says how a turn is drawn; this says what it is drawn ON, and
+   the two are independent settings because they answer different questions.
+
+   All four grounds are one hairline family at `--txg` — the decorative ghost
+   tier the light palettes only clear 3.3:1 at, which is exactly the budget a
+   texture should have. They are tokens, not colours, so every one of the 177
+   themes gets its own version for free and none of them can out-shout the
+   text sitting on it.
+
+   `background-attachment` stays at its initial `scroll`, which on a scroll
+   CONTAINER pins the tile to the padding box: the pattern does not slide
+   under the words as the transcript moves. That is the whole reason a 26px
+   grid is readable at all — a texture that travels with the text is a texture
+   you keep re-focusing on.
+
+   Bubbles, plates and windows all carry their own opaque background, so the
+   ground shows in the margins and between the cards and nowhere else. */
+/* The four are NOT drawn at one alpha. Ink per square inch is what the eye
+   reads, not the alpha of a single hairline, and these four differ by an order
+   of magnitude in it — a grid is two families crossing, a weave at reading
+   pitch is dozens of lines where a rule is one. Each strength below is set so
+   the four are about equally quiet with text on them; matching the numbers
+   instead would make TOOTH a fabric swatch and MATRIX invisible. */
+/* The ground is a LAYER, not "the element's background". The language may have
+   already painted one — LEDGER PRESS washes its page warm — and two rules both
+   writing `background` on the scroller means the later one wins outright and
+   the other silently vanishes, which is exactly how the first cut of this shipped
+   four invisible grounds under one language. So both go through custom
+   properties and are composed once, here: the ground over the wash, the order
+   they would sit in on paper. */
+[data-style] { background-image: var(--ground, none), var(--wash, none); }
+
+[data-bg] { --gnd: color-mix(in srgb, var(--txg) 70%, transparent); }
+/* Light grounds need less of it. `--txg` is a ghost against a near-black
+   canvas and a mid-grey against a cream one — the same 70% is a whisper on
+   AURORA and a printed grid on FOUNDRY. Halved rather than re-authored per
+   theme: one number, and all six light palettes land in the same register as
+   the sixteen dark ones. */
+:root[data-light] [data-bg] { --gnd: color-mix(in srgb, var(--txg) 34%, transparent); }
+
+/* GRAPH — the drafting sheet. 26px, both axes, quieter for the crossing. */
+[data-bg="grid"] {
+  --gnd: color-mix(in srgb, var(--txg) 44%, transparent);
+  --ground:
+    repeating-linear-gradient(0deg, var(--gnd) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(90deg, var(--gnd) 0 1px, transparent 1px 26px);
+}
+/* MATRIX — the crossings without the lines, so nothing runs through a word.
+   The sparsest of the four, so the loudest single mark. */
+[data-bg="dots"] {
+  --ground: radial-gradient(circle at 1px 1px, var(--gnd) 1px, transparent 1.6px);
+  background-size: 22px 22px;
+}
+/* RULED — the pitch is the transcript's own line box (13px × 1.6 ≈ 21px), so
+   the rules sit between lines of prose rather than through them. */
+[data-bg="rule"] {
+  --gnd: color-mix(in srgb, var(--txg) 58%, transparent);
+  --ground: repeating-linear-gradient(0deg, var(--gnd) 0 1px, transparent 1px 21px);
+}
+/* TOOTH — paper grain. A 9px weave, at a fifth of the strength: this is the
+   densest pattern here by a long way, and at the others' alpha it stops being
+   a ground and becomes upholstery. */
+[data-bg="tooth"] {
+  --gnd: color-mix(in srgb, var(--txg) 20%, transparent);
+  --ground: repeating-linear-gradient(135deg, var(--gnd) 0 1px, transparent 1px 9px);
+}
+/* A pattern is a decoration, and a reader who has asked for less motion and
+   less noise has already said what to do with it. */
+/* …and the three that set their own strength above re-state it halved, since a
+   later `--gnd` inside the pattern's own block would otherwise win. */
+:root[data-light] [data-bg="grid"] { --gnd: color-mix(in srgb, var(--txg) 21%, transparent); }
+:root[data-light] [data-bg="rule"] { --gnd: color-mix(in srgb, var(--txg) 28%, transparent); }
+:root[data-light] [data-bg="tooth"] { --gnd: color-mix(in srgb, var(--txg) 10%, transparent); }
+
+@media (prefers-contrast: more) {
+  [data-bg] { --ground: none; }
+}
+
 /* === THE SESSION'S IDIOM ===================================================
    OUTPUT STYLE is how a whole session reads, not just how a tool widget draws.
    `data-style` sits on the transcript scroller (hud/Terminal.tsx) and every
@@ -2187,7 +2308,6 @@ input {
 [data-style="wire"] .ax-winlights { display: none; }
 [data-style="wire"] .ax-wintag { color: var(--txd); letter-spacing: 1.6px; }
 [data-style="wire"] .ax-window > .actrow::before { display: none; }
-[data-style="wire"] .ax-window > .actrow > .ax-bar { display: none; }
 /* SUB-BUS — a nested turn is a square node on a 2px lead */
 [data-style="wire"] .agb {
   border: 0; background: none; border-left: 2px solid var(--h); position: relative;
@@ -2311,21 +2431,25 @@ input {
 [data-style="signal"] .siglog-head { display: grid; }
 .siglog-head > span:first-child { padding-left: 7px; }
 .siglog-head > span:nth-child(4) { text-align: right; }
-/* your message and the reply are rows on the same grid, told apart by a chip */
+/* your message and the reply are rows on the same grid, told apart by a chip —
+   with the chip over the text rather than beside it. Beside it cost the prose
+   both gutters (110px of a 690px column, every line of every answer), and prose
+   is the one element in a log that is read rather than scanned; the phone has
+   set them this way since it got the language. The chip keeps the LEVEL
+   column's x, so the left edge is still the grid's. */
 [data-style="signal"] .pbub,
 [data-style="signal"] .abub {
   position: relative; border: 0; border-radius: 0; background: none;
   border-bottom: 1px solid var(--ac-06);
-  padding: 5px 0 7px calc(var(--sig-t) + var(--axtag));
+  padding: 19px 0 7px var(--sig-t);
 }
 [data-style="signal"] .pbub { background: var(--ac-03); }
 [data-style="signal"] .abub { border-left: 3px solid var(--acc); }
 [data-style="signal"] .pbub::before,
 [data-style="signal"] .abub::before {
-  position: absolute; left: var(--sig-t); top: 7px;
-  width: calc(var(--axtag) - 8px); text-align: center;
+  position: absolute; left: var(--sig-t); top: 3px;
   font-family: var(--ui); font-size: var(--t8); letter-spacing: 1.4px;
-  padding: 1px 0; color: var(--acc-on);
+  padding: 1px 6px; color: var(--acc-on);
 }
 [data-style="signal"] .pbub::before { content: "YOU"; background: var(--purple); }
 [data-style="signal"] .abub::before { content: "SAY"; background: var(--acc); }
@@ -2486,7 +2610,8 @@ input {
   --press-mar: calc(var(--t95) * 3.4 + 10px);
   --press-rule: color-mix(in srgb, var(--warn) 22%, var(--border));
   --press-serif: ui-serif, Georgia, "Times New Roman", serif;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--warn) 4%, transparent), transparent 320px);
+  /* a layer, not the background — see THE GROUND, which composes both. */
+  --wash: linear-gradient(180deg, color-mix(in srgb, var(--warn) 4%, transparent), transparent 320px);
 }
 [data-style="press"] .md,
 [data-style="press"] .pbub,
@@ -3412,3 +3537,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   margin-left: 0; border-left: 0;
   grid-template-columns: 3px max-content minmax(0, 1fr) max-content 18px;
 }
+/* The frame's edge IS the row's rule: SIGNAL's 3px level bar drawn beside it
+   read as two borders, one behind the other. Hidden, not removed — the bar is
+   a grid item, and taking it out slides every cell one column left. */
+[data-style] .ax-window > .actrow > .ax-bar { background: none; }

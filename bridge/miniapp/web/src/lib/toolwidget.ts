@@ -46,6 +46,29 @@ export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
   { key: "halo", label: "HALO", hint: "surfaces, not rules — one radius, quiet by default, loud only when something changed" },
 ];
 
+/** The texture the transcript is read ON. A language decides how a turn is
+ *  drawn; this decides what it is drawn on — and the two are independent, so
+ *  they are two settings rather than one.
+ *
+ *  Four grounds and OFF, all authored the same way: one hairline family at the
+ *  ghost ink tier, tiled at a reading pitch. None of them is a picture. The
+ *  constraint is the only interesting thing here — a transcript is read for
+ *  minutes at a time, so a ground that competes for a single fixation has
+ *  already failed, however good it looks in a settings tile. */
+export type ChatBg = "none" | "grid" | "dots" | "rule" | "tooth";
+
+export const CHAT_BGS: { key: ChatBg; label: string; hint: string }[] = [
+  { key: "none", label: "NONE", hint: "the theme's own ground, unmarked" },
+  { key: "grid", label: "GRAPH", hint: "square hairline grid — the drafting sheet under the work" },
+  { key: "dots", label: "MATRIX", hint: "a dot at every crossing, no lines — the quietest of the four" },
+  { key: "rule", label: "RULED", hint: "horizontal rules only, at the reading pitch — nothing crosses a word" },
+  { key: "tooth", label: "TOOTH", hint: "a fine diagonal weave — paper grain rather than a grid" },
+];
+
+export function toChatBg(v: unknown): ChatBg {
+  return CHAT_BGS.some((b) => b.key === v) ? (v as ChatBg) : "none";
+}
+
 /** What the styles were called before the sheet replaced them. A stored pick
  *  lands on its nearest new language instead of silently snapping to default.
  *  PLAIN was the widget opt-out and has no column, so it maps to the quietest
@@ -139,6 +162,14 @@ const STYLE_KEY = "ma-tool-style";
 export function useToolStyle(): readonly [ToolStyle, (s: ToolStyle) => void] {
   const [v, set] = usePersistentState<ToolStyle>(STYLE_KEY, "stamp");
   return [toToolStyle(v), set] as const;
+}
+
+const BG_KEY = "ma-chat-bg";
+
+/** The ground the transcript is read on, and a setter. Same storage story. */
+export function useChatBg(): readonly [ChatBg, (b: ChatBg) => void] {
+  const [v, set] = usePersistentState<ChatBg>(BG_KEY, "none");
+  return [toChatBg(v), set] as const;
 }
 
 /** One widget for a whole run of results. A group is drawn by its head, so a

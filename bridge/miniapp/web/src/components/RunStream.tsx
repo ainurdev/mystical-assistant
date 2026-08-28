@@ -934,7 +934,7 @@ type RespondFn = (
 // Memoized: a long session's past turns keep the same `events`/`pending` arrays
 // across polls (see mergeDelta), so only the live turn re-renders.
 export const RunStream = memo(function RunStream({
-  events,
+  events: allEvents,
   pending = [],
   onRespond,
   onAnswer,
@@ -960,6 +960,17 @@ export const RunStream = memo(function RunStream({
    *  clock — on an older turn the figure would start when you scrolled to it. */
   live?: boolean;
 }) {
+  // An ask is drawn by its question card and by nothing else. A live run also
+  // emits it as a tool: the bridge answers the control request with a `deny`
+  // carrying the user's choice (runner.py _format_answers), so the row lands as
+  // an empty ASKUSERQUESTION tag over a red "The user answered…" — the same
+  // exchange a second time, dressed as a failure. Dropped here rather than at
+  // the source because attribution.py reads those stored events for `waiting_s`,
+  // and dropped before folding/grouping so a phantom can't head a run.
+  // The native reader already omits the row (transcript_jsonl.py, tool_use).
+  const events = allEvents.filter(
+    (e) => !(e.type === "tool" && e.name === "AskUserQuestion"),
+  );
   // Read here rather than threaded down: the Mini App has no settings blob
   // to ride along with (the dashboard passes it as a prop from HudSettings).
   const [toolStyle] = useToolStyle();

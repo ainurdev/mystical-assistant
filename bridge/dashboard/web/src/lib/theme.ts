@@ -11,7 +11,7 @@ import { TONES, type ToneKey } from "./push";
 import { PUSH_EVENT_KEYS, type PushEvent, type SoundChoice } from "./sounds";
 import { VOICE_KEYS, type VoiceKey } from "./piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "./songs";
-import { toToolStyle, type ToolStyle } from "./toolwidget";
+import { toChatBg, toToolStyle, type ChatBg, type ToolStyle } from "./toolwidget";
 
 export type ThemeKey =
   | "aqua"
@@ -402,6 +402,8 @@ export interface HudSettings {
   // Which of the five languages the whole transcript reads in — not just the
   // widgets, but the bubbles, the ledger and the reply (see lib/toolwidget).
   toolStyle: ToolStyle;
+  // The texture under all of it — independent of the language (see lib/toolwidget).
+  chatBg: ChatBg;
 }
 
 const KEY = "hud-settings";
@@ -413,7 +415,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "stamp",
+  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "stamp", chatBg: "none",
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -524,6 +526,7 @@ export function loadSettings(): HudSettings {
         pushVolume: clamp01(p.pushVolume, 0.6),
         pushSounds: soundChoices(p.pushSounds),
         toolStyle: toToolStyle(p.toolStyle),
+        chatBg: toChatBg(p.chatBg),
       };
     }
   } catch {

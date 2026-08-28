@@ -171,10 +171,11 @@ function SessionRow({
         display: "grid", gridTemplateColumns: showDot ? "8px 1fr auto" : "1fr auto", columnGap: 10,
         alignItems: "start", padding: compact ? "5px 8px" : "8px 8px 9px", position: "relative",
         // Lane rows wear their state on the left edge; PROJECTS rows carry a
-        // dot instead and the .sessrow bar marks the open one.
-        borderLeft: showDot ? undefined : `2px solid ${on ? "var(--acc)" : `color-mix(in srgb, ${v.c} 32%, transparent)`}`,
-        background: on ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent",
-        cursor: "pointer", transition: "background .13s ease",
+        // dot instead and the .sessrow bar (--openbar) marks the open one.
+        borderLeft: showDot ? undefined : `2px solid ${on ? tint.dim : `color-mix(in srgb, ${v.c} 32%, transparent)`}`,
+        background: on ? `color-mix(in srgb, ${tint.color} 7%, transparent)` : hov ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent",
+        cursor: "pointer",
+        ["--openbar" as string]: tint.dim,
       }}
     >
       {showDot && (
@@ -200,13 +201,13 @@ function SessionRow({
             )}
             {branchShown && (
               <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                             color: inWorktree ? "var(--acc)" : "var(--txd)" }}>
+                             color: inWorktree ? tint.dim : tint.faint }}>
                 ⎇ {branch.split("/").pop()}
               </span>
             )}
             {wtShown && (
               <span title={wtTitle} style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
-                                             whiteSpace: "nowrap", color: "var(--acc)" }}>
+                                             whiteSpace: "nowrap", color: tint.dim }}>
                 ⧉{s.worktree ? ` ${s.worktree}` : ""}
               </span>
             )}
@@ -232,8 +233,7 @@ function SessionRow({
           title={pinned ? "unpin — stops holding the top of the list" : "pin to the top of the list"}
           style={{ appearance: "none", cursor: "pointer", flex: "none", width: 11, border: 0, background: "transparent",
                    padding: 0, fontFamily: "inherit", fontSize: "var(--t10)", lineHeight: 1, textAlign: "center",
-                   color: pinned ? "var(--warn)" : "var(--txl)", opacity: pinned || hov ? 1 : 0.45,
-                   transition: "opacity .15s ease" }}
+                   color: pinned ? "var(--warn)" : "var(--txl)", opacity: pinned || hov ? 1 : 0.45 }}
         >{pinned ? "★" : "☆"}</button>
         <span style={{ flex: "none", width: 26, textAlign: "right", fontSize: "var(--t95)",
                        color: pulse ? "var(--ok)" : "var(--txl)" }}>{ago(s.updated)}</span>
@@ -289,8 +289,9 @@ export function SessionsPanel(props: Props) {
   // Projects you collapsed with the header. ponytail: not persisted — a collapse
   // is a "get this out of my way right now", not a preference.
   const [shut, setShut] = useState<Set<string>>(new Set());
-  // Projects expanded past their two default rows.
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  // The project you drilled into — PROJECTS shows only its sessions until you
+  // go back. ponytail: not persisted, same reasoning as `shut`.
+  const [drill, setDrill] = useState<string | null>(null);
   const [sessionQ, setSessionQ] = useState("");
   // One hover key for every small control — the rows manage their own.
   const [hov, setHov] = useState("");
@@ -409,10 +410,11 @@ export function SessionsPanel(props: Props) {
         : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
           : byLastUsed;
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
+    if (drill && g.rel !== drill) return [];
     const f = sorted.filter((s) => s.project === g.rel);
     if (sq && f.length === 0) return [];
     const isShut = shut.has(g.rel) && !sq;
-    const vis = isShut ? [] : sq || open.has(g.rel) ? f : f.slice(0, 2);
+    const vis = isShut ? [] : sq || drill ? f : f.slice(0, 2);
     const rest = Math.max(0, g.sessionCount - vis.length);
     return [{ g, f, isShut, vis, rest }];
   });
@@ -531,7 +533,7 @@ export function SessionsPanel(props: Props) {
           style={{ appearance: "none", cursor: "pointer", flex: "none", width: 24, height: 24, padding: 0, borderRadius: 7,
                    display: "grid", placeItems: "center", border: 0,
                    background: closeHov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
-                   color: closeHov ? "var(--purple-b)" : "var(--purple-g)", transition: "background .15s ease, color .15s ease" }}
+                   color: closeHov ? "var(--purple-b)" : "var(--purple-g)" }}
         >
           <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -673,21 +675,21 @@ export function SessionsPanel(props: Props) {
   );
 
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", flexDirection: "column", padding: "14px 16px 0" }}>
         <div style={{ display: "flex", alignItems: "stretch", gap: 2, padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
           {modeTabs.map((m) => {
             const on = mode === m.id;
             return (
               <button
-                key={m.id} onClick={() => setMode(m.id)} title={m.tip}
+                key={m.id} onClick={() => { setMode(m.id); setDrill(null); }} title={m.tip}
                 style={{ flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
                          height: 27, border: 0, borderRadius: 3, padding: 0, margin: 0,
                          background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
-                         cursor: "pointer", fontFamily: "inherit", transition: "background .15s ease" }}
+                         cursor: "pointer", fontFamily: "inherit" }}
               >
                 <span style={{ flex: "none", fontSize: "var(--t95)", letterSpacing: ".14em", textTransform: "uppercase",
-                               color: on ? "var(--txb)" : "var(--txf)", transition: "color .15s ease" }}>{m.label}</span>
+                               color: on ? "var(--txb)" : "var(--txf)" }}>{m.label}</span>
                 <span style={{ flex: "none", fontSize: "var(--t9)", color: on ? "var(--acc)" : "var(--txl)" }}>{m.count}</span>
               </button>
             );
@@ -708,6 +710,43 @@ export function SessionsPanel(props: Props) {
           />
           <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
           <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+          {mode === "projects" && (
+            <button
+              onClick={() => { setDetailMenu(false); setOrderMenu((o) => !o); }}
+              title={`Project order — ${ORDER_LABEL[order]}`}
+              aria-expanded={orderMenu}
+              onMouseEnter={() => setHov("order")} onMouseLeave={() => setHov("")}
+              style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
+                       fontSize: "var(--t12)", lineHeight: 1,
+                       color: orderMenu || hov === "order" ? "var(--acc)" : "var(--txl)" }}
+            >⇅</button>
+          )}
+          {orderMenu && (
+            <>
+              <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+              <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 140,
+                            border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
+                            boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>PROJECT ORDER</div>
+                {ORDERS.map((m) => (
+                  <button
+                    key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
+                    onMouseEnter={() => setHov(`ord:${m}`)} onMouseLeave={() => setHov("")}
+                    style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
+                             background: order === m ? "color-mix(in srgb, var(--acc) 14%, transparent)"
+                               : hov === `ord:${m}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                             color: order === m ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
+                             fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
+                  >{order === m ? "▸ " : "   "}{ORDER_LABEL[m]}</button>
+                ))}
+                {order === "custom" && (
+                  <div style={{ padding: "5px 8px 4px", fontSize: "var(--t85)", color: "var(--txf)", letterSpacing: ".04em" }}>
+                    drag a project header to reorder
+                  </div>
+                )}
+              </div>
+            </>
+          )}
           <button
             onClick={() => setCompact(!compact)}
             title={compact ? "comfortable rows" : "compact rows — titles only"}
@@ -720,7 +759,7 @@ export function SessionsPanel(props: Props) {
             </svg>
           </button>
           <button
-            onClick={() => setDetailMenu((o) => !o)}
+            onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
             title={`Row details — ${DETAIL_LABEL[detail]}`}
             aria-expanded={detailMenu}
             onMouseEnter={() => setHov("detail")} onMouseLeave={() => setHov("")}
@@ -760,7 +799,7 @@ export function SessionsPanel(props: Props) {
                      border: 0, borderRadius: 3,
                      background: `color-mix(in srgb, var(--acc) ${hov === "new" || nsOpen ? 11 : 5.5}%, transparent)`,
                      color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: ".18em", textTransform: "uppercase",
-                     cursor: "pointer", transition: "background .15s ease" }}
+                     cursor: "pointer" }}
           >
             <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
               <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -801,43 +840,20 @@ export function SessionsPanel(props: Props) {
           </div>
         ) : (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, height: 24, padding: "0 6px", marginBottom: 4, position: "relative" }}>
-              <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: ".24em", color: "var(--txl)" }}>{sq ? "MATCHES" : "PROJECTS"}</span>
-              <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
-              <button
-                onClick={() => setOrderMenu((o) => !o)}
-                title="Project order"
-                onMouseEnter={() => setHov("order")} onMouseLeave={() => setHov("")}
-                style={{ flex: "none", border: 0, background: "transparent", padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit",
-                         fontSize: "var(--t9)", letterSpacing: ".14em", textTransform: "uppercase",
-                         color: orderMenu || hov === "order" ? "var(--acc)" : "var(--txf)" }}
-              >{ORDER_LABEL[order]} ⇅</button>
-              {orderMenu && (
-                <>
-                  <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
-                  <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 97, minWidth: 140,
-                                border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                                boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
-                    {ORDERS.map((m) => (
-                      <button
-                        key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
-                        onMouseEnter={() => setHov(`ord:${m}`)} onMouseLeave={() => setHov("")}
-                        style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
-                                 background: order === m ? "color-mix(in srgb, var(--acc) 14%, transparent)"
-                                   : hov === `ord:${m}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
-                                 color: order === m ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
-                                 fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
-                      >{order === m ? "▸ " : "\u00a0\u00a0 "}{ORDER_LABEL[m]}</button>
-                    ))}
-                    {order === "custom" && (
-                      <div style={{ padding: "5px 8px 4px", fontSize: "var(--t85)", color: "var(--txf)", letterSpacing: ".04em" }}>
-                        drag a project header to reorder
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+            {drill && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, height: 24, padding: "0 6px", marginBottom: 4 }}>
+                <button
+                  onClick={() => setDrill(null)}
+                  onMouseEnter={() => setHov("back")} onMouseLeave={() => setHov("")}
+                  style={{ flex: "none", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
+                           padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
+                           letterSpacing: ".2em", textTransform: "uppercase",
+                           color: hov === "back" ? "var(--acc)" : "var(--txl)" }}
+                >← All projects</button>
+                <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
+                <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{tree[0]?.f.length ?? 0}</span>
+              </div>
+            )}
             {tree.map(({ g, f, isShut, vis, rest }) => {
               const tint = projectTint(g.rel);
               return (
@@ -879,8 +895,7 @@ export function SessionsPanel(props: Props) {
                       style={{ flex: "none", alignSelf: "stretch", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
                                padding: "0 8px", margin: "0 -8px", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
                                letterSpacing: ".14em", textTransform: "uppercase",
-                               color: hov === `add:${g.rel}` || (nsOpen && nsScoped && nsProject === g.rel) ? "var(--acc)" : "var(--txl)",
-                               transition: "color .15s ease" }}
+                               color: hov === `add:${g.rel}` || (nsOpen && nsScoped && nsProject === g.rel) ? "var(--acc)" : "var(--txl)" }}
                     >
                       <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
                         <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -889,22 +904,19 @@ export function SessionsPanel(props: Props) {
                     </button>
                   </div>
                   {nsOpen && nsScoped && nsProject === g.rel && nsForm}
-                  <div style={{ margin: "1px 0 0 3px", paddingLeft: 15, borderLeft: `1px solid color-mix(in srgb, ${tint.color} ${isShut ? 7 : 20}%, transparent)` }}>
+                  <div style={{ margin: "1px 0 0 3px", borderLeft: `1px solid color-mix(in srgb, ${tint.color} ${isShut ? 7 : 20}%, transparent)` }}>
                     {/* A search drops the per-project cap, so this can be every
                         session in the store — skip off-screen rows. */}
                     {vis.length > 0 && <div className="vskip-card">{vis.map((s) => rowFor(s, true, false))}</div>}
-                    {!isShut && !sq && (rest > 0 || (open.has(g.rel) && f.length > 2)) && (
+                    {!isShut && !sq && !drill && rest > 0 && (
                       <button
-                        onClick={() => setOpen((c) => {
-                          const n = new Set(c);
-                          if (!n.delete(g.rel)) n.add(g.rel);
-                          return n;
-                        })}
+                        onClick={() => setDrill(g.rel)}
+                        title={`Show only ${g.rel}`}
                         onMouseEnter={() => setHov(`more:${g.rel}`)} onMouseLeave={() => setHov("")}
                         style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 8px", border: 0, background: "transparent",
                                  fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: ".1em",
                                  color: hov === `more:${g.rel}` ? "var(--acc)" : "var(--txl)", cursor: "pointer" }}
-                      >{open.has(g.rel) ? "show less ↑" : `${rest} more ↓`}</button>
+                      >{rest} more →</button>
                     )}
                   </div>
                 </div>

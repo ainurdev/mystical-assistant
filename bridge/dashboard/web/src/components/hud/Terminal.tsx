@@ -336,7 +336,7 @@ export function Terminal({
       {/* OUTPUT STYLE is the whole session's idiom, not just its widgets: one
           attribute here and the ledger, the agent block, your prompt and the
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
-      <div ref={scrollRef} data-style={hud?.toolStyle ?? "stamp"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
+      <div ref={scrollRef} data-style={hud?.toolStyle ?? "stamp"} data-bg={hud?.chatBg ?? "none"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
         {/* Top padding clears the bar so the first prompt starts below
             it: parked at the top there is nothing under the bar, so no
             bar — the transcript opens on its first message, not on a
