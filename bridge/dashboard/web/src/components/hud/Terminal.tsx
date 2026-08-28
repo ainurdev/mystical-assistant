@@ -3,7 +3,8 @@ import type { AnswerSelection, EnrichedSession, NextItem, SessionBrief } from ".
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
-import { surfaceFor, projectTint } from "../../lib/surfaces";
+import { projectTint } from "../../lib/surfaces";
+import { hairline } from "../../lib/shell";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
@@ -14,9 +15,9 @@ import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
 
-/** Height of the sticky prompt bar. The observer insets the scroller's top by
- *  it, and `scroll-mt-[44px]` on the transcript's anchors clears it. */
-const PEEK_H = 36;
+/** Height of the sticky LAST band. The observer insets the scroller's top by
+ *  it, and `scroll-mt-[36px]` on the transcript's anchors clears it. */
+const PEEK_H = 28;
 
 const FRESH_QUOTES = [
   "the prompt is blank, the potential is not.",
@@ -156,10 +157,9 @@ function DesignBtn({ onClick }: { onClick: () => void }) {
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         appearance: "none", cursor: "pointer", fontFamily: "inherit",
-        fontSize: "var(--t9)", letterSpacing: 1, padding: "2px 7px", flex: "none",
-        border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)",
-        background: hov ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-        color: hov ? "var(--txb)" : "var(--txm)",
+        fontSize: "var(--t9)", letterSpacing: 1, padding: 0, flex: "none",
+        border: 0, background: "transparent",
+        color: hov ? "var(--txb)" : "var(--txd)",
       }}
     >
       ◇ DESIGN SYSTEM
@@ -220,10 +220,12 @@ export function Terminal({
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;
 }) {
-  const surf = surfaceFor(selected?.origin);
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
   const projectLabel = basename(sessionProject);
+  const [projHov, setProjHov] = useState(false);
+  const [brHov, setBrHov] = useState(false);
+  const [cntHov, setCntHov] = useState(false);
   const isChat = view === "chat";
   const empty = isChat && turns.length === 0;
 
@@ -275,7 +277,7 @@ export function Terminal({
   if (peeked?.prompt?.trim()) {
     held.current = {
       text: peeked.prompt.trim(),
-      label: peekIdx === turns.length - 1 ? "LAST" : `${(peekIdx ?? 0) + 1}/${turns.length}`,
+      label: `${(peekIdx ?? 0) + 1}/${turns.length}`,
     };
   }
   const showPeek = !empty && peekIdx !== null && !!held.current;
@@ -368,14 +370,20 @@ export function Terminal({
           is what lets the observer margin and the anchors' scroll-margin
           agree on where it ends. */}
       {!empty && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", height: PEEK_H, boxSizing: "border-box", padding: "0 18px", background: "linear-gradient(180deg,color-mix(in srgb, var(--panel2) 98%, transparent),color-mix(in srgb, var(--panel2) 86%, transparent))", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "center", gap: 9, backdropFilter: "blur(3px)", opacity: showPeek ? 1 : 0, transform: showPeek ? "none" : "translateY(-7px)", visibility: showPeek ? "visible" : "hidden", transition: "opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility .26s" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", height: PEEK_H, boxSizing: "border-box", padding: "0 14px", background: "color-mix(in srgb, var(--purple) 4%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "center", gap: 10, backdropFilter: "blur(3px)", opacity: showPeek ? 1 : 0, transform: showPeek ? "none" : "translateY(-7px)", visibility: showPeek ? "visible" : "hidden", transition: "opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility .26s" }}>
           {held.current && (
             // Keyed on the text so moving to another turn crossfades the
             // line instead of swapping it under you.
-            <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
-              <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none", fontVariantNumeric: "tabular-nums" }}>{held.current.label}</span>
-              <span style={{ color: "var(--purple)", flex: "none", fontSize: "var(--t12)" }}>~ ❯</span>
-              <span style={{ color: "var(--txh)", fontSize: "var(--t12)", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{held.current.text}</span>
+            <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
+              <span style={{ width: 2, height: 12, background: "var(--purple-g)", flex: "none" }} />
+              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.4, color: "var(--purple-g)", flex: "none" }}>LAST</span>
+              {/* Dimmer than the transcript it points at — it's a pointer, not the text. */}
+              <span style={{ color: "var(--txd)", fontSize: "var(--t11)", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{held.current.text}</span>
+              <button
+                type="button" onClick={onJumpBottom} title="jump to latest"
+                onMouseEnter={() => setCntHov(true)} onMouseLeave={() => setCntHov(false)}
+                style={{ pointerEvents: "auto", appearance: "none", border: 0, background: "transparent", cursor: "pointer", padding: 0, fontFamily: "var(--mono)", fontSize: "var(--t95)", color: cntHov ? "var(--txb)" : "var(--txl)", flex: "none", fontVariantNumeric: "tabular-nums" }}
+              >↓ {held.current.label}</button>
             </div>
           )}
         </div>
@@ -415,51 +423,66 @@ export function Terminal({
 
   // The session's own header. In CHAT it sits above the transcript; on the
   // board it floats over it, so the grid runs edge to edge underneath.
+  // One 40px row: title leads, meta reads as a ledger, and the only border in
+  // the row is the view switch — a hairline separates meta, a border marks an
+  // action.
   const header = (
-    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, padding: "8px 14px", flex: "none", minWidth: 0 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, overflow: "hidden" }}>
-          <span title="active project" style={{ display: "flex", alignItems: "center", gap: 5, flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: tint.color, border: `1px solid ${tint.border}`, padding: "2px 7px" }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color }} />
-            {projectLabel || "—"}
-          </span>
-          {branch && (
-            // The chat's one session affordance. data-ctx-* makes right-click open
-            // the session menu (the SESSIONS list's own), and the click re-fires it
-            // as a contextmenu anchored under the chip so it isn't right-click-only
-            // — that menu is where "move to a new worktree" lives, and the branch
-            // you're on is where you notice you want it.
-            <button
-              title={sessionId ? "session branch — session actions" : "session branch"}
-              data-ctx-type={sessionId ? "session" : undefined}
-              data-ctx-id={sessionId ?? undefined}
-              data-ctx-label={branch}
-              disabled={!sessionId}
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
-                  { bubbles: true, clientX: r.left, clientY: r.bottom }));
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 4, flex: "none", fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple-d)", border: "1px solid color-mix(in srgb, var(--purple) 28%, transparent)", padding: "2px 7px", appearance: "none", background: "transparent", fontFamily: "inherit", cursor: sessionId ? "pointer" : "default" }}>
-              <span style={{ color: "var(--purple)" }}>⎇</span>{branch}
-            </button>
-          )}
-          <span style={{ fontSize: "var(--t11)", letterSpacing: ".5px", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {selected?.title || "new session"}
-          </span>
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
-        {isChat && onOpenDesign && <DesignBtn onClick={onOpenDesign} />}
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 14px", height: 40, flex: "none", minWidth: 0 }}>
+      <span
+        title="active project"
+        onMouseEnter={() => setProjHov(true)} onMouseLeave={() => setProjHov(false)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t10)", color: projHov ? "var(--txb)" : "var(--txm)" }}
+      >
+        {/* The per-project tint dot is the only colour identifying the project now. */}
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
+        {projectLabel || "—"}
+      </span>
+      {branch && (
+        <>
+          <span style={hairline(13)} />
+          {/* The chat's one session affordance. data-ctx-* makes right-click open
+              the session menu (the SESSIONS list's own), and the click re-fires it
+              as a contextmenu anchored under the chip so it isn't right-click-only
+              — that menu is where "move to a new worktree" lives, and the branch
+              you're on is where you notice you want it. */}
+          <button
+            title={sessionId ? "session branch — session actions" : "session branch"}
+            data-ctx-type={sessionId ? "session" : undefined}
+            data-ctx-id={sessionId ?? undefined}
+            data-ctx-label={branch}
+            disabled={!sessionId}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
+                { bubbles: true, clientX: r.left, clientY: r.bottom }));
+            }}
+            onMouseEnter={() => setBrHov(true)} onMouseLeave={() => setBrHov(false)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t10)", color: brHov ? "var(--purple-h)" : "var(--purple-d)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionId ? "pointer" : "default" }}>
+            <span style={{ color: "var(--purple-g)" }}>⎇</span>{branch}
+          </button>
+        </>
+      )}
+      <span style={hairline(13)} />
+      <span style={{ fontSize: "var(--t14)", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+        {selected?.title || "new session"}
+      </span>
+      <span style={{ flex: 1, minWidth: 12 }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+        {isChat && onOpenDesign && (
+          <>
+            <DesignBtn onClick={onOpenDesign} />
+            <span style={hairline(11)} />
+          </>
+        )}
         {isChat && (
-          <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
+          <>
+            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
+            <span style={hairline(11)} />
+          </>
         )}
         {isChat && (
           <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
         )}
-        <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: surf.color, border: `1px solid ${surf.color}`, padding: "2px 7px" }}>
-          {surf.label.toUpperCase()}
-        </span>
         <ViewTabs view={view} onView={onView} />
       </div>
     </div>

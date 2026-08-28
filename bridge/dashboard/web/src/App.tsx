@@ -69,6 +69,7 @@ import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
+import { shellCols } from "./lib/shell";
 import { notify, setNoticeSound } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
@@ -1938,6 +1939,7 @@ export function App() {
               onSetUnit={setUnit}
               openSettings={wxSettings}
               onFeed={feed}
+              rightOpen={settings.rightOpen}
             />
 
             {/* Three flush columns, each divided from the next by one hairline —
@@ -2055,7 +2057,7 @@ export function App() {
 
             <StatusBar
               mount={wsRoot} usedPct={usedPct} resetLabel={resetLabel} accounts={accounts}
-              agent={activeAgent}
+              agent={activeAgent} rightOpen={settings.rightOpen}
               // The footer reports the session you have open, not the bridge's
               // active project — those differ while you read another session.
               repo={sessionProject ?? "—"} git={sessionGit}

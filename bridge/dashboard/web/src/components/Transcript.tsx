@@ -144,7 +144,7 @@ function TurnBlock({
     // data-ctx-*: the dashboard's right-click menu reads the nearest one of
     // these off the target chain, so a click anywhere inside a turn resolves to
     // that turn rather than the terminal pane wrapping it.
-    <div id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[44px]"
+    <div id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[36px]"
       data-ctx-type="turn" data-ctx-id={turn.id}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       {turn.prompt && (

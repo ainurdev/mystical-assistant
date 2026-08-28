@@ -118,13 +118,16 @@ export function NotificationCenter() {
           appearance: "none",
           cursor: "pointer",
           position: "relative",
-          border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
-          background: hover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+          border: 0,
+          background: "transparent",
           color: hover ? "var(--txb)" : "var(--txm)",
           fontFamily: "inherit",
-          padding: "4px 6px",
+          padding: 0,
+          width: 22,
+          height: 22,
           display: "flex",
           alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

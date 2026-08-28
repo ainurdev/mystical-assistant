@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api, type TodayInfo, type WeeklyReport } from "../../api";
+import { hairline } from "../../lib/shell";
 
 /** The strip's TODAY chip, now clickable: the dropdown is the weekly report —
  *  which projects the week went into, sessions/turns/time per project, a
@@ -122,19 +123,21 @@ export function WeekPanel() {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         style={{
-          appearance: "none", cursor: "pointer",
-          border: `1px solid color-mix(in srgb, var(--acc) ${open ? 45 : hover ? 25 : 0}%, transparent)`,
-          background: open || hover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-          display: "flex", alignItems: "center", gap: "6px", fontSize: "var(--t10)",
-          letterSpacing: "1.5px", color: "var(--txd)", flex: "none",
-          fontFamily: "inherit", padding: "3px 6px",
+          appearance: "none", cursor: "pointer", border: 0, background: "transparent",
+          display: "flex", alignItems: "center", gap: "11px", flex: "none",
+          fontFamily: "inherit", padding: 0,
         }}
       >
-        TODAY
-        <span style={{ color: "var(--tx)" }}>{today.turns}</span>
-        <span style={{ color: "var(--txf)" }}>TURNS</span>
-        <span style={{ color: "var(--tx)" }}>{fmtTokens(today.tokens)}</span>
-        <span style={{ color: "var(--txf)" }}>TOK</span>
+        <span style={{ fontSize: "var(--t95)", letterSpacing: "1.9px", color: open || hover ? "var(--txf)" : "var(--txl)" }}>TODAY</span>
+        <span style={{ display: "flex", alignItems: "baseline", gap: "5px" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", color: "var(--txh)" }}>{today.turns}</span>
+          <span style={{ fontSize: "var(--t9)", letterSpacing: "1.2px", color: "var(--txf)" }}>TURNS</span>
+        </span>
+        <span style={hairline(11)} />
+        <span style={{ display: "flex", alignItems: "baseline", gap: "5px" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", color: "var(--txh)" }}>{fmtTokens(today.tokens)}</span>
+          <span style={{ fontSize: "var(--t9)", letterSpacing: "1.2px", color: "var(--txf)" }}>TOK</span>
+        </span>
       </button>
 
       {open && (

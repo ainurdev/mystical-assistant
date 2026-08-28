@@ -121,17 +121,13 @@ export function SpendPanel({ sessionId, running }: {
         onMouseLeave={() => setHover(false)}
         style={{
           appearance: "none", cursor: "pointer", gap: 5,
-          border: `1px solid color-mix(in srgb, var(--acc) ${open ? 45 : 25}%, transparent)`,
-          background: open || hover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+          border: 0, background: "transparent",
           color: open || hover ? "var(--txb)" : "var(--txm)",
-          fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1,
-          padding: "3px 6px", display: "flex", alignItems: "center",
+          fontFamily: "var(--mono)", fontSize: "var(--t10)",
+          padding: 0, display: "flex", alignItems: "center",
         }}
       >
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="8" />
-          <path d="M12 7v5l3 2" />
-        </svg>
+        <span aria-hidden style={{ color: "var(--txl)" }}>{"⏱︎"}</span>
         {b ? secs(b.wall) : "·"}
         {!!b?.capped && (
           <span title={`${b.capped} turns killed by the per-turn time cap`}

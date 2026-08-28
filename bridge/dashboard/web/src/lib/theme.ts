@@ -33,6 +33,7 @@ export type ThemeKey =
   | "riso"
   | "void"
   | "nocturne"
+  | "studio"
   | "signal"
   | "foundry";
 
@@ -227,6 +228,13 @@ export const THEME_DEFS: ThemeDef[] = [
   // violet (271°), keeping every pair >20° apart. The only structural tell is a
   // faint sky-glow at the top of the canvas — no grid, no grain, no bloom.
   { key: "nocturne", name: "NOCTURNE", feel: "indigo night · low chroma, long sessions", filter: "none", ops: [], sw: "#a3b3f5", bg: "rgba(20,20,31,.55)", pbg: "#101019", crt: false, swp: false, glw: false, canvas: "radial-gradient(120% 80% at 50% 0%,rgba(163,179,245,.05),transparent 60%),#14141f", font: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace", prad: "6px", chat: "halo", pal: { acc: "#a3b3f5", "acc-on": "#12121c", "accent-rgb": "163 179 245", ok: "#6fd7a2", warn: "#e0b458", err: "#e88b7d", "err-hi": "#f2b3a8", "err-b": "#f7d2ca", "err-g": "#8c6058", info: "#63c7e8", "info-hi": "#95dcf2", "info-b": "#c4ecf9", purple: "#c79af0", "purple-d": "#b98ae8", "purple-h": "#d5b0f5", "purple-b": "#e6d1fa", "purple-g": "#7a6690", txb: "#ebecf2", txh: "#d7d8e5", tx: "#c0c3d7", txm: "#a6aac6", txd: "#9399ba", txf: "#898eb3", txl: "#7f86ad", txg: "#616898", panel: "#1f1f2e", panel2: "#191926", panel3: "#101019", canvas: "#14141f", mono: "'JetBrains Mono',monospace" } },
+  // STUDIO is the skin of the design mocks this shell was redesigned from
+  // (Canvas / Chat Elements / Sessions Panel / Header DCs): graphite ground,
+  // violet accent, grotesk voice. Ink carries the ground's cool hue (~240°)
+  // per NOCTURNE's rule; ladder solved on #08080a to the documented dark
+  // ratios. `purple` is pushed to ~290° so a branch chip and the accent stay
+  // >20° apart (the accent itself is violet).
+  { key: "studio", name: "STUDIO", feel: "graphite & violet · the design mocks", filter: "none", ops: [], sw: "#8b7cf6", bg: "rgba(12,12,18,.55)", pbg: "#0a0a0e", crt: false, swp: false, glw: false, canvas: "#08080a", font: "'Space Grotesk',system-ui,-apple-system,sans-serif", prad: "7px", chat: "halo", pal: { acc: "#8b7cf6", "acc-on": "#0c0a1a", "accent-rgb": "139 124 246", ok: "#4ade80", warn: "#fbbf24", err: "#f87171", "err-hi": "#fca5a5", "err-b": "#fecaca", "err-g": "#8a5c5c", info: "#60a5fa", "info-hi": "#93c5fd", "info-b": "#bfdbfe", purple: "#cf8df5", "purple-d": "#c07bef", "purple-h": "#dcabf8", "purple-b": "#ecd3fb", "purple-g": "#7d6597", txb: "#ecedf4", txh: "#d9dae4", tx: "#c3c5d3", txm: "#a8abbd", txd: "#9497ab", txf: "#8a8da2", txl: "#80839a", txg: "#5f6277", panel: "#14141b", panel2: "#0f0f15", panel3: "#0a0a0e", canvas: "#08080a", mono: "'JetBrains Mono',monospace" } },
   // SIGNAL is the log viewer's own skin (the Chat Elements sheet's 2b): near-
   // black, one chartreuse GO colour, and the level inks (info/warn/purple/err)
   // doing the talking. Its acc and ok are the SAME chartreuse on purpose —
