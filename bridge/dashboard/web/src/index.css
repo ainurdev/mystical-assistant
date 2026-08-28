@@ -1798,67 +1798,164 @@ input {
    bodies they hold, a claim, a finding, a meter, a verdict, and a block the
    model typed itself.
 
-   Each language is one answer to one question — WHAT CARRIES RANK — and every
-   rule below is downstream of its own answer. That is why none of them is a
-   border swap:
+   These are the sheet's five columns, built to the sheet's own structure —
+   its spines, gutters, margin labels, stamped headers and pill rows — with one
+   substitution: COLOUR AND THEME ARE THE DASHBOARD'S. The sheet paints 2a navy,
+   2b near-black on lime, 1a ink on cream, 1b ink on grey, 1c slate on indigo;
+   this app has 177 themes and a tool hue per row, so every colour below is a
+   token. What is copied is the FORM.
 
-     CONTROL PLATE  fill weight
-     WIRE           the stroke weight of a lead
-     SIGNAL LOG     a chip's saturation
-     LEDGER PRESS   a rule's weight, an indent, ink or italic
-     HALO           how far a surface floats
+   Each column is one answer to one question — WHAT CARRIES RANK:
 
-   CONTROL PLATE is what the rest of this file already authors, so it adds only
-   what presses it further; the other four are overrides off it. */
+     CONTROL PLATE  fill weight            a stamped plate, offset shadow
+     WIRE           a lead's stroke weight one spine, node glyphs, stubs
+     SIGNAL LOG     a chip's saturation    T+ | LEVEL | EVENT | RESULT
+     LEDGER PRESS   a rule, ink or italic  a 74px margin, no boxes at all
+     HALO           how far a surface floats one radius, pills, a lift
 
-/* ══ CONTROL PLATE ══ chrome is the signal ═════════════════════════════════
-   The base, stamped harder. A mark gets a real fill rather than a 4% wash, the
-   one round tag squares up, and every well a widget draws takes the hard edge
-   a plate has. Nothing here is soft and nothing here is round. */
+   CONTROL PLATE is closest to what the rest of this file already authors, so
+   it leads and is the default. */
+
+/* ══ 1B · CONTROL PLATE ══ chrome is the signal ════════════════════════════
+   Every element is a stamped plate: a 1.5px edge, a hard offset shadow that
+   does not blur (3px 3px 0 — the sheet's signature, and the one shadow in the
+   app that is a solid), a header bar with the label knocked out of it, and one
+   hue for consequence. No radius anywhere. Rank is fill weight, read from
+   across the room. */
+[data-style="stamp"] {
+  --plate-edge: color-mix(in srgb, var(--acc) 34%, transparent);
+  --plate-cast: color-mix(in srgb, var(--acc) 16%, transparent);
+}
+/* the prompt: a plate with its own stamped YOU bar */
+[data-style="stamp"] .pbub {
+  border: 1.5px solid var(--plate-edge); border-right-width: 1.5px;
+  border-radius: 0; background: var(--panel2); padding: 0 0 9px 0;
+  box-shadow: 3px 3px 0 var(--plate-cast);
+}
+[data-style="stamp"] .pbub::before {
+  content: "YOU"; display: block; margin-bottom: 8px; padding: 2px 9px;
+  background: color-mix(in srgb, var(--purple) 80%, var(--panel3));
+  color: var(--acc-on); font-family: var(--ui);
+  font-size: var(--t8); letter-spacing: 2.6px;
+}
+[data-style="stamp"] .pbub > * { padding: 0 10px; }
+/* the reply: a plate with the hue as a 5px stamped edge, no header */
+[data-style="stamp"] .abub {
+  border: 1.5px solid var(--plate-edge); border-left: 5px solid var(--acc);
+  border-radius: 0; background: var(--panel2); padding: 8px 11px;
+  box-shadow: 3px 3px 0 var(--plate-cast);
+}
+/* the thought: the one plate with nothing on it, so it is hatched */
+[data-style="stamp"] .thk {
+  border: 1px solid var(--ac-12); padding: 3px 9px; margin-top: 4px;
+  background: repeating-linear-gradient(135deg,
+    var(--ac-06) 0 5px, transparent 5px 10px);
+}
+[data-style="stamp"] .thk-lab { font-weight: 600; letter-spacing: 2.2px; }
+/* the rack: consecutive rows are one stamped box, not a run of bands */
+[data-style="stamp"] .actrow { border-left: 1.5px solid var(--ac-12); border-right: 1.5px solid var(--ac-12); }
+[data-style="stamp"] .actrow:first-of-type { border-top: 1.5px solid var(--ac-12); }
+[data-style="stamp"] .actrow:last-of-type { border-bottom: 1.5px solid var(--ac-12); }
 [data-style="stamp"] .actrow[data-tier="mark"] { background: color-mix(in srgb, var(--h) 10%, transparent); }
 [data-style="stamp"] .actrow[data-tier="mark"]:hover { background: color-mix(in srgb, var(--h) 15%, transparent); }
-[data-style="stamp"] .ax-tag[data-shape="round"] { border-radius: 0; }
+/* the eight shapes, stamped: an outline, a dashed outline, a knocked-out fill */
+[data-style="stamp"] .ax-tag { border-radius: 0; justify-content: center; }
+[data-style="stamp"] .ax-tag[data-shape="round"] { border-radius: 0; background: none; border: 1px solid color-mix(in srgb, var(--h) 38%, transparent); }
+[data-style="stamp"] .ax-tag[data-shape="rail"] { border-left-width: 3px; }
 [data-style="stamp"] .ax-pill { border-radius: 0; }
-/* the thought is stamped too — hatched, because it is the one step that
-   produced nothing to plate */
-[data-style="stamp"] .thk {
-  background: repeating-linear-gradient(135deg, var(--ac-03) 0 4px, transparent 4px 8px);
-  border-top: 1px solid var(--ac-06); border-bottom: 1px solid var(--ac-06);
-  padding: 0 8px;
-}
-[data-style="stamp"] .ax-drawer { border: 1px solid var(--ac-08); border-top: 0; }
 [data-style="stamp"] .ax-stat { border: 1px solid var(--ac-08); padding: 0 4px; }
+[data-style="stamp"] .ax-drawer { border: 1.5px solid var(--ac-12); border-top: 0; }
+[data-style="stamp"] .ax-window { border-width: 1.5px; box-shadow: 3px 3px 0 var(--plate-cast); }
+[data-style="stamp"] .agb { border-width: 1.5px; box-shadow: 3px 3px 0 var(--plate-cast); }
 [data-style="stamp"] .agb-type { border-radius: 0; }
-[data-style="stamp"] .flc-dot,
+[data-style="stamp"] .flc { border-width: 1.5px; border-radius: 0; box-shadow: 3px 3px 0 var(--plate-cast); }
+/* the idioms: a plate and a field are stamped plates too */
+[data-style="stamp"] .tw[data-tw="stamp"][data-idiom="plate"],
+[data-style="stamp"] .tw[data-tw="stamp"][data-idiom="field"] { box-shadow: 3px 3px 0 var(--plate-cast); }
 [data-style="stamp"] .flc-chip,
 [data-style="stamp"] .flc-btn,
 [data-style="stamp"] .flc-verd,
 [data-style="stamp"] .flc-node,
 [data-style="stamp"] .flc-lamp,
+[data-style="stamp"] .flc-dot,
 [data-style="stamp"] .flc-shots img { border-radius: 0; }
+[data-style="stamp"] .flc-shots img { box-shadow: 3px 3px 0 var(--plate-cast); }
 [data-style="stamp"] .md code,
 [data-style="stamp"] .md-code,
 [data-style="stamp"] .md img { border-radius: 0; }
 
-/* ══ WIRE ══ a schematic, one spine ════════════════════════════════════════
-   Rank is the stroke weight of a lead. Nothing is a card, so every fill goes to
-   nothing and every frame becomes a rule — what is left is the bar the action
-   row already varies (1px for a glance, 2px for a mark) finally doing the work
-   the fills were hiding. Hairlines only; the payload is the one solid thing. */
+
+/* ══ 2A · WIRE ══ a schematic, one spine ═══════════════════════════════════
+   Nothing is a card. ONE vertical bus runs the whole turn and every element
+   hangs off it as a node: a hollow diamond for what came in, a filled one for
+   what went out, a dashed circle for a thought, a stub for a step. Rank is the
+   stub's stroke weight — 1px hairline for a glance, 1px hued for a reach, 2px
+   solid for a mark — which is the rank the action row always encoded and the
+   fills were hiding. No fills except the payloads themselves.
+
+   The spine is drawn per row rather than once: consecutive rows butt together
+   (`.actrow + .actrow { margin-top: 0 }`), so a 1px line at the same x on each
+   of them IS one continuous bus, and it survives virtualization, which a
+   single absolutely-positioned line down a turn would not. */
+[data-style="wire"] {
+  --axtag: calc(var(--t95) * 4.6 + 18px);
+  --bus: color-mix(in srgb, var(--acc) 30%, transparent);
+}
+[data-style="wire"] .pbub,
+[data-style="wire"] .abub,
+[data-style="wire"] .thk,
+[data-style="wire"] .actrow { position: relative; }
+/* the bus itself */
+[data-style="wire"] .actrow::before,
+[data-style="wire"] .ax-drawer::before {
+  content: ""; position: absolute; left: -17px; top: 0; bottom: 0;
+  width: 1px; background: var(--bus);
+}
+[data-style="wire"] .ax-drawer { position: relative; }
+/* the stub: the action row's own bar, laid on its side. Its weight is rank. */
+[data-style="wire"] .actrow > .ax-bar {
+  align-self: center; width: 16px; height: 1px; margin-left: -16px;
+  background: var(--bus);
+}
+[data-style="wire"] .actrow[data-tier="reach"] > .ax-bar {
+  width: 16px; height: 1px; background: color-mix(in srgb, var(--h) 60%, transparent);
+}
+[data-style="wire"] .actrow[data-tier="mark"] > .ax-bar {
+  width: 16px; height: 2px; background: var(--h);
+}
+[data-style="wire"] .actrow[data-tier="glance"] > .ax-bar { width: 16px; height: 1px; }
+/* IN · OPERATOR — a hollow diamond straddling the bus */
 [data-style="wire"] .pbub {
-  border: 0; border-right: 1px solid var(--purple); background: none; padding: 0 10px 0 0;
+  border: 0; border-right: 1px solid var(--purple); border-radius: 0;
+  background: none; padding: 0 10px 0 0;
 }
+[data-style="wire"] .pbub::before {
+  content: ""; position: absolute; right: -5px; top: 5px; width: 9px; height: 9px;
+  border: 1px solid var(--purple); background: var(--canvas); transform: rotate(45deg);
+}
+/* OUT · AGENT — the same node, filled */
 [data-style="wire"] .abub {
-  border: 0; border-left: 1px solid var(--acc); background: none; padding-left: 10px;
+  border: 0; border-left: 1px solid var(--acc); border-radius: 0;
+  background: none; padding: 0 0 0 11px;
 }
-/* the thought hangs off a dashed lead: it looked, it did not reach */
-[data-style="wire"] .thk { margin-left: 17px; padding-left: 9px; border-left: 1px dashed var(--ac-12); }
+[data-style="wire"] .abub::before {
+  content: ""; position: absolute; left: -5px; top: 5px; width: 9px; height: 9px;
+  border: 1px solid var(--acc); background: var(--acc); transform: rotate(45deg);
+}
+/* a thought looked and did not reach, so its node is a dashed circle */
+[data-style="wire"] .thk { margin-left: 18px; padding-left: 11px; }
+[data-style="wire"] .thk::before {
+  content: ""; position: absolute; left: -4px; top: 8px; width: 7px; height: 7px;
+  border: 1px dashed var(--txl); border-radius: 50%; background: var(--canvas);
+}
+[data-style="wire"] .thk-peek { font-style: normal; }
 [data-style="wire"] .actrow,
 [data-style="wire"] .actrow[data-tier="mark"] { background: none; }
 [data-style="wire"] .actrow:hover,
 [data-style="wire"] .actrow[data-tier="mark"]:hover { background: var(--ac-03); }
 [data-style="wire"] .actrow + .actrow { border-top-color: transparent; }
-/* the eight shapes as leads and outlines — no shape may carry a fill */
+/* the eight shapes, all outline: a schematic has no filled parts */
+[data-style="wire"] .ax-tag { justify-content: center; border-radius: 0; }
 [data-style="wire"] .ax-tag[data-shape="fill"] {
   background: none; color: var(--h);
   border: 2px solid color-mix(in srgb, var(--h) 60%, transparent);
@@ -1868,41 +1965,47 @@ input {
   border: 1px solid color-mix(in srgb, var(--h) 38%, transparent);
 }
 [data-style="wire"] .ax-tag[data-shape="rail"] { border-left-width: 2px; }
-[data-style="wire"] .ax-tag[data-shape="term"] { border: 1px solid color-mix(in srgb, var(--h) 38%, transparent); }
+[data-style="wire"] .ax-tag[data-shape="term"] { border: 2px solid color-mix(in srgb, var(--h) 45%, transparent); }
 [data-style="wire"] .ax-pill {
   border-radius: 0; background: none;
   border: 1px solid color-mix(in srgb, var(--h) 30%, transparent);
 }
+[data-style="wire"] .ax-q { border-style: dashed; }
 [data-style="wire"] .ax-drawer {
-  background: none; border-top: 0;
-  margin-left: 21px; padding-left: var(--axtag); border-left: 1px solid var(--ac-12);
+  background: none; border-top: 0; padding-left: calc(var(--axtag) + 3px);
 }
-/* a terminal run is a heavier lead, not a window */
+/* a terminal run is a heavier lead off the bus, not a window */
 [data-style="wire"] .ax-window {
   border: 0; background: none;
   border-left: 2px solid color-mix(in srgb, var(--h) 55%, transparent);
 }
-[data-style="wire"] .ax-window > .ax-drawer { border-left: 0; margin-left: 0; }
-[data-style="wire"] .agb { border: 0; background: none; }
-[data-style="wire"] .agb::before,
+[data-style="wire"] .ax-window > .actrow::before { display: none; }
+[data-style="wire"] .ax-window > .actrow > .ax-bar { display: none; }
+/* SUB-BUS — a nested turn is a square node on a 2px lead */
+[data-style="wire"] .agb {
+  border: 0; background: none; border-left: 2px solid var(--h); position: relative;
+}
+[data-style="wire"] .agb::before {
+  content: ""; display: block; position: absolute; left: -6px; top: 6px;
+  width: 9px; height: 9px; border: 2px solid var(--h); background: var(--canvas);
+}
 [data-style="wire"] .agb::after { display: none; }
-[data-style="wire"] .agb-type { border-width: 2px; }
-[data-style="wire"] .agb-rail::after { display: none; }
-[data-style="wire"] .flc { border: 0; background: none; border-left: 1px solid var(--ac-16); }
-/* the idioms: a plate earns one hairline box, a field one rule; the two
-   zero-chrome ones keep the lead the material gave them */
+[data-style="wire"] .agb-rail { display: none; }
+[data-style="wire"] .agb-type { border-width: 2px; border-radius: 0; }
+[data-style="wire"] .flc { border: 0; background: none; border-radius: 0; border-left: 1px solid var(--ac-16); }
+/* the idioms: a plate earns one hairline box, a field four hairline corners */
 [data-style="wire"] .tw[data-idiom="plate"] { border: 1px solid var(--ac-12); padding-left: 0; }
 [data-style="wire"] .tw[data-idiom="plate"] > .tw-head { padding: 4px 9px 3px 9px; }
 [data-style="wire"] .tw[data-idiom="plate"] > .tw-body { padding: 5px 9px 7px 9px; }
-[data-style="wire"] .tw[data-idiom="field"] { background: none; border-top: 1px solid var(--ac-12); }
 [data-style="wire"] .tw[data-idiom="ledger"] { background: none; }
 [data-style="wire"] .tw[data-idiom="strip"] { border-top-color: var(--ac-12); }
-[data-style="wire"] .flc-dot { border-radius: 0; }
+[data-style="wire"] .tw[data-idiom="field"] { background: none; border-top: 1px solid var(--ac-12); }
 /* the widget bodies: outlines where there were fills, squares where lamps */
 [data-style="wire"] .flc-chip { background: none; border-radius: 0; }
-[data-style="wire"] .flc-btn { background: none; }
+[data-style="wire"] .flc-btn { background: none; border-radius: 0; }
 [data-style="wire"] .flc-btn[data-go] { background: none; color: var(--h); border-width: 2px; box-shadow: none; }
 [data-style="wire"] .flc-lamp,
+[data-style="wire"] .flc-dot,
 [data-style="wire"] .flc-node { border-radius: 0; background: none; }
 [data-style="wire"] .flc-meter .seg i { border: 1px solid var(--ac-12); background: none; }
 [data-style="wire"] .flc-meter .seg i[data-on] { background: var(--acc); box-shadow: none; }
@@ -1923,35 +2026,93 @@ input {
 [data-style="wire"] .md-tablewrap { border: 0; background: none; }
 
 
-/* ══ SIGNAL LOG ══ gutter, level, row ══════════════════════════════════════
-   Rank is a chip's saturation, and nothing else moves. Everything in the
-   stream lands on one tabular grid: single-line rows with a hairline under
-   each, the tag column becomes a column of level chips, and only a payload
-   body is allowed to break the line. The eight shapes survive, but they stop
-   being eight different objects — in a log the level is a field, not a
-   picture, so they are the same chip at eight strengths.
+/* ══ 2B · SIGNAL LOG ══ gutter, level, row ═════════════════════════════════
+   A log viewer, not a chat. One tabular grid — T+ | LEVEL | EVENT | RESULT —
+   and everything in the stream lands on it: your message and the reply are
+   rows with a level chip, not bubbles; a thought is a row; a folded run is a
+   row. Only a payload body may break the line. Rank is the chip's saturation
+   and a 3px rule at the row's left edge, nothing else.
 
-   The one thing the sheet's column has that this does not is the T+ gutter: a
-   row carries no turn-relative clock (bridge/transcript_jsonl.py never emits
-   one), and inventing a number in CSS would be a lie in a log. The RESULT
-   column is real, so it is the one that is drawn. */
+   The T+ gutter is real: `at` comes off the events table's own timestamp
+   (store.transcript) and RunStream renders it turn-relative into `data-t`.
+   A row with no clock (a live one, or a turn recorded before `at` was carried)
+   leaves the gutter empty rather than guessing. */
+[data-style="signal"] {
+  --axtag: calc(var(--t95) * 4.4 + 16px);
+  --sig-t: calc(var(--t85) * 3.4 + 10px);
+}
+[data-style="signal"] .actrow {
+  position: relative; margin-left: 0; padding-left: 3px;
+  grid-template-columns: var(--sig-t) var(--axtag) minmax(0, 1fr) max-content 18px;
+  background: none;
+}
+/* the gutter, and the reason the bar leaves the grid: it becomes the row's
+   left rule, which is where a log puts the kind. */
+[data-style="signal"] .actrow::before {
+  content: attr(data-t); align-self: center;
+  font-size: var(--t85); color: var(--txl);
+  font-variant-numeric: tabular-nums; letter-spacing: .4px; padding-left: 7px;
+}
+[data-style="signal"] .actrow > .ax-bar {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: none;
+}
+[data-style="signal"] .actrow[data-tier="reach"] > .ax-bar { background: color-mix(in srgb, var(--h) 45%, transparent); }
+[data-style="signal"] .actrow[data-tier="mark"] > .ax-bar { background: var(--h); }
+[data-style="signal"] .actrow[data-err] > .ax-bar { background: var(--err); }
+/* zebra: a log is read by scanning down one column, and the stripe is what
+   keeps the eye on a line across four of them */
+[data-style="signal"] .actrow:nth-of-type(even) { background: var(--ac-03); }
+[data-style="signal"] .actrow[data-tier="mark"] { background: color-mix(in srgb, var(--h) 5%, transparent); }
+[data-style="signal"] .actrow + .actrow { border-top-color: var(--ac-06); }
+/* the schema line, once at the top of the log rather than once per turn */
+.siglog-head {
+  /* 36px clears hud/Terminal's peek bar (PEEK_H), which floats over the top of
+     the scroller — a schema line hidden under it is a schema line nobody has. */
+  display: none; position: sticky; top: 36px; z-index: 3;
+  margin-top: 36px;
+  grid-template-columns: var(--sig-t) var(--axtag) minmax(0, 1fr) max-content 18px;
+  align-items: center; padding: 4px 0 4px 3px;
+  border-bottom: 1px solid var(--ac-12); background: var(--panel3);
+  font-size: var(--t8); letter-spacing: 2.4px; color: var(--txf);
+}
+[data-style="signal"] .siglog-head { display: grid; }
+.siglog-head > span:first-child { padding-left: 7px; }
+.siglog-head > span:nth-child(4) { text-align: right; }
+/* your message and the reply are rows on the same grid, told apart by a chip */
 [data-style="signal"] .pbub,
 [data-style="signal"] .abub {
-  border: 0; border-radius: 0; background: none;
-  border-bottom: 1px solid var(--ac-06); padding: 3px 0 6px 0;
+  position: relative; border: 0; border-radius: 0; background: none;
+  border-bottom: 1px solid var(--ac-06);
+  padding: 5px 0 7px calc(var(--sig-t) + var(--axtag));
 }
+[data-style="signal"] .pbub { background: var(--ac-03); }
+[data-style="signal"] .abub { border-left: 3px solid var(--acc); }
+[data-style="signal"] .pbub::before,
+[data-style="signal"] .abub::before {
+  position: absolute; left: var(--sig-t); top: 7px;
+  width: calc(var(--axtag) - 8px); text-align: center;
+  font-family: var(--ui); font-size: var(--t8); letter-spacing: 1.4px;
+  padding: 1px 0; color: var(--acc-on);
+}
+[data-style="signal"] .pbub::before { content: "YOU"; background: var(--purple); }
+[data-style="signal"] .abub::before { content: "SAY"; background: var(--acc); }
+/* a thought is a row too, with the one outlined chip in the column */
 [data-style="signal"] .thk {
-  border-bottom: 1px solid var(--ac-06); padding-right: 4px;
+  position: relative; margin-left: 0;
+  padding-left: calc(var(--sig-t) + var(--axtag));
+  border-bottom: 1px solid var(--ac-06);
 }
+[data-style="signal"] .thk-lab {
+  position: absolute; left: var(--sig-t); top: 3px;
+  width: calc(var(--axtag) - 8px); justify-content: center;
+  border: 1px solid var(--ac-12); padding: 0 0 1px; font-size: var(--t8);
+}
+[data-style="signal"] .thk-lab > svg { display: none; }
 [data-style="signal"] .thk-peek { font-style: normal; }
-[data-style="signal"] .actrow,
-[data-style="signal"] .actrow[data-tier="mark"] { background: none; }
-[data-style="signal"] .actrow + .actrow { border-top-color: var(--ac-06); }
-/* one chip shape for every kind, filling the level column; the shapes differ
-   by strength only */
+/* one chip shape for every kind; the eight shapes differ by strength only */
 [data-style="signal"] .ax-tag {
   min-width: 100%; justify-content: center; padding: 0 5px;
-  border: 0; border-radius: 0;
+  border: 0; border-radius: 0; letter-spacing: 1.1px;
   background: color-mix(in srgb, var(--h) 10%, transparent);
 }
 [data-style="signal"] .ax-tag[data-shape="bare"] { background: none; }
@@ -1961,33 +2122,36 @@ input {
 [data-style="signal"] .ax-tag[data-shape="box"] { background: color-mix(in srgb, var(--h) 14%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="round"] { background: color-mix(in srgb, var(--h) 18%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="cable"] { background: color-mix(in srgb, var(--h) 22%, transparent); }
-[data-style="signal"] .ax-tag[data-shape="rail"] { background: color-mix(in srgb, var(--h) 26%, transparent); }
+[data-style="signal"] .ax-tag[data-shape="rail"] { border-left: 0; background: color-mix(in srgb, var(--h) 26%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="term"] { background: color-mix(in srgb, var(--h) 30%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
 [data-style="signal"] .ax-pill { border-radius: 0; }
 [data-style="signal"] .ax-stat { font-variant-numeric: tabular-nums; }
-[data-style="signal"] .ax-drawer { border-radius: 0; background: var(--code-bg); }
-/* a terminal run keeps its box but loses its border: a log's blocks are told
-   apart by the bar at their left, which is where the kind lives */
-[data-style="signal"] .ax-window {
-  border: 0; border-left: 2px solid color-mix(in srgb, var(--h) 65%, transparent);
-  border-radius: 0;
+[data-style="signal"] .ax-drawer {
+  border-radius: 0; background: var(--code-bg); margin-left: 0;
+  padding-left: calc(var(--sig-t) + var(--axtag));
 }
+/* a terminal run and a nested turn are blocks in the log: no frame, a bar */
+[data-style="signal"] .ax-window {
+  border: 0; border-left: 3px solid color-mix(in srgb, var(--h) 65%, transparent);
+  border-radius: 0; margin-left: 0;
+}
+[data-style="signal"] .ax-window > .actrow { padding-left: 3px; }
+[data-style="signal"] .ax-window > .actrow::before { content: ""; }
 [data-style="signal"] .agb {
-  border: 0; border-left: 2px solid var(--h); border-radius: 0;
+  border: 0; border-left: 3px solid var(--h); border-radius: 0; margin-left: 0;
   background: color-mix(in srgb, var(--h) 3%, var(--panel3));
 }
 [data-style="signal"] .agb::before,
 [data-style="signal"] .agb::after { display: none; }
 [data-style="signal"] .agb-rail { display: none; }
 [data-style="signal"] .agb-type {
-  border: 0; background: color-mix(in srgb, var(--h) 18%, transparent); border-radius: 0;
+  border: 0; border-radius: 0; background: color-mix(in srgb, var(--h) 18%, transparent);
 }
-[data-style="signal"] .flc { border: 0; border-left: 2px solid var(--h); border-radius: 0; }
-/* the idioms: a plate is a block in the log, so it takes the left bar the
-   terminal and the agent block take; a field runs the full width a log gives */
+[data-style="signal"] .flc { border: 0; border-left: 3px solid var(--h); border-radius: 0; }
+/* the idioms: a plate is a block in the log and takes the same left rule */
 [data-style="signal"] .tw[data-idiom="plate"] {
-  border-left: 2px solid color-mix(in srgb, var(--h) 65%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--h) 65%, transparent);
   background: var(--code-bg); padding-left: 0;
 }
 [data-style="signal"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
@@ -1996,16 +2160,14 @@ input {
 [data-style="signal"] .tw[data-idiom="field"] { background: var(--code-bg); border-top: 0; }
 [data-style="signal"] .tw[data-idiom="field"]::before,
 [data-style="signal"] .tw[data-idiom="field"]::after { content: none; }
-/* the widget bodies: everything that was a shape becomes a chip or a bar */
 [data-style="signal"] .flc-chip {
   border: 0; border-radius: 0; background: color-mix(in srgb, var(--acc) 8%, transparent);
 }
 [data-style="signal"] .flc-btn { border-radius: 0; }
-[data-style="signal"] .flc-glyph { font-size: var(--t8); }
 [data-style="signal"] .flc-lamp,
-[data-style="signal"] .flc-dot { border-radius: 0; }
-[data-style="signal"] .flc-lamp { width: 6px; height: 6px; }
+[data-style="signal"] .flc-dot,
 [data-style="signal"] .flc-node { border-radius: 0; }
+[data-style="signal"] .flc-lamp { width: 6px; height: 6px; }
 [data-style="signal"] .flc-meter .seg i { border-radius: 0; box-shadow: none; }
 [data-style="signal"] .flc-verd { border-radius: 0; border-left-width: 3px; }
 [data-style="signal"] .flc-out { border-left-width: 3px; }
@@ -2018,16 +2180,22 @@ input {
 [data-style="signal"] .md-admonition { border-radius: 0; }
 [data-style="signal"] .md-tablewrap { border: 0; background: none; }
 
-/* ══ LEDGER PRESS ══ type does the framing ═════════════════════════════════
-   Rank is a rule's weight, an indent, and whether a label is set in ink or in
-   italic — a glance leans, a reach stands roman, a mark stands up in the hue.
-   So the frames go: not one box in the stream, and every fill becomes either a
-   rule or a change of face. Prose turns serif because it is printed rather
-   than rendered; a payload keeps the mono it was measured in. Runs warm, the
-   register the brand reserves for surfaces that are not instruments — and a
-   printed page is not one. */
+
+/* ══ 1A · LEDGER PRESS ══ type does the framing ════════════════════════════
+   Not one box in the whole transcript. What a frame used to do, a rule and a
+   margin do: every element is a two-column setting — a 74px margin holding its
+   label (YOU, §, the clock, the tool's name) and the text column beside it.
+   Rank is the rule's weight, the indent, and whether the label is set in ink
+   or in italic: a glance leans, a reach stands roman, a mark stands up in the
+   hue behind a 2px rule.
+
+   The sheet prints this one on cream. The dashboard's theme is the dashboard's,
+   so it runs warm on the app's own paper instead — the register NOTE
+   established for the surfaces that are not instruments. */
 [data-style="press"] {
-  --press-rule: color-mix(in srgb, var(--warn) 20%, var(--border));
+  --axtag: calc(var(--t95) * 5.6 + 18px);
+  --press-mar: calc(var(--t95) * 3.4 + 10px);
+  --press-rule: color-mix(in srgb, var(--warn) 22%, var(--border));
   --press-serif: ui-serif, Georgia, "Times New Roman", serif;
   background: linear-gradient(180deg, color-mix(in srgb, var(--warn) 4%, transparent), transparent 320px);
 }
@@ -2039,43 +2207,79 @@ input {
 [data-style="press"] .md code,
 [data-style="press"] .md-code,
 [data-style="press"] .md pre { font-family: var(--mono); }
-/* the prompt is an epigraph; the reply is body copy under a section mark */
+/* YOUR PROMPT · AN EPIGRAPH — a margin label and italic text, no box */
 [data-style="press"] .pbub {
-  border: 0; border-bottom: 1px solid var(--press-rule);
-  background: none; padding: 0 0 4px 0; font-style: italic;
+  position: relative; border: 0; border-radius: 0; background: none;
+  border-top: 1px solid var(--press-rule);
+  padding: 6px 0 4px var(--press-mar); font-style: italic;
 }
-[data-style="press"] .abub { border: 0; background: none; padding: 3px 0 0 0; }
+[data-style="press"] .pbub::before {
+  content: "YOU"; position: absolute; left: 0; top: 8px; width: var(--press-mar);
+  font-family: var(--ui); font-size: var(--t8); letter-spacing: 2px; color: var(--txf);
+}
+/* THE REPLY · BODY TEXT, NOTHING AROUND IT — a section mark in the margin */
+[data-style="press"] .abub {
+  position: relative; border: 0; border-radius: 0; background: none;
+  border-top: 1px solid var(--press-rule); padding: 6px 0 0 var(--press-mar);
+}
 [data-style="press"] .abub::before {
-  content: "§"; float: left; margin: 1px 9px 0 0;
-  color: color-mix(in srgb, var(--warn) 75%, transparent);
+  content: "§"; position: absolute; left: 0; top: 6px;
+  width: calc(var(--press-mar) - 10px); text-align: right;
+  font-family: var(--press-serif); font-size: var(--t14);
+  color: color-mix(in srgb, var(--warn) 80%, transparent);
 }
-/* the thought is a marginal note, and the only place the page speaks italic */
-[data-style="press"] .thk { font-family: var(--press-serif); font-style: italic; }
-[data-style="press"] .thk-peek { opacity: 1; color: var(--txf); }
+/* THINKING · A MARGINAL NOTE — the clock moves into the margin and the label
+   goes, because a marginal note is identified by where it sits */
+[data-style="press"] .thk {
+  border-top: 1px solid var(--press-rule);
+  font-family: var(--press-serif); font-style: italic;
+}
+[data-style="press"] .thk-lab { display: none; }
+[data-style="press"] .thk-ms {
+  order: -1; width: var(--press-mar); font-family: var(--ui);
+  font-style: normal; letter-spacing: .6px; color: var(--txf);
+}
+[data-style="press"] .thk-peek { opacity: 1; color: var(--txd); }
+/* ACTIONS · THREE TIERS, EIGHT SHAPES — set, not drawn */
 [data-style="press"] .actrow,
 [data-style="press"] .actrow[data-tier="mark"] { background: none; }
-[data-style="press"] .actrow + .actrow { border-top-color: var(--press-rule); }
-/* ink or italic, and nothing else: the eight shapes give up their boxes */
+[data-style="press"] .actrow + .actrow { border-top-color: transparent; }
+[data-style="press"] .ax-tagcell { align-items: baseline; }
 [data-style="press"] .ax-tag {
-  border: 0; border-radius: 0; padding: 0; background: none;
+  border: 0; border-radius: 0; padding: 0; background: none; height: auto;
   font-family: var(--press-serif); letter-spacing: 0; text-transform: lowercase;
   font-size: var(--t105); color: var(--txd);
 }
 [data-style="press"] .actrow[data-tier="glance"] .ax-tag { font-style: italic; }
-[data-style="press"] .actrow[data-tier="mark"] .ax-tag { color: var(--h); font-weight: 600; }
-[data-style="press"] .ax-tag[data-shape="dash"] {
-  text-decoration: underline dotted; text-underline-offset: 3px;
+[data-style="press"] .actrow[data-tier="mark"] .ax-tag {
+  color: var(--h); font-weight: 600; text-transform: uppercase;
+  font-family: var(--ui); font-size: var(--t9); letter-spacing: 1.2px;
 }
+/* the shapes become marks of punctuation, which is all a press has */
+[data-style="press"] .ax-tag[data-shape="dash"] {
+  text-decoration: underline dashed; text-underline-offset: 3px;
+}
+[data-style="press"] .ax-tag[data-shape="round"]::before { content: "( "; color: var(--txf); }
+[data-style="press"] .ax-tag[data-shape="round"]::after { content: " )"; color: var(--txf); }
+[data-style="press"] .ax-tag[data-shape="cable"]::before { content: "·—· "; color: var(--txf); }
+[data-style="press"] .ax-tag[data-shape="term"]::before { content: "∷ "; color: var(--txf); }
+[data-style="press"] .ax-tag[data-shape="fill"] { text-decoration: underline; text-underline-offset: 3px; }
+/* a mark is set behind a 2px rule and pulled out of the column, which is the
+   indent doing what a fill used to */
+[data-style="press"] .actrow[data-tier="mark"] {
+  border-left: 2px solid var(--h); padding-left: 7px; margin-left: 11px;
+}
+[data-style="press"] .actrow > .ax-bar { background: none; }
+[data-style="press"] .actrow[data-tier="reach"] > .ax-bar { background: var(--press-rule); }
 [data-style="press"] .ax-pill { border-radius: 0; background: none; color: var(--txd); padding: 0; }
 [data-style="press"] .ax-q { border: 0; font-style: italic; padding: 0; }
-[data-style="press"] .ax-drawer {
-  background: none; border-top: 1px solid var(--press-rule);
-}
-/* a terminal run is set as a table: rules, not a window */
+[data-style="press"] .ax-drawer { background: none; border-top: 1px solid var(--press-rule); }
+/* A TERMINAL RUN · SET AS A TABLE — rules above and below, nothing at the side */
 [data-style="press"] .ax-window {
   border: 0; border-top: 2px solid var(--press-rule); border-bottom: 1px solid var(--press-rule);
   background: none; border-radius: 0;
 }
+/* AN AGENT BLOCK · A NESTED VOICE — an indent behind a rule */
 [data-style="press"] .agb {
   border: 0; background: none; border-radius: 0;
   border-left: 2px solid var(--press-rule);
@@ -2086,30 +2290,30 @@ input {
 [data-style="press"] .agb-rail::after { display: none; }
 [data-style="press"] .agb-type { border: 0; padding: 0; font-weight: 600; }
 [data-style="press"] .flc { border: 0; background: none; border-radius: 0; border-left: 2px solid var(--press-rule); }
-/* the idioms: a plate is a printed excerpt — indented, ruled, never boxed; a
-   field is a plate of figures with its caption under it */
+/* THE FIVE IDIOMS — each labelled in the margin, none of them boxed */
 [data-style="press"] .tw[data-idiom="plate"] {
   border: 0; border-left: 2px solid var(--press-rule); background: none; padding-left: 0;
 }
 [data-style="press"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
 [data-style="press"] .tw[data-idiom="plate"] > .tw-head { padding: 3px 0 2px 11px; }
 [data-style="press"] .tw[data-idiom="plate"] > .tw-body { padding: 2px 0 5px 11px; }
-[data-style="press"] .tw[data-idiom="field"] { background: none; border-bottom: 1px solid var(--press-rule); }
 [data-style="press"] .tw[data-idiom="ledger"] { background: none; border-top-color: var(--press-rule); }
 [data-style="press"] .tw[data-idiom="strip"] { border-top-color: var(--press-rule); }
-[data-style="press"] .flc-dot { border-radius: 0; }
-[data-style="press"] .flc-bar { background: var(--txb); }
+[data-style="press"] .tw[data-idiom="field"] { background: none; border-bottom: 1px solid var(--press-rule); }
 [data-style="press"] .tw[data-idiom="field"]::before,
 [data-style="press"] .tw[data-idiom="field"]::after { content: none; }
-/* the widget bodies: a printed ledger — glyphs keep their meaning, the boxes
-   around them do not survive the press */
+[data-style="press"] .tw-name {
+  font-family: var(--ui); letter-spacing: 2.2px; color: var(--txf);
+}
+/* the widget bodies: a printed ledger keeps its glyphs and loses its boxes */
 [data-style="press"] .flc-chip {
   border: 0; border-radius: 0; background: none;
   border-bottom: 1px solid var(--press-rule);
 }
 [data-style="press"] .flc-btn { border-radius: 0; background: none; }
 [data-style="press"] .flc-btn[data-go] { background: none; color: var(--h); border-color: var(--h); box-shadow: none; }
-[data-style="press"] .flc-lamp { border-radius: 0; }
+[data-style="press"] .flc-lamp,
+[data-style="press"] .flc-dot,
 [data-style="press"] .flc-node { border-radius: 0; background: none; }
 [data-style="press"] .flc-meter .seg i { border-radius: 0; box-shadow: none; }
 [data-style="press"] .flc-meter .seg i[data-on] { background: var(--txb); }
@@ -2120,8 +2324,9 @@ input {
 [data-style="press"] .flc-out { background: none; border-left-color: var(--press-rule); }
 [data-style="press"] .flc-hunk { background: none; }
 [data-style="press"] .flc-sev { font-variant: small-caps; text-transform: lowercase; letter-spacing: .4px; }
-[data-style="press"] .flc-shots img { border-radius: 0; border-color: var(--press-rule); }
 [data-style="press"] .flc-lab { font-family: var(--press-serif); font-style: italic; letter-spacing: 0; text-transform: none; }
+[data-style="press"] .flc-bar { background: var(--txb); }
+[data-style="press"] .flc-shots img { border-radius: 0; border-color: var(--press-rule); }
 [data-style="press"] .md { line-height: 1.7; }
 [data-style="press"] .md h1,
 [data-style="press"] .md h2 { border-bottom-color: var(--press-rule); }
@@ -2135,46 +2340,84 @@ input {
 [data-style="press"] .md td { border-bottom-color: var(--press-rule); }
 
 
-/* ══ HALO ══ surfaces, not rules ═══════════════════════════════════════════
-   Rank is how far a surface floats. There is no rule anywhere in this
-   language: every hairline becomes a soft fill, every frame becomes a radius
-   and a shadow, and the only thing that lifts off the page is the row that
-   changed something. Quiet by default, which is the whole of what keeps a loud
-   one loud. */
-[data-style="halo"] .pbub { border-radius: 16px 16px 6px 16px; padding: 7px 13px; }
-[data-style="halo"] .abub { border-radius: 6px 16px 16px 16px; padding: 7px 13px; }
-[data-style="halo"] .thk { padding: 1px 10px; border-radius: 999px; background: var(--ac-03); }
-[data-style="halo"] .actrow { border-radius: 12px; overflow: hidden; }
-[data-style="halo"] .actrow + .actrow { margin-top: 3px; border-top: 0; }
+/* ══ 1C · HALO ══ surfaces, not rules ══════════════════════════════════════
+   One radius language and no rule anywhere. Every element is a surface: your
+   message and the reply are tinted cards with mirrored corners (the 6px corner
+   points at whoever spoke), a run of actions is a stack of soft rows, and rank
+   is how far a surface floats — only the row that CHANGED something lifts.
+   The tag is one pill at eight fills, centred in its column so the fills read
+   as a ladder down the page. A thought is three breathing dots and nothing
+   else, because it produced nothing to put on a surface. */
+[data-style="halo"] {
+  --axtag: calc(var(--t95) * 4.8 + 20px);
+}
+[data-style="halo"] .pbub {
+  border-radius: 16px 16px 6px 16px; padding: 9px 14px;
+  border-color: color-mix(in srgb, var(--purple) 24%, transparent);
+  background: color-mix(in srgb, var(--purple) 12%, transparent);
+}
+[data-style="halo"] .abub {
+  border-radius: 6px 16px 16px 16px; padding: 10px 14px;
+  border-color: var(--ac-12); background: var(--panel2);
+  box-shadow: 0 8px 24px var(--shadow-pop);
+}
+/* the thought: three dots, breathing out of phase, and the line it produced */
+[data-style="halo"] .thk { padding-left: 4px; }
+[data-style="halo"] .thk-lab { gap: 0; letter-spacing: 0; font-size: 0; }
+[data-style="halo"] .thk-lab > svg { display: none; }
+[data-style="halo"] .thk-lab::before {
+  content: "●●●"; font-size: var(--t8); letter-spacing: 2px; color: var(--txl);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-style="halo"] .thk-lab::before { animation: haloBreathe 1.3s ease-in-out infinite; }
+}
+@keyframes haloBreathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+[data-style="halo"] .thk-peek { font-style: italic; opacity: 1; color: var(--txd); }
+/* a run of actions: soft rows in a tight stack, one radius, no rules */
+[data-style="halo"] .actrow {
+  border-radius: 11px; overflow: hidden; background: none;
+  margin-left: 18px; padding-right: 2px;
+}
+[data-style="halo"] .actrow + .actrow { margin-top: 2px; border-top: 0; }
 [data-style="halo"] .actrow + .ax-drawer,
-[data-style="halo"] .ax-drawer + .actrow { margin-top: 3px; }
-/* the float, and the whole of what rank means here */
+[data-style="halo"] .ax-drawer + .actrow { margin-top: 2px; }
+[data-style="halo"] .actrow:hover { background: var(--ac-06); }
+/* the lift, and the whole of what rank means here */
+[data-style="halo"] .actrow[data-tier="reach"] { background: var(--ac-03); }
 [data-style="halo"] .actrow[data-tier="mark"] {
   background: color-mix(in srgb, var(--h) 9%, var(--panel2));
   box-shadow: 0 3px 14px var(--shadow-pop);
 }
-/* the eight shapes as one pill at eight fills */
+[data-style="halo"] .actrow[data-err] { background: color-mix(in srgb, var(--err) 10%, var(--panel2)); }
+/* the row's rule would be a rule, and this language has none */
+[data-style="halo"] .actrow > .ax-bar { background: none; }
+/* one pill at eight fills, centred so the ladder reads down the column */
 [data-style="halo"] .ax-tag {
-  border-radius: 999px; padding: 0 8px; border-color: transparent;
+  border-radius: 999px; padding: 1px 8px; border-color: transparent;
+  min-width: 100%; justify-content: center; letter-spacing: 1px;
   background: color-mix(in srgb, var(--h) 12%, transparent);
 }
-[data-style="halo"] .ax-tag[data-shape="bare"] { background: none; padding: 0 2px; }
+[data-style="halo"] .ax-tag[data-shape="bare"] { background: none; }
 [data-style="halo"] .ax-tag[data-shape="dash"] {
   background: none; border: 1px dashed color-mix(in srgb, var(--h) 40%, transparent);
 }
+[data-style="halo"] .ax-tag[data-shape="box"] { background: color-mix(in srgb, var(--h) 16%, transparent); }
+[data-style="halo"] .ax-tag[data-shape="round"] { background: color-mix(in srgb, var(--h) 20%, transparent); }
+[data-style="halo"] .ax-tag[data-shape="cable"] { background: color-mix(in srgb, var(--h) 24%, transparent); }
 [data-style="halo"] .ax-tag[data-shape="rail"] {
-  border-left: 0; padding-left: 8px; background: color-mix(in srgb, var(--h) 20%, transparent);
+  border-left: 0; background: none; color: var(--h); font-weight: 600;
+  position: relative; padding-left: 13px;
 }
+[data-style="halo"] .ax-tag[data-shape="rail"]::before {
+  content: ""; position: absolute; left: 3px; top: 2px; bottom: 2px;
+  width: 2px; border-radius: 2px; background: var(--h);
+}
+[data-style="halo"] .ax-tag[data-shape="term"] { background: color-mix(in srgb, var(--h) 28%, transparent); }
 [data-style="halo"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
-/* `background: none`, never `display: none` — the bar is the actrow grid's
-   first column, and removing the item shifts every cell one track left. */
-[data-style="halo"] .actrow > .ax-bar { background: none; }
-[data-style="halo"] .actrow[data-err] { background: color-mix(in srgb, var(--err) 10%, var(--panel2)); }
-[data-style="halo"] .tw[data-idiom="ledger"] { border-radius: 12px; }
-[data-style="halo"] .tw[data-idiom="strip"] { border-top: 0; }
-[data-style="halo"] .flc-dot { border-radius: 50%; }
-[data-style="halo"] .ax-drawer { border-radius: 12px; border-top: 0; }
+[data-style="halo"] .ax-pill { border-radius: 999px; }
+[data-style="halo"] .ax-drawer { border-radius: 11px; border-top: 0; }
 [data-style="halo"] .ax-window { border-radius: 16px; overflow: hidden; border-color: transparent; }
+[data-style="halo"] .ax-window > .actrow { border-radius: 0; margin-top: 0; }
 [data-style="halo"] .agb {
   border-radius: 16px; border-color: transparent;
   background: color-mix(in srgb, var(--h) 5%, var(--panel2));
@@ -2190,8 +2433,7 @@ input {
 }
 [data-style="halo"] .agb-rule { background: none; }
 [data-style="halo"] .flc { border-radius: 16px; border-color: transparent; }
-/* the idioms: a plate and a field are surfaces too, so they round and lift
-   rather than draw a boundary */
+/* the idioms: a plate and a field are surfaces too, so they round and lift */
 [data-style="halo"] .tw[data-idiom="plate"] {
   border-radius: 14px; overflow: hidden; padding-left: 0;
   background: color-mix(in srgb, var(--h) 4%, var(--panel2));
@@ -2199,6 +2441,8 @@ input {
 [data-style="halo"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
 [data-style="halo"] .tw[data-idiom="plate"] > .tw-head { padding: 8px 13px 4px 13px; }
 [data-style="halo"] .tw[data-idiom="plate"] > .tw-body { padding: 2px 13px 10px 13px; }
+[data-style="halo"] .tw[data-idiom="ledger"] { border-radius: 12px; }
+[data-style="halo"] .tw[data-idiom="strip"] { border-top: 0; }
 [data-style="halo"] .tw[data-idiom="field"] {
   border: 0; border-radius: 14px; margin-right: 0;
   background: color-mix(in srgb, var(--h) 4%, var(--panel2));
@@ -2206,7 +2450,6 @@ input {
 }
 [data-style="halo"] .tw[data-idiom="field"]::before,
 [data-style="halo"] .tw[data-idiom="field"]::after { content: none; }
-/* the widget bodies: one radius, and fill instead of stroke */
 [data-style="halo"] .flc-chip {
   border-radius: 999px; border-color: transparent;
   background: color-mix(in srgb, var(--acc) 10%, transparent);
@@ -2215,7 +2458,9 @@ input {
 [data-style="halo"] .flc-verd { border-radius: 999px; border-left: 0; padding: 2px 12px; }
 [data-style="halo"] .flc-verd[data-tone="good"] { background: color-mix(in srgb, var(--ok) 14%, transparent); }
 [data-style="halo"] .flc-verd[data-tone="bad"] { background: color-mix(in srgb, var(--err) 14%, transparent); }
-[data-style="halo"] .flc-node { border-radius: 999px; }
+[data-style="halo"] .flc-node,
+[data-style="halo"] .flc-dot,
+[data-style="halo"] .flc-lamp { border-radius: 999px; }
 [data-style="halo"] .flc-meter .seg i { border-radius: 3px; }
 [data-style="halo"] .flc-out {
   border-left: 0; border-radius: 12px; overflow: hidden;

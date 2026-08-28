@@ -1,4 +1,4 @@
-import type { Question, RunEvent, StoreTurn, Transcript } from "./api";
+import type { Question, RunEvent, StoreTurn, TimedEvent, Transcript } from "./api";
 
 export interface PendingRequest {
   request_id: string;
@@ -11,7 +11,11 @@ export interface PendingRequest {
 export interface Turn {
   id: string;
   prompt: string;
-  events: RunEvent[];
+  events: TimedEvent[];
+  /** Epoch seconds the turn opened, for the turn-relative clock SIGNAL LOG puts
+   *  in its gutter. Absent on a turn the client sent and the store hasn't
+   *  echoed back yet. */
+  started?: number;
   status: "running" | "done" | "error";
   pending: PendingRequest[];
   // Images sent with the prompt. Client-sent turns carry data: URLs (rendered
@@ -37,7 +41,7 @@ function tokensOf(st: StoreTurn): number | null {
   return parts.reduce((a: number, n) => a + (n ?? 0), 0);
 }
 
-export function derivePending(events: RunEvent[]): PendingRequest[] {
+export function derivePending(events: TimedEvent[]): PendingRequest[] {
   const resolved = new Set<string>();
   for (const e of events) {
     if (e.type === "permission_resolved" || e.type === "question_answered")
@@ -90,6 +94,7 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         attachments: st.attachments,
         runtime: st.runtime,
         sha: st.sha,
+        started: st.started,
         tokens: tokensOf(st),
       });
   }

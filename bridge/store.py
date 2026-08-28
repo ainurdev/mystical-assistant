@@ -1135,13 +1135,17 @@ def transcript(session_id: str, cursor: int = 0) -> dict:
         turns = [dict(r) for r in c.execute(
             "SELECT * FROM turns WHERE session_id=? ORDER BY seq", (session_id,)).fetchall()]
         evrows = c.execute(
-            "SELECT seq,turn_id,payload FROM events WHERE session_id=? AND seq>=? ORDER BY seq",
+            "SELECT seq,turn_id,payload,ts FROM events WHERE session_id=? AND seq>=? ORDER BY seq",
             (session_id, cursor)).fetchall()
     events = []
     for r in evrows:
         d = json.loads(r["payload"])
         d["seq"] = r["seq"]
         d["turn_id"] = r["turn_id"]
+        # When it landed, so a surface can show a turn-relative clock against
+        # turns.started. Carried on the row since the schema's first version;
+        # it was simply never handed out.
+        d["at"] = r["ts"]
         events.append(d)
     for t in turns:
         # Stored as bare filenames; handed out as the upload-dir paths both

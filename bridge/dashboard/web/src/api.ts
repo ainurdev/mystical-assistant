@@ -126,7 +126,12 @@ export type RunEvent =
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
 
-export type StoreEvent = RunEvent & { seq: number; turn_id: string };
+/** A run event with the clock the store kept for it. `at` is epoch seconds and
+ *  is absent on a live event, which has not been stored yet — a surface that
+ *  shows a turn-relative time leaves the cell empty rather than guessing. */
+export type TimedEvent = RunEvent & { at?: number };
+
+export type StoreEvent = TimedEvent & { seq: number; turn_id: string };
 
 export interface Transcript {
   session: SessionBrief | null;

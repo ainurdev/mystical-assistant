@@ -132,14 +132,14 @@ function ThinkingRow({ ms, text }: { ms?: number; text?: string }) {
   const peek = (text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
   const head = (
     <>
-      <Brain size={12} className="flex-none" aria-hidden />
-      <span className="flex-none text-[10px] tracking-[1px]">THOUGHT</span>
+      <Brain size={12} className="thk-lab flex-none" aria-hidden />
+      <span className="thk-lab flex-none text-[10px] tracking-[1px]">THOUGHT</span>
       {peek && !open ? (
         <span className="thk-peek min-w-0 flex-1 truncate text-[11px] italic opacity-75">{peek}</span>
       ) : (
         <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
       )}
-      <span className="flex-none text-[9.5px] tracking-[1px]">{slow(ms)}</span>
+      <span className="thk-ms flex-none text-[9.5px] tracking-[1px]">{slow(ms)}</span>
       {text ? (
         <ChevronDown
           size={12}

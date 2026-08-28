@@ -339,6 +339,13 @@ export function Terminal({
             it: parked at the top there is nothing under the bar, so no
             bar — the transcript opens on its first message, not on a
             header repeating it. */}
+        {/* SIGNAL LOG's schema line. A log names its columns once at the top,
+            not once per turn, so it lives here and sticks; every other output
+            style leaves it `display: none` (index.css, 2B · SIGNAL LOG). */}
+        <div className="siglog-head" aria-hidden>
+          <span>T+</span><span style={{ textAlign: "center" }}>LEVEL</span>
+          <span>EVENT</span><span>RESULT</span><span />
+        </div>
         <div ref={contentRef} style={{ padding: `${PEEK_H + 8}px 0 16px` }}>
           {/* A switch that lands inside the delay renders neither: no
               scanline for a load that's already over, and no FreshState

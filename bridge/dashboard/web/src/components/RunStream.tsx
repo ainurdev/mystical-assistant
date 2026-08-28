@@ -6,7 +6,7 @@ import {
   GitBranch, FileText, FilePen, Trash2, FolderTree, Play, Package,
   FlaskConical, Cpu, Database, Container,
 } from "lucide-react";
-import { api, type AnswerSelection, type RunEvent } from "../api";
+import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
 import { SteerIcon } from "./Composer";
 import { Markdown, type OpenFile } from "./Markdown";
@@ -600,7 +600,7 @@ function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animat
   const peek = (text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
   const head = (
     <>
-      <span className="flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1.5px]">
+      <span className="thk-lab flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1.5px]">
         <Brain size={11} aria-hidden />
         THOUGHT
       </span>
@@ -609,7 +609,7 @@ function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animat
       ) : (
         <span aria-hidden className="h-px flex-1 bg-border" />
       )}
-      <span className="flex-none text-[length:var(--t95)] tracking-[1px]">{slow(ms)}</span>
+      <span className="thk-ms flex-none text-[length:var(--t95)] tracking-[1px]">{slow(ms)}</span>
       {text ? (
         <ChevronDown
           size={12}
@@ -709,12 +709,16 @@ function ActionRow({
   animate,
   running,
   error,
+  t,
   startOpen = false,
   children,
 }: {
   tier: Tier;
   shape?: Shape;
   accent: string;
+  /** Turn-relative clock, already formatted. Only SIGNAL LOG draws it (its
+   *  gutter is `content: attr(data-t)`); every other language ignores it. */
+  t?: string;
   /** Omitted inside a terminal window — its header already said BASH. */
   tag?: string;
   /** A glyph in front of the object, where it says something the tag can't. */
@@ -763,6 +767,7 @@ function ActionRow({
       <div
         ref={ref}
         className="actrow group/act"
+        data-t={t}
         data-tier={tier}
         data-err={error ? "" : undefined}
         data-run={running ? "" : undefined}
@@ -877,10 +882,11 @@ function DrawerFoot({ children }: { children: ReactNode }) {
 
 /** A read only looked at a page, so it wears no frame at all and ends in the
  *  ruled lines of what it read. The quietest row there is. */
-function ReadCard({ path, ms, stat, error, animate }:
-  { path: string; ms?: number; stat?: string; error?: boolean; animate: boolean }) {
+function ReadCard({ path, ms, stat, error, animate, t }:
+  { path: string; ms?: number; stat?: string; error?: boolean; animate: boolean; t?: string }) {
   return (
     <ActionRow
+          t={t}
       tier="glance"
       shape={toolShape("Read")}
       accent={toolAccent("Read")}
@@ -896,11 +902,13 @@ function ReadCard({ path, ms, stat, error, animate }:
 
 /** A write is filled in — dark text on solid hue, the loudest a tag gets —
  *  because something on disk is different now. */
-function WriteCard({ name, path, ms, stat, error, animate }: {
+function WriteCard({ name, path, ms, stat, error, animate, t }: {
   name: string; path: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+  t?: string;
 }) {
   return (
     <ActionRow
+          t={t}
       tier="mark"
       shape={toolShape(name)}
       accent={toolAccent(name)}
@@ -916,11 +924,13 @@ function WriteCard({ name, path, ms, stat, error, animate }: {
 
 /** A lookup is a query as entered: the pattern sits in its own dashed inset,
  *  because nothing here is committed yet. */
-function SearchCard({ name, summary, ms, stat, error, animate }: {
+function SearchCard({ name, summary, ms, stat, error, animate, t }: {
   name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+  t?: string;
 }) {
   return (
     <ActionRow
+          t={t}
       tier="glance"
       shape={toolShape(name)}
       accent={toolAccent(name)}
@@ -936,12 +946,14 @@ function SearchCard({ name, summary, ms, stat, error, animate }: {
 
 /** The one round tag in a square UI, because the web is not this machine: the
  *  host reads bright, the rest of the URL dims behind it. */
-function WebCard({ name, summary, ms, stat, error, animate }: {
+function WebCard({ name, summary, ms, stat, error, animate, t }: {
   name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+  t?: string;
 }) {
   const host = hostOf(summary);
   return (
     <ActionRow
+          t={t}
       tier="reach"
       shape={toolShape(name)}
       accent={toolAccent(name)}
@@ -972,12 +984,14 @@ function WebCard({ name, summary, ms, stat, error, animate }: {
 /** A call out of this process and into another one, so the server's tag trails a
  *  patch cable across to the tool it reached — "get task" alone never said which
  *  task, so what it was called with follows. */
-function McpCard({ name, summary, ms, stat, error, animate }: {
+function McpCard({ name, summary, ms, stat, error, animate, t }: {
   name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
+  t?: string;
 }) {
   const { tool } = mcpParts(name);
   return (
     <ActionRow
+          t={t}
       tier="reach"
       shape={toolShape(name)}
       accent={toolAccent(name)}
@@ -1263,6 +1277,7 @@ export function ToolCard({
   stat,
   error,
   animate,
+  t,
 }: {
   name: string;
   summary: string;
@@ -1270,9 +1285,11 @@ export function ToolCard({
   stat?: string;
   error?: boolean;
   animate: boolean;
+  /** Turn-relative clock for SIGNAL LOG's gutter (see ActionRow). */
+  t?: string;
 }) {
   const kind = toolKind(name);
-  const rest = { ms, stat, error, animate };
+  const rest = { ms, stat, error, animate, t };
 
   if (kind === "mcp") return <McpCard name={name} summary={summary} {...rest} />;
   if (kind === "web") return <WebCard name={name} summary={summary} {...rest} />;
@@ -1280,6 +1297,7 @@ export function ToolCard({
 
   return (
     <ActionRow
+          t={t}
       tier={toolTier(name)}
       shape={toolShape(name)}
       accent={toolAccent(name)}
@@ -1442,6 +1460,7 @@ export const RunStream = memo(function RunStream({
   tokens = null,
   openResults = false,
   toolStyle = "stamp",
+  turnStarted,
   onRunCommand,
   onQuote,
   onOpenFile,
@@ -1450,7 +1469,7 @@ export const RunStream = memo(function RunStream({
   showAll = false,
   boot = null,
 }: {
-  events: RunEvent[];
+  events: TimedEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
   /** What this turn is waiting on before its first token, or null. */
@@ -1463,6 +1482,10 @@ export const RunStream = memo(function RunStream({
   /** How a structured result is drawn — the transcript's OUTPUT STYLE setting.
    *  "plain" draws no widget at all (see lib/toolwidget). */
   toolStyle?: ToolStyle;
+  /** Epoch seconds the turn opened. With each event's own `at` (store.transcript)
+   *  this is the turn-relative clock SIGNAL LOG prints in its gutter. Absent on
+   *  a turn the store hasn't echoed back, which leaves the gutter empty. */
+  turnStarted?: number;
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
@@ -1474,6 +1497,13 @@ export const RunStream = memo(function RunStream({
    *  browser's find is about to look for. */
   showAll?: boolean;
 }) {
+  // T+ for SIGNAL LOG's gutter. Every other language ignores `data-t`, so this
+  // costs one subtraction per row and nothing else.
+  const clockAt = (e: TimedEvent): string | undefined => {
+    if (turnStarted == null || e.at == null) return undefined;
+    const s = Math.max(0, e.at - turnStarted);
+    return s < 100 ? s.toFixed(1) : String(Math.round(s));
+  };
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
   // Derived from the length rather than stored as an index, so a running turn's
   // window slides with its tail instead of freezing where it was opened.
@@ -1712,6 +1742,7 @@ export const RunStream = memo(function RunStream({
                   stat={done?.is_error ? undefined : done?.stat}
                   error={done?.is_error}
                   animate={animate}
+                  t={clockAt(event)}
                 />
                 {done?.is_error && done.stat ? (
                   <div className="mt-2 ml-[18px]"><ErrLine text={done.stat} /></div>
