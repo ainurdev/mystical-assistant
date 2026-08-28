@@ -268,6 +268,7 @@ export function SessionsPanel(props: Props) {
   const [projQ, setProjQ] = useState("");
   const [projAll, setProjAll] = useState(false);
   const [branchQ, setBranchQ] = useState("");
+  const [parentMenu, setParentMenu] = useState(false);
 
   // Browser state — mode + project order remembered across reloads.
   const [mode, setMode] = useState<Mode>(() => loadPrefs().mode);
@@ -497,10 +498,11 @@ export function SessionsPanel(props: Props) {
     setNsOpen(false); setNsNewOpen(false); setNsNewBranch("");
   }
 
-  function cycleParent() {
-    const i = Math.max(0, branches.indexOf(nsParent));
-    setNsParent(branches[(i + 1) % Math.max(1, branches.length)] || nsParent);
-  }
+  // FROM is a text box over the branch list, so a typo has to be caught here
+  // rather than by git failing a minute later. An exact match lists everything —
+  // otherwise reopening the menu after a pick would show that one branch.
+  const parentOk = !nsParent || branches.includes(nsParent);
+  const parentHits = parentOk ? branches : branches.filter((b) => b.toLowerCase().includes(nsParent.toLowerCase()));
 
   // Form pickers: searchable, and long lists stay collapsed until asked for.
   const q = projQ.trim().toLowerCase();
@@ -626,14 +628,51 @@ export function SessionsPanel(props: Props) {
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
             <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>FROM</span>
-            <button
-              onClick={cycleParent} title="parent branch — click to cycle"
-              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", padding: "3px 7px", minWidth: 0 }}
-            >
+            {/* Type to filter, or open the list — same popup shape as the order menu. */}
+            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, flex: "0 1 220px", minWidth: 0, border: `1px solid ${parentOk ? "color-mix(in srgb, var(--purple) 30%, transparent)" : "var(--err)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", padding: "3px 7px" }}>
               <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{nsParent || "main"}</span>
-              <span style={{ color: "var(--purple-g)", flex: "none" }}>⟳</span>
-            </button>
+              <input
+                value={nsParent} onFocus={() => setParentMenu(true)} onClick={() => setParentMenu(true)}
+                onChange={(e) => { setNsParent(e.target.value); setParentMenu(true); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") { setParentMenu(false); return; }
+                  if (e.key === "Enter" && parentHits[0]) { e.preventDefault(); setNsParent(parentHits[0]); setParentMenu(false); }
+                }}
+                placeholder="main" title="parent branch — type to search"
+                style={{ flex: 1, minWidth: 0, border: 0, background: "transparent", outline: "none", color: parentOk ? "var(--purple-h)" : "var(--err)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", padding: 0 }}
+              />
+              <button
+                onMouseDown={(e) => e.preventDefault()} onClick={() => setParentMenu((o) => !o)}
+                title={`${branches.length} branches`} aria-expanded={parentMenu}
+                style={{ flex: "none", border: 0, background: "transparent", padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", lineHeight: 1, color: "var(--purple-g)" }}
+              >▾</button>
+              {parentMenu && (
+                <>
+                  <div onClick={() => setParentMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+                  <div style={{ position: "absolute", top: "calc(100% + 2px)", left: -1, right: -1, zIndex: 97, maxHeight: 190, overflowY: "auto",
+                                border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel)",
+                                boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                    {parentHits.map((b) => (
+                      <button
+                        key={b} onClick={() => { setNsParent(b); setParentMenu(false); }}
+                        onMouseEnter={() => setChipHov(`par:${b}`)} onMouseLeave={() => setChipHov("")}
+                        style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0, display: "flex", alignItems: "center", gap: 5,
+                                 background: b === nsParent ? "color-mix(in srgb, var(--purple) 16%, transparent)"
+                                   : chipHov === `par:${b}` ? "color-mix(in srgb, var(--purple) 8%, transparent)" : "transparent",
+                                 color: b === nsParent ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", padding: "5px 7px" }}
+                      >
+                        <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
+                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
+                      </button>
+                    ))}
+                    {parentHits.length === 0 && (
+                      <div style={{ fontSize: "var(--t9)", color: "var(--txl)", padding: "5px 7px" }}>no branch matches</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            {!parentOk && <span style={{ flex: "none", whiteSpace: "nowrap", fontSize: "var(--t9)", color: "var(--err-g)" }}>no such branch</span>}
           </div>
           <input
             value={nsNewBranch} onChange={(e) => setNsNewBranch(e.target.value)}
@@ -645,9 +684,10 @@ export function SessionsPanel(props: Props) {
       )}
       <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
         <button
-          onClick={start}
+          onClick={start} disabled={nsNewOpen && !parentOk}
+          title={nsNewOpen && !parentOk ? `FROM: no branch named “${nsParent}”` : undefined}
           onMouseEnter={() => setStartHov(true)} onMouseLeave={() => setStartHov(false)}
-          style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: startHov ? "color-mix(in srgb, var(--purple) 26%, transparent)" : "color-mix(in srgb, var(--purple) 16%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          style={{ flex: 1, appearance: "none", cursor: nsNewOpen && !parentOk ? "not-allowed" : "pointer", opacity: nsNewOpen && !parentOk ? 0.45 : 1, border: "1px solid var(--purple)", background: startHov ? "color-mix(in srgb, var(--purple) 26%, transparent)" : "color-mix(in srgb, var(--purple) 16%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
         ><span style={{ color: "var(--purple)" }}>▸</span>START SESSION</button>
         <button
           onClick={() => setNsOpen(false)}
