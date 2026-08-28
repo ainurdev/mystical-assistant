@@ -270,6 +270,10 @@ def _external_mcp(disabled_tools: "list[str] | None",
             continue
         if s["name"] in defs:
             extra[s["name"]] = defs[s["name"]]
+        elif s.get("dir"):
+            # Local to a different project: this cwd's claude couldn't load it
+            # even without strict mode, so skipping it hides nothing.
+            continue
         else:
             strict = False
     return extra, strict
