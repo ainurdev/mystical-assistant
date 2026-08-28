@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
-import { useStickyFlag } from "../../lib/prefs";
+import { useStickyFlag, useStickyStr } from "../../lib/prefs";
 import type { ProjectGroup } from "./ProjectsPanel";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
@@ -39,6 +39,11 @@ interface Props {
 }
 
 type Mode = "attention" | "projects" | "recent";
+/** How much of a row's provenance it prints. `notable` is the default and the
+ *  point of the setting: on a machine where most sessions sit on master in the
+ *  main checkout, printing "master" on every row is a column of noise that
+ *  hides the two rows that are somewhere else. */
+type Detail = "notable" | "all" | "none";
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
@@ -47,6 +52,16 @@ const ORDER_LABEL: Record<OrderMode, string> = {
   recent: "recently used", alpha: "a → z", biggest: "biggest", custom: "custom",
 };
 const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
+
+const DETAIL_LABEL: Record<Detail, string> = {
+  notable: "only what differs", all: "branch + worktree", none: "nothing",
+};
+const DETAIL_TIP: Record<Detail, string> = {
+  notable: "Show a branch only when it isn't main/master, and a worktree only when it isn't the main checkout",
+  all: "Show the branch and worktree on every row",
+  none: "No branch or worktree on any row",
+};
+const DETAILS: Detail[] = ["notable", "all", "none"];
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -111,7 +126,7 @@ function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFl
 }
 
 function SessionRow({
-  s, on, v, flag, branch, pinned, showDot, showProj, showBranch, compact, pulse, onPin, onAttach,
+  s, on, v, flag, branch, pinned, showDot, showProj, detail, compact, pulse, onPin, onAttach,
 }: {
   s: SessionBrief;
   on: boolean;
@@ -121,7 +136,7 @@ function SessionRow({
   pinned: boolean;
   showDot: boolean;  // PROJECTS rows carry the state dot; lane rows wear it as their left edge
   showProj: boolean; // lane rows name their project; PROJECTS rows sit under a header that already does
-  showBranch: boolean; // branch turned off panel-wide
+  detail: Detail;    // how much provenance the meta line prints
   compact: boolean;  // title only
   pulse: boolean;    // a turn is in flight — the one state that earns motion
   onPin: () => void;
@@ -130,14 +145,21 @@ function SessionRow({
   const [hov, setHov] = useState(false);
   const tint = projectTint(s.project);
   const fv = flag ? FLAG_VIEW[flag] : null;
-  // A sidebar has no room for a full ref, so a row shows the branch's last
-  // segment and lets the worktree collapse to one glyph. The full ref lives in
-  // the row tooltip. Compact drops the whole meta line; the ⎇ toggle drops the
-  // branch alone, for people who work on one branch and don't need telling.
+  // A sidebar has no room for a full ref, so a row prints the branch's last
+  // segment; the full ref lives in the row tooltip. Compact drops the whole meta
+  // line, and DETAILS decides how much of the rest is worth the width.
+  // `s.worktree` is empty for the main checkout (git.worktree_name), so "in a
+  // worktree at all" and "not the main worktree" are the same question.
+  const onDefault = branch === "master" || branch === "main";
   const inWorktree = !!(s.worktree || s.work_cwd);
   const wtTitle = s.work_cwd ? `working in ${s.work_cwd}` : s.worktree ? `worktree ${s.worktree}` : "";
-  const branchShown = showBranch && !!branch;
-  const metaShow = !compact && !!(showProj || branchShown || inWorktree || fv || s.goal);
+  const branchShown = detail === "all" ? !!branch : detail === "notable" && !!branch && !onDefault;
+  // A worktree usually carries the branch of the same name, and then the row
+  // would say it twice — only a tree named something else earns the second word.
+  // Under ALL it always earns it, because that is what ALL was asked for.
+  const wtShown = detail !== "none" && inWorktree
+    && (detail === "all" || !branchShown || s.worktree !== branch.split("/").pop());
+  const metaShow = !compact && !!(showProj || branchShown || wtShown || fv || s.goal);
   return (
     <div
       onClick={onAttach}
@@ -182,8 +204,11 @@ function SessionRow({
                 ⎇ {branch.split("/").pop()}
               </span>
             )}
-            {inWorktree && (
-              <span title={wtTitle} style={{ flex: "none", color: "var(--acc)" }}>⧉</span>
+            {wtShown && (
+              <span title={wtTitle} style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
+                                             whiteSpace: "nowrap", color: "var(--acc)" }}>
+                ⧉{s.worktree ? ` ${s.worktree}` : ""}
+              </span>
             )}
             {fv && (
               <span title={fv.t} style={{ flex: "none", color: fv.c }}>{fv.l}</span>
@@ -214,25 +239,6 @@ function SessionRow({
                        color: pulse ? "var(--ok)" : "var(--txl)" }}>{ago(s.updated)}</span>
       </div>
     </div>
-  );
-}
-
-/** Dashed full-width row action under a project group — START SESSION for a
- *  project with none yet. */
-function DashedRow({ label, onClick, title }: { label: string; onClick: () => void; title?: string }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <button
-      onClick={onClick} title={title}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{
-        width: "100%", margin: "1px 0 9px", appearance: "none", cursor: "pointer",
-        border: `1px dashed ${hov ? "color-mix(in srgb, var(--acc) 40%, transparent)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`,
-        background: hov ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent",
-        color: hov ? "var(--tx)" : "#7f9d97", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
-        padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-      }}
-    >{label}</button>
   );
 }
 
@@ -273,9 +279,11 @@ export function SessionsPanel(props: Props) {
   const [overRel, setOverRel] = useState<string | null>(null);
   // Row density — remembered, because it tracks the screen you use, not the task.
   const [compact, setCompact] = useStickyFlag("hud-sessions-compact");
-  // Branch off — the meta line drops it. Stored inverted so the default
-  // (nothing in localStorage) keeps the branch on.
-  const [noBranch, setNoBranch] = useStickyFlag("hud-sessions-nobranch");
+  // How much provenance each row prints. Remembered, because it tracks the
+  // machine you work on — one repo on one branch wants less than fifteen.
+  const [detailPref, setDetail] = useStickyStr("hud-sessions-detail", "notable");
+  const detail = (DETAILS.includes(detailPref as Detail) ? detailPref : "notable") as Detail;
+  const [detailMenu, setDetailMenu] = useState(false);
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
   const [folded, setFolded] = useState(true);
   // Projects you collapsed with the header. ponytail: not persisted — a collapse
@@ -411,7 +419,7 @@ export function SessionsPanel(props: Props) {
 
   const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean) => (
     <SessionRow
-      key={s.id} s={s} showDot={showDot} showProj={showProj} showBranch={!noBranch} compact={compact}
+      key={s.id} s={s} showDot={showDot} showProj={showProj} detail={detail} compact={compact}
       on={s.id === selectedSessionId}
       v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
@@ -685,7 +693,8 @@ export function SessionsPanel(props: Props) {
             );
           })}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, height: 38, marginTop: 11, borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, height: 38, marginTop: 11, position: "relative",
+                      borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)" }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flex: "none" }} aria-hidden="true">
             <circle cx="5" cy="5" r="3.6" stroke="var(--txl)" strokeWidth="1.3" />
             <line x1="7.8" y1="7.8" x2="11" y2="11" stroke="var(--txl)" strokeWidth="1.3" strokeLinecap="round" />
@@ -711,12 +720,36 @@ export function SessionsPanel(props: Props) {
             </svg>
           </button>
           <button
-            onClick={() => setNoBranch((v) => !v)}
-            title={noBranch ? "show the branch on every row" : "hide the branch"}
-            onMouseEnter={() => setHov("branch")} onMouseLeave={() => setHov("")}
+            onClick={() => setDetailMenu((o) => !o)}
+            title={`Row details — ${DETAIL_LABEL[detail]}`}
+            aria-expanded={detailMenu}
+            onMouseEnter={() => setHov("detail")} onMouseLeave={() => setHov("")}
             style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
-                     fontSize: "var(--t12)", lineHeight: 1, color: hov === "branch" ? "var(--acc)" : noBranch ? "var(--txl)" : "var(--acc)" }}
+                     fontSize: "var(--t12)", lineHeight: 1,
+                     color: detailMenu || hov === "detail" ? "var(--acc)" : detail === "none" ? "var(--txl)" : "var(--acc)" }}
           >⎇</button>
+          {detailMenu && (
+            <>
+              <div onClick={() => setDetailMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+              <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 168,
+                            border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
+                            boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS</div>
+                {DETAILS.map((d) => (
+                  <button
+                    key={d} onClick={() => { setDetail(d); setDetailMenu(false); }}
+                    title={DETAIL_TIP[d]}
+                    onMouseEnter={() => setHov(`det:${d}`)} onMouseLeave={() => setHov("")}
+                    style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
+                             background: detail === d ? "color-mix(in srgb, var(--acc) 14%, transparent)"
+                               : hov === `det:${d}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                             color: detail === d ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
+                             fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
+                  >{detail === d ? "▸ " : "\u00a0\u00a0 "}{DETAIL_LABEL[d]}</button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {mode !== "projects" && (
@@ -869,10 +902,6 @@ export function SessionsPanel(props: Props) {
                                  fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: ".1em",
                                  color: hov === `more:${g.rel}` ? "var(--acc)" : "var(--txl)", cursor: "pointer" }}
                       >{open.has(g.rel) ? "show less ↑" : `${rest} more ↓`}</button>
-                    )}
-                    {!isShut && g.sessionCount === 0 && !sq && (
-                      <DashedRow label="+ START SESSION" title="start a session in this project"
-                        onClick={() => openFor(g.rel)} />
                     )}
                   </div>
                 </div>
