@@ -877,16 +877,15 @@ export function ToolWidget({ spec, accent, style, children }: {
  *  the caller's cue to draw the code block it would have drawn. That fallback
  *  is the whole safety property: a malformed block costs a nicer rendering,
  *  never the text. */
-export function BlockWidget({ type, value }: { type: string; value: unknown }) {
+export function BlockWidget({ type, value, style = "stamp" }: {
+  type: string; value: unknown; style?: ToolStyle;
+}) {
   const body = drawWidget(type, value);
   if (!body) return null;
   const idiom = idiomFor(type);
   const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
   return (
-    // ponytail: a model-typed block wears the default material, not the
-    // session's — Markdown has no style prop and four callers would have to
-    // grow one. Thread it through if the mismatch ever reads as a bug.
-    <div className="tw" data-tw="stamp" data-idiom={idiom} data-said="">
+    <div className="tw" data-tw={style} data-idiom={idiom} data-said="">
       {idiom === "plate" && <span className="tw-rail" aria-hidden />}
       {head && (
         <div className="tw-head">

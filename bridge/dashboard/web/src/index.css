@@ -1792,70 +1792,163 @@ input {
 /* === THE SESSION'S IDIOM ===================================================
    OUTPUT STYLE is how a whole session reads, not just how a tool widget draws.
    `data-style` sits on the transcript scroller (hud/Terminal.tsx) and every
-   family below answers to it: your prompt, the action ledger, the run window,
-   the agent block, and the reply with its tables and its code.
+   family below answers to it, in the order the Chat Elements sheet lays them
+   out: your prompt, the reply, the thought, three tiers and eight tag shapes,
+   a folded run, a terminal, the agent block, the five idioms and the widget
+   bodies they hold, a claim, a finding, a meter, a verdict, and a block the
+   model typed itself.
 
-   CONTROL PLATE is what the rest of this file already authors — hard edges, a
-   fill for rank, no radius — so it adds only the two rules that press it
-   further than the base goes. The other four are overrides off it, and each is
-   deliberately short: a language is three or four decisions applied
-   everywhere, not a second stylesheet. */
+   Each language is one answer to one question — WHAT CARRIES RANK — and every
+   rule below is downstream of its own answer. That is why none of them is a
+   border swap:
 
-/* ── CONTROL PLATE — the base, stamped harder. Rank is fill weight, so a mark
-   row carries a real fill instead of a 4% wash, and the one tag shape with a
-   radius squares up: nothing on a plate is round. */
+     CONTROL PLATE  fill weight
+     WIRE           the stroke weight of a lead
+     SIGNAL LOG     a chip's saturation
+     LEDGER PRESS   a rule's weight, an indent, ink or italic
+     HALO           how far a surface floats
+
+   CONTROL PLATE is what the rest of this file already authors, so it adds only
+   what presses it further; the other four are overrides off it. */
+
+/* ══ CONTROL PLATE ══ chrome is the signal ═════════════════════════════════
+   The base, stamped harder. A mark gets a real fill rather than a 4% wash, the
+   one round tag squares up, and every well a widget draws takes the hard edge
+   a plate has. Nothing here is soft and nothing here is round. */
 [data-style="stamp"] .actrow[data-tier="mark"] { background: color-mix(in srgb, var(--h) 10%, transparent); }
 [data-style="stamp"] .actrow[data-tier="mark"]:hover { background: color-mix(in srgb, var(--h) 15%, transparent); }
 [data-style="stamp"] .ax-tag[data-shape="round"] { border-radius: 0; }
+[data-style="stamp"] .ax-pill { border-radius: 0; }
+/* the thought is stamped too — hatched, because it is the one step that
+   produced nothing to plate */
+[data-style="stamp"] .thk {
+  background: repeating-linear-gradient(135deg, var(--ac-03) 0 4px, transparent 4px 8px);
+  border-top: 1px solid var(--ac-06); border-bottom: 1px solid var(--ac-06);
+  padding: 0 8px;
+}
+[data-style="stamp"] .ax-drawer { border: 1px solid var(--ac-08); border-top: 0; }
+[data-style="stamp"] .ax-stat { border: 1px solid var(--ac-08); padding: 0 4px; }
+[data-style="stamp"] .agb-type { border-radius: 0; }
+[data-style="stamp"] .flc-dot,
+[data-style="stamp"] .flc-chip,
+[data-style="stamp"] .flc-btn,
+[data-style="stamp"] .flc-verd,
+[data-style="stamp"] .flc-node,
+[data-style="stamp"] .flc-lamp,
+[data-style="stamp"] .flc-shots img { border-radius: 0; }
+[data-style="stamp"] .md code,
+[data-style="stamp"] .md-code,
+[data-style="stamp"] .md img { border-radius: 0; }
 
-/* ── WIRE — nothing in the stream is a card. Every fill goes to nothing and
-   every frame becomes a lead, which moves rank entirely into stroke weight:
-   the row's bar is already 1px for a glance and 2px for a mark, so taking the
-   fills away is what makes that legible instead of decorative. */
+/* ══ WIRE ══ a schematic, one spine ════════════════════════════════════════
+   Rank is the stroke weight of a lead. Nothing is a card, so every fill goes to
+   nothing and every frame becomes a rule — what is left is the bar the action
+   row already varies (1px for a glance, 2px for a mark) finally doing the work
+   the fills were hiding. Hairlines only; the payload is the one solid thing. */
 [data-style="wire"] .pbub {
   border: 0; border-right: 1px solid var(--purple); background: none; padding: 0 10px 0 0;
 }
 [data-style="wire"] .abub {
   border: 0; border-left: 1px solid var(--acc); background: none; padding-left: 10px;
 }
+/* the thought hangs off a dashed lead: it looked, it did not reach */
+[data-style="wire"] .thk { margin-left: 17px; padding-left: 9px; border-left: 1px dashed var(--ac-12); }
 [data-style="wire"] .actrow,
 [data-style="wire"] .actrow[data-tier="mark"] { background: none; }
 [data-style="wire"] .actrow:hover,
 [data-style="wire"] .actrow[data-tier="mark"]:hover { background: var(--ac-03); }
 [data-style="wire"] .actrow + .actrow { border-top-color: transparent; }
-[data-style="wire"] .ax-tag[data-shape="fill"] { background: none; color: var(--h); }
+/* the eight shapes as leads and outlines — no shape may carry a fill */
+[data-style="wire"] .ax-tag[data-shape="fill"] {
+  background: none; color: var(--h);
+  border: 2px solid color-mix(in srgb, var(--h) 60%, transparent);
+}
 [data-style="wire"] .ax-tag[data-shape="round"] {
   border-radius: 0; background: none;
   border: 1px solid color-mix(in srgb, var(--h) 38%, transparent);
 }
-[data-style="wire"] .ax-window,
-[data-style="wire"] .ax-drawer { border: 0; border-left: 1px solid var(--ac-16); background: none; }
+[data-style="wire"] .ax-tag[data-shape="rail"] { border-left-width: 2px; }
+[data-style="wire"] .ax-tag[data-shape="term"] { border: 1px solid color-mix(in srgb, var(--h) 38%, transparent); }
+[data-style="wire"] .ax-pill {
+  border-radius: 0; background: none;
+  border: 1px solid color-mix(in srgb, var(--h) 30%, transparent);
+}
+[data-style="wire"] .ax-drawer {
+  background: none; border-top: 0;
+  margin-left: 21px; padding-left: var(--axtag); border-left: 1px solid var(--ac-12);
+}
+/* a terminal run is a heavier lead, not a window */
+[data-style="wire"] .ax-window {
+  border: 0; background: none;
+  border-left: 2px solid color-mix(in srgb, var(--h) 55%, transparent);
+}
+[data-style="wire"] .ax-window > .ax-drawer { border-left: 0; margin-left: 0; }
 [data-style="wire"] .agb { border: 0; background: none; }
 [data-style="wire"] .agb::before,
 [data-style="wire"] .agb::after { display: none; }
+[data-style="wire"] .agb-type { border-width: 2px; }
+[data-style="wire"] .agb-rail::after { display: none; }
+[data-style="wire"] .flc { border: 0; background: none; border-left: 1px solid var(--ac-16); }
+/* the idioms: a plate earns one hairline box, a field one rule; the two
+   zero-chrome ones keep the lead the material gave them */
+[data-style="wire"] .tw[data-idiom="plate"] { border: 1px solid var(--ac-12); padding-left: 0; }
+[data-style="wire"] .tw[data-idiom="plate"] > .tw-head { padding: 4px 9px 3px 9px; }
+[data-style="wire"] .tw[data-idiom="plate"] > .tw-body { padding: 5px 9px 7px 9px; }
+[data-style="wire"] .tw[data-idiom="field"] { background: none; border-top: 1px solid var(--ac-12); }
+[data-style="wire"] .tw[data-idiom="ledger"] { background: none; }
+[data-style="wire"] .tw[data-idiom="strip"] { border-top-color: var(--ac-12); }
+[data-style="wire"] .flc-dot { border-radius: 0; }
+/* the widget bodies: outlines where there were fills, squares where lamps */
+[data-style="wire"] .flc-chip { background: none; border-radius: 0; }
+[data-style="wire"] .flc-btn { background: none; }
+[data-style="wire"] .flc-btn[data-go] { background: none; color: var(--h); border-width: 2px; box-shadow: none; }
+[data-style="wire"] .flc-lamp,
+[data-style="wire"] .flc-node { border-radius: 0; background: none; }
+[data-style="wire"] .flc-meter .seg i { border: 1px solid var(--ac-12); background: none; }
+[data-style="wire"] .flc-meter .seg i[data-on] { background: var(--acc); box-shadow: none; }
+[data-style="wire"] .flc-verd { background: none; border-left-width: 2px; }
+[data-style="wire"] .flc-out,
+[data-style="wire"] .flc-hunk { background: none; }
+[data-style="wire"] .flc-shots img { border-radius: 0; }
+[data-style="wire"] .flc-bar { background: none; border: 1px solid var(--acc); }
 [data-style="wire"] .md { line-height: 1.55; }
 [data-style="wire"] .md code { background: none; border-color: transparent; padding: 0; }
 [data-style="wire"] .md-code { border: 0; background: none; border-left: 1px solid var(--border); }
 [data-style="wire"] .md-code-lang { border: 0; background: none; padding-left: 9px; }
-[data-style="wire"] .md blockquote { background: none; }
+[data-style="wire"] .md blockquote,
+[data-style="wire"] .md-admonition { background: none; }
 [data-style="wire"] .md h1,
 [data-style="wire"] .md h2 { border-bottom-color: var(--ac-12); }
 [data-style="wire"] .md td { border-bottom-color: transparent; }
-[data-style="wire"] .md-admonition { background: none; }
+[data-style="wire"] .md-tablewrap { border: 0; background: none; }
 
-/* ── SIGNAL LOG — a log viewer, not a chat. Everything collapses onto one
-   tabular grid: single-line rows, a hairline under each, and the tag column
-   becomes a column of level chips. The eight shapes survive but stop being
-   eight different objects — they are the same chip at different saturations,
-   because in a log the level is a field and not a picture. */
+
+/* ══ SIGNAL LOG ══ gutter, level, row ══════════════════════════════════════
+   Rank is a chip's saturation, and nothing else moves. Everything in the
+   stream lands on one tabular grid: single-line rows with a hairline under
+   each, the tag column becomes a column of level chips, and only a payload
+   body is allowed to break the line. The eight shapes survive, but they stop
+   being eight different objects — in a log the level is a field, not a
+   picture, so they are the same chip at eight strengths.
+
+   The one thing the sheet's column has that this does not is the T+ gutter: a
+   row carries no turn-relative clock (bridge/transcript_jsonl.py never emits
+   one), and inventing a number in CSS would be a lie in a log. The RESULT
+   column is real, so it is the one that is drawn. */
 [data-style="signal"] .pbub,
 [data-style="signal"] .abub {
   border: 0; border-radius: 0; background: none;
   border-bottom: 1px solid var(--ac-06); padding: 3px 0 6px 0;
 }
+[data-style="signal"] .thk {
+  border-bottom: 1px solid var(--ac-06); padding-right: 4px;
+}
+[data-style="signal"] .thk-peek { font-style: normal; }
 [data-style="signal"] .actrow,
 [data-style="signal"] .actrow[data-tier="mark"] { background: none; }
 [data-style="signal"] .actrow + .actrow { border-top-color: var(--ac-06); }
+/* one chip shape for every kind, filling the level column; the shapes differ
+   by strength only */
 [data-style="signal"] .ax-tag {
   min-width: 100%; justify-content: center; padding: 0 5px;
   border: 0; border-radius: 0;
@@ -1865,25 +1958,74 @@ input {
 [data-style="signal"] .ax-tag[data-shape="dash"] {
   background: none; border-bottom: 1px dashed color-mix(in srgb, var(--h) 50%, transparent);
 }
+[data-style="signal"] .ax-tag[data-shape="box"] { background: color-mix(in srgb, var(--h) 14%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="round"] { background: color-mix(in srgb, var(--h) 18%, transparent); }
+[data-style="signal"] .ax-tag[data-shape="cable"] { background: color-mix(in srgb, var(--h) 22%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="rail"] { background: color-mix(in srgb, var(--h) 26%, transparent); }
+[data-style="signal"] .ax-tag[data-shape="term"] { background: color-mix(in srgb, var(--h) 30%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
-[data-style="signal"] .ax-window,
-[data-style="signal"] .ax-drawer { border-radius: 0; }
-[data-style="signal"] .agb { border-width: 0 0 0 2px; border-radius: 0; background: none; }
+[data-style="signal"] .ax-pill { border-radius: 0; }
+[data-style="signal"] .ax-stat { font-variant-numeric: tabular-nums; }
+[data-style="signal"] .ax-drawer { border-radius: 0; background: var(--code-bg); }
+/* a terminal run keeps its box but loses its border: a log's blocks are told
+   apart by the bar at their left, which is where the kind lives */
+[data-style="signal"] .ax-window {
+  border: 0; border-left: 2px solid color-mix(in srgb, var(--h) 65%, transparent);
+  border-radius: 0;
+}
+[data-style="signal"] .agb {
+  border: 0; border-left: 2px solid var(--h); border-radius: 0;
+  background: color-mix(in srgb, var(--h) 3%, var(--panel3));
+}
 [data-style="signal"] .agb::before,
 [data-style="signal"] .agb::after { display: none; }
+[data-style="signal"] .agb-rail { display: none; }
+[data-style="signal"] .agb-type {
+  border: 0; background: color-mix(in srgb, var(--h) 18%, transparent); border-radius: 0;
+}
+[data-style="signal"] .flc { border: 0; border-left: 2px solid var(--h); border-radius: 0; }
+/* the idioms: a plate is a block in the log, so it takes the left bar the
+   terminal and the agent block take; a field runs the full width a log gives */
+[data-style="signal"] .tw[data-idiom="plate"] {
+  border-left: 2px solid color-mix(in srgb, var(--h) 65%, transparent);
+  background: var(--code-bg); padding-left: 0;
+}
+[data-style="signal"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
+[data-style="signal"] .tw[data-idiom="plate"] > .tw-head { padding: 3px 9px 2px 9px; }
+[data-style="signal"] .tw[data-idiom="plate"] > .tw-body { padding: 3px 9px 6px 9px; }
+[data-style="signal"] .tw[data-idiom="field"] { background: var(--code-bg); border-top: 0; }
+[data-style="signal"] .tw[data-idiom="field"]::before,
+[data-style="signal"] .tw[data-idiom="field"]::after { content: none; }
+/* the widget bodies: everything that was a shape becomes a chip or a bar */
+[data-style="signal"] .flc-chip {
+  border: 0; border-radius: 0; background: color-mix(in srgb, var(--acc) 8%, transparent);
+}
+[data-style="signal"] .flc-btn { border-radius: 0; }
+[data-style="signal"] .flc-glyph { font-size: var(--t8); }
+[data-style="signal"] .flc-lamp,
+[data-style="signal"] .flc-dot { border-radius: 0; }
+[data-style="signal"] .flc-lamp { width: 6px; height: 6px; }
+[data-style="signal"] .flc-node { border-radius: 0; }
+[data-style="signal"] .flc-meter .seg i { border-radius: 0; box-shadow: none; }
+[data-style="signal"] .flc-verd { border-radius: 0; border-left-width: 3px; }
+[data-style="signal"] .flc-out { border-left-width: 3px; }
+[data-style="signal"] .flc-shots img { border-radius: 0; }
 [data-style="signal"] .md { line-height: 1.55; }
 [data-style="signal"] .md code,
-[data-style="signal"] .md-code { border-radius: 0; }
+[data-style="signal"] .md-code,
+[data-style="signal"] .md img,
+[data-style="signal"] .md blockquote,
+[data-style="signal"] .md-admonition { border-radius: 0; }
+[data-style="signal"] .md-tablewrap { border: 0; background: none; }
 
-/* ── LEDGER PRESS — type does the framing, so the frames go. Not one box in
-   the stream: rank is a rule's weight, an indent, and whether the tag is set
-   in ink or in italic — a glance leans, a mark stands up in the hue. Prose
-   turns serif because it is printed rather than rendered; the payload keeps
-   the mono it was measured in. Runs warm, the way NOTE did before it: the
-   brand reserves that temperature for the surfaces that are not instruments,
-   and a printed page is not one. */
+/* ══ LEDGER PRESS ══ type does the framing ═════════════════════════════════
+   Rank is a rule's weight, an indent, and whether a label is set in ink or in
+   italic — a glance leans, a reach stands roman, a mark stands up in the hue.
+   So the frames go: not one box in the stream, and every fill becomes either a
+   rule or a change of face. Prose turns serif because it is printed rather
+   than rendered; a payload keeps the mono it was measured in. Runs warm, the
+   register the brand reserves for surfaces that are not instruments — and a
+   printed page is not one. */
 [data-style="press"] {
   --press-rule: color-mix(in srgb, var(--warn) 20%, var(--border));
   --press-serif: ui-serif, Georgia, "Times New Roman", serif;
@@ -1891,11 +2033,13 @@ input {
 }
 [data-style="press"] .md,
 [data-style="press"] .pbub,
-[data-style="press"] .abub { font-family: var(--press-serif); }
+[data-style="press"] .abub,
+[data-style="press"] .agb-brief,
+[data-style="press"] .flc-findnote { font-family: var(--press-serif); }
 [data-style="press"] .md code,
 [data-style="press"] .md-code,
 [data-style="press"] .md pre { font-family: var(--mono); }
-/* the prompt is an epigraph, the reply is body copy with a section mark */
+/* the prompt is an epigraph; the reply is body copy under a section mark */
 [data-style="press"] .pbub {
   border: 0; border-bottom: 1px solid var(--press-rule);
   background: none; padding: 0 0 4px 0; font-style: italic;
@@ -1905,9 +2049,13 @@ input {
   content: "§"; float: left; margin: 1px 9px 0 0;
   color: color-mix(in srgb, var(--warn) 75%, transparent);
 }
+/* the thought is a marginal note, and the only place the page speaks italic */
+[data-style="press"] .thk { font-family: var(--press-serif); font-style: italic; }
+[data-style="press"] .thk-peek { opacity: 1; color: var(--txf); }
 [data-style="press"] .actrow,
 [data-style="press"] .actrow[data-tier="mark"] { background: none; }
 [data-style="press"] .actrow + .actrow { border-top-color: var(--press-rule); }
+/* ink or italic, and nothing else: the eight shapes give up their boxes */
 [data-style="press"] .ax-tag {
   border: 0; border-radius: 0; padding: 0; background: none;
   font-family: var(--press-serif); letter-spacing: 0; text-transform: lowercase;
@@ -1915,13 +2063,65 @@ input {
 }
 [data-style="press"] .actrow[data-tier="glance"] .ax-tag { font-style: italic; }
 [data-style="press"] .actrow[data-tier="mark"] .ax-tag { color: var(--h); font-weight: 600; }
-[data-style="press"] .ax-window,
-[data-style="press"] .ax-drawer {
-  border: 0; border-top: 1px solid var(--press-rule); border-radius: 0; background: none;
+[data-style="press"] .ax-tag[data-shape="dash"] {
+  text-decoration: underline dotted; text-underline-offset: 3px;
 }
-[data-style="press"] .agb { border: 0; background: none; border-radius: 0; }
+[data-style="press"] .ax-pill { border-radius: 0; background: none; color: var(--txd); padding: 0; }
+[data-style="press"] .ax-q { border: 0; font-style: italic; padding: 0; }
+[data-style="press"] .ax-drawer {
+  background: none; border-top: 1px solid var(--press-rule);
+}
+/* a terminal run is set as a table: rules, not a window */
+[data-style="press"] .ax-window {
+  border: 0; border-top: 2px solid var(--press-rule); border-bottom: 1px solid var(--press-rule);
+  background: none; border-radius: 0;
+}
+[data-style="press"] .agb {
+  border: 0; background: none; border-radius: 0;
+  border-left: 2px solid var(--press-rule);
+}
 [data-style="press"] .agb::before,
 [data-style="press"] .agb::after { display: none; }
+[data-style="press"] .agb-rail { width: 0; }
+[data-style="press"] .agb-rail::after { display: none; }
+[data-style="press"] .agb-type { border: 0; padding: 0; font-weight: 600; }
+[data-style="press"] .flc { border: 0; background: none; border-radius: 0; border-left: 2px solid var(--press-rule); }
+/* the idioms: a plate is a printed excerpt — indented, ruled, never boxed; a
+   field is a plate of figures with its caption under it */
+[data-style="press"] .tw[data-idiom="plate"] {
+  border: 0; border-left: 2px solid var(--press-rule); background: none; padding-left: 0;
+}
+[data-style="press"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
+[data-style="press"] .tw[data-idiom="plate"] > .tw-head { padding: 3px 0 2px 11px; }
+[data-style="press"] .tw[data-idiom="plate"] > .tw-body { padding: 2px 0 5px 11px; }
+[data-style="press"] .tw[data-idiom="field"] { background: none; border-bottom: 1px solid var(--press-rule); }
+[data-style="press"] .tw[data-idiom="ledger"] { background: none; border-top-color: var(--press-rule); }
+[data-style="press"] .tw[data-idiom="strip"] { border-top-color: var(--press-rule); }
+[data-style="press"] .flc-dot { border-radius: 0; }
+[data-style="press"] .flc-bar { background: var(--txb); }
+[data-style="press"] .tw[data-idiom="field"]::before,
+[data-style="press"] .tw[data-idiom="field"]::after { content: none; }
+/* the widget bodies: a printed ledger — glyphs keep their meaning, the boxes
+   around them do not survive the press */
+[data-style="press"] .flc-chip {
+  border: 0; border-radius: 0; background: none;
+  border-bottom: 1px solid var(--press-rule);
+}
+[data-style="press"] .flc-btn { border-radius: 0; background: none; }
+[data-style="press"] .flc-btn[data-go] { background: none; color: var(--h); border-color: var(--h); box-shadow: none; }
+[data-style="press"] .flc-lamp { border-radius: 0; }
+[data-style="press"] .flc-node { border-radius: 0; background: none; }
+[data-style="press"] .flc-meter .seg i { border-radius: 0; box-shadow: none; }
+[data-style="press"] .flc-meter .seg i[data-on] { background: var(--txb); }
+[data-style="press"] .flc-verd {
+  background: none; border-left: 0; padding-left: 0;
+  font-weight: 700; letter-spacing: 2.4px;
+}
+[data-style="press"] .flc-out { background: none; border-left-color: var(--press-rule); }
+[data-style="press"] .flc-hunk { background: none; }
+[data-style="press"] .flc-sev { font-variant: small-caps; text-transform: lowercase; letter-spacing: .4px; }
+[data-style="press"] .flc-shots img { border-radius: 0; border-color: var(--press-rule); }
+[data-style="press"] .flc-lab { font-family: var(--press-serif); font-style: italic; letter-spacing: 0; text-transform: none; }
 [data-style="press"] .md { line-height: 1.7; }
 [data-style="press"] .md h1,
 [data-style="press"] .md h2 { border-bottom-color: var(--press-rule); }
@@ -1934,12 +2134,16 @@ input {
 [data-style="press"] .md th { border-bottom: 2px solid var(--press-rule); }
 [data-style="press"] .md td { border-bottom-color: var(--press-rule); }
 
-/* ── HALO — surfaces, not rules. One radius everywhere, every hairline becomes
-   a soft fill, and the row that changed something is the only one that floats.
-   Same content, read rather than scanned: the ledger stops butting into one
-   block and becomes a stack of quiet cards with one loud one in it. */
+
+/* ══ HALO ══ surfaces, not rules ═══════════════════════════════════════════
+   Rank is how far a surface floats. There is no rule anywhere in this
+   language: every hairline becomes a soft fill, every frame becomes a radius
+   and a shadow, and the only thing that lifts off the page is the row that
+   changed something. Quiet by default, which is the whole of what keeps a loud
+   one loud. */
 [data-style="halo"] .pbub { border-radius: 16px 16px 6px 16px; padding: 7px 13px; }
 [data-style="halo"] .abub { border-radius: 6px 16px 16px 16px; padding: 7px 13px; }
+[data-style="halo"] .thk { padding: 1px 10px; border-radius: 999px; background: var(--ac-03); }
 [data-style="halo"] .actrow { border-radius: 12px; overflow: hidden; }
 [data-style="halo"] .actrow + .actrow { margin-top: 3px; border-top: 0; }
 [data-style="halo"] .actrow + .ax-drawer,
@@ -1949,17 +2153,77 @@ input {
   background: color-mix(in srgb, var(--h) 9%, var(--panel2));
   box-shadow: 0 3px 14px var(--shadow-pop);
 }
+/* the eight shapes as one pill at eight fills */
 [data-style="halo"] .ax-tag {
   border-radius: 999px; padding: 0 8px; border-color: transparent;
   background: color-mix(in srgb, var(--h) 12%, transparent);
 }
 [data-style="halo"] .ax-tag[data-shape="bare"] { background: none; padding: 0 2px; }
+[data-style="halo"] .ax-tag[data-shape="dash"] {
+  background: none; border: 1px dashed color-mix(in srgb, var(--h) 40%, transparent);
+}
+[data-style="halo"] .ax-tag[data-shape="rail"] {
+  border-left: 0; padding-left: 8px; background: color-mix(in srgb, var(--h) 20%, transparent);
+}
 [data-style="halo"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
-[data-style="halo"] .ax-window { border-radius: 16px; overflow: hidden; }
-[data-style="halo"] .ax-drawer { border-radius: 12px; }
-[data-style="halo"] .agb { border-radius: 16px; box-shadow: 0 5px 20px var(--shadow-pop); }
+/* `background: none`, never `display: none` — the bar is the actrow grid's
+   first column, and removing the item shifts every cell one track left. */
+[data-style="halo"] .actrow > .ax-bar { background: none; }
+[data-style="halo"] .actrow[data-err] { background: color-mix(in srgb, var(--err) 10%, var(--panel2)); }
+[data-style="halo"] .tw[data-idiom="ledger"] { border-radius: 12px; }
+[data-style="halo"] .tw[data-idiom="strip"] { border-top: 0; }
+[data-style="halo"] .flc-dot { border-radius: 50%; }
+[data-style="halo"] .ax-drawer { border-radius: 12px; border-top: 0; }
+[data-style="halo"] .ax-window { border-radius: 16px; overflow: hidden; border-color: transparent; }
+[data-style="halo"] .agb {
+  border-radius: 16px; border-color: transparent;
+  background: color-mix(in srgb, var(--h) 5%, var(--panel2));
+  box-shadow: 0 5px 20px var(--shadow-pop);
+}
 [data-style="halo"] .agb::before,
 [data-style="halo"] .agb::after { display: none; }
+[data-style="halo"] .agb-rail { border-radius: 999px; }
+[data-style="halo"] .agb-rail::after { display: none; }
+[data-style="halo"] .agb-type {
+  border-radius: 999px; border-color: transparent;
+  background: color-mix(in srgb, var(--h) 16%, transparent);
+}
+[data-style="halo"] .agb-rule { background: none; }
+[data-style="halo"] .flc { border-radius: 16px; border-color: transparent; }
+/* the idioms: a plate and a field are surfaces too, so they round and lift
+   rather than draw a boundary */
+[data-style="halo"] .tw[data-idiom="plate"] {
+  border-radius: 14px; overflow: hidden; padding-left: 0;
+  background: color-mix(in srgb, var(--h) 4%, var(--panel2));
+}
+[data-style="halo"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
+[data-style="halo"] .tw[data-idiom="plate"] > .tw-head { padding: 8px 13px 4px 13px; }
+[data-style="halo"] .tw[data-idiom="plate"] > .tw-body { padding: 2px 13px 10px 13px; }
+[data-style="halo"] .tw[data-idiom="field"] {
+  border: 0; border-radius: 14px; margin-right: 0;
+  background: color-mix(in srgb, var(--h) 4%, var(--panel2));
+  box-shadow: 0 4px 18px var(--shadow-pop);
+}
+[data-style="halo"] .tw[data-idiom="field"]::before,
+[data-style="halo"] .tw[data-idiom="field"]::after { content: none; }
+/* the widget bodies: one radius, and fill instead of stroke */
+[data-style="halo"] .flc-chip {
+  border-radius: 999px; border-color: transparent;
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+}
+[data-style="halo"] .flc-btn { border-radius: 999px; }
+[data-style="halo"] .flc-verd { border-radius: 999px; border-left: 0; padding: 2px 12px; }
+[data-style="halo"] .flc-verd[data-tone="good"] { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+[data-style="halo"] .flc-verd[data-tone="bad"] { background: color-mix(in srgb, var(--err) 14%, transparent); }
+[data-style="halo"] .flc-node { border-radius: 999px; }
+[data-style="halo"] .flc-meter .seg i { border-radius: 3px; }
+[data-style="halo"] .flc-out {
+  border-left: 0; border-radius: 12px; overflow: hidden;
+  background: color-mix(in srgb, var(--acc) 4%, var(--panel2));
+}
+[data-style="halo"] .flc-hunk { border-left: 0; border-radius: 10px; }
+[data-style="halo"] .flc-shots img { border-radius: 12px; border-color: transparent; }
+[data-style="halo"] .flc-bar { border-radius: 3px 3px 0 0; }
 [data-style="halo"] .md { line-height: 1.7; }
 [data-style="halo"] .md p { margin: 0.65em 0; }
 [data-style="halo"] .md li { margin: 0.3em 0; }

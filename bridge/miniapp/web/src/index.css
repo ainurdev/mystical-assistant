@@ -330,23 +330,49 @@ input {
 /* === THE SESSION'S IDIOM ===================================================
    OUTPUT STYLE is how a whole session reads, not just how a tool widget draws.
    `data-style` sits on the transcript root (routes/run.tsx); everything with a
-   name below answers to it — both bubbles, the agent block, the widgets, and
-   the reply with its tables and code.
+   name below answers to it — your bubble, the reply, the thought, the agent
+   block, the flow card, the five idioms and the widget bodies they hold.
 
    The phone's transcript is mostly Tailwind utilities, which have no name to
-   hook: what a style can reach here is what carries a class. That is the
+   hook: what a language can reach here is what carries a class. That is the
    reading surface, which is the part you are looking at on a phone anyway.
 
-   CONTROL PLATE is the authored default and adds nothing here. The other four
-   are overrides off it, one column of the Chat Elements sheet each. */
+   Each language is one answer to one question — WHAT CARRIES RANK — and every
+   rule is downstream of it, the same five answers the dashboard gives:
+
+     CONTROL PLATE  fill weight
+     WIRE           the stroke weight of a lead
+     SIGNAL LOG     a chip's saturation
+     LEDGER PRESS   a rule's weight, an indent, ink or italic
+     HALO           how far a surface floats
+
+   CONTROL PLATE is the authored default and adds only what presses the base
+   further; the other four are overrides off it. */
+
+/* -- CONTROL PLATE: stamped. The phone rounds panels, so this is the one place
+   the two idioms argue — the panel keeps its radius and everything printed ON
+   it goes hard, which is what a plate is. */
+[data-style="stamp"] .thk {
+  background: repeating-linear-gradient(135deg, var(--ac-03) 0 4px, transparent 4px 8px);
+  padding: 0 8px;
+}
+[data-style="stamp"] .flc-chip,
+[data-style="stamp"] .flc-btn,
+[data-style="stamp"] .flc-verd,
+[data-style="stamp"] .flc-node,
+[data-style="stamp"] .flc-lamp,
+[data-style="stamp"] .flc-dot,
+[data-style="stamp"] .flc-shots img { border-radius: 0; }
+[data-style="stamp"] .agb-type { border-radius: 0; }
 
 /* -- WIRE: nothing is a card. Fills go to nothing, frames become leads, and
-   what is left is colour carrying the kind — the phone's version of a
-   schematic, where the indent does the grouping a box used to. */
+   colour carries the kind — the phone's schematic, where the indent does the
+   grouping a box used to. */
 [data-style="wire"] .pbub {
   border-radius: 0; background: none; padding: 0 10px 0 0;
   color: var(--txb); border-right: 1px solid var(--tg-button);
 }
+[data-style="wire"] .thk { padding-left: 9px; border-left: 1px dashed var(--ac-12); }
 [data-style="wire"] .md {
   border-color: transparent; background: none; border-radius: 0;
   padding-left: 0; padding-right: 0; line-height: 1.55;
@@ -354,28 +380,88 @@ input {
 [data-style="wire"] .md code { background: none; border-color: transparent; padding: 0; }
 [data-style="wire"] .md pre { border: 0; background: none; border-radius: 0; border-left: 1px solid var(--border); }
 [data-style="wire"] .md td { border-bottom-color: transparent; }
+[data-style="wire"] .md-tablewrap { border: 0; background: none; }
 [data-style="wire"] .agb { border: 0; background: none; border-radius: 0; }
-[data-style="wire"] .flc { border: 0; background: none; border-radius: 0; }
+[data-style="wire"] .agb::before,
+[data-style="wire"] .agb::after { display: none; }
+[data-style="wire"] .agb-type { border-width: 2px; border-radius: 0; }
+[data-style="wire"] .agb-rail::after { display: none; }
+[data-style="wire"] .flc { border: 0; background: none; border-radius: 0; border-left: 1px solid var(--ac-16); }
+[data-style="wire"] .tw[data-idiom="plate"] { border: 1px solid var(--ac-12); padding-left: 0; }
+[data-style="wire"] .tw[data-idiom="plate"] > .tw-head { padding: 4px 10px 3px 10px; }
+[data-style="wire"] .tw[data-idiom="plate"] > .tw-body { padding: 5px 10px 8px 10px; }
+[data-style="wire"] .tw[data-idiom="ledger"] { background: none; }
+[data-style="wire"] .tw[data-idiom="field"] { background: none; border-top: 1px solid var(--ac-12); }
+[data-style="wire"] .flc-chip { background: none; border-radius: 0; }
+[data-style="wire"] .flc-btn { background: none; border-radius: 0; }
+[data-style="wire"] .flc-btn[data-go] { background: none; color: var(--h); border-width: 2px; box-shadow: none; }
+[data-style="wire"] .flc-lamp,
+[data-style="wire"] .flc-dot,
+[data-style="wire"] .flc-node { border-radius: 0; background: none; }
+[data-style="wire"] .flc-meter .seg i { border: 1px solid var(--ac-12); background: none; }
+[data-style="wire"] .flc-meter .seg i[data-on] { background: var(--acc); box-shadow: none; }
+[data-style="wire"] .flc-verd { background: none; border-left-width: 2px; }
+[data-style="wire"] .flc-out,
+[data-style="wire"] .flc-hunk { background: none; }
+[data-style="wire"] .flc-shots img { border-radius: 0; }
+[data-style="wire"] .flc-bar { background: none; border: 1px solid var(--acc); }
 
 /* -- SIGNAL LOG: a log viewer. Everything lands on one grid — the bubbles stop
-   being bubbles and become rows with a hairline under them, and nothing but a
-   payload body is allowed to break the line. */
+   being bubbles and become rows with a hairline under them, and blocks are
+   told apart by the bar at their left, where the kind lives. Nothing but a
+   payload body may break the line. */
 [data-style="signal"] .pbub {
   border-radius: 0; background: none; border: 0;
   border-bottom: 1px solid var(--ac-06); padding: 3px 0 6px 0; color: var(--txb);
 }
+[data-style="signal"] .thk { border-bottom: 1px solid var(--ac-06); }
 [data-style="signal"] .md {
   border-color: transparent; background: none; border-radius: 0;
   padding-left: 0; padding-right: 0; line-height: 1.55;
 }
-[data-style="signal"] .md code, [data-style="signal"] .md pre { border-radius: 0; }
-[data-style="signal"] .agb { border-radius: 0; border-width: 0 0 0 2px; background: none; }
-[data-style="signal"] .flc { border-radius: 0; }
+[data-style="signal"] .md code,
+[data-style="signal"] .md pre,
+[data-style="signal"] .md blockquote,
+[data-style="signal"] .md-admonition,
+[data-style="signal"] .md img { border-radius: 0; }
+[data-style="signal"] .md-tablewrap { border: 0; background: none; }
+[data-style="signal"] .agb {
+  border: 0; border-left: 2px solid var(--h); border-radius: 0;
+  background: color-mix(in srgb, var(--h) 3%, var(--panel3));
+}
+[data-style="signal"] .agb::before,
+[data-style="signal"] .agb::after { display: none; }
+[data-style="signal"] .agb-rail { display: none; }
+[data-style="signal"] .agb-type {
+  border: 0; border-radius: 0; background: color-mix(in srgb, var(--h) 18%, transparent);
+}
+[data-style="signal"] .flc { border: 0; border-left: 2px solid var(--h); border-radius: 0; }
+[data-style="signal"] .tw[data-idiom="plate"] {
+  border-left: 2px solid color-mix(in srgb, var(--h) 65%, transparent);
+  background: var(--code-bg); padding-left: 0;
+}
+[data-style="signal"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
+[data-style="signal"] .tw[data-idiom="plate"] > .tw-head { padding: 3px 10px 2px 10px; }
+[data-style="signal"] .tw[data-idiom="plate"] > .tw-body { padding: 3px 10px 7px 10px; }
+[data-style="signal"] .tw[data-idiom="field"] { background: var(--code-bg); border-top: 0; }
+[data-style="signal"] .flc-chip {
+  border: 0; border-radius: 0; background: color-mix(in srgb, var(--acc) 8%, transparent);
+}
+[data-style="signal"] .flc-btn { border-radius: 0; }
+[data-style="signal"] .flc-lamp,
+[data-style="signal"] .flc-dot,
+[data-style="signal"] .flc-node { border-radius: 0; }
+[data-style="signal"] .flc-meter .seg i { border-radius: 0; box-shadow: none; }
+[data-style="signal"] .flc-verd { border-radius: 0; border-left-width: 3px; }
+[data-style="signal"] .flc-out { border-left-width: 3px; }
+[data-style="signal"] .flc-shots img { border-radius: 0; }
 
-/* -- LEDGER PRESS: type does the framing, so the frames go. Prose turns serif
-   because it is printed rather than rendered; the payload keeps its mono. Runs
-   warm, the way NOTE did before it — the one surface here that is not a
-   screen. */
+
+/* -- LEDGER PRESS: type does the framing, so the frames go. Not one box on the
+   page: a rule's weight and a change of face carry what a fill used to. Prose
+   turns serif because it is printed rather than rendered; a payload keeps the
+   mono it was measured in. Runs warm, the register the brand reserves for
+   surfaces that are not screens. */
 [data-style="press"] {
   --press-rule: color-mix(in srgb, var(--warn) 20%, var(--border));
   --press-serif: ui-serif, Georgia, "Times New Roman", serif;
@@ -385,10 +471,16 @@ input {
   border-bottom: 1px solid var(--press-rule);
   font-family: var(--press-serif); font-style: italic; color: var(--txb);
 }
+[data-style="press"] .thk { font-family: var(--press-serif); font-style: italic; }
+[data-style="press"] .thk-peek { opacity: 1; }
 [data-style="press"] .md {
   border-color: transparent; background: none; border-radius: 0;
   padding-left: 0; padding-right: 0; line-height: 1.7;
   font-family: var(--press-serif);
+}
+[data-style="press"] .abub::before {
+  content: "§"; float: left; margin: 1px 9px 0 0;
+  color: color-mix(in srgb, var(--warn) 75%, transparent);
 }
 [data-style="press"] .md code, [data-style="press"] .md pre { font-family: var(--mono); }
 [data-style="press"] .md pre {
@@ -397,28 +489,119 @@ input {
 [data-style="press"] .md blockquote { background: none; border-left-color: var(--warn); }
 [data-style="press"] .md th { border-bottom: 2px solid var(--press-rule); }
 [data-style="press"] .md td { border-bottom-color: var(--press-rule); }
-[data-style="press"] .agb { border: 0; background: none; border-radius: 0; }
-[data-style="press"] .flc { border: 0; background: none; border-radius: 0; }
+[data-style="press"] .md-tablewrap { border: 0; background: none; }
+[data-style="press"] .agb {
+  border: 0; background: none; border-radius: 0;
+  border-left: 2px solid var(--press-rule);
+}
+[data-style="press"] .agb::before,
+[data-style="press"] .agb::after { display: none; }
+[data-style="press"] .agb-rail { width: 0; }
+[data-style="press"] .agb-rail::after { display: none; }
+[data-style="press"] .agb-type { border: 0; padding: 0; font-weight: 600; }
+[data-style="press"] .agb-brief { font-family: var(--press-serif); }
+[data-style="press"] .flc {
+  border: 0; background: none; border-radius: 0; border-left: 2px solid var(--press-rule);
+}
+[data-style="press"] .tw[data-idiom="plate"] {
+  border: 0; border-left: 2px solid var(--press-rule); background: none; padding-left: 0;
+}
+[data-style="press"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
+[data-style="press"] .tw[data-idiom="plate"] > .tw-head { padding: 3px 0 2px 11px; }
+[data-style="press"] .tw[data-idiom="plate"] > .tw-body { padding: 2px 0 6px 11px; }
+[data-style="press"] .tw[data-idiom="ledger"] { background: none; border-top-color: var(--press-rule); }
+[data-style="press"] .tw[data-idiom="strip"] { border-top-color: var(--press-rule); }
+[data-style="press"] .tw[data-idiom="field"] { background: none; border-bottom: 1px solid var(--press-rule); }
+[data-style="press"] .flc-chip {
+  border: 0; border-radius: 0; background: none;
+  border-bottom: 1px solid var(--press-rule);
+}
+[data-style="press"] .flc-btn { border-radius: 0; background: none; }
+[data-style="press"] .flc-btn[data-go] { background: none; color: var(--h); border-color: var(--h); box-shadow: none; }
+[data-style="press"] .flc-lamp,
+[data-style="press"] .flc-dot,
+[data-style="press"] .flc-node { border-radius: 0; background: none; }
+[data-style="press"] .flc-meter .seg i { border-radius: 0; box-shadow: none; }
+[data-style="press"] .flc-meter .seg i[data-on] { background: var(--txb); }
+[data-style="press"] .flc-verd {
+  background: none; border-left: 0; padding-left: 0;
+  font-weight: 700; letter-spacing: 2.4px;
+}
+[data-style="press"] .flc-out { background: none; border-left-color: var(--press-rule); }
+[data-style="press"] .flc-hunk { background: none; }
+[data-style="press"] .flc-sev { font-variant: small-caps; text-transform: lowercase; letter-spacing: .4px; }
+[data-style="press"] .flc-findnote { font-family: var(--press-serif); }
+[data-style="press"] .flc-lab { font-family: var(--press-serif); font-style: italic; letter-spacing: 0; text-transform: none; }
+[data-style="press"] .flc-bar { background: var(--txb); }
+[data-style="press"] .flc-shots img { border-radius: 0; border-color: var(--press-rule); }
 
 /* -- HALO: surfaces, not rules. Rounder than the phone's own idiom and roomy
    enough to sit with — the reply is a surface here, so it gets the air and a
-   real shadow instead of a border. */
+   real shadow instead of a border, and nothing on the page is a hairline. */
 [data-style="halo"] .pbub { border-radius: 20px 20px 6px 20px; padding: 10px 14px; }
+[data-style="halo"] .thk { padding: 1px 10px; border-radius: 999px; background: var(--ac-03); }
 [data-style="halo"] .md {
-  border-radius: 20px; border-bottom-left-radius: 8px;
+  border-radius: 20px; border-bottom-left-radius: 8px; border-color: transparent;
   padding: 11px 15px; line-height: 1.72;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.38);
 }
 [data-style="halo"] .md p { margin: 0.6em 0; }
 [data-style="halo"] .md li { margin: 0.3em 0; }
 [data-style="halo"] .md pre { border-radius: 14px; }
 [data-style="halo"] .md code { border-radius: 6px; }
 [data-style="halo"] .md blockquote { border-radius: 10px; padding: 0.4em 0.9em; background: var(--ac-03); }
+[data-style="halo"] .md-admonition { border-radius: 12px; }
+[data-style="halo"] .md img { border-radius: 14px; }
 [data-style="halo"] .md-tablewrap {
   border: 1px solid var(--border); border-radius: 14px;
   background: var(--panel2); padding: 9px 13px 10px;
 }
-[data-style="halo"] .agb { border-radius: 18px; box-shadow: 0 5px 20px rgb(0 0 0 / 0.42); }
-[data-style="halo"] .flc { border-radius: 16px; }
+[data-style="halo"] .agb {
+  border-radius: 18px; border-color: transparent;
+  background: color-mix(in srgb, var(--h) 5%, var(--panel2));
+  box-shadow: 0 5px 20px rgb(0 0 0 / 0.42);
+}
+[data-style="halo"] .agb::before,
+[data-style="halo"] .agb::after { display: none; }
+[data-style="halo"] .agb-rail { border-radius: 999px; }
+[data-style="halo"] .agb-rail::after { display: none; }
+[data-style="halo"] .agb-type {
+  border-radius: 999px; border-color: transparent;
+  background: color-mix(in srgb, var(--h) 16%, transparent);
+}
+[data-style="halo"] .flc { border-radius: 16px; border-color: transparent; }
+[data-style="halo"] .tw[data-idiom="plate"] {
+  border-radius: 14px; overflow: hidden; padding-left: 0;
+  background: color-mix(in srgb, var(--h) 4%, var(--panel2));
+}
+[data-style="halo"] .tw[data-idiom="plate"] > .tw-rail { display: none; }
+[data-style="halo"] .tw[data-idiom="plate"] > .tw-head { padding: 9px 15px 4px 15px; }
+[data-style="halo"] .tw[data-idiom="plate"] > .tw-body { padding: 2px 15px 12px 15px; }
+[data-style="halo"] .tw[data-idiom="ledger"] { border-radius: 12px; }
+[data-style="halo"] .tw[data-idiom="strip"] { border-top: 0; }
+[data-style="halo"] .tw[data-idiom="field"] {
+  border: 0; border-radius: 14px; margin-right: 0;
+  background: color-mix(in srgb, var(--h) 4%, var(--panel2));
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.38);
+}
+[data-style="halo"] .flc-chip {
+  border-radius: 999px; border-color: transparent;
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+}
+[data-style="halo"] .flc-btn { border-radius: 999px; }
+[data-style="halo"] .flc-verd { border-radius: 999px; border-left: 0; padding: 2px 12px; }
+[data-style="halo"] .flc-verd[data-tone="good"] { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+[data-style="halo"] .flc-verd[data-tone="bad"] { background: color-mix(in srgb, var(--err) 14%, transparent); }
+[data-style="halo"] .flc-node,
+[data-style="halo"] .flc-dot { border-radius: 999px; }
+[data-style="halo"] .flc-meter .seg i { border-radius: 3px; }
+[data-style="halo"] .flc-out {
+  border-left: 0; border-radius: 12px; overflow: hidden;
+  background: color-mix(in srgb, var(--acc) 4%, var(--panel2));
+}
+[data-style="halo"] .flc-hunk { border-left: 0; border-radius: 10px; }
+[data-style="halo"] .flc-shots img { border-radius: 12px; border-color: transparent; }
+[data-style="halo"] .flc-bar { border-radius: 3px 3px 0 0; }
 
 /* === THE AGENT BLOCK ======================================================
    A delegated run — Task, Agent, Skill. The one card that keeps a frame,

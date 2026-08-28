@@ -5,6 +5,7 @@ import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
 import { FileIcon } from "../lib/fileicon";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
+import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
@@ -115,12 +116,16 @@ function FileRefSpan({
 }
 
 export const Markdown = memo(function Markdown({
-  children, className = "", onOpenFile,
+  children, className = "", onOpenFile, toolStyle = "stamp",
 }: {
   children: string;
   className?: string;
   /** Given, inline code that parses as a repo path becomes a link. */
   onOpenFile?: OpenFile;
+  /** The session's output style, for a ```widget:``` block the model typed —
+   *  it is a result printed in the reply, so it wears the same material every
+   *  other result does. Callers outside a transcript keep the default. */
+  toolStyle?: ToolStyle;
 }) {
   return (
     <div className={`md ${className}`}>
@@ -168,7 +173,7 @@ export const Markdown = memo(function Markdown({
             if (wtype) {
               const value = widgetValue(code);
               if (value !== null) {
-                const drawn = <BlockWidget type={wtype} value={value} />;
+                const drawn = <BlockWidget type={wtype} value={value} style={toolStyle} />;
                 if (drawWidget(wtype, value)) return drawn;
               }
             }

@@ -605,7 +605,7 @@ function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animat
         THOUGHT
       </span>
       {peek && !open ? (
-        <span className="min-w-0 flex-1 truncate text-[length:var(--t11)] italic opacity-75">{peek}</span>
+        <span className="thk-peek min-w-0 flex-1 truncate text-[length:var(--t11)] italic opacity-75">{peek}</span>
       ) : (
         <span aria-hidden className="h-px flex-1 bg-border" />
       )}
@@ -621,7 +621,7 @@ function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animat
   );
   return (
     <div
-      className="ml-[18px] text-muted-2"
+      className="thk ml-[18px] text-muted-2"
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       {text ? (
@@ -656,7 +656,7 @@ function LogRow({ src, label, text, error, animate }:
   const color = error ? "var(--err)" : undefined;
   return (
     <div
-      className="ml-[18px] text-muted-2"
+      className="thk thk-log ml-[18px] text-muted-2"
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <button
@@ -1587,7 +1587,7 @@ export const RunStream = memo(function RunStream({
                     and it is the part worth reading — so it gets a bubble of its
                     own (MessageBlock) and a node on the rail where it starts. */}
                 <MessageBlock text={text} onQuote={onQuote}>
-                  <Markdown className="leading-relaxed" onOpenFile={onOpenFile}>{text}</Markdown>
+                  <Markdown className="leading-relaxed" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
                 </MessageBlock>
               </div>
             );

@@ -998,6 +998,16 @@ function ThemeCardGrid({
  *
  *  The wells are `inert`: a preview is a picture, so its links neither take a
  *  click nor a tab stop away from the tile that owns them. */
+/* Two payloads, not one: SOURCES draws in the zero-chrome STRIP idiom, which
+   is the idiom a material has no frame to show itself in. A tile that showed
+   only that would preview the language's typography and none of its chrome. */
+const STYLE_PREVIEW_PLATE: ToolWidgetSpec = {
+  label: "OUTPUT",
+  type: "output",
+  meta: "2 lines",
+  value: { cmd: "tsc -p tsconfig.app.json", ok: false, text: "lib/toolwidget.ts:41:12\nerror TS2322: not assignable to 'Idiom'" },
+};
+
 const STYLE_PREVIEW: ToolWidgetSpec = {
   label: "SOURCES",
   type: "sources",
@@ -1076,6 +1086,7 @@ function OutputStylePicker({
                 width: "100%",
               }}
             >
+              <ToolWidget spec={STYLE_PREVIEW_PLATE} accent={hue} style={o.key} />
               <ToolWidget spec={STYLE_PREVIEW} accent={hue} style={o.key} />
               <div className="md" style={{ marginTop: 9, fontSize: "var(--t11)" }}>
                 <div className="md-tablewrap">

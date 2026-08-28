@@ -12,6 +12,16 @@ import { TOOL_STYLES, useToolStyle, type ToolWidgetSpec } from "../lib/toolwidge
    The previews are `inert`: a picture, not a document — their links take
    neither a tap nor a tab stop from the row that owns them. */
 
+/* Two payloads, not one: SOURCES draws in the zero-chrome STRIP idiom, so a
+   tile showing only that would preview the language's type and none of its
+   chrome. OUTPUT is a PLATE, which is where a material has a frame to show. */
+const PREVIEW_PLATE: ToolWidgetSpec = {
+  label: "OUTPUT",
+  type: "output",
+  meta: "2 lines",
+  value: { cmd: "tsc -p tsconfig.app.json", ok: false, text: "lib/toolwidget.ts:41:12\nerror TS2322: not assignable to 'Idiom'" },
+};
+
 const PREVIEW: ToolWidgetSpec = {
   label: "SOURCES",
   type: "sources",
@@ -65,6 +75,7 @@ function OutputPage() {
               {/* data-style, not just the widget's own data-tw: the pick
                   governs the whole stream, so the well is a slice of one. */}
               <div inert data-style={o.key} className="border-t border-border bg-[var(--tg-bg)] px-3 py-3">
+                <ToolWidget spec={PREVIEW_PLATE} accent={hue} style={o.key} />
                 <ToolWidget spec={PREVIEW} accent={hue} style={o.key} />
                 <div className="md mt-2 text-[11px]">
                   <div className="md-tablewrap">

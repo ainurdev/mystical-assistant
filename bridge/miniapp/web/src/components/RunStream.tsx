@@ -135,7 +135,7 @@ function ThinkingRow({ ms, text }: { ms?: number; text?: string }) {
       <Brain size={12} className="flex-none" aria-hidden />
       <span className="flex-none text-[10px] tracking-[1px]">THOUGHT</span>
       {peek && !open ? (
-        <span className="min-w-0 flex-1 truncate text-[11px] italic opacity-75">{peek}</span>
+        <span className="thk-peek min-w-0 flex-1 truncate text-[11px] italic opacity-75">{peek}</span>
       ) : (
         <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
       )}
@@ -150,7 +150,7 @@ function ThinkingRow({ ms, text }: { ms?: number; text?: string }) {
     </>
   );
   return (
-    <div className="text-[var(--muted-2)]">
+    <div className="thk text-[var(--muted-2)]">
       {text ? (
         <button
           type="button"
@@ -1058,7 +1058,7 @@ export const RunStream = memo(function RunStream({
                 <div key={i} className="relative -ml-3 pl-3">
                   <RailNode />
                   <Card className="border border-[var(--tg-button)]/30">
-                    <Markdown className="text-sm leading-normal">{text}</Markdown>
+                    <Markdown className="text-sm leading-normal" toolStyle={toolStyle}>{text}</Markdown>
                   </Card>
                 </div>
               );
@@ -1071,7 +1071,7 @@ export const RunStream = memo(function RunStream({
             return (
               <div key={i} className="relative -ml-3 flex pl-3">
                 <RailNode />
-                <Markdown className="min-w-0 max-w-[85%] break-words rounded-2xl rounded-bl-sm border border-border bg-[var(--ac-06)] px-3 py-2 text-sm leading-normal">
+                <Markdown className="abub min-w-0 max-w-[85%] break-words rounded-2xl rounded-bl-sm border border-border bg-[var(--ac-06)] px-3 py-2 text-sm leading-normal" toolStyle={toolStyle}>
                   {text}
                 </Markdown>
               </div>

@@ -2,6 +2,7 @@ import { cloneElement, isValidElement, memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
+import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
@@ -52,7 +53,14 @@ function stripMarker(node: unknown): unknown {
   return node;
 }
 
-export const Markdown = memo(function Markdown({ children, className = "" }: { children: string; className?: string }) {
+export const Markdown = memo(function Markdown({ children, className = "", toolStyle = "stamp" }: {
+  children: string;
+  className?: string;
+  /** The session's output style, for a ```widget:``` block the model typed — it
+   *  is a result printed in the reply, so it wears the same material every
+   *  other result does. Callers outside a transcript keep the default. */
+  toolStyle?: ToolStyle;
+}) {
   return (
     <div className={`md ${className}`}>
       <ReactMarkdown
@@ -90,7 +98,7 @@ export const Markdown = memo(function Markdown({ children, className = "" }: { c
             if (wtype) {
               const value = widgetValue(code);
               if (value !== null && drawWidget(wtype, value))
-                return <BlockWidget type={wtype} value={value} />;
+                return <BlockWidget type={wtype} value={value} style={toolStyle} />;
             }
             return (
               <div className="md-code">
