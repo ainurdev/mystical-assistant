@@ -414,20 +414,18 @@ body {
   border-color: color-mix(in srgb, var(--acc) 45%, transparent);
 }
 /* The open session's left bar grows out of the row instead of fading in — a
-   colour fade from transparent goes through washed-out purple and reads as lag
-   at any duration. A composited scaleY snaps. Sits inside the row's own 2px
-   transparent border-left, so nothing shifts when it appears — and, unlike a
-   negative offset, it survives the paint containment `content-visibility` puts
-   on .vskip-card rows, so BY PROJECT marks the open session like RECENT does. */
+   colour fade from transparent goes through a washed-out mid-tone and reads as
+   lag at any duration. A composited scaleY snaps. And, unlike a negative
+   offset, it survives the paint containment `content-visibility` puts on
+   .vskip-card rows, so PROJECTS marks the open session like the lanes do. */
 .sessrow::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 6px;
-  bottom: 6px;
+  top: 0;
+  bottom: 0;
   width: 2px;
-  border-radius: 2px;
-  background: var(--purple);
+  background: var(--acc);
   transform: scaleY(0);
   transition: transform 0.18s var(--ease-hud);
 }
