@@ -444,15 +444,15 @@ export function App() {
     saveSettings(settings);
   }, [settings]);
 
-  // Picking a theme also applies its default CRT toggles (design onPick) —
-  // except within a family (AURORA's colours, CLAUDE's accents), which is one
-  // profile, so your toggles survive the switch.
+  // Picking a theme also applies its default CRT toggles and chat language
+  // (design onPick) — except within a family (AURORA's colours, CLAUDE's
+  // accents), which is one profile, so your toggles survive the switch.
   function setTheme(t: ThemeKey) {
     const d = themeDef(t);
     setSettings((s) =>
       sameFamily(s.theme, t)
         ? { ...s, theme: t }
-        : { ...s, theme: t, scanlines: d.crt, sweep: d.swp, glow: d.glw });
+        : { ...s, theme: t, scanlines: d.crt, sweep: d.swp, glow: d.glw, toolStyle: d.chat });
   }
   function toggleCrt(key: "scanlines" | "sweep" | "glow") {
     setSettings((s) => ({ ...s, [key]: !s[key] }));
@@ -1092,6 +1092,7 @@ export function App() {
       }
       setHeldMap((m) => omit(m, sid));
       liveTurns.current.add(res.job_id);
+      markWorking(res.session_id || sid);
       // Only paint the turn if that session is still the one on screen; if you
       // moved on it belongs to the session you left, and its transcript poll
       // picks it up when you go back.
@@ -1933,7 +1934,7 @@ export function App() {
                 px and squeezing it. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
-              style={{ gridTemplateColumns: `clamp(260px,22vw,340px) minmax(0,1fr) ${settings.rightOpen ? "calc(clamp(230px,20vw,296px) + 48px)" : "48px"}`, minWidth: 0 }}
+              style={{ gridTemplateColumns: shellCols(settings.rightOpen), minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>

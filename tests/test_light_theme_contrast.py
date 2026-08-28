@@ -39,7 +39,8 @@ GHOST_FLOOR = 3.25
 # `gloam` are ported from vvd.world, whose themes carry only an accent over a
 # wallpaper; their ink tiers are derived, so this is the check that they hold.
 CANVAS = {"normal": "#e3e9ef", "newsprint": "#e8e2d3", "candy": "#f6d7e8",
-          "apex": "#e4e9ee", "gloam": "#e6e8e0", "riso": "#f0eee9"}
+          "apex": "#e4e9ee", "gloam": "#e6e8e0", "riso": "#f0eee9",
+          "foundry": "#dcdcd6"}
 
 # The light ground has to stay a GROUND, not a spotlight: `panel` is the raised
 # card and `canvas` sits below it, so the biggest surface is never the brightest.
