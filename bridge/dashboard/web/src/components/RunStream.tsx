@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
-  Search, Globe, Bot, Plug, Quote,
+  Search, Globe, Quote,
   Terminal, Layers, Brain,
   GitBranch, FileText, FilePen, Trash2, FolderTree, Play, Package,
   FlaskConical, Cpu, Database, Container,
@@ -160,15 +160,10 @@ const CMD_ICON: Record<CmdKind, typeof Terminal> = {
 
 /** The window's three lights, the one thing that says "terminal" at a glance.
  *  A lone command draws them itself — a header row for one line is all frame. */
-function Lights({ accent, running }: { accent: string; running: boolean }) {
+function Lights({ running }: { running: boolean }) {
   return (
-    <span className="flex flex-none gap-[3px]" aria-hidden>
-      <i
-        className="block h-[5px] w-[5px]"
-        style={{ background: accent, animation: running ? "blink 1.1s steps(1) infinite" : undefined }}
-      />
-      <i className="block h-[5px] w-[5px] bg-[var(--txl)]" />
-      <i className="block h-[5px] w-[5px] bg-[var(--txg)]" />
+    <span className="ax-winlights" data-run={running ? "" : undefined} aria-hidden>
+      <i /><i /><i />
     </span>
   );
 }
@@ -300,21 +295,22 @@ function TerminalGroup({
   return (
     <div
       className="ax-window"
+      data-err={failed ? "" : undefined}
       style={{
-        borderColor: failed ? "color-mix(in srgb, var(--err) 32%, transparent)" : undefined,
+        ...({ "--h": accent } as React.CSSProperties),
         ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <div className="flex items-center gap-2 border-b border-border bg-[var(--ac-03)] px-2.5 py-1">
-        <Lights accent={accent} running={running} />
-        <span className="flex flex-none items-center gap-1.5 text-[length:var(--t95)] tracking-[2px]" style={{ color: accent }}>
-          <Terminal size={11} aria-hidden />
-          BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
+      <div className="ax-winhead">
+        <Lights running={running} />
+        {/* No `>_`: not one of the sheet's five columns draws a glyph here —
+            the word is the label, and the run's state is the pip beside it. */}
+        <span className="ax-wintag">BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}</span>
+        <i className="ax-winrule" aria-hidden />
+        <span className="ax-winmeta">
+          <span>{cmds.length} CMDS</span>
+          {slow(ms) && <span>{dur(ms)}</span>}
         </span>
-        <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {cmds.length} CMDS</span>
-        {slow(ms) && (
-          <span className="flex-none text-[length:var(--t95)] tracking-[1px] text-muted-2">· {dur(ms)}</span>
-        )}
       </div>
       {cmds.map((c, k) => (
         <CommandRow
@@ -457,27 +453,25 @@ function EditGroup({
   return (
     <div
       className="ax-window"
+      data-err={failed ? "" : undefined}
       style={{
-        borderColor: failed ? "color-mix(in srgb, var(--err) 32%, transparent)" : edge(accent),
+        ...({ "--h": accent } as React.CSSProperties),
         ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <div
-        className="flex items-center gap-2 border-b px-2.5 py-1 text-[length:var(--t95)] tracking-[2px]"
-        style={{ borderColor: edge(accent), color: failed ? "var(--err)" : accent }}
-      >
-        <FilePen size={11} aria-hidden />
-        <span className="truncate">EDIT{failed ? " // FAILED" : ""}</span>
-        <span className="flex-none tracking-[1px] text-muted-2">· {files.length} FILES</span>
-        {edits.length > files.length && (
-          <span className="flex-none tracking-[1px] text-muted-2">· {edits.length} EDITS</span>
-        )}
-        {slow(ms) && <span className="flex-none tracking-[1px] text-muted-2">· {dur(ms)}</span>}
-        {/* The one figure the header exists for: what this whole run did to the
-            tree, without opening a single drawer. */}
-        <span className="ml-auto flex flex-none gap-1.5 tracking-[1px]">
-          <span style={{ color: "var(--ok)" }}>+{add}</span>
-          <span style={{ color: "var(--err)" }}>−{del}</span>
+      <div className="ax-winhead">
+        <span className="ax-wintag truncate">EDIT{failed ? " // FAILED" : ""}</span>
+        <i className="ax-winrule" aria-hidden />
+        {/* The last figure is the one the header exists for: what this whole run
+            did to the tree, without opening a single drawer. */}
+        <span className="ax-winmeta">
+          <span>{files.length} FILES</span>
+          {edits.length > files.length && <span>{edits.length} EDITS</span>}
+          {slow(ms) && <span>{dur(ms)}</span>}
+          <span className="ax-winnum">
+            <span style={{ color: "var(--ok)" }}>+{add}</span>
+            <span style={{ color: "var(--err)" }}>−{del}</span>
+          </span>
         </span>
       </div>
       {files.map((f) => (
@@ -1234,19 +1228,19 @@ function CallGroup({
   return (
     <div
       className="ax-window"
+      data-err={failed ? "" : undefined}
       style={{
-        borderColor: failed ? "color-mix(in srgb, var(--err) 32%, transparent)" : undefined,
+        ...({ "--h": accent } as React.CSSProperties),
         ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <div
-        className="flex items-center gap-2 border-b px-2.5 py-1 text-[length:var(--t95)] tracking-[2px]"
-        style={{ borderColor: edge(accent), color: failed ? "var(--err)" : accent }}
-      >
-        {kind === "mcp" ? <Plug size={11} aria-hidden /> : kind === "web" ? <Globe size={11} aria-hidden /> : <Bot size={11} aria-hidden />}
-        <span className="truncate">{tag}</span>
-        <span className="flex-none tracking-[1px] text-muted-2">· {calls.length} CALLS</span>
-        {slow(total) && <span className="flex-none tracking-[1px] text-muted-2">· {dur(total)}</span>}
+      <div className="ax-winhead">
+        <span className="ax-wintag truncate">{tag}</span>
+        <i className="ax-winrule" aria-hidden />
+        <span className="ax-winmeta">
+          <span>{calls.length} CALLS</span>
+          {slow(total) && <span>{dur(total)}</span>}
+        </span>
       </div>
       {calls.map((c, k) => (
         <ActionRow
