@@ -325,6 +325,12 @@ export function App() {
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
+  // openBlank drops the open session on purpose while POST /session is in
+  // flight. The restore below reads that as "nothing open" and races the mint —
+  // when the session list wins you get a flash of the chat you just left before
+  // the new one lands. One-shot: the pass openBlank triggers is the only one to
+  // skip, so a failed create doesn't leave restore switched off.
+  const skipRestore = useRef(false);
   const liveTurns = useRef<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -585,6 +591,7 @@ export function App() {
     void loadSessions().then((ss) => {
       if (!live) return;
       if (!sessionId) {
+        if (skipRestore.current) { skipRestore.current = false; return; }
         // Back to the chat you had open, wherever it lives; one that's gone
         // falls through to the newest here, as before. Opening it is all this
         // takes — every panel reads the *session's* repo, and a run carries it
@@ -1227,6 +1234,7 @@ export function App() {
   // chat opens on nothing first and the transcript's own loading state carries
   // the wait; the real session drops in behind it.
   function openBlank() {
+    skipRestore.current = true;
     setSessionId(null);
     setTurns([]);
     setLoadingSession(true);
