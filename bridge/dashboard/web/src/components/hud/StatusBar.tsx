@@ -10,20 +10,23 @@ import { Drop } from "../Composer";
    seen. Undefined upstream = backend too old to report it; stay quiet rather
    than guess. Counts come from the last fetch, so "SYNCED" means "synced as
    of what this checkout knows", which the tooltip says out loud. */
+/* Segment texts are the mock's compact forms — the words live in the tooltip,
+   the counts in the chain (a 296px zone can't carry "UNPUSHED" next to CHG and
+   PUSH without invading the rail). */
 function syncChip(git: GitStatus): { text: string; warn: boolean; title: string } | null {
   if (git.upstream === undefined) return null;
   const { ahead, behind, upstream } = git;
   if (!upstream)
-    return { text: "LOCAL ONLY", warn: true,
+    return { text: "LOCAL", warn: true,
              title: "This branch has no remote tracking branch — it exists only in this checkout" };
   if (ahead && behind)
-    return { text: `↑${ahead} ↓${behind} DIVERGED`, warn: true,
+    return { text: `↑${ahead} ↓${behind}`, warn: true,
              title: `Diverged from ${upstream}: ${ahead} local, ${behind} remote. Counts are from the last fetch.` };
   if (ahead)
-    return { text: `↑${ahead} UNPUSHED`, warn: true,
-             title: `${ahead} commit${ahead === 1 ? "" : "s"} not yet on ${upstream}` };
+    return { text: `↑${ahead}`, warn: true,
+             title: `${ahead} unpushed commit${ahead === 1 ? "" : "s"} not yet on ${upstream}` };
   if (behind)
-    return { text: `↓${behind} BEHIND`, warn: true,
+    return { text: `↓${behind}`, warn: true,
              title: `${behind} commit${behind === 1 ? "" : "s"} on ${upstream} not pulled in. Counts are from the last fetch.` };
   return { text: "SYNCED", warn: false,
            title: `Even with ${upstream} as of the last fetch` };
@@ -148,7 +151,9 @@ export function StatusBar(props: StatusBarProps) {
   // describes (or at the end of the centre zone when that track is collapsed).
   const chain = (
     <span className="chain" style={{
-      display: "inline-flex", alignItems: "center", minWidth: 0, maxWidth: "100%",
+      // overflow hidden: at the narrowest widths the chain clips inside its own
+      // border instead of painting over the rail's ⌘K.
+      display: "inline-flex", alignItems: "center", minWidth: 0, maxWidth: "100%", overflow: "hidden",
       fontFamily: "var(--mono)", fontSize: "var(--t95)", letterSpacing: "normal",
       border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
     }}>
