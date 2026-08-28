@@ -644,8 +644,6 @@ class Handler(BaseHTTPRequestHandler):
                 "events": store.list_hook_events(_qs_int(qs, "limit") or 50),
                 "sources": list(hooks.SOURCES),
                 "public": bool(config.PREVIEW_HOSTNAME)})
-        if path == "/local/tags":
-            return self._json({"tags": store.tag_counts()})
         if path == "/local/prompts":
             return self._json({"prompts": store.prompt_history()})
         if path == "/local/skills":
@@ -954,25 +952,6 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": f"lifecycle must be one of {store.LIFECYCLES}"}, 400)
             store.set_lifecycle(sid, state)
             return self._json({"ok": True, "lifecycle": state})
-        if path.startswith("/local/sessions/") and path.endswith("/tags"):
-            sid = path[len("/local/sessions/"):-len("/tags")]
-            s = store.get_session(sid)
-            if not s or s["chat_id"] != chat:
-                return self._json({"error": "not found"}, 404)
-            tags = body.get("tags")
-            if not isinstance(tags, list):
-                return self._json({"error": "tags must be a list"}, 400)
-            # store.set_tags normalizes and caps; it returns what it kept.
-            return self._json({"ok": True, "tags": store.set_tags(sid, tags)})
-        if path == "/local/tags":
-            # Rename a tag everywhere, or drop it (new omitted/empty). Renaming
-            # onto a tag that already exists is how you merge two.
-            old = (body.get("tag") or "").strip()
-            if not old:
-                return self._json({"error": "tag required"}, 400)
-            new = (body.get("new") or "").strip() or None
-            changed = store.retag(old, new)
-            return self._json({"ok": True, "changed": changed, "tags": store.tag_counts()})
         if path.startswith("/local/sessions/") and path.endswith("/retitle"):
             sid = path[len("/local/sessions/"):-len("/retitle")]
             s = store.get_session(sid)

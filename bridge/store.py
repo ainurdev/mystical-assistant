@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   fallback_policy   TEXT,
   goal              TEXT,
   lifecycle         TEXT,
-  tags              TEXT,
   fork_from         TEXT,
   ctx_tokens        INTEGER,
   autocompact       TEXT
@@ -159,10 +158,6 @@ def init() -> None:
         if "lifecycle" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN lifecycle TEXT")
             c.execute("UPDATE sessions SET lifecycle='done' WHERE archived=1")
-        # Topic tags as a JSON array; NULL/[] = untagged. Written by the titler's
-        # existing one-shot, so tagging costs no extra model call.
-        if "tags" not in scols:
-            c.execute("ALTER TABLE sessions ADD COLUMN tags TEXT")
         # A duplicated session carries its source's claude session id here instead
         # of in claude_session_id: its first run resumes that transcript with
         # --fork-session, so claude mints a fresh id and the original is never
@@ -413,12 +408,8 @@ def parse_goal(raw: "str | None") -> dict | None:
     return g if isinstance(g, dict) else None
 
 
-MAX_TAGS = 4
-_TAG_MAX_LEN = 24
-
-
-def parse_tags(raw: "str | None") -> list[str]:
-    """Stored tag JSON as a list of strings; anything malformed reads as no tags."""
+def parse_str_list(raw: "str | None") -> list[str]:
+    """A stored JSON array as a list of strings; anything malformed reads as []."""
     if not raw:
         return []
     try:
@@ -426,77 +417,6 @@ def parse_tags(raw: "str | None") -> list[str]:
     except ValueError:
         return []
     return [t for t in v if isinstance(t, str)] if isinstance(v, list) else []
-
-
-def clean_tags(tags) -> list[str]:
-    """Normalize model- or user-supplied tags: lowercase, trimmed, deduped, capped.
-    Shared by the titler and the manual-tag endpoint so both store the same shape."""
-    out: list[str] = []
-    for t in tags if isinstance(tags, list) else []:
-        t = " ".join(str(t).split()).strip("#").lower()[:_TAG_MAX_LEN].strip()
-        if t and t not in out:
-            out.append(t)
-    return out[:MAX_TAGS]
-
-
-def get_tags(session_id: str) -> list[str]:
-    with closing(_connect()) as c:
-        row = c.execute("SELECT tags FROM sessions WHERE id=?",
-                        (session_id,)).fetchone()
-    return parse_tags(row["tags"]) if row else []
-
-
-def set_tags(session_id: str, tags) -> list[str]:
-    """Replace this session's tags. Returns what was actually stored."""
-    clean = clean_tags(tags)
-    with closing(_connect()) as c:
-        c.execute("UPDATE sessions SET tags=? WHERE id=?",
-                  (json.dumps(clean) if clean else None, session_id))
-    return clean
-
-
-def tag_counts() -> "list[dict]":
-    """Every tag in use with how many sessions carry it, most-used first. The
-    tag list is derived, not a table — a tag exists exactly as long as some
-    session wears it."""
-    counts: dict[str, int] = {}
-    with closing(_connect()) as c:
-        for row in c.execute("SELECT tags FROM sessions WHERE tags IS NOT NULL"):
-            for t in parse_tags(row["tags"]):
-                counts[t] = counts.get(t, 0) + 1
-    return [{"tag": t, "count": n} for t, n in
-            sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
-
-
-def retag(old: str, new: "str | None") -> int:
-    """Rename `old` to `new` across every session, or drop it when `new` is None.
-    Renaming onto an existing tag is a merge — a session wearing both ends up
-    with one, because tags are a set. Returns the number of sessions changed."""
-    old = (old or "").strip().lower()
-    if not old:
-        return 0
-    dest = clean_tags([new]) if new else []
-    changed = 0
-    with closing(_connect()) as c:
-        c.execute("BEGIN IMMEDIATE")
-        rows = c.execute(
-            "SELECT id, tags FROM sessions WHERE tags IS NOT NULL").fetchall()
-        for row in rows:
-            tags = parse_tags(row["tags"])
-            if old not in tags:
-                continue
-            # Position is preserved on a rename: the tag keeps its place in the
-            # row's strip rather than jumping to the end.
-            out: list[str] = []
-            for t in tags:
-                t = dest[0] if (t == old and dest) else t
-                if t != old and t not in out:
-                    out.append(t)
-            c.execute("UPDATE sessions SET tags=? WHERE id=?",
-                      (json.dumps(out) if out else None, row["id"]))
-            changed += 1
-        c.execute("COMMIT")
-    return changed
 
 
 # --- shares -----------------------------------------------------------------
@@ -659,7 +579,7 @@ def default_disabled_tools() -> list[str]:
     from bridge import toolsets  # local: toolsets imports runner
     stored = get_setting(DEFAULT_TOOLS_KEY)
     if stored is not None:
-        return parse_tags(stored)
+        return parse_str_list(stored)
     allowed = {s.strip() for s in config.MCP_SERVERS.split(",") if s.strip()}
     return sorted(s["rule"] for s in toolsets.servers() if s["name"] not in allowed)
 
@@ -670,7 +590,7 @@ def parse_disabled_tools(raw: "str | None") -> list[str]:
     NULL means never configured, and falls back to default_disabled_tools().
     A stored "[]" is a real choice (everything on) and is honoured — including
     by the run itself, which no longer re-denies on top."""
-    return default_disabled_tools() if raw is None else parse_tags(raw)
+    return default_disabled_tools() if raw is None else parse_str_list(raw)
 
 
 def get_setting(key: str) -> "str | None":
@@ -914,8 +834,8 @@ def duplicate(session_id: str) -> dict | None:
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         c.execute("UPDATE sessions SET title=?, title_source=?, fork_from=?, "
-                  "tags=?, fallback_policy=?, updated=? WHERE id=?",
-                  (title, "manual", src.get("claude_session_id"), src.get("tags"),
+                  "fallback_policy=?, updated=? WHERE id=?",
+                  (title, "manual", src.get("claude_session_id"),
                    src.get("fallback_policy"), now, copy["id"]))
         # New turn ids so the two sessions' turns never collide; events follow
         # their turn through the same map.

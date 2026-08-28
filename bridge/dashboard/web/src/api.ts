@@ -42,7 +42,6 @@ export interface SessionBrief {
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
-  tags?: string[]; // topic tags, written by the titler's existing one-shot
 }
 
 export interface StoreTurn {
@@ -322,12 +321,6 @@ export interface QueueItem {
 }
 // The whole per-session queue. `seq` is a revision counter (SSE dedup); the
 // server publishes a fresh snapshot on every change.
-/** A tag and how many sessions wear it (SETTINGS · TAGS manages these). */
-export interface TagCount {
-  tag: string;
-  count: number;
-}
-
 export interface QueueSnapshot {
   session_id: string;
   seq: number;
@@ -996,14 +989,6 @@ export const api = {
         method: "POST",
         body: { project, branch },
       }),
-  // Replaces the session's tags; the bridge normalizes and caps, and returns
-  // what it actually kept.
-  setTags: (id: string, tags: string[]) =>
-    req<{ ok: boolean; tags: string[] }>(
-      `/local/sessions/${encodeURIComponent(id)}/tags`, {
-        method: "POST",
-        body: { tags },
-      }),
   // done | abandoned | backlog, or null to make it active again.
   setLifecycle: (id: string, lifecycle: Lifecycle | null) =>
     req<{ ok: boolean; lifecycle: Lifecycle | null }>(
@@ -1265,17 +1250,8 @@ export const api = {
       method: "POST",
       body: { project, path, content, ...(branch ? { branch } : {}) },
     }),
-  // --- tags: the set every session's strip draws from ---
-  tags: () => req<{ tags: TagCount[] }>("/local/tags"),
   /** Every session's prompts, newest first and deduped — what Ctrl+R searches. */
   promptHistory: () => req<{ prompts: string[] }>("/local/prompts"),
-  /** Rename a tag everywhere. `next` omitted deletes it; naming an existing tag
-   *  merges the two. */
-  retag: (tag: string, next?: string) =>
-    req<{ ok: boolean; changed: number; tags: TagCount[] }>("/local/tags", {
-      method: "POST",
-      body: { tag, ...(next ? { new: next } : {}) },
-    }),
   /** Mint a read-only link to one session, or revoke every link it has. The
    *  page is served by the bridge itself — which binds loopback, so a link only
    *  opens elsewhere if you deliberately expose the port. */

@@ -133,7 +133,6 @@ def _session_brief(s: dict) -> dict:
             "disabled_tools": store.parse_disabled_tools(s.get("disabled_tools")),
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
-            "tags": store.parse_tags(s.get("tags")),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),
             "branch": wt_branch or (git.current_branch_cached(cwd) if cwd else "")}

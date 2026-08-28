@@ -8,7 +8,7 @@ import {
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
   MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
   Power, Radio, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
-  ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, Tag, TriangleAlert, Type,
+  ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, X, type LucideIcon,
 } from "lucide-react";
 import { TOOL_STYLES, type ToolStyle, type ToolWidgetSpec } from "../../lib/toolwidget";
@@ -27,7 +27,6 @@ import {
   type FreeAgents,
   type McpInfo,
   type StartupState,
-  type TagCount,
   type UpdateInfo,
   type Weather,
 } from "../../api";
@@ -116,7 +115,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "session" | "tags" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system";
+  | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system";
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -133,7 +132,6 @@ const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: st
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD" },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
   { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK" },
-  { key: "tags", label: "TAGS", hint: "topics across sessions", icon: Tag, group: "THE WORK" },
   { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK" },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK" },
   { key: "mcp", label: "MCP", hint: "servers · auth", icon: Plug, group: "THE WORK" },
@@ -164,7 +162,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "notifications", sec: "PER EVENT", terms: "sound per event pack finished needs you error" },
   { tab: "session", sec: "RUN DEFAULTS", terms: "model agent mode effort ponytail permission plan bypass opus sonnet" },
   { tab: "session", sec: "PROFILES", terms: "preset saved knobs tools restore" },
-  { tab: "tags", sec: "TAGS", terms: "topics rename merge chart sessions" },
   { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
   { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
@@ -343,7 +340,6 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "PER EVENT": ListMusic,
   "RUN DEFAULTS": SlidersHorizontal,
   PROFILES: Bookmark,
-  TAGS: Tag,
   "MODEL-SPENDING EXTRAS": Sparkles,
   "CLAUDE CODE": SquareTerminal,
   OPENCODE: Boxes,
@@ -1440,110 +1436,6 @@ const POLICY_BLURB: Record<string, string> = {
  *  turns you typed until you decide otherwise. The ones that only fire on a
  *  press ship on, and are listed so the spend is still visible and stoppable.
  *  Takes effect on the next turn — no restart. */
-/** Every tag in play, with the two operations that actually come up: fix a name,
- *  or get rid of one. Merging isn't a separate button — renaming a tag to one
- *  that already exists is a merge, which is both true of the storage and one
- *  fewer thing to explain. */
-function TagsPanel() {
-  const [tags, setTags] = useState<TagCount[]>([]);
-  const [manage, setManage] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    void api.tags().then((r) => { if (live) setTags(r.tags); }).catch(() => {});
-    return () => { live = false; };
-  }, []);
-
-  async function commit(tag: string, next?: string) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const r = await api.retag(tag, next);
-      setTags(r.tags);
-    } catch { /* the list just doesn't change */ }
-    setBusy(false);
-    setEditing(null);
-  }
-
-  if (!tags.length)
-    return <div style={CARD}><span style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>No tags yet — they arrive with the first named session.</span></div>;
-
-  // The bar IS the chart: each tag against the most-used one. A count alone
-  // doesn't say whether 12 is a lot here; beside the longest bar it does. Only
-  // the head is worth drawing — the tail is a hundred one-session tags, which
-  // is a wall of stubs, so the full set lives in the list below instead.
-  const top = tags.slice(0, 12);
-  const peak = tags[0].count;
-
-  const nameStyle: CSSProperties = { fontSize: "var(--t11)", color: "var(--purple-d)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-  const editStyle: CSSProperties = { flex: 1, minWidth: 0, background: "transparent", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 7px", outline: "none" };
-
-  const rename = (t: TagCount) => (
-    <input
-      autoFocus
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") void commit(t.tag, value.trim() || undefined);
-        if (e.key === "Escape") setEditing(null);
-      }}
-      onBlur={() => setEditing(null)}
-      style={editStyle}
-    />
-  );
-
-  return (
-    <div style={CARD}>
-      {top.map((t) => (
-        <div key={t.tag} style={{ marginTop: 9 }} title={`${t.count} session${t.count === 1 ? "" : "s"}`}>
-          <div style={{ ...KV, gap: 10 }}>
-            <span style={nameStyle}>{t.tag}</span>
-            <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none" }}>{t.count}</span>
-          </div>
-          <div style={{ height: 3, marginTop: 3, background: "color-mix(in srgb, var(--acc) 8%, transparent)" }}>
-            <div style={{ height: "100%", width: `${(t.count / peak) * 100}%`, background: "var(--purple-d)" }} />
-          </div>
-        </div>
-      ))}
-
-      <div style={{ ...ROW, marginTop: 16, paddingTop: 12, borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)" }}>
-        <span style={KEY_TX}>MANAGE ALL {tags.length}</span>
-        <span style={{ flex: 1 }} />
-        <Switch on={manage} onClick={() => { setManage(!manage); setEditing(null); }} />
-      </div>
-
-      {manage && (
-        <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 2 }}>
-          {tags.map((t) => (
-            <div key={t.tag} style={{ ...KV, marginTop: 8, gap: 10 }}>
-              {editing === t.tag ? rename(t) : (
-                <>
-                  <span style={nameStyle}>{t.tag}</span>
-                  <span style={{ fontSize: "var(--t95)", color: "var(--txl)", flex: "none" }}>
-                    {t.count} session{t.count === 1 ? "" : "s"}
-                  </span>
-                  <button
-                    onClick={() => { setEditing(t.tag); setValue(t.tag); }}
-                    title="rename — an existing name merges the two"
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
-                  >RENAME</button>
-                  <button
-                    onClick={() => void commit(t.tag)}
-                    title={`remove "${t.tag}" from all ${t.count} session${t.count === 1 ? "" : "s"}`}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}
-                  >✕</button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // One icon per extra: a grid of ten cards is scanned by shape long before it is
 // read, and these are otherwise ten identical rectangles.
@@ -3738,14 +3630,6 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {shown === "tags" && (
-              <Section
-                title="TAGS"
-                info="Tags come from the model when it names a session. The chart is the twelve most-worn, each against the most-used one; MANAGE opens the full set, where renaming a tag onto an existing one merges them and every session wearing the old name follows."
-              >
-                <TagsPanel />
-              </Section>
-            )}
 
             {shown === "ai" && <AiPanel />}
 

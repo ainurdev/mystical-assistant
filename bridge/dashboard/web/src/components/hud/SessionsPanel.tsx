@@ -39,16 +39,19 @@ interface Props {
 }
 
 type Mode = "attention" | "projects" | "recent";
-type OrderMode = "recent" | "alpha" | "biggest";
+type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
 
-const ORDER_LABEL: Record<OrderMode, string> = { recent: "recent", alpha: "a–z", biggest: "biggest" };
+const ORDER_LABEL: Record<OrderMode, string> = {
+  recent: "recently used", alpha: "a → z", biggest: "biggest", custom: "custom",
+};
+const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
 
-// Which mode you were on and how PROJECTS is ordered.
+// Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
 const PREFS_KEY = "hud-sessions-prefs";
-type Prefs = { mode: Mode; order: OrderMode };
+type Prefs = { mode: Mode; order: OrderMode; custom: string[] };
 
 function loadPrefs(): Prefs {
   try {
@@ -57,8 +60,12 @@ function loadPrefs(): Prefs {
     const mode: Mode =
       r.mode === "attention" || r.mode === "projects" || r.mode === "recent" ? r.mode
         : r.tab === "grouped" ? "projects" : r.tab === "recent" ? "recent" : "attention";
-    return { mode, order: r.order === "alpha" || r.order === "biggest" ? r.order : "recent" };
-  } catch { return { mode: "attention", order: "recent" }; }
+    return {
+      mode,
+      order: r.order && ORDERS.includes(r.order) ? r.order : "recent",
+      custom: Array.isArray(r.custom) ? r.custom : [],
+    };
+  } catch { return { mode: "attention", order: "recent", custom: [] }; }
 }
 
 /** The four lanes ATTENTION sorts every session into. */
@@ -104,7 +111,7 @@ function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFl
 }
 
 function SessionRow({
-  s, on, v, flag, branch, pinned, showDot, showProj, showTags, compact, pulse, onPin, onAttach,
+  s, on, v, flag, branch, pinned, showDot, showProj, showBranch, compact, pulse, onPin, onAttach,
 }: {
   s: SessionBrief;
   on: boolean;
@@ -114,7 +121,7 @@ function SessionRow({
   pinned: boolean;
   showDot: boolean;  // PROJECTS rows carry the state dot; lane rows wear it as their left edge
   showProj: boolean; // lane rows name their project; PROJECTS rows sit under a header that already does
-  showTags: boolean; // tags turned off panel-wide
+  showBranch: boolean; // branch turned off panel-wide
   compact: boolean;  // title only
   pulse: boolean;    // a turn is in flight — the one state that earns motion
   onPin: () => void;
@@ -123,16 +130,14 @@ function SessionRow({
   const [hov, setHov] = useState(false);
   const tint = projectTint(s.project);
   const fv = flag ? FLAG_VIEW[flag] : null;
-  // A sidebar has no room for a full ref. The default branch says nothing, so
-  // it is dropped entirely; anything else shows its last segment only, and the
-  // worktree collapses to one glyph. The full ref lives in the row tooltip.
-  // ponytail: "default" = the literal master/main; a repo whose trunk is named
-  // otherwise shows its trunk on every row, harmlessly.
-  const onDefault = branch === "master" || branch === "main";
+  // A sidebar has no room for a full ref, so a row shows the branch's last
+  // segment and lets the worktree collapse to one glyph. The full ref lives in
+  // the row tooltip. Compact drops the whole meta line; the ⎇ toggle drops the
+  // branch alone, for people who work on one branch and don't need telling.
   const inWorktree = !!(s.worktree || s.work_cwd);
   const wtTitle = s.work_cwd ? `working in ${s.work_cwd}` : s.worktree ? `worktree ${s.worktree}` : "";
-  const tags = showTags ? (s.tags ?? []).slice(0, 2) : [];
-  const metaShow = !compact && !!(showProj || !onDefault || inWorktree || fv || s.goal || tags.length);
+  const branchShown = showBranch && !!branch;
+  const metaShow = !compact && !!(showProj || branchShown || inWorktree || fv || s.goal);
   return (
     <div
       onClick={onAttach}
@@ -171,7 +176,7 @@ function SessionRow({
                 {projectName(s.project)}
               </span>
             )}
-            {!onDefault && (
+            {branchShown && (
               <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                              color: inWorktree ? "var(--acc)" : "var(--txd)" }}>
                 ⎇ {branch.split("/").pop()}
@@ -193,9 +198,6 @@ function SessionRow({
                          animation: s.goal.state === "active" ? "mpulse 2.4s infinite" : "none" }}
               >◎</span>
             )}
-            {tags.map((t) => (
-              <span key={t} title={`tag: ${t}`} style={{ flex: "none", color: "var(--txl)" }}>#{t}</span>
-            ))}
           </div>
         )}
       </div>
@@ -264,11 +266,16 @@ export function SessionsPanel(props: Props) {
   // Browser state — mode + project order remembered across reloads.
   const [mode, setMode] = useState<Mode>(() => loadPrefs().mode);
   const [order, setOrder] = useState<OrderMode>(() => loadPrefs().order);
+  const [customOrder, setCustomOrder] = useState<string[]>(() => loadPrefs().custom);
+  const [orderMenu, setOrderMenu] = useState(false);
+  // Native HTML5 drag state for CUSTOM order.
+  const [dragRel, setDragRel] = useState<string | null>(null);
+  const [overRel, setOverRel] = useState<string | null>(null);
   // Row density — remembered, because it tracks the screen you use, not the task.
   const [compact, setCompact] = useStickyFlag("hud-sessions-compact");
-  // Tags off — the meta line drops them. Stored inverted so the default
-  // (nothing in localStorage) keeps tags on.
-  const [noTags, setNoTags] = useStickyFlag("hud-sessions-notags");
+  // Branch off — the meta line drops it. Stored inverted so the default
+  // (nothing in localStorage) keeps the branch on.
+  const [noBranch, setNoBranch] = useStickyFlag("hud-sessions-nobranch");
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
   const [folded, setFolded] = useState(true);
   // Projects you collapsed with the header. ponytail: not persisted — a collapse
@@ -285,9 +292,9 @@ export function SessionsPanel(props: Props) {
   const [cancelHov, setCancelHov] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, order })); }
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, order, custom: customOrder })); }
     catch { /* ignore */ }
-  }, [mode, order]);
+  }, [mode, order, customOrder]);
 
   // "/" jumps to the search box — the hint badge in it promises this.
   const searchRef = useRef<HTMLInputElement>(null);
@@ -334,7 +341,7 @@ export function SessionsPanel(props: Props) {
   // holds the top of its lane, its bucket, and its project's rows alike — and
   // the search applied here reaches every mode from one place.
   const sorted = [...sessions]
-    .filter((s) => !sq || `${s.title ?? ""} ${(s.tags ?? []).join(" ")} ${branchFor(s)}`.toLowerCase().includes(sq))
+    .filter((s) => !sq || `${s.title ?? ""} ${branchFor(s)}`.toLowerCase().includes(sq))
     .sort((a, b) =>
       Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
 
@@ -385,10 +392,14 @@ export function SessionsPanel(props: Props) {
 
   // PROJECTS: the tree. Order is a cycle — most-recently-used, name, size.
   const byLastUsed = [...groups].sort((a, b) => (b.sessions[0]?.updated ?? 0) - (a.sessions[0]?.updated ?? 0));
+  // CUSTOM: dragged positions first (sort is stable, so anything you never
+  // dragged keeps its last-used order behind them).
+  const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
   const ps =
     order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
       : order === "biggest" ? [...groups].sort((a, b) => b.sessionCount - a.sessionCount)
-        : byLastUsed;
+        : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
+          : byLastUsed;
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
     const f = sorted.filter((s) => s.project === g.rel);
     if (sq && f.length === 0) return [];
@@ -400,7 +411,7 @@ export function SessionsPanel(props: Props) {
 
   const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean) => (
     <SessionRow
-      key={s.id} s={s} showDot={showDot} showProj={showProj} showTags={!noTags} compact={compact}
+      key={s.id} s={s} showDot={showDot} showProj={showProj} showBranch={!noBranch} compact={compact}
       on={s.id === selectedSessionId}
       v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
@@ -451,6 +462,18 @@ export function SessionsPanel(props: Props) {
   function openFor(rel: string) {
     if (nsOpen && nsScoped && nsProject === rel) { setNsOpen(false); return; }
     setNsProject(rel); setNsScoped(true); setNsOpen(true); resetForm();
+  }
+
+  /** Drop `dragRel` into `target`'s slot, materialising the visible order as the
+   *  custom one on first drag. */
+  function dropOn(target: string) {
+    if (dragRel && dragRel !== target) {
+      const next = tree.map(({ g }) => g.rel).filter((r) => r !== dragRel);
+      const at = next.indexOf(target);
+      next.splice(at < 0 ? next.length : at, 0, dragRel);
+      setCustomOrder(next);
+    }
+    setDragRel(null); setOverRel(null);
   }
 
   function start() {
@@ -671,7 +694,7 @@ export function SessionsPanel(props: Props) {
             ref={searchRef}
             value={sessionQ} onChange={(e) => setSessionQ(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape") { setSessionQ(""); e.currentTarget.blur(); } }}
-            placeholder="Search title, tag, or branch"
+            placeholder="Search title or branch"
             style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txb)" }}
           />
           <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
@@ -688,12 +711,12 @@ export function SessionsPanel(props: Props) {
             </svg>
           </button>
           <button
-            onClick={() => setNoTags((v) => !v)}
-            title={noTags ? "show tags" : "hide tags"}
-            onMouseEnter={() => setHov("tags")} onMouseLeave={() => setHov("")}
+            onClick={() => setNoBranch((v) => !v)}
+            title={noBranch ? "show the branch on every row" : "hide the branch"}
+            onMouseEnter={() => setHov("branch")} onMouseLeave={() => setHov("")}
             style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
-                     fontSize: "var(--t12)", lineHeight: 1, color: hov === "tags" ? "var(--acc)" : noTags ? "var(--txl)" : "var(--acc)" }}
-          >#</button>
+                     fontSize: "var(--t12)", lineHeight: 1, color: hov === "branch" ? "var(--acc)" : noBranch ? "var(--txl)" : "var(--acc)" }}
+          >⎇</button>
         </div>
 
         {mode !== "projects" && (
@@ -745,30 +768,68 @@ export function SessionsPanel(props: Props) {
           </div>
         ) : (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, height: 24, padding: "0 6px", marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, height: 24, padding: "0 6px", marginBottom: 4, position: "relative" }}>
               <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: ".24em", color: "var(--txl)" }}>{sq ? "MATCHES" : "PROJECTS"}</span>
               <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
               <button
-                onClick={() => setOrder((o) => (o === "recent" ? "alpha" : o === "alpha" ? "biggest" : "recent"))}
-                title="Cycle project order"
+                onClick={() => setOrderMenu((o) => !o)}
+                title="Project order"
                 onMouseEnter={() => setHov("order")} onMouseLeave={() => setHov("")}
                 style={{ flex: "none", border: 0, background: "transparent", padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit",
                          fontSize: "var(--t9)", letterSpacing: ".14em", textTransform: "uppercase",
-                         color: hov === "order" ? "var(--acc)" : "var(--txf)" }}
+                         color: orderMenu || hov === "order" ? "var(--acc)" : "var(--txf)" }}
               >{ORDER_LABEL[order]} ⇅</button>
+              {orderMenu && (
+                <>
+                  <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+                  <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 97, minWidth: 140,
+                                border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
+                                boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                    {ORDERS.map((m) => (
+                      <button
+                        key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
+                        onMouseEnter={() => setHov(`ord:${m}`)} onMouseLeave={() => setHov("")}
+                        style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
+                                 background: order === m ? "color-mix(in srgb, var(--acc) 14%, transparent)"
+                                   : hov === `ord:${m}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                                 color: order === m ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
+                                 fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
+                      >{order === m ? "▸ " : "\u00a0\u00a0 "}{ORDER_LABEL[m]}</button>
+                    ))}
+                    {order === "custom" && (
+                      <div style={{ padding: "5px 8px 4px", fontSize: "var(--t85)", color: "var(--txf)", letterSpacing: ".04em" }}>
+                        drag a project header to reorder
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             {tree.map(({ g, f, isShut, vis, rest }) => {
               const tint = projectTint(g.rel);
               return (
-                <div key={g.rel} style={{ marginBottom: isShut ? 4 : 13 }}>
+                <div
+                  key={g.rel}
+                  onDragOver={dragRel ? (e) => { e.preventDefault(); setOverRel(g.rel); } : undefined}
+                  onDrop={dragRel ? (e) => { e.preventDefault(); dropOn(g.rel); } : undefined}
+                  style={{ marginBottom: isShut ? 4 : 13, opacity: dragRel === g.rel ? 0.4 : 1,
+                           borderTop: `2px solid ${dragRel && overRel === g.rel && dragRel !== g.rel ? "var(--acc)" : "transparent"}` }}
+                >
                   <div
+                    draggable={order === "custom" && !sq}
+                    onDragStart={order === "custom" && !sq
+                      ? (e) => { e.dataTransfer.effectAllowed = "move"; setDragRel(g.rel); } : undefined}
+                    onDragEnd={order === "custom" ? () => { setDragRel(null); setOverRel(null); } : undefined}
                     onClick={() => setShut((c) => {
                       const n = new Set(c);
                       if (!n.delete(g.rel)) n.add(g.rel);
                       return n;
                     })}
-                    title={`${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${g.sessionCount} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
-                    style={{ display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", cursor: "pointer", userSelect: "none" }}
+                    title={order === "custom" && !sq
+                      ? `${g.rel} — drag to reorder, click to ${isShut ? "expand" : "collapse"}`
+                      : `${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${g.sessionCount} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
+                    style={{ display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
+                             cursor: order === "custom" && !sq ? "grab" : "pointer" }}
                   >
                     <span style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -777,6 +838,7 @@ export function SessionsPanel(props: Props) {
                     <button
                       onClick={(e) => { e.stopPropagation(); openFor(g.rel); }}
                       title={`New session in ${g.rel}`}
+                      draggable={false} onDragStart={(e) => e.preventDefault()}
                       onMouseEnter={() => setHov(`add:${g.rel}`)} onMouseLeave={() => setHov("")}
                       style={{ flex: "none", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
                                padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",

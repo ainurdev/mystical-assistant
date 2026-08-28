@@ -424,7 +424,7 @@ def test_session_brief_shape(monkeypatch):
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "updated", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal",
-                      "lifecycle", "tags", "disabled_tools",
+                      "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
                       "worktree"}
     assert b["id"] == s["id"] and b["project"] == "p6"
