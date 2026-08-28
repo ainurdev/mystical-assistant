@@ -46,7 +46,7 @@ export function QuestionCard({
     // Resolved / historical: still show the prepared answers as buttons, with the
     // chosen one(s) highlighted (matches Claude Code's answered-question look).
     return (
-      <Card className="space-y-3 border border-[var(--tg-button)]/30">
+      <Card className="chatcard space-y-3 border border-[var(--tg-button)]/30">
         {questions.map((q) => {
           const given = answered?.find((x) => x.header === q.header);
           const chosen = given?.labels ?? [];

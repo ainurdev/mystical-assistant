@@ -72,16 +72,17 @@ function RuntimeBadge({ runtime }: { runtime: string }) {
   );
 }
 
-/** What you said, drawn as the one thing in the transcript that comes from your
- *  side: right-aligned, violet, with the solid bar on the right edge — the mirror
- *  of the bar a WRITE card wears on its left. No speaker label: the side is the
- *  label, the way it is in every chat. */
+/** What you said. WHICH SIDE it sits on is the language's call, not this
+ *  component's: a log needs it full width to keep its T+ gutter, a press needs
+ *  the measure for its margin label, a plate is stamped edge to edge — only HALO
+ *  reads it as the right-hand half of a two-sided conversation. So the row and
+ *  the width live in `.pbub-row` / `.pbub` (index.css), and nothing here decides
+ *  either. Colours are there too — see `.abub` for why not inline. */
 function PromptBubble({ text }: { text: string }) {
   return (
-    <div className="flex justify-end">
+    <div className="pbub-row">
       <div
-        // Colours in .pbub (index.css) — see .abub for why not inline.
-        className="pbub max-w-[78%] border border-r-[3px] px-3 py-1.5"
+        className="pbub border border-r-[3px] px-3 py-1.5"
       >
         <span className="block whitespace-pre-wrap break-words leading-relaxed text-foreground-bright">
           {text}

@@ -668,7 +668,7 @@ function MeterBank({ rows }: { rows: Meter[] }) {
     <ul className="flc-bank">
       {rows.map((m, i) => (
         <li key={i} data-hot={m.pct >= 90 ? "" : undefined} data-warm={m.pct >= 70 && m.pct < 90 ? "" : undefined}>
-          <span className="flc-lab">{m.label.toUpperCase()}</span>
+          <span className="flc-lab" title={m.label}>{m.label.toUpperCase()}</span>
           <span className="flc-track" role="meter" aria-valuenow={Math.round(m.pct)} aria-valuemin={0} aria-valuemax={100}>
             <i style={{ width: `${m.pct}%` }} />
           </span>

@@ -1317,19 +1317,16 @@ export function ToolCard({
  *  line. Drawn inside the row's own box (the row pads past the gutter instead of
  *  margining past it): .vskip-card paint-contains each row, so a mark hung
  *  outside it would be clipped. */
+/** Where the agent spoke, marked on the turn's rail. A diamond and its stub are
+ *  WIRE's vocabulary, not everyone's — a ledger press marks a section with a §,
+ *  a log marks it with a level chip, and a halo marks it by floating — so the
+ *  glyph is two empty classes here and each language draws (or hides) its own.
+ *  Colours are not inline for the same reason: nothing overrides an inline rule. */
 function RailNode() {
   return (
     <>
-      <span
-        aria-hidden
-        className="pointer-events-none absolute left-[3px] top-[13px] h-[7px] w-[7px] rotate-45 border"
-        style={{ borderColor: "var(--acc)", background: "var(--panel3)" }}
-      />
-      <span
-        aria-hidden
-        className="pointer-events-none absolute left-[11px] top-[16px] h-px w-[7px]"
-        style={{ background: "var(--ac-22)" }}
-      />
+      <span aria-hidden className="rail-node" />
+      <span aria-hidden className="rail-stub" />
     </>
   );
 }
@@ -1987,22 +1984,19 @@ function FinalResult({
   // the session arrive folded.
   const [open, setOpen] = useState(flash || lines <= RESULT_FOLD_LINES);
   return (
-    <div className="relative my-2 pl-[18px]">
+    // `--tone` rather than four inline colours: the answer is the loudest thing
+    // in a turn, so every language has to be able to re-draw it (a plate, a pair
+    // of rules, a level bar, a margin note, a floating surface) — and nothing
+    // overrides an inline rule. See `.res` in index.css and THE SESSION'S IDIOM.
+    <div className="resblk relative my-2 pl-[18px]" style={{ "--tone": tone } as React.CSSProperties}>
       <RailNode />
       <div
-        className="group/res border"
-        style={{
-          borderColor: `color-mix(in srgb, ${tone} 28%, transparent)`,
-          background: `color-mix(in srgb, ${tone} 4%, transparent)`,
-          animation: flash ? "resultflash 1.2s ease both" : undefined,
-        }}
+        className="res group/res"
+        style={flash ? { animation: "resultflash 1.2s ease both" } : undefined}
       >
-        <div
-          className="flex items-center gap-2 border-b px-3 py-1.5 text-[length:var(--t95)] tracking-[2px]"
-          style={{ borderColor: `color-mix(in srgb, ${tone} 18%, transparent)`, color: tone }}
-        >
-          <span>{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
-          <span className="ml-auto flex items-center gap-2 tracking-[1px] text-muted-2">
+        <div className="res-head">
+          <span className="res-lab">{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
+          <span className="res-meta">
             {typeof elapsed === "number" && elapsed > 0 && (
               <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
             )}
@@ -2017,17 +2011,11 @@ function FinalResult({
           </span>
         </div>
         {body && (
-          <div className="relative px-3 py-2.5">
+          <div className="res-body relative">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
               <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
             </div>
-            {!open && (
-              <div
-                className="pointer-events-none absolute inset-x-0 bottom-0 h-20"
-                style={{ background: "linear-gradient(to bottom, transparent, var(--background))" }}
-                aria-hidden
-              />
-            )}
+            {!open && <div className="res-fade" aria-hidden />}
           </div>
         )}
         {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
@@ -2035,8 +2023,7 @@ function FinalResult({
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="flex w-full items-center justify-center gap-1.5 border-t px-3 py-1 text-[length:var(--t95)] tracking-[1.5px] text-muted-2 hover:text-foreground-bright"
-            style={{ borderColor: `color-mix(in srgb, ${tone} 14%, transparent)` }}
+            className="res-fold"
           >
             <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
             {open ? "FOLD" : `SHOW ALL // ${lines} LINES`}

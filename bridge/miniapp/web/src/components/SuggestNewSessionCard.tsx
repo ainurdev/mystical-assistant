@@ -17,7 +17,7 @@ export function SuggestNewSessionCard({
   onDismiss: () => void;
 }) {
   return (
-    <Card className="space-y-2 border border-[var(--brand-soft)]/30">
+    <Card className="chatcard space-y-2 border border-[var(--brand-soft)]/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <SplitSquareHorizontal size={15} className="shrink-0 text-[var(--brand-soft)]" aria-hidden />
         <span>Different work?</span>

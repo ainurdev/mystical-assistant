@@ -32,7 +32,7 @@ export function PermissionCard({
     if ((await fn()) === false) setSending(null);
   }
   return (
-    <Card className="space-y-2 border border-[var(--tg-button)]/30">
+    <Card className="chatcard space-y-2 border border-[var(--tg-button)]/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Wrench
           size={15}

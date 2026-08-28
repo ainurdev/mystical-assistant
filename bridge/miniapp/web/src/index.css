@@ -384,6 +384,24 @@ input {
 [data-style="stamp"] .flc-lamp,
 [data-style="stamp"] .flc-dot,
 [data-style="stamp"] .flc-shots img { border-radius: 0; }
+/* the answer, and the cards the app asks on: a stamped plate, hard edge and
+   the one shadow in the app that does not blur */
+/* the nested turn's head is the stamp, and its cells are cut, not drawn */
+[data-style="stamp"] .agb-head {
+  padding: 4px 8px; border-bottom: 1.5px solid var(--ac-12);
+  background-image: repeating-linear-gradient(135deg, var(--ac-06) 0 5px, transparent 5px 10px);
+}
+[data-style="stamp"] .agb-kind { font-weight: 700; letter-spacing: 2px; }
+[data-style="stamp"] .agb-nums { letter-spacing: 1.4px; }
+[data-style="stamp"] .flc-glyph { font-size: 10.5px; }
+[data-style="stamp"] .flc-cmd { letter-spacing: .2px; }
+[data-style="stamp"] .flc-stat { letter-spacing: 1px; }
+
+[data-style="stamp"] .chatcard {
+  border-width: 1.5px; border-radius: 0;
+  box-shadow: 3px 3px 0 var(--plate-cast, color-mix(in srgb, var(--acc) 16%, transparent));
+  background: var(--panel2);
+}
 
 /* ══ 2A · WIRE ══ a schematic, one spine ═══════════════════════════════════
    Nothing is a card. Your message hangs off a hollow diamond, the reply off a
@@ -446,6 +464,21 @@ input {
 [data-style="wire"] .flc-shots img { border-radius: 0; }
 [data-style="wire"] .flc-bar { background: none; border: 1px solid var(--acc); }
 
+/* nothing is a card here either: an answer is a node on the bus with a lead */
+/* SUB-BUS — a label on the lead, no glyph of its own; hairline cells */
+[data-style="wire"] .agb-mark { display: none; }
+[data-style="wire"] .agb-head { padding: 4px 9px 2px 10px; }
+[data-style="wire"] .agb-kind { letter-spacing: 2.2px; color: var(--txf); }
+[data-style="wire"] .agb-nums { letter-spacing: 1.8px; color: var(--txl); }
+[data-style="wire"] .flc-glyph { font-size: 9.5px; }
+[data-style="wire"] .flc-cmd { color: var(--tx); }
+[data-style="wire"] .flc-stat { letter-spacing: 1.3px; color: var(--txl); }
+
+[data-style="wire"] .chatcard {
+  border: 0; border-left: 2px solid var(--acc); border-radius: 0;
+  background: none; padding-left: 11px;
+}
+
 /* ══ 2B · SIGNAL LOG ══ level, then row ════════════════════════════════════
    Everything lands on one grid: your message and the reply stop being bubbles
    and become rows under a level chip, with a hairline under each and a 3px
@@ -503,6 +536,21 @@ input {
 [data-style="signal"] .flc-out { border-left-width: 3px; }
 [data-style="signal"] .flc-shots img { border-radius: 0; }
 
+
+/* the loudest level in the log: a bar, a wash, no frame */
+/* the block is a level, so its head reads like one and its figures are tabular */
+[data-style="signal"] .agb-mark { display: none; }
+[data-style="signal"] .agb-head { padding: 5px 10px 2px; }
+[data-style="signal"] .agb-kind { text-transform: lowercase; letter-spacing: .8px; }
+[data-style="signal"] .agb-nums { font-variant-numeric: tabular-nums; letter-spacing: .8px; }
+[data-style="signal"] .flc-glyph { font-size: 9.5px; }
+[data-style="signal"] .flc-cmd { color: var(--txm); }
+[data-style="signal"] .flc-stat { letter-spacing: .6px; }
+
+[data-style="signal"] .chatcard {
+  border: 0; border-left: 3px solid var(--acc); border-radius: 0;
+  background: color-mix(in srgb, var(--acc) 7%, transparent);
+}
 
 /* ══ 1A · LEDGER PRESS ══ type does the framing ════════════════════════════
    Not one box. Every element is a two-column setting: a margin holding its
@@ -598,6 +646,25 @@ input {
 [data-style="press"] .flc-lab { font-family: var(--press-serif); font-style: italic; letter-spacing: 0; text-transform: none; }
 [data-style="press"] .flc-bar { background: var(--txb); }
 [data-style="press"] .flc-shots img { border-radius: 0; border-color: var(--press-rule); }
+/* set, not boxed: a rule above it and the words in the text column */
+/* a nested voice announced in small caps, and every figure in italic serif */
+[data-style="press"] .agb-mark { display: none; }
+[data-style="press"] .agb-head { padding: 5px 0 2px 10px; }
+[data-style="press"] .agb-kind { color: var(--txd); letter-spacing: 1.8px; font-family: var(--ui); }
+[data-style="press"] .agb-nums {
+  font-family: var(--press-serif); font-style: italic;
+  text-transform: none; letter-spacing: 0; color: var(--txf);
+}
+[data-style="press"] .flc-glyph { font-family: var(--press-serif); font-size: 12px; }
+[data-style="press"] .flc-cmd { font-family: var(--mono); color: var(--txh); }
+[data-style="press"] .flc-stat {
+  font-family: var(--press-serif); font-style: italic; letter-spacing: 0; color: var(--txf);
+}
+
+[data-style="press"] .chatcard {
+  border: 0; border-top: 1.5px solid var(--txb); border-radius: 0;
+  background: none; padding: 8px 0 10px;
+}
 
 /* ══ 1C · HALO ══ surfaces, not rules ══════════════════════════════════════
    One radius language and no rule anywhere. The bubbles are tinted surfaces
@@ -686,6 +753,20 @@ input {
 [data-style="halo"] .flc-hunk { border-left: 0; border-radius: 10px; }
 [data-style="halo"] .flc-shots img { border-radius: 12px; border-color: transparent; }
 [data-style="halo"] .flc-bar { border-radius: 3px 3px 0 0; }
+/* an answer floats above the transcript it ends */
+/* quiet head on a floating surface; nothing in the cells shouts */
+[data-style="halo"] .agb-mark { display: none; }
+[data-style="halo"] .agb-head { padding: 8px 12px 2px; }
+[data-style="halo"] .agb-kind { text-transform: lowercase; letter-spacing: .6px; color: var(--txd); }
+[data-style="halo"] .agb-nums { text-transform: lowercase; letter-spacing: .4px; }
+[data-style="halo"] .flc-glyph { font-size: 9.5px; }
+[data-style="halo"] .flc-cmd { color: var(--tx); }
+[data-style="halo"] .flc-stat { letter-spacing: .2px; }
+
+[data-style="halo"] .chatcard {
+  border-radius: 16px; box-shadow: 0 8px 24px var(--shadow-pop);
+  background: var(--panel2);
+}
 
 /* === THE AGENT BLOCK ======================================================
    A delegated run — Task, Agent, Skill. The one card that keeps a frame,

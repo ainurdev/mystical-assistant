@@ -870,7 +870,7 @@ function FinalResult({
   // out of the body so it reads as an ask, and offer the answers it expected.
   const ask = onAnswer ? askBack(result) : null;
   return (
-    <Card className="space-y-2 border border-[var(--tg-button)]/30">
+    <Card className="res chatcard space-y-2 border border-[var(--tg-button)]/30">
       {(ask ? ask.body : result) && (
         <Markdown className="text-sm leading-normal">{ask ? ask.body : result}</Markdown>
       )}
@@ -1057,7 +1057,7 @@ export const RunStream = memo(function RunStream({
               return (
                 <div key={i} className="relative -ml-3 pl-3">
                   <RailNode />
-                  <Card className="border border-[var(--tg-button)]/30">
+                  <Card className="chatcard border border-[var(--tg-button)]/30">
                     <Markdown className="text-sm leading-normal" toolStyle={toolStyle}>{text}</Markdown>
                   </Card>
                 </div>

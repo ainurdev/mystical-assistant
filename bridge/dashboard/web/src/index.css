@@ -1273,8 +1273,11 @@ input {
 .ax-tag[data-shape="box"]   { border: 1px solid color-mix(in srgb, var(--h) 38%, transparent); }
 .ax-tag[data-shape="round"] { border-radius: 999px; padding: 0 7px; background: color-mix(in srgb, var(--h) 16%, transparent); }
 .ax-tag[data-shape="rail"]  { border-left: 2px solid var(--h); padding-left: 5px; }
+/* The cable is decoration and the server's name is information, so the stub is
+   the narrowest thing that still reads as a cable and it gives up its width
+   before the name loses a character. */
 .ax-tag[data-shape="cable"]::after {
-  content: ""; width: 12px; height: 1px; flex: none;
+  content: ""; width: 7px; height: 1px; flex: 0 1 auto;
   background-image: repeating-linear-gradient(90deg, var(--h) 0 2px, transparent 2px 5px);
 }
 .ax-lights { display: inline-flex; gap: 2px; flex: none; }
@@ -1773,9 +1776,58 @@ input {
   .tw { animation: termIn .34s cubic-bezier(.2,.8,.2,1) both; }
 }
 
+/* THE ANSWER — the RESULT box, and the rail mark beside it.
+   `--tone` comes from the component (ok / err / accent when it is an ask), so a
+   language re-draws the FORM and the tone still says which kind of ending this
+   was. The base is the CONTROL PLATE reading: a bordered plate with the label
+   knocked out of a headed bar. */
+.res { border: 1px solid color-mix(in srgb, var(--tone) 28%, transparent);
+  background: color-mix(in srgb, var(--tone) 4%, transparent); }
+.res-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-bottom: 1px solid color-mix(in srgb, var(--tone) 18%, transparent);
+  font-size: var(--t95); letter-spacing: 2px; color: var(--tone);
+}
+.res-meta { margin-left: auto; display: flex; align-items: center; gap: 8px;
+  letter-spacing: 1px; color: var(--txd); }
+.res-body { padding: 10px 12px; }
+.res-fade { pointer-events: none; position: absolute; left: 0; right: 0; bottom: 0;
+  height: 80px; background: linear-gradient(to bottom, transparent, var(--background)); }
+.res-fold {
+  display: flex; width: 100%; align-items: center; justify-content: center; gap: 6px;
+  padding: 4px 12px; border-top: 1px solid color-mix(in srgb, var(--tone) 14%, transparent);
+  font-size: var(--t95); letter-spacing: 1.5px; color: var(--txd);
+}
+.res-fold:hover { color: var(--txb); }
+/* A card the app asks you something on — a permission, a question. The sheet
+   never drew one (it drew a transcript, not a dialogue), so each language reads
+   it the way it reads its other framed things: the answer box is the closest
+   relative, so these follow it. */
+.chatcard { border-radius: 0; }
+
+/* the mark on the rail — a hollow diamond and its stub, WIRE's own glyph, which
+   is why four of the five languages replace or hide it */
+.rail-node {
+  pointer-events: none; position: absolute; left: 3px; top: 13px;
+  width: 7px; height: 7px; transform: rotate(45deg);
+  border: 1px solid var(--acc); background: var(--panel3);
+}
+.rail-stub {
+  pointer-events: none; position: absolute; left: 11px; top: 16px;
+  width: 7px; height: 1px; background: var(--ac-22);
+}
+
 /* The two bubbles: yours on the right with the bar on its right edge, the
    agent's on the left with the bar on its left. Their colours are here rather
    than inline so a style can take the fill off (see below). */
+/* Which side your prompt sits on is a decision of the LANGUAGE, not of the
+   component (Transcript.tsx PromptBubble). The sheet sets it full width in four
+   of its five columns — SIGNAL needs the measure for its T+ gutter, LEDGER PRESS
+   for its margin label, CONTROL PLATE stamps it edge to edge, WIRE hangs it off
+   the bus — and only HALO reads it as the right-hand half of a conversation.
+   The base is the plate's: full width, on the left. */
+.pbub-row { display: flex; justify-content: flex-start; }
+.pbub { max-width: 100%; }
 .pbub {
   border-color: color-mix(in srgb, var(--purple) 26%, transparent);
   border-right-color: var(--purple);
@@ -1862,10 +1914,26 @@ input {
 [data-style="stamp"] .ax-tag[data-shape="rail"] { border-left-width: 3px; }
 [data-style="stamp"] .ax-pill { border-radius: 0; }
 [data-style="stamp"] .ax-stat { border: 1px solid var(--ac-08); padding: 0 4px; }
+/* a plate's figures are stamped into a cell of their own, and its glyphs are cut
+   rather than drawn — no glow on the page lines, no soft chevron */
+[data-style="stamp"] .ax-obj { font-size: var(--t12); }
+[data-style="stamp"] .ax-chev { color: var(--txf); }
+[data-style="stamp"] .ax-lead { opacity: 1; }
+[data-style="stamp"] .ax-page > i { height: 2px; opacity: .75; }
 [data-style="stamp"] .ax-drawer { border: 1.5px solid var(--ac-12); border-top: 0; }
 [data-style="stamp"] .ax-window { border-width: 1.5px; box-shadow: 3px 3px 0 var(--plate-cast); }
 [data-style="stamp"] .agb { border-width: 1.5px; box-shadow: 3px 3px 0 var(--plate-cast); }
 [data-style="stamp"] .agb-type { border-radius: 0; }
+/* the nested turn's head IS the stamp: hatched ground, ink rule under it */
+[data-style="stamp"] .agb-head {
+  padding: 4px 9px; border-bottom: 1.5px solid var(--ac-12);
+  background-image: repeating-linear-gradient(135deg,
+    var(--ac-06) 0 5px, transparent 5px 10px);
+}
+[data-style="stamp"] .agb-kind { font-weight: 700; letter-spacing: 2.2px; }
+[data-style="stamp"] .agb-mark { text-shadow: none; }
+[data-style="stamp"] .agb-nums { letter-spacing: 1.6px; }
+[data-style="stamp"] .agb-foot { border-top: 1.5px solid var(--ac-12); }
 [data-style="stamp"] .flc { border-width: 1.5px; border-radius: 0; box-shadow: 3px 3px 0 var(--plate-cast); }
 /* the idioms: a plate and a field are stamped plates too */
 [data-style="stamp"] .tw[data-tw="stamp"][data-idiom="plate"],
@@ -1881,7 +1949,44 @@ input {
 [data-style="stamp"] .md code,
 [data-style="stamp"] .md-code,
 [data-style="stamp"] .md img { border-radius: 0; }
+/* THE ANSWER — a stamped plate: the head is a solid bar with the label knocked
+   out of it, and the plate casts the one hard shadow in the app */
+[data-style="stamp"] .res {
+  border: 1.5px solid color-mix(in srgb, var(--tone) 42%, transparent);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--tone) 16%, transparent);
+}
+[data-style="stamp"] .res-head {
+  background: color-mix(in srgb, var(--tone) 82%, var(--panel3));
+  color: var(--acc-on); border-bottom: 0; font-weight: 600;
+}
+[data-style="stamp"] .res-meta { color: color-mix(in srgb, var(--acc-on) 72%, transparent); }
+[data-style="stamp"] .res-fold { border-top-width: 1.5px; }
+/* the rail mark is a stamped square, not a drawn diamond */
+[data-style="stamp"] .rail-node {
+  transform: none; width: 6px; height: 6px; top: 14px;
+  border: 0; background: var(--acc);
+}
+[data-style="stamp"] .rail-stub { background: var(--ac-12); }
+/* plates butt up against the rail they are stamped beside */
+[data-style="stamp"] .resblk { padding-left: 18px; }
+[data-style="stamp"] .chatcard {
+  border-width: 1.5px; border-radius: 0;
+  box-shadow: 3px 3px 0 var(--plate-cast); background: var(--panel2);
+}
 
+
+/* the widget's own cells, stamped: a glyph is a cut square, a figure sits in a
+   ruled cell, a table is a plate with ruled rows */
+[data-style="stamp"] .flc-glyph { font-size: var(--t105); }
+[data-style="stamp"] .flc-cmd,
+[data-style="stamp"] .flc-path { letter-spacing: .2px; }
+[data-style="stamp"] .flc-stat { letter-spacing: 1px; }
+[data-style="stamp"] .flc-at { text-decoration: underline; text-underline-offset: 2px; }
+[data-style="stamp"] .flc-cite {
+  border-radius: 0; background: var(--h); color: var(--acc-on); padding: 0 3px;
+}
+[data-style="stamp"] .flc-table th { border-bottom-width: 1.5px; }
+[data-style="stamp"] .flc-table td { border-bottom: 1px solid var(--ac-06); }
 
 /* ══ 2A · WIRE ══ a schematic, one spine ═══════════════════════════════════
    Nothing is a card. ONE vertical bus runs the whole turn and every element
@@ -1896,7 +2001,8 @@ input {
    of them IS one continuous bus, and it survives virtualization, which a
    single absolutely-positioned line down a turn would not. */
 [data-style="wire"] {
-  --axtag: calc(var(--t95) * 4.6 + 18px);
+  /* 6 lowercase characters — `github` is the longest tag a schematic draws */
+  --axtag: calc(var(--t95) * 5.6 + 24px);
   --bus: color-mix(in srgb, var(--acc) 30%, transparent);
 }
 [data-style="wire"] .pbub,
@@ -1923,12 +2029,16 @@ input {
 }
 [data-style="wire"] .actrow[data-tier="glance"] > .ax-bar { width: 16px; height: 1px; }
 /* IN · OPERATOR — a hollow diamond straddling the bus */
+/* IN · OPERATOR — what came in hangs off the same bus as everything else, on a
+   hollow node. It used to hang off its RIGHT edge because the row was
+   right-aligned; the row is the language's call now, and a schematic has one
+   spine, so the lead and the node move to the left where the bus is. */
 [data-style="wire"] .pbub {
-  border: 0; border-right: 1px solid var(--purple); border-radius: 0;
-  background: none; padding: 0 10px 0 0;
+  border: 0; border-left: 1px solid var(--purple); border-radius: 0;
+  background: none; padding: 0 0 0 11px;
 }
 [data-style="wire"] .pbub::before {
-  content: ""; position: absolute; right: -5px; top: 5px; width: 9px; height: 9px;
+  content: ""; position: absolute; left: -5px; top: 5px; width: 9px; height: 9px;
   border: 1px solid var(--purple); background: var(--canvas); transform: rotate(45deg);
 }
 /* OUT · AGENT — the same node, filled */
@@ -1953,7 +2063,12 @@ input {
 [data-style="wire"] .actrow[data-tier="mark"]:hover { background: var(--ac-03); }
 [data-style="wire"] .actrow + .actrow { border-top-color: transparent; }
 /* the eight shapes, all outline: a schematic has no filled parts */
-[data-style="wire"] .ax-tag { justify-content: center; border-radius: 0; }
+/* A schematic labels its nodes in lowercase — the sheet's own `read` `grep`
+   `fetch` `gh`. Uppercase is the CONTROL PLATE's voice (a stamp shouts); wire
+   and signal set the same words small, which is also what stops a five-letter
+   tool name from clipping in a 54px cell. */
+[data-style="wire"] .ax-tag { justify-content: center; border-radius: 0;
+  text-transform: lowercase; letter-spacing: .6px; }
 [data-style="wire"] .ax-tag[data-shape="fill"] {
   background: none; color: var(--h);
   border: 2px solid color-mix(in srgb, var(--h) 60%, transparent);
@@ -1963,7 +2078,18 @@ input {
   border: 1px solid color-mix(in srgb, var(--h) 38%, transparent);
 }
 [data-style="wire"] .ax-tag[data-shape="rail"] { border-left-width: 2px; }
+/* the cable is decoration and the server's name is information, so the stub
+   gives up its width first — the sheet draws this row as a short `gh` beside a
+   node, and an MCP server whose name does not fit is the common case */
+[data-style="wire"] .ax-tag[data-shape="cable"]::after { width: 6px; }
 [data-style="wire"] .ax-tag[data-shape="term"] { border: 2px solid color-mix(in srgb, var(--h) 45%, transparent); }
+/* the row's interior: a schematic's only ink is the payload, so the object
+   stays bright and everything around it drops to the bus's own greys */
+[data-style="wire"] .ax-obj { font-size: var(--t115); }
+[data-style="wire"] .ax-stat { letter-spacing: 1.6px; color: var(--txl); }
+[data-style="wire"] .ax-chev { color: var(--txl); }
+[data-style="wire"] .ax-lead { opacity: .75; }
+[data-style="wire"] .ax-page > i { height: 1px; opacity: .8; }
 [data-style="wire"] .ax-pill {
   border-radius: 0; background: none;
   border: 1px solid color-mix(in srgb, var(--h) 30%, transparent);
@@ -1976,6 +2102,23 @@ input {
 [data-style="wire"] .ax-window {
   border: 0; background: none;
   border-left: 2px solid color-mix(in srgb, var(--h) 55%, transparent);
+}
+/* THE ANSWER — two rules and the words between them. A schematic has no cards,
+   so the box goes and the bus keeps carrying it. */
+[data-style="wire"] .res {
+  border: 0; background: none;
+  border-top: 1px solid var(--tone); border-bottom: 1px solid var(--tone);
+}
+[data-style="wire"] .res-head { border-bottom: 0; padding: 4px 0 2px 11px; letter-spacing: 2.4px; }
+[data-style="wire"] .res-body { padding: 2px 0 6px 11px; }
+[data-style="wire"] .res-fold { border-top: 0; justify-content: flex-start; padding-left: 11px; }
+[data-style="wire"] .res-fade { background: linear-gradient(to bottom, transparent, var(--canvas)); }
+/* the answer hangs off the bus like everything else in a schematic */
+[data-style="wire"] .resblk { padding-left: 18px; }
+/* nothing is a card here either: an ask is a node on the bus with a lead */
+[data-style="wire"] .chatcard {
+  border: 0; border-left: 2px solid var(--acc); border-radius: 0;
+  background: none; padding-left: 11px;
 }
 [data-style="wire"] .ax-window > .actrow::before { display: none; }
 [data-style="wire"] .ax-window > .actrow > .ax-bar { display: none; }
@@ -1990,6 +2133,15 @@ input {
 [data-style="wire"] .agb::after { display: none; }
 [data-style="wire"] .agb-rail { display: none; }
 [data-style="wire"] .agb-type { border-width: 2px; border-radius: 0; }
+/* SUB-BUS — the head is a label on the lead, not a bar: no glyph of its own
+   (the square node already marks it) and everything set in the small caps the
+   rest of the schematic labels its zones in */
+[data-style="wire"] .agb-mark { display: none; }
+[data-style="wire"] .agb-head { padding: 4px 10px 2px 11px; gap: 7px; }
+[data-style="wire"] .agb-kind { letter-spacing: 2.4px; color: var(--txf); }
+[data-style="wire"] .agb-kind > span { color: var(--txl); }
+[data-style="wire"] .agb-nums { letter-spacing: 2px; color: var(--txl); }
+[data-style="wire"] .agb-foot { border-top: 0; padding-left: 11px; justify-content: flex-start; }
 [data-style="wire"] .flc { border: 0; background: none; border-radius: 0; border-left: 1px solid var(--ac-16); }
 /* the idioms: a plate earns one hairline box, a field four hairline corners */
 [data-style="wire"] .tw[data-idiom="plate"] { border: 1px solid var(--ac-12); padding-left: 0; }
@@ -2024,6 +2176,22 @@ input {
 [data-style="wire"] .md-tablewrap { border: 0; background: none; }
 
 
+/* the widget's cells on a schematic: everything hairline, nothing filled, and
+   the citation is a bracketed node reference the way the sheet prints it */
+[data-style="wire"] .flc-glyph { font-size: var(--t95); }
+[data-style="wire"] .flc-cmd,
+[data-style="wire"] .flc-path { color: var(--tx); }
+[data-style="wire"] .flc-stat { letter-spacing: 1.4px; color: var(--txl); }
+[data-style="wire"] .flc-at { text-decoration-style: dashed; color: var(--txm); }
+[data-style="wire"] .flc-cite {
+  border-radius: 0; background: none; padding: 0;
+  color: var(--h); font-size: var(--t8); vertical-align: super;
+}
+[data-style="wire"] .flc-cite::before { content: "["; }
+[data-style="wire"] .flc-cite::after { content: "]"; }
+[data-style="wire"] .flc-table th { border-bottom: 1px solid var(--bus, var(--ac-16)); }
+[data-style="wire"] .flc-table td { border-bottom: 1px solid var(--ac-06); }
+
 /* ══ 2B · SIGNAL LOG ══ gutter, level, row ═════════════════════════════════
    A log viewer, not a chat. One tabular grid — T+ | LEVEL | EVENT | RESULT —
    and everything in the stream lands on it: your message and the reply are
@@ -2036,7 +2204,8 @@ input {
    A row with no clock (a live one, or a turn recorded before `at` was carried)
    leaves the gutter empty rather than guessing. */
 [data-style="signal"] {
-  --axtag: calc(var(--t95) * 4.4 + 16px);
+  /* the level cell holds the longest level word without cutting it */
+  --axtag: calc(var(--t95) * 5.4 + 26px);
   --sig-t: calc(var(--t85) * 3.4 + 10px);
 }
 [data-style="signal"] .actrow {
@@ -2108,9 +2277,13 @@ input {
 [data-style="signal"] .thk-lab > svg { display: none; }
 [data-style="signal"] .thk-peek { font-style: normal; }
 /* one chip shape for every kind; the eight shapes differ by strength only */
+/* A log's level column is set in lowercase (the sheet's `read` `grep` `fetch`
+   `bash`): the chip's SATURATION carries rank here, so the word itself must not
+   also shout — and a lowercase word fits the level cell without clipping. */
 [data-style="signal"] .ax-tag {
   min-width: 100%; justify-content: center; padding: 0 5px;
-  border: 0; border-radius: 0; letter-spacing: 1.1px;
+  border: 0; border-radius: 0; letter-spacing: .7px;
+  text-transform: lowercase;
   background: color-mix(in srgb, var(--h) 10%, transparent);
 }
 [data-style="signal"] .ax-tag[data-shape="bare"] { background: none; }
@@ -2123,8 +2296,36 @@ input {
 [data-style="signal"] .ax-tag[data-shape="rail"] { border-left: 0; background: color-mix(in srgb, var(--h) 26%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="term"] { background: color-mix(in srgb, var(--h) 30%, transparent); }
 [data-style="signal"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
+/* EVENT and RESULT are columns, not decoration: the event stays plain, the
+   result is right-aligned and tabular, and the chevron is the quietest thing */
+[data-style="signal"] .ax-obj { font-size: var(--t115); }
+[data-style="signal"] .ax-chev { color: var(--txg); }
+[data-style="signal"] .ax-lead { opacity: .8; }
+[data-style="signal"] .ax-page > i { height: 1px; }
 [data-style="signal"] .ax-pill { border-radius: 0; }
 [data-style="signal"] .ax-stat { font-variant-numeric: tabular-nums; }
+/* THE ANSWER — the loudest level in the log: a 3px bar and a wash, no frame */
+[data-style="signal"] .res {
+  border: 0; border-left: 3px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 7%, transparent);
+}
+[data-style="signal"] .res-head {
+  border-bottom: 1px solid color-mix(in srgb, var(--tone) 14%, transparent);
+  padding: 4px 12px; letter-spacing: 1.4px; text-transform: lowercase;
+}
+[data-style="signal"] .res-lab { font-weight: 700; }
+[data-style="signal"] .res-meta { font-variant-numeric: tabular-nums; }
+[data-style="signal"] .res-fold { border-top-color: color-mix(in srgb, var(--tone) 12%, transparent); }
+/* no glyph on the rail: the level bar already says who is speaking */
+[data-style="signal"] .rail-node,
+[data-style="signal"] .rail-stub { display: none; }
+/* a log has no rail to indent past: the level bar starts at the gutter */
+[data-style="signal"] .resblk { padding-left: 0; }
+/* an ask is the loudest level there is: a bar, a wash, no frame */
+[data-style="signal"] .chatcard {
+  border: 0; border-left: 3px solid var(--acc); border-radius: 0;
+  background: color-mix(in srgb, var(--acc) 7%, transparent);
+}
 [data-style="signal"] .ax-drawer {
   border-radius: 0; background: var(--code-bg); margin-left: 0;
   padding-left: calc(var(--sig-t) + var(--axtag));
@@ -2143,6 +2344,12 @@ input {
 [data-style="signal"] .agb::before,
 [data-style="signal"] .agb::after { display: none; }
 [data-style="signal"] .agb-rail { display: none; }
+/* the block is a level, so its head reads like one: lowercase, gutter-aligned,
+   figures tabular — and no glyph, because the bar already carries the rank */
+[data-style="signal"] .agb-mark { display: none; }
+[data-style="signal"] .agb-head { padding: 5px 12px 2px; }
+[data-style="signal"] .agb-kind { text-transform: lowercase; letter-spacing: .8px; }
+[data-style="signal"] .agb-nums { font-variant-numeric: tabular-nums; letter-spacing: .8px; }
 [data-style="signal"] .agb-type {
   border: 0; border-radius: 0; background: color-mix(in srgb, var(--h) 18%, transparent);
 }
@@ -2179,6 +2386,20 @@ input {
 [data-style="signal"] .md-tablewrap { border: 0; background: none; }
 
 
+/* the widget's cells in a log: figures tabular, levels saturated, and a citation
+   is a bare superscript index — a log cites by number, not by badge */
+[data-style="signal"] .flc-glyph { font-size: var(--t95); }
+[data-style="signal"] .flc-cmd,
+[data-style="signal"] .flc-path { color: var(--txm); }
+[data-style="signal"] .flc-stat { letter-spacing: .6px; }
+[data-style="signal"] .flc-at { text-decoration: none; border-bottom: 1px dashed var(--ac-22); }
+[data-style="signal"] .flc-cite {
+  border-radius: 0; background: none; padding: 0;
+  color: var(--info); font-size: var(--t8); vertical-align: super;
+}
+[data-style="signal"] .flc-table th { letter-spacing: .8px; text-transform: lowercase; }
+[data-style="signal"] .flc-table tbody tr:nth-child(even) td { background: var(--ac-03); }
+
 /* ══ 1A · LEDGER PRESS ══ type does the framing ════════════════════════════
    Not one box in the whole transcript. What a frame used to do, a rule and a
    margin do: every element is a two-column setting — a 74px margin holding its
@@ -2191,7 +2412,8 @@ input {
    so it runs warm on the app's own paper instead — the register NOTE
    established for the surfaces that are not instruments. */
 [data-style="press"] {
-  --axtag: calc(var(--t95) * 5.6 + 18px);
+  /* the margin holds the longest tool name — `github` — without cutting it */
+  --axtag: calc(var(--t95) * 5.6 + 28px);
   --press-mar: calc(var(--t95) * 3.4 + 10px);
   --press-rule: color-mix(in srgb, var(--warn) 22%, var(--border));
   --press-serif: ui-serif, Georgia, "Times New Roman", serif;
@@ -2248,6 +2470,18 @@ input {
   font-family: var(--press-serif); letter-spacing: 0; text-transform: lowercase;
   font-size: var(--t105); color: var(--txd);
 }
+/* the object is the one thing on the page set in mono — a filename in a
+   printed ledger is set in the machine face, and the figures beside it are
+   italic serif like every other number in this column */
+[data-style="press"] .ax-obj { font-size: var(--t115); color: var(--txh); }
+[data-style="press"] .actrow[data-tier="mark"] .ax-obj { color: var(--txb); font-weight: 500; }
+[data-style="press"] .ax-stat {
+  font-family: var(--press-serif); font-style: italic;
+  letter-spacing: 0; font-size: var(--t105); color: var(--txf);
+}
+[data-style="press"] .ax-chev { color: var(--txl); }
+[data-style="press"] .ax-lead { opacity: .7; }
+[data-style="press"] .ax-page > i { height: 1px; opacity: .7; }
 [data-style="press"] .actrow[data-tier="glance"] .ax-tag { font-style: italic; }
 [data-style="press"] .actrow[data-tier="mark"] .ax-tag {
   color: var(--h); font-weight: 600; text-transform: uppercase;
@@ -2287,6 +2521,20 @@ input {
 [data-style="press"] .agb-rail { width: 0; }
 [data-style="press"] .agb-rail::after { display: none; }
 [data-style="press"] .agb-type { border: 0; padding: 0; font-weight: 600; }
+/* a nested voice is announced the way a press announces one: one line of small
+   caps in ink above the setting, no mark, no bar */
+[data-style="press"] .agb-mark { display: none; }
+[data-style="press"] .agb-head { padding: 5px 0 2px 11px; gap: 6px; }
+[data-style="press"] .agb-kind { color: var(--txd); letter-spacing: 2px; font-family: var(--ui); }
+[data-style="press"] .agb-nums {
+  font-family: var(--press-serif); font-style: italic;
+  text-transform: none; letter-spacing: 0; color: var(--txf);
+}
+[data-style="press"] .agb-foot {
+  border-top: 1px solid var(--press-rule); padding-left: 11px;
+  justify-content: flex-start; font-style: italic;
+}
+[data-style="press"] .agb-foot > i { display: none; }
 [data-style="press"] .flc { border: 0; background: none; border-radius: 0; border-left: 2px solid var(--press-rule); }
 /* THE FIVE IDIOMS — each labelled in the margin, none of them boxed */
 [data-style="press"] .tw[data-idiom="plate"] {
@@ -2323,6 +2571,33 @@ input {
 [data-style="press"] .flc-hunk { background: none; }
 [data-style="press"] .flc-sev { font-variant: small-caps; text-transform: lowercase; letter-spacing: .4px; }
 [data-style="press"] .flc-lab { font-family: var(--press-serif); font-style: italic; letter-spacing: 0; text-transform: none; }
+/* THE ANSWER — set, not framed: a heavy rule above it, the label in the margin
+   in ink, the body in the text column. The sheet's own verdict setting. */
+[data-style="press"] .res {
+  border: 0; background: none; border-top: 1.5px solid var(--txb);
+}
+[data-style="press"] .res-head {
+  border-bottom: 0; padding: 5px 0 2px; color: var(--txb);
+  font-family: var(--ui); font-weight: 600; letter-spacing: 2px;
+}
+[data-style="press"] .res-lab { width: var(--press-mar); flex: none; }
+[data-style="press"] .res-meta { font-family: var(--ui); color: var(--txf); }
+[data-style="press"] .res-body { padding: 2px 0 6px var(--press-mar); }
+[data-style="press"] .res-fold {
+  border-top: 1px solid var(--press-rule); justify-content: flex-start;
+  padding-left: var(--press-mar); font-style: italic; letter-spacing: .4px;
+}
+[data-style="press"] .res-fade { background: linear-gradient(to bottom, transparent, var(--canvas)); }
+/* a section mark in the margin does this job, so the diamond goes */
+[data-style="press"] .rail-node,
+[data-style="press"] .rail-stub { display: none; }
+/* the rule runs the full measure, the way a rule does on a page */
+[data-style="press"] .resblk { padding-left: 0; }
+/* set, not boxed: a rule above it and the question in the text column */
+[data-style="press"] .chatcard {
+  border: 0; border-top: 1.5px solid var(--txb); border-radius: 0;
+  background: none; padding: 8px 0 10px;
+}
 [data-style="press"] .flc-bar { background: var(--txb); }
 [data-style="press"] .flc-shots img { border-radius: 0; border-color: var(--press-rule); }
 [data-style="press"] .md { line-height: 1.7; }
@@ -2338,6 +2613,29 @@ input {
 [data-style="press"] .md td { border-bottom-color: var(--press-rule); }
 
 
+/* the widget's cells in print: the machine face for what ran, italic serif for
+   every figure, and a citation set as a real superscript numeral */
+[data-style="press"] .flc-glyph { font-family: var(--press-serif); font-size: var(--t12); }
+[data-style="press"] .flc-cmd,
+[data-style="press"] .flc-path { font-family: var(--mono); color: var(--txh); }
+[data-style="press"] .flc-stat {
+  font-family: var(--press-serif); font-style: italic; letter-spacing: 0; color: var(--txf);
+}
+[data-style="press"] .flc-at {
+  font-family: var(--mono); text-decoration: none;
+  border-bottom: 1px solid var(--press-rule); color: var(--txb);
+}
+[data-style="press"] .flc-cite {
+  border-radius: 0; background: none; padding: 0 0 0 1px; color: var(--txd);
+  font-family: var(--press-serif); font-size: var(--t8); vertical-align: super;
+}
+[data-style="press"] .flc-table { font-family: var(--mono); }
+[data-style="press"] .flc-table th {
+  font-family: var(--press-serif); font-style: italic; letter-spacing: 0;
+  text-transform: none; border-bottom: 1.5px solid var(--txb);
+}
+[data-style="press"] .flc-table td { border-bottom: 1px solid var(--press-rule); }
+
 /* ══ 1C · HALO ══ surfaces, not rules ══════════════════════════════════════
    One radius language and no rule anywhere. Every element is a surface: your
    message and the reply are tinted cards with mirrored corners (the 6px corner
@@ -2347,7 +2645,8 @@ input {
    as a ladder down the page. A thought is three breathing dots and nothing
    else, because it produced nothing to put on a surface. */
 [data-style="halo"] {
-  --axtag: calc(var(--t95) * 4.8 + 20px);
+  /* a pill is centred in this column, so the column holds the widest pill */
+  --axtag: calc(var(--t95) * 5.6 + 40px);
 }
 [data-style="halo"] .pbub {
   border-radius: 16px 16px 6px 16px; padding: 9px 14px;
@@ -2412,6 +2711,14 @@ input {
 }
 [data-style="halo"] .ax-tag[data-shape="term"] { background: color-mix(in srgb, var(--h) 28%, transparent); }
 [data-style="halo"] .ax-tag[data-shape="fill"] { background: var(--h); color: var(--acc-on); }
+/* nothing in a halo row shouts: the object softens, the stat rounds its
+   letter-spacing, and only the row that CHANGED something takes full ink */
+[data-style="halo"] .ax-obj { font-size: var(--t115); color: var(--tx); }
+[data-style="halo"] .actrow[data-tier="mark"] .ax-obj { color: var(--txb); font-weight: 500; }
+[data-style="halo"] .ax-stat { letter-spacing: .4px; }
+[data-style="halo"] .ax-chev { color: var(--txg); }
+[data-style="halo"] .ax-lead { opacity: .85; }
+[data-style="halo"] .ax-page > i { height: 2px; border-radius: 2px; }
 [data-style="halo"] .ax-pill { border-radius: 999px; }
 [data-style="halo"] .ax-drawer { border-radius: 11px; border-top: 0; }
 [data-style="halo"] .ax-window { border-radius: 16px; overflow: hidden; border-color: transparent; }
@@ -2430,6 +2737,13 @@ input {
   background: color-mix(in srgb, var(--h) 16%, transparent);
 }
 [data-style="halo"] .agb-rule { background: none; }
+/* quiet head on a floating surface: no glyph, no rules, the pill does the work */
+[data-style="halo"] .agb-mark { display: none; }
+[data-style="halo"] .agb-head { padding: 9px 14px 2px; gap: 8px; }
+[data-style="halo"] .agb-kind { text-transform: lowercase; letter-spacing: .6px; color: var(--txd); }
+[data-style="halo"] .agb-nums { text-transform: lowercase; letter-spacing: .4px; }
+[data-style="halo"] .agb-foot { border-top: 0; padding: 4px 14px 8px; }
+[data-style="halo"] .agb-foot > i { display: none; }
 [data-style="halo"] .flc { border-radius: 16px; border-color: transparent; }
 /* the idioms: a plate and a field are surfaces too, so they round and lift */
 [data-style="halo"] .tw[data-idiom="plate"] {
@@ -2453,6 +2767,35 @@ input {
   background: color-mix(in srgb, var(--acc) 10%, transparent);
 }
 [data-style="halo"] .flc-btn { border-radius: 999px; }
+/* THE ANSWER — a surface that floats: one radius, a tinted skin, a soft lift */
+[data-style="halo"] .res {
+  border: 1px solid color-mix(in srgb, var(--tone) 24%, transparent);
+  background: color-mix(in srgb, var(--tone) 8%, transparent);
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 8px 24px var(--shadow-pop);
+}
+[data-style="halo"] .res-head {
+  border-bottom: 0; padding: 9px 14px 4px; letter-spacing: 1.4px;
+}
+[data-style="halo"] .res-body { padding: 2px 14px 12px; }
+[data-style="halo"] .res-fold {
+  border-top: 1px solid color-mix(in srgb, var(--tone) 14%, transparent);
+  padding: 6px 14px; letter-spacing: 1px;
+}
+/* nothing on the rail: in a halo a surface is placed by floating, not by a mark */
+/* the one language that reads a transcript as two sides: your bubble floats on
+   the right, shrink-wrapped, with the notch pointing at you */
+[data-style="halo"] .pbub-row { justify-content: flex-end; }
+[data-style="halo"] .pbub { max-width: 78%; }
+[data-style="halo"] .rail-node,
+[data-style="halo"] .rail-stub { display: none; }
+/* nothing to hang off — a surface is placed by floating, so it takes the column */
+[data-style="halo"] .resblk { padding-left: 0; }
+/* a question floats above the transcript it interrupts */
+[data-style="halo"] .chatcard {
+  border-radius: 16px; box-shadow: 0 8px 24px var(--shadow-pop);
+  background: var(--panel2);
+}
 [data-style="halo"] .flc-verd { border-radius: 999px; border-left: 0; padding: 2px 12px; }
 [data-style="halo"] .flc-verd[data-tone="good"] { background: color-mix(in srgb, var(--ok) 14%, transparent); }
 [data-style="halo"] .flc-verd[data-tone="bad"] { background: color-mix(in srgb, var(--err) 14%, transparent); }
@@ -2849,7 +3192,14 @@ button.flc-star:hover { color: var(--warn); }
 /* Meters: "how full" is the actual question, so the bar is honest. */
 .flc-bank { display: flex; flex-direction: column; gap: 4px; max-width: 340px; }
 .flc-bank > li { display: flex; align-items: center; gap: 8px; }
-.flc-bank .flc-lab { flex: none; width: 42px; }
+/* The sheet's meter rows are labelled with one word (TRACE, TOKENS) in a 42px
+   margin. A real label can be a phrase, and a fixed column with no overflow rule
+   breaks it mid-word — "SUBGRI / D" — so it ellipsises on one line and keeps the
+   geometry; the whole label stays in the title. */
+.flc-bank .flc-lab {
+  flex: none; width: 42px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .flc-track { flex: 1; height: 5px; background: var(--ac-06); }
 .flc-track > i { display: block; height: 100%; background: var(--ok); }
 .flc-bank > li[data-warm] .flc-track > i { background: var(--warn); }
@@ -2946,3 +3296,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   .flc[data-await] > .flc-rail { animation: none; }
   .flc-hold[data-held] > .flc-fill { transition: none; }
 }
+
+/* the widget's cells on a surface: round glyphs, soft figures, and a citation
+   that is a small pill like every other label in this language */
+[data-style="halo"] .flc-glyph { font-size: var(--t95); }
+[data-style="halo"] .flc-cmd,
+[data-style="halo"] .flc-path { color: var(--tx); }
+[data-style="halo"] .flc-stat { letter-spacing: .2px; }
+[data-style="halo"] .flc-at { text-decoration: none; color: var(--h); }
+[data-style="halo"] .flc-cite {
+  border-radius: 999px; background: color-mix(in srgb, var(--h) 14%, transparent);
+  color: var(--h); padding: 0 6px; font-size: var(--t8);
+}
+[data-style="halo"] .flc-table th { border-bottom: 0; letter-spacing: .6px; }
+[data-style="halo"] .flc-table td { border-radius: 6px; }
+[data-style="halo"] .flc-table tbody tr:hover td { background: var(--ac-06); }
