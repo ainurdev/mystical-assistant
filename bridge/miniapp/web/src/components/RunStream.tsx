@@ -32,7 +32,7 @@ import {
   Container,
 } from "lucide-react";
 import { ToolWidget } from "./ResultWidgets";
-import { useToolStyle, widgetFor, type WebSource } from "../lib/toolwidget";
+import { useToolStyle, widgetForRun, type WebSource } from "../lib/toolwidget";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
@@ -988,7 +988,10 @@ export const RunStream = memo(function RunStream({
   const { folds, headOf } = foldChips(events, (i) => {
     const e = events[i];
     if (e.type !== "tool") return false;
-    return BLOCK_KINDS.has(toolKind(e.name)) || !!doneOf(e)?.patch;
+    const d = doneOf(e);
+    // A glance that came back with a shot carries a block too: chips would hide
+    // the picture, which is the whole result.
+    return BLOCK_KINDS.has(toolKind(e.name)) || !!d?.patch || !!d?.images?.length;
   });
   // Back-to-back calls of one kind share a card, so six MCP calls read as one
   // block with six rows instead of six cards. MCP groups by server.
@@ -1001,7 +1004,11 @@ export const RunStream = memo(function RunStream({
     if (doneOf(e)?.patch) return "edit";
     const kind = toolKind(e.name);
     if (kind === "mcp") return `mcp:${mcpParts(e.name).server}`;
-    return BLOCK_KINDS.has(kind) ? kind : null;   // the quiet ones fold into chips
+    // Shots group across tools: a chain of Reads that each came back with a PNG
+    // is one contact sheet, not five galleries a screen tall each.
+    if (!BLOCK_KINDS.has(kind))
+      return doneOf(e)?.images?.length ? "shots" : null;   // the quiet ones fold into chips
+    return kind;
   };
   const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
 
@@ -1090,9 +1097,12 @@ export const RunStream = memo(function RunStream({
                 />
               );
             const done = doneOf(event);
-            // What structure this result carried, if any. Null keeps the plain
-            // row — which is every tool without a table entry.
-            const spec = widgetFor(done);
+            const run = groups.get(i);
+            // What structure the run's results carried, if any. Null keeps the
+            // plain row — which is every tool without a table entry. Built from
+            // the whole run rather than this event: the head draws the group's
+            // one card, so a member's shots or sources would be drawn by nobody.
+            const spec = widgetForRun((run ?? [i]).map((j) => doneOf(events[j])));
             // Hung under whichever card this tool got, not just the default one:
             // a run of Reads collapses into a CallGroup, and a Read of a PNG is
             // how almost every image result in this store arrives.
@@ -1107,7 +1117,6 @@ export const RunStream = memo(function RunStream({
             if (event.name === "Bash")
               return <TerminalBlock key={i} command={event.summary} done={done} />;
             if (groupOf.has(i)) return null;   // drawn by the run's head
-            const run = groups.get(i);
             // A delegation is a turn nested inside this one, so it is drawn as
             // its own framed block — and a run of them as one fan, not as N
             // identical cards or a generic "AGENT · 4 CALLS" box.

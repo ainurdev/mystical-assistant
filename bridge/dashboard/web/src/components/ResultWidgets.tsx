@@ -289,6 +289,14 @@ function FindingsTriage({ rows, send, onOpenFile }: {
   );
 }
 
+/** What a shot is called under it: the flow's caption, a real filename, or —
+ *  for the id the bridge saved a tool's image under — its place in the sheet. */
+function shotLabel(s: { path: string; caption?: string }, i: number): string {
+  if (s.caption) return s.caption;
+  const name = s.path.split("/").pop() ?? s.path;
+  return name.startsWith("mcp-toolu") ? `SHOT ${i + 1}` : name;
+}
+
 /** Screenshots a design stage produced. On the draft gate they are the thing
  *  being approved, so a note per screen is how you answer without describing
  *  which screen you mean. */
@@ -304,7 +312,11 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
         {rows.map((s, i) => (
           <figure key={i}>
             <Shot path={s.path} onZoom={setZoom} />
-            <figcaption>{s.caption ?? s.path.split("/").pop()}</figcaption>
+            {/* Every image a tool returns is saved as mcp-<tool_use_id>-<n>.png
+                (bridge/runner.py) — an id is not a caption, and in a chain of
+                them the rows above already name what was read. Number those
+                instead; the full path stays on hover. */}
+            <figcaption title={s.caption ?? s.path}>{shotLabel(s, i)}</figcaption>
             {send && (
               <input
                 className="flc-in"

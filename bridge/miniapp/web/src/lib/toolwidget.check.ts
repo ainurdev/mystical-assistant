@@ -4,7 +4,7 @@
 // result it doesn't recognise keeps the plain row it always had. That is what
 // this checks — not how the widgets look.
 
-import { isToolStyle, toToolStyle, widgetFor, TOOL_STYLES } from "./toolwidget.ts";
+import { isToolStyle, toToolStyle, widgetFor, widgetForRun, TOOL_STYLES } from "./toolwidget.ts";
 
 // --- the table --------------------------------------------------------------
 const src = widgetFor({ sources: [{ url: "https://a.dev", title: "A" }] });
@@ -31,6 +31,16 @@ console.assert(
   widgetFor({ stat: "6 files" } as Parameters<typeof widgetFor>[0]) === null,
   "an unmapped tool keeps its stat line",
 );
+
+// --- a run of results is ONE widget -----------------------------------------
+// A group is drawn by its head, so anything a member returned has to be folded
+// into the head's widget or it is drawn by nobody.
+const chain = widgetForRun([{ images: ["/u/a.png"] }, undefined, { images: ["/u/b.png"] }]);
+console.assert(chain?.type === "screens", `a run of shots is one gallery, got ${chain?.type}`);
+console.assert(chain?.meta === "2", `both members' shots are in it, got ${chain?.meta}`);
+const webchain = widgetForRun([{ sources: [{ url: "https://a.dev" }] }, { sources: [{ url: "https://b.dev" }] }]);
+console.assert(webchain?.meta === "2", `a run of fetches is one source list, got ${webchain?.meta}`);
+console.assert(widgetForRun([undefined, {}]) === null, "a run that carried nothing keeps its rows plain");
 
 // --- the style setting ------------------------------------------------------
 console.assert(TOOL_STYLES.length === 5, `five styles, got ${TOOL_STYLES.length}`);

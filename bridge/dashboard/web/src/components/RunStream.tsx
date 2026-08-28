@@ -17,7 +17,7 @@ import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { ToolWidget } from "./ResultWidgets";
-import { widgetFor, type ToolStyle, type WebSource } from "../lib/toolwidget";
+import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
   cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
   type CmdKind, type Shape, type Tier,
@@ -1522,10 +1522,13 @@ export const RunStream = memo(function RunStream({
 
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
   // fetch or an MCP call each carry their own block and break the run instead.
+  // A glance that came back with a shot carries one too: chips would hide the
+  // picture, which is the whole result.
   const { folds, headOf } = foldChips(events, (i) => {
     const e = events[i];
     if (e.type !== "tool") return false;
-    return toolTier(e.name) !== "glance" || !!doneOf(e)?.patch;
+    const d = doneOf(e);
+    return toolTier(e.name) !== "glance" || !!d?.patch || !!d?.images?.length;
   });
   // Back-to-back calls of one kind share a card — Bash a terminal window, the
   // rest a CallGroup; the head draws them all, the rest render nothing. MCP
@@ -1539,7 +1542,11 @@ export const RunStream = memo(function RunStream({
     if (doneOf(e)?.patch) return "edit";
     const kind = toolKind(e.name);
     if (kind === "mcp") return `mcp:${mcpParts(e.name).server}`;
-    return toolTier(e.name) === "glance" ? null : kind; // the quiet ones fold into chips
+    // Shots group across tools: a chain of Reads that each came back with a PNG
+    // is one contact sheet, not five galleries a screen tall each.
+    if (toolTier(e.name) === "glance")
+      return doneOf(e)?.images?.length ? "shots" : null; // the quiet ones fold into chips
+    return kind;
   };
   const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
 
@@ -1632,9 +1639,13 @@ export const RunStream = memo(function RunStream({
                 />
               );
             const done = doneOf(event);
-            // What structure this result carried, if any. Null keeps the plain
-            // row — which is every tool without a table entry.
-            const spec = widgetFor(done);
+            if (groupOf.has(i)) return null; // drawn by the run's head
+            const run = groups.get(i) ?? [i];
+            // What structure the run's results carried, if any. Null keeps the
+            // plain row — which is every tool without a table entry. Built from
+            // the whole run rather than this event: the head draws the group's
+            // one card, so a member's shots or sources would be drawn by nobody.
+            const spec = widgetForRun(run.map((j) => doneOf(events[j])));
             // Hung under whichever card this tool got, not just the default one:
             // a Read of a PNG returns an image and takes the ReadCard branch, and
             // that is 715 of the 729 image results in this store — a widget only
@@ -1649,8 +1660,6 @@ export const RunStream = memo(function RunStream({
             ) : done?.images?.length ? <ToolImages paths={done.images} /> : null;
             const withExtra = (node: ReactNode) =>
               extra ? <div key={i}>{node}{extra}</div> : node;
-            if (groupOf.has(i)) return null; // drawn by the run's head
-            const run = groups.get(i) ?? [i];
             // A delegation is a turn nested inside this one, so it is drawn as
             // its own framed block — and a run of them as one fan, not as N
             // identical rows or a generic "AGENT · 4 CALLS" box.

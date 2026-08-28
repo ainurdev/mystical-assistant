@@ -1129,7 +1129,10 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
   display: block; height: 96px; width: auto; max-width: 150px;
   object-fit: cover; border-radius: 8px; border: 1px solid var(--border);
 }
-.flc-shots figcaption { font-size: 9px; letter-spacing: .6px; color: var(--txf); }
+.flc-shots figcaption {
+  font-size: 9px; letter-spacing: .6px; color: var(--txf);
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .flc-gone { font-family: var(--mono); font-size: 9px; color: var(--txl); }
 
 .flc-meter { display: flex; align-items: center; gap: 8px; }

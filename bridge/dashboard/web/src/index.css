@@ -2950,7 +2950,10 @@ li[data-sev="med"]  .flc-sev { color: var(--warn); }
   display: block; height: 112px; width: auto; max-width: 200px;
   object-fit: cover; border: 1px solid var(--ac-16);
 }
-.flc-shots figcaption { font-size: var(--t8); letter-spacing: .6px; color: var(--txf); }
+.flc-shots figcaption {
+  font-size: var(--t8); letter-spacing: .6px; color: var(--txf);
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .flc-gone { font-family: var(--mono); font-size: var(--t8); color: var(--txl); }
 
 /* Confidence: lamps, the readout this HUD already uses for a fraction. */

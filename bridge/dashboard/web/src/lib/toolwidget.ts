@@ -124,3 +124,14 @@ export function widgetFor(done: Structured | undefined): ToolWidgetSpec | null {
     };
   return null;
 }
+
+/** One widget for a whole run of results. A group is drawn by its head, so a
+ *  member's shots or sources would never reach the screen otherwise — and five
+ *  Reads of five PNGs are one contact sheet, not five galleries a screen tall.
+ *  Payloads concatenate; precedence stays widgetFor's. */
+export function widgetForRun(dones: (Structured | undefined)[]): ToolWidgetSpec | null {
+  return widgetFor({
+    sources: dones.flatMap((d) => d?.sources ?? []),
+    images: dones.flatMap((d) => d?.images ?? []),
+  });
+}
