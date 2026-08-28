@@ -1129,6 +1129,18 @@ export function App() {
     setCheckingMap((m) => (prompt === null ? omit(m, sid) : { ...m, [sid]: prompt }));
   }
 
+  // A run we just started must not wait out the 4s /running poll to read as
+  // WORKING: deselected in that window, the fresh row drops out of its project's
+  // busy list (rowsFor) and the active counts. Same literal the bridge's
+  // _build_status returns; the next poll owns it from here.
+  function markWorking(sid: string) {
+    setStatusMap((m) => {
+      const n = new Map(m);
+      n.set(sid, { state: "working", kind: null, source: "bridge", label: "working…" });
+      return n;
+    });
+  }
+
   // "Start new session" on the held-prompt card: route it to a fresh session
   // pre-named with the suggested title, forced so the check isn't paid twice.
   async function heldStartNew(h: HeldPrompt) {
@@ -1317,6 +1329,7 @@ export function App() {
       const r = await api.createProject(name, prompt);
       await selectProject(r.project.rel);
       await loadSessions();
+      if (r.session && r.job_id) markWorking(r.session.id);
       if (r.session) openSession(r.session.id);
       toChat();
     } catch (e) { notify("error", (e as Error).message); }

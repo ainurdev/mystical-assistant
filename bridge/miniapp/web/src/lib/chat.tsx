@@ -332,6 +332,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   function refresh() {
     if (sessionId) void qc.invalidateQueries({ queryKey: ["transcript", sessionId] });
+    // Run state just changed server-side (send/respond/stop) — refetch status now
+    // instead of letting the 4s ["running"] poll show this session idle meanwhile.
+    void qc.invalidateQueries({ queryKey: ["running"] });
   }
 
   // Fetch the page of turns before the oldest loaded one and prepend it.
