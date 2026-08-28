@@ -1557,7 +1557,8 @@ def _watchdog(job: Job, proc) -> None:
         proc.kill()
 
 
-def _consume_free_agent(job: Job, prompt: str, cwd: str) -> None:
+def _consume_free_agent(job: Job, prompt: str, cwd: str,
+                        mode: "str | None" = None) -> None:
     """Run one turn on a fallback-ladder free agent instead of Claude.
 
     Blocking, not streamed: opencode is a different runtime with its own event
@@ -1576,7 +1577,7 @@ def _consume_free_agent(job: Job, prompt: str, cwd: str) -> None:
         return
     # No --session: job.resume_id is a *Claude* session id and means nothing to
     # opencode. Continuity travels in the briefing prompt instead.
-    cmd = freeagent.build_cmd(prompt, provider, None, cwd)
+    cmd = freeagent.build_cmd(prompt, provider, None, cwd, mode)
     try:
         proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
                               env=freeagent.run_env(),
@@ -1615,7 +1616,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
     job.cwd = cwd
     try:
         if (job.runtime or "").startswith("opencode:"):
-            _consume_free_agent(job, prompt, cwd)
+            _consume_free_agent(job, prompt, cwd, permission_mode)
             return
         full_prompt = _with_images(prompt, image_paths)
         # The gap before the first token is two waits, and an empty stream makes

@@ -98,15 +98,15 @@ SETTINGS = (
               "number. Raise it for 1M-context runs. Display only — it doesn't change "
               "what any model actually accepts."},
     {"key": "NEW_SESSION_PERMISSION_MODE", "type": "enum", "live": True,
-     "choices": ("auto", "plan", "acceptEdits", "bypassPermissions", "default"),
+     "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
      "group": "RUNS", "label": "NEW SESSION MODE", "hint": "permission mode a dashboard/Mini App session is created with",
      "about": "Persisted on the session, so continuing it from any surface keeps the "
               "posture. 'bypassPermissions' is full autonomy: anything that can inject "
               "a prompt then runs commands as you. 'default' surfaces Allow/Deny "
-              "cards; 'plan' plans without editing. A per-message pick still overrides "
-              "one run."},
+              "cards; 'plan' plans without editing; 'dontAsk' never prompts and denies "
+              "anything not pre-approved. A per-message pick still overrides one run."},
     {"key": "MINIAPP_PERMISSION_MODE", "type": "enum", "live": True,
-     "choices": ("auto", "plan", "acceptEdits", "bypassPermissions", "default"),
+     "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
      "group": "RUNS", "label": "FALLBACK MODE", "hint": "used when a run requests no mode of its own",
      "about": "The chat clients normally send a mode per message; this is what a run "
               "that sends none gets. 'auto' lets Claude's own classifier decide."},

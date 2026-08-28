@@ -17,15 +17,30 @@ export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "xhigh", label: "XHigh" },
   { id: "max", label: "Max" },
 ];
-// Per-message operating mode ("" keeps the session's). Mirrors the CLI permission
-// modes so you can flip a single run (ask / plan / full autonomy) remotely.
-export const PERMS: { id: string; label: string }[] = [
-  { id: "", label: "Session" },
-  { id: "default", label: "Ask" },
-  { id: "acceptEdits", label: "Accept Edits" },
-  { id: "plan", label: "Plan" },
-  { id: "auto", label: "Auto-run" },
-  { id: "bypassPermissions", label: "Full Auto" },
+// Per-message operating mode ("" keeps the session's). These are Claude Code's
+// own permission modes — the ids and titles the CLI itself uses, in its own
+// least-authority-first order — so the picker can't offer a posture `claude
+// --permission-mode` would reject, or name one something Claude doesn't. The
+// CLI also takes "manual", but that is just its alias for "default". Each row's
+// tooltip is Claude's own one-line description of the mode.
+export const PERMS: { id: string; label: string; title?: string }[] = [
+  { id: "", label: "Session", title: "Keep the mode this session was started with." },
+  { id: "plan", label: "Plan", title: "Planning mode, no actual tool execution." },
+  { id: "default", label: "Manual", title: "Standard behavior, prompts for dangerous operations." },
+  { id: "dontAsk", label: "Don't Ask", title: "Don't prompt for permissions, deny if not pre-approved." },
+  { id: "acceptEdits", label: "Accept Edits", title: "Auto-accept file edit operations." },
+  { id: "auto", label: "Auto", title: "Use a model classifier to approve/deny permission prompts." },
+  { id: "bypassPermissions", label: "Bypass", title: "Bypass all permission checks — full autonomy." },
+];
+// The same picker for a free agent, which is a different program: `opencode run`
+// has no permission-mode enum, only --auto and a read-only plan agent, and
+// nothing headless can answer an approval prompt. Offering Claude's six here
+// would name four postures opencode cannot take. Keep in step with
+// freeagent.FREE_MODES.
+export const FREE_PERMS: { id: string; label: string; title?: string }[] = [
+  { id: "", label: "Session", title: "Keep the mode this session was started with." },
+  { id: "plan", label: "Plan", title: "opencode's plan agent: reads and plans, edits denied." },
+  { id: "bypassPermissions", label: "Full Auto", title: "`opencode run --auto` — approves every tool call it makes." },
 ];
 // Per-run code-minimalism intensity, threaded to the runner's env (Task 4/8).
 export const PONYTAILS: { id: string; label: string }[] = [
@@ -221,8 +236,9 @@ export function Composer({
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony" | "verbs">("");
-  // A free agent brings its own model and has no effort knob, so those two
-  // dropdowns would be lying about what runs — swap them for what actually will.
+  // A free agent brings its own model, has no effort knob, and takes different
+  // permission modes, so three of these dropdowns would be lying about what
+  // runs — swap them for what actually will.
   const activeAgent = agents.find((a) => a.id === agent);
   // MODEL rows grouped by usage pool, each with what it has left. The meter is
   // the ambient login's, so it only decorates the rows while that login is the
@@ -614,7 +630,7 @@ export function Composer({
                   onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
               </>
             )}
-            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={PERMS} open={openDrop === "mode"} minWidth={104}
+            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} open={openDrop === "mode"} minWidth={104}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
             {showPonytail && (

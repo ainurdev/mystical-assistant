@@ -177,6 +177,7 @@ export type PermissionMode =
   | "plan"
   | "acceptEdits"
   | "bypassPermissions"
+  | "dontAsk"
   | "default";
 
 export interface PendingRequest {

@@ -301,7 +301,9 @@ def test_the_free_rung_is_tried_first(monkeypatch):
     monkeypatch.setattr(freeagent, "available",
                         lambda: [{"provider": "zen", "model": "big-pickle", "label": "zen"}])
     monkeypatch.setattr(freeagent, "build_cmd",
-                        lambda prompt, provider, session, cwd: ["/bin/echo", "[]"])
+                        lambda prompt, provider, session, cwd, mode:
+                        ["/bin/echo", "[]"] if mode == "plan"    # scout reads, never writes
+                        else pytest.fail(f"free scout ran in {mode!r}"))
     monkeypatch.setattr(runner, "run_blocking",
                         lambda *a, **k: pytest.fail("free rung was skipped"))
     assert nextup._agent("prompt", d, CHAT, 5).strip() == "[]"
@@ -312,7 +314,7 @@ def test_a_failing_free_rung_falls_back_to_claude(monkeypatch):
     monkeypatch.setattr(freeagent, "available",
                         lambda: [{"provider": "zen", "model": "big-pickle", "label": "zen"}])
     monkeypatch.setattr(freeagent, "build_cmd",
-                        lambda prompt, provider, session, cwd: ["/bin/false"])
+                        lambda prompt, provider, session, cwd, mode: ["/bin/false"])
     monkeypatch.setattr(runner, "run_blocking",
                         lambda *a, **k: ("[]", None, None, False))
     assert nextup._agent("prompt", d, CHAT, 5) == "[]"

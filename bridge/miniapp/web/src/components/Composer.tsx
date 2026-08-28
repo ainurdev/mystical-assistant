@@ -24,13 +24,18 @@ const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "max", label: "Max" },
 ];
 
-// Per-message operating mode ("" keeps the session's). Mirrors the CLI's
-// permission modes so you can flip a single run from your phone.
+// Per-message operating mode ("" keeps the session's). These are Claude Code's
+// own permission modes — the CLI's ids, in its own least-authority-first order —
+// so a phone can't pick a posture `claude --permission-mode` would reject. (It
+// also takes "manual", but that is only its alias for "default".) The Mini App
+// has no free-agent picker, so this list is Claude's alone; the dashboard's
+// composer carries opencode's shorter one.
 const PERMS: { id: string; label: string }[] = [
   { id: "", label: "Session default" },
-  { id: "default", label: "Ask each time" },
-  { id: "acceptEdits", label: "Accept edits" },
   { id: "plan", label: "Plan only" },
+  { id: "default", label: "Ask each time" },
+  { id: "dontAsk", label: "Never ask" },
+  { id: "acceptEdits", label: "Accept edits" },
   { id: "auto", label: "Auto" },
   { id: "bypassPermissions", label: "Full autonomy" },
 ];

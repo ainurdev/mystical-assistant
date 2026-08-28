@@ -219,13 +219,14 @@ def _agent(prompt: str, cwd: str, chat_id: int, timeout: int) -> str:
     read is exactly what a free provider is good enough for — then haiku."""
     rungs = freeagent.available()
     if rungs:
-        # ponytail: opencode's `run --auto` approves its own tool calls, so the
-        # free rung's read-only-ness rests on the prompt alone. Detect a scout
+        # "plan" is opencode's own read-only posture (its plan agent denies
+        # `edit`), the same one the composer's MODE picker offers a free agent.
+        # It is a rule inside opencode, not a sandbox, so still detect a scout
         # that wrote anyway and say so — never repair, that would be destroying
-        # work on a guess. Upgrade path: a real read-only flag on `opencode run`.
+        # work on a guess.
         before = _dirty_set(cwd)
         try:
-            p = subprocess.run(freeagent.build_cmd(prompt, rungs[0], None, cwd),
+            p = subprocess.run(freeagent.build_cmd(prompt, rungs[0], None, cwd, "plan"),
                                cwd=cwd, capture_output=True, text=True,
                                timeout=timeout, env=freeagent.run_env())
             if _dirty_set(cwd) - before:

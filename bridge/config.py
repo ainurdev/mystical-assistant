@@ -38,7 +38,11 @@ MINIAPP_MODELS = ("opus", "sonnet", "haiku", "fable")
 MINIAPP_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 # Permission/operating modes the chat clients may request per message (passed as
 # `claude --permission-mode`); the server rejects anything outside this set.
-MINIAPP_PERMISSION_MODES = {"auto", "plan", "acceptEdits", "bypassPermissions", "default"}
+# These are exactly the CLI's own choices, canonical spelling: it also accepts
+# "manual", but that is only an alias for "default" (normalizePermissionModeAlias),
+# so storing it would give one posture two names on the session row.
+MINIAPP_PERMISSION_MODES = {"auto", "plan", "acceptEdits", "bypassPermissions",
+                            "dontAsk", "default"}
 
 # Sessions started from the desktop dashboard or the Mini App are created with
 # this permission mode, persisted on the session, so continuing them from any

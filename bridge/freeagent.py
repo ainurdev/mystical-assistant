@@ -157,11 +157,23 @@ def status() -> dict:
     return {"installed": bool(opencode_bin()), "providers": rows}
 
 
+# Claude's permission modes have no counterpart in `opencode run`, which has no
+# mode enum at all — only `--auto` (approve everything) and `--agent`, whose
+# built-in `plan` agent denies `edit` outside its own plan files. So the two
+# postures opencode can honestly offer are plan and full auto; the asking modes
+# (default/dontAsk/acceptEdits) are not among them, because a headless run has
+# nobody to answer an approval prompt. Anything else lands on --auto, which is
+# what a free-agent turn has always done.
+FREE_MODES = ("plan", "bypassPermissions")
+
+
 def build_cmd(prompt: str, provider: dict, session: "str | None",
-              cwd: "str | None") -> list:
+              cwd: "str | None", mode: "str | None" = None) -> list:
     cmd = [opencode_bin() or OPENCODE_BIN, "run", prompt,
            "--model", f"{provider['provider']}/{provider['model']}",
            "--auto"]
+    if mode == "plan":
+        cmd += ["--agent", "plan"]
     if session:
         cmd += ["--session", session]
     if cwd:
