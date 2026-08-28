@@ -873,8 +873,11 @@ export function SessionsPanel(props: Props) {
                       title={`New session in ${g.rel}`}
                       draggable={false} onDragStart={(e) => e.preventDefault()}
                       onMouseEnter={() => setHov(`add:${g.rel}`)} onMouseLeave={() => setHov("")}
-                      style={{ flex: "none", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
-                               padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
+                      // Sits inside a header that collapses on click, so a near
+                      // miss shuts the project instead. Full row height plus
+                      // side padding, pulled back so nothing moves.
+                      style={{ flex: "none", alignSelf: "stretch", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
+                               padding: "0 8px", margin: "0 -8px", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
                                letterSpacing: ".14em", textTransform: "uppercase",
                                color: hov === `add:${g.rel}` || (nsOpen && nsScoped && nsProject === g.rel) ? "var(--acc)" : "var(--txl)",
                                transition: "color .15s ease" }}
