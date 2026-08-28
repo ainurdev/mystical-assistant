@@ -95,16 +95,17 @@ function PromptBubble({ text }: { text: string }) {
 /** The agent's side of the chat: a hairline down the 18px gutter every card in a
  *  turn already indents past. The diamonds on it belong to the messages — each
  *  prose bubble and the RESULT box draws its own where it starts (RailNode in
- *  RunStream) — so the rail marks where the agent spoke, not just that it did. */
+ *  RunStream) — so the rail marks where the agent spoke, not just that it did.
+ *  Drawn in WIRE only: the Chat Elements sheet gives the spine to 2A alone, and
+ *  the other four say the same thing their own way (a stamped edge, a 3px rule
+ *  on the row, a §, or nothing). */
 function AgentRail() {
   return (
     // Flat, not a gradient: a turn runs to thousands of pixels, so anything
     // that fades out is invisible for most of its own length.
-    <span
-      aria-hidden
-      className="pointer-events-none absolute bottom-1 left-[6px] top-[14px] w-px"
-      style={{ background: "var(--ac-12)" }}
-    />
+    // Geometry and colour both live in .agent-rail (index.css): the spine is
+    // 2A WIRE's, and a language cannot take it off an inline rule.
+    <span aria-hidden className="agent-rail" />
   );
 }
 

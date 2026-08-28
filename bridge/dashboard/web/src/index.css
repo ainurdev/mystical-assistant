@@ -1805,8 +1805,19 @@ input {
    relative, so these follow it. */
 .chatcard { border-radius: 0; }
 
-/* the mark on the rail — a hollow diamond and its stub, WIRE's own glyph, which
-   is why four of the five languages replace or hide it */
+/* THE BUS AND WHAT HANGS OFF IT — a hairline down the turn, a hollow diamond
+   where the agent spoke and a stub into what it said. All three are 2A WIRE's
+   ("SCHEMATIC · ONE SPINE"), and the sheet draws them in that column only:
+   CONTROL PLATE marks a section with a dash before its eyebrow and the reply
+   with a stamped edge, SIGNAL with a 3px rule on the row itself, LEDGER PRESS
+   with a §, HALO with nothing at all. So they are off here and on in wire,
+   rather than on here and off in four — a line the sheet draws once should not
+   need denying four times. Transcript.tsx AgentRail / RunStream.tsx RailNode. */
+.agent-rail,
+.rail-node,
+.rail-stub { display: none; }
+.agent-rail { position: absolute; left: 6px; top: 14px; bottom: 4px; width: 1px;
+  pointer-events: none; background: var(--ac-12); }
 .rail-node {
   pointer-events: none; position: absolute; left: 3px; top: 13px;
   width: 7px; height: 7px; transform: rotate(45deg);
@@ -1866,17 +1877,14 @@ input {
    CONTROL PLATE is closest to what the rest of this file already authors, so
    it leads and is the default. */
 
-/* THE GUTTER IS THE RAIL'S, so it belongs to the languages that draw one. The
-   18px down the left of every top-level thing in a turn exists to hold the
-   rail's mark — wire's diamond, stamp's square. Signal, press and halo hide
-   that mark (see .rail-node below), and then the gutter is 18px of nothing
-   indenting every row, bubble and widget past the answer box, which already
-   took the full measure: one language, two left edges. Components read it as
-   `ml-[var(--rail)]`, never as a number, so a language can close it. */
-[data-style] { --rail: 18px; }
-[data-style="signal"],
-[data-style="press"],
-[data-style="halo"] { --rail: 0px; }
+/* THE GUTTER IS THE BUS'S, so only the language with a bus keeps one. The 18px
+   down the left of every top-level thing in a turn exists to hold the spine and
+   its marks; in the four columns the sheet draws no spine in, it is 18px of
+   nothing indenting every row, bubble and widget past the answer box, which had
+   already been given the full measure — one language, two left edges.
+   Components read it as `ml-[var(--rail)]`, never as a number. */
+[data-style] { --rail: 0px; }
+[data-style="wire"] { --rail: 18px; }
 
 /* ══ 1B · CONTROL PLATE ══ chrome is the signal ════════════════════════════
    Every element is a stamped plate: a 1.5px edge, a hard offset shadow that
@@ -1973,12 +1981,6 @@ input {
 }
 [data-style="stamp"] .res-meta { color: color-mix(in srgb, var(--acc-on) 72%, transparent); }
 [data-style="stamp"] .res-fold { border-top-width: 1.5px; }
-/* the rail mark is a stamped square, not a drawn diamond */
-[data-style="stamp"] .rail-node {
-  transform: none; width: 6px; height: 6px; top: 14px;
-  border: 0; background: var(--acc);
-}
-[data-style="stamp"] .rail-stub { background: var(--ac-12); }
 /* plates butt up against the rail they are stamped beside */
 [data-style="stamp"] .chatcard {
   border-width: 1.5px; border-radius: 0;
@@ -2020,6 +2022,10 @@ input {
 [data-style="wire"] .abub,
 [data-style="wire"] .thk,
 [data-style="wire"] .actrow { position: relative; }
+/* the one column the sheet gives a spine, so the one that gets one */
+[data-style="wire"] .agent-rail,
+[data-style="wire"] .rail-node,
+[data-style="wire"] .rail-stub { display: block; }
 /* the bus itself */
 [data-style="wire"] .actrow::before,
 [data-style="wire"] .ax-drawer::before {
@@ -2327,8 +2333,6 @@ input {
 [data-style="signal"] .res-meta { font-variant-numeric: tabular-nums; }
 [data-style="signal"] .res-fold { border-top-color: color-mix(in srgb, var(--tone) 12%, transparent); }
 /* no glyph on the rail: the level bar already says who is speaking */
-[data-style="signal"] .rail-node,
-[data-style="signal"] .rail-stub { display: none; }
 /* a log has no rail to indent past: the level bar starts at the gutter */
 /* an ask is the loudest level there is: a bar, a wash, no frame */
 [data-style="signal"] .chatcard {
@@ -2598,9 +2602,6 @@ input {
   padding-left: var(--press-mar); font-style: italic; letter-spacing: .4px;
 }
 [data-style="press"] .res-fade { background: linear-gradient(to bottom, transparent, var(--canvas)); }
-/* a section mark in the margin does this job, so the diamond goes */
-[data-style="press"] .rail-node,
-[data-style="press"] .rail-stub { display: none; }
 /* set, not boxed: a rule above it and the question in the text column */
 [data-style="press"] .chatcard {
   border: 0; border-top: 1.5px solid var(--txb); border-radius: 0;
@@ -2792,13 +2793,10 @@ input {
   border-top: 1px solid color-mix(in srgb, var(--tone) 14%, transparent);
   padding: 6px 14px; letter-spacing: 1px;
 }
-/* nothing on the rail: in a halo a surface is placed by floating, not by a mark */
 /* the one language that reads a transcript as two sides: your bubble floats on
    the right, shrink-wrapped, with the notch pointing at you */
 [data-style="halo"] .pbub-row { justify-content: flex-end; }
 [data-style="halo"] .pbub { max-width: 78%; }
-[data-style="halo"] .rail-node,
-[data-style="halo"] .rail-stub { display: none; }
 /* a question floats above the transcript it interrupts */
 [data-style="halo"] .chatcard {
   border-radius: 16px; box-shadow: 0 8px 24px var(--shadow-pop);
