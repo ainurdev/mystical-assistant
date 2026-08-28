@@ -1234,7 +1234,7 @@ input {
   grid-template-columns: 3px var(--axtag) minmax(0, 1fr) max-content 18px;
   align-items: center;
   min-height: 24px;
-  margin-left: 18px;
+  margin-left: var(--rail);
   background: var(--ac-03);
   transition: background 0.14s;
 }
@@ -1315,7 +1315,7 @@ input {
 /* The drawer: the payload, opened in place. Its text column starts where the
    object's does, so opening a row never moves the eye sideways. */
 .ax-drawer {
-  margin-left: 18px; padding: 7px 12px 8px calc(var(--axtag) + 3px);
+  margin-left: var(--rail); padding: 7px 12px 8px calc(var(--axtag) + 3px);
   border-top: 1px solid var(--ac-06); background: var(--panel3);
   font-family: var(--mono); font-size: var(--t115); line-height: 1.55;
 }
@@ -1327,7 +1327,7 @@ input {
    said BASH — and each line leads with its own command-kind icon instead. The
    empty cell collapses to its own padding (max-content), so commands don't
    inherit the gutter the tag column exists for. */
-.ax-window { margin-left: 18px; border: 1px solid var(--ac-16); background: var(--code-bg); }
+.ax-window { margin-left: var(--rail); border: 1px solid var(--ac-16); background: var(--code-bg); }
 .ax-window > .actrow { margin-left: 0; background: none; grid-template-columns: 3px max-content minmax(0, 1fr) max-content 18px; }
 .ax-window > .actrow:hover { background: var(--ac-03); }
 .ax-window > .actrow > .ax-bar { background: none; }
@@ -1356,7 +1356,7 @@ input {
    the two-line margin that says "nested". `--h` is the block's hue, set inline:
    teal for an agent, violet for a skill, salmon when it failed. */
 .agb {
-  margin-left: 18px;
+  margin-left: var(--rail);
   padding-left: 10px;
   border: 1px solid var(--ac-16);
   background: var(--panel3);
@@ -1866,6 +1866,18 @@ input {
    CONTROL PLATE is closest to what the rest of this file already authors, so
    it leads and is the default. */
 
+/* THE GUTTER IS THE RAIL'S, so it belongs to the languages that draw one. The
+   18px down the left of every top-level thing in a turn exists to hold the
+   rail's mark — wire's diamond, stamp's square. Signal, press and halo hide
+   that mark (see .rail-node below), and then the gutter is 18px of nothing
+   indenting every row, bubble and widget past the answer box, which already
+   took the full measure: one language, two left edges. Components read it as
+   `ml-[var(--rail)]`, never as a number, so a language can close it. */
+[data-style] { --rail: 18px; }
+[data-style="signal"],
+[data-style="press"],
+[data-style="halo"] { --rail: 0px; }
+
 /* ══ 1B · CONTROL PLATE ══ chrome is the signal ════════════════════════════
    Every element is a stamped plate: a 1.5px edge, a hard offset shadow that
    does not blur (3px 3px 0 — the sheet's signature, and the one shadow in the
@@ -1968,7 +1980,6 @@ input {
 }
 [data-style="stamp"] .rail-stub { background: var(--ac-12); }
 /* plates butt up against the rail they are stamped beside */
-[data-style="stamp"] .resblk { padding-left: 18px; }
 [data-style="stamp"] .chatcard {
   border-width: 1.5px; border-radius: 0;
   box-shadow: 3px 3px 0 var(--plate-cast); background: var(--panel2);
@@ -2051,7 +2062,7 @@ input {
   border: 1px solid var(--acc); background: var(--acc); transform: rotate(45deg);
 }
 /* a thought looked and did not reach, so its node is a dashed circle */
-[data-style="wire"] .thk { margin-left: 18px; padding-left: 11px; }
+[data-style="wire"] .thk { padding-left: 11px; }
 [data-style="wire"] .thk::before {
   content: ""; position: absolute; left: -4px; top: 8px; width: 7px; height: 7px;
   border: 1px dashed var(--txl); border-radius: 50%; background: var(--canvas);
@@ -2114,7 +2125,6 @@ input {
 [data-style="wire"] .res-fold { border-top: 0; justify-content: flex-start; padding-left: 11px; }
 [data-style="wire"] .res-fade { background: linear-gradient(to bottom, transparent, var(--canvas)); }
 /* the answer hangs off the bus like everything else in a schematic */
-[data-style="wire"] .resblk { padding-left: 18px; }
 /* nothing is a card here either: an ask is a node on the bus with a lead */
 [data-style="wire"] .chatcard {
   border: 0; border-left: 2px solid var(--acc); border-radius: 0;
@@ -2209,7 +2219,7 @@ input {
   --sig-t: calc(var(--t85) * 3.4 + 10px);
 }
 [data-style="signal"] .actrow {
-  position: relative; margin-left: 0; padding-left: 3px;
+  position: relative; padding-left: 3px;
   grid-template-columns: var(--sig-t) var(--axtag) minmax(0, 1fr) max-content 18px;
   background: none;
 }
@@ -2265,7 +2275,7 @@ input {
 [data-style="signal"] .abub::before { content: "SAY"; background: var(--acc); }
 /* a thought is a row too, with the one outlined chip in the column */
 [data-style="signal"] .thk {
-  position: relative; margin-left: 0;
+  position: relative;
   padding-left: calc(var(--sig-t) + var(--axtag));
   border-bottom: 1px solid var(--ac-06);
 }
@@ -2320,7 +2330,6 @@ input {
 [data-style="signal"] .rail-node,
 [data-style="signal"] .rail-stub { display: none; }
 /* a log has no rail to indent past: the level bar starts at the gutter */
-[data-style="signal"] .resblk { padding-left: 0; }
 /* an ask is the loudest level there is: a bar, a wash, no frame */
 [data-style="signal"] .chatcard {
   border: 0; border-left: 3px solid var(--acc); border-radius: 0;
@@ -2496,13 +2505,12 @@ input {
 [data-style="press"] .ax-tag[data-shape="cable"]::before { content: "·—· "; color: var(--txf); }
 [data-style="press"] .ax-tag[data-shape="term"]::before { content: "∷ "; color: var(--txf); }
 [data-style="press"] .ax-tag[data-shape="fill"] { text-decoration: underline; text-underline-offset: 3px; }
-/* a mark is set behind a 2px rule and pulled out of the column, which is the
-   indent doing what a fill used to */
-[data-style="press"] .actrow[data-tier="mark"] {
-  border-left: 2px solid var(--h); padding-left: 7px; margin-left: 11px;
-}
+/* a mark is set behind a rule, in the bar cell the grid already keeps for one —
+   drawing it as a border and pulling the row left of the column instead put the
+   one row worth reading on its own left edge, which is what a rule is for */
 [data-style="press"] .actrow > .ax-bar { background: none; }
 [data-style="press"] .actrow[data-tier="reach"] > .ax-bar { background: var(--press-rule); }
+[data-style="press"] .actrow[data-tier="mark"] > .ax-bar { width: 2px; background: var(--h); }
 [data-style="press"] .ax-pill { border-radius: 0; background: none; color: var(--txd); padding: 0; }
 [data-style="press"] .ax-q { border: 0; font-style: italic; padding: 0; }
 [data-style="press"] .ax-drawer { background: none; border-top: 1px solid var(--press-rule); }
@@ -2580,7 +2588,9 @@ input {
   border-bottom: 0; padding: 5px 0 2px; color: var(--txb);
   font-family: var(--ui); font-weight: 600; letter-spacing: 2px;
 }
-[data-style="press"] .res-lab { width: var(--press-mar); flex: none; }
+/* the margin is 3.4 characters wide and this label is twelve, so it sets as a
+   heading over the rule instead of breaking "RESUL / T // / OK" into it */
+[data-style="press"] .res-lab { flex: none; white-space: nowrap; }
 [data-style="press"] .res-meta { font-family: var(--ui); color: var(--txf); }
 [data-style="press"] .res-body { padding: 2px 0 6px var(--press-mar); }
 [data-style="press"] .res-fold {
@@ -2591,8 +2601,6 @@ input {
 /* a section mark in the margin does this job, so the diamond goes */
 [data-style="press"] .rail-node,
 [data-style="press"] .rail-stub { display: none; }
-/* the rule runs the full measure, the way a rule does on a page */
-[data-style="press"] .resblk { padding-left: 0; }
 /* set, not boxed: a rule above it and the question in the text column */
 [data-style="press"] .chatcard {
   border: 0; border-top: 1.5px solid var(--txb); border-radius: 0;
@@ -2649,12 +2657,14 @@ input {
   --axtag: calc(var(--t95) * 5.6 + 40px);
 }
 [data-style="halo"] .pbub {
-  border-radius: 16px 16px 6px 16px; padding: 9px 14px;
+  border-radius: 16px 16px 6px 16px; padding: 9px 14px; border-width: 1px;
   border-color: color-mix(in srgb, var(--purple) 24%, transparent);
   background: color-mix(in srgb, var(--purple) 12%, transparent);
 }
+/* the one language with no rules in it: the 3px the component puts down a
+   bubble's speaking side is a rule, so a surface takes an even hairline */
 [data-style="halo"] .abub {
-  border-radius: 6px 16px 16px 16px; padding: 10px 14px;
+  border-radius: 6px 16px 16px 16px; padding: 10px 14px; border-width: 1px;
   border-color: var(--ac-12); background: var(--panel2);
   box-shadow: 0 8px 24px var(--shadow-pop);
 }
@@ -2673,7 +2683,7 @@ input {
 /* a run of actions: soft rows in a tight stack, one radius, no rules */
 [data-style="halo"] .actrow {
   border-radius: 11px; overflow: hidden; background: none;
-  margin-left: 18px; padding-right: 2px;
+  padding-right: 2px;
 }
 [data-style="halo"] .actrow + .actrow { margin-top: 2px; border-top: 0; }
 [data-style="halo"] .actrow + .ax-drawer,
@@ -2789,8 +2799,6 @@ input {
 [data-style="halo"] .pbub { max-width: 78%; }
 [data-style="halo"] .rail-node,
 [data-style="halo"] .rail-stub { display: none; }
-/* nothing to hang off — a surface is placed by floating, so it takes the column */
-[data-style="halo"] .resblk { padding-left: 0; }
 /* a question floats above the transcript it interrupts */
 [data-style="halo"] .chatcard {
   border-radius: 16px; box-shadow: 0 8px 24px var(--shadow-pop);
@@ -2829,7 +2837,7 @@ input {
    for that. The hue says who is waiting — accent while the flow moves itself,
    amber the moment the card asks you to approve something. */
 .flc {
-  position: relative; margin-left: 18px; padding-left: 10px;
+  position: relative; margin-left: var(--rail); padding-left: 10px;
   border: 1px solid var(--ac-16); background: var(--panel3);
 }
 .flc::before,
@@ -3314,3 +3322,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-style="halo"] .flc-table th { border-bottom: 0; letter-spacing: .6px; }
 [data-style="halo"] .flc-table td { border-radius: 6px; }
 [data-style="halo"] .flc-table tbody tr:hover td { background: var(--ac-06); }
+
+/* A ROW INSIDE A TERMINAL WINDOW BELONGS TO THE WINDOW. The frame already
+   supplies its own edge and its own gutter, so a language may not indent the
+   row again or rule its left: the strip that opens between the frame and the
+   row paints the window's ground and reads as a border nobody drew — a black
+   band in halo, a salmon one when the run failed. Last in the file because
+   `.ax-window > .actrow` and `[data-style="x"] .actrow` weigh the same and
+   order is all that decides. */
+.ax-window > .actrow { margin-left: 0; border-left: 0; }

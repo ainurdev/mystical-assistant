@@ -55,7 +55,7 @@ function RuntimeBadge({ runtime }: { runtime: string }) {
   const free = kind === "opencode";
   const label = free ? `FREE AGENT · ${(arg || "?").toUpperCase()}` : `ACCOUNT ${arg}`;
   return (
-    <div className="ml-[18px] flex">
+    <div className="ml-[var(--rail)] flex">
       <span
         className="border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{

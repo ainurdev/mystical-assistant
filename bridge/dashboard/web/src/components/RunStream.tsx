@@ -586,7 +586,7 @@ function BootRow({ text }: { text: string }) {
  *  figure on top of that row's own numbers. */
 function GapMark({ ms }: { ms: number }) {
   return (
-    <div aria-hidden className="ml-[18px] flex items-center gap-2 pr-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
+    <div aria-hidden className="ml-[var(--rail)] flex items-center gap-2 pr-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
       <span className="h-px min-w-0 flex-1 bg-border" />
       <span className="flex-none">+{dur(ms)}</span>
     </div>
@@ -621,7 +621,7 @@ function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animat
   );
   return (
     <div
-      className="thk ml-[18px] text-muted-2"
+      className="thk ml-[var(--rail)] text-muted-2"
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       {text ? (
@@ -656,7 +656,7 @@ function LogRow({ src, label, text, error, animate }:
   const color = error ? "var(--err)" : undefined;
   return (
     <div
-      className="thk thk-log ml-[18px] text-muted-2"
+      className="thk thk-log ml-[var(--rail)] text-muted-2"
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <button
@@ -1186,7 +1186,7 @@ function ToolImages({ paths }: { paths: string[] }) {
   const live = paths.filter((p) => !gone.has(p));
   if (!live.length) return null;
   return (
-    <div className="mt-2 ml-[18px] flex flex-wrap gap-2">
+    <div className="mt-2 ml-[var(--rail)] flex flex-wrap gap-2">
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
       {live.map((p) => {
         const src = api.attachmentUrl(p);
@@ -1584,7 +1584,7 @@ export const RunStream = memo(function RunStream({
         <button
           type="button"
           onClick={() => setWholeTurn(true)}
-          className="ml-[18px] flex items-center gap-1.5 border border-border px-2.5 py-1 text-[length:var(--t95)] tracking-[1px] text-muted-2 hover:text-foreground-bright"
+          className="ml-[var(--rail)] flex items-center gap-1.5 border border-border px-2.5 py-1 text-[length:var(--t95)] tracking-[1px] text-muted-2 hover:text-foreground-bright"
         >
           <ChevronsUp size={11} aria-hidden />
           {from} EARLIER STEP{from === 1 ? "" : "S"}
@@ -1612,7 +1612,7 @@ export const RunStream = memo(function RunStream({
             return (
               <div
                 key={i}
-                className="group/msg relative flex items-start pl-[18px]"
+                className="group/msg relative flex items-start pl-[var(--rail)]"
                 style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
               >
                 <RailNode />
@@ -1654,7 +1654,7 @@ export const RunStream = memo(function RunStream({
             // of them, has no column on the sheet and was replaced by a fifth
             // look (lib/toolwidget TOOL_STYLES).
             const extra = spec ? (
-              <div className="ml-[18px]">
+              <div className="ml-[var(--rail)]">
                 <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
               </div>
             ) : done?.images?.length ? <ToolImages paths={done.images} /> : null;
@@ -1751,7 +1751,7 @@ export const RunStream = memo(function RunStream({
                   t={clockAt(event)}
                 />
                 {done?.is_error && done.stat ? (
-                  <div className="mt-2 ml-[18px]"><ErrLine text={done.stat} /></div>
+                  <div className="mt-2 ml-[var(--rail)]"><ErrLine text={done.stat} /></div>
                 ) : null}
                 {extra}
               </div>
@@ -1822,7 +1822,7 @@ export const RunStream = memo(function RunStream({
             return (
               <div
                 key={i}
-                className="ml-[18px] flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
+                className="ml-[var(--rail)] flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
                 style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
               >
                 <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
@@ -1831,7 +1831,7 @@ export const RunStream = memo(function RunStream({
             );
           case "permission":
             return (
-              <div key={i} className="ml-[18px]">
+              <div key={i} className="ml-[var(--rail)]">
                 <PermissionCard
                   toolName={event.tool_name}
                   summary={event.summary}
@@ -1847,7 +1847,7 @@ export const RunStream = memo(function RunStream({
             );
           case "question":
             return (
-              <div key={i} id={ckId(turnId, event.request_id)} className="ml-[18px] scroll-mt-[44px]">
+              <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[44px]">
                 <QuestionCard
                   questions={event.questions}
                   requestId={event.request_id}
@@ -1862,7 +1862,7 @@ export const RunStream = memo(function RunStream({
             return (
               <div
                 key={i}
-                className="ml-[18px] flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
+                className="ml-[var(--rail)] flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
               >
                 <CircleStop
                   size={14}
@@ -1997,7 +1997,7 @@ function FinalResult({
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
     // of rules, a level bar, a margin note, a floating surface) — and nothing
     // overrides an inline rule. See `.res` in index.css and THE SESSION'S IDIOM.
-    <div className="resblk relative my-2 pl-[18px]" style={{ "--tone": tone } as React.CSSProperties}>
+    <div className="resblk relative my-2 pl-[var(--rail)]" style={{ "--tone": tone } as React.CSSProperties}>
       <RailNode />
       <div
         className="res group/res"
