@@ -21,7 +21,7 @@ import {
   type FreeAgentInfo,
 } from "./api";
 import { modelOptions, latestPerFamily, type AgentOption } from "./models";
-import { activeOf, estimateContextTokens, mergeDelta, type Turn } from "./chat";
+import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
@@ -414,7 +414,7 @@ export function App() {
   const openWorking =
     (sessionId ? statusMap.get(sessionId)?.state : undefined) === "working";
 
-  const contextTokens = estimateContextTokens(turns);
+  const contextTokens = selected?.ctx_tokens ?? undefined;
   const toolCount = turns.reduce(
     (n, t) => n + t.events.filter((e) => e.type === "tool").length, 0);
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
@@ -2029,7 +2029,8 @@ export function App() {
                       agent={agentId} agents={agentOpts} onAgent={setAgent}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       draft={draft} onDraft={setDraft}
-                      contextTokens={contextTokens} onModel={setModel} onEffort={setEffort}
+                      contextTokens={contextTokens} contextWindow={selected?.ctx_window}
+                      onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}

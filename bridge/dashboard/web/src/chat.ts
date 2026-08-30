@@ -126,20 +126,3 @@ export function activeOf(turns: Turn[]): Turn | null {
   const last = turns[turns.length - 1];
   return last && last.status === "running" ? last : null;
 }
-
-/** Rough client-side estimate of the conversation's context size. The backend
- *  records no token counts, so we approximate at ~4 chars/token over the visible
- *  prompt + event text. Good enough to surface "getting big — consider /compact". */
-export function estimateContextTokens(turns: Turn[]): number {
-  let chars = 0;
-  for (const t of turns) {
-    chars += t.prompt.length;
-    for (const e of t.events) {
-      if (e.type === "text") chars += e.text.length;
-      else if (e.type === "tool") chars += e.name.length + e.summary.length;
-      else if (e.type === "result") chars += e.result.length;
-      else if (e.type === "error") chars += e.message.length;
-    }
-  }
-  return Math.round(chars / 4);
-}

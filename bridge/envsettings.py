@@ -95,8 +95,10 @@ SETTINGS = (
     {"key": "CONTEXT_WINDOW", "type": "int", "live": True, "min": 1000, "unit": "tokens",
      "group": "RUNS", "label": "CONTEXT WINDOW", "hint": "denominator for the context meter",
      "about": "The Models API doesn't report per-model windows, so the meter needs one "
-              "number. Raise it for 1M-context runs. Display only — it doesn't change "
-              "what any model actually accepts."},
+              "number. 1M covers every model a session runs on; lower it only for a "
+              "200k model like Haiku. A session pinned to an auto-compact token count "
+              "counts up to that instead. Display only — it doesn't change what any "
+              "model actually accepts."},
     {"key": "NEW_SESSION_PERMISSION_MODE", "type": "enum", "live": True,
      "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
      "group": "RUNS", "label": "NEW SESSION MODE", "hint": "permission mode a dashboard/Mini App session is created with",

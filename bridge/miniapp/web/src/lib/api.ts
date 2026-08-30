@@ -59,7 +59,8 @@ export interface SessionBrief {
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
   ctx_tokens?: number | null; // window fill at the end of the last turn (null = unmeasured)
-  ctx_window?: number; // what ctx_tokens is a fraction of (config.CONTEXT_WINDOW)
+  ctx_window?: number; // what ctx_tokens is a fraction of: this session's
+  // compact-at when it is a token count, else config.CONTEXT_WINDOW
   autocompact?: string | null; // compact at: "auto" | token count | null (claude's default)
   branch?: string; // the branch it is working on ("" when unknown)
   work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there

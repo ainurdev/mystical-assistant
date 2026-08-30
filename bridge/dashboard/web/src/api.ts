@@ -37,7 +37,8 @@ export interface SessionBrief {
   worktree?: string; // the linked worktree it runs in ("" = the project checkout)
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
   ctx_tokens?: number | null; // window fill at the end of the last turn (null = unmeasured)
-  ctx_window?: number; // what ctx_tokens is a fraction of (config.CONTEXT_WINDOW)
+  ctx_window?: number; // what ctx_tokens is a fraction of: this session's
+  // compact-at when it is a token count, else config.CONTEXT_WINDOW
   autocompact?: string | null; // compact at: "auto" | token count | null (claude's default)
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;

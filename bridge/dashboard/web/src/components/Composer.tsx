@@ -51,8 +51,9 @@ export const PONYTAILS: { id: string; label: string }[] = [
   { id: "ultra", label: "Ultra" },
 ];
 
-const COMPACT_SUGGEST_TOKENS = 100_000;
-const CONTEXT_MAX_TOKENS = 200_000;
+// Past this share of the window, COMPACT lights up. A fraction, not a token
+// count: the ceiling moves with the model and with a session's own compact-at.
+const COMPACT_SUGGEST = 0.75;
 // The context readout is a segmented instrument, not a track: eight lamps read
 // as fast as a bar at a tenth of the width, and the width is the point — the
 // old full-bleed bar spent a whole row of the composer to render "1%".
@@ -164,6 +165,7 @@ function LeftMeter({ left, severity }: { left: number; severity?: string }) {
 }
 
 function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
   return `${n}`;
 }
@@ -183,7 +185,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
 
 export function Composer({
   disabled, running, model, models, usage, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
-  draft, onDraft, contextTokens, onModel, onEffort, onSend, onSteer, onStop, onCompact,
+  draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause, pills,
 }: {
   disabled: boolean;
@@ -212,7 +214,12 @@ export function Composer({
   injectedText?: string;
   injectNonce?: number;
   sessionId?: string | null;
+  // Measured window fill at the end of the last turn, and what it counts up to
+  // (the model's window, or this session's compact-at when it has one). Both
+  // come from the session row — the composer no longer guesses from the
+  // transcript, which never saw the system prompt, the tools or a file's body.
   contextTokens?: number;
+  contextWindow?: number;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
   onSend: (text: string, images: string[]) => void;
@@ -493,8 +500,9 @@ export function Composer({
   }
 
   const ctx = contextTokens ?? 0;
-  const ctxPct = Math.min(100, Math.round((ctx / CONTEXT_MAX_TOKENS) * 100));
-  const suggest = ctx >= COMPACT_SUGGEST_TOKENS;
+  const ctxMax = contextWindow || 1_000_000;
+  const ctxPct = Math.min(100, Math.round((ctx / ctxMax) * 100));
+  const suggest = ctx >= ctxMax * COMPACT_SUGGEST;
   const ctxSegs = Math.min(CTX_SEGMENTS, Math.ceil((ctxPct / 100) * CTX_SEGMENTS));
   // The meter is teal until the window is actually filling. Colour that is
   // always on is colour that says nothing.
@@ -683,7 +691,7 @@ export function Composer({
           {/* CONTEXT as an instrument: eight segments that only recolour when
               the window is actually filling, and a COMPACT that is always
               there, dim until past the point where pressing it is the right call. */}
-          <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${CONTEXT_MAX_TOKENS / 1000}k${ctx > 0 ? ` (~${fmtTokens(ctx)} tokens)` : ""}`}>
+          <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}`}>
             <span className="lbl">CTX</span>
             <span className="seg">
               {Array.from({ length: CTX_SEGMENTS }, (_, i) => (

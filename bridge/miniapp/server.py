@@ -109,6 +109,16 @@ def normalize_autocompact(value) -> "tuple[bool, str | None]":
     return True, str(int(v))
 
 
+def _ctx_ceiling(autocompact) -> int:
+    """What the context meter counts up to. A session pinned to a token count
+    compacts *there*, not at the end of the window, so that number is the honest
+    denominator — the meter is read to decide whether to compact, and a
+    percentage of a ceiling nothing ever reaches answers a question nobody asked.
+    "auto" and unset leave the CLI's own trigger, which is unpublished, so those
+    fall back to the window."""
+    return int(autocompact) if str(autocompact or "").isdigit() else config.CONTEXT_WINDOW
+
+
 def _session_brief(s: dict) -> dict:
     cwd = s.get("cwd")
     # The branch the session is *working* on: the worktree its shell moved into
@@ -128,7 +138,7 @@ def _session_brief(s: dict) -> dict:
             "origin": s.get("origin"), "cwd": cwd,
             "fallback_policy": s.get("fallback_policy"),
             "ctx_tokens": s.get("ctx_tokens"),
-            "ctx_window": config.CONTEXT_WINDOW,
+            "ctx_window": _ctx_ceiling(s.get("autocompact")),
             "autocompact": s.get("autocompact"),
             "disabled_tools": store.parse_disabled_tools(s.get("disabled_tools")),
             "goal": store.parse_goal(s.get("goal")),

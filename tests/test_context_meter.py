@@ -65,6 +65,21 @@ def test_normalize_autocompact_rejects_instead_of_coercing():
     assert normalize_autocompact("soon")[0] is False
 
 
+def test_the_meter_counts_up_to_the_compact_point_when_there_is_one():
+    """The denominator answers "how close am I to compacting", so a session
+    pinned to a token count counts up to that, not to the whole window."""
+    from bridge import config
+    from bridge.miniapp.server import _ctx_ceiling
+    assert _ctx_ceiling("150000") == 150000
+    # "auto" and unset leave the CLI's own (unpublished) trigger — the window
+    # is the only honest ceiling then.
+    assert _ctx_ceiling("auto") == config.CONTEXT_WINDOW
+    assert _ctx_ceiling(None) == config.CONTEXT_WINDOW
+    # The window is the one every model a session runs on actually has. A 200k
+    # denominator read past 100% on any long session.
+    assert config.CONTEXT_WINDOW == 1_000_000
+
+
 def _dash_handler():
     """Drive the dashboard handler without sockets (as test_toolset_endpoints does)."""
     from bridge.dashboard import server as dash

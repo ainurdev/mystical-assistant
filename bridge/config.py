@@ -68,9 +68,11 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
 
 # Denominator for the context meter: how big the window a session is filling is.
-# The Models API doesn't report per-model windows and 1M-context runs are the
-# exception, so one overridable number is the whole mechanism.
-CONTEXT_WINDOW = int(os.environ.get("CONTEXT_WINDOW", "200000"))
+# The Models API doesn't report per-model windows, so one overridable number is
+# the whole mechanism. 1M is the window of every model a session actually runs
+# on (Opus 5, Fable 5, Sonnet 5); the old 200k default was a Haiku-era figure
+# that read >100% on any real session — this machine's DB has turns at 504k.
+CONTEXT_WINDOW = int(os.environ.get("CONTEXT_WINDOW", "1000000"))
 
 # MCP servers a *new* session starts with, comma-separated, by their
 # `claude mcp list` name (e.g. "playwright,chrome-devtools"). The rest start
