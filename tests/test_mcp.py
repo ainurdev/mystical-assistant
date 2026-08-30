@@ -156,3 +156,28 @@ def test_only_one_login_is_ever_in_flight(stub_login):
 def test_the_parsed_list_says_what_each_server_connects_to():
     row = toolsets._parse("attio: https://mcp.attio.com/mcp (HTTP) - ✔ Connected")[0]
     assert row["target"] == "https://mcp.attio.com/mcp (HTTP)"
+
+
+# A login the CLI refuses outright: a red error line, then the cursor-show it
+# writes on its way out. That `ESC[?25h` is the literal last line of output —
+# what the panel showed instead of the reason, before _ANSI covered CSI.
+REFUSED_STUB = """
+    import sys
+    sys.stdout.write('\\x1b[0m\\x1b[31mCouldn\\'t complete authentication for'
+                     ' "attio": Dynamic Client Registration rejected\\x1b[0m\\r\\n')
+    sys.stdout.write('\\x1b[?25h')
+    sys.stdout.flush()
+    sys.exit(1)
+"""
+
+
+def test_a_refused_login_reports_the_reason_not_the_cursor_escape(monkeypatch, tmp_path):
+    script = _stub(tmp_path, REFUSED_STUB)
+    real = mcp.subprocess.Popen
+    monkeypatch.setattr(mcp.subprocess, "Popen",
+                        lambda argv, **kw: real([sys.executable, script], **kw))
+    monkeypatch.setattr(toolsets, "servers", lambda refresh=False: SAMPLE)
+    monkeypatch.setattr(toolsets, "invalidate", lambda: None)
+    err = mcp.begin_login("attio", timeout=10)["error"]
+    assert "Dynamic Client Registration rejected" in err
+    assert "\x1b" not in err and "25h" not in err

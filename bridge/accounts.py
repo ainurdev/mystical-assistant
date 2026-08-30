@@ -267,7 +267,7 @@ def add(slot: "int | None" = None, alias: "str | None" = None) -> int:
 
 _LOGIN_ARGS = ("auth", "login", "--claudeai")
 _OSC8 = re.compile(rb"\x1b]8;;(https://[^\x1b\x07]+)")   # terminal hyperlink target
-_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b][^\x1b\x07]*(?:\x1b\\|\x07)?")
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b][^\x1b\x07]*(?:\x1b\\|\x07)?")
 _PROMPT = re.compile(r".*Paste code here[^>]*>\s*")      # the one prompt this flow hits
 _pending: dict = {}                                      # slot -> _Login
 

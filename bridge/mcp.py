@@ -47,9 +47,12 @@ TRANSPORTS = ("http", "sse", "stdio")
 # The CLI writes its authorization link as an OSC-8 terminal hyperlink, whose
 # plain-text half then arrives doubled. accounts.py has the twin of this for
 # `claude auth login` -- deliberately not shared, so neither auth flow can break
-# the other by tightening a regex.
+# the other by tightening a regex. _ANSI matches the whole CSI grammar, not
+# just the colour subset: the CLI's last write on the way out is the cursor-show
+# `ESC[?25h`, and a private-parameter `?` left unstripped becomes tail()'s "last
+# line" -- the error the user needed to read hidden one line above it.
 _OSC8 = re.compile(rb"\x1b]8;;(https://[^\x1b\x07]+)")
-_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b][^\x1b\x07]*(?:\x1b\\|\x07)?")
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b][^\x1b\x07]*(?:\x1b\\|\x07)?")
 _PROMPT = re.compile(r".*paste the redirect URL here:\s*")
 _FAILED = "Couldn't complete authentication"
 
