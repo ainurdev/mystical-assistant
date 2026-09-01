@@ -5,6 +5,7 @@ import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
 import { FileIcon } from "../lib/fileicon";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
+import { collapseProgress, type Progress } from "../lib/progressline";
 import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 
@@ -49,6 +50,44 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
             : code}
         </code>
       </pre>
+    </div>
+  );
+}
+
+/** A pasted job log that is mostly a bar redrawing itself, drawn as the bar.
+ *  The percentage is the reading, so it gets the track every other utilisation
+ *  in the HUD gets; the step headings between runs stay as the text they were. */
+function ProgressBlock({ rows }: { rows: (string | Progress)[] }) {
+  return (
+    <div className="md-code px-2.5 py-2">
+      {rows.map((r, i) =>
+        typeof r === "string" ? (
+          r.trim() && (
+            <div key={i} className="text-[length:var(--t95)] tracking-[1.4px] text-muted-2">
+              {r}
+            </div>
+          )
+        ) : (
+          <div key={i} className="py-1">
+            <div className="flex items-baseline gap-2">
+              <span className="min-w-0 flex-1 truncate text-[length:var(--t95)] text-muted-2" title={r.label}>
+                {r.label}
+              </span>
+              <b className="text-[length:var(--t95)] font-normal tabular-nums text-muted-2">{r.pct}%</b>
+            </div>
+            <span
+              className="flc-track mt-1 block"
+              role="progressbar"
+              aria-valuenow={r.pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={r.label || "progress"}
+            >
+              <i style={{ width: `${r.pct}%` }} />
+            </span>
+          </div>
+        ),
+      )}
     </div>
   );
 }
@@ -193,6 +232,10 @@ export const Markdown = memo(function Markdown({
                 if (drawWidget(wtype, value)) return drawn;
               }
             }
+            // A job's own progress output, which is a bar already — just one
+            // drawn in hyphens, forty times over. Drawn once, as a bar.
+            const rows = collapseProgress(code);
+            if (rows.some((r) => typeof r !== "string")) return <ProgressBlock rows={rows} />;
             return <CodeBlock code={code} lang={lang} />;
           },
         }}
