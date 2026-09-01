@@ -78,12 +78,12 @@ with "Target closed" in this WSL box).
 
 ## Recording, not just stills
 
-A still cannot show a transition, a hover, or a race. `.claude/skills/bridge-eyes/rec.mjs`
+A still cannot show a transition, a hover, or a race. `bridge/rec.mjs`
 is `shot2.mjs` with `Page.startScreencast` in place of the single capture, and
 takes the same arguments plus an output fps:
 
 ```sh
-node .claude/skills/bridge-eyes/rec.mjs 'http://127.0.0.1:8790/?skipboot=1' /tmp/clip.webm \
+node bridge/rec.mjs 'http://127.0.0.1:8790/?skipboot=1' /tmp/clip.webm \
   1280 800 3000 '{}' "$ASYNC_JS" 10
 # → /tmp/clip.webm 800KB  490 frames -> 102 @10fps  10.2s
 ```

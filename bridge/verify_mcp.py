@@ -1,8 +1,11 @@
 """Stdio MCP server giving the model eyes on a running page.
 
-Spawned per interactive run via --mcp-config, alongside the goal server. One
-tool: a screenshot comes back as an image content block, so "the layout is
-fixed" can be looked at instead of asserted.
+Spawned per interactive run via --mcp-config, alongside the goal server. Two
+tools: a screenshot comes back as an image content block, so "the layout is
+fixed" can be looked at instead of asserted, and a recording -- which does not
+come back at all. A clip is tens of megabytes and the model cannot watch video
+anyway, so Record returns a path and the runner moves it into the turn's
+attachments, where the human sees it in the transcript.
 
 Only screenshotting lives here. A DevLog tool would have been redundant --
 `.mystical/dev.log` is a file on disk and the system prompt already points at
@@ -19,7 +22,7 @@ import base64
 import json
 import sys
 
-from bridge import screenshot
+from bridge import record, screenshot
 
 PROTOCOL = "2024-11-05"
 
@@ -48,6 +51,38 @@ _TOOLS = [
             "required": ["url"],
         },
     },
+    {
+        "name": "Record",
+        "description": (
+            "Screen-record a URL in headless Chrome. Use it when one frame "
+            "cannot show the thing: a transition, a hover, a loading sequence, "
+            "a click-through. The clip goes to the human in the chat -- you get "
+            "back a confirmation, not the pixels, because you cannot watch "
+            "video. Prefer Screenshot when a still would do."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Absolute URL, e.g. http://localhost:5173/",
+                },
+                "seconds": {
+                    "type": "integer",
+                    "description": "How long to watch after load. Default 8, max 60.",
+                },
+                "width": {"type": "integer", "description": "Default 1200."},
+                "height": {"type": "integer", "description": "Default 900."},
+                "steps": {
+                    "type": "string",
+                    "description": (
+                        "Optional JS run in the page while recording, awaited: "
+                        "an async IIFE that clicks and awaits between steps is "
+                        "how you record an interaction rather than an idle page."),
+                },
+            },
+            "required": ["url"],
+        },
+    },
 ]
 
 
@@ -62,11 +97,26 @@ def _call(name: str, args: dict) -> list[dict]:
     """MCP content blocks for one tool call. Errors come back as text: a failed
     screenshot is something the model should read and route around, not a
     protocol fault."""
-    if name != "Screenshot":
+    if name not in ("Screenshot", "Record"):
         return [{"type": "text", "text": f"Unknown tool: {name}"}]
     url = (args.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
         return [{"type": "text", "text": "url must be an absolute http(s) URL."}]
+    if name == "Record":
+        try:
+            path = record.capture(url, args.get("seconds") or 8,
+                                  _clamp(args.get("width"), 1200, MAX_W),
+                                  _clamp(args.get("height"), 900, MAX_H),
+                                  args.get("steps") or "")
+        except Exception as e:  # noqa: BLE001 -- node missing, chrome missing, timeout
+            return [{"type": "text", "text": f"Recording failed: {e}"}]
+        # First line is the path, and the runner reads exactly that: it matches
+        # on this tool's name, so this is our own output shape rather than a
+        # path sniffed out of arbitrary text.
+        return [{"type": "text", "text": (
+            f"{path}\nRecorded {url}. The clip is in the chat for the human to "
+            f"watch -- you cannot see it, so ask them what it showed if the "
+            f"answer matters.")}]
     try:
         png = screenshot.capture(url, _clamp(args.get("width"), 1200, MAX_W),
                                  _clamp(args.get("height"), 900, MAX_H))

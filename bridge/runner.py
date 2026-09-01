@@ -1474,6 +1474,8 @@ def _handle_event(job: Job, d: dict):
                 ev = transcript_jsonl.tool_done(
                     rid, name, ms, b, d.get("tool_use_result"))
                 imgs = _save_result_images(job.id, rid, b.get("content"))
+                if (clip := _save_result_video(job.id, name, b.get("content"))):
+                    imgs = imgs + [clip]
                 if imgs:
                     ev["images"] = imgs
                 job.add(ev)
@@ -1526,6 +1528,44 @@ def _save_result_images(job_id: str, rid: str, content) -> list[str]:
         except (ValueError, OSError) as e:
             print(f"[runner] tool image dropped: {e}", file=sys.stderr)
     return out
+
+
+_MCP_VID_BYTES = 64 * 1024 * 1024   # one clip, on disk
+
+
+def _save_result_video(job_id: str, name: "str | None", content) -> "str | None":
+    """The Record tool hands back a path rather than bytes -- a clip is tens of
+    megabytes, and this event goes into the store and down every SSE stream, so
+    base64 is out of the question. It writes to a temp dir nobody serves; moving
+    it next to the run's uploads is what puts it in the transcript, and makes it
+    subject to the same pruning as everything else there.
+
+    Gated on the tool name: this is our own tool's first line, not a path
+    sniffed out of whatever text some other tool happened to return."""
+    if not name or not name.endswith("__Record") or not isinstance(content, list):
+        return None
+    for b in content:
+        if not isinstance(b, dict) or b.get("type") != "text":
+            continue
+        first = ((b.get("text") or "").splitlines() or [""])[0].strip()
+        if not first or not os.path.isfile(first):
+            continue
+        if not (mimetypes.guess_type(first)[0] or "").startswith("video/"):
+            continue
+        try:
+            if os.path.getsize(first) > _MCP_VID_BYTES:
+                return None
+            d = os.path.join(config.UPLOAD_DIR, job_id)
+            os.makedirs(d, exist_ok=True)
+            # The temp dir's name is already unique per recording, so it keeps
+            # two clips in one turn from overwriting each other.
+            fp = os.path.join(d, f"{os.path.basename(os.path.dirname(first))}.webm")
+            shutil.move(first, fp)
+            return fp
+        except OSError as e:
+            print(f"[runner] recording dropped: {e}", file=sys.stderr)
+            return None
+    return None
 
 
 def _cleanup_uploads(job_id: str):
