@@ -10,7 +10,7 @@ import {
   type Idea, type Meter, type Output, type PlanRow, type Question, type Source,
   type Stat, type Table,
 } from "../lib/resultfields";
-import { ImageLightbox } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, isVideo } from "./ImageLightbox";
 
 // The widgets a typed stage's card is made of. Which one draws is the flow's
 // call, not this file's: bridge/flows/*.json declares a field's type and
@@ -301,17 +301,17 @@ function shotLabel(s: { path: string; caption?: string }, i: number): string {
  *  being approved, so a note per screen is how you answer without describing
  *  which screen you mean. */
 function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string }[]; send?: (t: string) => void }) {
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<{ src: string; video: boolean } | null>(null);
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [sent, setSent] = useState(false);
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
     <div className="flc-gal">
-      {zoom && <ImageLightbox src={zoom} alt="screen" onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom.src} alt="screen" video={zoom.video} onClose={() => setZoom(null)} />}
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>
-            <Shot path={s.path} onZoom={setZoom} />
+            <Shot path={s.path} onZoom={(src, video) => setZoom({ src, video })} />
             {/* Every image a tool returns is saved as mcp-<tool_use_id>-<n>.png
                 (bridge/runner.py) — an id is not a caption, and in a chain of
                 them the rows above already name what was read. Number those
@@ -350,7 +350,7 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
  *  App's auth lives in a header, so the bytes come through the API as a blob
  *  (same shape as RunStream's ToolImage — inlined rather than imported, because
  *  RunStream already imports this file's card). */
-function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void }) {
+function Shot({ path, onZoom }: { path: string; onZoom: (src: string, video: boolean) => void }) {
   const [src, setSrc] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
   useEffect(() => {
@@ -366,8 +366,8 @@ function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void })
   if (gone) return <span className="flc-gone">{path.split("/").pop()}</span>;
   if (!src) return null;
   return (
-    <button type="button" className="flc-zoom" onClick={() => onZoom(src)} aria-label={`Open ${path}`}>
-      <img src={src} alt={path} />
+    <button type="button" className="flc-zoom" onClick={() => onZoom(src, isVideo(path))} aria-label={`Open ${path}`}>
+      <MediaThumb src={src} alt={path} video={isVideo(path)} />
     </button>
   );
 }

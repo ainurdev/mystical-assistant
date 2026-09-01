@@ -10,7 +10,7 @@ import {
   type Idea, type Meter, type Output, type PlanRow, type Question, type Source,
   type Stat, type Table,
 } from "../lib/resultfields";
-import { ImageLightbox, ZoomButton } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 
 // The widgets a typed stage's card is made of. Which one draws is the flow's
 // call, not this file's: bridge/flows/*.json declares a field's type and
@@ -354,7 +354,7 @@ function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void })
   if (gone) return <span className="flc-gone">{path.split("/").pop()}</span>;
   return (
     <ZoomButton onOpen={() => onZoom(src)}>
-      <img src={src} alt={path} onError={() => setGone(true)} />
+      <MediaThumb src={src} alt={path} onError={() => setGone(true)} />
     </ZoomButton>
   );
 }

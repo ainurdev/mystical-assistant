@@ -36,7 +36,7 @@ from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, usage,
                     weather, wsutil)
-from bridge.miniapp.server import (_pre_title, _qs_int, _save_images,
+from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
                                    transcript_for)
@@ -1735,7 +1735,7 @@ class Handler(BaseHTTPRequestHandler):
         fp = os.path.realpath(p or "")
         ctype = mimetypes.guess_type(fp)[0] or ""
         if (not fp.startswith(up + os.sep) or not os.path.isfile(fp)
-                or not ctype.startswith("image/")):
+                or not ctype.startswith(_SERVABLE)):
             return self._json({"error": "not found"}, 404)
         with open(fp, "rb") as f:
             self._send(f.read(), 200, ctype, cache="private, max-age=300")

@@ -12,7 +12,7 @@ import { SteerIcon } from "./Composer";
 import { Markdown, type OpenFile } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
-import { ImageLightbox, ZoomButton } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
@@ -1186,7 +1186,7 @@ function ToolImages({ paths }: { paths: string[] }) {
         const src = api.attachmentUrl(p);
         return (
           <ZoomButton key={p} onOpen={() => setZoom(src)}>
-            <img
+            <MediaThumb
               src={src}
               alt="tool output"
               onError={() => setGone((g) => new Set(g).add(p))}

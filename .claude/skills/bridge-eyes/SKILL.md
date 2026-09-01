@@ -76,6 +76,39 @@ with "Target closed" in this WSL box).
   bridge's active project**. Stay in the active project, or restore it with
   `POST /local/select {"dir": …}` on 8790.
 
+## Recording, not just stills
+
+A still cannot show a transition, a hover, or a race. `.claude/skills/bridge-eyes/rec.mjs`
+is `shot2.mjs` with `Page.startScreencast` in place of the single capture, and
+takes the same arguments plus an output fps:
+
+```sh
+node .claude/skills/bridge-eyes/rec.mjs 'http://127.0.0.1:8790/?skipboot=1' /tmp/clip.webm \
+  1280 800 3000 '{}' "$ASYNC_JS" 10
+# → /tmp/clip.webm 800KB  490 frames -> 102 @10fps  10.2s
+```
+
+The 7th argument is the same `Runtime.evaluate` string `shot2.mjs` takes, run
+with `awaitPromise`, so an async IIFE with `await sleep()` between clicks is the
+whole step language — no separate DSL.
+
+- **Output is VP8/webm, never mp4.** Playwright's bundled ffmpeg (the only one
+  on this machine) is built `--disable-everything`: mjpeg in, libvpx out, webm
+  muxed. No h264, no concat demuxer, no gif. Telegram accepts it via
+  `sendVideo` (measured 2026-08-31); `send.py` falls back to `sendDocument` if
+  that ever stops being true.
+- Chrome emits ~50 frames/s and only when pixels *change*, so the recorder
+  drops the surplus and pads gaps with the last frame, against an absolute
+  video clock. Check the printed real-time figure against the container's
+  `Duration` — they should match within a frame or two. If they don't, the
+  video is lying about how long the UI took.
+- Watch it yourself before sending: `send.py` now takes `.webm` as well as PNGs.
+
+Isolation needs nothing new. Build in a worktree, serve that `dist` with
+`.mystical/probe/probe.py` (static + read-only GET proxy), and record against
+*that* port — the recorder already gets a fresh `mkdtemp` chrome profile per
+run, so nothing touches the live bridge's state.
+
 ## In-session alternative
 
 A run started by the bridge gets a `Screenshot` MCP tool

@@ -13,7 +13,7 @@ import { Composer } from "../components/Composer";
 import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
-import { ImageLightbox } from "../components/ImageLightbox";
+import { ImageLightbox, MediaThumb } from "../components/ImageLightbox";
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
 import { useChatBg, useToolStyle } from "../lib/toolwidget";
@@ -87,7 +87,7 @@ function RunPage() {
   // Reassigned every render: the scroll listener mounts once, but has to save
   // against the session and the rows that are on screen *now*.
   const keepPlace = useRef<() => void>(() => {});
-  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
+  const [zoom, setZoom] = useState<{ src: string; alt: string; video?: boolean } | null>(null);
   // The scroller is <main> from the root layout — captured once mounted so the
   // virtualizer (which reads it lazily) sees a real element, not null.
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
@@ -259,7 +259,7 @@ function RunPage() {
     // attribute here and the bubbles, the agent block and the reply's own
     // tables all answer to it (index.css, THE SESSION'S IDIOM).
     <div ref={contentRef} data-style={style} data-bg={chatBg} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
-      {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} video={zoom.video} onClose={() => setZoom(null)} />}
 
       {/* What this session is for, and what a usage limit does to it. */}
       <div className="flex items-center gap-1.5">
@@ -336,8 +336,8 @@ function RunPage() {
                         aria-label={`Open ${a.name}`}
                         className="block"
                       >
-                        <img
-                          src={a.dataUrl}
+                        <MediaThumb
+                          src={a.dataUrl as string}
                           alt={a.name}
                           className="h-16 w-16 rounded-lg object-cover"
                         />
@@ -353,7 +353,7 @@ function RunPage() {
                         alt={a.name}
                         className="h-16 w-16 rounded-lg object-cover"
                         fallback={<span className="text-xs text-[var(--tg-hint)]">📎 1 image</span>}
-                        onZoom={(src) => setZoom({ src, alt: a.name })}
+                        onZoom={(src, video) => setZoom({ src, alt: a.name, video })}
                       />
                     ))}
                   </div>

@@ -26,7 +26,13 @@ from bridge import (agents, browser, config, devserver, git, github,
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
 _EXT = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
-        "image/webp": "webp", "image/gif": "gif"}
+        "image/webp": "webp", "image/gif": "gif",
+        "video/webm": "webm", "video/mp4": "mp4", "video/quicktime": "mov"}
+
+# What the two attachment routes will hand back. Images and video only: the
+# upload dir is reachable by path from the browser, so widening this to
+# "anything" would turn a screenshot cache into a file server.
+_SERVABLE = ("image/", "video/")
 
 
 def validate_init_data(init_data: str) -> int | None:
@@ -679,7 +685,7 @@ class Handler(BaseHTTPRequestHandler):
         fp = os.path.realpath(p or "")
         ctype = mimetypes.guess_type(fp)[0] or ""
         if (not fp.startswith(up + os.sep) or not os.path.isfile(fp)
-                or not ctype.startswith("image/")):
+                or not ctype.startswith(_SERVABLE)):
             return self._json({"error": "not found"}, 404)
         with open(fp, "rb") as f:
             self._send_bytes(f.read(), 200, ctype, cache="private, max-age=300")

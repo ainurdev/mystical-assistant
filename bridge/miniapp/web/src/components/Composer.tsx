@@ -7,7 +7,7 @@ import { isExact, rankCommands, slashQuery } from "../lib/slash";
 import { Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
-import { ImageLightbox } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb } from "./ImageLightbox";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -215,8 +215,8 @@ export function Composer() {
                 aria-label={`Open ${a.name}`}
                 className="block"
               >
-                <img
-                  src={a.dataUrl}
+                <MediaThumb
+                  src={a.dataUrl as string}
                   alt={a.name}
                   className="h-12 w-12 rounded-lg object-cover"
                 />
@@ -283,7 +283,7 @@ export function Composer() {
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/*"
           multiple
           className="hidden"
           onChange={(e) => {

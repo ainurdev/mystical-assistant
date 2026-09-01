@@ -36,7 +36,7 @@ import { useToolStyle, widgetForRun, type WebSource } from "../lib/toolwidget";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
-import { ImageLightbox } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, isVideo } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
@@ -549,7 +549,7 @@ export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto 
   alt?: string;
   className?: string;
   fallback?: ReactNode;
-  onZoom: (src: string) => void;
+  onZoom: (src: string, video: boolean) => void;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
@@ -568,18 +568,18 @@ export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto 
   }, [path]);
   if (!src) return gone ? <>{fallback}</> : null;
   return (
-    <button type="button" onClick={() => onZoom(src)} aria-label={`Open ${alt}`} className="block">
-      <img src={src} alt={alt} className={className} />
+    <button type="button" onClick={() => onZoom(src, isVideo(path))} aria-label={`Open ${alt}`} className="block">
+      <MediaThumb src={src} alt={alt} video={isVideo(path)} className={className} />
     </button>
   );
 }
 
 function ToolImages({ paths }: { paths: string[] }) {
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<{ src: string; video: boolean } | null>(null);
   return (
     <div className="flex flex-wrap gap-2">
-      {zoom && <ImageLightbox src={zoom} alt="tool output" onClose={() => setZoom(null)} />}
-      {paths.map((p) => <ToolImage key={p} path={p} onZoom={setZoom} />)}
+      {zoom && <ImageLightbox src={zoom.src} alt="tool output" video={zoom.video} onClose={() => setZoom(null)} />}
+      {paths.map((p) => <ToolImage key={p} path={p} onZoom={(src, video) => setZoom({ src, video })} />)}
     </div>
   );
 }

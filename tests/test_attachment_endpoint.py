@@ -1,5 +1,5 @@
-"""Both surfaces serve a turn's uploaded screenshots back to the transcript, and
-serve nothing else: only image files inside UPLOAD_DIR. Plus the retention that
+"""Both surfaces serve a turn's uploaded media back to the transcript, and serve
+nothing else: only image and video files inside UPLOAD_DIR. Plus the retention that
 keeps those files viewable — a finished run prunes by age, not on the spot.
 Run: python tests/test_attachment_endpoint.py"""
 
@@ -19,6 +19,7 @@ from bridge import config, runner  # noqa: E402
 from bridge.dashboard import server as dash  # noqa: E402
 from bridge.miniapp import server as mini  # noqa: E402
 
+WEBM = b"\x1a\x45\xdf\xa3" + b"\x00" * 12   # EBML magic; the route never parses it
 PNG = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89")
 
@@ -82,6 +83,16 @@ def test_rejects_non_image_inside_upload_dir():
     assert box["code"] == 404
 
 
+def test_serves_uploaded_video():
+    """A screen recording is an attachment like any other — the route gates on
+    type, and video is the second type it lets through."""
+    p = _upload("job_vid", "shot1.webm", WEBM)
+    h, box = _handler()
+    h._get_api("/local/attachment", {"path": [p]})
+    assert box["code"] == 200 and box["data"] == WEBM
+    assert box["ctype"] == "video/webm"
+
+
 def test_rejects_blank_path():
     h, box = _handler()
     h._get_api("/local/attachment", {})
@@ -103,6 +114,14 @@ def test_miniapp_serves_uploaded_image():
     h._api_attachment(p)
     assert box["code"] == 200 and box["data"] == PNG
     assert box["ctype"] == "image/png"
+
+
+def test_miniapp_serves_uploaded_video():
+    p = _upload("job_mini_vid", "shot1.webm", WEBM)
+    h, box = _mini_handler()
+    h._api_attachment(p)
+    assert box["code"] == 200 and box["data"] == WEBM
+    assert box["ctype"] == "video/webm"
 
 
 def test_miniapp_serves_nothing_but_images_under_upload_dir():

@@ -6,7 +6,7 @@ import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
 import type { OpenFile } from "./Markdown";
-import { ImageLightbox, ZoomButton } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
 import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
@@ -29,7 +29,7 @@ function Attachments({ items }: { items: string[] }) {
         {srcs.map((src, i) =>
           gone.has(src) ? null : (
             <ZoomButton key={i} onOpen={() => setZoom(src)}>
-              <img
+              <MediaThumb
                 src={src}
                 alt="attachment"
                 onError={() => setGone((g) => new Set(g).add(src))}

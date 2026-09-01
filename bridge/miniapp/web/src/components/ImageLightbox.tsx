@@ -6,13 +6,92 @@ import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
 /** How far a press may wander and still count as a tap rather than a pan. */
 const TAP_SLOP = 8;
 
-/** Full-size view of one attachment, and a zoom: pinch (or wheel) to scale,
+/** A path or data URL the browser should play rather than paint. */
+export const isVideo = (s: string) =>
+  /^data:video\//i.test(s) || /\.(webm|mp4|mov|m4v)\b/i.test(s);
+
+/** An <img>, unless the src is a video — then a muted inline preview with a ▶
+ *  badge. Same props either way, so the eight call sites that used to hardcode
+ *  <img> don't each grow a branch. */
+export function MediaThumb(
+  { src, className, style, alt, video, onError }:
+  { src: string; className?: string; style?: React.CSSProperties; alt?: string; video?: boolean; onError?: () => void },
+) {
+  // `video` overrides the sniff: an object URL (blob:…) has lost both the
+  // extension and the mime type, so only the caller still knows.
+  if (!(video ?? isVideo(src))) return <img src={src} alt={alt ?? ""} className={className} style={style} onError={onError} />;
+  // #t=0.1 makes the browser paint a real first frame instead of a black box;
+  // a data: URL can't carry a fragment, so it goes without.
+  const poster = src.startsWith("data:") ? src : `${src}#t=0.1`;
+  return (
+    <span style={{ position: "relative", display: "inline-block", lineHeight: 0 }}>
+      <video src={poster} muted playsInline preload="metadata" aria-label={alt || "video"}
+        className={className} style={style} onError={onError} />
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center",
+        color: "#fff", fontSize: 18, textShadow: "0 0 6px rgba(0,0,0,.8)", pointerEvents: "none" }}>▶</span>
+    </span>
+  );
+}
+
+/** Full-size view of one attachment. Video gets its own component rather than
+ *  a branch inside the still viewer: pinch-to-zoom fights the scrubber, and the
+ *  still's tap-to-close would fire on the play button. */
+export function ImageLightbox({ src, alt, video, onClose }: { src: string; alt?: string; video?: boolean; onClose: () => void }) {
+  return (video ?? isVideo(src)) ? <VideoLightbox src={src} alt={alt} onClose={onClose} />
+                                 : <StillLightbox src={src} alt={alt} onClose={onClose} />;
+}
+
+/** Closes on Esc, the ✕ and the backdrop — but not on the player itself, so
+ *  reaching for the scrubber can't dismiss the thing you're scrubbing. */
+function VideoLightbox({ src, alt, onClose }: { src: string; alt?: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt || "Attachment"}
+      // touch-none so a drag on the backdrop isn't read as Telegram's
+      // swipe-down-to-close, the same reason the still viewer sets it.
+      className="fixed inset-0 z-50 flex touch-none items-center justify-center bg-black/85 p-4"
+    >
+      {/* autoPlay + loop, muted so a browser will actually honour it: these are
+          short screen recordings, and a clip that needs a tap to start reads as
+          broken next to a screenshot that is simply there. */}
+      <video
+        src={src}
+        controls
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="max-h-full max-w-full rounded-lg bg-black"
+      />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white/90"
+      >
+        <X size={18} />
+      </button>
+    </div>,
+    document.body,
+  );
+}
+
+/** Full-size view of one still, and a zoom: pinch (or wheel) to scale,
  *  drag to pan, tap the image to toggle fit ↔ 2.5x. The backdrop, the ✕ and Esc
  *  close it — the image itself never dismisses.
  *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
  *  (virtualized rows are translateY'd), which would make position:fixed resolve
  *  against that ancestor instead of the viewport. */
-export function ImageLightbox({ src, alt, onClose }: { src: string; alt?: string; onClose: () => void }) {
+function StillLightbox({ src, alt, onClose }: { src: string; alt?: string; onClose: () => void }) {
   const [v, setV] = useState<View>(FIT);
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
