@@ -544,12 +544,15 @@ function CallGroup({ name, calls }: {
  *  prompt. The bytes come through the API instead of a plain <img src> because the
  *  Mini App's auth lives in a header (see api.attachmentUrl). The dir is pruned by
  *  age, so an old turn's image is gone: `fallback` is what shows in its place. */
-export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto max-w-[160px] rounded-lg object-cover", fallback = null, onZoom }: {
+export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto max-w-[160px] rounded-lg object-cover", fallback = null, onZoom, onSrc }: {
   path: string;
   alt?: string;
   className?: string;
   fallback?: ReactNode;
   onZoom: (src: string, video: boolean) => void;
+  /** Reports the resolved blob URL, so a parent can hand the whole set to the
+   *  lightbox — only this component ever learns it. */
+  onSrc?: (src: string) => void;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
@@ -559,7 +562,7 @@ export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto 
     api.attachmentUrl(path).then((u) => {
       url = u;
       if (dead) URL.revokeObjectURL(u);
-      else setSrc(u);
+      else { setSrc(u); onSrc?.(u); }
     }).catch(() => { if (!dead) setGone(true); });
     return () => {
       dead = true;
@@ -576,10 +579,26 @@ export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto 
 
 function ToolImages({ paths }: { paths: string[] }) {
   const [zoom, setZoom] = useState<{ src: string; video: boolean } | null>(null);
+  const [srcs, setSrcs] = useState<Record<string, string>>({});
   return (
     <div className="flex flex-wrap gap-2">
-      {zoom && <ImageLightbox src={zoom.src} alt="tool output" video={zoom.video} onClose={() => setZoom(null)} />}
-      {paths.map((p) => <ToolImage key={p} path={p} onZoom={(src, video) => setZoom({ src, video })} />)}
+      {zoom && (
+        <ImageLightbox
+          src={zoom.src}
+          alt="tool output"
+          video={zoom.video}
+          all={paths.flatMap((p) => (srcs[p] ? [{ src: srcs[p], video: isVideo(p) }] : []))}
+          onClose={() => setZoom(null)}
+        />
+      )}
+      {paths.map((p) => (
+        <ToolImage
+          key={p}
+          path={p}
+          onZoom={(src, video) => setZoom({ src, video })}
+          onSrc={(src) => setSrcs((m) => ({ ...m, [p]: src }))}
+        />
+      ))}
     </div>
   );
 }
@@ -1113,7 +1132,7 @@ export const RunStream = memo(function RunStream({
             // plain row — which is every tool without a table entry. Built from
             // the whole run rather than this event: the head draws the group's
             // one card, so a member's shots or sources would be drawn by nobody.
-            const spec = widgetForRun((run ?? [i]).map((j) => doneOf(events[j])));
+            const spec = widgetForRun((run ?? [i]).map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
             // Hung under whichever card this tool got, not just the default one:
             // a run of Reads collapses into a CallGroup, and a Read of a PNG is
             // how almost every image result in this store arrives.

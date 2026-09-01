@@ -34,15 +34,84 @@ export function MediaThumb(
 
 /** Full-size view of one attachment. Video gets its own component rather than
  *  a branch inside the still viewer: pinch-to-zoom fights the scrubber, and the
- *  still's tap-to-close would fire on the play button. */
-export function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
-  return isVideo(src) ? <VideoLightbox src={src} onClose={onClose} />
-                      : <StillLightbox src={src} onClose={onClose} />;
+ *  still's tap-to-close would fire on the play button.
+ *  `all` makes it a gallery: ‹ › and ←/→ step through it, and the rest of the
+ *  set stays visible as a strip along the bottom. */
+export function ImageLightbox({ src, all, onClose }: { src: string; all?: string[]; onClose: () => void }) {
+  const list = all?.length ? all : [src];
+  const [i, setI] = useState(() => Math.max(0, list.indexOf(src)));
+  const cur = list[i] ?? src;
+  const many = list.length > 1;
+  const go = (d: number) => setI((n) => (n + d + list.length) % list.length);
+
+  useEffect(() => {
+    if (!many) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") go(1);
+      else if (e.key === "ArrowLeft") go(-1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [many, list.length]);
+
+  // key={cur}: each image opens at fit, rather than inheriting the pan and zoom
+  // of the one before it.
+  return (
+    <>
+      {isVideo(cur) ? <VideoLightbox key={cur} src={cur} strip={many} onClose={onClose} />
+                    : <StillLightbox key={cur} src={cur} strip={many} onClose={onClose} />}
+      {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go} />}
+    </>
+  );
+}
+
+/** The rest of the set, under the open one. Its own portal, above the viewer's:
+ *  a sibling rather than a child, so its clicks never reach the backdrop
+ *  handler that would close the thing you are paging through. */
+function Filmstrip(
+  { list, at, onPick, onStep }:
+  { list: string[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void },
+) {
+  const arrow: React.CSSProperties = {
+    position: "fixed", top: "50%", transform: "translateY(-50%)", zIndex: 96,
+    appearance: "none", cursor: "pointer", padding: "18px 14px", lineHeight: 1,
+    border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+    background: "color-mix(in srgb, var(--panel3) 70%, transparent)",
+    color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t14)",
+  };
+  return createPortal(
+    <>
+      <button type="button" aria-label="Previous" onClick={() => onStep(-1)} style={{ ...arrow, left: 12 }}>‹</button>
+      <button type="button" aria-label="Next" onClick={() => onStep(1)} style={{ ...arrow, right: 12 }}>›</button>
+      <div
+        style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 96, display: "flex", gap: 8,
+          justifyContent: "center", overflowX: "auto", padding: "10px 12px",
+          background: "color-mix(in srgb, var(--panel3) 88%, transparent)",
+          borderTop: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}
+      >
+        {list.map((s, k) => (
+          <button
+            key={s}
+            type="button"
+            aria-label={`Image ${k + 1} of ${list.length}`}
+            aria-current={k === at ? "true" : undefined}
+            onClick={() => onPick(k)}
+            style={{ appearance: "none", cursor: "pointer", padding: 0, flex: "none", lineHeight: 0,
+              border: `1px solid ${k === at ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
+              opacity: k === at ? 1 : 0.5, background: "transparent" }}
+          >
+            <MediaThumb src={s} style={{ height: 56, width: 84, objectFit: "cover", display: "block" }} />
+          </button>
+        ))}
+      </div>
+    </>,
+    document.body,
+  );
 }
 
 /** Closes on Esc, the ✕ and the backdrop — but not on the player itself, so
  *  reaching for the scrubber can't dismiss the thing you're scrubbing. */
-function VideoLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+function VideoLightbox({ src, strip, onClose }: { src: string; strip?: boolean; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -55,7 +124,7 @@ function VideoLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       role="dialog"
       aria-modal="true"
       aria-label="Attachment"
-      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "color-mix(in srgb, var(--panel3) 82%, transparent)", animation: "backdropIn .18s ease both" }}
+      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, paddingBottom: strip ? 108 : 24, background: "color-mix(in srgb, var(--panel3) 82%, transparent)", animation: "backdropIn .18s ease both" }}
     >
       {/* autoPlay + loop, muted so a browser will actually honour it: these are
           short screen recordings, and a clip that needs a tap to start reads as
@@ -67,7 +136,7 @@ function VideoLightbox({ src, onClose }: { src: string; onClose: () => void }) {
         loop
         muted
         playsInline
-        style={{ maxWidth: "92vw", maxHeight: "92vh", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "#000" }}
+        style={{ maxWidth: "92vw", maxHeight: strip ? "76vh" : "92vh", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "#000" }}
       />
       <button
         type="button"
@@ -86,7 +155,7 @@ function VideoLightbox({ src, onClose }: { src: string; onClose: () => void }) {
  *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
  *  (virtualized rows are translateY'd), which would make position:fixed resolve
  *  against that ancestor instead of the viewport. */
-function StillLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+function StillLightbox({ src, strip, onClose }: { src: string; strip?: boolean; onClose: () => void }) {
   const [v, setV] = useState<View>(FIT);
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
@@ -185,14 +254,14 @@ function StillLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       role="dialog"
       aria-modal="true"
       aria-label="Attachment"
-      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "hidden", touchAction: "none", background: "color-mix(in srgb, var(--panel3) 82%, transparent)", cursor: "zoom-out", animation: "backdropIn .18s ease both" }}
+      style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, paddingBottom: strip ? 108 : 24, overflow: "hidden", touchAction: "none", background: "color-mix(in srgb, var(--panel3) 82%, transparent)", cursor: "zoom-out", animation: "backdropIn .18s ease both" }}
     >
       <img
         ref={img}
         src={src}
         alt=""
         draggable={false}
-        style={{ maxWidth: "92vw", maxHeight: "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
+        style={{ maxWidth: "92vw", maxHeight: strip ? "76vh" : "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
       />
       <button
         type="button"

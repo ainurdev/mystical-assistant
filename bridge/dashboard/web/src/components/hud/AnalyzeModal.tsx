@@ -16,6 +16,7 @@ import { useAiFeatures } from "../../lib/ai";
 import { branchForIssue } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
 import { ago, projectTint, setProjectTint } from "../../lib/surfaces";
+import { CommitGraph } from "../CommitGraph";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { LearnTab } from "./LearnTab";
 import { MapTab } from "./MapTab";
@@ -307,6 +308,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
   const ai = useAiFeatures();   // GEN is hidden while commit messages are off
+  // Uncommitted work, or what already landed. Same tab because they answer the
+  // same question ("what changed") and share the branch switcher below.
+  const [view, setView] = useState<"tree" | "history">("tree");
 
   const [st, setSt] = useState<GitStatus | null>(null);
   const [sel, setSel] = useState<string | null>(initialFile ?? null);
@@ -403,7 +407,10 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
       {/* Header row always renders the branch switcher — inside the file grid it
           unmounted on a clean branch, leaving no way to switch back. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, flex: "none" }}>
-        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>WORKING TREE</span>
+        {([["tree", "WORKING TREE"], ["history", "HISTORY"]] as const).map(([v, l]) => (
+          <button key={v} onClick={() => setView(v)} {...hp(`v:${v}`)}
+            style={{ appearance: "none", cursor: "pointer", border: 0, borderBottom: `1px solid ${view === v ? "var(--acc)" : "transparent"}`, background: "transparent", color: view === v ? "var(--txb)" : hov === `v:${v}` ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "2px 1px" }}>{l}</button>
+        ))}
         <span style={{ flex: 1 }} />
         <div style={{ position: "relative", flex: "none" }}>
           <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
@@ -428,7 +435,14 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
           )}
         </div>
       </div>
-      {st && files.length === 0 && (
+      {/* The right rail's commit graph, in a pane wide enough to read a diff
+          in: click a commit for its files, a file for that commit's diff. */}
+      {view === "history" && (
+        <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "6px 9px" }}>
+          <CommitGraph project={project} branch={branch || undefined} />
+        </div>
+      )}
+      {view === "tree" && st && files.length === 0 && (
         <div style={{ fontSize: "var(--t12)", color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>
           {wrongTree
             ? <>⎇ {branch} isn't checked out — no working tree to show. Create a worktree for it in the WORKTREES tab.</>
@@ -438,7 +452,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
       {/* Fills the modal body (not min-height): the file list and diff then
           scroll inside their columns, keeping the commit box pinned at the
           bottom instead of pushing it below the modal's own scroll. */}
-      {files.length > 0 && (
+      {view === "tree" && files.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", flex: 1, minHeight: 0, overflow: "hidden" }}>
           {/* file list */}
           <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0 }}>

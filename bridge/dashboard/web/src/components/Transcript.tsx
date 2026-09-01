@@ -24,7 +24,7 @@ function Attachments({ items }: { items: string[] }) {
   return (
     // Yours, so they hang off the right edge under your bubble.
     <div className="flex justify-end">
-      {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={srcs.filter((s) => !gone.has(s))} onClose={() => setZoom(null)} />}
       <div className="flex max-w-[78%] flex-wrap items-center justify-end gap-2">
         {srcs.map((src, i) =>
           gone.has(src) ? null : (

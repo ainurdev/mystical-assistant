@@ -586,7 +586,7 @@ export function Composer({
         </div>
       )}
       {/* image attachments */}
-      {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={images} onClose={() => setZoom(null)} />}
       {images.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 9 }}>
           {images.map((src, i) => (

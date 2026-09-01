@@ -137,20 +137,14 @@ type Structured = { images?: string[]; sources?: WebSource[] };
  *  table entry rather than a component. */
 export type ToolWidgetSpec = { label: string; type: string; value: unknown; meta?: string };
 
-export function widgetFor(done: Structured | undefined): ToolWidgetSpec | null {
-  if (!done) return null;
-  if (done.sources?.length)
-    return {
-      label: "SOURCES", type: "sources", value: done.sources,
-      meta: String(done.sources.length),
-    };
-  if (done.images?.length)
-    return {
-      label: "SCREENS", type: "screens",
-      value: done.images.map((path) => ({ path })),
-      meta: String(done.images.length),
-    };
-  return null;
+/** What a shot is called under it. Every image a tool returns is saved as
+ *  mcp-<tool_use_id>-<n>.png (bridge/runner._save_result_images), so the file
+ *  can't name it and the gallery numbered them — SHOT 1, SHOT 2 — which says
+ *  nothing four screenshots into a session. The call that produced it can: a
+ *  url gives its page, a path its file, anything else itself. */
+export function shotName(summary: string): string {
+  const s = (summary || "").trim().split(/[?#]/)[0].replace(/\/+$/, "");
+  return (s.split("/").pop() || s).slice(0, 40);
 }
 
 // Where the Mini App keeps the choice. The dashboard's lives in HudSettings
@@ -172,13 +166,25 @@ export function useChatBg(): readonly [ChatBg, (b: ChatBg) => void] {
   return [toChatBg(v), set] as const;
 }
 
-/** One widget for a whole run of results. A group is drawn by its head, so a
- *  member's shots or sources would never reach the screen otherwise — and five
- *  Reads of five PNGs are one contact sheet, not five galleries a screen tall.
- *  Payloads concatenate; precedence stays widgetFor's. */
-export function widgetForRun(dones: (Structured | undefined)[]): ToolWidgetSpec | null {
-  return widgetFor({
-    sources: dones.flatMap((d) => d?.sources ?? []),
-    images: dones.flatMap((d) => d?.images ?? []),
+/** One widget for a whole run of results — one call or twenty. A group is drawn
+ *  by its head, so a member's shots or sources would never reach the screen
+ *  otherwise, and five Reads of five PNGs are one contact sheet rather than
+ *  five galleries a screen tall. Payloads concatenate; sources win over shots.
+ *  Fed the whole call and not just its result, because what a shot should be
+ *  called is in the input. */
+export function widgetForRun(calls: { done?: Structured; summary?: string }[]): ToolWidgetSpec | null {
+  const sources = calls.flatMap((c) => c.done?.sources ?? []);
+  if (sources.length)
+    return { label: "SOURCES", type: "sources", value: sources, meta: String(sources.length) };
+  const shots = calls.flatMap((c) => {
+    const paths = c.done?.images ?? [];
+    const name = shotName(c.summary ?? "");
+    // One call, several frames: the name alone would caption them identically.
+    return paths.map((path, i) => ({
+      path, caption: name && paths.length > 1 ? `${name} · ${i + 1}` : name || undefined,
+    }));
   });
+  if (shots.length)
+    return { label: "SCREENS", type: "screens", value: shots, meta: String(shots.length) };
+  return null;
 }

@@ -432,6 +432,24 @@ body {
 .sessrow[data-on="true"]::before {
   transform: scaleY(1);
 }
+/* Row affordances — a project header's NEW, a session row's pin — are noise
+   until you reach for them, so they sit at opacity 0 until the cursor or the
+   keyboard arrives. A pin belongs to its own row and wakes with that row; NEW
+   belongs to the whole project, so anywhere in the block — header, sessions,
+   the "N more" — wakes it. `data-keep` holds one open regardless: a pinned
+   star, a header whose new-session form is showing. CSS, not React state, so
+   hovering a row doesn't re-render the list. */
+.rowact {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.rowact[data-keep="true"],
+.sessrow:hover .rowact,
+.sessrow:focus-within .rowact,
+.projgrp:hover .projhead .rowact,
+.projgrp:focus-within .projhead .rowact {
+  opacity: 1;
+}
 /* Only WORK gets motion. Every other busy state (WAIT, ASK, CHECK) is waiting
    on you and already shouts with colour — a pulse there would be four things
    blinking at once. This one says "churning, leave it alone". */

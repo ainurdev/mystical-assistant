@@ -5,43 +5,55 @@
 // this checks — not how the widgets look.
 
 import { readFileSync } from "node:fs";
-import { CHAT_BGS, isToolStyle, toChatBg, toToolStyle, widgetFor, widgetForRun, TOOL_STYLES } from "./toolwidget.ts";
+import { CHAT_BGS, isToolStyle, shotName, toChatBg, toToolStyle, widgetForRun, TOOL_STYLES } from "./toolwidget.ts";
 
 // --- the table --------------------------------------------------------------
-const src = widgetFor({ sources: [{ url: "https://a.dev", title: "A" }] });
+const src = widgetForRun([{ done: { sources: [{ url: "https://a.dev", title: "A" }] } }]);
 console.assert(src?.type === "sources", `sources -> SOURCES, got ${src?.type}`);
 console.assert(src?.meta === "1", `meta counts the rows, got ${src?.meta}`);
 
-const shot = widgetFor({ images: ["/u/a.png", "/u/b.png"] });
+const shot = widgetForRun([{ done: { images: ["/u/a.png", "/u/b.png"] } }]);
 console.assert(shot?.type === "screens", `images -> SCREENS, got ${shot?.type}`);
-console.assert(
-  JSON.stringify(shot?.value) === JSON.stringify([{ path: "/u/a.png" }, { path: "/u/b.png" }]),
-  "images become the {path} rows asScreens wants",
-);
 console.assert(shot?.meta === "2", "meta counts the shots");
 
 // --- nothing to draw keeps the plain row ------------------------------------
-console.assert(widgetFor(undefined) === null, "a tool still running has no widget");
-console.assert(widgetFor({}) === null, "a bare result keeps its one-line row");
-console.assert(widgetFor({ sources: [] }) === null, "an empty list is not a widget");
-console.assert(widgetFor({ images: [] }) === null, "no shots is not a gallery");
+console.assert(widgetForRun([{}]) === null, "a tool still running has no widget");
+console.assert(widgetForRun([{ done: {} }]) === null, "a bare result keeps its one-line row");
+console.assert(widgetForRun([{ done: { sources: [] } }]) === null, "an empty list is not a widget");
+console.assert(widgetForRun([{ done: { images: [] } }]) === null, "no shots is not a gallery");
 
 // A tool with no table entry — Grep, TodoWrite, anything added upstream — must
 // fall through rather than half-draw. This is the regression that matters.
 console.assert(
-  widgetFor({ stat: "6 files" } as Parameters<typeof widgetFor>[0]) === null,
+  widgetForRun([{ done: { stat: "6 files" } as { images?: string[] } }]) === null,
   "an unmapped tool keeps its stat line",
 );
+
+// --- what a shot is called --------------------------------------------------
+// The caption comes from the call, because the file it was saved as is an id.
+console.assert(shotName("http://127.0.0.1:8899/dashboard-a-rail.html") === "dashboard-a-rail.html",
+  `a url is named by its page, got ${shotName("http://127.0.0.1:8899/dashboard-a-rail.html")}`);
+console.assert(shotName("https://a.dev/x/y?q=1#z") === "y", `query and hash are not the name, got ${shotName("https://a.dev/x/y?q=1#z")}`);
+console.assert(shotName("http://127.0.0.1:8790/") === "127.0.0.1:8790",
+  `a bare host still names itself, got ${shotName("http://127.0.0.1:8790/")}`);
+console.assert(shotName("/home/u/shot1.png") === "shot1.png", "a path is named by its file");
+console.assert(shotName("") === "", "nothing to name it by falls back to the number");
+const named = widgetForRun([{ done: { images: ["/u/mcp-toolu-1-0.png"] }, summary: "http://x.dev/page.html" }]);
+console.assert((named?.value as { caption?: string }[])[0].caption === "page.html",
+  "the call captions its shot");
+const pair = widgetForRun([{ done: { images: ["/u/a.png", "/u/b.png"] }, summary: "http://x.dev/page.html" }]);
+console.assert((pair?.value as { caption?: string }[])[1].caption === "page.html · 2",
+  "one call's several frames are numbered under one name");
 
 // --- a run of results is ONE widget -----------------------------------------
 // A group is drawn by its head, so anything a member returned has to be folded
 // into the head's widget or it is drawn by nobody.
-const chain = widgetForRun([{ images: ["/u/a.png"] }, undefined, { images: ["/u/b.png"] }]);
+const chain = widgetForRun([{ done: { images: ["/u/a.png"] } }, {}, { done: { images: ["/u/b.png"] } }]);
 console.assert(chain?.type === "screens", `a run of shots is one gallery, got ${chain?.type}`);
 console.assert(chain?.meta === "2", `both members' shots are in it, got ${chain?.meta}`);
-const webchain = widgetForRun([{ sources: [{ url: "https://a.dev" }] }, { sources: [{ url: "https://b.dev" }] }]);
+const webchain = widgetForRun([{ done: { sources: [{ url: "https://a.dev" }] } }, { done: { sources: [{ url: "https://b.dev" }] } }]);
 console.assert(webchain?.meta === "2", `a run of fetches is one source list, got ${webchain?.meta}`);
-console.assert(widgetForRun([undefined, {}]) === null, "a run that carried nothing keeps its rows plain");
+console.assert(widgetForRun([{}, { done: {} }]) === null, "a run that carried nothing keeps its rows plain");
 
 // --- the style setting ------------------------------------------------------
 console.assert(TOOL_STYLES.length === 5, `five styles, got ${TOOL_STYLES.length}`);

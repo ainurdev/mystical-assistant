@@ -1181,7 +1181,7 @@ function ToolImages({ paths }: { paths: string[] }) {
   if (!live.length) return null;
   return (
     <div className="mt-2 ml-[var(--rail)] flex flex-wrap gap-2">
-      {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={live.map((p) => api.attachmentUrl(p))} onClose={() => setZoom(null)} />}
       {live.map((p) => {
         const src = api.attachmentUrl(p);
         return (
@@ -1651,7 +1651,7 @@ export const RunStream = memo(function RunStream({
             // plain row — which is every tool without a table entry. Built from
             // the whole run rather than this event: the head draws the group's
             // one card, so a member's shots or sources would be drawn by nobody.
-            const spec = widgetForRun(run.map((j) => doneOf(events[j])));
+            const spec = widgetForRun(run.map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
             // Hung under whichever card this tool got, not just the default one:
             // a Read of a PNG returns an image and takes the ReadCard branch, and
             // that is 715 of the 729 image results in this store — a widget only

@@ -927,6 +927,17 @@ export interface Lesson {
   project?: string; // only in the ALL scope, where a lesson can be from any repo
 }
 
+// A standalone HTML page on disk, listed by the ARTIFACTS tab (bridge/artifacts.py).
+export interface Artifact {
+  path: string; // repo-relative, forward slashes — also its identity in the raw route
+  dir: string; // the folder holding it — the subject the tab groups by ("" = repo root)
+  name: string;
+  title: string; // the page's <title>; "" when it has none
+  at: number; // epoch seconds
+  size: number;
+  project?: string; // only in the ALL scope, where a page can be from any repo
+}
+
 // The platform's own checkout vs its upstream — powers the header sync button,
 // both directions: behind/commits is theirs, ahead/dirty/files is ours.
 export interface UpdateInfo {
@@ -1427,6 +1438,13 @@ export const api = {
     req<GraphState>("/local/graph/update", { method: "POST", body: { project } }),
   graphHtmlUrl: (project: string) =>
     `/local/graph/html?project=${encodeURIComponent(project)}`,
+  // --- ARTIFACTS tab: standalone HTML pages on disk. "*" = every repo. ---
+  artifacts: (project: string) =>
+    req<{ artifacts: Artifact[] }>(`/local/artifacts?project=${encodeURIComponent(project)}`),
+  // Iframed, so it is a URL rather than a fetch — GET reads are Host-gated, not
+  // token-gated, exactly like graphHtmlUrl.
+  artifactUrl: (project: string, path: string) =>
+    `/local/artifacts/raw?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
   // --- LEARN tab: per-turn lessons in <repo>/.mystical/learn/ ---
   lessons: (project: string) =>
     req<{ lessons: Lesson[]; repo_enabled: boolean }>(

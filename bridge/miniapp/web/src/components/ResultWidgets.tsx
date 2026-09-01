@@ -302,21 +302,37 @@ function shotLabel(s: { path: string; caption?: string }, i: number): string {
  *  which screen you mean. */
 function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string }[]; send?: (t: string) => void }) {
   const [zoom, setZoom] = useState<{ src: string; video: boolean } | null>(null);
+  // Each Shot fetches its own bytes (auth lives in a header), so the set the
+  // lightbox pages through can only be assembled from what they report back.
+  const [srcs, setSrcs] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [sent, setSent] = useState(false);
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
     <div className="flc-gal">
-      {zoom && <ImageLightbox src={zoom.src} alt="screen" video={zoom.video} onClose={() => setZoom(null)} />}
+      {zoom && (
+        <ImageLightbox
+          src={zoom.src}
+          alt="screen"
+          video={zoom.video}
+          all={rows.flatMap((r) => (srcs[r.path] ? [{ src: srcs[r.path], video: isVideo(r.path) }] : []))}
+          onClose={() => setZoom(null)}
+        />
+      )}
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>
-            <Shot path={s.path} onZoom={(src, video) => setZoom({ src, video })} />
+            <Shot
+              path={s.path}
+              onZoom={(src, video) => setZoom({ src, video })}
+              onSrc={(src) => setSrcs((m) => ({ ...m, [s.path]: src }))}
+            />
             {/* Every image a tool returns is saved as mcp-<tool_use_id>-<n>.png
-                (bridge/runner.py) — an id is not a caption, and in a chain of
-                them the rows above already name what was read. Number those
-                instead; the full path stays on hover. */}
-            <figcaption title={s.caption ?? s.path}>{shotLabel(s, i)}</figcaption>
+                (bridge/runner.py) — an id is not a caption, so the call names
+                the shot instead (lib/toolwidget.shotName), and a shot from
+                before that, or from a call with nothing to name it by, falls
+                back to its number. The saved file stays on hover. */}
+            <figcaption title={s.path}>{shotLabel(s, i)}</figcaption>
             {send && (
               <input
                 className="flc-in"
@@ -350,7 +366,7 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
  *  App's auth lives in a header, so the bytes come through the API as a blob
  *  (same shape as RunStream's ToolImage — inlined rather than imported, because
  *  RunStream already imports this file's card). */
-function Shot({ path, onZoom }: { path: string; onZoom: (src: string, video: boolean) => void }) {
+function Shot({ path, onZoom, onSrc }: { path: string; onZoom: (src: string, video: boolean) => void; onSrc?: (src: string) => void }) {
   const [src, setSrc] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
   useEffect(() => {
@@ -359,7 +375,7 @@ function Shot({ path, onZoom }: { path: string; onZoom: (src: string, video: boo
     api.attachmentUrl(path).then((u) => {
       url = u;
       if (dead) URL.revokeObjectURL(u);
-      else setSrc(u);
+      else { setSrc(u); onSrc?.(u); }
     }).catch(() => { if (!dead) setGone(true); });
     return () => { dead = true; if (url) URL.revokeObjectURL(url); };
   }, [path]);

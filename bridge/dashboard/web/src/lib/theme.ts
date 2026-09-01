@@ -351,7 +351,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => (t.pal ? Object.keys(t.pal) : []))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["projects", "files", "changes", "git", "learn", "queue"] as const;
+export const RIGHT_TABS = ["files", "changes", "git", "learn", "artifacts", "queue"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 /** What the transcript shows while the agent works. */
@@ -408,7 +408,7 @@ export interface HudSettings {
 
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
-  theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "projects",
+  theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "files",
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6,
@@ -475,7 +475,7 @@ export function loadSettings(): HudSettings {
         sweep: p.sweep ?? true,
         glow: p.glow ?? true,
         rightOpen: p.rightOpen ?? true,
-        rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "projects",
+        rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
         // `nyan` used to carry "off" to mean the stock bar; that role moved to
         // `indicator`, so a stored "off" migrates to indicator:"bar".
         indicator: INDICATORS.includes(p.indicator as Indicator)

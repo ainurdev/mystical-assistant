@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
-import { useStickyFlag, useStickyStr } from "../../lib/prefs";
+import { useStickyStr } from "../../lib/prefs";
 import type { ProjectGroup } from "./ProjectsPanel";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
@@ -36,6 +36,8 @@ interface Props {
   onNewSession: (rel: string) => void;
   /** Start a typed session: the form's fields, already composed into a prompt. */
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
+  /** Scaffold a repo and open its first session on the given prompt. */
+  onCreateProject: (name: string, prompt: string) => void;
 }
 
 type Mode = "attention" | "projects" | "recent";
@@ -66,7 +68,7 @@ const DETAILS: Detail[] = ["notable", "all", "none"];
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
 const PREFS_KEY = "hud-sessions-prefs";
-type Prefs = { mode: Mode; order: OrderMode; custom: string[] };
+type Prefs = { mode: Mode; order: OrderMode; custom: string[]; shut: string[] };
 
 function loadPrefs(): Prefs {
   try {
@@ -79,8 +81,9 @@ function loadPrefs(): Prefs {
       mode,
       order: r.order && ORDERS.includes(r.order) ? r.order : "recent",
       custom: Array.isArray(r.custom) ? r.custom : [],
+      shut: Array.isArray(r.shut) ? r.shut : [],
     };
-  } catch { return { mode: "attention", order: "recent", custom: [] }; }
+  } catch { return { mode: "attention", order: "recent", custom: [], shut: [] }; }
 }
 
 /** The four lanes ATTENTION sorts every session into. */
@@ -126,9 +129,10 @@ function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFl
 }
 
 function SessionRow({
-  s, on, v, flag, branch, pinned, showDot, showProj, detail, compact, pulse, onPin, onAttach,
+  s, i, on, v, flag, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
   s: SessionBrief;
+  i?: number;        // place in a non-virtualised list — its entrance stagger
   on: boolean;
   v: StateView;
   flag?: PromptFlag;
@@ -137,7 +141,6 @@ function SessionRow({
   showDot: boolean;  // PROJECTS rows carry the state dot; lane rows wear it as their left edge
   showProj: boolean; // lane rows name their project; PROJECTS rows sit under a header that already does
   detail: Detail;    // how much provenance the meta line prints
-  compact: boolean;  // title only
   pulse: boolean;    // a turn is in flight — the one state that earns motion
   onPin: () => void;
   onAttach: () => void;
@@ -159,7 +162,7 @@ function SessionRow({
   // Under ALL it always earns it, because that is what ALL was asked for.
   const wtShown = detail !== "none" && inWorktree
     && (detail === "all" || !branchShown || s.worktree !== branch.split("/").pop());
-  const metaShow = !compact && !!(showProj || branchShown || wtShown || fv || s.goal);
+  const metaShow = !!(showProj || branchShown || wtShown || fv || s.goal);
   return (
     <div
       onClick={onAttach}
@@ -169,19 +172,24 @@ function SessionRow({
       title={`${s.title || "untitled session"} · ${projectName(s.project)} · ${branch} · ${v.t}`}
       style={{
         display: "grid", gridTemplateColumns: showDot ? "8px 1fr auto" : "1fr auto", columnGap: 10,
-        alignItems: "start", padding: compact ? "5px 8px" : "8px 8px 9px", position: "relative",
+        alignItems: "start", padding: "8px 8px 9px", position: "relative",
         // Lane rows wear their state on the left edge; PROJECTS rows carry a
         // dot instead and the .sessrow bar (--openbar) marks the open one.
         borderLeft: showDot ? undefined : `2px solid ${on ? tint.dim : `color-mix(in srgb, ${v.c} 32%, transparent)`}`,
         background: on ? `color-mix(in srgb, ${tint.color} 7%, transparent)` : hov ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent",
-        cursor: "pointer",
+        cursor: "pointer", transition: "background .13s ease",
+        // Rows cascade in when the list they sit in is rebuilt — a tab switch, a
+        // project opening. Virtualised rows pass no `i`: they mount on scroll,
+        // and a cascade every time you scroll is noise, not motion.
+        animation: i === undefined ? undefined : "mfadeup .4s ease both",
+        animationDelay: i === undefined ? undefined : `${Math.min(i, 10) * 35}ms`,
         ["--openbar" as string]: tint.dim,
       }}
     >
       {showDot && (
         <span
           className="sessdot" data-work={pulse} title={v.t}
-          style={{ width: 8, height: 8, marginTop: compact ? 4 : 3, borderRadius: "50%", boxSizing: "border-box",
+          style={{ width: 8, height: 8, marginTop: 3, borderRadius: "50%", boxSizing: "border-box",
                    background: v.fill ? v.c : "transparent", border: v.fill ? 0 : `1.5px solid ${v.c}`,
                    boxShadow: v.fill ? `0 0 7px color-mix(in srgb, ${v.c} 40%, transparent)` : "none" }}
         />
@@ -231,9 +239,10 @@ function SessionRow({
         <button
           onClick={(e) => { e.stopPropagation(); onPin(); }}
           title={pinned ? "unpin — stops holding the top of the list" : "pin to the top of the list"}
+          className="rowact" data-keep={pinned}
           style={{ appearance: "none", cursor: "pointer", flex: "none", width: 11, border: 0, background: "transparent",
                    padding: 0, fontFamily: "inherit", fontSize: "var(--t10)", lineHeight: 1, textAlign: "center",
-                   color: pinned ? "var(--warn)" : "var(--txl)", opacity: pinned || hov ? 1 : 0.45 }}
+                   color: pinned ? "var(--warn)" : "var(--txl)" }}
         >{pinned ? "★" : "☆"}</button>
         <span style={{ flex: "none", width: 26, textAlign: "right", fontSize: "var(--t95)",
                        color: pulse ? "var(--ok)" : "var(--txl)" }}>{ago(s.updated)}</span>
@@ -252,7 +261,7 @@ type LaneItem =
 export function SessionsPanel(props: Props) {
   const {
     sessions, groups, status, done, flags, pins, selectedSessionId, activeProject, booting,
-    onTogglePin, onSelectSession, onNewSession, onWorktreeSession,
+    onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject,
   } = props;
 
   // New-session form.
@@ -266,6 +275,10 @@ export function SessionsPanel(props: Props) {
   const [nsParent, setNsParent] = useState("");
   const [nsScoped, setNsScoped] = useState(false); // opened from a project header — project is fixed
   const [projQ, setProjQ] = useState("");
+  // New-project form — the PROJECTS mode's counterpart to NEW SESSION.
+  const [npOpen, setNpOpen] = useState(false);
+  const [npName, setNpName] = useState("");
+  const [npPrompt, setNpPrompt] = useState("");
   const [projAll, setProjAll] = useState(false);
   const [branchQ, setBranchQ] = useState("");
   const [parentMenu, setParentMenu] = useState(false);
@@ -278,8 +291,6 @@ export function SessionsPanel(props: Props) {
   // Native HTML5 drag state for CUSTOM order.
   const [dragRel, setDragRel] = useState<string | null>(null);
   const [overRel, setOverRel] = useState<string | null>(null);
-  // Row density — remembered, because it tracks the screen you use, not the task.
-  const [compact, setCompact] = useStickyFlag("hud-sessions-compact");
   // How much provenance each row prints. Remembered, because it tracks the
   // machine you work on — one repo on one branch wants less than fifteen.
   const [detailPref, setDetail] = useStickyStr("hud-sessions-detail", "notable");
@@ -287,12 +298,15 @@ export function SessionsPanel(props: Props) {
   const [detailMenu, setDetailMenu] = useState(false);
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
   const [folded, setFolded] = useState(true);
-  // Projects you collapsed with the header. ponytail: not persisted — a collapse
-  // is a "get this out of my way right now", not a preference.
-  const [shut, setShut] = useState<Set<string>>(new Set());
-  // The project you drilled into — PROJECTS shows only its sessions until you
-  // go back. ponytail: not persisted, same reasoning as `shut`.
-  const [drill, setDrill] = useState<string | null>(null);
+  // Projects you collapsed with the header — remembered, because the projects
+  // you keep out of the way are the same ones every day.
+  const [shut, setShut] = useState<Set<string>>(() => new Set(loadPrefs().shut));
+  // Projects expanded past their default rows. ponytail: not persisted — an
+  // expand is "show me this now", not a preference.
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  // A mode switch replaces every row, so the list cascades in once. Rows mount
+  // on scroll too, and those must not — hence a flag, not an always-on entrance.
+  const [fresh, setFresh] = useState(true);
   const [sessionQ, setSessionQ] = useState("");
   // One hover key for every small control — the rows manage their own.
   const [hov, setHov] = useState("");
@@ -302,9 +316,15 @@ export function SessionsPanel(props: Props) {
   const [cancelHov, setCancelHov] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, order, custom: customOrder })); }
+    setFresh(true);
+    const t = setTimeout(() => setFresh(false), 900);
+    return () => clearTimeout(t);
+  }, [mode]);
+
+  useEffect(() => {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, order, custom: customOrder, shut: [...shut] })); }
     catch { /* ignore */ }
-  }, [mode, order, customOrder]);
+  }, [mode, order, customOrder, shut]);
 
   // "/" jumps to the search box — the hint badge in it promises this.
   const searchRef = useRef<HTMLInputElement>(null);
@@ -410,19 +430,30 @@ export function SessionsPanel(props: Props) {
       : order === "biggest" ? [...groups].sort((a, b) => b.sessionCount - a.sessionCount)
         : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
           : byLastUsed;
+  // A capped project lists every session that is doing something (WORK/WAIT/
+  // ASK/DONE), holding a prompt of yours, pinned, or open right now — hiding the
+  // chat you are looking at reads as "it's gone". Only a project with none of
+  // those falls back to its newest rows.
+  // Expanding is a drill-down, not a longer list: while one project is open the
+  // others step aside, and "← All projects" is the way back.
+  const drilled = !sq && open.size > 0;
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
-    if (drill && g.rel !== drill) return [];
+    if (drilled && !open.has(g.rel)) return [];
     const f = sorted.filter((s) => s.project === g.rel);
     if (sq && f.length === 0) return [];
-    const isShut = shut.has(g.rel) && !sq;
-    const vis = isShut ? [] : sq || drill ? f : f.slice(0, 2);
+    // Nothing to show is nothing to expand — an empty project is collapsed,
+    // whatever the header was last clicked to.
+    const isShut = !f.length || (shut.has(g.rel) && !sq);
+    const live = f.filter((s) => s.id === selectedSessionId || pins.has(s.id)
+      || laneOf(s) !== "idle" || flags.has(s.id));
+    const vis = isShut ? [] : sq || open.has(g.rel) ? f : live.length ? live : f.slice(0, 2);
     const rest = Math.max(0, g.sessionCount - vis.length);
     return [{ g, f, isShut, vis, rest }];
   });
 
-  const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean) => (
+  const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean, i?: number) => (
     <SessionRow
-      key={s.id} s={s} showDot={showDot} showProj={showProj} detail={detail} compact={compact}
+      key={s.id} s={s} i={i} showDot={showDot} showProj={showProj} detail={detail}
       on={s.id === selectedSessionId}
       v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
@@ -439,11 +470,9 @@ export function SessionsPanel(props: Props) {
   const rowV = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: laneItems.length,
     getScrollElement: () => scrollRef.current,
-    // Compact drops the metadata line, so the estimate has to follow or the
-    // scrollbar promises a list twice as long as the one that renders.
     estimateSize: (i) => {
       const it = laneItems[i];
-      return it.k === "head" ? (it.first ? 24 : 40) : it.k === "fold" ? 30 : compact ? 27 : 50;
+      return it.k === "head" ? (it.first ? 24 : 40) : it.k === "fold" ? 30 : 50;
     },
     overscan: 8,
     scrollMargin,
@@ -535,7 +564,7 @@ export function SessionsPanel(props: Props) {
           style={{ appearance: "none", cursor: "pointer", flex: "none", width: 24, height: 24, padding: 0, borderRadius: 7,
                    display: "grid", placeItems: "center", border: 0,
                    background: closeHov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
-                   color: closeHov ? "var(--purple-b)" : "var(--purple-g)" }}
+                   color: closeHov ? "var(--purple-b)" : "var(--purple-g)", transition: "background .15s ease, color .15s ease" }}
         >
           <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -698,6 +727,54 @@ export function SessionsPanel(props: Props) {
     </div>
   );
 
+  // PROJECTS mode's form: a repo name and the first thing to build in it. Same
+  // shape as nsForm, one tint over — a project is not a session.
+  const npForm = (
+    <div style={{ border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--info) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--info)", flex: "none" }} />
+        <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--info-hi)" }}>NEW PROJECT</span>
+        <span style={{ flex: 1 }} />
+        <button
+          onClick={() => setNpOpen(false)} title="close" aria-label="close"
+          onMouseEnter={() => setHov("npclose")} onMouseLeave={() => setHov("")}
+          style={{ appearance: "none", cursor: "pointer", flex: "none", width: 24, height: 24, padding: 0, borderRadius: 7,
+                   display: "grid", placeItems: "center", border: 0,
+                   background: hov === "npclose" ? "color-mix(in srgb, var(--info) 14%, transparent)" : "transparent",
+                   color: hov === "npclose" ? "var(--info-b)" : "var(--txd)", transition: "background .15s ease, color .15s ease" }}
+        >
+          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+      <input
+        value={npName} onChange={(e) => setNpName(e.target.value)} placeholder="project-name"
+        style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--info) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", padding: "6px 9px" }} />
+      <textarea
+        value={npPrompt} onChange={(e) => setNpPrompt(e.target.value)} placeholder="starting prompt — what should Claude build first?"
+        style={{ width: "100%", boxSizing: "border-box", minHeight: 60, resize: "vertical", marginTop: 8, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1.5, padding: "8px 9px" }} />
+      <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+        <button
+          onClick={() => {
+            const name = npName.trim(), prompt = npPrompt.trim();
+            if (!name || !prompt) return;
+            onCreateProject(name, prompt);
+            setNpName(""); setNpPrompt(""); setNpOpen(false);
+          }}
+          disabled={!npName.trim() || !npPrompt.trim()}
+          onMouseEnter={() => setHov("npgo")} onMouseLeave={() => setHov("")}
+          style={{ flex: 1, appearance: "none", cursor: npName.trim() && npPrompt.trim() ? "pointer" : "not-allowed", opacity: npName.trim() && npPrompt.trim() ? 1 : 0.45, border: "1px solid var(--info)", background: hov === "npgo" ? "color-mix(in srgb, var(--info) 26%, transparent)" : "color-mix(in srgb, var(--info) 16%, transparent)", color: "var(--info-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+        ><span style={{ color: "var(--info)" }}>▸</span>CREATE & START</button>
+        <button
+          onClick={() => setNpOpen(false)}
+          onMouseEnter={() => setHov("npcancel")} onMouseLeave={() => setHov("")}
+          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "npcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "9px 12px" }}
+        >CANCEL</button>
+      </div>
+    </div>
+  );
+
   const modeTabs: { id: Mode; label: string; count: number; tip: string }[] = [
     { id: "attention", label: "Attention", count: sorted.filter((s) => laneOf(s) !== "idle").length, tip: "Grouped by what each session wants from you" },
     { id: "projects", label: "Projects", count: groups.length, tip: "Grouped by project" },
@@ -715,21 +792,31 @@ export function SessionsPanel(props: Props) {
   );
 
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", flexDirection: "column", padding: "14px 16px 0" }}>
-        <div style={{ display: "flex", alignItems: "stretch", gap: 2, padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "stretch", gap: 2, padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
+          {/* One pill travels to the tab you picked. Three backgrounds fading in
+              and out reads as a blink; a thing that moves reads as a switch.
+              Its own width + the 2px gap is one step, so the maths survives a
+              fourth tab. */}
+          <span
+            aria-hidden
+            style={{ position: "absolute", top: 2, bottom: 2, left: 2, width: `calc((100% - ${2 * 2 + (modeTabs.length - 1) * 2}px) / ${modeTabs.length})`,
+                     borderRadius: 3, background: "color-mix(in srgb, var(--acc) 10%, transparent)", pointerEvents: "none",
+                     transform: `translateX(calc(${modeTabs.findIndex((m) => m.id === mode)} * (100% + 2px)))`,
+                     transition: "transform .22s cubic-bezier(.2,.8,.2,1)" }}
+          />
           {modeTabs.map((m) => {
             const on = mode === m.id;
             return (
               <button
-                key={m.id} onClick={() => { setMode(m.id); setDrill(null); }} title={m.tip}
-                style={{ flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-                         height: 27, border: 0, borderRadius: 3, padding: 0, margin: 0,
-                         background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
+                key={m.id} onClick={() => setMode(m.id)} title={m.tip}
+                style={{ position: "relative", flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                         height: 27, border: 0, borderRadius: 3, padding: 0, margin: 0, background: "transparent",
                          cursor: "pointer", fontFamily: "inherit" }}
               >
                 <span style={{ flex: "none", fontSize: "var(--t95)", letterSpacing: ".14em", textTransform: "uppercase",
-                               color: on ? "var(--txb)" : "var(--txf)" }}>{m.label}</span>
+                               color: on ? "var(--txb)" : "var(--txf)", transition: "color .15s ease" }}>{m.label}</span>
                 <span style={{ flex: "none", fontSize: "var(--t9)", color: on ? "var(--acc)" : "var(--txl)" }}>{m.count}</span>
               </button>
             );
@@ -788,17 +875,6 @@ export function SessionsPanel(props: Props) {
             </>
           )}
           <button
-            onClick={() => setCompact(!compact)}
-            title={compact ? "comfortable rows" : "compact rows — titles only"}
-            onMouseEnter={() => setHov("density")} onMouseLeave={() => setHov("")}
-            style={{ flex: "none", display: "flex", alignItems: "center", border: 0, background: "transparent", padding: 3, margin: 0, cursor: "pointer",
-                     color: hov === "density" ? "var(--acc)" : compact ? "var(--acc)" : "var(--txl)" }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-              <rect x="0" y="1" width="12" height="1.3" fill="currentColor" /><rect x="0" y="5.4" width="12" height="1.3" fill="currentColor" /><rect x="0" y="9.8" width="12" height="1.3" fill="currentColor" />
-            </svg>
-          </button>
-          <button
             onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
             title={`Row details — ${DETAIL_LABEL[detail]}`}
             aria-expanded={detailMenu}
@@ -831,7 +907,22 @@ export function SessionsPanel(props: Props) {
           )}
         </div>
 
-        {mode !== "projects" && (
+        {mode === "projects" ? (
+          <button
+            onClick={() => setNpOpen((o) => !o)} title="scaffold a new repo and start its first session"
+            onMouseEnter={() => setHov("newproj")} onMouseLeave={() => setHov("")}
+            style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", height: 34, marginTop: 11, padding: "0 10px",
+                     border: 0, borderRadius: 3,
+                     background: `color-mix(in srgb, var(--info) ${hov === "newproj" || npOpen ? 14 : 7}%, transparent)`,
+                     color: "var(--info-hi)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: ".18em", textTransform: "uppercase",
+                     cursor: "pointer", transition: "background .15s ease" }}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
+              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            Add project
+          </button>
+        ) : (
           <button
             onClick={toggleForm} title="start a session — current worktree or a new one"
             onMouseEnter={() => setHov("new")} onMouseLeave={() => setHov("")}
@@ -839,7 +930,7 @@ export function SessionsPanel(props: Props) {
                      border: 0, borderRadius: 3,
                      background: `color-mix(in srgb, var(--acc) ${hov === "new" || nsOpen ? 11 : 5.5}%, transparent)`,
                      color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: ".18em", textTransform: "uppercase",
-                     cursor: "pointer" }}
+                     cursor: "pointer", transition: "background .15s ease" }}
           >
             <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
               <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -851,6 +942,7 @@ export function SessionsPanel(props: Props) {
 
       <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
         {nsOpen && !nsScoped && nsForm}
+        {npOpen && mode === "projects" && npForm}
 
         {mode !== "projects" ? (
           <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>
@@ -864,7 +956,7 @@ export function SessionsPanel(props: Props) {
                   style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vi.start - scrollMargin}px)` }}
                 >
                   {it.k === "head" ? laneHead(it)
-                    : it.k === "row" ? rowFor(it.s, false, true)
+                    : it.k === "row" ? rowFor(it.s, false, true, fresh ? vi.index : undefined)
                     : (
                       <button
                         onClick={() => setFolded((v) => !v)}
@@ -880,40 +972,34 @@ export function SessionsPanel(props: Props) {
           </div>
         ) : (
           <>
-            {drill && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, height: 24, padding: "0 6px", marginBottom: 4 }}>
-                <button
-                  onClick={() => setDrill(null)}
-                  onMouseEnter={() => setHov("back")} onMouseLeave={() => setHov("")}
-                  style={{ flex: "none", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
-                           padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
-                           letterSpacing: ".2em", textTransform: "uppercase",
-                           color: hov === "back" ? "var(--acc)" : "var(--txl)" }}
-                >← All projects</button>
-                <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
-                <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{tree[0]?.f.length ?? 0}</span>
-              </div>
-            )}
             {tree.map(({ g, f, isShut, vis, rest }) => {
               const tint = projectTint(g.rel);
               return (
                 <div
                   key={g.rel}
+                  className="projgrp"
+                  data-ctx-type="project" data-ctx-id={g.rel} data-ctx-label={g.name}
                   onDragOver={dragRel ? (e) => { e.preventDefault(); setOverRel(g.rel); } : undefined}
                   onDrop={dragRel ? (e) => { e.preventDefault(); dropOn(g.rel); } : undefined}
                   style={{ marginBottom: isShut ? 4 : 13, opacity: dragRel === g.rel ? 0.4 : 1,
                            borderTop: `2px solid ${dragRel && overRel === g.rel && dragRel !== g.rel ? "var(--acc)" : "transparent"}` }}
                 >
                   <div
+                    className="projhead"
                     draggable={order === "custom" && !sq}
                     onDragStart={order === "custom" && !sq
                       ? (e) => { e.dataTransfer.effectAllowed = "move"; setDragRel(g.rel); } : undefined}
                     onDragEnd={order === "custom" ? () => { setDragRel(null); setOverRel(null); } : undefined}
-                    onClick={() => setShut((c) => {
-                      const n = new Set(c);
-                      if (!n.delete(g.rel)) n.add(g.rel);
-                      return n;
-                    })}
+                    onClick={() => {
+                      // Collapsing the one project you drilled into would leave
+                      // an empty panel — leave the drill first.
+                      setOpen((c) => { const n = new Set(c); n.delete(g.rel); return n; });
+                      setShut((c) => {
+                        const n = new Set(c);
+                        if (!n.delete(g.rel)) n.add(g.rel);
+                        return n;
+                      });
+                    }}
                     title={order === "custom" && !sq
                       ? `${g.rel} — drag to reorder, click to ${isShut ? "expand" : "collapse"}`
                       : `${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${g.sessionCount} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
@@ -929,6 +1015,7 @@ export function SessionsPanel(props: Props) {
                       title={`New session in ${g.rel}`}
                       draggable={false} onDragStart={(e) => e.preventDefault()}
                       onMouseEnter={() => setHov(`add:${g.rel}`)} onMouseLeave={() => setHov("")}
+                      className="rowact" data-keep={nsOpen && nsScoped && nsProject === g.rel}
                       // Sits inside a header that collapses on click, so a near
                       // miss shuts the project instead. Full row height plus
                       // side padding, pulled back so nothing moves.
@@ -944,19 +1031,38 @@ export function SessionsPanel(props: Props) {
                     </button>
                   </div>
                   {nsOpen && nsScoped && nsProject === g.rel && nsForm}
+                  {/* Expanded, a project can be hundreds of rows long — the way
+                      out has to sit at the top, not under all of them. */}
+                  {open.has(g.rel) && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, height: 24, padding: "0 6px", margin: "2px 0 4px" }}>
+                      <button
+                        onClick={() => setOpen((c) => { const n = new Set(c); n.delete(g.rel); return n; })}
+                        onMouseEnter={() => setHov(`back:${g.rel}`)} onMouseLeave={() => setHov("")}
+                        style={{ flex: "none", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
+                                 padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
+                                 letterSpacing: ".2em", textTransform: "uppercase",
+                                 color: hov === `back:${g.rel}` ? "var(--acc)" : "var(--txl)" }}
+                      >← All projects</button>
+                      <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
+                      <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{f.length}</span>
+                    </div>
+                  )}
                   <div style={{ margin: "1px 0 0 3px", borderLeft: `1px solid color-mix(in srgb, ${tint.color} ${isShut ? 7 : 20}%, transparent)` }}>
                     {/* A search drops the per-project cap, so this can be every
                         session in the store — skip off-screen rows. */}
-                    {vis.length > 0 && <div className="vskip-card">{vis.map((s) => rowFor(s, true, false))}</div>}
-                    {!isShut && !sq && !drill && rest > 0 && (
+                    {vis.length > 0 && <div className="vskip-card">{vis.map((s, i) => rowFor(s, true, false, i))}</div>}
+                    {!isShut && !sq && (rest > 0 || (open.has(g.rel) && f.length > 2)) && (
                       <button
-                        onClick={() => setDrill(g.rel)}
-                        title={`Show only ${g.rel}`}
+                        onClick={() => setOpen((c) => {
+                          const n = new Set(c);
+                          if (!n.delete(g.rel)) n.add(g.rel);
+                          return n;
+                        })}
                         onMouseEnter={() => setHov(`more:${g.rel}`)} onMouseLeave={() => setHov("")}
                         style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 8px", border: 0, background: "transparent",
                                  fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: ".1em",
                                  color: hov === `more:${g.rel}` ? "var(--acc)" : "var(--txl)", cursor: "pointer" }}
-                      >{rest} more →</button>
+                      >{open.has(g.rel) ? "show less ↑" : `${rest} more ↓`}</button>
                     )}
                   </div>
                 </div>

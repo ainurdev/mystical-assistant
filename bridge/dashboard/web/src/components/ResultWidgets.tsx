@@ -307,16 +307,17 @@ function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string 
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
     <div className="flc-gal">
-      {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={rows.map((s) => api.attachmentUrl(s.path))} onClose={() => setZoom(null)} />}
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>
             <Shot path={s.path} onZoom={setZoom} />
             {/* Every image a tool returns is saved as mcp-<tool_use_id>-<n>.png
-                (bridge/runner.py) — an id is not a caption, and in a chain of
-                them the rows above already name what was read. Number those
-                instead; the full path stays on hover. */}
-            <figcaption title={s.caption ?? s.path}>{shotLabel(s, i)}</figcaption>
+                (bridge/runner.py) — an id is not a caption, so the call names
+                the shot instead (lib/toolwidget.shotName), and a shot from
+                before that, or from a call with nothing to name it by, falls
+                back to its number. The saved file stays on hover. */}
+            <figcaption title={s.path}>{shotLabel(s, i)}</figcaption>
             {send && (
               <input
                 className="flc-in"

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Boxes, FileDiff, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
+  FileDiff, FolderTree, GitBranch, GraduationCap, LayoutTemplate, ListTodo, Sparkles,
 } from "lucide-react";
 import {
   api,
@@ -60,10 +60,11 @@ import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
 import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
-import { ProjectsPanel, type ProjectGroup } from "./components/hud/ProjectsPanel";
+import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
+import { ArtifactsPanel } from "./components/hud/ArtifactsPanel";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
@@ -1430,6 +1431,14 @@ export function App() {
   const sessionProject = selected?.project ?? activeProject;
   const sessionBranch = selected?.branch;
 
+  // The app running for this project, out of the dev servers the 3s state poll
+  // already carries. ponytail: matched on the project, not the session's
+  // worktree — one running app per project is the case that exists.
+  const sessionRun = useMemo(
+    () => (state?.servers ?? []).find(
+      (s) => s.dir === sessionProject || s.project === sessionProject) ?? null,
+    [state, sessionProject]);
+
   // Footer git state for that tree. Same 10s cadence as the project badges;
   // clears on switch so the footer never shows the last session's branch.
   // Clearing is its own effect: a push bumps gitNonce to re-read now, and that
@@ -1475,18 +1484,6 @@ export function App() {
 
   const rightTabs: PanelTab[] = [
     {
-      id: "projects", label: "Projects", icon: <Boxes {...RAIL} />,
-      render: () => (
-        <ProjectsPanel
-          groups={visibleGroups} activeProject={activeProject} booting={!booted}
-          onSelectProject={(rel) => void selectProject(rel)}
-          onAnalyze={(rel) => openAnalyze(rel)}
-          onManage={() => setManageOpen(true)}
-          onCreateProject={(name, prompt) => void createProject(name, prompt)}
-        />
-      ),
-    },
-    {
       id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree",
       render: () => (
         <FilesPanel
@@ -1520,6 +1517,12 @@ export function App() {
         <LearnPanel project={sessionProject} read={lessonsRead}
           onRead={(k) => setLessonsRead((r) => new Set(r).add(k))} />
       ),
+    },
+    {
+      // No `scope`: the shelf spans repos and holds a search and a reading
+      // position, so a project switch must not remount it.
+      id: "artifacts", label: "Artifacts", icon: <LayoutTemplate {...RAIL} />, ownScroll: true,
+      render: () => <ArtifactsPanel project={sessionProject} />,
     },
     { id: "queue", label: "Queue", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];
@@ -1963,6 +1966,7 @@ export function App() {
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}
+                  onCreateProject={(name, prompt) => void createProject(name, prompt)}
                 />
               </div>
 
@@ -1997,6 +2001,8 @@ export function App() {
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
                 onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
+                run={sessionRun}
+                onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2119,6 +2125,7 @@ export function App() {
                 sessionTools={selected?.disabled_tools ?? []}
                 onSessionTools={setSessionTools}
                 onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
+                onManageProjects={() => { setSettingsOpen(false); setManageOpen(true); }}
                 onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}

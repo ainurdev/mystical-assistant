@@ -3,7 +3,7 @@ import { createRoute } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
 import { rootRoute } from "./root";
-import { useChat } from "../lib/chat";
+import { useChat, type Attachment } from "../lib/chat";
 import { api, type PendingRequest } from "../lib/api";
 import { stickToBottom } from "../lib/stick";
 import { useLoadingPhase } from "../lib/loadingPhase";
@@ -13,7 +13,7 @@ import { Composer } from "../components/Composer";
 import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
-import { ImageLightbox, MediaThumb } from "../components/ImageLightbox";
+import { ImageLightbox, MediaThumb, isVideo, type Shown } from "../components/ImageLightbox";
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
 import { useChatBg, useToolStyle } from "../lib/toolwidget";
@@ -87,7 +87,18 @@ function RunPage() {
   // Reassigned every render: the scroll listener mounts once, but has to save
   // against the session and the rows that are on screen *now*.
   const keepPlace = useRef<() => void>(() => {});
-  const [zoom, setZoom] = useState<{ src: string; alt: string; video?: boolean } | null>(null);
+  const [zoom, setZoom] = useState<{ src: string; alt: string; video?: boolean; all: Shown[] } | null>(null);
+  // Rehydrated attachments arrive as upload-dir paths that only ToolImage ever
+  // resolves to bytes; it reports them back here so the lightbox can page
+  // through a turn's whole set, not just the one you tapped.
+  const [blobs, setBlobs] = useState<Record<string, string>>({});
+  /** Everything a turn attached, in the order it was sent, minus what is still
+   *  loading or pruned. */
+  const shown = (atts: Attachment[]): Shown[] =>
+    atts.flatMap((a) =>
+      a.dataUrl ? [{ src: a.dataUrl }]
+      : a.path && blobs[a.path] ? [{ src: blobs[a.path], video: isVideo(a.path) }]
+      : []);
   // The scroller is <main> from the root layout — captured once mounted so the
   // virtualizer (which reads it lazily) sees a real element, not null.
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
@@ -259,7 +270,7 @@ function RunPage() {
     // attribute here and the bubbles, the agent block and the reply's own
     // tables all answer to it (index.css, THE SESSION'S IDIOM).
     <div ref={contentRef} data-style={style} data-bg={chatBg} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
-      {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} video={zoom.video} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} video={zoom.video} all={zoom.all} onClose={() => setZoom(null)} />}
 
       {/* What this session is for, and what a usage limit does to it. */}
       <div className="flex items-center gap-1.5">
@@ -332,7 +343,7 @@ function RunPage() {
                       <button
                         key={a.id}
                         type="button"
-                        onClick={() => setZoom({ src: a.dataUrl as string, alt: a.name })}
+                        onClick={() => setZoom({ src: a.dataUrl as string, alt: a.name, all: shown(turn.attachments) })}
                         aria-label={`Open ${a.name}`}
                         className="block"
                       >
@@ -353,7 +364,8 @@ function RunPage() {
                         alt={a.name}
                         className="h-16 w-16 rounded-lg object-cover"
                         fallback={<span className="text-xs text-[var(--tg-hint)]">📎 1 image</span>}
-                        onZoom={(src, video) => setZoom({ src, alt: a.name, video })}
+                        onZoom={(src, video) => setZoom({ src, alt: a.name, video, all: shown(turn.attachments) })}
+                        onSrc={(src) => setBlobs((m) => ({ ...m, [a.path as string]: src }))}
                       />
                     ))}
                   </div>

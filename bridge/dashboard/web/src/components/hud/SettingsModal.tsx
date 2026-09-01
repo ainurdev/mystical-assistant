@@ -103,6 +103,7 @@ export interface SettingsModalProps {
   sessionTools: string[];
   onSessionTools: (rules: string[]) => void;
   onOpenInspector: () => void;
+  onManageProjects: () => void;
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
@@ -178,6 +179,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "accounts", sec: "FREE AGENTS", terms: "api key gemini openai provider fallback handover" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
+  { tab: "system", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
 ];
@@ -3141,6 +3143,7 @@ export function SettingsModal(props: SettingsModalProps) {
     sessionTools,
     onSessionTools,
     onOpenInspector,
+    onManageProjects,
   } = props;
 
   const [tab, setTab] = useState<Tab>("appearance");
@@ -3751,6 +3754,21 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
 
                 <StartupSection />
+
+                <Section title="PROJECTS" top>
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="MANAGE"
+                      info="Hide a project from the sidebar, detach one from the bridge, or import an existing repository by path."
+                    >
+                      <button onClick={onManageProjects}
+                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none" }}>
+                        OPEN
+                      </button>
+                    </Row>
+                  </div>
+                </Section>
 
                 <Section title="HTTP INSPECTOR" top>
                   <div style={CARD}>

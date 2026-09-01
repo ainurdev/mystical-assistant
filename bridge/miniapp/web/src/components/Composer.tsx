@@ -204,7 +204,14 @@ export function Composer() {
     >
       <UsageStrip />
 
-      {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
+      {zoom && (
+        <ImageLightbox
+          src={zoom.src}
+          alt={zoom.alt}
+          all={draftAttachments.flatMap((a) => (a.dataUrl ? [{ src: a.dataUrl }] : []))}
+          onClose={() => setZoom(null)}
+        />
+      )}
       {draftAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {draftAttachments.map((a) => (
