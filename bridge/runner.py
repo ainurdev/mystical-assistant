@@ -1482,7 +1482,7 @@ def _handle_event(job: Job, d: dict):
                 ev = transcript_jsonl.tool_done(
                     rid, name, ms, b, d.get("tool_use_result"))
                 imgs = _save_result_images(job.id, rid, b.get("content"))
-                if (clip := _save_result_video(job.id, name, b.get("content"))):
+                if (clip := _save_result_file(job.id, rid, name, b.get("content"))):
                     imgs = imgs + [clip]
                 if imgs:
                     ev["images"] = imgs
@@ -1538,19 +1538,31 @@ def _save_result_images(job_id: str, rid: str, content) -> list[str]:
     return out
 
 
-_MCP_VID_BYTES = 64 * 1024 * 1024   # one clip, on disk
+_MCP_FILE_BYTES = 64 * 1024 * 1024  # one clip or attachment, on disk
 
 
-def _save_result_video(job_id: str, name: "str | None", content) -> "str | None":
-    """The Record tool hands back a path rather than bytes -- a clip is tens of
+def _save_result_file(job_id: str, rid: str, name: "str | None",
+                      content) -> "str | None":
+    """Record and Attach hand back a path rather than bytes -- a clip is tens of
     megabytes, and this event goes into the store and down every SSE stream, so
-    base64 is out of the question. It writes to a temp dir nobody serves; moving
-    it next to the run's uploads is what puts it in the transcript, and makes it
-    subject to the same pruning as everything else there.
+    base64 is out of the question. Putting the file next to the run's uploads is
+    what puts it in the transcript, and makes it subject to the same pruning as
+    everything else there.
 
-    Gated on the tool name: this is our own tool's first line, not a path
-    sniffed out of whatever text some other tool happened to return."""
-    if not name or not name.endswith("__Record") or not isinstance(content, list):
+    Gated on the tool name: this is our own tools' first line, not a path
+    sniffed out of whatever text some other tool happened to return. Record
+    writes to a temp dir nobody serves, so its clip is moved; an attachment is a
+    file the human already owns somewhere, so it is copied and left where it is.
+    Record stays video-only -- it cannot produce anything else, and widening it
+    would let the one tool with a whole page of prose in its result publish a
+    stray image path."""
+    if not name or not isinstance(content, list):
+        return None
+    if name.endswith("__Record"):
+        kinds, take = ("video/",), shutil.move
+    elif name.endswith("__Attach"):
+        kinds, take = ("image/", "video/"), shutil.copy2
+    else:
         return None
     for b in content:
         if not isinstance(b, dict) or b.get("type") != "text":
@@ -1558,20 +1570,21 @@ def _save_result_video(job_id: str, name: "str | None", content) -> "str | None"
         first = ((b.get("text") or "").splitlines() or [""])[0].strip()
         if not first or not os.path.isfile(first):
             continue
-        if not (mimetypes.guess_type(first)[0] or "").startswith("video/"):
+        if not (mimetypes.guess_type(first)[0] or "").startswith(kinds):
             continue
         try:
-            if os.path.getsize(first) > _MCP_VID_BYTES:
+            if os.path.getsize(first) > _MCP_FILE_BYTES:
                 return None
             d = os.path.join(config.UPLOAD_DIR, job_id)
             os.makedirs(d, exist_ok=True)
-            # The temp dir's name is already unique per recording, so it keeps
-            # two clips in one turn from overwriting each other.
-            fp = os.path.join(d, f"{os.path.basename(os.path.dirname(first))}.webm")
-            shutil.move(first, fp)
+            # One tool call, one file: the id keeps two of them in the same turn
+            # from overwriting each other, and the real name keeps the extension
+            # the players key off.
+            fp = os.path.join(d, f"{rid or 'tool'}-{os.path.basename(first)}")
+            take(first, fp)
             return fp
         except OSError as e:
-            print(f"[runner] recording dropped: {e}", file=sys.stderr)
+            print(f"[runner] attachment dropped: {e}", file=sys.stderr)
             return None
     return None
 

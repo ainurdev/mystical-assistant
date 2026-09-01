@@ -1,12 +1,19 @@
 """Stdio MCP server giving the model eyes on a running page.
 
-Spawned per interactive run via --mcp-config, alongside the goal server. Two
-tools: a screenshot comes back as an image content block, so "the layout is
-fixed" can be looked at instead of asserted, and a recording -- which comes back
-only as its final frame. A clip is tens of megabytes and the model cannot watch
-video anyway, so Record returns a path, the runner moves it into the turn's
+Spawned per interactive run via --mcp-config, alongside the goal server. A
+screenshot comes back as an image content block, so "the layout is fixed" can be
+looked at instead of asserted, and a recording -- which comes back only as its
+final frame. A clip is tens of megabytes and the model cannot watch video
+anyway, so Record returns a path, the runner moves it into the turn's
 attachments where the human sees it, and the still is what keeps the model from
 reporting success on a recording nobody has looked at.
+
+Attach exists because Record only reaches what headless Chrome can load. A clip
+of an Android emulator, an ffmpeg export, a downloaded PDF-turned-png -- the
+model made the file, then wrote a line of prose about where it was, and the
+human got nothing. Same contract as Record (first line is the path, the runner
+matches on the tool name), except the file belongs to whoever made it, so the
+runner copies rather than moves.
 
 Run starts the project. A dev server the model spawns with background Bash is
 owned by the run and invisible to the human, so "run the project" has to land in
@@ -25,6 +32,7 @@ stdout -- that channel is the protocol.
 
 import base64
 import json
+import mimetypes
 import os
 import sys
 import urllib.error
@@ -94,6 +102,29 @@ _TOOLS = [
         },
     },
     {
+        "name": "Attach",
+        "description": (
+            "Put a file you already made in front of the human, in the chat. "
+            "Use it for anything Record cannot reach: an adb screenrecord of an "
+            "emulator, an ffmpeg export, a rendered chart, a downloaded asset. "
+            "Writing \"the clip is at /tmp/x.mp4\" attaches nothing and the "
+            "human sees nothing -- this is what actually delivers it. Images "
+            "and video only; Read the file yourself if you also need to look "
+            "at it."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Path to an image or video on this machine. A Windows "
+                        "path has to come in as its /mnt/... form."),
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "Run",
         "description": (
             "Start (or stop) this project's dev server, owned by the bridge. Use "
@@ -139,6 +170,8 @@ def _call(name: str, args: dict) -> list[dict]:
     protocol fault."""
     if name == "Run":
         return [{"type": "text", "text": _run(args)}]
+    if name == "Attach":
+        return [{"type": "text", "text": _attach(args)}]
     if name not in ("Screenshot", "Record"):
         return [{"type": "text", "text": f"Unknown tool: {name}"}]
     url = (args.get("url") or "").strip()
@@ -178,6 +211,21 @@ def _call(name: str, args: dict) -> list[dict]:
         {"type": "image", "data": base64.b64encode(png).decode(),
          "mimeType": "image/png"},
     ]
+
+
+def _attach(args: dict) -> str:
+    """First line is the path, exactly as Record does it -- that is the shape the
+    runner reads. Everything after it is for the model, and says plainly that the
+    file has landed, so it stops describing files instead of sending them."""
+    path = os.path.abspath(os.path.expanduser((args.get("path") or "").strip()))
+    if not os.path.isfile(path):
+        return f"Nothing to attach: {path} is not a file."
+    kind = mimetypes.guess_type(path)[0] or ""
+    if not kind.startswith(("image/", "video/")):
+        return (f"Not an image or video: {path} ({kind or 'unknown type'}). The "
+                f"chat only shows those.")
+    return (f"{path}\nAttached to the chat -- the human can see it now. You "
+            f"cannot; Read the file if you need to check it yourself.")
 
 
 def _run(args: dict) -> str:
