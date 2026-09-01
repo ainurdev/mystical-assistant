@@ -444,9 +444,12 @@ export function SessionsPanel(props: Props) {
     // Nothing to show is nothing to expand — an empty project is collapsed,
     // whatever the header was last clicked to.
     const isShut = !f.length || (shut.has(g.rel) && !sq);
-    const live = f.filter((s) => s.id === selectedSessionId || pins.has(s.id)
-      || laneOf(s) !== "idle" || flags.has(s.id));
-    const vis = isShut ? [] : sq || open.has(g.rel) ? f : live.length ? live : f.slice(0, 2);
+    // Newest rows *plus* anything live — a union, not a replacement: selecting
+    // an idle row made it "live" and shoved its sibling out of the list.
+    const keep = new Set(f.slice(0, 2).map((s) => s.id));
+    const vis = isShut ? [] : sq || open.has(g.rel) ? f
+      : f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id)
+        || laneOf(s) !== "idle" || flags.has(s.id));
     const rest = Math.max(0, g.sessionCount - vis.length);
     return [{ g, f, isShut, vis, rest }];
   });

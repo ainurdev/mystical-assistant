@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FileDiff, FolderTree, GitBranch, GraduationCap, LayoutTemplate, ListTodo, Sparkles,
+  FileDiff, FileText, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
 } from "lucide-react";
 import {
   api,
@@ -64,7 +64,7 @@ import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
-import { ArtifactsPanel } from "./components/hud/ArtifactsPanel";
+import { DocsPanel } from "./components/hud/DocsPanel";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
@@ -1521,8 +1521,8 @@ export function App() {
     {
       // No `scope`: the shelf spans repos and holds a search and a reading
       // position, so a project switch must not remount it.
-      id: "artifacts", label: "Artifacts", icon: <LayoutTemplate {...RAIL} />, ownScroll: true,
-      render: () => <ArtifactsPanel project={sessionProject} />,
+      id: "docs", label: "Docs", icon: <FileText {...RAIL} />, ownScroll: true,
+      render: () => <DocsPanel project={sessionProject} />,
     },
     { id: "queue", label: "Queue", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
   ];

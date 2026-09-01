@@ -1,101 +1,105 @@
-"""Standalone HTML pages a session left on disk, listed for the dashboard's
-ARTIFACTS tab.
+"""The markdown a repo was written with, listed for the dashboard's DOCS tab.
 
-An artifact here is a page you open and *read*: a /design-first mockup under
-`.mystical/design-drafts/`, a built graphify map, a one-off report. Two kinds of
-`.html` are not that, and both are filtered out.
+A doc here is prose you sit down and *read*: a spec under
+`docs/superpowers/specs/`, a release note, a README, a design brief someone
+dropped in `.mystical/docs/`. The tab exists so reading one is two clicks
+instead of a hunt through the FILES tree for a name you half remember.
 
-*Source* is a build input nobody reads — a bundler's entry `index.html`, a
-`popup.html` under `src/`, a vendored library's README. So `src` and `vendor`
-join the pruned dirs, and an `index.html` sitting next to a `package.json` is
-skipped.
-
-*Fragments* are the other half: a `_body-01.html` a build script inlines, an SVG
-`_sprite.html`, a `<script>` snippet a template includes. Each is real content
-but not a whole page — opened alone it renders as unstyled soup. A fragment
-starts straight into content, so requiring a document root (`<!doctype`,
-`<html`, `<body`) in the first few KB is the whole test.
+What is pruned is the point. Most `.md` in a repo is not a doc anyone wrote for
+this project: `node_modules` ships thousands, `.claude` and `.superpowers` hold
+tooling a skill installed, `graphify-out` holds generated reports, and
+`.mystical/learn` holds lessons that already have their own tab. Take those out
+and what is left is the writing — a few dozen files, which is a list you can
+read down.
 
 Why a walk and not an index. Nothing writes these *through* the bridge — the
 model calls Write and a file appears — so a registry would be a second source of
-truth that goes stale the first time a session writes a page somewhere it
-doesn't know about. The tree is the index. With SKIP_DIRS pruned the walk is a
-few milliseconds per repo, and the tab reads it on mount, not per frame.
+truth that goes stale the first time a session writes a doc somewhere it doesn't
+know about. The tree is the index. With SKIP_DIRS pruned the walk is a few
+milliseconds per repo, and the tab reads it on mount, not per frame.
 
-Dotted directories are *not* skipped: the whole design-draft shelf lives under
-`.mystical/`, which is the point of the tab.
+Dotted directories are *not* skipped wholesale: `.mystical/docs/` is the shelf a
+repo can put anything on that it wants rendered here, and it has to be walked to
+be found.
 """
 
-import html
 import os
 
 from bridge import config
 
-# Build output, dependency trees and package source — everything else, including
-# dotted dirs, is walked. `dist`/`build` are where a page gets copied to, never
-# authored; `vendor` is composer's `node_modules`; `.claude` holds a skill's own
-# swatch pages, which are tooling rather than anything you sat down to read.
+# Dependency trees, build output, and the two kinds of markdown that are not
+# this project's writing: tooling a skill installed (`.claude`, `.superpowers`)
+# and output a tool generated (`graphify-out`, `dist`).
 SKIP_DIRS = {".git", "node_modules", "dist", "build", ".next", "coverage",
              "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache",
-             ".bridge_uploads", "src", "vendor", ".claude"}
+             ".bridge_uploads", "vendor", ".claude", ".superpowers",
+             "graphify-out", "site-packages"}
+
+# Walked but not listed: `.mystical/learn` is the LEARN tab's shelf, and folding
+# a repo's 200 lessons into DOCS would bury the dozen docs someone wrote.
+SKIP_PATHS = {os.path.join(".mystical", "learn")}
 
 _MAX_PER_REPO = 300
 _MAX_ALL = 800
 _HEAD_BYTES = 4096
-_ROOTS = ("<!doctype", "<html", "<body")
 
 
-def _head(path: str) -> str:
-    """The first few KB — enough for both questions asked of a page, is this a
-    document and what is it called. A self-contained mockup can be megabytes;
-    its <head> never is."""
+def _title(path: str, at_root: bool = False) -> str:
+    """The doc's first `# ` heading, which is what it calls itself. Only the top
+    of the file is read — a heading below the first few KB is a section, not a
+    title. Scanned rather than stopped at the first line of content, because a
+    README opens with badges and a spec with front-matter. Falls back to the
+    filename, de-slugged.
+
+    A doc in the repo root is titled by its filename instead: README.md and
+    CLAUDE.md both open `# <repo name>`, so their headings collide into two
+    identical rows, and "the README" is what anyone calls it anyway."""
+    if at_root:
+        return os.path.basename(path)[:-3][:80]
     try:
         with open(path, "rb") as f:
-            return f.read(_HEAD_BYTES).decode("utf-8", "replace")
+            head = f.read(_HEAD_BYTES).decode("utf-8", "replace")
     except OSError:
-        return ""
+        head = ""
+    for line in head.splitlines():
+        s = line.strip()
+        if s.startswith("# "):
+            return s[2:].strip()[:80]
+    name = os.path.basename(path)[:-3]
+    # A dated spec filename ("2026-08-25-flow-native-chat.md") reads better as
+    # its subject; the date is already in the row's timestamp.
+    parts = name.split("-")
+    if len(parts) > 3 and parts[0].isdigit() and len(parts[0]) == 4:
+        name = "-".join(parts[3:]) or name
+    return name.replace("-", " ").replace("_", " ")[:80]
 
 
-def _title(head: str) -> str:
-    """The page's <title>, if it declared one."""
-    lo = head.lower()
-    i = lo.find("<title")
-    if i < 0:
-        return ""
-    j = head.find(">", i)
-    k = lo.find("</title>", j)
-    if not 0 < j < k:
-        return ""
-    # Entities, because a <title> is markup: "Widgets &mdash; Mini App" has to
-    # read as an em dash in the list, not as its source.
-    return html.unescape(" ".join(head[j + 1:k].split()))[:80]
-
-
-def artifacts(cwd: str) -> list[dict]:
-    """Every standalone HTML page in a repo, newest first. `path` is repo-rel
-    with forward slashes (it round-trips through a URL); `dir` is what the tab
-    groups by — the folder is the subject."""
+def docs(cwd: str) -> list[dict]:
+    """Every markdown doc in a repo, newest first. `path` is repo-rel with
+    forward slashes (it round-trips through a URL); `dir` is what the tab groups
+    by — the folder is the subject."""
     out: list[dict] = []
     for root, dirs, names in os.walk(cwd):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        entry = "package.json" in names
+        rel_root = os.path.relpath(root, cwd)
+        if rel_root in SKIP_PATHS:
+            dirs[:] = []
+            continue
         for n in names:
-            if not n.endswith(".html") or (n == "index.html" and entry):
+            if not n.endswith(".md") or n.startswith("."):
                 continue
             p = os.path.join(root, n)
-            head = _head(p)
-            if not any(r in head.lower() for r in _ROOTS):
-                continue    # a fragment, not a page
             try:
                 st = os.stat(p)
             except OSError:
                 continue
-            d = os.path.relpath(root, cwd)
+            if not st.st_size:
+                continue        # an empty file is not a doc
             out.append({
                 "path": os.path.relpath(p, cwd).replace(os.sep, "/"),
-                "dir": "" if d == "." else d.replace(os.sep, "/"),
+                "dir": "" if rel_root == "." else rel_root.replace(os.sep, "/"),
                 "name": n,
-                "title": _title(head),
+                "title": _title(p, at_root=rel_root == "."),
                 "at": st.st_mtime,
                 "size": st.st_size,
             })
@@ -103,32 +107,32 @@ def artifacts(cwd: str) -> list[dict]:
     return out[:_MAX_PER_REPO]
 
 
-def all_artifacts() -> list[dict]:
-    """Every repo's pages in one list, each tagged with the project that holds
-    it — the tab's default scope, because a mockup belongs to the repo it was
-    drawn for, not to whichever session happens to be focused."""
+def all_docs() -> list[dict]:
+    """Every repo's docs in one list, each tagged with the project that holds
+    it — the tab's default scope, because a spec belongs to the repo it was
+    written for, not to whichever session happens to be focused."""
     from bridge import browser   # local import: browser imports config too
 
     out = []
     for p in browser.list_projects():
-        for a in artifacts(os.path.join(config.BASE_PATH, p.lstrip("/"))):
+        for a in docs(os.path.join(config.BASE_PATH, p.lstrip("/"))):
             out.append({**a, "project": p})
     out.sort(key=lambda a: a["at"], reverse=True)
     return out[:_MAX_ALL]
 
 
-def read(cwd: str, path: str) -> "bytes | None":
-    """One page's bytes. `path` arrives from the browser, so it is matched
+def read(cwd: str, path: str) -> "str | None":
+    """One doc's markdown. `path` arrives from the browser, so it is matched
     against what the walk actually found rather than joined onto a path — the
     containment check is the listing itself, so `../` never resolves.
 
     ponytail: re-walks the repo per open (milliseconds at this size). Cache the
     listing if a repo ever makes that show.
     """
-    if path not in {a["path"] for a in artifacts(cwd)}:
+    if path not in {a["path"] for a in docs(cwd)}:
         return None
     try:
-        with open(os.path.join(cwd, path), "rb") as f:
+        with open(os.path.join(cwd, path), encoding="utf-8", errors="replace") as f:
             return f.read()
     except OSError:
         return None

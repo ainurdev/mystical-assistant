@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Artifact } from "../../api";
+import { api, type Doc } from "../../api";
 import { ago } from "../../lib/surfaces";
 import { useStickySet } from "../../lib/prefs";
+import { Markdown } from "../Markdown";
 
-/* ARTIFACTS — the standalone HTML pages sitting in your repos (design-first
-   mockups, a built graphify map, a one-off report), listed by the repo that
-   holds them and the folder that named the subject, and opened in an iframe
-   right here rather than in a browser tab you then lose.
+/* DOCS — the markdown a repo was written with (specs, plans, release notes,
+   READMEs, a design brief in .mystical/docs/), listed by the repo that holds
+   them and the folder that named the subject, and read right here rather than
+   hunted for by name in the FILES tree.
 
-   Scope is ALL, like LEARN: a mockup belongs to the repo it was drawn for, not
+   Scope is ALL, like LEARN: a spec belongs to the repo it was written for, not
    to whichever session is focused, so switching sessions must not swap the
    shelf out. The session's own repo is the group that starts open. */
 
@@ -22,18 +23,19 @@ const btn: React.CSSProperties = {
   border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
 };
 
-const OPEN_KEY = "hud-artifacts-open";
+const OPEN_KEY = "hud-docs-open";
 
-/** The subject a page belongs to: its folder, with the noise-free tail first.
- *  ".mystical/design-drafts/agent-block" reads as "agent-block" — the segment
- *  someone named — with the path above it only as context. */
+/** The subject a doc belongs to: its folder, with the noise-free tail first.
+ *  "docs/superpowers/specs" reads as "specs" — the segment someone named —
+ *  with the path above it only as context. */
 const subject = (dir: string) => dir.split("/").filter(Boolean).pop() ?? "root";
 
-export function ArtifactsPanel({ project }: { project: string | null }) {
-  const [list, setList] = useState<Artifact[] | null>(null);
+export function DocsPanel({ project }: { project: string | null }) {
+  const [list, setList] = useState<Doc[] | null>(null);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
-  const [sel, setSel] = useState<Artifact | null>(null);
+  const [sel, setSel] = useState<Doc | null>(null);
+  const [body, setBody] = useState<string | null>(null);
   // Which groups were toggled *away from* their default — so the session's
   // repo stays open without every other repo needing a row in localStorage.
   const [flipped, setFlipped] = useStickySet(OPEN_KEY);
@@ -41,22 +43,36 @@ export function ArtifactsPanel({ project }: { project: string | null }) {
 
   useEffect(() => {
     let live = true;
-    api.artifacts("*")
-      .then((r) => { if (live) { setList(r.artifacts); setErr(""); } })
+    api.docs("*")
+      .then((r) => { if (live) { setList(r.docs); setErr(""); } })
       .catch((e: Error) => { if (live) { setList([]); setErr(e.message); } });
     return () => { live = false; };
   }, []);
 
-  // project -> subject folder -> pages, each level newest-first because the
+  // The open doc's markdown, fetched once per selection. Keyed on project as
+  // well as path, because the same `docs/README.md` exists in half the repos.
+  const selKey = sel ? `${sel.project ?? project ?? ""} ${sel.path}` : "";
+  useEffect(() => {
+    if (!sel) return;
+    let live = true;
+    setBody(null);
+    api.doc(sel.project ?? project ?? "", sel.path)
+      .then((r) => { if (live) setBody(r.body); })
+      .catch((e: Error) => { if (live) setBody(`_could not read this doc — ${e.message}_`); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey]);
+
+  // project -> subject folder -> docs, each level newest-first because the
   // flat list already is and the grouping preserves order.
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const rows = (list ?? []).filter((a) => !needle ||
       `${a.project ?? ""} ${a.path} ${a.title}`.toLowerCase().includes(needle));
-    const byProject = new Map<string, Map<string, Artifact[]>>();
+    const byProject = new Map<string, Map<string, Doc[]>>();
     for (const a of rows) {
       const p = a.project ?? "";
-      const dirs = byProject.get(p) ?? new Map<string, Artifact[]>();
+      const dirs = byProject.get(p) ?? new Map<string, Doc[]>();
       byProject.set(p, dirs);
       const key = a.dir || "root";
       dirs.set(key, [...(dirs.get(key) ?? []), a]);
@@ -75,7 +91,6 @@ export function ArtifactsPanel({ project }: { project: string | null }) {
   });
 
   if (sel) {
-    const url = api.artifactUrl(sel.project ?? project ?? "", sel.path);
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: line }}>
@@ -85,12 +100,12 @@ export function ArtifactsPanel({ project }: { project: string | null }) {
             title={`${sel.project ?? ""}/${sel.path}`}>
             {sel.title || sel.name}
           </span>
-          <a href={url} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: "none" }}>↗</a>
         </div>
-        {/* Sandboxed: these pages are ours, but they are also whatever the model
-            last wrote, and they must not reach the dashboard's own origin. */}
-        <iframe key={url} src={url} title={sel.name} sandbox="allow-scripts"
-          style={{ flex: 1, width: "100%", border: 0, background: "var(--panel3)" }} />
+        <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 14px" }}>
+          {body === null
+            ? <div style={{ ...label, color: "var(--txd)" }}>reading…</div>
+            : <div style={{ maxWidth: 720 }}><Markdown>{body}</Markdown></div>}
+        </div>
       </div>
     );
   }
@@ -99,7 +114,7 @@ export function ArtifactsPanel({ project }: { project: string | null }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: line }}>
-        <span style={label}>Artifacts</span>
+        <span style={label}>Docs</span>
         <span style={{ ...label, color: "var(--txd)" }}>{list ? `${total}` : "…"}</span>
       </div>
       <div style={{ padding: "8px 10px", borderBottom: line }}>
@@ -111,7 +126,7 @@ export function ArtifactsPanel({ project }: { project: string | null }) {
         {!list && <div style={{ ...label, padding: 12 }}>reading…</div>}
         {list && !total && (
           <div style={{ ...label, padding: 12, lineHeight: 1.7 }}>
-            {err || "no html pages on disk yet — a /design-first mockup lands here."}
+            {err || "no markdown on disk yet — a spec, a plan or a README lands here."}
           </div>
         )}
         {groups.map(([proj, dirs]) => {

@@ -351,7 +351,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => (t.pal ? Object.keys(t.pal) : []))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["files", "changes", "git", "learn", "artifacts", "queue"] as const;
+export const RIGHT_TABS = ["files", "changes", "git", "learn", "docs", "queue"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 /** What the transcript shows while the agent works. */

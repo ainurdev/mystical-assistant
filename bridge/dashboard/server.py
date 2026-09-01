@@ -598,27 +598,24 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None or not q:
                 return self._json({"error": "invalid project or query"}, 400)
             return self._json({"text": graphmap.explain(abs_p, q)})
-        if path == "/local/artifacts":
-            from bridge import artifacts as arts
+        if path == "/local/docs":
+            from bridge import docs as projdocs
             project = qs.get("project", [None])[0]
             if project == "*":
-                # ALL scope — every repo's pages, each tagged with its project.
-                return self._json({"artifacts": arts.all_artifacts()})
+                # ALL scope — every repo's docs, each tagged with its project.
+                return self._json({"docs": projdocs.all_docs()})
             abs_p = _abs_project(project)
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
-            return self._json({"artifacts": arts.artifacts(abs_p)})
-        if path == "/local/artifacts/raw":
-            from bridge import artifacts as arts
-            abs_p = _abs_project(qs.get("project", [None])[0])
-            page = arts.read(abs_p, qs.get("path", [""])[0] or "") if abs_p else None
-            if page is None:
-                # the tab iframes this, so a JSON body would paint as a raw blob
-                return self._send(b"<!doctype html><body style='background:#0a0a0a;"
-                                  b"color:#888;font:12px monospace;padding:14px'>"
-                                  b"gone - this page is no longer on disk.",
-                                  404, "text/html; charset=utf-8")
-            return self._send(page, 200, "text/html; charset=utf-8")
+            # One doc's markdown, same shape as /local/learn: the tab renders it
+            # itself, so this is a body and not a page.
+            rel = (qs.get("path", [""])[0] or "").strip()
+            if rel:
+                body = projdocs.read(abs_p, rel)
+                if body is None:
+                    return self._json({"error": "not found"}, 404)
+                return self._json({"path": rel, "body": body})
+            return self._json({"docs": projdocs.docs(abs_p)})
         if path == "/local/learn":
             from bridge import learn
             project = qs.get("project", [None])[0]

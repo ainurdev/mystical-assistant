@@ -37,7 +37,10 @@ preamble — put it in conftest, above the first bridge import.
   what. Read the docstring before changing a module; write one for a new one.
 - Specs and plans live in `docs/superpowers/{specs,plans}/YYYY-MM-DD-slug.md`.
 - Per-repo runtime state (git-ignored) goes in `.mystical/`: `dev.log`,
-  `learn/` lessons, design-sync state.
+  `learn/` lessons, design-sync state, `docs/` for markdown that exists to be
+  read in the DOCS tab. It self-ignores from git (`.mystical/.gitignore` is
+  `*`), so anything that must survive in the repo — specs, plans, releases —
+  stays in `docs/`; the DOCS tab reads both.
 - No external MCP servers load by default (startup cost) — the `mcp-on` skill
   turns one on for a session.
 

@@ -936,15 +936,15 @@ export interface Lesson {
   project?: string; // only in the ALL scope, where a lesson can be from any repo
 }
 
-// A standalone HTML page on disk, listed by the ARTIFACTS tab (bridge/artifacts.py).
-export interface Artifact {
-  path: string; // repo-relative, forward slashes — also its identity in the raw route
+// A markdown doc on disk, listed by the DOCS tab (bridge/docs.py).
+export interface Doc {
+  path: string; // repo-relative, forward slashes — also its identity when reading one
   dir: string; // the folder holding it — the subject the tab groups by ("" = repo root)
   name: string;
-  title: string; // the page's <title>; "" when it has none
+  title: string; // its first "# " heading, or the filename de-slugged
   at: number; // epoch seconds
   size: number;
-  project?: string; // only in the ALL scope, where a page can be from any repo
+  project?: string; // only in the ALL scope, where a doc can be from any repo
 }
 
 // The platform's own checkout vs its upstream — powers the header sync button,
@@ -1447,13 +1447,13 @@ export const api = {
     req<GraphState>("/local/graph/update", { method: "POST", body: { project } }),
   graphHtmlUrl: (project: string) =>
     `/local/graph/html?project=${encodeURIComponent(project)}`,
-  // --- ARTIFACTS tab: standalone HTML pages on disk. "*" = every repo. ---
-  artifacts: (project: string) =>
-    req<{ artifacts: Artifact[] }>(`/local/artifacts?project=${encodeURIComponent(project)}`),
-  // Iframed, so it is a URL rather than a fetch — GET reads are Host-gated, not
-  // token-gated, exactly like graphHtmlUrl.
-  artifactUrl: (project: string, path: string) =>
-    `/local/artifacts/raw?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
+  // --- DOCS tab: the markdown a repo was written with. "*" = every repo. ---
+  docs: (project: string) =>
+    req<{ docs: Doc[] }>(`/local/docs?project=${encodeURIComponent(project)}`),
+  doc: (project: string, path: string) =>
+    req<{ path: string; body: string }>(
+      `/local/docs?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
+    ),
   // --- LEARN tab: per-turn lessons in <repo>/.mystical/learn/ ---
   lessons: (project: string) =>
     req<{ lessons: Lesson[]; repo_enabled: boolean }>(
