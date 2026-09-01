@@ -40,10 +40,14 @@ function Typewriter({
   idKey: string;
   className?: string;
 }) {
-  const [n, setN] = useState(() => (animate && !typedResults.has(idKey) ? 0 : text.length));
+  // -1 is "done typing". A `n >= text.length` test can't stand in for it: `text`
+  // grows under a mounted block when FinalResult folds the ask-back question back
+  // into the body (the turn stopped being the last one), and a finished block that
+  // falls back to the plain branch prints raw markdown under a stuck caret.
+  const [n, setN] = useState(() => (animate && !typedResults.has(idKey) ? 0 : -1));
 
   useEffect(() => {
-    if (n >= text.length) return;
+    if (n < 0) return;
     typedResults.add(idKey);
     const step = Math.max(1, Math.ceil(text.length / 60)); // ~60 frames ≈ 2.1s, capped
     const id = setInterval(() => {
@@ -51,7 +55,7 @@ function Typewriter({
         const next = p + step;
         if (next >= text.length) {
           clearInterval(id);
-          return text.length;
+          return -1;
         }
         return next;
       });
@@ -60,7 +64,7 @@ function Typewriter({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (n >= text.length) return <Markdown className={className}>{text}</Markdown>;
+  if (n < 0) return <Markdown className={className}>{text}</Markdown>;
   return (
     <div className={`${className ?? ""} whitespace-pre-wrap break-words`}>
       {text.slice(0, n)}
