@@ -47,6 +47,26 @@ PROTOCOL = "2024-11-05"
 # a phone-sized report.
 MAX_W, MAX_H = 1600, 1600
 
+# Both media tools take these, and neither one reads them: the runner picks them
+# off the tool_use block and stamps them onto the event that carries the file, so
+# the surfaces can say what the clip is evidence for. Declared here because this
+# schema is the only thing that tells the model they exist.
+NOTES = {
+    "type": "string",
+    "description": (
+        "One or two sentences: what this clip shows, and what you fixed. The "
+        "human sees it beside the player. Without it a recording is just motion "
+        "-- they can see that something changed, never what."),
+}
+RESOLVES = {
+    "type": "array",
+    "items": {"type": "integer"},
+    "description": (
+        "Indices into your current TodoWrite list (0-based) that this clip is "
+        "evidence for. The surfaces show your plan next to the clip with these "
+        "lit. Omit if the clip does not close anything out."),
+}
+
 _TOOLS = [
     {
         "name": "Screenshot",
@@ -95,8 +115,15 @@ _TOOLS = [
                     "description": (
                         "Optional JS run in the page while recording, awaited: "
                         "an async IIFE that clicks and awaits between steps is "
-                        "how you record an interaction rather than an idle page."),
+                        "how you record an interaction rather than an idle page. "
+                        "Call mark(\"what just happened\") between steps to name "
+                        "the moments -- the recorder timestamps each one against "
+                        "the video clock and they become the clip's chapter list. "
+                        "You cannot watch the clip, so these are the only "
+                        "timestamps that will be true."),
                 },
+                "notes": NOTES,
+                "resolves": RESOLVES,
             },
             "required": ["url"],
         },
@@ -120,6 +147,8 @@ _TOOLS = [
                         "Path to an image or video on this machine. A Windows "
                         "path has to come in as its /mnt/... form."),
                 },
+                "notes": NOTES,
+                "resolves": RESOLVES,
             },
             "required": ["path"],
         },
@@ -179,17 +208,20 @@ def _call(name: str, args: dict) -> list[dict]:
         return [{"type": "text", "text": "url must be an absolute http(s) URL."}]
     if name == "Record":
         try:
-            path, still = record.capture(url, args.get("seconds") or 8,
-                                         _clamp(args.get("width"), 1200, MAX_W),
-                                         _clamp(args.get("height"), 900, MAX_H),
-                                         args.get("steps") or "")
+            path, still, chapters = record.capture(
+                url, args.get("seconds") or 8,
+                _clamp(args.get("width"), 1200, MAX_W),
+                _clamp(args.get("height"), 900, MAX_H),
+                args.get("steps") or "")
         except Exception as e:  # noqa: BLE001 -- node missing, chrome missing, timeout
             return [{"type": "text", "text": f"Recording failed: {e}"}]
-        # First line is the path, and the runner reads exactly that: it matches
-        # on this tool's name, so this is our own output shape rather than a
-        # path sniffed out of arbitrary text.
+        # Line 1 is the path and line 2 (when there is one) is the chapters, and
+        # the runner reads exactly those: it matches on this tool's name, so this
+        # is our own output shape rather than text sniffed out of a tool result.
+        chapter_line = f"CHAPTERS {json.dumps(chapters)}\n" if chapters else ""
         blocks = [{"type": "text", "text": (
-            f"{path}\nRecorded {url}. The clip itself goes to the human in the "
+            f"{path}\n{chapter_line}"
+            f"Recorded {url}. The clip itself goes to the human in the "
             f"chat. You cannot watch it -- what follows is its final frame, so "
             f"check that before calling the recording proof of anything.")}]
         if still:

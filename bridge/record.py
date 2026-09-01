@@ -14,6 +14,7 @@ Playwright ships, built --disable-everything -- mjpeg in, libvpx out, webm
 muxed. Both surfaces and Telegram play it. rec.mjs carries the timing detail.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -27,13 +28,18 @@ MAX_SECONDS = 60
 
 
 def capture(url: str, seconds: int = 8, width: int = 1200, height: int = 900,
-            steps: str = "") -> "tuple[str, str | None]":
-    """Record `url`; return (webm, final-frame jpg) in a fresh temp dir the caller
-    owns. `seconds` is how long to watch after load; `steps` (optional JS, run
-    with awaitPromise) extends that by however long it takes to finish.
+            steps: str = "") -> "tuple[str, str | None, list]":
+    """Record `url`; return (webm, final-frame jpg, chapters) in a fresh temp dir
+    the caller owns. `seconds` is how long to watch after load; `steps` (optional
+    JS, run with awaitPromise) extends that by however long it takes to finish.
 
     The still exists because nothing that calls this can watch video. Handing
-    back only a clip means the caller reports "it works" having seen nothing."""
+    back only a clip means the caller reports "it works" having seen nothing.
+
+    Chapters are `[{"t": seconds, "text": …}]` for every mark() the step script
+    called, empty when it called none. They come back in the return value rather
+    than staying on disk because the sidecar sits in this temp dir, and the
+    caller moves only the clip out of it."""
     node = shutil.which("node")
     if not node:
         raise RuntimeError("node is not installed, and it is what drives the recorder")
@@ -45,4 +51,10 @@ def capture(url: str, seconds: int = 8, width: int = 1200, height: int = 900,
     if proc.returncode != 0 or not os.path.exists(out):
         raise RuntimeError((proc.stderr or proc.stdout or "recorder failed").strip()[:300])
     still = os.path.splitext(out)[0] + ".jpg"
-    return out, (still if os.path.exists(still) else None)
+    chapters = []
+    try:
+        with open(out + ".chapters.json") as f:
+            chapters = json.load(f)
+    except (OSError, ValueError):
+        pass            # no marks is the normal case, not a failure
+    return out, (still if os.path.exists(still) else None), chapters
