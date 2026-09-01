@@ -1450,13 +1450,15 @@ function ctxQuery(ctx: RunCtx): string {
   return p.toString();
 }
 
-/** Subscribe to the live dev-server log stream (SSE). Returns an unsubscribe fn. */
-export function logStream(onLine: (line: string) => void): () => void {
+/** Subscribe to the live dev-server log stream (SSE). One stream carries every
+ *  concurrent server, so each line names the run dir it came from (null for the
+ *  initial snapshot, which is the primary server's). Returns an unsubscribe fn. */
+export function logStream(onLine: (line: string, dir: string | null) => void): () => void {
   const es = new EventSource(`/local/stream/logs?token=${encodeURIComponent(TOKEN)}`);
   es.onmessage = (e) => {
     try {
       const d = JSON.parse(e.data);
-      if (typeof d.line === "string") onLine(d.line);
+      if (typeof d.line === "string") onLine(d.line, typeof d.dir === "string" ? d.dir : null);
     } catch {
       /* ignore */
     }

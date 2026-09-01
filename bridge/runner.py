@@ -72,9 +72,12 @@ def _drain_journal() -> None:
 
 
 _LOG_NOTE = (
-    "If a dev server was started for this project from the bridge, its output "
-    f"is logged to {devserver.DEV_LOG_REL} in the project root — read that file "
-    "(e.g. tail it) to inspect dev-server logs.")
+    "To run this project (dev server, `npm run dev`, anything long-lived the "
+    "human will look at), use the Run tool — not Bash. The bridge owns what Run "
+    "starts, so it outlives the turn and the human can follow its port and logs "
+    "in the dashboard; a background Bash process is invisible to them. Its "
+    f"output is also logged to {devserver.DEV_LOG_REL} in the project root — "
+    "read that file (e.g. tail it) to inspect dev-server logs.")
 
 
 def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
@@ -204,7 +207,12 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
     so `-m bridge.*` imports regardless of the run's cwd. Ours go in last: a
     user server named `goals` must not shadow the goal tools."""
     env = {"PYTHONPATH": _REPO_ROOT,
-           "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id}
+           "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id,
+           # The Run tool starts dev servers in the *bridge* process (its registry
+           # is module state there), so it calls back over the dashboard's own
+           # localhost API — same token any browser tab uses.
+           "MYSTICAL_DASH": f"http://127.0.0.1:{config.DASH_PORT}",
+           "MYSTICAL_DASH_TOKEN": config.DASH_TOKEN}
     return json.dumps({"mcpServers": {
         **(extra or {}),
         "goals": {"command": sys.executable,

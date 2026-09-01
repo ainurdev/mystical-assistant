@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import type { AnswerSelection, EnrichedSession, NextItem, SessionBrief } from "../../api";
+import type { AnswerSelection, DevServerInfo, EnrichedSession, NextItem, SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
@@ -167,13 +167,38 @@ function DesignBtn({ onClick }: { onClick: () => void }) {
   );
 }
 
+/** The project's running app, in the header. A dev server the bridge owns (the
+ *  RUN bar, or the model's Run tool) is the one thing about this session that is
+ *  alive outside the transcript — so it says the port and opens the TERMINAL tab,
+ *  which is where its logs and the STOP button live. */
+function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void }) {
+  const [hov, setHov] = useState(false);
+  const live = run.status === "running";
+  const c = live ? "var(--ok)" : "var(--err)";
+  return (
+    <button
+      onClick={onClick} disabled={!onClick}
+      title={`${live ? "running" : "exited"}${run.cmd ? ` · ${run.cmd}` : ""} — open the terminal`}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5, flex: "none",
+        fontFamily: "var(--mono)", fontSize: "var(--t10)", padding: 0, border: 0,
+        appearance: "none", background: "transparent", cursor: onClick ? "pointer" : "default",
+        color: hov ? "var(--txb)" : c,
+      }}>
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 6px ${c}` : "none", animation: live ? "caretbreath 2s ease-in-out infinite" : "none" }} />
+      {live ? (run.port ? `:${run.port}` : "RUNNING") : "EXITED"}
+    </button>
+  );
+}
+
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign,
+  onOpenDesign, run, onOpenRun,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -219,6 +244,10 @@ export function Terminal({
   /** Open a fresh typed session from a report card (PROBE -> FIX, and friends). */
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;
+  /** The dev server the bridge is running for this project, if any. */
+  run?: DevServerInfo | null;
+  /** Open this project's TERMINAL tab (the run bar, logs and STOP). */
+  onOpenRun?: () => void;
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
@@ -460,6 +489,12 @@ export function Terminal({
             style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t10)", color: brHov ? "var(--purple-h)" : "var(--purple-d)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionId ? "pointer" : "default" }}>
             <span style={{ color: "var(--purple-g)" }}>⎇</span>{branch}
           </button>
+        </>
+      )}
+      {run && (
+        <>
+          <span style={hairline(13)} />
+          <RunChip run={run} onClick={onOpenRun} />
         </>
       )}
       <span style={hairline(13)} />

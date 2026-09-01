@@ -2,17 +2,22 @@
 
 Spawned per interactive run via --mcp-config, alongside the goal server. Two
 tools: a screenshot comes back as an image content block, so "the layout is
-fixed" can be looked at instead of asserted, and a recording -- which does not
-come back at all. A clip is tens of megabytes and the model cannot watch video
-anyway, so Record returns a path and the runner moves it into the turn's
-attachments, where the human sees it in the transcript.
+fixed" can be looked at instead of asserted, and a recording -- which comes back
+only as its final frame. A clip is tens of megabytes and the model cannot watch
+video anyway, so Record returns a path, the runner moves it into the turn's
+attachments where the human sees it, and the still is what keeps the model from
+reporting success on a recording nobody has looked at.
 
-Only screenshotting lives here. A DevLog tool would have been redundant --
-`.mystical/dev.log` is a file on disk and the system prompt already points at
-it, so Bash reads it for free -- and a preview-URL tool cannot work at all from
-here: devserver's registry is module state in the *bridge* process, and this
-runs as its own subprocess, where it would always look empty. The URL is in
-dev.log too.
+Run starts the project. A dev server the model spawns with background Bash is
+owned by the run and invisible to the human, so "run the project" has to land in
+the bridge's dev-server registry -- which is module state in the *bridge*
+process, unreachable from this subprocess except over the wire. So Run POSTs to
+the dashboard's own /local/server with the token the bridge handed us in the
+environment: no second implementation of starting, detecting the port, or
+tailing, and every surface sees the same server.
+
+A DevLog tool would still be redundant -- `.mystical/dev.log` is a file on disk
+and the system prompt already points at it, so Bash reads it for free.
 
 Stdlib only, line-delimited JSON-RPC 2.0 on stdin/stdout. Nothing is logged to
 stdout -- that channel is the protocol.
@@ -20,7 +25,10 @@ stdout -- that channel is the protocol.
 
 import base64
 import json
+import os
 import sys
+import urllib.error
+import urllib.request
 
 from bridge import record, screenshot
 
@@ -56,9 +64,11 @@ _TOOLS = [
         "description": (
             "Screen-record a URL in headless Chrome. Use it when one frame "
             "cannot show the thing: a transition, a hover, a loading sequence, "
-            "a click-through. The clip goes to the human in the chat -- you get "
-            "back a confirmation, not the pixels, because you cannot watch "
-            "video. Prefer Screenshot when a still would do."),
+            "a click-through. The clip goes to the human in the chat; you get "
+            "back only its final frame, which is all of it you can ever see -- "
+            "so a recording on its own is not verification, and the frame is "
+            "what you check before calling the change done. Prefer Screenshot "
+            "when a still would do."),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -83,7 +93,37 @@ _TOOLS = [
             "required": ["url"],
         },
     },
+    {
+        "name": "Run",
+        "description": (
+            "Start (or stop) this project's dev server, owned by the bridge. Use "
+            "it instead of a background Bash command whenever the human asked you "
+            "to run the project: what Run starts outlives your turn and shows up "
+            "in the dashboard with its port and live logs, where they can watch "
+            "it. Returns the URL it bound. Output is also tailed to "
+            ".mystical/dev.log. One server per project -- stop before restarting."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": (
+                        "Shell command to start it, e.g. `npm run dev`. Omit to "
+                        "use the project's saved/detected run command."),
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["start", "stop"],
+                    "description": "Default start.",
+                },
+            },
+        },
+    },
 ]
+
+# devserver.start blocks up to DETECT_TIMEOUT (8s) waiting for the framework to
+# print its URL, so this outwaits it rather than reporting a false failure.
+RUN_TIMEOUT = 25
 
 
 def _clamp(val, default: int, hi: int) -> int:
@@ -97,6 +137,8 @@ def _call(name: str, args: dict) -> list[dict]:
     """MCP content blocks for one tool call. Errors come back as text: a failed
     screenshot is something the model should read and route around, not a
     protocol fault."""
+    if name == "Run":
+        return [{"type": "text", "text": _run(args)}]
     if name not in ("Screenshot", "Record"):
         return [{"type": "text", "text": f"Unknown tool: {name}"}]
     url = (args.get("url") or "").strip()
@@ -104,19 +146,28 @@ def _call(name: str, args: dict) -> list[dict]:
         return [{"type": "text", "text": "url must be an absolute http(s) URL."}]
     if name == "Record":
         try:
-            path = record.capture(url, args.get("seconds") or 8,
-                                  _clamp(args.get("width"), 1200, MAX_W),
-                                  _clamp(args.get("height"), 900, MAX_H),
-                                  args.get("steps") or "")
+            path, still = record.capture(url, args.get("seconds") or 8,
+                                         _clamp(args.get("width"), 1200, MAX_W),
+                                         _clamp(args.get("height"), 900, MAX_H),
+                                         args.get("steps") or "")
         except Exception as e:  # noqa: BLE001 -- node missing, chrome missing, timeout
             return [{"type": "text", "text": f"Recording failed: {e}"}]
         # First line is the path, and the runner reads exactly that: it matches
         # on this tool's name, so this is our own output shape rather than a
         # path sniffed out of arbitrary text.
-        return [{"type": "text", "text": (
-            f"{path}\nRecorded {url}. The clip is in the chat for the human to "
-            f"watch -- you cannot see it, so ask them what it showed if the "
-            f"answer matters.")}]
+        blocks = [{"type": "text", "text": (
+            f"{path}\nRecorded {url}. The clip itself goes to the human in the "
+            f"chat. You cannot watch it -- what follows is its final frame, so "
+            f"check that before calling the recording proof of anything.")}]
+        if still:
+            try:
+                with open(still, "rb") as f:
+                    blocks.append({"type": "image",
+                                   "data": base64.b64encode(f.read()).decode(),
+                                   "mimeType": "image/jpeg"})
+            except OSError:
+                pass                    # the clip is the deliverable; the still is a bonus
+        return blocks
     try:
         png = screenshot.capture(url, _clamp(args.get("width"), 1200, MAX_W),
                                  _clamp(args.get("height"), 900, MAX_H))
@@ -127,6 +178,32 @@ def _call(name: str, args: dict) -> list[dict]:
         {"type": "image", "data": base64.b64encode(png).decode(),
          "mimeType": "image/png"},
     ]
+
+
+def _run(args: dict) -> str:
+    """Ask the bridge to start/stop the dev server for this run's cwd."""
+    base = os.environ.get("MYSTICAL_DASH")
+    if not base:
+        return ("The dashboard is not running, so the bridge cannot own a dev "
+                "server. Start it with Bash and say so -- the human will not be "
+                "able to follow it from the dashboard.")
+    body = json.dumps({"action": "stop" if args.get("action") == "stop" else "start",
+                       "cwd": os.getcwd(),
+                       "cmd": (args.get("command") or "").strip()}).encode()
+    req = urllib.request.Request(
+        base.rstrip("/") + "/local/server", data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 "X-Dash-Token": os.environ.get("MYSTICAL_DASH_TOKEN", "")})
+    try:
+        with urllib.request.urlopen(req, timeout=RUN_TIMEOUT) as r:
+            data = json.load(r)
+    except (urllib.error.URLError, OSError, ValueError) as e:  # noqa: BLE001
+        return f"Could not reach the bridge to start it: {e}"
+    msg = data.get("message") or ""
+    srv = data.get("server") or {}
+    if srv.get("url"):
+        msg += f"\nThe human can follow it in the dashboard: {srv['url']}"
+    return msg or "Done."
 
 
 def _handle(req: dict) -> dict | None:

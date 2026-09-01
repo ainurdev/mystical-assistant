@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  logStream,
+  type DevServerInfo,
   type GitBadge,
   type GitStatus,
   type Issue,
@@ -741,6 +743,69 @@ function IssuesTab({ project, info, onFeed, onShip, onReload }: {
   );
 }
 
+/* The app this project is running, live. The dev server is owned by the bridge
+   — started here, or by the model's Run tool when the human said "run it" in
+   chat — so this is the same server the chat header's chip points at. Logs come
+   off the SSE stream every surface already publishes to; the poll alone would
+   drop everything between ticks. */
+function RunningApp({ project }: { project: string }) {
+  const [srv, setSrv] = useState<DevServerInfo | null>(null);
+  const [lines, setLines] = useState<string[]>([]);
+  const [hov, setHov] = useState("");
+  const logRef = useRef<HTMLDivElement>(null);
+  const seeded = useRef<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    const tick = () => void api.servers()
+      .then((d) => { if (live) setSrv(d.servers.find((x) => x.dir === project || x.project === project) ?? null); })
+      .catch(() => { /* the bridge will be back */ });
+    tick();
+    const id = setInterval(tick, 3000);
+    return () => { live = false; clearInterval(id); };
+  }, [project]);
+
+  const dir = srv?.dir ?? null;
+  useEffect(() => {   // a different (or restarted) server starts its log over
+    if (dir && seeded.current !== dir) { seeded.current = dir; setLines(srv?.tail ?? []); }
+  }, [dir, srv]);
+  useEffect(() => {
+    if (!dir) return;
+    return logStream((line, d) => { if (d === dir) setLines((p) => [...p, line].slice(-200)); });
+  }, [dir]);
+  useLayoutEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+
+  if (!srv || srv.status === "not started") return null;
+  const live = srv.status === "running";
+  const c = live ? "var(--ok)" : "var(--err)";
+  return (
+    <div style={{ marginBottom: 11, border: `1px solid color-mix(in srgb, ${c} 24%, transparent)`, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 11px", flexWrap: "wrap", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 7px ${c}` : "none" }} />
+        <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: c, flex: "none" }}>{live ? "RUNNING" : "EXITED"}</span>
+        <span title={srv.cmd ?? ""} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txd)", flex: 1, minWidth: 60, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{srv.cmd}</span>
+        {srv.url && (
+          <a href={srv.url} target="_blank" rel="noreferrer" {...{ onMouseEnter: () => setHov("url"), onMouseLeave: () => setHov("") }}
+            style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: hov === "url" ? "var(--txb)" : "var(--ok)", textDecoration: "none", flex: "none", borderBottom: `1px solid color-mix(in srgb, var(--ok) ${hov === "url" ? 70 : 30}%, transparent)` }}>
+            {srv.url.replace("http://", "")} ↗</a>
+        )}
+        {live && (
+          <button onClick={() => void api.server("stop", { project }).catch(() => {})} title="stop this server"
+            onMouseEnter={() => setHov("stop")} onMouseLeave={() => setHov("")}
+            style={{ appearance: "none", cursor: "pointer", border: `1px solid color-mix(in srgb, var(--err) ${hov === "stop" ? 60 : 30}%, transparent)`, background: hov === "stop" ? "color-mix(in srgb, var(--err) 14%, transparent)" : "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px", flex: "none" }}>
+            ■ STOP</button>
+        )}
+      </div>
+      <div ref={logRef} style={{ maxHeight: 132, overflowY: "auto", padding: "7px 11px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", lineHeight: 1.55, color: "var(--txd)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {lines.length ? lines.join("\n") : "(no output yet)"}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- TERMINAL: run-project bar + multi-tab PTY terminals (design 1063–1120) ---------------- */
 
 function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
@@ -844,8 +909,10 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
     const cmd = runCmd.trim();
     if (!cmd || runBusy) return;
     setRunBusy(true);
-    try { await api.server("start", { cmd, project }); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      const r = await api.server("start", { cmd, project });
+      if (r.message?.startsWith("❌")) setError(r.message);
+    } catch (e) { setError((e as Error).message); }
     finally { setRunBusy(false); }
   }
 
@@ -874,6 +941,7 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
       {error && (
         <div style={{ border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", color: "var(--err)", fontSize: "var(--t105)", padding: "7px 11px", marginBottom: 9, fontFamily: "'JetBrains Mono',monospace" }}>{error}</div>
       )}
+      <RunningApp project={project} />
       {/* terminal box */}
       <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
         <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: "color-mix(in srgb, var(--panel2) 50%, transparent)", overflowX: "auto" }}>
