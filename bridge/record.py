@@ -27,10 +27,13 @@ MAX_SECONDS = 60
 
 
 def capture(url: str, seconds: int = 8, width: int = 1200, height: int = 900,
-            steps: str = "") -> str:
-    """Record `url`, return the path to a webm in a fresh temp dir the caller
+            steps: str = "") -> "tuple[str, str | None]":
+    """Record `url`; return (webm, final-frame jpg) in a fresh temp dir the caller
     owns. `seconds` is how long to watch after load; `steps` (optional JS, run
-    with awaitPromise) extends that by however long it takes to finish."""
+    with awaitPromise) extends that by however long it takes to finish.
+
+    The still exists because nothing that calls this can watch video. Handing
+    back only a clip means the caller reports "it works" having seen nothing."""
     node = shutil.which("node")
     if not node:
         raise RuntimeError("node is not installed, and it is what drives the recorder")
@@ -41,4 +44,5 @@ def capture(url: str, seconds: int = 8, width: int = 1200, height: int = 900,
         capture_output=True, text=True, timeout=secs + 120)
     if proc.returncode != 0 or not os.path.exists(out):
         raise RuntimeError((proc.stderr or proc.stdout or "recorder failed").strip()[:300])
-    return out
+    still = os.path.splitext(out)[0] + ".jpg"
+    return out, (still if os.path.exists(still) else None)

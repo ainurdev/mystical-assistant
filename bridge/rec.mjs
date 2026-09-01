@@ -93,6 +93,11 @@ if (evalJs) {
 await send("Page.stopScreencast");
 catchUp(Date.now());
 if (last && !written) { ff.stdin.write(last); written++; }
+// The final frame, written out as a still. It is already in hand, so this costs
+// no second decode -- and it is what lets a caller that cannot watch video (the
+// model) still see how the page ended up.
+const still = `${out.replace(/\.[^./]+$/, "")}.jpg`;
+if (last) await fs.writeFile(still, last);
 ws.close();
 ff.stdin.end();
 const code = await done;
@@ -103,5 +108,5 @@ if (!frames) { console.error(`no frames in ${secs}s -- the page never painted`);
 if (frames === 1) console.error(`warning: 1 frame in ${secs}s -- nothing moved, this is a still`);
 if (code !== 0) { console.error(`ffmpeg exited ${code}`); process.exit(1); }
 const kb = (await fs.stat(out)).size / 1024 | 0;
-console.log(`${out} ${kb}KB  ${frames} frames -> ${written} @${fps}fps  ${secs.toFixed(1)}s`);
+console.log(`${out} ${kb}KB  ${frames} frames -> ${written} @${fps}fps  ${secs.toFixed(1)}s  still:${still}`);
 process.exit(0);
