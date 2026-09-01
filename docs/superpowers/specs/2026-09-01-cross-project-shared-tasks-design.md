@@ -121,11 +121,18 @@ comes back as "Three projects match 'app': /apex, /apex-web, /apps/site — call
 Delegate again with one of them", and nothing is created.
 
 **Starting the run.** MCP servers are separate processes; run slots, the job
-registry and the queue live in the bridge process. `Delegate` therefore POSTs
-`/local/run` on the dashboard with `X-Dash-Token`, exactly as the `Run` tool in
-`verify_mcp.py:263` does, passing the new session's id, its project, and the
-handoff prompt. No dashboard, no delegation: the tool says so and creates
-nothing, rather than half-creating a session that will never run.
+registry, the Telegram notifier and the queue all live in the bridge process.
+`Delegate` therefore POSTs one dedicated endpoint, `/local/tasks/delegate`, with
+`X-Dash-Token` — the same callback shape the `Run` tool uses
+(`verify_mcp.py:263`), but with the whole operation on the far side: resolve,
+create the session, join the task, start the turn, announce it. The tool passes
+only `{from_session, project, task, prompt}` and relays the reply.
+
+Everything ends up on the side that can already do it, and the endpoint is
+directly testable without a subprocess. `TaskStatus` and `TaskNote` need none of
+this and talk to the store directly, as `goal_mcp.py` does. No dashboard, no
+delegation: the tool says so and creates nothing, rather than half-creating a
+session that will never run.
 
 The handoff prompt is composed by the caller (the model in session A) and
 prefixed by the tool with the shared context the other side cannot see:
@@ -180,15 +187,19 @@ is only for the moment a session appears in a repo you didn't open yourself.
 In the order `bridge-feature-slice` prescribes:
 
 1. `store` — above.
-2. `bridge/dashboard/server.py` — `_session_brief` gains
-   `task: {id, title, members: [{id, project}]} | null`. `GET /local/tasks/<id>`
-   returns the task with its notes for the panel.
+2. `bridge/miniapp/server.py` — `_session_brief` gains
+   `task: {id, title, members: [{id, project}]} | null`. It is *shared*: the
+   dashboard imports it (`server.py:40`), so one edit feeds both surfaces' rows.
+   The extra query runs only for a row that has a `task_id`.
+   `bridge/dashboard/server.py` adds `GET /local/tasks/<id>` (the task with its
+   notes) and `POST /local/tasks/delegate` (§3).
 3. Dashboard `SessionsPanel` — a `⇄` chip on a linked row showing the sibling's
    project; tapping it filters the list to the task's members. The chip reuses
    the branch/attention chip styling already on the row (Sessions Panel v3), so
    this is one more chip, not a new row layout.
 4. Mini App session list — the same chip, no filter (the list is short).
-5. Bot — `⇄ <project>` appended to the session's line in `/sessions`.
+5. Bot — nothing beyond §5's `⇄` line. There is no bot-side session list to
+   mark: the Panel and the Mini App are that surface.
 
 No TASKS tab. The task is a property of the sessions, and a tab implies a
 backlog nobody asked to manage.
