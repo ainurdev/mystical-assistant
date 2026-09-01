@@ -110,6 +110,15 @@ export type RunEvent =
       stat?: string;
       // Screenshots a tool returned, as upload-dir paths (see /local/attachment).
       images?: string[];
+      // What a Record/Attach clip is evidence for: the model's note, the plan
+      // it was recorded against, and the chapters the recorder timestamped.
+      // Only on events that carry a file (runner._clip_meta).
+      clip?: {
+        notes?: string;
+        todos?: { content: string; status: string }[];
+        resolves?: number[];
+        chapters?: { t: number; text: string }[];
+      };
       // The pages a web tool actually reached (transcript_jsonl.web_sources).
       // Present instead of `stat` when the result was shaped as expected.
       sources?: { url: string; title?: string; code?: number }[];

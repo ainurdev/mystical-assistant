@@ -36,7 +36,7 @@ import { useToolStyle, widgetForRun, type WebSource } from "../lib/toolwidget";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
-import { ImageLightbox, MediaThumb, isVideo } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
@@ -577,17 +577,21 @@ export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto 
   );
 }
 
-function ToolImages({ paths }: { paths: string[] }) {
+function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
   const [zoom, setZoom] = useState<{ src: string; video: boolean } | null>(null);
   const [srcs, setSrcs] = useState<Record<string, string>>({});
   return (
     <div className="flex flex-wrap gap-2">
+      {/* The panel belongs to the clip, so it only rides along when the thing
+          being opened is the video the metadata was stamped onto — stepping the
+          gallery to a screenshot drops it. */}
       {zoom && (
         <ImageLightbox
           src={zoom.src}
           alt="tool output"
           video={zoom.video}
           all={paths.flatMap((p) => (srcs[p] ? [{ src: srcs[p], video: isVideo(p) }] : []))}
+          clip={zoom.video ? clip : undefined}
           onClose={() => setZoom(null)}
         />
       )}
@@ -608,7 +612,7 @@ function ToolImages({ paths }: { paths: string[] }) {
 const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
 
 type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[];
-               stat?: string; images?: string[]; sources?: WebSource[] };
+               stat?: string; images?: string[]; clip?: Clip; sources?: WebSource[] };
 
 // Output/diff lines shown before a block folds — a turn can hold dozens.
 const OUT_PREVIEW = 6;
@@ -1141,7 +1145,7 @@ export const RunStream = memo(function RunStream({
             // look (lib/toolwidget TOOL_STYLES).
             const extra = spec ? (
               <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
-            ) : done?.images?.length ? <ToolImages paths={done.images} /> : null;
+            ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
             const withExtra = (node: ReactNode) =>
               extra ? <div key={i} className="space-y-2">{node}{extra}</div> : node;
             if (event.name === "Bash")

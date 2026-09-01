@@ -12,7 +12,7 @@ import { SteerIcon } from "./Composer";
 import { Markdown, type OpenFile } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
-import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, ZoomButton, isVideo, type Clip } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
@@ -78,7 +78,7 @@ const edge = (accent: string) => `color-mix(in srgb, ${accent} 24%, transparent)
 const tagEdge = (accent: string) => `color-mix(in srgb, ${accent} 35%, transparent)`;
 
 type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[];
-  stat?: string; images?: string[]; sources?: WebSource[] };
+  stat?: string; images?: string[]; clip?: Clip; sources?: WebSource[] };
 
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
@@ -1174,14 +1174,24 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
  *  transcript already uses for prompt attachments. The upload dir is pruned by
  *  age, so an old turn's screenshot 404s — that row just disappears rather than
  *  leaving a broken-image glyph. */
-function ToolImages({ paths }: { paths: string[] }) {
+function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const live = paths.filter((p) => !gone.has(p));
   if (!live.length) return null;
   return (
     <div className="mt-2 ml-[var(--rail)] flex flex-wrap gap-2">
-      {zoom && <ImageLightbox src={zoom} all={live.map((p) => api.attachmentUrl(p))} onClose={() => setZoom(null)} />}
+      {/* The panel belongs to the clip, so it only rides along when the thing
+          being opened is the video the metadata was stamped onto — stepping the
+          gallery to a screenshot drops it. */}
+      {zoom && (
+        <ImageLightbox
+          src={zoom}
+          all={live.map((p) => api.attachmentUrl(p))}
+          clip={isVideo(zoom) ? clip : undefined}
+          onClose={() => setZoom(null)}
+        />
+      )}
       {live.map((p) => {
         const src = api.attachmentUrl(p);
         return (
@@ -1663,7 +1673,7 @@ export const RunStream = memo(function RunStream({
               <div className="ml-[var(--rail)]">
                 <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
               </div>
-            ) : done?.images?.length ? <ToolImages paths={done.images} /> : null;
+            ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
             const withExtra = (node: ReactNode) =>
               extra ? <div key={i}>{node}{extra}</div> : node;
             // A delegation is a turn nested inside this one, so it is drawn as

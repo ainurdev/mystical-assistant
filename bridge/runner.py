@@ -559,6 +559,12 @@ class Job:
         self.work_cwd: str | None = None  # worktree the shell moved into, if any
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
         self.open_tools: dict[str, tuple[str, float]] = {}
+        # The latest TodoWrite list, so a clip can be shown against the plan it
+        # is evidence for. Last write wins: that is what the plan *is*.
+        self.todos: list = []
+        # tool_use id -> {notes, resolves} from a Record/Attach call, held until
+        # its result comes back with the file.
+        self.clip_meta: dict[str, dict] = {}
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -1467,6 +1473,10 @@ def _handle_event(job: Job, d: dict):
                 inp = b.get("input", {})
                 if name == "Bash":
                     _note_work_cwd(job, inp.get("command") or "")
+                elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
+                    job.todos = inp["todos"]
+                elif name.endswith(("__Record", "__Attach")):
+                    job.clip_meta[b.get("id")] = _clip_meta(job, inp)
                 job.open_tools[b.get("id")] = (name, time.time())
                 ev = {"type": "tool", "name": name, "id": b.get("id"),
                       "summary": _summarize_tool(name, inp)}
@@ -1484,6 +1494,13 @@ def _handle_event(job: Job, d: dict):
                 imgs = _save_result_images(job.id, rid, b.get("content"))
                 if (clip := _save_result_file(job.id, rid, name, b.get("content"))):
                     imgs = imgs + [clip]
+                    # Only on the event that actually carries a file: a panel
+                    # with nothing to sit beside is not worth streaming.
+                    if (meta := job.clip_meta.pop(rid, None)) is not None:
+                        meta["chapters"] = _clip_chapters(b.get("content"))
+                        if any(meta.values()):
+                            ev["clip"] = meta
+                job.clip_meta.pop(rid, None)
                 if imgs:
                     ev["images"] = imgs
                 job.add(ev)
@@ -1536,6 +1553,52 @@ def _save_result_images(job_id: str, rid: str, content) -> list[str]:
         except (ValueError, OSError) as e:
             print(f"[runner] tool image dropped: {e}", file=sys.stderr)
     return out
+
+
+_CLIP_NOTES_CHARS = 600
+_CLIP_TODOS = 12          # a plan longer than this is not a caption any more
+
+
+def _clip_meta(job: "Job", inp: dict) -> dict:
+    """What a Record/Attach call claims, snapshotted when the call is made.
+
+    The plan is read here rather than at the result because a long recording can
+    outlive its own todo list -- stamping the list as it was when the clip was
+    asked for is what keeps `resolves` pointing at the rows it was counted
+    against. Indices out of range are dropped rather than clamped: a wrong row
+    lit up is worse than none."""
+    notes = inp.get("notes")
+    todos = [t for t in job.todos if isinstance(t, dict)][:_CLIP_TODOS]
+    res = inp.get("resolves")
+    res = [i for i in res if isinstance(i, int) and 0 <= i < len(todos)] if isinstance(res, list) else []
+    return {
+        "notes": notes.strip()[:_CLIP_NOTES_CHARS] if isinstance(notes, str) else "",
+        "todos": [{"content": str(t.get("content", ""))[:200],
+                   "status": str(t.get("status", ""))} for t in todos],
+        "resolves": res,
+    }
+
+
+def _clip_chapters(content) -> list:
+    """The `CHAPTERS [...]` line verify_mcp puts under the path. Anything that is
+    not our own shape is no chapters at all -- this parses a tool result, so it
+    stays incurious about text it did not write."""
+    if not isinstance(content, list):
+        return []
+    for b in content:
+        if not isinstance(b, dict) or b.get("type") != "text":
+            continue
+        lines = (b.get("text") or "").splitlines()
+        if len(lines) < 2 or not lines[1].startswith("CHAPTERS "):
+            continue
+        try:
+            got = json.loads(lines[1][len("CHAPTERS "):])
+        except ValueError:
+            return []
+        return [{"t": float(c["t"]), "text": str(c["text"])[:200]}
+                for c in got
+                if isinstance(c, dict) and isinstance(c.get("t"), (int, float)) and "text" in c]
+    return []
 
 
 _MCP_FILE_BYTES = 64 * 1024 * 1024  # one clip or attachment, on disk

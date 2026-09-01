@@ -11,6 +11,13 @@
 // usage: node rec.mjs <url> <out.webm> <w> <h> <settleMs> [seedJSON] [asyncJS] [fps]
 //   asyncJS runs with awaitPromise, so an async IIFE with awaits between clicks
 //   is the whole step language -- same param, same contract as shot2.mjs.
+//
+// The step script can call mark("what just happened") to name a moment. Marks
+// are stamped against t0f (the first *frame*, which is video time zero -- not
+// t0, which is a few hundred ms earlier while chrome is still opening the page)
+// and written to <out>.chapters.json. The recorder times them because the model
+// that wrote the steps can never watch the result: a chapter list it timed
+// itself would be a guess presented as a measurement.
 const [url, out, w = 1280, h = 800, settleMs = 3000, seed = "{}", evalJs = "", fps = 10] =
   process.argv.slice(2);
 const { spawn } = await import("node:child_process");
@@ -31,7 +38,14 @@ const proc = spawn(BIN, ["--headless", "--no-sandbox", "--hide-scrollbars", "--f
   `--window-size=${w},${h}`, `--remote-debugging-port=${PORT}`, `--user-data-dir=${dir}`, "about:blank"],
   { env: { ...process.env, LD_LIBRARY_PATH: `${PW}:${process.env.LD_LIBRARY_PATH ?? ""}` }, stdio: "ignore" });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const cleanup = async () => { proc.kill(); await fs.rm(dir, { recursive: true, force: true }); };
+// Best-effort: chrome keeps flushing its profile after SIGTERM, so an immediate
+// recursive rm races it and throws ENOTEMPTY -- which failed the whole recording
+// *after* the clip had already been written. The temp dir is disposable and
+// lives in /tmp; the clip is not.
+const cleanup = async () => {
+  proc.kill();
+  await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+};
 
 let tab;
 for (let i = 0; i < 40 && !tab; i++) {
@@ -51,6 +65,7 @@ await new Promise(r => ws.onopen = r);
 let id = 0; const waiting = new Map();
 
 let frames = 0, written = 0, last = null, t0f = 0;
+const marks = [];
 // Hold the video clock to the wall clock: pad with the last frame when nothing
 // changed, drop when chrome outruns fps (it emits ~50/s). Absolute target, not
 // per-gap, so rounding cannot drift over a long recording.
@@ -62,6 +77,12 @@ const catchUp = until => {
 ws.onmessage = e => {
   const m = JSON.parse(e.data);
   if (m.id !== undefined) return waiting.get(m.id)?.(m.result ?? m.error);
+  if (m.method === "Runtime.bindingCalled" && m.params.name === "__mark") {
+    // Before the first frame there is no video yet, so those marks pin to 0.
+    const t = t0f ? (Date.now() - t0f) / 1000 : 0;
+    marks.push({ t: Math.max(0, +t.toFixed(2)), text: String(m.params.payload).slice(0, 200) });
+    return;
+  }
   if (m.method !== "Page.screencastFrame") return;
   const now = Date.now();
   // Wall clock, not metadata.timestamp: always present, and the emit lag is
@@ -81,6 +102,12 @@ await send("Page.enable"); await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: +w, height: +h, deviceScaleFactor: 1, mobile: false });
 const seedSrc = `try { const s = ${seed}; for (const k in s) localStorage.setItem(k, typeof s[k] === "string" ? s[k] : JSON.stringify(s[k])); } catch (e) {}`;
 await send("Page.addScriptToEvaluateOnNewDocument", { source: seedSrc });
+// addBinding lands __mark in every context including ones created later, so it
+// survives the navigate below; mark() is the name the step script actually uses.
+await send("Runtime.addBinding", { name: "__mark" });
+await send("Page.addScriptToEvaluateOnNewDocument", {
+  source: 'window.mark = t => { try { window.__mark(String(t)); } catch (e) {} };',
+});
 
 const t0 = Date.now();
 await send("Page.startScreencast", { format: "jpeg", quality: 80, maxWidth: +w, maxHeight: +h, everyNthFrame: 1 });
@@ -98,6 +125,9 @@ if (last && !written) { ff.stdin.write(last); written++; }
 // model) still see how the page ended up.
 const still = `${out.replace(/\.[^./]+$/, "")}.jpg`;
 if (last) await fs.writeFile(still, last);
+// Sidecar rather than stdout: record.py already owns the temp dir, and a clip
+// with no marks simply has no file -- no empty-list special case anywhere.
+if (marks.length) await fs.writeFile(`${out}.chapters.json`, JSON.stringify(marks));
 ws.close();
 ff.stdin.end();
 const code = await done;

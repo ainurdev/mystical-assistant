@@ -44,8 +44,8 @@ export type Shown = { src: string; video?: boolean };
  *  `all` makes it a gallery: ‹ › and ←/→ step through it, and the rest of the
  *  set stays visible as a strip along the bottom. */
 export function ImageLightbox(
-  { src, alt, video, all, onClose }:
-  { src: string; alt?: string; video?: boolean; all?: Shown[]; onClose: () => void },
+  { src, alt, video, all, clip, onClose }:
+  { src: string; alt?: string; video?: boolean; all?: Shown[]; clip?: Clip; onClose: () => void },
 ) {
   const list = all?.length ? all : [{ src, video }];
   const [i, setI] = useState(() => Math.max(0, list.findIndex((m) => m.src === src)));
@@ -67,10 +67,13 @@ export function ImageLightbox(
   // zoom of the one before it.
   return (
     <>
+      {/* Only the video carries the sheet — stepping the gallery to a still
+          must not leave a clip's chapters sitting under a screenshot. */}
       {(cur.video ?? isVideo(cur.src))
-        ? <VideoLightbox key={cur.src} src={cur.src} alt={alt} strip={many} onClose={onClose} />
+        ? <VideoLightbox key={cur.src} src={cur.src} alt={alt} strip={many} clip={clip} onClose={onClose} />
         : <StillLightbox key={cur.src} src={cur.src} alt={alt} strip={many} onClose={onClose} />}
-      {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go} />}
+      {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go}
+                          high={hasPanel(clip) && (cur.video ?? isVideo(cur.src))} />}
     </>
   );
 }
@@ -79,10 +82,12 @@ export function ImageLightbox(
  *  a sibling rather than a child, so its taps never reach the backdrop handler
  *  that would close the thing you are paging through. */
 function Filmstrip(
-  { list, at, onPick, onStep }:
-  { list: Shown[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void },
+  { list, at, onPick, onStep, high }:
+  { list: Shown[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void; high?: boolean },
 ) {
-  const arrow = "fixed top-1/2 z-[60] -translate-y-1/2 rounded-full bg-black/60 p-2 text-white/90";
+  // `high` pins them over the clip rather than the sheet below it — mid-screen
+  // is empty backdrop for a still and a paragraph for a clip.
+  const arrow = `fixed z-[60] -translate-y-1/2 rounded-full bg-black/60 p-2 text-white/90 ${high ? "top-[22vh]" : "top-1/2"}`;
   return createPortal(
     <>
       <button type="button" aria-label="Previous" onClick={() => onStep(-1)} className={`${arrow} left-2`}>
@@ -111,14 +116,44 @@ function Filmstrip(
   );
 }
 
+/** What a clip is evidence for, stamped onto the tool_done event by the runner.
+ *  Every field is optional because the three channels are authored separately —
+ *  a recording with marks but no notes is normal, and so is the reverse. */
+export type Clip = {
+  notes?: string;
+  todos?: { content: string; status: string }[];
+  resolves?: number[];
+  chapters?: { t: number; text: string }[];
+};
+
+const hasPanel = (c?: Clip) =>
+  !!(c && (c.notes || c.chapters?.length || c.todos?.length));
+
 /** Closes on Esc, the ✕ and the backdrop — but not on the player itself, so
- *  reaching for the scrubber can't dismiss the thing you're scrubbing. */
-function VideoLightbox({ src, alt, strip, onClose }: { src: string; alt?: string; strip?: boolean; onClose: () => void }) {
+ *  reaching for the scrubber can't dismiss the thing you're scrubbing.
+ *
+ *  With a `clip` the rest of the sheet below the video says what the recording
+ *  claims, which plan items it answers, and its chapters. On a phone there is no
+ *  room beside the clip, so the panel is simply the rest of the page. */
+function VideoLightbox({ src, alt, strip, clip, onClose }: { src: string; alt?: string; strip?: boolean; clip?: Clip; onClose: () => void }) {
+  const vid = useRef<HTMLVideoElement>(null);
+  const [at, setAt] = useState(0);
+  const [dur, setDur] = useState(0);
+  const panel = hasPanel(clip);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const seek = (t: number) => {
+    const v = vid.current;
+    if (!v) return;
+    v.currentTime = t;
+    setAt(t);           // don't wait for timeupdate; the tap should feel instant
+    void v.play().catch(() => {});
+  };
 
   return createPortal(
     <div
@@ -128,20 +163,31 @@ function VideoLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
       aria-label={alt || "Attachment"}
       // touch-none so a drag on the backdrop isn't read as Telegram's
       // swipe-down-to-close, the same reason the still viewer sets it.
-      className={`fixed inset-0 z-50 flex touch-none items-center justify-center bg-black/85 p-4 ${strip ? "pb-24" : ""}`}
+      className={`fixed inset-0 z-50 flex touch-none justify-center bg-black/85 ${panel ? "flex-col p-0" : "items-center p-4"} ${strip ? "pb-24" : ""}`}
     >
       {/* autoPlay + loop, muted so a browser will actually honour it: these are
           short screen recordings, and a clip that needs a tap to start reads as
           broken next to a screenshot that is simply there. */}
       <video
+        ref={vid}
         src={src}
         controls
         autoPlay
         loop
         muted
         playsInline
-        className="max-h-full max-w-full rounded-lg bg-black"
+        onTimeUpdate={panel ? (e) => setAt(e.currentTarget.currentTime) : undefined}
+        onLoadedMetadata={panel ? (e) => setDur(e.currentTarget.duration || 0) : undefined}
+        className={panel ? "max-h-[46vh] w-full shrink-0 bg-black" : "max-h-full max-w-full rounded-lg bg-black"}
       />
+      {panel && (
+        <>
+          {!!clip?.chapters?.length && (
+            <ChapterBar chapters={clip.chapters} at={at} dur={dur} onSeek={seek} />
+          )}
+          <ClipSheet clip={clip!} at={at} onSeek={seek} />
+        </>
+      )}
       <button
         type="button"
         onClick={onClose}
@@ -152,6 +198,150 @@ function VideoLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
       </button>
     </div>,
     document.body,
+  );
+}
+
+const mmss = (s: number) =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+/** Which chapter the playhead is inside: the last one that has started. */
+const activeChapter = (chapters: { t: number }[], at: number) => {
+  let i = -1;
+  for (let k = 0; k < chapters.length; k++) if (chapters[k].t <= at + 0.01) i = k;
+  return i;
+};
+
+/** The ticks a native <video> scrubber will not take, as a strip under it.
+ *  Rebuilding the transport to decorate the timeline would cost the free
+ *  fullscreen and volume that come with `controls`.
+ *
+ *  Segment widths are the real gaps between marks, so the strip is the shape of
+ *  the recording. Until metadata lands `dur` is 0 and they fall back to equal.
+ *  26px tall rather than the dashboard's 22: this one is hit with a thumb. */
+function ChapterBar(
+  { chapters, at, dur, onSeek }:
+  { chapters: { t: number; text: string }[]; at: number; dur: number; onSeek: (t: number) => void },
+) {
+  const active = activeChapter(chapters, at);
+  return (
+    <div className="flex h-[26px] shrink-0 gap-[2px] border-y border-[color-mix(in_srgb,var(--acc)_16%,transparent)]">
+      {chapters.map((c, i) => {
+        const end = chapters[i + 1]?.t ?? (dur || 0);
+        const span = dur && end > c.t ? end - c.t : 1;
+        const on = i === active;
+        const played = on && dur && end > c.t
+          ? Math.min(1, Math.max(0, (at - c.t) / (end - c.t))) : 0;
+        return (
+          <button
+            key={i}
+            type="button"
+            aria-label={`Chapter ${i + 1}: ${c.text}`}
+            aria-current={on ? "true" : undefined}
+            onClick={() => onSeek(c.t)}
+            style={{ flex: `${span} 1 0` }}
+            className={`relative min-w-0 overflow-hidden border-t ${on
+              ? "border-[var(--acc)] bg-[color-mix(in_srgb,var(--acc)_22%,transparent)]"
+              : "border-transparent bg-[color-mix(in_srgb,var(--acc)_8%,transparent)]"}`}
+          >
+            {played > 0 && (
+              <span aria-hidden="true" style={{ width: `${played * 100}%` }}
+                className="absolute inset-y-0 left-0 bg-[color-mix(in_srgb,var(--acc)_22%,transparent)]" />
+            )}
+            {/* The timestamp, not the text: a real mark is a sentence, and a
+                sentence in a segment a few percent wide is an ellipsis. The
+                sheet below this already carries the words. */}
+            <span className={`absolute inset-0 flex items-center justify-center overflow-hidden whitespace-nowrap font-[var(--mono)] text-[9px] ${on ? "text-[var(--txb)]" : "text-[var(--txd)]"}`}>
+              {mmss(c.t)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Everything the clip claims, under it. Sections disappear rather than showing
+ *  empty: a heading over nothing reads as a bug. Rows carry 44px of tap height
+ *  while the type stays 11px — a phone needs the target, not the size. */
+function ClipSheet(
+  { clip, at, onSeek }: { clip: Clip; at: number; onSeek: (t: number) => void },
+) {
+  const chapters = clip.chapters ?? [];
+  const todos = clip.todos ?? [];
+  const resolves = new Set(clip.resolves ?? []);
+  const active = activeChapter(chapters, at);
+  const rowRef = useRef<HTMLButtonElement>(null);
+  // Follow the playhead, but only within the sheet — `nearest` on the scroller,
+  // so a long chapter list doesn't drag the whole overlay around. Not on the
+  // first chapter: at 0:00 that would scroll Resolves off the top before the
+  // clip has told you anything.
+  useEffect(() => {
+    if (active > 0) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
+  const label = "flex items-center gap-[7px] px-3 pb-1.5 pt-3 text-[8px] uppercase tracking-[2.5px] text-[var(--txl)]";
+  const rule = <span aria-hidden="true" className="h-px flex-1 bg-[color-mix(in_srgb,var(--acc)_8%,transparent)]" />;
+
+  return (
+    <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto bg-[var(--panel2)]">
+      {clip.notes && (
+        <p className="m-0 px-3 pb-3 pt-2.5 font-[var(--mono)] text-[13px] leading-[1.55] text-[var(--tx)]">
+          {clip.notes}
+        </p>
+      )}
+
+      {!!todos.length && (
+        <>
+          <div className={label}>Resolves{rule}</div>
+          {todos.map((t, i) => {
+            const done = t.status === "completed";
+            const lit = resolves.has(i);
+            return (
+              <div
+                key={i}
+                className={`grid grid-cols-[14px_1fr] items-start gap-2 px-3 py-2.5 text-[11px] leading-[1.45] ${lit
+                  ? "bg-[color-mix(in_srgb,var(--acc)_6%,transparent)] text-[var(--txb)] shadow-[inset_2px_0_0_var(--acc)]"
+                  : "text-[var(--txd)]"}`}
+              >
+                <span aria-hidden="true" className={`pt-px font-[var(--mono)] text-[10px] ${done ? "text-[var(--ok)]" : "text-[var(--txl)]"}`}>
+                  {done ? "✓" : "·"}
+                </span>
+                <span>
+                  {t.content}
+                  {/* The lit row is otherwise only a colour, which is not a
+                      state a screen reader can hear. */}
+                  {lit && <span className="sr-only"> — shown in this clip</span>}
+                </span>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {!!chapters.length && (
+        <>
+          <div className={label}>Timeline{rule}</div>
+          {chapters.map((c, i) => {
+            const on = i === active;
+            return (
+              <button
+                key={i}
+                ref={on ? rowRef : undefined}
+                type="button"
+                aria-current={on ? "true" : undefined}
+                onClick={() => onSeek(c.t)}
+                className={`grid w-full grid-cols-[40px_1fr] items-start gap-[9px] border-l-2 py-2.5 pl-2.5 pr-3 text-left text-[11px] leading-[1.45] ${on
+                  ? "border-[var(--acc)] bg-[color-mix(in_srgb,var(--acc)_8%,transparent)] text-[var(--txb)]"
+                  : "border-transparent text-[var(--txd)]"}`}
+              >
+                <span className={`pt-px font-[var(--mono)] text-[10px] ${on ? "text-[var(--acc)]" : "text-[var(--txl)]"}`}>{mmss(c.t)}</span>
+                <span>{c.text}</span>
+              </button>
+            );
+          })}
+        </>
+      )}
+    </div>
   );
 }
 
