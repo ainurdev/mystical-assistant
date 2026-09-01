@@ -1996,6 +1996,7 @@ export function App() {
                 }}
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
+                onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}

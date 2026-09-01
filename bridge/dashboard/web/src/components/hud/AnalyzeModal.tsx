@@ -224,8 +224,10 @@ export function AnalyzeModal(props: Props) {
             </button>
           ))}
         </div>
-        {/* body */}
-        <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 18 }}>
+        {/* body — EDITOR and TERMINAL fill it with their own framed layout (an
+            app in a tab, not a page of content), so the modal's edge is the only
+            frame they need. The rest are documents and keep their margin. */}
+        <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: tab === "editor" || tab === "terminal" ? 0 : 18 }}>
           {tab === "changes" && (
             <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
               onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile} />

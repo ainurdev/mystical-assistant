@@ -1113,6 +1113,23 @@ def test_terminal_write_echoes_through_attached_socket():
         terminals._DEFAULT_SHELL = orig_shell
 
 
+def test_terminal_shell_gets_a_256_colour_term():
+    # The bridge runs as a systemd unit with no TERM; a shell that inherits that
+    # writes malformed colour escapes and the prompt renders black on black.
+    from bridge import terminals
+    orig_shell = terminals._DEFAULT_SHELL
+    terminals._DEFAULT_SHELL = "/bin/sh"
+    got = bytearray()
+    tid = terminals.create("/tmp")["id"]
+    try:
+        terminals.attach(tid, lambda b: got.extend(b))
+        terminals.write(tid, b"echo TERM_IS_$TERM\n")
+        assert _wait_for(lambda: b"TERM_IS_xterm-256color" in bytes(got))
+    finally:
+        terminals.close(tid)
+        terminals._DEFAULT_SHELL = orig_shell
+
+
 def test_dashboard_ws_authorization():
     from bridge.dashboard import server as dash
     host = f"127.0.0.1:{config.DASH_PORT}"

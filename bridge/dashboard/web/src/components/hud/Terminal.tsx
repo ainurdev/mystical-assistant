@@ -147,13 +147,14 @@ function ChannelTuning({ step }: { step?: string | null }) {
   );
 }
 
-/** Header shortcut into the project's DESIGN tab — link, pull and sync the
- *  design system without a detour through the project modal's other tabs. */
-function DesignBtn({ onClick }: { onClick: () => void }) {
+/** Header shortcut into the project modal — the whole thing, or straight to its
+ *  DESIGN tab. Borderless: in this row a border marks an action, and these only
+ *  open a panel that is otherwise a detour through the sessions list. */
+function HeaderBtn({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
   const [hov, setHov] = useState(false);
   return (
     <button
-      onClick={onClick} title="design system — link, pull & sync"
+      onClick={onClick} title={title}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         appearance: "none", cursor: "pointer", fontFamily: "inherit",
@@ -162,7 +163,7 @@ function DesignBtn({ onClick }: { onClick: () => void }) {
         color: hov ? "var(--txb)" : "var(--txd)",
       }}
     >
-      ◇ DESIGN SYSTEM
+      {label}
     </button>
   );
 }
@@ -198,7 +199,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, run, onOpenRun,
+  onOpenDesign, onOpenProject, run, onOpenRun,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -244,6 +245,8 @@ export function Terminal({
   /** Open a fresh typed session from a report card (PROBE -> FIX, and friends). */
   /** Open this project's DESIGN tab (the design-system link & sync). */
   onOpenDesign?: () => void;
+  /** Open the project modal on its default tab. */
+  onOpenProject?: () => void;
   /** The dev server the bridge is running for this project, if any. */
   run?: DevServerInfo | null;
   /** Open this project's TERMINAL tab (the run bar, logs and STOP). */
@@ -503,9 +506,15 @@ export function Terminal({
       </span>
       <span style={{ flex: 1, minWidth: 12 }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+        {isChat && onOpenProject && (
+          <>
+            <HeaderBtn label="⊞ PROJECT" title="project — files, git, worktrees, terminal" onClick={onOpenProject} />
+            <span style={hairline(11)} />
+          </>
+        )}
         {isChat && onOpenDesign && (
           <>
-            <DesignBtn onClick={onOpenDesign} />
+            <HeaderBtn label="◇ DESIGN SYSTEM" title="design system — link, pull & sync" onClick={onOpenDesign} />
             <span style={hairline(11)} />
           </>
         )}

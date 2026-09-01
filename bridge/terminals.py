@@ -71,6 +71,14 @@ class Term:
                 os.chdir(cwd)
             except OSError:
                 pass
+            # The bridge runs as a systemd unit, so it has no TERM to inherit —
+            # and a shell that can't identify its terminal writes broken colour.
+            # zsh turns `%F{238}` into `\e[3238m` instead of `\e[38;5;238m`, so
+            # every prompt segment keeps whatever colour was last set: the path
+            # stays on the preceding `\e[30m` and renders black on black. What
+            # is on the other end of this PTY is xterm.js, so say so.
+            os.environ["TERM"] = "xterm-256color"
+            os.environ["COLORTERM"] = "truecolor"
             if self.venv:
                 # What `source .venv/bin/activate` does, minus the prompt string:
                 # `python` and `pip` in this terminal are the project's, without
