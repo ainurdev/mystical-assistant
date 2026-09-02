@@ -25,7 +25,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, useProjectTints } from "./lib/surfaces";
+import { ago, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
 import {
   autoBaseFont,
   fontStack,
@@ -202,7 +202,7 @@ interface HeldPrompt {
 }
 
 export function App() {
-  useProjectTints(); // re-render on saved project tag/colour edits
+  const labelVersion = useProjectTints(); // re-render on saved project name/colour edits
   const [state, setState] = useState<DashState | null>(null);
   const [sessions, setSessions] = useState<SessionBrief[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -521,7 +521,7 @@ export function App() {
   // without making the UI wait for the round-trip: patch local state now, then
   // let the real response (and the 3s state poll) reconcile.
   function selectProjectBg(rel: string) {
-    setState((st) => st ? { ...st, project: { rel, name: rel.split("/").pop() || rel } } : st);
+    setState((st) => st ? { ...st, project: { rel, name: projectName(rel) } } : st);
     void api.select(rel).then(() => api.state()).then(setState).catch(() => { /* ignore */ });
   }
 
@@ -559,6 +559,7 @@ export function App() {
       // The bridge is the source of truth for HIDE; an older backend omits the
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
+      setProjectNames(p.names ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
     } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
   }, [markBoot]);
@@ -1371,6 +1372,14 @@ export function App() {
     )).then(() => refreshProjects());
   }
 
+  // Display only: the rel path stays the key, so nothing moves and no session
+  // is orphaned. Blank clears back to the directory name.
+  function renameProject(rel: string, name: string) {
+    void api.setProjectSettings({ project: rel }, { name })
+      .catch(() => null)
+      .then(() => refreshProjects());
+  }
+
   // TODO(phase2-data): local-only import — no bridge endpoint to attach a repo yet.
   function importProject(path: string) {
     const rel = path.trim().replace(/\/+$/, "");
@@ -1398,9 +1407,10 @@ export function App() {
         return st === "working" || st === "awaiting" || st === "live";
       });
       groups.push({
-        // Basename only — the PROJECTS panel groups rows under a parent-path
-        // header, so the org context lives on the group, not the row.
-        rel, name: rel.replace(/\/+$/, "").split("/").pop() || rel,
+        // The name you gave the project, else its basename — the PROJECTS panel
+        // groups rows under a parent-path header, so the org context lives on
+        // the group, not the row.
+        rel, name: projectName(rel),
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
@@ -1409,7 +1419,7 @@ export function App() {
     // order, so selecting a project moved it (and others) under the cursor.
     groups.sort((a, b) => a.rel.localeCompare(b.rel));
     return groups;
-  }, [sessions, gitBadges, statusMap, activeProject, discovered]);
+  }, [sessions, gitBadges, statusMap, activeProject, discovered, labelVersion]);
 
   // HIDE keeps a project out of the sidebar; REMOVE detaches it (design manage modal).
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && !removedProjects[g.rel]);
@@ -2104,6 +2114,7 @@ export function App() {
                 onRemove={(rel) => {
                   setRemovedProjects((p) => ({ ...p, [rel]: true }));
                 }}
+                onRename={renameProject}
                 onImport={importProject}
                 onClose={() => setManageOpen(false)}
               />

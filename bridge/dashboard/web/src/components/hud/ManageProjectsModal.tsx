@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { projectTint } from "../../lib/surfaces";
+import { useRef, useState } from "react";
+import { projectName, projectTint } from "../../lib/surfaces";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
 /* MANAGE PROJECTS modal — matches the HUD design mock (hud.dc.html lines
@@ -12,6 +12,7 @@ interface Props {
   hidden: Record<string, boolean>;
   onSetHidden: (rels: string[], hidden: boolean) => void; // one row, or a whole org
   onRemove: (rel: string) => void;
+  onRename: (rel: string, name: string) => void; // blank restores the directory name
   onImport: (path: string) => void;
   onClose: () => void;
 }
@@ -22,9 +23,13 @@ function basename(rel: string): string {
 }
 
 export function ManageProjectsModal(props: Props) {
-  const { groups, imported, hidden, onSetHidden, onRemove, onImport, onClose } = props;
+  const { groups, imported, hidden, onSetHidden, onRemove, onRename, onImport, onClose } = props;
   const [importPath, setImportPath] = useState("");
   const [hov, setHov] = useState("");
+  // Rename in place: the name chip becomes an input. Esc has to blur (not just
+  // unmount) or the blur that follows would save what you were escaping from.
+  const [editing, setEditing] = useState<{ rel: string; value: string } | null>(null);
+  const cancelled = useRef(false);
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const rows = [
@@ -39,7 +44,7 @@ export function ManageProjectsModal(props: Props) {
     // Imported-but-sessionless repos still show here so they can be managed.
     ...imported
       .filter((rel) => !groups.some((g) => g.rel === rel))
-      .map((rel) => ({ rel, name: basename(rel), dot: "var(--txl)", sessionCount: 0 })),
+      .map((rel) => ({ rel, name: projectName(rel), dot: "var(--txl)", sessionCount: 0 })),
   ].sort((a, b) => a.rel.localeCompare(b.rel));
 
   // One section per owning folder — "ainurhq", then "ainurhq/efas" — so a whole
@@ -108,7 +113,24 @@ export function ManageProjectsModal(props: Props) {
                 <div key={r.rel}
                   style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 7%, transparent)", opacity: isHidden ? 0.5 : 1 }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: r.dot, flex: "none" }} />
-                  <span style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
+                  {editing?.rel === r.rel ? (
+                    <input autoFocus value={editing.value} placeholder={basename(r.rel)}
+                      onChange={(e) => setEditing({ rel: r.rel, value: e.target.value })}
+                      onBlur={() => {
+                        if (!cancelled.current) onRename(r.rel, editing.value);
+                        cancelled.current = false;
+                        setEditing(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") { cancelled.current = true; e.currentTarget.blur(); }
+                      }}
+                      style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", outline: "none", fontFamily: "inherit", width: 160, flex: "none" }} />
+                  ) : (
+                    <span onClick={() => setEditing({ rel: r.rel, value: r.name })}
+                      title={`${r.rel} — click to rename (display only)`}
+                      style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "text" }}>{r.name}</span>
+                  )}
                   {isHidden && (
                     <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", padding: "1px 5px", flex: "none" }}>HIDDEN</span>
                   )}

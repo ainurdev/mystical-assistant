@@ -76,16 +76,34 @@ try {
 let tintVersion = 0;
 const tintSubs = new Set<() => void>();
 
-/** A project's display name: the basename of its rel path. The same key
- *  projectTint() hashes and stores overrides by, so a name and its colour
- *  always agree — panels print this where a 4-char tag used to go. */
-export function projectName(name: string | null | undefined): string {
+/** The basename of a rel path. What projectTint() hashes and stores overrides
+ *  by, so a project keeps its colour when it is renamed. */
+function dirName(name: string | null | undefined): string {
   const clean = (name ?? "").replace(/\/+$/, "");
   return clean.split("/").pop() || clean || "proj";
 }
 
+// Display names the bridge remembers per project rel (project_config.json),
+// refreshed with the projects listing. Module-level rather than context, so the
+// panels that already call projectName() need no new prop.
+let projectNames: Record<string, string> = {};
+
+/** Apply the bridge's rel -> name map. Rides the tint subscription: both are
+ *  "how a project is labelled", both change rarely, both re-render the root. */
+export function setProjectNames(map: Record<string, string>): void {
+  projectNames = map;
+  tintVersion++;
+  tintSubs.forEach((fn) => fn());
+}
+
+/** A project's display name: the name it was given, else the basename of its
+ *  rel path — panels print this where a 4-char tag used to go. */
+export function projectName(name: string | null | undefined): string {
+  return projectNames[(name ?? "").replace(/\/+$/, "")] || dirName(name);
+}
+
 export function setProjectTint(name: string | null | undefined, ov: TintOverride): void {
-  tintOverrides[projectName(name)] = ov;
+  tintOverrides[dirName(name)] = ov;
   try { localStorage.setItem(TINT_KEY, JSON.stringify(tintOverrides)); } catch { /* ignore */ }
   tintVersion++;
   tintSubs.forEach((fn) => fn());
@@ -101,7 +119,7 @@ export function useProjectTints(): number {
 }
 
 export function projectTint(name: string | null | undefined): ProjectTint {
-  const base = projectName(name);
+  const base = dirName(name);
   const ov = tintOverrides[base];
   let h = 0;
   for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;

@@ -3,7 +3,7 @@ import type { AnswerSelection, DevServerInfo, EnrichedSession, NextItem, Session
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
-import { projectTint } from "../../lib/surfaces";
+import { projectName, projectTint } from "../../lib/surfaces";
 import { hairline } from "../../lib/shell";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import type { HudSettings } from "../../lib/theme";
@@ -34,7 +34,7 @@ function basename(rel: string | null | undefined): string | null {
   if (!rel) return null;
   const clean = rel.replace(/\/+$/, "");
   if (clean === "" || clean === "/") return "/";
-  return clean.split("/").pop() || clean;
+  return projectName(clean);
 }
 
 // The assistant's idle expressions. Eyes + mouth are simple glowing primitives;

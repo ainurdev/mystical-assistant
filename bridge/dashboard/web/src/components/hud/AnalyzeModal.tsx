@@ -15,7 +15,7 @@ import {
 import { useAiFeatures } from "../../lib/ai";
 import { branchForIssue } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
-import { ago, projectTint, setProjectTint } from "../../lib/surfaces";
+import { ago, projectName, projectTint, setProjectTint } from "../../lib/surfaces";
 import { CommitGraph } from "../CommitGraph";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { LearnTab } from "./LearnTab";
@@ -64,7 +64,7 @@ const TAG_COLORS = [
 ];
 
 function name(rel: string): string {
-  return rel.replace(/\/+$/, "").split("/").pop() || rel;
+  return projectName(rel);
 }
 
 function hexRgba(hex: string, a: number): string {

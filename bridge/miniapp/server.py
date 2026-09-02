@@ -420,7 +420,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_state(self, chat_id: int):
         pd = state.project_dir(chat_id)
         self._json({
-            "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)} if pd else None,
+            "project": {"rel": browser.rel(pd), "name": project_config.name(browser.rel(pd), os.path.basename(pd))} if pd else None,
             "busy": state.any_running(),
             "server": devserver.server_state(pd),
             "permission_mode": config.MINIAPP_PERMISSION_MODE,
@@ -450,7 +450,7 @@ class Handler(BaseHTTPRequestHandler):
         if not browser.within_base(cand) or not os.path.isdir(cand):
             return self._json({"error": "invalid dir"}, 400)
         state.active[chat_id] = cand
-        self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
+        self._json({"project": {"rel": browser.rel(cand), "name": project_config.name(browser.rel(cand), os.path.basename(cand))}})
 
     def _api_run(self, chat_id: int, body: dict):
         prompt = (body.get("prompt") or "").strip()

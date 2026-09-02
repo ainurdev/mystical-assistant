@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { projectName } from "../../lib/surfaces";
 import { api, type AvailablePlugin, type CatalogSkill, type InstalledSkill, type PluginAction, type PluginsInfo, type SkillCategory, type SkillScope, type SkillsInfo } from "../../api";
 
 /* SKILLS — what's installed as a Claude Code skill (a SKILL.md under
@@ -410,7 +411,7 @@ export function SkillsPanel({ project }: { project: string | null }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
         <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>SKILLS</span>
         <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--acc)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {project ? project.split("/").pop() : "NO PROJECT"}
+          {project ? projectName(project) : "NO PROJECT"}
         </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .16s" }} />

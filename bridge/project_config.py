@@ -99,6 +99,31 @@ def set_design_project(project: str, project_id: str,
     return _set_field(project, branch, "design_project", project_id)
 
 
+def name(project: str, fallback: str = "") -> str:
+    """What to call a project on screen: the name you gave it, else its
+    directory name. Display only — the rel path stays the key everywhere, so a
+    rename moves nothing on disk and breaks no stored session. Project-wide: a
+    repo is the same thing whatever branch you have checked out.
+
+    `fallback` covers the rel with no basename of its own: the workspace root
+    is "/", which used to be labelled with the base directory's own name."""
+    return (_get_field(project, None, "name")
+            or os.path.basename((project or "").rstrip("/")) or fallback or project)
+
+
+def set_name(project: str, value: str) -> "str | None":
+    """Give a project a display name, or clear it (blank) back to its directory."""
+    return _set_field(project, None, "name", value)
+
+
+def names() -> dict:
+    """Every project rel that carries a display name — the surfaces label their
+    own lists, which are built from rels the bridge never sees one at a time."""
+    with _lock:
+        return {k: v["name"] for k, v in _load().items()
+                if isinstance(v, dict) and v.get("name")}
+
+
 def set_hidden(project: str, on: bool) -> bool:
     """Keep a project out of the sidebar (projects + session list). Project-wide;
     returns the effective value."""

@@ -275,7 +275,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/state":
             pd = state.project_dir(chat)
             return self._json({
-                "project": {"rel": browser.rel(pd), "name": os.path.basename(pd)},
+                "project": {"rel": browser.rel(pd), "name": project_config.name(browser.rel(pd), os.path.basename(pd))},
                 "server": devserver.server_state(),
                 "servers": devserver.list_servers(),
                 "dev_port": config.PREVIEW_PORT,
@@ -292,7 +292,8 @@ class Handler(BaseHTTPRequestHandler):
                                "can_up": real != config.BASE_PATH,
                                "dirs": browser.list_dirs(cur),
                                "projects": browser.list_projects(),
-                               "hidden": project_config.hidden_projects()})
+                               "hidden": project_config.hidden_projects(),
+                               "names": project_config.names()})
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
@@ -485,6 +486,7 @@ class Handler(BaseHTTPRequestHandler):
                 "run_cmd": project_config.run_cmd(rel, branch),
                 "prod_url": project_config.prod_url(rel, branch),
                 "design_project": project_config.design_project(rel, branch),
+                "name": project_config.name(rel),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
@@ -1142,6 +1144,8 @@ class Handler(BaseHTTPRequestHandler):
             if "design_project" in body:
                 out["design_project"] = project_config.set_design_project(
                     rel, (body.get("design_project") or "")[:200], branch)
+            if "name" in body:
+                out["name"] = project_config.set_name(rel, (body.get("name") or "")[:60])
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
             return self._json(out)
@@ -1550,7 +1554,7 @@ class Handler(BaseHTTPRequestHandler):
         if not browser.within_base(cand) or not os.path.isdir(cand):
             return self._json({"error": "invalid dir"}, 400)
         state.active[chat] = cand
-        self._json({"project": {"rel": browser.rel(cand), "name": os.path.basename(cand)}})
+        self._json({"project": {"rel": browser.rel(cand), "name": project_config.name(browser.rel(cand), os.path.basename(cand))}})
 
     # --- terminal websocket (Host + Origin + ?token= gated) ---
     def _terminal_ws(self, qs):

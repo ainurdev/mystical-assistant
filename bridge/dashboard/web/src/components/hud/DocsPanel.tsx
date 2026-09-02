@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Doc } from "../../api";
-import { ago } from "../../lib/surfaces";
+import { ago, projectName } from "../../lib/surfaces";
 import { useStickySet } from "../../lib/prefs";
 import { Markdown } from "../Markdown";
 
@@ -140,7 +140,7 @@ export function DocsPanel({ project }: { project: string | null }) {
                 <span style={{ color: "var(--txd)" }}>{shown ? "▾" : "▸"}</span>
                 <span style={{ flex: 1, minWidth: 0, color: "var(--acc)", whiteSpace: "nowrap",
                   overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {proj.split("/").pop() || proj}
+                  {projectName(proj)}
                 </span>
                 <span style={{ color: "var(--txd)" }}>{count}</span>
               </button>

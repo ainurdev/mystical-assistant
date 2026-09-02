@@ -201,6 +201,7 @@ export interface ProjectsListing {
   dirs: string[];
   projects?: string[]; // git repos under BASE_PATH, org-folder nesting included
   hidden?: string[]; // rels the bridge remembers as HIDDEN (project_config.json)
+  names?: Record<string, string>; // rel -> the display name you gave it
 }
 
 export interface GitFile {
@@ -1300,7 +1301,7 @@ export const api = {
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
   setProjectSettings: (
     ctx: RunCtx,
-    patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean },
+    patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string },
   ) =>
     req<{
       ok: boolean;
@@ -1308,6 +1309,7 @@ export const api = {
       prod_url?: string | null;
       design_project?: string | null;
       hidden?: boolean;
+      name?: string | null;
     }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },

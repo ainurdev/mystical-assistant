@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Lesson } from "../../api";
 import { Markdown } from "../Markdown";
-import { ago } from "../../lib/surfaces";
+import { ago, projectName } from "../../lib/surfaces";
 import { checkYourself, deal, dueCount, grade, lessonKey, nextUnread, shelves,
   UNSORTED, type Sched } from "../../lib/learn";
 import { useStickyFlag, useStickyObj, useStickySet, useStickyStr } from "../../lib/prefs";
@@ -259,7 +259,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
           {scope !== "*" && (
             <span style={{ ...mono, fontSize: "var(--t95)", color: "var(--acc)", minWidth: 0,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {project.split("/").pop()}
+              {projectName(project)}
             </span>
           )}
           {!repoOn && scope !== "*" && <span style={{ ...label, color: "var(--warn)" }}>WRITING OFF</span>}
@@ -418,7 +418,7 @@ export function LearnTab({ project, compact, allowAll, read, onRead }: {
                                   {l.title}
                                   <span style={{ display: "block", ...mono, fontSize: "var(--t9)", color: "var(--txl)", marginTop: 3,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {scope === "*" && l.project ? `${l.project.split("/").pop()} · ` : `${l.file.slice(0, 4)} · `}
+                                    {scope === "*" && l.project ? `${projectName(l.project)} · ` : `${l.file.slice(0, 4)} · `}
                                     {when(l.at)}
                                   </span>
                                 </span>
@@ -458,7 +458,7 @@ function LessonHead({ sel, scope }: { sel: Lesson; scope: string }) {
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
       <span style={{ ...label, color: "var(--acc)" }}>{sel.concept || "unsorted"}</span>
       <span style={{ ...mono, fontSize: "var(--t9)", color: "var(--txl)" }}>
-        {scope === "*" && sel.project ? `${sel.project.split("/").pop()} · ` : ""}{when(sel.at)}
+        {scope === "*" && sel.project ? `${projectName(sel.project)} · ` : ""}{when(sel.at)}
       </span>
     </div>
   );

@@ -79,3 +79,17 @@ def test_design_project_falls_back_to_the_directory_link(tmp_path, monkeypatch):
     assert project_config.design_project("/repo", branch="feat/x") == "bbbb-2"
     assert project_config.design_project("/repo", branch="other") == "aaaa-1"
     assert project_config.design_project("/repo") == "aaaa-1"
+
+
+def test_name_roundtrip_and_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "pc.json"))
+    # No override: the directory name, with `fallback` covering a rel that has none.
+    assert project_config.name("/org/repo") == "repo"
+    assert project_config.name("/", "projects") == "projects"
+    project_config.set_name("/org/repo", "Efas API")
+    assert project_config.name("/org/repo") == "Efas API"
+    # Project-wide, so a branch checkout of the same repo reads the same name.
+    assert project_config.names() == {"/org/repo": "Efas API"}
+    assert project_config.set_name("/org/repo", "") is None
+    assert project_config.name("/org/repo") == "repo"
+    assert project_config.names() == {}
