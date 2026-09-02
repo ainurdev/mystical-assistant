@@ -117,15 +117,17 @@ already uses:
 - `link(a, b)` shows up in both `links(a)` and `links(b)`; `unlink` from
   either side clears both; a self-link is a no-op; an unknown project → `[]`.
 
-`tests/test_bridge.py`, next to `test_interactive_base_cmd`:
+`tests/test_linked_repos.py` (one file per feature, the `test_pack_cache.py`
+pattern), against two plain dirs under the pinned `BASE_PATH`:
 
 - a linked project's run carries `--add-dir <abs>`; a link whose directory is
   gone is skipped; a `skip_pack` run carries none.
-- the system prompt names the linked path when there is a link and is
-  unchanged when there is none.
-
-The endpoint is covered the way the other `/local/project/settings` fields
-are, if at all — it is a two-line pass-through.
+- the system prompt names the linked path when there is a link, is unchanged
+  when there is none, and is byte-identical across two turns (the prompt-cache
+  contract `test_pack_cache.py` guards).
+- the settings endpoint reports `links`, takes `link`/`unlink` and writes both
+  sides, and refuses a rel that does not resolve — driven socket-free the way
+  `test_design_endpoints.py` does.
 
 ## What this does not build
 
