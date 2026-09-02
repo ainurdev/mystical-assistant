@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, memo, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { selectionMd } from "../lib/selmd";
 import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
 import { FileIcon } from "../lib/fileicon";
@@ -170,7 +171,16 @@ export const Markdown = memo(function Markdown({
   toolStyle?: ToolStyle;
 }) {
   return (
-    <div className={`md ${className}`}>
+    <div
+      className={`md ${className}`}
+      // What you copy out of a rendered reply is its markdown, not the view.
+      onCopy={(e) => {
+        const md = selectionMd();
+        if (md === null) return;
+        e.preventDefault();
+        e.clipboardData.setData("text/plain", md);
+      }}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

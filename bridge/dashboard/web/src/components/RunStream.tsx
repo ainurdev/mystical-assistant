@@ -10,6 +10,7 @@ import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../ap
 import type { PendingRequest } from "../chat";
 import { SteerIcon } from "./Composer";
 import { Markdown, type OpenFile } from "./Markdown";
+import { selectionMd } from "../lib/selmd";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, MediaThumb, ZoomButton, isVideo, type Clip } from "./ImageLightbox";
@@ -1370,7 +1371,7 @@ function MessageBlock({
     const sel = window.getSelection();
     const t = sel?.toString().trim();
     if (!t || !sel?.anchorNode || !ref.current?.contains(sel.anchorNode)) return text;
-    return t;
+    return selectionMd() ?? t;
   }
 
   return (

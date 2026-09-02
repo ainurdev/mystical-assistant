@@ -1,5 +1,6 @@
 import type { CtxItem } from "../components/hud/ContextMenu";
 import { confirmLeave } from "./leaveGuard";
+import { selectionMd } from "./selmd";
 
 /* The browser's own context-menu entries, rebuilt for the custom HUD menu —
    preventDefault() takes the native one away, so anything it offered has to be
@@ -42,12 +43,13 @@ export function nativeCtxItems(e: MouseEvent): { top: CtxItem[]; page: CtxItem[]
   const el = e.target as HTMLElement;
   // Read the selection now — clicking a menu row drops it.
   const sel = (window.getSelection()?.toString() ?? "").trim();
+  const selMd = selectionMd() ?? sel;
   const link = el.closest?.("a[href]") as HTMLAnchorElement | null;
   const img = el.closest?.("img") as HTMLImageElement | null;
 
   const top: CtxItem[] = [];
   if (sel) {
-    top.push({ icon: "⧉", label: "Copy", hint: "⌘C", onClick: () => copy(sel) });
+    top.push({ icon: "⧉", label: "Copy", hint: "⌘C", onClick: () => copy(selMd) });
     const q = sel.length > 22 ? `${sel.slice(0, 22)}…` : sel;
     top.push({ icon: "⌕", label: `Search web for “${q}”`, onClick: () => open(`https://www.google.com/search?q=${encodeURIComponent(sel)}`) });
   }
