@@ -2,11 +2,13 @@ import { useRef, useState } from "react";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
-/* MANAGE PROJECTS modal — matches the HUD design mock (hud.dc.html lines
-   1283–1318): project rows (dot, name, tag, HIDDEN badge, sess count,
-   HIDE/SHOW + REMOVE) and the import-existing-repository row. */
+/* The PROJECTS tab of SETTINGS — project rows (dot, name, HIDDEN badge, sess
+   count, HIDE/SHOW + REMOVE) and the import-existing-repository row, from the
+   HUD design mock (hud.dc.html lines 1283–1318). It was a modal of its own,
+   reached from SYSTEM ▸ MANAGE ▸ OPEN: a settings screen two clicks and one
+   dialog deep from settings, which is where nobody found it. */
 
-interface Props {
+export interface ProjectsSettingsProps {
   groups: ProjectGroup[]; // manageable projects (removed ones filtered out; hidden included)
   imported: string[];     // locally imported repo paths — TODO(phase2-data): no bridge endpoint yet
   hidden: Record<string, boolean>;
@@ -14,7 +16,6 @@ interface Props {
   onRemove: (rel: string) => void;
   onRename: (rel: string, name: string) => void; // blank restores the directory name
   onImport: (path: string) => void;
-  onClose: () => void;
 }
 
 function basename(rel: string): string {
@@ -22,8 +23,8 @@ function basename(rel: string): string {
   return clean.split("/").pop() || clean;
 }
 
-export function ManageProjectsModal(props: Props) {
-  const { groups, imported, hidden, onSetHidden, onRemove, onRename, onImport, onClose } = props;
+export function ProjectsSettings(props: ProjectsSettingsProps) {
+  const { groups, imported, hidden, onSetHidden, onRemove, onRename, onImport } = props;
   const [importPath, setImportPath] = useState("");
   const [hov, setHov] = useState("");
   // Rename in place: the name chip becomes an input. Esc has to blur (not just
@@ -68,19 +69,8 @@ export function ManageProjectsModal(props: Props) {
   };
 
   return (
-    <div onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 94, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "9vh", animation: "backdropIn .2s ease both" }}>
-      <div onClick={(e) => e.stopPropagation()} className="panel modal-tall"
-        style={{ width: "max(580px, var(--modal-w))", maxWidth: "94vw", maxHeight: "80vh", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 60px var(--shadow-modal)", animation: "mslide .2s ease both" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none" }}>
-          <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>MANAGE</span>
-          <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>Projects</span>
-          <span style={{ flex: 1 }} />
-          <button onClick={onClose} {...hp("esc")}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "esc" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 12px" }}>ESC ✕</button>
-        </div>
-        <div className="mscroll mcol" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
-          <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>HIDE keeps a project out of the sidebar · REMOVE detaches it from the bridge</div>
+    <>
+      <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>CLICK A NAME TO RENAME · HIDE keeps a project out of the sidebar · REMOVE detaches it</div>
           {sections.map(({ parent, rows: srows }) => {
             const segs = parent ? parent.split("/") : [];
             const allHidden = srows.every((r) => hidden[r.rel]);
@@ -156,9 +146,7 @@ export function ManageProjectsModal(props: Props) {
             <button onClick={doImport} {...hp("import")}
               style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--info)", background: hov === "import" ? "color-mix(in srgb, var(--info) 24%, transparent)" : "color-mix(in srgb, var(--info) 14%, transparent)", color: "var(--info-b)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "8px 13px", flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ color: "var(--info)" }}>▸</span>IMPORT</button>
-          </div>
-        </div>
       </div>
-    </div>
+    </>
   );
 }

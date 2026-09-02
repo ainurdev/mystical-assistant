@@ -17,6 +17,7 @@ import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
 import { ago } from "../../lib/surfaces";
+import { ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import {
   api,
   type AccountInfo,
@@ -103,7 +104,7 @@ export interface SettingsModalProps {
   sessionTools: string[];
   onSessionTools: (rules: string[]) => void;
   onOpenInspector: () => void;
-  onManageProjects: () => void;
+  projects: ProjectsSettingsProps;
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
@@ -118,7 +119,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system";
+  | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system";
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -134,6 +135,9 @@ const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: st
   { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD" },
   { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD" },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
+  // First under THE WORK: the repo is the biggest unit of it, and this was a
+  // modal behind SYSTEM ▸ MANAGE ▸ OPEN, which nobody found.
+  { key: "projects", label: "PROJECTS", hint: "name · hide · import", icon: FolderTree, group: "THE WORK" },
   { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK" },
   { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK" },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK" },
@@ -179,7 +183,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "accounts", sec: "FREE AGENTS", terms: "api key gemini openai provider fallback handover" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
-  { tab: "system", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar" },
+  { tab: "projects", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
 ];
@@ -3143,7 +3147,7 @@ export function SettingsModal(props: SettingsModalProps) {
     sessionTools,
     onSessionTools,
     onOpenInspector,
-    onManageProjects,
+    projects,
   } = props;
 
   const [tab, setTab] = useState<Tab>("appearance");
@@ -3486,6 +3490,15 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
+            {shown === "projects" && (
+              <Section
+                title="PROJECTS"
+                info="Every git repo the bridge found under your workspace. A name here is a label only — the path stays the key, so renaming moves nothing on disk and orphans no session."
+              >
+                <ProjectsSettings {...projects} />
+              </Section>
+            )}
+
             {shown === "transcript" && (
               <>
                 {/* Its own tab, again. It was folded into APPEARANCE when it
@@ -3754,21 +3767,6 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
 
                 <StartupSection />
-
-                <Section title="PROJECTS" top>
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="MANAGE"
-                      info="Hide a project from the sidebar, detach one from the bridge, or import an existing repository by path."
-                    >
-                      <button onClick={onManageProjects}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none" }}>
-                        OPEN
-                      </button>
-                    </Row>
-                  </div>
-                </Section>
 
                 <Section title="HTTP INSPECTOR" top>
                   <div style={CARD}>

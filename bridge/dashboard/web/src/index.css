@@ -121,13 +121,6 @@
   :root { --modal-w: 50vw; }
 }
 
-/* Same reasoning, one axis over: on a small screen a dialog sized to its
-   content is a stamp with a lot of empty around it, so MANAGE Projects takes a
-   fixed 80% of the height instead of shrinking to its list. */
-@media (max-width: 1080px) {
-  .modal-tall { height: 80vh; }
-}
-
 /* === LIGHT GROUNDS ==========================================================
    Set by App when isLight(theme). Every token above that tints with an alpha
    wash over `transparent` is re-derived here, because alpha does not carry over

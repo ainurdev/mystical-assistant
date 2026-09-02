@@ -81,7 +81,6 @@ import { RestartIntro, restartBridge } from "./lib/restart";
 import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
-import { ManageProjectsModal } from "./components/hud/ManageProjectsModal";
 import { ToolsModal } from "./components/hud/ToolsModal";
 import { InspectorModal } from "./components/hud/InspectorModal";
 import { AgentsPill } from "./components/AgentsPill";
@@ -266,7 +265,6 @@ export function App() {
   const markBoot = useCallback((key: BootKey, phase: "ok" | "fail", detail: string) => {
     setBootSteps((prev) => markStep(prev, key, phase, detail));
   }, []);
-  const [manageOpen, setManageOpen] = useState(false);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // Manage-projects bookkeeping. TODO(phase2-data): the bridge has no
@@ -995,7 +993,6 @@ export function App() {
         if (ctxMenu) closeCtx();
         else if (inspectorOpen) setInspectorOpen(false);
         else if (toolsFor) setToolsFor(null);
-        else if (manageOpen) setManageOpen(false);
         else if (paletteOpen) setPaletteOpen(false);
         else if (settingsOpen) setSettingsOpen(false);
         else if (analyzeProject) setAnalyzeProject(null);
@@ -1004,7 +1001,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, toolsFor, inspectorOpen, manageOpen, paletteOpen, settingsOpen, analyzeProject]);
+  }, [ctxMenu, toolsFor, inspectorOpen, paletteOpen, settingsOpen, analyzeProject]);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
@@ -2105,20 +2102,6 @@ export function App() {
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
-            {manageOpen && (
-              <ManageProjectsModal
-                groups={projectGroups.filter((g) => !removedProjects[g.rel])}
-                imported={importedProjects.filter((rel) => !removedProjects[rel])}
-                hidden={hiddenProjects}
-                onSetHidden={setHidden}
-                onRemove={(rel) => {
-                  setRemovedProjects((p) => ({ ...p, [rel]: true }));
-                }}
-                onRename={renameProject}
-                onImport={importProject}
-                onClose={() => setManageOpen(false)}
-              />
-            )}
             {toolsFor && (
               <ToolsModal
                 title={sessions.find((s) => s.id === toolsFor)?.title || "session"}
@@ -2136,7 +2119,15 @@ export function App() {
                 sessionTools={selected?.disabled_tools ?? []}
                 onSessionTools={setSessionTools}
                 onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
-                onManageProjects={() => { setSettingsOpen(false); setManageOpen(true); }}
+                projects={{
+                  groups: projectGroups.filter((g) => !removedProjects[g.rel]),
+                  imported: importedProjects.filter((rel) => !removedProjects[rel]),
+                  hidden: hiddenProjects,
+                  onSetHidden: setHidden,
+                  onRemove: (rel) => setRemovedProjects((p) => ({ ...p, [rel]: true })),
+                  onRename: renameProject,
+                  onImport: importProject,
+                }}
                 onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
