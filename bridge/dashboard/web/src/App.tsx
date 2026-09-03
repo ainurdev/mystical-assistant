@@ -1497,6 +1497,8 @@ export function App() {
         <FilesPanel
           project={sessionProject} branch={sessionBranch} changedOnly
           onOpenFile={openFileFromPanel}
+          // A "commit message ready" click lands back here: this session, this tab.
+          onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "changes", rightOpen: true }); }}
         />
       ),
     },

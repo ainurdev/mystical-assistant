@@ -7,6 +7,8 @@ import { FileIcon } from "../../lib/fileicon";
 import { ignoredMatcher } from "../../lib/gitignored";
 import { Skeleton } from "../ui";
 import { useLoadingPhase } from "../../lib/loadingPhase";
+import { draftKey, patchDraft, useDraft, watched } from "../../lib/commitdraft";
+import { notify } from "./Notifications";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
    (project + its branch's worktree). Git-changed files carry their status
@@ -25,6 +27,10 @@ interface Props {
   // `changed` lets the caller land a dirty file on the GIT tab (diff) instead
   // of the editor, so its changed lines are visible.
   onOpenFile: (path: string, changed: boolean) => void;
+  // CHANGES mode: bring this panel back — its session, on this tab. What a
+  // "commit message ready" notification does when clicked, since by then the
+  // panel that asked for the message is gone.
+  onReveal?: () => void;
 }
 
 /* A tree row, or — in CHANGES mode — a section header (`head`) or one of its
@@ -56,7 +62,7 @@ function ancestorsOf(paths: Iterable<string>): Set<string> {
   return out;
 }
 
-export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) {
+export function FilesPanel({ project, branch, changedOnly, onOpenFile, onReveal }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
   const [ignored, setIgnored] = useState<string[]>([]);
@@ -70,10 +76,13 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
   // not a git repo, because [] renders the same either way.
   const [treeReady, setTreeReady] = useState(false);
   const [gitReady, setGitReady] = useState(false);
-  // CHANGES mode also owns commit/push (the git panel is graph-only).
-  const [msg, setMsg] = useState("");
+  // CHANGES mode also owns commit/push (the git panel is graph-only). The box
+  // lives outside this component (lib/commitdraft.ts): the rail rebuilds the
+  // panel on every tab/session switch, and a GENERATE in flight outlives that.
+  const key = draftKey(project, branch);
+  const { msg, gen } = useDraft(changedOnly ? key : null);
+  const setMsg = (m: string) => patchDraft(key, { msg: m });
   const [busy, setBusy] = useState(false);
-  const [gen, setGen] = useState(false);
   const [note, setNote] = useState("");
   // Right-clicked row. `staged` says which half it was clicked in, which is
   // what decides between Stage and Unstage.
@@ -177,18 +186,25 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile }: Props) 
   }
 
   /** Generate the commit message from what's about to be committed — the
-   *  staged set once anything is staged, since that's what COMMIT will take. */
+   *  staged set once anything is staged, since that's what COMMIT will take.
+   *  Runs to the end whether or not this panel is still on screen: the result
+   *  goes to the store, and if nothing is showing this worktree's box by then,
+   *  the bell says so and clicking it brings the panel back. */
   async function generate() {
     const paths = (staged.length ? staged : unstaged).map((f) => f.path);
     if (!project || !paths.length) return;
-    setGen(true);
+    patchDraft(key, { gen: true });
     setNote("");
+    let message = "";
+    let error = "";
     try {
       const r = await api.commitMessage(project, branch || "", paths);
-      if (r.message) setMsg(r.message);
-      else setNote(r.error || "Couldn't write a message.");
-    } catch (e) { setNote((e as Error).message); }
-    finally { setGen(false); }
+      message = r.message ?? "";
+      if (!message) error = r.error || "Couldn't write a message.";
+    } catch (e) { error = (e as Error).message; }
+    patchDraft(key, message ? { gen: false, msg: message } : { gen: false });
+    if (error) notify("error", `Couldn't write a commit message — ${error}`, onReveal);
+    else if (!watched(key)) notify("info", `Commit message ready — ${message.split("\n")[0]}`, onReveal);
   }
 
   async function gitOp(op: "stage" | "unstage" | "discard", paths: string[]) {

@@ -7,6 +7,8 @@ export interface Notice {
   text: string;
   time: number;
   read: boolean;
+  // Somewhere to go: the toast and the bell row both open it on click.
+  onClick?: () => void;
 }
 
 // ponytail: module-level store (one array + subscribers) — a single global feed
@@ -24,9 +26,10 @@ function getNotices() { return notices; }
 let onNotice: ((kind: NoticeKind) => void) | null = null;
 export function setNoticeSound(fn: ((kind: NoticeKind) => void) | null) { onNotice = fn; }
 
-/** Push a notification: shows a toast popup and lands in the bell dropdown. */
-export function notify(kind: NoticeKind, text: string) {
-  notices = [{ id: nextId++, kind, text: text || "unknown error", time: Date.now(), read: false }, ...notices].slice(0, 50);
+/** Push a notification: shows a toast popup and lands in the bell dropdown.
+ *  `onClick` makes it a link — clicking the toast or the row runs it. */
+export function notify(kind: NoticeKind, text: string, onClick?: () => void) {
+  notices = [{ id: nextId++, kind, text: text || "unknown error", time: Date.now(), read: false, onClick }, ...notices].slice(0, 50);
   emit();
   onNotice?.(kind);
 }
@@ -46,7 +49,7 @@ const KIND: Record<NoticeKind, { color: string; label: string }> = {
 const fmtTime = (t: number) => new Date(t).toTimeString().slice(0, 8);
 const TOAST_MS = 8000;
 
-function Row({ n, onDismiss }: { n: Notice; onDismiss: () => void }) {
+function Row({ n, onDismiss, onOpen }: { n: Notice; onDismiss: () => void; onOpen?: () => void }) {
   const k = KIND[n.kind];
   return (
     <div style={{ padding: "9px 11px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
@@ -64,7 +67,8 @@ function Row({ n, onDismiss }: { n: Notice; onDismiss: () => void }) {
           ×
         </button>
       </div>
-      <div style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--tx)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace" }}>
+      <div onClick={onOpen} title={onOpen ? "open" : undefined}
+        style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--tx)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", cursor: onOpen ? "pointer" : undefined }}>
         {n.text}
       </div>
     </div>
@@ -173,7 +177,10 @@ export function NotificationCenter() {
                 NO NOTIFICATIONS
               </div>
             ) : (
-              list.map((n) => <Row key={n.id} n={n} onDismiss={() => dismiss(n.id)} />)
+              list.map((n) => (
+                <Row key={n.id} n={n} onDismiss={() => dismiss(n.id)}
+                  onOpen={n.onClick && (() => { setOpen(false); n.onClick?.(); })} />
+              ))
             )}
           </div>
         </div>
@@ -207,7 +214,9 @@ export function NotificationCenter() {
                     ×
                   </button>
                 </div>
-                <div style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--txb)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                {/* A clicked toast is spent, like an OS notification: it goes, bell entry and all. */}
+                <div onClick={n.onClick && (() => { n.onClick?.(); dismiss(n.id); })} title={n.onClick ? "open" : undefined}
+                  style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--txb)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden", cursor: n.onClick ? "pointer" : undefined }}>
                   {n.text}
                 </div>
               </div>
