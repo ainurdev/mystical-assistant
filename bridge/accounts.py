@@ -555,14 +555,22 @@ def enable(slot: int) -> None:
 EXHAUSTED = 99
 
 
-def _used(meter: dict) -> "int | None":
-    """Percent consumed of whichever window is closer to its limit. None when
-    there is no readable meter -- no evidence of headroom is not headroom."""
+def _tighter(meter: dict) -> "dict | None":
+    """Whichever window is closer to its limit -- the one that decides whether
+    this account can take a turn, and whose reset is the one that frees it.
+    None when there is no readable meter -- no evidence of headroom is not
+    headroom."""
     if not meter or not meter.get("available"):
         return None
-    pcts = [b["percent"] for b in (meter.get("five_hour"), meter.get("seven_day"))
-            if isinstance(b, dict) and b.get("percent") is not None]
-    return max(pcts) if pcts else None
+    buckets = [b for b in (meter.get("five_hour"), meter.get("seven_day"))
+               if isinstance(b, dict) and b.get("percent") is not None]
+    return max(buckets, key=lambda b: b["percent"]) if buckets else None
+
+
+def _used(meter: dict) -> "int | None":
+    """Percent consumed of whichever window is closer to its limit."""
+    b = _tighter(meter)
+    return None if b is None else b["percent"]
 
 
 def _weekly_reset(meter: dict) -> float:
@@ -581,6 +589,13 @@ def headroom(slot: int) -> "int | None":
     meter is unreadable."""
     used = _used(usage_for(slot))
     return None if used is None else max(0, 100 - used)
+
+
+def resets_at(slot: int) -> "str | None":
+    """When the number headroom() reports goes back up: the tighter window's
+    own reset, because an account pinned at 0% by its weekly cap is not free
+    again when the 5-hour one rolls. None when the meter is unreadable."""
+    return (_tighter(usage_for(slot)) or {}).get("resets_at")
 
 
 def pick(exclude=(), strategy: str = "best") -> "int | None":

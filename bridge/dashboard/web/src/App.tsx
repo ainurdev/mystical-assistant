@@ -25,7 +25,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
+import { ago, fmtReset, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
 import {
   autoBaseFont,
   fontStack,
@@ -88,15 +88,6 @@ import { GoalPill } from "./components/GoalPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { Spinner } from "./components/ui";
 
-
-function fmtReset(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const ms = new Date(iso).getTime() - Date.now();
-  if (!isFinite(ms) || ms <= 0) return "now";
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  return `${h}H${String(m).padStart(2, "0")}M`;
-}
 
 // One size for every right-rail icon — the rail's buttons are 38px. At 15px
 // these read as grey smudges on the scanlined panel; 18px with a heavier
@@ -1564,7 +1555,9 @@ export function App() {
     ...accounts.filter((a) => !a.disabled).map((a) => ({
       id: `claude:${a.slot}`,
       short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}`,
-      label: `A${a.slot} · ${a.email ?? "unknown"}${a.left === null ? "" : ` · ${a.left}% LEFT`}`,
+      // The countdown is the answer to the question a 0% row makes you ask.
+      label: `A${a.slot} · ${a.email ?? "unknown"}${a.left === null ? "" : ` · ${a.left}% LEFT`}`
+        + (a.resets_at ? ` · RESETS ${fmtReset(a.resets_at)}` : ""),
       free: false, def: a.default, left: a.left,
     })),
     ...freeAgents.map((p) => ({

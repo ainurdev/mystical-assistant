@@ -146,6 +146,16 @@ export function ago(sec: number | null): string {
   return `${Math.floor(h / 24)}d`;
 }
 
+/** "2H14M" until a usage window's resets_at — the HUD's countdown spelling. */
+export function fmtReset(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!isFinite(ms) || ms <= 0) return "now";
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return `${h}H${String(m).padStart(2, "0")}M`;
+}
+
 /** "2h 14m" / "47m" / "30s" from a positive duration in seconds. */
 export function fmtDuration(sec: number): string {
   if (sec <= 0) return "now";

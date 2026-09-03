@@ -318,7 +318,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/accounts":
             from bridge import accounts, ladder
             return self._json({
-                "accounts": [{**a, "left": accounts.headroom(a["slot"])}
+                "accounts": [{**a, "left": accounts.headroom(a["slot"]),
+                              "resets_at": accounts.resets_at(a["slot"])}
                              for a in accounts.list_accounts()],
                 "default_policy": ladder.default_policy(),
                 "pending_login": accounts.pending_login(),

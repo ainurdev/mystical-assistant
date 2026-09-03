@@ -4,7 +4,8 @@ import os
 import sys
 import threading
 
-from bridge import accounts, config, graphmap, ladder, report, state, store
+from bridge import (accounts, config, graphmap, ladder, limits, report, state,
+                    store, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -287,6 +288,11 @@ def _accounts_text() -> str:
     for a in rows:
         left = accounts.headroom(a["slot"])
         meter = f"{left}% left" if left is not None else "usage unknown"
+        # A clock time, not "in 2h14m": this text sits in chat history, where a
+        # countdown is a lie five minutes later.
+        at = usage.resets_epoch(accounts.resets_at(a["slot"]))
+        if at and left is not None:
+            meter += f", resets {limits.when_str(at)}"
         tags = " (default)" if a["default"] else ""
         tags += " (disabled)" if a["disabled"] else ""
         plan = f"{a['plan']} · " if a.get("plan") else ""

@@ -531,6 +531,24 @@ def _slots(n):
     _fake_identity()
 
 
+def test_resets_at_reports_the_window_that_is_capping_you():
+    """0% left because the weekly cap is spent is not freed by the 5-hour
+    window rolling, so that is not the reset to show."""
+    meter = {"available": True,
+             "five_hour": {"percent": 20, "resets_at": "2026-09-03T18:00:00Z",
+                           "severity": "normal"},
+             "seven_day": {"percent": 100, "resets_at": "2026-09-07T00:00:00Z",
+                           "severity": "normal"},
+             "limits": []}
+    restore = _stub_usage({1: meter})
+    try:
+        assert accounts.headroom(1) == 0
+        assert accounts.resets_at(1) == "2026-09-07T00:00:00Z"
+        assert accounts.resets_at(2) is None      # no readable meter, no reset
+    finally:
+        restore()
+
+
 def test_pick_takes_the_account_with_most_quota_left():
     _slots(3)
     restore = _stub_usage({1: _meter(five=90), 2: _meter(five=20),

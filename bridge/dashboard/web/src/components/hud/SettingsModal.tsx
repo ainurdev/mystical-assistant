@@ -16,7 +16,7 @@ import { AgentRail, PromptBubble } from "../Transcript";
 import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
-import { ago } from "../../lib/surfaces";
+import { ago, fmtReset } from "../../lib/surfaces";
 import { ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import {
   api,
@@ -2760,6 +2760,11 @@ function AccountsPanel() {
               >
                 {a.left === null ? "—" : `${a.left}% LEFT`}
               </span>
+              {a.resets_at && (
+                <span style={{ fontSize: "var(--t105)", color: "var(--txd)" }}>
+                  RESETS {fmtReset(a.resets_at)}
+                </span>
+              )}
               <MiniBtn disabled={busy || !!login} onClick={() => void startLogin(a.slot)}>
                 RE-LOGIN
               </MiniBtn>

@@ -545,6 +545,7 @@ export interface AccountInfo {
   disabled: boolean;
   default: boolean;
   left: number | null; // % of the tighter usage window unspent; null = meter unreadable
+  resets_at: string | null; // when that window rolls and `left` goes back up
   plan: string | null; // "MAX 20x" / "TEAM 5x" / "PRO", off the login's own credentials
 }
 /** One free-agent rung — listed even unconfigured, since this is where you set it up. */
