@@ -106,6 +106,20 @@ def resolve_agent(spec: str) -> tuple:
     raise ValueError(f"unknown agent {spec!r}")
 
 
+def same_agent(runtime: "str | None") -> tuple:
+    """A turn's stored runtime -> the (account_slot, runtime) that reruns it on
+    the same login. Resuming an interrupted turn must land where it was running:
+    without this it silently falls back to the ambient account, which is how a
+    session handed to account 2 ends up back on the exhausted account 1.
+
+    Unlike resolve_agent this never raises — a resume whose account has since
+    been removed degrades to the ambient login instead of not happening."""
+    try:
+        return resolve_agent(runtime or "")
+    except ValueError:
+        return None, None
+
+
 def rungs(session: "dict | None", dead_slot: "int | None" = None,
           strategy: str = "best") -> list:
     """Alternatives to waiting, best first. Waiting itself is always available

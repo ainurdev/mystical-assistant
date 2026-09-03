@@ -1177,7 +1177,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     try:
         job2 = start_streaming_job(
             job.chat_id, TIMEOUT_NUDGE if job.timed_out else RESUME_NUDGE, [],
-            project=cwd, session_id=sid, model=model, effort=effort)
+            project=cwd, session_id=sid, model=model, effort=effort,
+            account_slot=job.account_slot, runtime=job.runtime)
     except Exception as e:  # noqa: BLE001
         print(f"[auto-resume] failed for {sid}: {e}", file=sys.stderr)
         return False

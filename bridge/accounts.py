@@ -604,19 +604,28 @@ def pick(exclude=(), strategy: str = "best") -> "int | None":
     best          -- most quota left (default)
     consume-first -- among accounts with room, the one whose weekly window
                      resets soonest, so perishable quota is spent first
+
+    An account whose meter won't read is a last resort rather than a skip: the
+    usage endpoint 429s readily (the Claude CLI polls it too, and reading two
+    accounts back-to-back is enough to trip it), and treating "can't tell" as
+    "no headroom" used to hide a perfectly healthy login — leaving the session
+    parked for a reset it didn't need. Trying it and failing beats waiting.
     """
     skip = {int(s) for s in exclude}
-    viable = []
+    viable, unknown = [], []
     for a in list_accounts():
         if a["slot"] in skip or a["disabled"]:
             continue
         meter = usage_for(a["slot"])
         used = _used(meter)
-        if used is None or used >= EXHAUSTED:
+        if used is None:
+            unknown.append(a["slot"])
+            continue
+        if used >= EXHAUSTED:
             continue
         viable.append((a["slot"], used, _weekly_reset(meter)))
     if not viable:
-        return None
+        return min(unknown) if unknown else None
     if strategy == "consume-first":
         return min(viable, key=lambda v: (v[2], v[1], v[0]))[0]
     return min(viable, key=lambda v: (v[1], v[0]))[0]

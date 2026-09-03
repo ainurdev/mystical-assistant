@@ -11,7 +11,7 @@ lives in the runner's mid-run auto-resume (runner.AUTO_RESUME_MAX).
 
 import sys
 
-from bridge import config, runner, store, telegram
+from bridge import config, ladder, runner, store, telegram
 
 NUDGE = (
     "⏮ You were interrupted mid-task by a bridge restart — not by the user. "
@@ -42,8 +42,10 @@ def recover(*, run=None, notify=None) -> int:
             continue
         resumed_sessions.add(sid)
         try:
+            slot, runtime = ladder.same_agent(t["runtime"])
             job = run(t["chat_id"], NUDGE, [], project=t["cwd"],
-                      session_id=sid, model=t["model"])
+                      session_id=sid, model=t["model"],
+                      account_slot=slot, runtime=runtime)
         except Exception as e:  # noqa: BLE001
             print(f"[recovery] resume failed for {sid}: {e}", file=sys.stderr)
             continue

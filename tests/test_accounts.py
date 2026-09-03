@@ -600,12 +600,24 @@ def test_pick_skips_disabled_accounts():
         restore()
 
 
-def test_pick_skips_accounts_with_no_readable_usage():
-    """No meter means no evidence of headroom — never gamble a turn on it."""
+def test_pick_prefers_accounts_whose_usage_actually_reads():
+    """A readable meter always beats a guess."""
     _slots(2)
     restore = _stub_usage({1: _meter(five=50)})     # slot 2 → {"available": False}
     try:
         assert accounts.pick() == 1
+    finally:
+        restore()
+
+
+def test_pick_gambles_on_an_unreadable_meter_rather_than_park():
+    """The usage endpoint 429s readily, so an unreadable meter is not evidence of
+    an exhausted account. Skipping it outright stranded sessions on a reset they
+    did not need while a healthy login sat unused."""
+    _slots(2)
+    restore = _stub_usage({1: _meter(five=100)})    # slot 2 → {"available": False}
+    try:
+        assert accounts.pick() == 2
     finally:
         restore()
 

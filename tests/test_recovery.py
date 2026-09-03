@@ -22,14 +22,15 @@ CHAT = 555
 
 
 def _orphan(project, *, claude_sid, cwd="/tmp/proj", chat=CHAT, model=None,
-            turn_ids=("t",)):
+            runtime=None, turn_ids=("t",)):
     """A session (optionally carrying a claude_session_id) + one or more 'running'
     turns — i.e. turns a restart left mid-flight."""
     s = store.create_session(chat, project, cwd=cwd)
     if claude_sid:
         store.set_claude_session_id(s["id"], claude_sid)
     for suffix in turn_ids:
-        store.start_turn(s["id"], f"{s['id']}-{suffix}", "do the thing", [], model=model)
+        store.start_turn(s["id"], f"{s['id']}-{suffix}", "do the thing", [], model=model,
+                         runtime=runtime)
     return s["id"]
 
 
@@ -43,7 +44,9 @@ class _Rec:
     def __call__(self, chat_id, prompt, images=None, project=None, session_id=None,
                  model=None, **kw):
         self.calls.append({"chat_id": chat_id, "prompt": prompt, "images": images,
-                           "project": project, "session_id": session_id, "model": model})
+                           "project": project, "session_id": session_id, "model": model,
+                           "account_slot": kw.get("account_slot"),
+                           "runtime": kw.get("runtime")})
         return self._job
 
 
@@ -161,3 +164,40 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+def _live_slots(*slots):
+    """Make ladder.resolve_agent see these account slots as live logins."""
+    saved = recovery.ladder.accounts.list_accounts
+    recovery.ladder.accounts.list_accounts = lambda: [
+        {"slot": s, "disabled": False} for s in slots]
+    return lambda: setattr(recovery.ladder.accounts, "list_accounts", saved)
+
+
+def test_recover_resumes_on_the_account_the_turn_was_running_on():
+    """A restart used to hand every interrupted turn back to the ambient login,
+    so a session moved to account 2 silently returned to the account it had
+    fled — and died on that account's usage limit all over again."""
+    restore = _live_slots(1, 2)
+    try:
+        sid = _orphan("acct2", claude_sid="c-2", runtime="claude:2")
+        run = _Rec()
+        assert _recover(run) == 1
+        call = next(c for c in run.calls if c["session_id"] == sid)
+        assert call["account_slot"] == 2
+    finally:
+        restore()
+
+
+def test_recover_falls_back_to_the_ambient_login_when_the_account_is_gone():
+    """The account was removed while the bridge was down: resume anyway rather
+    than lose the turn."""
+    restore = _live_slots(1)
+    try:
+        sid = _orphan("acct9", claude_sid="c-9", runtime="claude:9")
+        run = _Rec()
+        assert _recover(run) == 1
+        call = next(c for c in run.calls if c["session_id"] == sid)
+        assert call["account_slot"] is None and call["runtime"] is None
+    finally:
+        restore()
