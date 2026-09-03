@@ -45,7 +45,7 @@ type Mode = "attention" | "projects" | "recent";
  *  point of the setting: on a machine where most sessions sit on master in the
  *  main checkout, printing "master" on every row is a column of noise that
  *  hides the two rows that are somewhere else. */
-type Detail = "notable" | "all" | "none";
+type Detail = "notable" | "all" | "branch" | "none";
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
@@ -56,14 +56,15 @@ const ORDER_LABEL: Record<OrderMode, string> = {
 const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
 
 const DETAIL_LABEL: Record<Detail, string> = {
-  notable: "only what differs", all: "branch + worktree", none: "nothing",
+  notable: "only what differs", all: "branch + worktree", branch: "branch only", none: "nothing",
 };
 const DETAIL_TIP: Record<Detail, string> = {
   notable: "Show a branch only when it isn't main/master, and a worktree only when it isn't the main checkout",
   all: "Show the branch and worktree on every row",
+  branch: "Show the branch on every row and nothing else — no project name, no worktree",
   none: "No branch or worktree on any row",
 };
-const DETAILS: Detail[] = ["notable", "all", "none"];
+const DETAILS: Detail[] = ["notable", "all", "branch", "none"];
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -156,13 +157,17 @@ function SessionRow({
   const onDefault = branch === "master" || branch === "main";
   const inWorktree = !!(s.worktree || s.work_cwd);
   const wtTitle = s.work_cwd ? `working in ${s.work_cwd}` : s.worktree ? `worktree ${s.worktree}` : "";
-  const branchShown = detail === "all" ? !!branch : detail === "notable" && !!branch && !onDefault;
+  const branchShown = detail === "all" || detail === "branch"
+    ? !!branch : detail === "notable" && !!branch && !onDefault;
+  // BRANCH is the narrow-sidebar answer: the project name and the branch both
+  // truncate to nothing side by side, so this mode gives the width to one.
+  const projShown = showProj && detail !== "branch";
   // A worktree usually carries the branch of the same name, and then the row
   // would say it twice — only a tree named something else earns the second word.
   // Under ALL it always earns it, because that is what ALL was asked for.
-  const wtShown = detail !== "none" && inWorktree
+  const wtShown = detail !== "none" && detail !== "branch" && inWorktree
     && (detail === "all" || !branchShown || s.worktree !== branch.split("/").pop());
-  const metaShow = !!(showProj || branchShown || wtShown || fv || s.goal);
+  const metaShow = !!(projShown || branchShown || wtShown || fv || s.goal);
   return (
     <div
       onClick={onAttach}
@@ -202,7 +207,7 @@ function SessionRow({
         </span>
         {metaShow && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
-            {showProj && (
+            {projShown && (
               <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.color }}>
                 {projectName(s.project)}
               </span>
