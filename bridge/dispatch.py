@@ -289,7 +289,8 @@ def _accounts_text() -> str:
         meter = f"{left}% left" if left is not None else "usage unknown"
         tags = " (default)" if a["default"] else ""
         tags += " (disabled)" if a["disabled"] else ""
-        lines.append(f"{a['slot']}. {a['email'] or 'unknown'} — {meter}{tags}")
+        plan = f"{a['plan']} · " if a.get("plan") else ""
+        lines.append(f"{a['slot']}. {a['email'] or 'unknown'} — {plan}{meter}{tags}")
     return ("Claude accounts:\n" + "\n".join(lines) +
             "\n\n/accounts login — sign in as another account (link + code, no terminal)\n"
             "/accounts add — snapshot the login currently in ~/.claude\n"

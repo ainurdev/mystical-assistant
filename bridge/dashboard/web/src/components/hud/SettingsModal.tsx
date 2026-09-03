@@ -2748,6 +2748,7 @@ function AccountsPanel() {
               >
                 {a.email ?? "unknown"}
               </span>
+              {a.plan && <span style={{ ...CAPTION, width: "auto" }}>{a.plan}</span>}
               {a.default && <span style={{ ...CAPTION, width: "auto" }}>DEFAULT</span>}
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>

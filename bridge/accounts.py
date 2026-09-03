@@ -189,6 +189,17 @@ def _email_at(path: str) -> "str | None":
         return None
 
 
+def _plan_at(path: str) -> "str | None":
+    """'MAX 20x' / 'TEAM 5x' / 'PRO' from a credentials file's own subscription
+    fields; None when there is no type to read (pending or pre-plan login)."""
+    oauth = _read_json(path).get("claudeAiOauth") or {}
+    sub = oauth.get("subscriptionType")
+    if not sub:
+        return None
+    m = re.search(r"(\d+x)$", str(oauth.get("rateLimitTier") or ""))
+    return f"{sub.upper()} {m.group(1)}" if m else str(sub).upper()
+
+
 def _registered_slot_for(email: "str | None", reg: dict) -> "int | None":
     """The slot (2+) already holding this login, if any. A slot's live
     .claude.json outranks the registry email, same as list_accounts()."""
@@ -211,7 +222,8 @@ def list_accounts() -> list:
     out = []
     if os.path.exists(credentials_path(DEFAULT_SLOT)):
         out.append({"slot": DEFAULT_SLOT, "email": _email_at(IDENTITY),
-                    "alias": None, "disabled": False, "default": True})
+                    "alias": None, "disabled": False, "default": True,
+                    "plan": _plan_at(credentials_path(DEFAULT_SLOT))})
     for key, e in reg.items():
         if not str(key).isdigit() or int(key) == DEFAULT_SLOT:
             continue
@@ -221,7 +233,7 @@ def list_accounts() -> list:
         live = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
         out.append({"slot": slot, "email": live or e.get("email"),
                     "alias": e.get("alias"), "disabled": bool(e.get("disabled")),
-                    "default": False})
+                    "default": False, "plan": _plan_at(credentials_path(slot))})
     return sorted(out, key=lambda a: a["slot"])
 
 

@@ -126,6 +126,25 @@ def test_ambient_login_is_slot_one_without_any_setup():
     assert got[0]["default"] is True
 
 
+def _fake_credentials(home, **oauth):
+    with open(os.path.join(home, ".credentials.json"), "w") as fh:
+        json.dump({"claudeAiOauth": {"accessToken": "t", **oauth}}, fh)
+
+
+def test_list_accounts_names_each_login_plan():
+    """The plan is read off the login's own credentials: subscription type, plus
+    the rate-limit multiplier when the tier carries one. No type, no plan."""
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity()
+    _fake_credentials(home, subscriptionType="team", rateLimitTier="default_claude_max_5x")
+    assert accounts.list_accounts()[0]["plan"] == "TEAM 5x"
+    _fake_credentials(home, subscriptionType="pro", rateLimitTier="default_claude_pro")
+    assert accounts.list_accounts()[0]["plan"] == "PRO"
+    _fake_credentials(home)
+    assert accounts.list_accounts()[0]["plan"] is None
+
+
 def test_add_copies_the_current_login_into_the_next_free_slot():
     _fresh_root()
     _fake_claude_home()
