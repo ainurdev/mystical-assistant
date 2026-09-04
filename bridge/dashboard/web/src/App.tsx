@@ -1558,7 +1558,7 @@ export function App() {
       // The countdowns are the answer to the question a 0% row makes you ask —
       // and a row never goes blank: no meter still says which kind of no.
       const wins = windowLabels(a);
-      if (!wins.length) wins.push(a.logged_in ? "USAGE UNKNOWN" : "LOGIN EXPIRED");
+      if (!wins.length) wins.push(a.logged_in === false ? "LOGIN EXPIRED" : "USAGE UNKNOWN");
       return {
         id: `claude:${a.slot}`,
         short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}`,

@@ -2765,7 +2765,7 @@ function AccountsPanel() {
               ))}
               {!windowLabels(a).length && (
                 <span style={{ fontSize: "var(--t105)", color: "var(--txd)" }}>
-                  {a.logged_in ? "USAGE UNKNOWN" : "LOGIN EXPIRED"}
+                  {a.logged_in === false ? "LOGIN EXPIRED" : "USAGE UNKNOWN"}
                 </span>
               )}
               <MiniBtn disabled={busy || !!login} onClick={() => void startLogin(a.slot)}>
