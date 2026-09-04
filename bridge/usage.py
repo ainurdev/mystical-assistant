@@ -49,6 +49,12 @@ def _token(path: str) -> str | None:
     return oauth.get("accessToken") or None
 
 
+def has_token(path: str) -> bool:
+    """A usable OAuth token at this path. False is the one unreadable-meter
+    state that waiting doesn't fix: the login has to be redone."""
+    return _token(path) is not None
+
+
 def _fetch(token: str) -> dict | None:
     req = urllib.request.Request(USAGE_URL, headers={
         "Authorization": f"Bearer {token}",

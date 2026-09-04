@@ -546,6 +546,9 @@ export interface AccountInfo {
   default: boolean;
   left: number | null; // % of the tighter usage window unspent; null = meter unreadable
   resets_at: string | null; // when that window rolls and `left` goes back up
+  five_hour: UsageBucket | null; // both windows, so a row can show the near reset
+  seven_day: UsageBucket | null; //   as well as the cap that's actually binding
+  logged_in: boolean; // false = the OAuth token is gone/expired; only a re-login fixes it
   plan: string | null; // "MAX 20x" / "TEAM 5x" / "PRO", off the login's own credentials
 }
 /** One free-agent rung — listed even unconfigured, since this is where you set it up. */

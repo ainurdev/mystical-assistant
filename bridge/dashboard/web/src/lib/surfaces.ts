@@ -158,6 +158,19 @@ export function fmtReset(iso: string | null | undefined): string {
   return `${h}H${String(m).padStart(2, "0")}M`;
 }
 
+/** An account row's two usage windows: ["5H 95% 0H31M", "WK 70% 5D07H"]. Both,
+    because the weekly cap is usually the binding one but resets days out, so
+    only the 5-hour line answers "when does this login work again". Empty when
+    the meter won't read — the caller says why. */
+export function windowLabels(a: {
+  five_hour?: { percent: number; resets_at: string | null } | null;
+  seven_day?: { percent: number; resets_at: string | null } | null;
+}): string[] {
+  return ([["5H", a.five_hour], ["WK", a.seven_day]] as const)
+    .filter(([, b]) => b)
+    .map(([tag, b]) => `${tag} ${Math.max(0, 100 - Math.round(b!.percent))}% ${fmtReset(b!.resets_at)}`);
+}
+
 /** "2h 14m" / "47m" / "30s" from a positive duration in seconds. */
 export function fmtDuration(sec: number): string {
   if (sec <= 0) return "now";

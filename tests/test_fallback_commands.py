@@ -234,3 +234,34 @@ if __name__ == "__main__":
                 traceback.print_exc()
     print(f"\n{fails} failure(s)")
     sys.exit(1 if fails else 0)
+
+
+def test_accounts_lists_both_windows_and_names_a_dead_login():
+    """The weekly cap is usually what's binding, but its reset is days out —
+    so a row carries the 5-hour reset too, and a login whose token expired
+    says so instead of going quiet."""
+    import time
+    send = _Rec()
+    restore = _patch(send=send)
+    saved = (dispatch.accounts.list_accounts, dispatch.accounts.meter)
+    soon = time.time() + 1800
+    dispatch.accounts.list_accounts = lambda: [
+        {"slot": 1, "email": "a@x.com", "alias": None, "disabled": False,
+         "default": True, "plan": "MAX 20x"},
+        {"slot": 2, "email": "b@x.com", "alias": None, "disabled": False,
+         "default": False, "plan": None}]
+    dispatch.accounts.meter = lambda slot: (
+        {"left": 70, "resets_at": None, "logged_in": True,
+         "five_hour": {"percent": 5, "resets_at": soon, "severity": "normal"},
+         "seven_day": {"percent": 30, "resets_at": soon + 5 * 86400, "severity": "normal"}}
+        if slot == 1 else
+        {"left": None, "resets_at": None, "logged_in": False,
+         "five_hour": None, "seven_day": None})
+    try:
+        dispatch.handle_fallback_command(CHAT, "/accounts")
+        text = send.calls[0][0][1]
+        assert "5h 95% left, resets " in text and "week 70% left, resets " in text
+        assert "login expired" in text
+    finally:
+        dispatch.accounts.list_accounts, dispatch.accounts.meter = saved
+        restore()

@@ -598,6 +598,18 @@ def resets_at(slot: int) -> "str | None":
     return (_tighter(usage_for(slot)) or {}).get("resets_at")
 
 
+def meter(slot: int) -> dict:
+    """Everything an account row says about this login's quota. Both windows,
+    not just the tighter one: the weekly cap is usually what's binding, but its
+    reset is days out, and "when do I get going again" is the 5-hour one.
+    `logged_in` False separates a dead login (re-login) from a meter the usage
+    endpoint just wouldn't serve (wait)."""
+    m = usage_for(slot)
+    return {"left": headroom(slot), "resets_at": resets_at(slot),
+            "five_hour": m.get("five_hour"), "seven_day": m.get("seven_day"),
+            "logged_in": usage.has_token(credentials_path(slot))}
+
+
 def pick(exclude=(), strategy: str = "best") -> "int | None":
     """The slot that should take over, or None when nothing has headroom.
 

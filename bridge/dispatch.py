@@ -286,13 +286,20 @@ def _accounts_text() -> str:
                 "/accounts add.")
     lines = []
     for a in rows:
-        left = accounts.headroom(a["slot"])
-        meter = f"{left}% left" if left is not None else "usage unknown"
-        # A clock time, not "in 2h14m": this text sits in chat history, where a
+        m = accounts.meter(a["slot"])
+        # Both windows: the weekly cap is usually what's binding, but its reset
+        # is days out, so the 5-hour one is the answer to "when can I go again".
+        # Clock times, not "in 2h14m": this text sits in chat history, where a
         # countdown is a lie five minutes later.
-        at = usage.resets_epoch(accounts.resets_at(a["slot"]))
-        if at and left is not None:
-            meter += f", resets {limits.when_str(at)}"
+        parts = []
+        for tag, b in (("5h", m["five_hour"]), ("week", m["seven_day"])):
+            if not b:
+                continue
+            at = usage.resets_epoch(b.get("resets_at"))
+            parts.append(f"{tag} {max(0, 100 - round(b['percent']))}% left"
+                         + (f", resets {limits.when_str(at)}" if at else ""))
+        meter = " · ".join(parts) or (
+            "usage unknown" if m["logged_in"] else "login expired — /accounts login")
         tags = " (default)" if a["default"] else ""
         tags += " (disabled)" if a["disabled"] else ""
         plan = f"{a['plan']} · " if a.get("plan") else ""

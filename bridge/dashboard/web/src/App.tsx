@@ -25,7 +25,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, fmtReset, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
+import { ago, fmtReset, projectName, setProjectNames, useProjectTints, windowLabels } from "./lib/surfaces";
 import {
   autoBaseFont,
   fontStack,
@@ -1554,14 +1554,18 @@ export function App() {
   // strings the bridge stores as a turn's runtime, so the picker, the status
   // bar and the transcript badge all name the same thing.
   const agentOpts = useMemo<AgentOption[]>(() => [
-    ...accounts.filter((a) => !a.disabled).map((a) => ({
-      id: `claude:${a.slot}`,
-      short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}`,
-      // The countdown is the answer to the question a 0% row makes you ask.
-      label: `A${a.slot} · ${a.email ?? "unknown"}${a.left === null ? "" : ` · ${a.left}% LEFT`}`
-        + (a.resets_at ? ` · RESETS ${fmtReset(a.resets_at)}` : ""),
-      free: false, def: a.default, left: a.left,
-    })),
+    ...accounts.filter((a) => !a.disabled).map((a) => {
+      // The countdowns are the answer to the question a 0% row makes you ask —
+      // and a row never goes blank: no meter still says which kind of no.
+      const wins = windowLabels(a);
+      if (!wins.length) wins.push(a.logged_in ? "USAGE UNKNOWN" : "LOGIN EXPIRED");
+      return {
+        id: `claude:${a.slot}`,
+        short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}`,
+        label: [`A${a.slot} · ${a.email ?? "unknown"}`, ...wins].join(" · "),
+        free: false, def: a.default, left: a.left,
+      };
+    }),
     ...freeAgents.map((p) => ({
       id: `opencode:${p.provider}`,
       short: `⚡ ${p.provider.toUpperCase()}`,

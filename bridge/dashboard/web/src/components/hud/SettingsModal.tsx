@@ -16,7 +16,7 @@ import { AgentRail, PromptBubble } from "../Transcript";
 import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
-import { ago, fmtReset } from "../../lib/surfaces";
+import { ago, windowLabels } from "../../lib/surfaces";
 import { ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import {
   api,
@@ -2752,17 +2752,20 @@ function AccountsPanel() {
               {a.default && <span style={{ ...CAPTION, width: "auto" }}>DEFAULT</span>}
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
-              <span
-                style={{
-                  fontSize: "var(--t105)",
-                  color: a.left === null ? "var(--txd)" : a.left <= 1 ? "var(--warn)" : "var(--ok)",
-                }}
-              >
-                {a.left === null ? "—" : `${a.left}% LEFT`}
-              </span>
-              {a.resets_at && (
+              {windowLabels(a).map((w) => (
+                <span
+                  key={w}
+                  style={{
+                    fontSize: "var(--t105)",
+                    color: a.left === null ? "var(--txd)" : a.left <= 1 ? "var(--warn)" : "var(--ok)",
+                  }}
+                >
+                  {w}
+                </span>
+              ))}
+              {!windowLabels(a).length && (
                 <span style={{ fontSize: "var(--t105)", color: "var(--txd)" }}>
-                  RESETS {fmtReset(a.resets_at)}
+                  {a.logged_in ? "USAGE UNKNOWN" : "LOGIN EXPIRED"}
                 </span>
               )}
               <MiniBtn disabled={busy || !!login} onClick={() => void startLogin(a.slot)}>
