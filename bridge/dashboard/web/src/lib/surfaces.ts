@@ -146,13 +146,15 @@ export function ago(sec: number | null): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-/** "2H14M" until a usage window's resets_at — the HUD's countdown spelling. */
+/** "2H14M", or "5D08H" past a day — the HUD's countdown spelling. Weekly
+    windows reset days out, and "128H03M" is not a number anyone reads. */
 export function fmtReset(iso: string | null | undefined): string {
   if (!iso) return "—";
   const ms = new Date(iso).getTime() - Date.now();
   if (!isFinite(ms) || ms <= 0) return "now";
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (h >= 24) return `${Math.floor(h / 24)}D${String(h % 24).padStart(2, "0")}H`;
   return `${h}H${String(m).padStart(2, "0")}M`;
 }
 
