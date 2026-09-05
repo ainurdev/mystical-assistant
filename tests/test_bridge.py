@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import urllib.parse
 
@@ -1236,7 +1237,7 @@ def test_timeout_auto_resumes_capped(monkeypatch):
     def timed_out_turn():
         job = runner.Job(f"jt{len(started)}", 555, s["id"])
         job.status, job.timed_out = "error", True
-        job.error_msg = f"⏱️ Timed out after {config.RUN_TIMEOUT // 60} min."
+        job.error_msg = f"⏱️ No output for {config.RUN_TIMEOUT // 60} min — killed as hung."
         return runner._maybe_auto_resume(job, "/tmp", None, None)
 
     # the watchdog no longer ends the task…
@@ -1244,7 +1245,7 @@ def test_timeout_auto_resumes_capped(monkeypatch):
     assert not timed_out_turn()   # …but a turn that only ever times out eventually stops
     assert len(started) == runner.AUTO_RESUME_MAX
     assert started[0][0][1] == runner.TIMEOUT_NUDGE  # distinct from the crash nudge
-    assert "cap" in notes[0]
+    assert "hung" in notes[0]
     ok = runner.Job("jtok", 555, s["id"])          # a turn that finishes resets the cap
     ok.status = "done"
     runner._maybe_auto_resume(ok, "/tmp", None, None)
@@ -1273,6 +1274,37 @@ def test_midrun_no_resume_for_user_stop_or_shutdown(monkeypatch):
     job2 = runner.Job("jn2", 555, fresh["id"])
     job2.status = "error"
     assert not runner._maybe_auto_resume(job2, "/tmp", None, None)  # no claude session id
+
+
+def test_watchdog_kills_silence_not_work(monkeypatch):
+    """The watchdog is a hang detector, not a work cap: a turn that keeps
+    producing events runs past RUN_TIMEOUT untouched; one that stays quiet for
+    RUN_TIMEOUT while nothing waits on the user is killed."""
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 1)
+
+    def watch(job, proc):
+        threading.Thread(target=runner._watchdog, args=(job, proc), daemon=True).start()
+
+    # Busy well past RUN_TIMEOUT: events keep landing, so it is never killed.
+    job, proc = runner.Job("wd-busy", 555), _FakeProc()
+    watch(job, proc)
+    for _ in range(6):
+        time.sleep(0.4)
+        job.add({"type": "thinking"})
+    assert not proc.killed and not job.timed_out
+    proc._returncode = 0                       # child exits on its own
+
+    # Quiet because a card waits on the user: not a hang. Silence counts from
+    # the answer, and a run that then stays silent is killed.
+    job, proc = runner.Job("wd-quiet", 555), _FakeProc()
+    job.add_pending({"request_id": "r1", "kind": "question"})
+    watch(job, proc)
+    time.sleep(2.5)
+    assert not proc.killed
+    job.clear_pending()
+    assert not proc.killed
+    time.sleep(2.5)
+    assert proc.killed and job.timed_out
 
 
 if __name__ == "__main__":

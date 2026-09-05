@@ -79,11 +79,11 @@ SETTINGS = (
 
     # --- runs ---------------------------------------------------------------
     {"key": "RUN_TIMEOUT", "type": "int", "live": True, "min": 60, "max": 86400, "unit": "seconds",
-     "group": "RUNS", "label": "RUN TIMEOUT", "hint": "when the watchdog kills a run",
-     "about": "Counts time a run spends actually working — seconds blocked on an "
-              "Allow/Deny card or an unanswered question don't age it — so a turn "
-              "waiting on you is never killed for waiting. A run stopped here is not "
-              "a user Stop, so AUTO-RESUME will restart it where it left off."},
+     "group": "RUNS", "label": "RUN TIMEOUT", "hint": "silence before the watchdog kills a run as hung",
+     "about": "Counts seconds without any output from the run — a busy turn can run "
+              "for hours; only a run that has gone quiet, and is not waiting on an "
+              "Allow/Deny card or an unanswered question, is killed. A run stopped "
+              "here is not a user Stop, so AUTO-RESUME will restart it where it left off."},
     {"key": "AUTO_RESUME", "type": "bool", "live": True,
      "group": "RUNS", "label": "AUTO-RESUME", "hint": "restart a turn that died without you stopping it",
      "about": "Only you may stop a turn. A bridge restart leaves the in-flight turn "

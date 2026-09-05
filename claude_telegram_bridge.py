@@ -220,5 +220,5 @@ if __name__ == "__main__":
 #   3. The Mini App HTTP server binds 127.0.0.1 only; its sole ingress is the
 #      public tunnel, and unauthenticated requests get 401.
 #   4. Pick your permission posture deliberately (acceptEdits vs skip-perms).
-#   5. RUN_TIMEOUT caps runaway Claude runs; keep it sane.
+#   5. RUN_TIMEOUT kills a Claude run that goes silent; keep it sane.
 # ============================================================================

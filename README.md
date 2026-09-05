@@ -370,9 +370,10 @@ past you runs as you too.
 - **Read-only where it counts.** The parts that watch your existing sessions only
   read. Subagent views derive from files Claude Code already wrote, and never
   touch a live run.
-- **`RUN_TIMEOUT` caps a single Claude run.** The session auto-resumes afterwards,
-  so the brake on a runaway is the resume cap (5 consecutive dead turns), not the
-  clock.
+- **`RUN_TIMEOUT` is a hang detector, not a work cap.** A run is killed only after
+  that many seconds with no output while nothing waits on you; a busy turn runs as
+  long as it takes. The session auto-resumes afterwards, so the brake on a runaway
+  is the resume cap (5 consecutive dead turns), not the clock.
 
 Your code stays on your machine and there's no telemetry. One caveat: the
 auto-title and new-session-relevance checks each run a cheap Haiku pass

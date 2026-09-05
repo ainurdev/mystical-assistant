@@ -65,7 +65,7 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
     "AskUserQuestion so the choice arrives as a card to tap instead of prose to "
     "type a reply to. One decision, not an interrogation."))
 
-RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # per Claude run (s)
+RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # silence before a run is killed as hung (s)
 
 # Denominator for the context meter: how big the window a session is filling is.
 # The Models API doesn't report per-model windows, so one overridable number is
@@ -87,7 +87,7 @@ MCP_SERVERS = os.environ.get("MCP_SERVERS", "")
 
 # Auto-resume: only the user may stop a turn. A restart leaves the in-flight turn
 # 'running' and the next boot resumes it (bridge/recovery.py); a Claude crash — or a
-# RUN_TIMEOUT kill — while the bridge stays up is resumed immediately
+# hang kill (RUN_TIMEOUT of silence) — while the bridge stays up is resumed immediately
 # (runner._maybe_auto_resume, capped per session so a session that keeps dying or
 # keeps timing out can't burn tokens forever).
 AUTO_RESUME = os.environ.get("AUTO_RESUME", "1").lower() not in ("0", "false", "no", "")

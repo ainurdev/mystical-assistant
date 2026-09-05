@@ -130,7 +130,7 @@ export function SpendPanel({ sessionId, running }: {
         <span aria-hidden style={{ color: "var(--txl)" }}>{"⏱︎"}</span>
         {b ? secs(b.wall) : "·"}
         {!!b?.capped && (
-          <span title={`${b.capped} turns killed by the per-turn time cap`}
+          <span title={`${b.capped} turns killed as hung by the watchdog`}
             style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--red)", boxShadow: "0 0 6px var(--red)" }} />
         )}
       </button>
@@ -156,9 +156,9 @@ export function SpendPanel({ sessionId, running }: {
           ) : (
             <>
               {!!b.capped && (
-                <div title="a turn that hit the per-turn time cap was killed and auto-resumed"
+                <div title="a turn that went silent past RUN_TIMEOUT was killed and auto-resumed"
                   style={{ margin: "0 11px 8px", padding: "5px 7px", fontSize: "var(--t10)", color: "var(--red)", border: "1px solid color-mix(in srgb, var(--red) 30%, transparent)" }}>
-                  {b.capped} {b.capped === 1 ? "turn" : "turns"} killed by the time cap
+                  {b.capped} {b.capped === 1 ? "turn" : "turns"} killed as hung
                 </div>
               )}
 

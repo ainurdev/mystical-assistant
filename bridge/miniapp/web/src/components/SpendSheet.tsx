@@ -136,7 +136,7 @@ function SpendSheet({ sessionId, running, onClose }: {
             <>
               {!!b.capped && (
                 <div className="mx-3.5 mt-3 border border-red-500/30 px-2.5 py-1.5 text-[11px] text-red-400">
-                  {b.capped} {b.capped === 1 ? "turn" : "turns"} killed by the time cap
+                  {b.capped} {b.capped === 1 ? "turn" : "turns"} killed as hung
                 </div>
               )}
               <div className="flex flex-col gap-2.5 px-3.5 py-3">

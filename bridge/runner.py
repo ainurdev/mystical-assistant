@@ -1063,7 +1063,7 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
 #     the turn stops and its message carries a sign-in button — and the work is
 #     remembered, so signing back in resumes it (resume_after_login, below).
 #   - Claude crashed while the bridge stays up (API drop, OOM, CLI failure), or
-#     the RUN_TIMEOUT watchdog killed a run still doing real work: resume the
+#     the RUN_TIMEOUT watchdog killed a run that went silent: resume the
 #     session right here with a nudge. Consecutive failures are capped per
 #     session — a completed turn resets the cap — so a session whose resume
 #     itself keeps dying (or keeps timing out) can't burn tokens in a loop. That
@@ -1075,9 +1075,9 @@ RESUME_NUDGE = (
     "Review your recent transcript and continue exactly where you left off; "
     "finish the task you were doing. Don't start over.")
 TIMEOUT_NUDGE = (
-    "⏮ Your previous turn was cut off by the bridge's per-turn time cap — not by "
-    "the user. Review your recent transcript and continue exactly where you left "
-    "off; finish the task you were doing. Don't start over.")
+    "⏮ Your previous turn was killed by the bridge's hang watchdog (no output "
+    "for too long) — not by the user. Review your recent transcript and continue "
+    "exactly where you left off; finish the task you were doing. Don't start over.")
 AUTO_RESUME_MAX = 5                 # consecutive dead turns before giving up
 _resume_fails: dict[str, int] = {}  # session id -> consecutive error-ended turns
 
@@ -1185,8 +1185,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     if job2 is None:
         return False                              # slot taken (e.g. the queue advanced)
     if job.timed_out:
-        _notify(job.chat_id, f"⏱️ The turn hit the {config.RUN_TIMEOUT // 60}-min cap "
-                             f"— resuming {_session_label(sid)}.")
+        _notify(job.chat_id, f"⏱️ No output for {config.RUN_TIMEOUT // 60} min — "
+                             f"killed as hung, resuming {_session_label(sid)}.")
     else:
         _notify(job.chat_id, f"🔄 The turn was interrupted by an error "
                              f"— resuming {_session_label(sid)}.")
@@ -1680,17 +1680,20 @@ def _prune_uploads():
 
 
 def _watchdog(job: Job, proc) -> None:
-    """Kill a run that spends RUN_TIMEOUT actually working. Seconds spent blocked
-    on the user (job.pending non-empty) don't accrue, so an unanswered card can't
-    time the run out."""
-    active = 0.0
-    while proc.poll() is None and active < config.RUN_TIMEOUT:
+    """Kill a run that has gone silent: no event from the child for RUN_TIMEOUT
+    while nothing waits on the user. A busy turn runs for as long as it takes —
+    this is a hang detector, not a work cap (the cost brake is the auto-resume
+    cap, see _maybe_auto_resume)."""
+    quiet_since = time.time()
+    while proc.poll() is None:
         time.sleep(1.0)
-        if not job.pending and not job.interrupted:
-            active += 1.0
-    if proc.poll() is None and active >= config.RUN_TIMEOUT:
-        job.timed_out = True
-        proc.kill()
+        if job.pending or job.interrupted:
+            quiet_since = time.time()   # waiting on the user, or stopping: not a hang
+            continue
+        if time.time() - max(job.last_at, quiet_since) >= config.RUN_TIMEOUT:
+            job.timed_out = True
+            proc.kill()
+            return
 
 
 def _consume_free_agent(job: Job, prompt: str, cwd: str,
@@ -1809,9 +1812,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if proc.stderr is not None:
             threading.Thread(target=_drain_stderr, daemon=True).start()
 
-        # Watchdog: kill the run if it spends RUN_TIMEOUT *working* — time spent
-        # blocked on you (a permission/question card) doesn't count, so a slow
-        # human reply never gets Claude killed mid-task.
+        # Watchdog: kill the run only if it goes *silent* for RUN_TIMEOUT — no
+        # event from the child while nothing waits on you. Work never counts,
+        # however long; a hang does.
         threading.Thread(target=_watchdog, args=(job, proc), daemon=True).start()
 
         # Deliver the prompt on stdin as a stream-json user message.
@@ -1847,7 +1850,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # No terminal result event — surface the timeout / stderr / exit code.
             err = "".join(stderr_tail).strip()
             if job.timed_out:
-                msg = f"⏱️ Timed out after {config.RUN_TIMEOUT // 60} min."
+                msg = f"⏱️ No output for {config.RUN_TIMEOUT // 60} min — killed as hung."
             else:
                 msg = err[:1500] or f"claude exited {proc.returncode}"
             job.error_msg = msg

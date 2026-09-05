@@ -337,7 +337,7 @@ export interface SessionBreakdown {
   waiting_s: number; // AskUserQuestion — a human deciding, not the session being slow
   model_s: number; // the remainder: generating
   tokens: { in: number; out: number; cache_w: number; cache_r: number } | null;
-  capped: number; // turns the per-turn time cap killed
+  capped: number; // turns the hang watchdog killed
   turns: number;
 }
 
