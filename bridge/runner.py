@@ -1442,6 +1442,13 @@ def _handle_event(job: Job, d: dict):
         if job.store_session_id:
             store.set_claude_session_id(job.store_session_id, sid)
     if t == "assistant":
+        if job.status == "done":
+            # ponytail: claude -p emits `result` when the model ends its turn with
+            # a background task still pending, then stays alive and wakes the
+            # model with the task's notification — same process, same turn. Back
+            # to running, or a watchdog kill / crash from here reads as a clean
+            # finish: no error row, no timeout notice, no auto-resume.
+            job.status, job.elapsed = "running", None
         usage = d.get("message", {}).get("usage") or {}
         ctx = _ctx_of(usage)
         if ctx:

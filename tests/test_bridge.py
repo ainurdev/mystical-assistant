@@ -226,6 +226,25 @@ def test_job_snapshot_cursor():
     assert "result" not in snap
 
 
+def test_work_after_result_reopens_the_turn():
+    """claude -p emits `result` when the model ends its turn while a background
+    task is still pending, then stays alive and wakes the model with the task's
+    notification — same process, same turn. That later work must put the job
+    back to running, or a watchdog kill / crash after it reads as a clean finish
+    (no error row, no timeout notice, no auto-resume)."""
+    job = runner.Job("j-bg", 555)
+    runner._handle_event(job, {"type": "result", "result": "waiting for the build",
+                               "total_cost_usd": 0.5})
+    assert job.status == "done" and job.elapsed is not None
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "thinking", "thinking": "build finished, carrying on"}]}})
+    assert job.status == "running"
+    assert job.elapsed is None          # the real duration is measured at exit
+    runner._handle_event(job, {"type": "result", "result": "all done",
+                               "total_cost_usd": 0.9})
+    assert job.status == "done" and job.cost == 0.9
+
+
 # --- interactive control protocol (permissions + questions) -----------------
 
 class _FakeStdin:
