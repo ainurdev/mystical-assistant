@@ -41,11 +41,10 @@ interface Props {
 }
 
 type Mode = "attention" | "projects" | "recent";
-/** How much of a row's provenance it prints. `notable` is the default and the
- *  point of the setting: on a machine where most sessions sit on master in the
- *  main checkout, printing "master" on every row is a column of noise that
- *  hides the two rows that are somewhere else. */
-type Detail = "notable" | "all" | "branch" | "none";
+/** Which pieces of a row's provenance it prints. Independent, because the four
+ *  presets this replaced could not express the obvious wants — a sidebar that
+ *  names the project but not the branch was simply not on the menu. */
+type Detail = { proj: boolean; branch: boolean; wt: boolean };
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
@@ -55,21 +54,23 @@ const ORDER_LABEL: Record<OrderMode, string> = {
 };
 const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
 
-const DETAIL_LABEL: Record<Detail, string> = {
-  notable: "only what differs", all: "branch + worktree", branch: "branch only", none: "nothing",
-};
-const DETAIL_TIP: Record<Detail, string> = {
-  notable: "Show a branch only when it isn't main/master, and a worktree only when it isn't the main checkout",
-  all: "Show the branch and worktree on every row",
-  branch: "Show the branch on every row and nothing else — no project name, no worktree",
-  none: "No branch or worktree on any row",
-};
-const DETAILS: Detail[] = ["notable", "all", "branch", "none"];
+const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
+  { k: "proj", label: "project name", tip: "Name the project on every row" },
+  { k: "branch", label: "branch", tip: "Print the branch on every row" },
+  { k: "wt", label: "worktree", tip: "Mark rows working in a worktree rather than the main checkout" },
+];
+/** PROJECTS rows sit under a header that already names the project, so that tick
+ *  is not offered there — the other two tabs mix projects and need it. */
+const fieldsFor = (mode: Mode) => (mode === "projects" ? FIELDS.filter((f) => f.k !== "proj") : FIELDS);
 /** Detail is per tab, because each tab shows a different slice: ATTENTION mixes
  *  every project into four lanes and can't be read without the project name,
- *  while PROJECTS rows sit under a header that already said it and would rather
- *  spend the width on the branch. RECENT is its own stream again. */
-const DETAIL_DEFAULT: Record<Mode, Detail> = { attention: "notable", projects: "notable", recent: "notable" };
+ *  while PROJECTS rows would rather spend the width on the branch. RECENT is its
+ *  own stream again. */
+const DETAIL_DEFAULT: Record<Mode, Detail> = {
+  attention: { proj: true, branch: true, wt: true },
+  projects: { proj: false, branch: true, wt: true },
+  recent: { proj: true, branch: true, wt: true },
+};
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -156,22 +157,14 @@ function SessionRow({
   const fv = flag ? FLAG_VIEW[flag] : null;
   // A sidebar has no room for a full ref, so a row prints the branch's last
   // segment; the full ref lives in the row tooltip. Compact drops the whole meta
-  // line, and DETAILS decides how much of the rest is worth the width.
+  // line, and ROW DETAILS ticks decide which of the rest is worth the width.
   // `s.worktree` is empty for the main checkout (git.worktree_name), so "in a
   // worktree at all" and "not the main worktree" are the same question.
-  const onDefault = branch === "master" || branch === "main";
   const inWorktree = !!(s.worktree || s.work_cwd);
   const wtTitle = s.work_cwd ? `working in ${s.work_cwd}` : s.worktree ? `worktree ${s.worktree}` : "";
-  const branchShown = detail === "all" || detail === "branch"
-    ? !!branch : detail === "notable" && !!branch && !onDefault;
-  // BRANCH is the narrow-sidebar answer: the project name and the branch both
-  // truncate to nothing side by side, so this mode gives the width to one.
-  const projShown = showProj && detail !== "branch";
-  // A worktree usually carries the branch of the same name, and then the row
-  // would say it twice — only a tree named something else earns the second word.
-  // Under ALL it always earns it, because that is what ALL was asked for.
-  const wtShown = detail !== "none" && detail !== "branch" && inWorktree
-    && (detail === "all" || !branchShown || s.worktree !== branch.split("/").pop());
+  const projShown = showProj && detail.proj;
+  const branchShown = detail.branch && !!branch;
+  const wtShown = detail.wt && inWorktree;
   const metaShow = !!(projShown || branchShown || wtShown || fv || s.goal);
   return (
     <div
@@ -303,11 +296,14 @@ export function SessionsPanel(props: Props) {
   const [overRel, setOverRel] = useState<string | null>(null);
   // How much provenance each row prints. Remembered, because it tracks the
   // machine you work on — one repo on one branch wants less than fifteen.
-  // ponytail: new key, no migration off the old single "hud-sessions-detail" —
-  // one setting to re-pick per tab beats a migration path that outlives it.
-  const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>("hud-sessions-details", DETAIL_DEFAULT);
-  const detail = DETAILS.includes(detailPrefs[mode]) ? detailPrefs[mode] : "notable";
-  const setDetail = (d: Detail) => setDetailPrefs((p) => ({ ...p, [mode]: d }));
+  // ponytail: new key per shape change, no migration — useStickyObj merges one
+  // level deep, so a stored preset string would survive as a Detail that has no
+  // fields and silently print nothing. Three ticks are cheaper to re-pick.
+  const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>("hud-sessions-fields", DETAIL_DEFAULT);
+  const detail = { ...DETAIL_DEFAULT[mode], ...detailPrefs[mode] };
+  const toggleField = (k: keyof Detail) =>
+    setDetailPrefs((p) => ({ ...p, [mode]: { ...detail, [k]: !detail[k] } }));
+  const shownFields = fieldsFor(mode).filter((f) => detail[f.k]).map((f) => f.label).join(" + ");
   const [detailMenu, setDetailMenu] = useState(false);
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
   const [folded, setFolded] = useState(true);
@@ -892,12 +888,12 @@ export function SessionsPanel(props: Props) {
           )}
           <button
             onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
-            title={`Row details in ${mode.toUpperCase()} — ${DETAIL_LABEL[detail]}`}
+            title={`Row details in ${mode.toUpperCase()} — ${shownFields || "nothing"}`}
             aria-expanded={detailMenu}
             onMouseEnter={() => setHov("detail")} onMouseLeave={() => setHov("")}
             style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
                      fontSize: "var(--t12)", lineHeight: 1,
-                     color: detailMenu || hov === "detail" ? "var(--acc)" : detail === "none" ? "var(--txl)" : "var(--acc)" }}
+                     color: detailMenu || hov === "detail" ? "var(--acc)" : shownFields ? "var(--acc)" : "var(--txl)" }}
           >⎇</button>
           {detailMenu && (
             <>
@@ -906,18 +902,29 @@ export function SessionsPanel(props: Props) {
                             border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
                             boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
                 <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
-                {DETAILS.map((d) => (
-                  <button
-                    key={d} onClick={() => { setDetail(d); setDetailMenu(false); }}
-                    title={DETAIL_TIP[d]}
-                    onMouseEnter={() => setHov(`det:${d}`)} onMouseLeave={() => setHov("")}
-                    style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
-                             background: detail === d ? "color-mix(in srgb, var(--acc) 14%, transparent)"
-                               : hov === `det:${d}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
-                             color: detail === d ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
-                             fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
-                  >{detail === d ? "▸ " : "\u00a0\u00a0 "}{DETAIL_LABEL[d]}</button>
-                ))}
+                {fieldsFor(mode).map((f) => {
+                  const on = detail[f.k];
+                  return (
+                    // Ticks, not a preset list — the menu stays open so you can
+                    // set all three against the rows changing behind it.
+                    <button
+                      key={f.k} onClick={() => toggleField(f.k)} title={f.tip}
+                      role="menuitemcheckbox" aria-checked={on}
+                      onMouseEnter={() => setHov(`det:${f.k}`)} onMouseLeave={() => setHov("")}
+                      style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
+                               display: "flex", alignItems: "center", gap: 8,
+                               background: hov === `det:${f.k}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                               color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
+                               fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
+                    >
+                      <span style={{ flex: "none", width: 12, height: 12, display: "flex", alignItems: "center", justifyContent: "center",
+                                     border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
+                                     background: on ? "var(--acc)" : "transparent", color: "var(--acc-on)",
+                                     fontSize: "var(--t9)", fontWeight: 700 }}>{on ? "✓" : ""}</span>
+                      {f.label}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
