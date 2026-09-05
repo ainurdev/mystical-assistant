@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
-import { useStickyStr } from "../../lib/prefs";
+import { useStickyObj } from "../../lib/prefs";
 import type { ProjectGroup } from "./ProjectsPanel";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
@@ -65,6 +65,11 @@ const DETAIL_TIP: Record<Detail, string> = {
   none: "No branch or worktree on any row",
 };
 const DETAILS: Detail[] = ["notable", "all", "branch", "none"];
+/** Detail is per tab, because each tab shows a different slice: ATTENTION mixes
+ *  every project into four lanes and can't be read without the project name,
+ *  while PROJECTS rows sit under a header that already said it and would rather
+ *  spend the width on the branch. RECENT is its own stream again. */
+const DETAIL_DEFAULT: Record<Mode, Detail> = { attention: "notable", projects: "notable", recent: "notable" };
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -298,8 +303,11 @@ export function SessionsPanel(props: Props) {
   const [overRel, setOverRel] = useState<string | null>(null);
   // How much provenance each row prints. Remembered, because it tracks the
   // machine you work on — one repo on one branch wants less than fifteen.
-  const [detailPref, setDetail] = useStickyStr("hud-sessions-detail", "notable");
-  const detail = (DETAILS.includes(detailPref as Detail) ? detailPref : "notable") as Detail;
+  // ponytail: new key, no migration off the old single "hud-sessions-detail" —
+  // one setting to re-pick per tab beats a migration path that outlives it.
+  const [detailPrefs, setDetailPrefs] = useStickyObj<Record<Mode, Detail>>("hud-sessions-details", DETAIL_DEFAULT);
+  const detail = DETAILS.includes(detailPrefs[mode]) ? detailPrefs[mode] : "notable";
+  const setDetail = (d: Detail) => setDetailPrefs((p) => ({ ...p, [mode]: d }));
   const [detailMenu, setDetailMenu] = useState(false);
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
   const [folded, setFolded] = useState(true);
@@ -884,7 +892,7 @@ export function SessionsPanel(props: Props) {
           )}
           <button
             onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
-            title={`Row details — ${DETAIL_LABEL[detail]}`}
+            title={`Row details in ${mode.toUpperCase()} — ${DETAIL_LABEL[detail]}`}
             aria-expanded={detailMenu}
             onMouseEnter={() => setHov("detail")} onMouseLeave={() => setHov("")}
             style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
@@ -897,7 +905,7 @@ export function SessionsPanel(props: Props) {
               <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 168,
                             border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
                             boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
-                <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS</div>
+                <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
                 {DETAILS.map((d) => (
                   <button
                     key={d} onClick={() => { setDetail(d); setDetailMenu(false); }}
