@@ -22,6 +22,7 @@ import type {
 import { usePersistentState } from "./persistentState";
 import { lastOpen, rememberOpen } from "./lastopen";
 import { modelOptions } from "./models";
+import { withName } from "../components/ImageLightbox";
 
 export interface Attachment {
   id: string;
@@ -483,7 +484,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (!files) return;
     const added: Attachment[] = [];
     for (const file of Array.from(files)) {
-      const dataUrl = await readAsDataUrl(file);
+      // The name rides in the data URL, so a .csv reaches the upload dir as a
+      // .csv instead of being guessed into a .png the model can't read.
+      const dataUrl = withName(await readAsDataUrl(file), file.name);
       added.push({ id: `att-${fileIdRef.current++}-${file.name}`, name: file.name, dataUrl });
     }
     setDraftAttachments((prev) => [...prev, ...added]);

@@ -7,7 +7,7 @@ import { isExact, rankCommands, slashQuery } from "../lib/slash";
 import { Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
-import { ImageLightbox, MediaThumb } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, isFileUrl } from "./ImageLightbox";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -218,7 +218,7 @@ export function Composer() {
             <div key={a.id} className="relative">
               <button
                 type="button"
-                onClick={() => a.dataUrl && setZoom({ src: a.dataUrl, alt: a.name })}
+                onClick={() => a.dataUrl && !isFileUrl(a.dataUrl) && setZoom({ src: a.dataUrl, alt: a.name })}
                 aria-label={`Open ${a.name}`}
                 className="block"
               >
@@ -290,7 +290,6 @@ export function Composer() {
         <input
           ref={fileRef}
           type="file"
-          accept="image/*,video/*"
           multiple
           className="hidden"
           onChange={(e) => {
@@ -304,7 +303,7 @@ export function Composer() {
           size="icon"
           className="h-9 w-9 shrink-0 rounded-full text-muted-foreground"
           onClick={() => fileRef.current?.click()}
-          aria-label="Attach images"
+          aria-label="Attach a file"
         >
           <Paperclip size={18} aria-hidden />
         </Button>

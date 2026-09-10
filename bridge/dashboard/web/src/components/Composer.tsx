@@ -3,7 +3,7 @@ import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Pape
 import { api, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { modelRows, type AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
-import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
 import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
 import { isExact, rankCommands, slashAt } from "../lib/slash";
@@ -459,16 +459,19 @@ export function Composer({
     if (!files) return;
     Array.from(files).forEach((f) => {
       const r = new FileReader();
-      r.onload = () => setImages((prev) => [...prev, r.result as string]);
+      // The name rides in the data URL, so a .csv reaches the upload dir as a
+      // .csv instead of being guessed into a .png the model can't read.
+      r.onload = () => setImages((prev) => [...prev, withName(r.result as string, f.name)]);
       r.readAsDataURL(f);
     });
   }
-  // Paste and drop go through here, so this filter has to accept everything the
-  // file picker's accept= does — otherwise a dragged-in recording vanishes with
-  // no error, which reads as the app being broken.
+  // Paste and drop go through here, so this has to accept everything the file
+  // picker does — anything, now — otherwise a dragged-in file vanishes with no
+  // error, which reads as the app being broken. Pasted text is kind "string",
+  // so the kind check is the whole filter.
   function imagesFrom(items: DataTransferItemList | undefined): File[] {
     return Array.from(items ?? [])
-      .filter((it) => it.kind === "file" && /^(image|video)\//.test(it.type))
+      .filter((it) => it.kind === "file")
       .map((it) => it.getAsFile())
       .filter((f): f is File => f !== null);
   }
@@ -591,13 +594,13 @@ export function Composer({
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 9 }}>
           {images.map((src, i) => (
             <div key={i} style={{ position: "relative", width: 48, height: 48 }}>
-              <ZoomButton onOpen={() => setZoom(src)}>
+              <ZoomButton onOpen={() => { if (!isFileUrl(src)) setZoom(src); }}>
                 <MediaThumb src={src} style={{ width: 48, height: 48, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", objectFit: "cover" }} />
               </ZoomButton>
               <button
                 type="button"
                 onClick={() => setImages((p) => p.filter((_, j) => j !== i))}
-                aria-label="Remove image"
+                aria-label="Remove attachment"
                 style={{ position: "absolute", right: -6, top: -6, width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "var(--panel3)", color: "var(--txd)", fontSize: "var(--t11)", lineHeight: 1, cursor: "pointer" }}
               >
                 ×
@@ -729,8 +732,7 @@ export function Composer({
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          const imgs = Array.from(e.dataTransfer.files).filter((f) => /^(image|video)\//.test(f.type));
-          if (imgs.length) addFiles(imgs);
+          if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
         }}
       >
         <span style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>
@@ -823,9 +825,12 @@ export function Composer({
           rows={1}
           style={{ flex: 1, minWidth: 0, display: "block", maxHeight: 180, overflowY: "auto", resize: "none", background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.5 }}
         />
-        <input ref={fileRef} type="file" accept="image/*,video/*" multiple style={{ display: "none" }}
+        {/* No accept=: the model reads whatever lands in the upload dir, so a
+            .csv or a PDF is as good an attachment as a screenshot — and a
+            filter that hides them is what made it look image-only. */}
+        <input ref={fileRef} type="file" multiple style={{ display: "none" }}
           onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-        <button onClick={() => fileRef.current?.click()} title="Attach image or video"
+        <button onClick={() => fileRef.current?.click()} title="Attach a file"
           style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
           <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
         {/* Exactly one primary. STOP and PAUSE are rare and modal and one of

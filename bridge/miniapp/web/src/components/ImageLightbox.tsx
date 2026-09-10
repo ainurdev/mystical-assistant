@@ -10,6 +10,47 @@ const TAP_SLOP = 8;
 export const isVideo = (s: string) =>
   /^data:video\//i.test(s) || /\.(webm|mp4|mov|m4v)\b/i.test(s);
 
+/** A data URL for something the browser cannot paint or play — an attached
+ *  file. Deliberately narrow: only a data URL declares its type outright, so a
+ *  served path or a blob: URL keeps taking the <img> path it always did. */
+export const isFileUrl = (s: string) =>
+  /^data:/i.test(s) && !/^data:(image|video)\//i.test(s);
+
+/** Ride the original filename along in the data URL's media-type parameter
+ *  (RFC 2397 allows them). Nothing between the composer and the upload dir has
+ *  to learn a new shape, and a .csv keeps its extension on disk. */
+export const withName = (durl: string, name: string) =>
+  durl.replace(/^data:([^;,]*)/, (_m, mime) => `data:${mime};name=${encodeURIComponent(name)}`);
+
+/** The name to show for an attachment: the `name=` parameter if it has one,
+ *  else the last path segment of wherever it is being served from. */
+export function attachName(src: string): string {
+  const m = /^data:[^,]*;name=([^;,]*)/.exec(src);
+  const raw = m ? m[1] : src;
+  return decodeURIComponent(raw).split(/[?#]/).pop()?.split("/").pop() || "file";
+}
+
+/** What a file attachment looks like where a thumbnail would go: its extension,
+ *  boxed to the same size. Enough to say "this went through, and it is a CSV".
+ *  ponytail: no preview and no download — add one when a file gets attached
+ *  often enough that reopening it from the tray matters. */
+function FileThumb(
+  { name, className, style }:
+  { name: string; className?: string; style?: React.CSSProperties },
+) {
+  const ext = (name.split(".").pop() || name).slice(0, 4).toUpperCase();
+  return (
+    <span
+      className={className} title={name} aria-label={name}
+      style={{ ...style, display: "grid", placeItems: "center", overflow: "hidden",
+               border: "1px solid color-mix(in srgb, currentColor 24%, transparent)",
+               fontSize: 10, letterSpacing: "0.5px", lineHeight: 1, opacity: 0.85 }}
+    >
+      {ext}
+    </span>
+  );
+}
+
 /** An <img>, unless the src is a video — then a muted inline preview with a ▶
  *  badge. Same props either way, so the eight call sites that used to hardcode
  *  <img> don't each grow a branch. */
@@ -19,6 +60,7 @@ export function MediaThumb(
 ) {
   // `video` overrides the sniff: an object URL (blob:…) has lost both the
   // extension and the mime type, so only the caller still knows.
+  if (!video && isFileUrl(src)) return <FileThumb name={attachName(src)} className={className} style={style} />;
   if (!(video ?? isVideo(src))) return <img src={src} alt={alt ?? ""} className={className} style={style} onError={onError} />;
   // #t=0.1 makes the browser paint a real first frame instead of a black box;
   // a data: URL can't carry a fragment, so it goes without.

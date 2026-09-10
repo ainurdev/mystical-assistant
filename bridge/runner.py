@@ -723,12 +723,15 @@ def get_job(job_id: str) -> Job | None:
 
 
 def _with_images(prompt: str, image_paths: list[str] | None) -> str:
-    """Point the model at the screenshots it was sent. They stay on disk (the
-    upload dir) rather than going inline: a screenshot is a megabyte of base64,
-    and the child can just read the file."""
+    """Point the model at what it was sent. Attachments stay on disk (the upload
+    dir) rather than going inline: a screenshot is a megabyte of base64, and the
+    child can just read the file.
+
+    "File(s)", not "screenshot(s)" — the tray takes any file, and telling the
+    model a .csv is a screenshot is how it ends up trying to look at one."""
     if not image_paths:
         return prompt
-    return ("The user attached screenshot(s); view them before responding: "
+    return ("The user attached file(s); open them before responding: "
             + ", ".join(image_paths) + "\n\n" + prompt)
 
 

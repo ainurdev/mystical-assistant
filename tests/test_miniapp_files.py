@@ -125,3 +125,29 @@ if __name__ == "__main__":
         fn()
         print(f"ok - {fn.__name__}")
     print(f"\n{len(fns)} passed")
+
+
+def test_upload_name_keeps_the_extension_the_model_has_to_read():
+    """A .csv attached from the composer used to land as shot1.png, because the
+    name only existed in the browser. It now rides in the data URL — and gets
+    sanitised on the way in, since this names a file the bridge writes to disk
+    straight out of an HTTP body."""
+    assert mini._upload_name(0, "budget.csv", "png") == "1-budget.csv"
+    assert mini._upload_name(2, "", "png") == "shot3.png"            # screenshots unchanged
+    assert mini._upload_name(0, "../../etc/passwd", "png") == "1-passwd"
+    assert mini._upload_name(0, "a b;$(x).py", "png") == "1-a_b___x_.py"
+    assert mini._upload_name(0, "...", "webp") == "shot1.webp"       # nothing left after strip
+    assert "/" not in mini._upload_name(0, "a/b/c.txt", "png")
+
+    d = tempfile.mkdtemp()
+    from bridge import config
+    old, config.UPLOAD_DIR = config.UPLOAD_DIR, d
+    try:
+        paths = mini._save_images("job1", [
+            "data:text/csv;name=budget.csv;base64,YSxiCjEsMg==",
+            "data:image/png;base64,aGk=",
+        ])
+    finally:
+        config.UPLOAD_DIR = old
+    assert [os.path.basename(p) for p in paths] == ["1-budget.csv", "shot2.png"]
+    assert open(paths[0]).read() == "a,b\n1,2"

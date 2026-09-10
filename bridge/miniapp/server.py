@@ -12,6 +12,7 @@ import hmac
 import json
 import mimetypes
 import os
+import re
 import threading
 import time
 import uuid
@@ -31,7 +32,9 @@ _EXT = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
 
 # What the two attachment routes will hand back. Images and video only: the
 # upload dir is reachable by path from the browser, so widening this to
-# "anything" would turn a screenshot cache into a file server.
+# "anything" would turn a screenshot cache into a file server. Attaching a .csv
+# still works — the model reads it off disk by path; it just never streams back
+# to the browser, so the composer shows it as a chip rather than a thumbnail.
 _SERVABLE = ("image/", "video/")
 
 
@@ -206,6 +209,19 @@ def transcript_for(session: dict, cursor: int = 0,
     return page(data)
 
 
+def _upload_name(i: int, name: str, ext: str) -> str:
+    """What an attachment is called on disk. `shot3.png` unless the client sent
+    the original filename in the data URL's `name=` parameter — a .csv the model
+    is meant to read has to keep its extension, and `budget.csv` tells it more
+    than `shot3` does. The index stays in front so two files of the same name in
+    one message don't overwrite each other.
+
+    Sanitised hard, because this lands on disk straight out of a browser POST:
+    basename only, and only these characters survive."""
+    base = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(name)).strip("._")[:80]
+    return f"{i + 1}-{base}" if base else f"shot{i + 1}.{ext}"
+
+
 def _save_images(job_id: str, images: list) -> list[str]:
     paths: list[str] = []
     d = os.path.join(config.UPLOAD_DIR, job_id)
@@ -215,16 +231,21 @@ def _save_images(job_id: str, images: list) -> list[str]:
             continue
         header, _, b64 = durl.partition(",")
         mime = "image/png"
+        name = ""
         if header.startswith("data:") and ";" in header:
-            mime = header[5:].split(";")[0] or "image/png"
+            parts = header[5:].split(";")
+            mime = parts[0] or "image/png"
+            for prm in parts[1:]:
+                if prm.startswith("name="):
+                    name = unquote(prm[5:])
         ext = _EXT.get(mime, "png")
         try:
             raw = base64.b64decode(b64)
         except (binascii.Error, ValueError):
             continue
         if len(raw) > config.UPLOAD_MAX_MB * 1024 * 1024:
-            raise ValueError(f"image {i + 1} exceeds {config.UPLOAD_MAX_MB} MB")
-        p = os.path.join(d, f"shot{i + 1}.{ext}")
+            raise ValueError(f"attachment {i + 1} exceeds {config.UPLOAD_MAX_MB} MB")
+        p = os.path.join(d, _upload_name(i, name, ext))
         with open(p, "wb") as f:
             f.write(raw)
         paths.append(p)
