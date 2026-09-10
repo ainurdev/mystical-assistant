@@ -168,6 +168,9 @@ function RunPage() {
   // Measured heights survive unmount so a revisited turn is estimated exactly
   // right — same "wrong only once" property the cards' content-visibility has.
   const sizesRef = useRef(new Map<string, number>());
+  // While a jump settles, scroll anchoring is off (see below). ponytail: a
+  // deadline, not a "landed" signal — scrollToIndex doesn't report one.
+  const jumpT = useRef(0);
   // The list sits below the chips/monitor block inside <main>; the virtualizer
   // needs that offset so row coordinates line up with real scroll positions.
   const [listOffset, setListOffset] = useState(0);
@@ -203,8 +206,14 @@ function RunPage() {
   // *inside* measures right after, and this correction reads that growth as
   // "content above you got taller" and pushes you the whole height of the turn.
   // During a restore the anchor owns the scroll position.
+  // A checkpoint jump is the same story: it aims at estimated offsets, the rows
+  // it lands among mount and measure, and the overscan rows *above* the target
+  // report the growth as "content above you got taller" — which walked a jump to
+  // turn 5 down to turn 12. scrollToIndex re-aims itself as rows measure, so
+  // it, not this, owns the scroll while a jump is settling.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    !restoreTo.current && item.start < (instance.scrollOffset ?? 0);
+    !restoreTo.current && Date.now() > jumpT.current
+    && item.start < (instance.scrollOffset ?? 0);
 
   keepPlace.current = () => {
     // Mid-restore the scrolling is ours, not yours — recording it would
@@ -256,6 +265,7 @@ function RunPage() {
       jumpToTurn: (turnId: string) => {
         const i = visibleTurns.findIndex((t) => t.id === turnId);
         if (i < 0) return false;
+        jumpT.current = Date.now() + 1000;
         virtualizer.scrollToIndex(i, { align: "start" });
         stick.current = false;
         setParked(false);

@@ -267,7 +267,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [older, setOlder] = useState<{ has: boolean; seq: number | null; from: string | null; loading: boolean }>(
     { has: false, seq: null, from: null, loading: false });
   const olderRef = useRef(older);
-  olderRef.current = older;
+  // The ref leads the state rather than mirroring it at render time: the
+  // checkpoint walk in jumpToTurn reads it again a frame after loadOlder
+  // resolves — before React has necessarily re-rendered — and a stale
+  // `loading: true` there ended the walk half way to the checkpoint.
+  const putOlder = (o: typeof older) => { olderRef.current = o; setOlder(o); };
   // The run route's virtualized transcript registers its jump surface here so
   // the checkpoints sheet (rendered from the root layout) can navigate it.
   const transcriptNav = useRef<{ jumpToTurn: (turnId: string) => boolean } | null>(null);
@@ -312,7 +316,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sessionIdRef.current = id;
     pinnedRef.current = null;   // an explicit pick outranks the deep link
     setTurns([]);
-    setOlder({ has: false, seq: null, from: null, loading: false });
+    putOlder({ has: false, seq: null, from: null, loading: false });
     setSessionId(id);
     setHeld(null);          // a card about the session we're leaving
   }
@@ -345,24 +349,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const o = olderRef.current;
     const forId = sessionId;
     if (!forId || !o.has || o.loading || o.seq == null) return;
-    setOlder({ ...o, loading: true });
+    putOlder({ ...o, loading: true });
     try {
       const t = await api.getSession(forId, 0, { tail: 3, before: o.seq });
       if (sessionIdRef.current !== forId) return;   // switched away mid-flight
       setTurns((prev) => mergeDelta(prev, t));
-      setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
+      putOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
                  from: t.tail_from ?? null, loading: false });
-    } catch { setOlder({ ...olderRef.current, loading: false }); }
+    } catch { putOlder({ ...olderRef.current, loading: false }); }
   }
 
   // Jump the transcript to a turn, loading older pages until its row exists —
   // the checkpoints sheet lists every turn while only the tail is loaded.
   async function jumpToTurn(turnId: string) {
-    for (let i = 0; i < 200; i++) {               // pages ≫ max observed 34 turns
+    // A prepend only reaches the nav a render later, so a pass with nothing left
+    // to page in waits a frame and tries again: giving up on the first attempt
+    // after the last page landed short of the checkpoint every time.
+    for (let idle = 0; idle < 30;) {
       if (transcriptNav.current?.jumpToTurn(turnId)) return;
-      if (!olderRef.current.has || olderRef.current.loading) return;
-      await loadOlder();
-      // A prepend re-renders the transcript; give the nav a frame to rebuild.
+      if (olderRef.current.has && !olderRef.current.loading) await loadOlder();
+      else idle++;
       await new Promise((r) => requestAnimationFrame(() => r(null)));
     }
   }
@@ -461,7 +467,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setTurns((prev) => mergeDelta(prev, t));
       seqRef.current = t.next_cursor;
       if (first && t.has_older !== undefined)
-        setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
+        putOlder({ has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false });
       return t;
     },
     refetchInterval: isRunning || sessionWorking ? 1500 : false,

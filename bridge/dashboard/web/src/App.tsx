@@ -307,7 +307,11 @@ export function App() {
   const [older, setOlder] = useState<{ has: boolean; seq: number | null; from: string | null; loading: boolean }>(
     { has: false, seq: null, from: null, loading: false });
   const olderRef = useRef(older);
-  olderRef.current = older;
+  // The ref leads the state rather than mirroring it at render time: the
+  // checkpoint walk below reads it again a frame after loadOlder resolves —
+  // before React has necessarily re-rendered — and a stale `loading: true`
+  // there ended the walk half way to the checkpoint it was asked for.
+  const putOlder = useCallback((o: typeof older) => { olderRef.current = o; setOlder(o); }, []);
   // The turns on screen belong to the session we just left — held there so a
   // switch doesn't blank the chat. Whatever writes the new session's first
   // turns drops them.
@@ -623,7 +627,7 @@ export function App() {
         // the server doesn't speak tail — because openSession left the previous
         // session's values in place to keep the held frame's cut stable.
         if (first)
-          setOlder(t.has_older !== undefined
+          putOlder(t.has_older !== undefined
             ? { has: !!t.has_older, seq: t.oldest_seq ?? null, from: t.tail_from ?? null, loading: false }
             : { has: false, seq: null, from: null, loading: false });
         markBoot("chat", "ok", bootCount(t.turns.length, "TURN"));
@@ -633,7 +637,7 @@ export function App() {
         if (live && staleTurns.current) {
           staleTurns.current = false;
           setTurns([]);
-          setOlder({ has: false, seq: null, from: null, loading: false });
+          putOlder({ has: false, seq: null, from: null, loading: false });
         }
         markBoot("chat", "fail", "NO TRANSCRIPT");
       }
@@ -660,14 +664,14 @@ export function App() {
     // staleTurns: mid-swap `older` still describes the session being left —
     // paging with its seq against the new session id would merge nonsense.
     if (!sessionId || staleTurns.current || !o.has || o.loading || o.seq == null) return;
-    setOlder({ ...o, loading: true });
+    putOlder({ ...o, loading: true });
     try {
       const t = await api.transcript(sessionId, 0, { tail: TAIL_TURNS, before: o.seq });
       if (sessionIdRef.current !== sessionId) return;   // switched away mid-flight
       setTurns((prev) => mergeDelta(prev, t));
-      setOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
+      putOlder({ has: !!t.has_older, seq: t.oldest_seq ?? o.seq,
                  from: t.tail_from ?? null, loading: false });
-    } catch { setOlder({ ...olderRef.current, loading: false }); }
+    } catch { putOlder({ ...olderRef.current, loading: false }); }
   }, [sessionId]);
 
   // Checkpoint navigation into the virtualized transcript. A jump to a turn
@@ -676,12 +680,21 @@ export function App() {
   // even though only its tail is loaded.
   const transcriptNav = useRef<TranscriptNav | null>(null);
   const jumpToMark = useCallback(async (m: Mark) => {
+    // Asking for a checkpoint is asking to stop following the latest — and it
+    // has to be said here, before the walk: the follow policy's resize snap runs
+    // in the same frame as the jump but after it (rAF callbacks, then observer
+    // notifications), so a stick left armed pulls you back to the bottom before
+    // any scroll event gets the chance to disarm it.
+    stickRef.current = false;
+    setAtBottom(false);
     const sub = m.subKey ? ckId(m.turnId, m.subKey) : undefined;
-    for (let i = 0; i < 200; i++) {              // pages ≫ max observed 34 turns
+    // A prepend only reaches the nav a render later, so a pass with nothing left
+    // to page in waits a frame and tries again: giving up on the first attempt
+    // after the last page landed short of the checkpoint every time.
+    for (let idle = 0; idle < 30;) {
       if (transcriptNav.current?.jumpToTurn(m.turnId, sub)) return;
-      if (!olderRef.current.has || olderRef.current.loading) return;
-      await loadOlder();
-      // A prepend re-renders the transcript; give the nav a frame to rebuild.
+      if (olderRef.current.has && !olderRef.current.loading) await loadOlder();
+      else idle++;
       await new Promise((r) => requestAnimationFrame(() => r(null)));
     }
   }, [loadOlder]);

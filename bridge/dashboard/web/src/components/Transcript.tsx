@@ -273,6 +273,9 @@ export function Transcript({
   // cards, one level up. Keyed by turn id, so it also survives session switches
   // back and forth within one mount.
   const sizesRef = useRef(new Map<string, number>());
+  // While a jump settles, scroll anchoring is off (see below). ponytail: a
+  // deadline, not a "landed" signal — scrollToIndex doesn't report one.
+  const jumpT = useRef(0);
   const keyOf = (r: Row) => (r.kind === "turn" ? r.turn.id : "__working");
 
   // Ctrl-F escape hatch: browser find only sees mounted rows, so the shortcut
@@ -324,8 +327,15 @@ export function Transcript({
   // "content above you got taller" and pushes you the whole height of the turn —
   // to the bottom of a one-megaturn session. During a restore the anchor owns
   // the scroll position.
+  //
+  // A checkpoint jump is the same story: it aims at estimated offsets, the rows
+  // it lands among mount and measure, and the overscan rows *above* the target
+  // report the growth as "content above you got taller" — which walked a jump to
+  // turn 5 down to turn 12. scrollToIndex re-aims itself as rows measure, so
+  // it, not this, owns the scroll while a jump is settling.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    !restoringRef?.current && item.start < (instance.scrollOffset ?? 0);
+    !restoringRef?.current && Date.now() > jumpT.current
+    && item.start < (instance.scrollOffset ?? 0);
 
   // Checkpoint navigation. In full-mount mode everything is in the DOM, so the
   // plain scrollIntoView path is both available and exact; windowed, the row is
@@ -348,6 +358,7 @@ export function Transcript({
     };
     navRef.current = {
       jumpToTurn: (turnId, subAnchorId) => {
+        jumpT.current = Date.now() + 1000;
         if (fullRef.current) {
           const el = document.getElementById(subAnchorId ?? ckId(turnId));
           el?.scrollIntoView({ behavior: "smooth", block: "start" });
