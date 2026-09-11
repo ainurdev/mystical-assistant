@@ -280,7 +280,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, onOpenProject, run, onOpenRun, onDropFiles,
+  onOpenDesign, onOpenProject, run, onOpenRun, onDropFiles, chrome,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -334,6 +334,10 @@ export function Terminal({
   onOpenRun?: () => void;
   /** Files dropped on a fresh session's screen — the composer's attachments. */
   onDropFiles?: (files: FileList) => void;
+  /** Shell chrome folded in at the header's end — SHIP, the radio, clock &
+   *  weather, the bell — while the right panel is collapsed to its rail and
+   *  its column has no room for them. */
+  chrome?: ReactNode;
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
@@ -625,6 +629,12 @@ export function Terminal({
           <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
         )}
         <ViewTabs view={view} onView={onView} />
+        {chrome && (
+          <>
+            <span style={hairline(11)} />
+            {chrome}
+          </>
+        )}
       </div>
     </div>
   );

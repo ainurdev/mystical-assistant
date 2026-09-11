@@ -1,6 +1,7 @@
-// The shell's three chrome rows — strip, hudgrid, status bar — share one set
-// of column tracks so every zone lines up with the panel head under it. The
-// tracks are defined once here; never re-type the numbers.
+// The shell's two rows — hudgrid and status bar — share one set of column
+// tracks so every zone lines up with the panel above or below it. (The strip
+// that was a third row now caps the side columns from inside them; see
+// Strip.tsx.) The tracks are defined once here; never re-type the numbers.
 import type { CSSProperties } from "react";
 
 export function shellCols(rightOpen: boolean): string {

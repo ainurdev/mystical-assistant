@@ -57,7 +57,7 @@ import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath"
 import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
-import { Strip } from "./components/hud/Strip";
+import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
 import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
@@ -390,6 +390,7 @@ export function App() {
   const host = useHostVitals();
   const { weather, setCity, setUnit } = useWeather();
   const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
+  const [weekNonce, setWeekNonce] = useState(0); // nonce — opens the week report, from the same menu
   const radio = useRadio(settings.radioVolume);
   // Server-side per-session prompt queue: lets a new prompt be queued while a
   // turn is in flight (runs after it) instead of forcing a STOP first.
@@ -1780,15 +1781,21 @@ export function App() {
       items.push({ icon: "↥", label: "Scroll to top", onClick: () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; } });
       items.push({ divider: true });
     } else if (ctxMenu.type === "weather") {
+      // The clock's menu — a plain click on the clock opens it too — so it
+      // carries what used to sit around the clock in the strip: the week
+      // report, the clock & weather settings, the radio's skip.
       const other = weather.unit === "F" ? "C" : "F";
-      items.push({ icon: "✎", label: "Set city…", onClick: () => setWxSettings((n) => n + 1) });
+      items.push({ icon: "▤", label: "Weekly report", onClick: () => setWeekNonce((n) => n + 1) });
+      items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
       items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
+      items.push({ icon: "»", label: "Next station", onClick: () => radio.next() });
       items.push({ divider: true });
     }
     // Dashboard-wide rows. When you right-clicked *something* — a card, a turn,
     // a file — these five are never the reason, so they collapse to one row and
     // stop pushing that thing's own options off the bottom. On bare surface,
-    // where there is nothing else, they are the menu.
+    // where there is nothing else, they are the menu — and under the clock,
+    // whose menu is the dashboard's own.
     const globals: CtxItem[] = [
       { icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) },
       { icon: "♪", label: "Toggle Claude·FM", onClick: () => radio.toggle() },
@@ -1798,7 +1805,7 @@ export function App() {
         hint: "picks up code on disk; running turns resume",
         onClick: () => void restartBridge() },
     ];
-    if (ctxMenu.type === "surface") items.push(...globals);
+    if (ctxMenu.type === "surface" || ctxMenu.type === "weather") items.push(...globals);
     else items.push({ icon: "⌗", label: "Dashboard", children: globals });
     // The browser-level block (back/reload/print) is never the reason you opened
     // the menu — it goes behind one row.
@@ -1929,6 +1936,21 @@ export function App() {
 
   const td = themeDef(settings.theme);
   const wsRoot = (activeProject || "/").replace(/\/[^/]*$/, "") || "/";
+  // One cluster, two homes: the right column's cap while the panel is open,
+  // the chat header's end while it's folded to the rail (see Strip.tsx).
+  const strip = (
+    <Strip
+      radio={radio.radio}
+      onToggleRadio={radio.toggle}
+      clock={tele.clock}
+      weather={weather}
+      onSetCity={setCity}
+      onSetUnit={setUnit}
+      openSettings={wxSettings}
+      openReport={weekNonce}
+      onFeed={feed}
+    />
+  );
 
   return (
     <div className="flex h-full flex-col" style={{ background: "var(--panel3)", position: "relative" }}>
@@ -1953,31 +1975,19 @@ export function App() {
             ...themeVars(settings.theme),
           } as CSSProperties}
         >
-            <Strip
-              radio={radio.radio}
-              onToggleRadio={radio.toggle}
-              onNextRadio={radio.next}
-              onOpenSettings={() => setSettingsOpen(true)}
-              clock={tele.clock}
-              weather={weather}
-              onSetCity={setCity}
-              onSetUnit={setUnit}
-              openSettings={wxSettings}
-              onFeed={feed}
-              rightOpen={settings.rightOpen}
-            />
-
             {/* Three flush columns, each divided from the next by one hairline —
                 the shell is a single surface, not three cards floating on a
                 fourth. Widths are the mock's: the sidebars give ground back to
                 the transcript on a narrow window instead of holding a fixed
-                px and squeezing it. */}
+                px and squeezing it. No strip above them: the side columns cap
+                themselves (Brand, RightCap), so the transcript runs to the top. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
               style={{ gridTemplateColumns: shellCols(settings.rightOpen), minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
+                <Brand />
                 <SessionsPanel
                   sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
@@ -2026,6 +2036,9 @@ export function App() {
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}
+                // Folded to the rail, the right column can't carry the cluster —
+                // the chat header takes it.
+                chrome={settings.rightOpen ? undefined : strip}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2079,12 +2092,19 @@ export function App() {
               />
 
               {/* RIGHT — activity bar of icons; clicking the active one collapses
-                  the body and unmounts the panel (which stops its polling). */}
-              <RightPanel
-                tabs={rightTabs} activeId={settings.rightTab}
-                open={settings.rightOpen} onTab={pickRightTab}
-                project={sessionProject} branch={sessionBranch}
-              />
+                  the body and unmounts the panel (which stops its polling). The
+                  cap rides on top: the cluster over the panel, the gear over
+                  the rail. */}
+              <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0 }}>
+                <RightCap onOpenSettings={() => setSettingsOpen(true)}>
+                  {settings.rightOpen && strip}
+                </RightCap>
+                <RightPanel
+                  tabs={rightTabs} activeId={settings.rightTab}
+                  open={settings.rightOpen} onTab={pickRightTab}
+                  project={sessionProject} branch={sessionBranch}
+                />
+              </div>
             </div>
 
             <StatusBar

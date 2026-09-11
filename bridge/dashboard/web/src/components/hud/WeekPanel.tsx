@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { api, type TodayInfo, type WeeklyReport } from "../../api";
-import { hairline } from "../../lib/shell";
 
-/** The strip's TODAY chip, now clickable: the dropdown is the weekly report —
+/** The week report, dropped from under the clock when its menu asks for it:
  *  which projects the week went into, sessions/turns/time per project, a
- *  per-day rhythm strip, and the delta against the week before.
+ *  per-day rhythm strip, and the delta against the week before. Today's count
+ *  heads it — that line used to be the strip's always-on TODAY chip.
  *
  *  Time and tokens, never dollars: the CLI prices subscription runs at API
  *  list rate (9f612a4), so a dollar line here would be confidently wrong. */
@@ -68,45 +68,26 @@ function DayStrip({ rep }: { rep: WeeklyReport }) {
   );
 }
 
+/** Positioned against the nearest `position: relative` — the clock's anchor,
+ *  which also closes it on an outside press. */
 export function WeekPanel() {
   const [today, setToday] = useState<TodayInfo | null>(null);
-  const [open, setOpen] = useState(false);
-  const [hover, setHover] = useState(false);
   const [back, setBack] = useState(0);
   const [rep, setRep] = useState<WeeklyReport | null>(null);
   // A bridge still running pre-restart code has no /local/report route — say
   // "restart" instead of spinning forever (the SpendPanel posture).
   const [stale, setStale] = useState(false);
-  const wrapRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => { void api.today().then(setToday).catch(() => {}); }, []);
 
   useEffect(() => {
-    let live = true;
-    const load = () => void api.today().then((r) => { if (live) setToday(r); }).catch(() => {});
-    load();
-    const t = setInterval(load, 60_000);
-    return () => { live = false; clearInterval(t); };
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
     let live = true;
     setRep(null);
     api.report(back)
       .then((r) => { if (live) { setRep(r); setStale(false); } })
       .catch(() => { if (live) setStale(true); });
     return () => { live = false; };
-  }, [open, back]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [open]);
-
-  if (!today || !today.turns) return null;
+  }, [back]);
 
   const t = rep?.totals;
   const peak = rep?.projects.length ? rep.projects[0].elapsed : 0;
@@ -115,109 +96,89 @@ export function WeekPanel() {
     : "";
 
   return (
-    <span ref={wrapRef} style={{ position: "relative", flex: "none", display: "flex" }}>
-      <button
-        onClick={() => setOpen(!open)}
-        title={`Since midnight: ${today.turns} turn${today.turns === 1 ? "" : "s"}, `
-          + `${today.tokens.toLocaleString()} tokens — click for the week per project`}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        style={{
-          appearance: "none", cursor: "pointer", border: 0, background: "transparent",
-          display: "flex", alignItems: "center", gap: "11px", flex: "none",
-          fontFamily: "inherit", padding: 0,
-        }}
-      >
-        <span style={{ fontSize: "var(--t95)", letterSpacing: "1.9px", color: open || hover ? "var(--txf)" : "var(--txl)" }}>TODAY</span>
-        <span style={{ display: "flex", alignItems: "baseline", gap: "5px" }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", color: "var(--txh)" }}>{today.turns}</span>
-          <span style={{ fontSize: "var(--t9)", letterSpacing: "1.2px", color: "var(--txf)" }}>TURNS</span>
+    <div style={{
+      position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 60, width: 360,
+      border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
+      background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
+      boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both",
+    }}>
+      <div style={{ padding: "11px 11px 7px", fontSize: "var(--t9)", letterSpacing: 2, color: "var(--acc)", display: "flex", alignItems: "center", gap: 8 }}>
+        <span>WEEK</span>
+        <span style={{ color: "var(--txl)", letterSpacing: 1 }}>{range}</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ display: "flex", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
+          <button onClick={() => setBack(0)} style={seg(back === 0)}>THIS</button>
+          <button onClick={() => setBack(1)} style={seg(back === 1)}>LAST</button>
         </span>
-        <span style={hairline(11)} />
-        <span style={{ display: "flex", alignItems: "baseline", gap: "5px" }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", color: "var(--txh)" }}>{fmtTokens(today.tokens)}</span>
-          <span style={{ fontSize: "var(--t9)", letterSpacing: "1.2px", color: "var(--txf)" }}>TOK</span>
-        </span>
-      </button>
+      </div>
 
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 60, width: 360,
-          border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
-          background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
-          boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both",
-        }}>
-          <div style={{ padding: "11px 11px 7px", fontSize: "var(--t9)", letterSpacing: 2, color: "var(--acc)", display: "flex", alignItems: "center", gap: 8 }}>
-            <span>WEEK</span>
-            <span style={{ color: "var(--txl)", letterSpacing: 1 }}>{range}</span>
-            <span style={{ flex: 1 }} />
-            <span style={{ display: "flex", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
-              <button onClick={() => setBack(0)} style={seg(back === 0)}>THIS</button>
-              <button onClick={() => setBack(1)} style={seg(back === 1)}>LAST</button>
-            </span>
-          </div>
-
-          {stale ? (
-            <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>
-              the bridge needs a restart before it can answer this
-            </div>
-          ) : !rep ? (
-            <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>reading…</div>
-          ) : !rep.projects.length ? (
-            <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>
-              nothing ran this week
-            </div>
-          ) : (
-            <>
-              <div style={{ padding: "0 11px 8px", fontSize: "var(--t10)", color: "var(--txm)", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>
-                  {t!.sessions} session{t!.sessions === 1 ? "" : "s"} · {t!.turns} turn{t!.turns === 1 ? "" : "s"} · {dur(t!.elapsed)}
-                </span>
-                {rep.prev.turns > 0 && (
-                  <span title="vs the week before" style={{ color: "var(--txl)" }}>
-                    {pct(t!.turns, rep.prev.turns)} turns{rep.prev.elapsed ? ` · ${pct(t!.elapsed, rep.prev.elapsed)} time` : ""}
-                  </span>
-                )}
-              </div>
-
-              <DayStrip rep={rep} />
-
-              <div style={{ padding: "0 11px 4px", display: "flex", flexDirection: "column", gap: 6 }}>
-                {rep.projects.map((p) => (
-                  <div key={p.project} title={`${p.project}${p.models.length ? ` — ${p.models.join(", ")}` : ""}`}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "var(--t10)", color: "var(--txm)" }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {shortName(p.project)}
-                        <span style={{ color: "var(--txl)" }}>
-                          {" "}{p.sessions} sess · {p.turns} turns{p.tokens !== null ? ` · ${fmtTokens(p.tokens)} tok` : ""}
-                        </span>
-                      </span>
-                      <span style={{ flex: "none", color: "var(--txb)" }}>{dur(p.elapsed)}</span>
-                    </div>
-                    <div style={{ height: 3, marginTop: 2, background: "color-mix(in srgb, var(--acc) 8%, transparent)" }}>
-                      <div style={{ height: "100%", width: `${peak ? (p.elapsed / peak) * 100 : 0}%`, background: "var(--acc)" }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", margin: "8px 0 0", padding: "8px 11px 11px", fontSize: "var(--t10)", color: "var(--txl)", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>tokens</span>
-                {t!.tokens ? (
-                  <span
-                    title={`in ${t!.tokens.in.toLocaleString()} · out ${t!.tokens.out.toLocaleString()} · cache write ${t!.tokens.cache_w.toLocaleString()} · cache read ${t!.tokens.cache_r.toLocaleString()}`}
-                    style={{ color: "var(--txm)" }}
-                  >
-                    {fmtTokens(t!.tokens.in)} in · {fmtTokens(t!.tokens.out)} out · {fmtTokens(t!.tokens.cache_r + t!.tokens.cache_w)} cache
-                  </span>
-                ) : (
-                  <span title="no turn this week reported usage — unknown, not zero">—</span>
-                )}
-              </div>
-            </>
-          )}
+      {!!today?.turns && (
+        <div title={`${today.tokens.toLocaleString()} tokens since midnight`}
+          style={{ padding: "0 11px 8px", fontSize: "var(--t10)", color: "var(--txl)" }}>
+          today <span style={{ color: "var(--txh)" }}>{today.turns}</span> turn{today.turns === 1 ? "" : "s"}
+          {" · "}<span style={{ color: "var(--txh)" }}>{fmtTokens(today.tokens)}</span> tok
         </div>
       )}
-    </span>
+
+      {stale ? (
+        <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>
+          the bridge needs a restart before it can answer this
+        </div>
+      ) : !rep ? (
+        <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>reading…</div>
+      ) : !rep.projects.length ? (
+        <div style={{ padding: "10px 11px 13px", fontSize: "var(--t10)", color: "var(--txl)" }}>
+          nothing ran this week
+        </div>
+      ) : (
+        <>
+          <div style={{ padding: "0 11px 8px", fontSize: "var(--t10)", color: "var(--txm)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>
+              {t!.sessions} session{t!.sessions === 1 ? "" : "s"} · {t!.turns} turn{t!.turns === 1 ? "" : "s"} · {dur(t!.elapsed)}
+            </span>
+            {rep.prev.turns > 0 && (
+              <span title="vs the week before" style={{ color: "var(--txl)" }}>
+                {pct(t!.turns, rep.prev.turns)} turns{rep.prev.elapsed ? ` · ${pct(t!.elapsed, rep.prev.elapsed)} time` : ""}
+              </span>
+            )}
+          </div>
+
+          <DayStrip rep={rep} />
+
+          <div style={{ padding: "0 11px 4px", display: "flex", flexDirection: "column", gap: 6 }}>
+            {rep.projects.map((p) => (
+              <div key={p.project} title={`${p.project}${p.models.length ? ` — ${p.models.join(", ")}` : ""}`}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "var(--t10)", color: "var(--txm)" }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {shortName(p.project)}
+                    <span style={{ color: "var(--txl)" }}>
+                      {" "}{p.sessions} sess · {p.turns} turns{p.tokens !== null ? ` · ${fmtTokens(p.tokens)} tok` : ""}
+                    </span>
+                  </span>
+                  <span style={{ flex: "none", color: "var(--txb)" }}>{dur(p.elapsed)}</span>
+                </div>
+                <div style={{ height: 3, marginTop: 2, background: "color-mix(in srgb, var(--acc) 8%, transparent)" }}>
+                  <div style={{ height: "100%", width: `${peak ? (p.elapsed / peak) * 100 : 0}%`, background: "var(--acc)" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", margin: "8px 0 0", padding: "8px 11px 11px", fontSize: "var(--t10)", color: "var(--txl)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>tokens</span>
+            {t!.tokens ? (
+              <span
+                title={`in ${t!.tokens.in.toLocaleString()} · out ${t!.tokens.out.toLocaleString()} · cache write ${t!.tokens.cache_w.toLocaleString()} · cache read ${t!.tokens.cache_r.toLocaleString()}`}
+                style={{ color: "var(--txm)" }}
+              >
+                {fmtTokens(t!.tokens.in)} in · {fmtTokens(t!.tokens.out)} out · {fmtTokens(t!.tokens.cache_r + t!.tokens.cache_w)} cache
+              </span>
+            ) : (
+              <span title="no turn this week reported usage — unknown, not zero">—</span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -354,6 +354,14 @@ body {
 .hudgrid {
   transition: grid-template-columns 0.26s var(--ease-hud);
 }
+/* The right column's cap: SHIP, the radio, clock & weather and the bell share
+   one row as wide as the panel. A narrow panel drops the temperature first,
+   then the radio, rather than spill into the transcript. The widths are the
+   whole cap, rail included — re-measure if the cluster grows. !important
+   because the elements carry an inline display. */
+.rcap { container-type: inline-size; }
+@container (max-width: 337px) { .rcap .wx { display: none !important; } }
+@container (max-width: 289px) { .rcap .fm { display: none !important; } }
 /* A shell column is one flush surface, divided from its neighbour by a single
    hairline — so the panel that fills a column must not draw a second box
    inside it. This outranks the panels' own inline border on purpose: the same
