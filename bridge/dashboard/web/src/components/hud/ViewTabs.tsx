@@ -2,28 +2,24 @@ import { useState } from "react";
 
 export type View = "chat" | "history" | "next";
 
-const LABELS: Record<View, string> = { chat: "CHAT", history: "HIST", next: "NEXT" };
-
-/* View switcher in the Terminal header — the header's ONE bordered element (a
-   hairline separates meta, a border marks an action). HIST and NEXT are
-   reachable from the command palette, not from here: they are places you go,
-   not ways to read the session you are already in. */
+/* The way back to CHAT from HIST or NEXT: the header's one bordered element (a
+   hairline separates meta, a border marks an action). In CHAT it isn't drawn.
+   A switch with one position was the brightest thing in the row and did
+   nothing. HIST and NEXT themselves are reached from the command palette: they
+   are places you go, not ways to read the session you are already in. */
 export function ViewTabs({ view, onView }: { view: View; onView: (v: View) => void }) {
-  const [hov, setHov] = useState<View | null>(null);
+  const [hov, setHov] = useState(false);
+  if (view === "chat") return null;
   return (
-    <div style={{ display: "flex", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
-      {(["chat"] as const).map((v) => (
-        <button key={v} onClick={() => onView(v)}
-          onMouseEnter={() => setHov(v)} onMouseLeave={() => setHov(null)}
-          style={{
-            appearance: "none", cursor: "pointer", border: 0,
-            background: view === v ? "var(--acc)" : hov === v ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent",
-            color: view === v ? "var(--acc-on)" : hov === v ? "var(--tx)" : "var(--txf)",
-            fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "3px 9px",
-          }}>
-          {LABELS[v]}
-        </button>
-      ))}
-    </div>
+    <button onClick={() => onView("chat")}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        appearance: "none", cursor: "pointer", flex: "none",
+        border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+        background: hov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent",
+        color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "3px 9px",
+      }}>
+      ← CHAT
+    </button>
   );
 }

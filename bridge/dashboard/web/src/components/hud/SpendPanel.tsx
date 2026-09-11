@@ -122,13 +122,14 @@ export function SpendPanel({ sessionId, running }: {
         style={{
           appearance: "none", cursor: "pointer", gap: 5,
           border: 0, background: "transparent",
-          color: open || hover ? "var(--txb)" : "var(--txm)",
-          fontFamily: "var(--mono)", fontSize: "var(--t10)",
+          // A named readout: the label in the header's own voice, the number in mono.
+          color: open || hover ? "var(--txb)" : "var(--txd)",
+          fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
           padding: 0, display: "flex", alignItems: "center",
         }}
       >
-        <span aria-hidden style={{ color: "var(--txl)" }}>{"⏱︎"}</span>
-        {b ? secs(b.wall) : "·"}
+        TIME
+        <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t10)", letterSpacing: 0, color: open || hover ? "var(--txb)" : "var(--txm)" }}>{b ? secs(b.wall) : "·"}</span>
         {!!b?.capped && (
           <span title={`${b.capped} turns killed as hung by the watchdog`}
             style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--red)", boxShadow: "0 0 6px var(--red)" }} />

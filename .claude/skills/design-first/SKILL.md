@@ -15,7 +15,7 @@ claude.ai design pane — before any repo code changes.
 Read `~/.bridge_state/project_config.json`. The key is the repo's trailing
 path (this repo: `/mystical-assistant`), with an optional `@<branch>` variant
 that wins over the plain key; the field is `design_project`. No key → tell the
-user the repo isn't linked (dashboard ▸ ◇ DESIGN SYSTEM in the chat header, or
+user the repo isn't linked (dashboard ▸ the chat header's project name ▸ ◇ Design system, or
 the project modal's DESIGN tab), design in-chat anyway,
 and skip step 4.
 

@@ -1747,6 +1747,13 @@ export function App() {
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
+      // The chat header's project name opens this menu; its DESIGN SYSTEM and
+      // TASKS links folded in here.
+      if (ai.design)
+        items.push({ icon: "◇", label: "Design system", hint: "link · pull · sync",
+          onClick: () => openAnalyze(ctxMenu.id, undefined, "design") });
+      items.push({ icon: "⌁", label: "Tasks", hint: "Teamwork · Jira",
+        onClick: () => openAnalyze(ctxMenu.id, undefined, "tasks") });
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
       items.push({ icon: "◎", label: "Open issues", onClick: () => openAnalyze(ctxMenu.id) });
@@ -2034,9 +2041,6 @@ export function App() {
                   } else void send(text, []);
                 }}
                 onOpenFile={openFileRef}
-                onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
-                onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
-                onOpenTasks={sessionProject ? () => openAnalyze(sessionProject, undefined, "tasks") : undefined}
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}

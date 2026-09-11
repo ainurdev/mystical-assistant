@@ -228,31 +228,10 @@ function ChannelTuning({ step }: { step?: string | null }) {
   );
 }
 
-/** Header shortcut into the project modal — the whole thing, or straight to its
- *  DESIGN tab. Borderless: in this row a border marks an action, and these only
- *  open a panel that is otherwise a detour through the sessions list. */
-function HeaderBtn({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <button
-      onClick={onClick} title={title}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{
-        appearance: "none", cursor: "pointer", fontFamily: "inherit",
-        fontSize: "var(--t9)", letterSpacing: 1, padding: 0, flex: "none",
-        border: 0, background: "transparent",
-        color: hov ? "var(--txb)" : "var(--txd)",
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-/** The project's running app, in the header. A dev server the bridge owns (the
- *  RUN bar, or the model's Run tool) is the one thing about this session that is
- *  alive outside the transcript — so it says the port and opens the TERMINAL tab,
- *  which is where its logs and the STOP button live. */
+/** The project's running app, in the header's caption. A dev server the bridge
+ *  owns (the RUN bar, or the model's Run tool) is the one thing about this session
+ *  that is alive outside the transcript — so it says the port and opens the
+ *  TERMINAL tab, which is where its logs and the STOP button live. */
 function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void }) {
   const [hov, setHov] = useState(false);
   const live = run.status === "running";
@@ -264,7 +243,7 @@ function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void })
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         display: "inline-flex", alignItems: "center", gap: 5, flex: "none",
-        fontFamily: "var(--mono)", fontSize: "var(--t10)", padding: 0, border: 0,
+        fontFamily: "var(--mono)", fontSize: "var(--t9)", padding: 0, border: 0,
         appearance: "none", background: "transparent", cursor: onClick ? "pointer" : "default",
         color: hov ? "var(--txb)" : c,
       }}>
@@ -280,7 +259,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, onOpenProject, onOpenTasks, run, onOpenRun, onDropFiles, chrome, gridRow,
+  run, onOpenRun, onDropFiles, chrome, gridRow,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -324,12 +303,6 @@ export function Terminal({
   onAnswer?: (text: string) => void;
   /** Move a typed session's stage — the rail's jumps and a gate's APPROVE. */
   /** Open a fresh typed session from a report card (PROBE -> FIX, and friends). */
-  /** Open this project's DESIGN tab (the design-system link & sync). */
-  onOpenDesign?: () => void;
-  /** Open the project modal on its default tab. */
-  onOpenProject?: () => void;
-  /** Open this project's TASKS tab (the linked Teamwork / Jira list). */
-  onOpenTasks?: () => void;
   /** The dev server the bridge is running for this project, if any. */
   run?: DevServerInfo | null;
   /** Open this project's TERMINAL tab (the run bar, logs and STOP). */
@@ -349,6 +322,7 @@ export function Terminal({
   const projectLabel = basename(sessionProject);
   const [projHov, setProjHov] = useState(false);
   const [brHov, setBrHov] = useState(false);
+  const [titleHov, setTitleHov] = useState(false);
   const [cntHov, setCntHov] = useState(false);
   const isChat = view === "chat";
   const empty = isChat && turns.length === 0;
@@ -559,78 +533,81 @@ export function Terminal({
     </div>
   );
 
-  // The session's own header. In CHAT it sits above the transcript; on the
-  // board it floats over it, so the grid runs edge to edge underneath.
-  // One 40px row: title leads, meta reads as a ledger, and the only border in
-  // the row is the view switch — a hairline separates meta, a border marks an
-  // action.
+  // The session's own header: a nameplate. The title has a line to itself and
+  // the row's whole width; project, branch and the running app are its caption
+  // underneath. Each of those opens its own menu (the title and the branch the
+  // session's, the project name the project's), so the row carries no links of
+  // its own. The ledger names its numbers, and the only border left is the way
+  // back to CHAT from HIST or NEXT: a hairline separates meta, a border marks an
+  // action. Still one 40px row, the height the side columns' caps are cut to.
+  // data-ctx-* is what right-click reads; a click re-fires it as a contextmenu
+  // anchored under the element, so none of these menus is right-click-only.
+  const openMenu = (e: { currentTarget: HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
+      { bubbles: true, clientX: r.left, clientY: r.bottom }));
+  };
   const header = (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 14px", height: 40, flex: "none", minWidth: 0 }}>
-      <span
-        title="active project"
-        onMouseEnter={() => setProjHov(true)} onMouseLeave={() => setProjHov(false)}
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t10)", color: projHov ? "var(--txb)" : "var(--txm)" }}
-      >
-        {/* The per-project tint dot is the only colour identifying the project now. */}
-        <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
-        {projectLabel || "—"}
-      </span>
-      {branch && (
-        <>
-          <span style={hairline(13)} />
-          {/* The chat's one session affordance. data-ctx-* makes right-click open
-              the session menu (the SESSIONS list's own), and the click re-fires it
-              as a contextmenu anchored under the chip so it isn't right-click-only
-              — that menu is where "move to a new worktree" lives, and the branch
-              you're on is where you notice you want it. */}
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 14px", height: 40, flex: "none", minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, flex: "0 1 auto", minWidth: 0 }}>
+        <button
+          title={sessionId ? "session — rename, pin, move to a worktree…" : undefined}
+          data-ctx-type={sessionId ? "session" : undefined}
+          data-ctx-id={sessionId ?? undefined}
+          data-ctx-label={selected?.title || undefined}
+          disabled={!sessionId}
+          onClick={openMenu}
+          onMouseEnter={() => setTitleHov(true)} onMouseLeave={() => setTitleHov(false)}
+          style={{ display: "flex", alignItems: "baseline", gap: 7, minWidth: 0, maxWidth: "100%", padding: 0, border: 0, appearance: "none", background: "transparent", fontFamily: "inherit", textAlign: "left", cursor: sessionId ? "pointer" : "default" }}>
+          <span style={{ fontSize: "var(--t13)", lineHeight: "16px", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+            {selected?.title || "new session"}
+          </span>
+          {sessionId && <span aria-hidden style={{ flex: "none", fontSize: "var(--t9)", color: titleHov ? "var(--txb)" : "var(--txl)" }}>▾</span>}
+        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
           <button
-            title={sessionId ? "session branch — session actions" : "session branch"}
-            data-ctx-type={sessionId ? "session" : undefined}
-            data-ctx-id={sessionId ?? undefined}
-            data-ctx-label={branch}
-            disabled={!sessionId}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
-                { bubbles: true, clientX: r.left, clientY: r.bottom }));
-            }}
-            onMouseEnter={() => setBrHov(true)} onMouseLeave={() => setBrHov(false)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t10)", color: brHov ? "var(--purple-h)" : "var(--purple-d)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionId ? "pointer" : "default" }}>
-            <span style={{ color: "var(--purple-g)" }}>⎇</span>{branch}
+            title={sessionProject ? "project — analyze, design system, new session here" : undefined}
+            data-ctx-type={sessionProject ? "project" : undefined}
+            data-ctx-id={sessionProject ?? undefined}
+            data-ctx-label={projectLabel ?? undefined}
+            disabled={!sessionProject}
+            onClick={openMenu}
+            onMouseEnter={() => setProjHov(true)} onMouseLeave={() => setProjHov(false)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", color: projHov ? "var(--txb)" : "var(--txm)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionProject ? "pointer" : "default" }}>
+            {/* The per-project tint dot is the only colour identifying the project now. */}
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
+            {projectLabel || "—"}
           </button>
-        </>
-      )}
-      {run && (
-        <>
-          <span style={hairline(13)} />
-          <RunChip run={run} onClick={onOpenRun} />
-        </>
-      )}
-      <span style={hairline(13)} />
-      <span style={{ fontSize: "var(--t14)", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
-        {selected?.title || "new session"}
-      </span>
+          {branch && (
+            <>
+              <span style={hairline(9)} />
+              {/* The session menu again: "move to a new worktree" lives there,
+                  and the branch you're on is where you notice you want it. */}
+              <button
+                title={sessionId ? "session branch — session actions" : "session branch"}
+                data-ctx-type={sessionId ? "session" : undefined}
+                data-ctx-id={sessionId ?? undefined}
+                data-ctx-label={branch}
+                disabled={!sessionId}
+                onClick={openMenu}
+                onMouseEnter={() => setBrHov(true)} onMouseLeave={() => setBrHov(false)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", color: brHov ? "var(--purple-h)" : "var(--purple-d)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionId ? "pointer" : "default" }}>
+                <span style={{ color: "var(--purple-g)" }}>⎇</span>{branch}
+              </button>
+            </>
+          )}
+          {run && (
+            <>
+              <span style={hairline(9)} />
+              <RunChip run={run} onClick={onOpenRun} />
+            </>
+          )}
+        </div>
+      </div>
       <span style={{ flex: 1, minWidth: 12 }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
-        {isChat && onOpenProject && (
-          <>
-            <HeaderBtn label="⊞ PROJECT" title="project — files, git, worktrees, terminal" onClick={onOpenProject} />
-            <span style={hairline(11)} />
-          </>
-        )}
-        {isChat && onOpenDesign && (
-          <>
-            <HeaderBtn label="◇ DESIGN SYSTEM" title="design system — link, pull & sync" onClick={onOpenDesign} />
-            <span style={hairline(11)} />
-          </>
-        )}
-        {isChat && onOpenTasks && (
-          <>
-            <HeaderBtn label="⌁ TASKS" title="tasks — the linked Teamwork / Jira list, and POST UPDATE" onClick={onOpenTasks} />
-            <span style={hairline(11)} />
-          </>
-        )}
-        {isChat && (
+        {/* No turns, no checkpoints, and no hairline left hanging in front of TIME. */}
+        {isChat && turns.length > 0 && (
           <>
             <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
             <span style={hairline(11)} />

@@ -894,7 +894,7 @@ export function Composer({
             )}
             <span className="act-fence" aria-hidden />
             <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
-              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header)."}>
+              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
               DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
             {onSteer && (
               <button className="act-alt" onClick={steer} disabled={!text.trim()}
@@ -908,7 +908,7 @@ export function Composer({
         ) : (
           <>
             <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
-              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (◇ DESIGN SYSTEM in the chat header)."}>
+              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
               DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
             <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()}>
               SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
