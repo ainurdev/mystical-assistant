@@ -1806,7 +1806,7 @@ export const RunStream = memo(function RunStream({
             // reads as the user speaking, not another agent row; violet + the
             // STEER tag keep it distinct from the turn-opening prompt.
             return (
-              <div key={i} id={ckId(turnId, steerKey(i))} className="my-2 flex scroll-mt-[44px] justify-end">
+              <div key={i} id={ckId(turnId, steerKey(i))} className="my-2 flex scroll-mt-[94px] justify-end">
                 <div
                   className="max-w-[78%] border border-r-[3px] px-3 py-1.5"
                   style={{
@@ -1871,7 +1871,7 @@ export const RunStream = memo(function RunStream({
             );
           case "question":
             return (
-              <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[44px]">
+              <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
                 <QuestionCard
                   questions={event.questions}
                   requestId={event.request_id}

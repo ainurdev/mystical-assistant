@@ -146,7 +146,7 @@ function TurnBlock({
     // data-ctx-*: the dashboard's right-click menu reads the nearest one of
     // these off the target chain, so a click anywhere inside a turn resolves to
     // that turn rather than the terminal pane wrapping it.
-    <div id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[36px]"
+    <div id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       {turn.prompt && (
@@ -310,6 +310,10 @@ export function Transcript({
       ?? Math.min(20000, 80 + (rows[i].kind === "turn"
         ? Math.min(rows[i].turn.events.length, TURN_TAIL) * 20 : 0)),
     overscan: 2,
+    // A jump aims a turn at the list's top, which sits under Terminal's content
+    // padding (62px). This lowers it to 86px, clear of the header island with
+    // its LAST row open: the line scroll-mt-[86px] draws for scrollIntoView.
+    scrollPaddingStart: 24,
     measureElement: (el) => {
       const h = el.getBoundingClientRect().height;
       const k = el.getAttribute("data-key");

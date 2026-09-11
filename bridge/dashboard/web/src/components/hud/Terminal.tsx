@@ -16,8 +16,16 @@ import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
 
-/** Height of the sticky LAST band. The observer insets the scroller's top by
- *  it, and `scroll-mt-[36px]` on the transcript's anchors clears it. */
+/** The header is an island this far in from the chat column's top and sides;
+ *  16 clears the ScrollRail on the right edge. */
+const ISLE_TOP = 8, ISLE_X = 16;
+/** The island's bottom with only its header row: where a prompt counts as
+ *  passed, the moment the island starts covering it. Parked at the top nothing
+ *  has, so the LAST row stays folded. */
+const ISLE_EDGE = ISLE_TOP + 40 + 2;
+/** Height of the LAST row the island opens once a prompt has slid under it.
+ *  Open, the island covers ISLE_EDGE + PEEK_H of the scroller: what
+ *  `scroll-mt-[86px]` on the transcript's anchors (RunStream's: 94) clears. */
 const PEEK_H = 28;
 
 const FRESH_QUOTES = [
@@ -338,7 +346,7 @@ export function Terminal({
   // section header rather than a permanent footnote about the tail. And at the
   // top of the transcript nothing has passed yet, so there is no bar to bury the
   // first message under. The cut-off is the bar's own bottom edge, so a prompt
-  // counts as passed exactly when the bar starts covering it.
+  // counts as passed exactly when the island starts covering it.
   const [peekIdx, setPeekIdx] = useState<number | null>(null);
   useEffect(() => {
     const root = scrollRef.current;
@@ -350,7 +358,7 @@ export function Terminal({
     // how the old peek got stuck showing the tail at the top of the scroll.
     const measure = () => {
       raf = 0;
-      const edge = root.getBoundingClientRect().top + PEEK_H;
+      const edge = root.getBoundingClientRect().top + ISLE_EDGE;
       let best: number | null = null;
       for (const el of root.querySelectorAll<HTMLElement>("[data-prompt-idx]")) {
         if (el.getBoundingClientRect().top >= edge) continue;
@@ -449,10 +457,10 @@ export function Terminal({
         // relatedTarget is where the drag went: still inside, it only crossed a child
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
         onDrop={(e) => { if (!fileDrag(e)) return; e.preventDefault(); setDropping(false); onDropFiles?.(e.dataTransfer.files); }}>
-        {/* Top padding clears the bar so the first prompt starts below
-            it: parked at the top there is nothing under the bar, so no
-            bar — the transcript opens on its first message, not on a
-            header repeating it. */}
+        {/* Top padding clears the island so the first prompt starts
+            below it: parked at the top nothing has slid under it, so the
+            LAST row stays folded and the transcript opens on its first
+            message, not on a header repeating it. */}
         {/* SIGNAL LOG's schema line. A log names its columns once at the top,
             not once per turn, so it lives here and sticks; every other output
             style leaves it `display: none` (index.css, 2B · SIGNAL LOG). */}
@@ -460,7 +468,7 @@ export function Terminal({
           <span>T+</span><span style={{ textAlign: "center" }}>LEVEL</span>
           <span>EVENT</span><span>RESULT</span><span />
         </div>
-        <div ref={contentRef} style={{ padding: `${PEEK_H + 8}px 0 16px` }}>
+        <div ref={contentRef} style={{ padding: `${ISLE_EDGE + 12}px 0 16px` }}>
           {/* A switch that lands inside the delay renders neither: no
               scanline for a load that's already over, and no FreshState
               flashing in front of a transcript that's about to arrive. */}
@@ -473,33 +481,6 @@ export function Terminal({
           )}
         </div>
       </div>
-      {/* Overlay, not a sticky child of the scroller: in-flow it added ~68px
-          to the content the instant it toggled, so the first scroll down from
-          the top lurched everything you were reading (and back up on the way
-          out). An absolute layer costs the scroll range nothing. */}
-      {/* Stays mounted and fades: mounting it on the crossing popped a
-          bar into place mid-scroll. One line tall, always — a fixed height
-          is what lets the observer margin and the anchors' scroll-margin
-          agree on where it ends. */}
-      {!empty && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, pointerEvents: "none", height: PEEK_H, boxSizing: "border-box", padding: "0 14px", background: "color-mix(in srgb, var(--purple) 4%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "center", gap: 10, backdropFilter: "blur(3px)", opacity: showPeek ? 1 : 0, transform: showPeek ? "none" : "translateY(-7px)", visibility: showPeek ? "visible" : "hidden", transition: "opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility .26s" }}>
-          {held.current && (
-            // Keyed on the text so moving to another turn crossfades the
-            // line instead of swapping it under you.
-            <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
-              <span style={{ width: 2, height: 12, background: "var(--purple-g)", flex: "none" }} />
-              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.4, color: "var(--purple-g)", flex: "none" }}>LAST</span>
-              {/* Dimmer than the transcript it points at — it's a pointer, not the text. */}
-              <span style={{ color: "var(--txd)", fontSize: "var(--t11)", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{held.current.text}</span>
-              <button
-                type="button" onClick={onJumpBottom} title="jump to latest"
-                onMouseEnter={() => setCntHov(true)} onMouseLeave={() => setCntHov(false)}
-                style={{ pointerEvents: "auto", appearance: "none", border: 0, background: "transparent", cursor: "pointer", padding: 0, fontFamily: "var(--mono)", fontSize: "var(--t95)", color: cntHov ? "var(--txb)" : "var(--txl)", flex: "none", fontVariantNumeric: "tabular-nums" }}
-              >↓ {held.current.label}</button>
-            </div>
-          )}
-        </div>
-      )}
       {!empty && <ScrollRail turns={turns} scrollRef={scrollRef} />}
       {/* Scrolled off the tail — the way back down. Hidden while parked at
           the bottom, where new output already follows on its own. Stays
@@ -527,8 +508,8 @@ export function Terminal({
           <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST
         </button>
       )}
-      {/* Last, so the whole outgoing session recedes behind it — transcript,
-          LAST peek and rail alike. Only .swapline sits above. */}
+      {/* Last, so the whole outgoing session recedes behind it, transcript
+          and rail alike. Only .swapline sits above. */}
       <div aria-hidden className="swapscrim" />
     </div>
   );
@@ -539,7 +520,7 @@ export function Terminal({
   // session's, the project name the project's), so the row carries no links of
   // its own. The ledger names its numbers, and the only border left is the way
   // back to CHAT from HIST or NEXT: a hairline separates meta, a border marks an
-  // action. Still one 40px row, the height the side columns' caps are cut to.
+  // action.
   // data-ctx-* is what right-click reads; a click re-fires it as a contextmenu
   // anchored under the element, so none of these menus is right-click-only.
   const openMenu = (e: { currentTarget: HTMLElement }) => {
@@ -548,7 +529,7 @@ export function Terminal({
       { bubbles: true, clientX: r.left, clientY: r.bottom }));
   };
   const header = (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 14px", height: 40, flex: "none", minWidth: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px", height: 40, flex: "none", minWidth: 0 }}>
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, flex: "0 1 auto", minWidth: 0 }}>
         <button
           title={sessionId ? "session — rename, pin, move to a worktree…" : undefined}
@@ -627,6 +608,53 @@ export function Terminal({
     </div>
   );
 
+  // The header is an island. In CHAT it floats over the transcript, which runs
+  // to the column's top edge and scrolls under it, and the LAST line folds into
+  // it as a second row instead of being a band of its own. HIST and NEXT keep
+  // the same island in the flow, so their lists never slide under it. `.panel`
+  // makes it the theme's own card: brackets and hard corners in the HUD themes,
+  // a soft radius in the reading ones. The blur sits on a layer of its own so
+  // it isn't the containing block for anything fixed inside the row.
+  const island = (
+    <div className="panel" style={{
+      ...(isChat
+        ? { position: "absolute", top: ISLE_TOP, left: ISLE_X, right: ISLE_X }
+        : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
+      zIndex: 12, flex: "none",
+      border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
+      boxShadow: "0 10px 28px var(--shadow-pop)",
+    }}>
+      <div aria-hidden style={{ position: "absolute", inset: 0, borderRadius: "inherit", background: "color-mix(in srgb, var(--panel) 88%, transparent)", backdropFilter: "blur(10px) saturate(1.15)" }} />
+      <div style={{ position: "relative" }}>
+        {header}
+        {isChat && !empty && (
+          // Stays mounted and folds: mounting it on the crossing popped a row
+          // into place mid-scroll. A fixed height is what lets the observer's
+          // edge and the anchors' scroll-margin agree on where the island ends.
+          <div aria-hidden={!showPeek || undefined} style={{ height: showPeek ? PEEK_H : 0, opacity: showPeek ? 1 : 0, overflow: "hidden", transition: "height .26s cubic-bezier(.2,.8,.2,1), opacity .2s ease" }}>
+            <div style={{ height: PEEK_H, boxSizing: "border-box", padding: "0 12px", borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", alignItems: "center", gap: 10 }}>
+              {held.current && (
+                // Keyed on the text so moving to another turn crossfades the
+                // line instead of swapping it under you.
+                <div key={held.current.text} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, animation: "tickfade .22s ease both" }}>
+                  <span style={{ width: 2, height: 12, background: "var(--purple-g)", flex: "none" }} />
+                  <span style={{ fontSize: "var(--t9)", letterSpacing: 1.4, color: "var(--purple-g)", flex: "none" }}>LAST</span>
+                  {/* Dimmer than the transcript it points at — it's a pointer, not the text. */}
+                  <span style={{ color: "var(--txd)", fontSize: "var(--t11)", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{held.current.text}</span>
+                  <button
+                    type="button" onClick={onJumpBottom} title="jump to latest" tabIndex={showPeek ? 0 : -1}
+                    onMouseEnter={() => setCntHov(true)} onMouseLeave={() => setCntHov(false)}
+                    style={{ appearance: "none", border: 0, background: "transparent", cursor: "pointer", padding: 0, fontFamily: "var(--mono)", fontSize: "var(--t95)", color: cntHov ? "var(--txb)" : "var(--txl)", flex: "none", fontVariantNumeric: "tabular-nums" }}
+                  >↓ {held.current.label}</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div
       data-ctx-type="terminal"
@@ -634,10 +662,9 @@ export function Terminal({
       // already say where it starts, and a border here would draw them twice.
       // Pinned to the centre track: a row with no column is placed before the
       // auto-placed side columns, and would take the first track from SESSIONS.
-      style={{ gridColumn: 2, gridRow, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      style={{ position: "relative", gridColumn: 2, gridRow, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
-      {header}
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />
+      {island}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
