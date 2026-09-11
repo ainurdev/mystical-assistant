@@ -831,6 +831,7 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
   // Consumed by the first pane that connects, then cleared so switching tabs or
   // opening another terminal doesn't run it again.
   const [preload, setPreload] = useState(initialCommand ?? "");
+  const ai = useAiFeatures();   // GENERATE asks Claude — hidden while RUN COMMAND is off
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
@@ -945,7 +946,7 @@ function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
         <input value={runCmd} onChange={(e) => setRunCmd(e.target.value)} placeholder="command to run this project…"
           style={{ flex: 1, minWidth: 120, background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", padding: "7px 9px" }} />
         <span title="auto-detected" style={{ fontSize: "var(--t8)", letterSpacing: ".5px", color: "var(--txf)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{runSource}</span>
-        {detected && !runCmd && (
+        {ai.preview && detected && !runCmd && (
           <button onClick={() => void genRun()} title="complex project — let Claude generate the run command" {...hp("gen")}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "gen" ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "7px 11px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ color: "var(--purple)" }}>✦</span>{genBusy ? "THINKING…" : "GENERATE"}</button>

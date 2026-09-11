@@ -8,6 +8,7 @@ import { ignoredMatcher } from "../../lib/gitignored";
 import { Skeleton } from "../ui";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import { draftKey, patchDraft, useDraft, watched } from "../../lib/commitdraft";
+import { useAiFeatures } from "../../lib/ai";
 import { notify } from "./Notifications";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
@@ -81,6 +82,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile, onReveal 
   // panel on every tab/session switch, and a GENERATE in flight outlives that.
   const key = draftKey(project, branch);
   const { msg, gen } = useDraft(changedOnly ? key : null);
+  const ai = useAiFeatures();   // GENERATE is hidden while commit messages are off
   const setMsg = (m: string) => patchDraft(key, { msg: m });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
@@ -340,8 +342,8 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile, onReveal 
                 gets the full width as the panel's one primary action. */}
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               {[
-                { k: "gen", l: gen ? "WRITING…" : "✧ GENERATE", t: "write the message from the diff",
-                  on: () => void generate(), off: gen || busy || !changed.size, grow: 1 },
+                ...(ai.commitmsg ? [{ k: "gen", l: gen ? "WRITING…" : "✧ GENERATE", t: "write the message from the diff",
+                  on: () => void generate(), off: gen || busy || !changed.size, grow: 1 }] : []),
                 { k: "ps", l: "↑ PUSH", t: "push to the remote", on: () => void push(), off: busy, grow: 0 },
               ].map((b) => (
                 <button key={b.k} onClick={b.on} disabled={b.off} title={b.t}

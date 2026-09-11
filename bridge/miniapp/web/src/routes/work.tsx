@@ -39,6 +39,8 @@ function WorkPage() {
     queryFn: () => api.getIssues(),
     refetchInterval: 60000,
   });
+  // NEXT UP hides with its AI switch — the board's own read says which way it is.
+  const nextup = useQuery({ queryKey: ["nextup"], queryFn: () => api.getNextUp() });
   const queued = (queues.data?.queues ?? []).reduce(
     (n, q) => n + q.items.filter((i) => i.status === "queued").length,
     0,
@@ -46,7 +48,7 @@ function WorkPage() {
 
   const TABS: { id: Tab; label: string }[] = [
     { id: "queue", label: `QUEUE${queued ? ` · ${queued}` : ""}` },
-    { id: "next", label: "NEXT UP" },
+    ...(nextup.data?.enabled ? [{ id: "next" as Tab, label: "NEXT UP" }] : []),
     { id: "issues", label: `ISSUES${issues.data?.open_count ? ` · ${issues.data.open_count}` : ""}` },
   ];
 

@@ -3278,6 +3278,7 @@ function ProfilesPanel({
 }) {
   const [profiles, setProfiles] = useState<Profile[]>(loadProfiles);
   const [name, setName] = useState("");
+  const ai = useAiFeatures();   // the PONYTAIL bit hides with its switch
 
   const write = (next: Profile[]) => {
     setProfiles(next);
@@ -3328,7 +3329,7 @@ function ProfilesPanel({
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? RULE : undefined }}>
           <span style={{ fontSize: "var(--t12)", color: "var(--txb)", flex: "none" }}>{p.name}</span>
           <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {describe(p)}
+            {describe(ai.ponytail ? p : { ...p, ponytail: "" })}
           </span>
           <span style={{ flex: 1 }} />
           <button onClick={() => apply(p)} style={btn("var(--ok)")}>APPLY</button>

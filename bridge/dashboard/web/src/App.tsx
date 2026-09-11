@@ -1527,14 +1527,15 @@ export function App() {
       id: "skills", label: "Skills", icon: <Sparkles {...RAIL} />,
       render: () => <SkillsPanel project={sessionProject} />,
     },
-    {
+    // Hidden while LESSONS is off, like ANALYZE's copy — nothing is being written.
+    ...(ai.learn ? [{
       id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true,
       badge: unreadLessons ? railCount(unreadLessons) : null,
       render: () => (
         <LearnPanel project={sessionProject} read={lessonsRead}
           onRead={(k) => setLessonsRead((r) => new Set(r).add(k))} />
       ),
-    },
+    }] : []),
     {
       // No `scope`: the shelf spans repos and holds a search and a reading
       // position, so a project switch must not remount it.
@@ -1603,8 +1604,8 @@ export function App() {
   }, [agentOpts, agentId]);
 
   // Switched an extra off while looking at the view it owns: the tab is gone, so
-  // sitting there would strand you on a screen with no way back to it. (The MEM
-  // and TEACH panel tabs need no guard — RightPanel falls back to its first tab.)
+  // sitting there would strand you on a screen with no way back to it. (The
+  // LEARN rail tab needs no guard — RightPanel falls back to its first tab.)
   useEffect(() => {
     if (view === "next" && !ai.nextup) toChat();
   }, [view, ai]);
@@ -1720,9 +1721,10 @@ export function App() {
       // its own submenu, so share and relocate live here as plain rows.
       items.push({ icon: "⋯", label: "More", children: [
         { icon: "⧉", label: "Copy session name", onClick: () => s && copy(s.title || "session") },
-        { icon: "↻", label: "Regenerate title",
+        // AUTO TITLES off: the bridge refuses a regenerate, so don't offer one.
+        ...(ai.title ? [{ icon: "↻", label: "Regenerate title",
           hint: "let the model name it from the whole session",
-          onClick: () => void regenerateTitle(ctxMenu.id) },
+          onClick: () => void regenerateTitle(ctxMenu.id) }] : []),
         { icon: "⧉", label: "Duplicate session",
           hint: "copy the transcript into a new one",
           onClick: () => void duplicateSession(ctxMenu.id) },
@@ -1813,7 +1815,7 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets]);
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets, ai]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
@@ -2046,7 +2048,7 @@ export function App() {
                 gridRow={settings.rightOpen ? "1 / 3" : "1"}
                 composer={
                   <>
-                    {checking !== undefined && <CheckingBanner prompt={checking} />}
+                    {ai.relevance && checking !== undefined && <CheckingBanner prompt={checking} />}
                     {held && (
                       <SuggestNewSessionCard
                         currentTitle={selected?.title ?? ""}
