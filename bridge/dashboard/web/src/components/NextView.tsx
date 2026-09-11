@@ -18,8 +18,9 @@ function when(ts: number | null): string {
 
 /** The ranked next steps across recently touched repos. Serves the cached board
  *  instantly; REFRESH is the only thing that spends anything, and only on repos
- *  whose git state has moved since last time. */
-export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
+ *  whose git state has moved since last time. Given a `project` it is the fresh
+ *  session screen's cut: that repo's top three, without the page's padding. */
+export function NextView({ onStart, project }: { onStart: (item: NextItem) => void; project?: string | null }) {
   const [board, setBoard] = useState<NextBoard | null>(null);
   const [busy, setBusy] = useState(false);
   const poll = useRef<number | null>(null);
@@ -56,10 +57,11 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
     }, 3000);
   }
 
-  const items = board?.items ?? [];
+  const all = board?.items ?? [];
+  const items = project ? all.filter((it) => it.project === project).slice(0, 3) : all;
 
   return (
-    <div style={{ padding: "18px 18px 40px" }}>
+    <div style={{ padding: project ? 0 : "18px 18px 40px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 14 }}>
         <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>NEXT UP</span>
         <span style={{ fontSize: "var(--t9)", color: "var(--txd)" }}>
@@ -69,6 +71,7 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
         <button
           onClick={() => void refresh()}
           disabled={busy}
+          title="Re-scouts each repo you worked in this week whose git state moved (up to 6), then ranks them — a free provider first, then haiku. Nothing moved, nothing spent."
           style={{
             appearance: "none",
             cursor: busy ? "default" : "pointer",

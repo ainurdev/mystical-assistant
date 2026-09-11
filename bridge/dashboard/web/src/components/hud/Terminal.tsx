@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import type { AnswerSelection, DevServerInfo, EnrichedSession, NextItem, SessionBrief } from "../../api";
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { api, type AnswerSelection, type DevServerInfo, type EnrichedSession, type GitCommit, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
-import { projectName, projectTint } from "../../lib/surfaces";
+import { ago, projectName, projectTint } from "../../lib/surfaces";
 import { hairline } from "../../lib/shell";
 import { useLoadingPhase } from "../../lib/loadingPhase";
+import { useAiFeatures } from "../../lib/ai";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
 import type { OpenFile } from "../Markdown";
@@ -70,10 +71,26 @@ const FACES: { eyeL: EyeV; eyeR: EyeV; mouth: MouthV }[] = [
   { eyeL: "open", eyeR: "line", mouth: "smile" },   // a wink
 ];
 
-/** The empty-session intro: the mystical assistant face + a rotating quote. */
-function FreshState({ project }: { project: string | null }) {
+/** The empty-session intro: the mystical assistant face + a rotating quote,
+ *  then where the project stands — its last commit, a RUN for its saved dev
+ *  command, and NEXT's items for this repo. All reads of what the bridge already
+ *  keeps; the one spend is NEXT's REFRESH, behind the NEXT-UP BOARD switch. */
+function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
+  project: string | null;
+  branch?: string | null;
+  run?: DevServerInfo | null;
+  onOpenRun?: () => void;
+  onStartNext: (item: NextItem) => void;
+}) {
   const [qi, setQi] = useState(0);
   const [face, setFace] = useState(0);
+  const ai = useAiFeatures();
+  const [commit, setCommit] = useState<GitCommit | null>(null);
+  // undefined while asking (or unreadable): no run slot at all. null: nothing
+  // saved, so the slot offers the TERMINAL tab, where the command is set.
+  const [runCmd, setRunCmd] = useState<string | null | undefined>(undefined);
+  const [starting, setStarting] = useState(false);
+  const [runErr, setRunErr] = useState("");
   useEffect(() => {
     const id = setInterval(() => setQi((q) => q + 1), 7200);
     return () => clearInterval(id);
@@ -83,6 +100,39 @@ function FreshState({ project }: { project: string | null }) {
     const id = setInterval(() => setFace((f) => (f + 1) % FACES.length), 10000);
     return () => clearInterval(id);
   }, []);
+  useEffect(() => {
+    setCommit(null);
+    setRunCmd(undefined);
+    if (!project) return;
+    let live = true;
+    api.gitLog(project, 1, branch || undefined)
+      .then((r) => { if (live) setCommit(r.commits[0] ?? null); })
+      .catch(() => {});
+    // The project's run, not the session's worktree: the one the TERMINAL tab
+    // starts and `run` (App's sessionRun) is matched against.
+    api.projectSettings({ project })
+      .then((s) => { if (live) setRunCmd(s.run_cmd); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [project, branch]);
+  // Any move of the run — up, exited, restarted — settles STARTING…
+  useEffect(() => { setStarting(false); }, [run?.status, run?.pid]);
+
+  async function start() {
+    if (!project || starting) return;
+    setStarting(true);
+    setRunErr("");
+    try {
+      const r = await api.server("start", { project });
+      // Up: the 3s state poll brings the header's :port chip, and this slot goes.
+      if (r.server?.status !== "running") { setRunErr(r.message || "didn't start"); setStarting(false); }
+    } catch (e) {
+      setRunErr((e as Error).message || "start failed");
+      setStarting(false);
+    }
+  }
+  const runSlot = run?.status === "running" ? null
+    : runCmd ? "run" : runCmd === null && onOpenRun ? "setup" : null;
   return (
     <div style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, textAlign: "center", animation: "mfadeup .5s ease both" }}>
       <div style={{ position: "relative", width: 150, height: 150, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -127,6 +177,37 @@ function FreshState({ project }: { project: string | null }) {
         <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>awaiting your command</span>
         <span style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
       </div>
+      {(commit || runSlot) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, maxWidth: "min(560px, 100%)", minWidth: 0, fontFamily: "var(--mono)", fontSize: "var(--t10)", color: "var(--txd)" }}>
+          {commit && (
+            <span title={`${commit.sha.slice(0, 7)} · ${commit.author}`} style={{ display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>LAST COMMIT</span>
+              <span style={{ color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{commit.subject}</span>
+              <span style={{ flex: "none" }}>{ago(commit.ts)}</span>
+            </span>
+          )}
+          {commit && runSlot && <span style={hairline(13)} />}
+          {/* RUN is an action, so it wears the border; SET UP RUN only opens a
+              tab, so it stays bare — the header's rule. */}
+          {runSlot === "run" && (
+            <button type="button" onClick={() => void start()} disabled={starting} title={runErr || `start ${runCmd}`}
+              style={{ appearance: "none", flex: "none", cursor: starting ? "default" : "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "4px 10px", background: "transparent", border: `1px solid color-mix(in srgb, ${runErr ? "var(--err) 45%" : "var(--acc) 30%"}, transparent)`, color: runErr ? "var(--err)" : starting ? "var(--txd)" : "var(--acc)" }}>
+              {starting ? "STARTING…" : runErr ? "FAILED" : "▸ RUN"}
+            </button>
+          )}
+          {runSlot === "setup" && (
+            <button type="button" onClick={onOpenRun} title="No run command saved for this project — set one in its TERMINAL tab"
+              style={{ appearance: "none", flex: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: 0, border: 0, background: "transparent", color: "var(--txd)" }}>
+              SET UP RUN
+            </button>
+          )}
+        </div>
+      )}
+      {ai.nextup && project && (
+        <div style={{ width: "min(560px, 100%)", textAlign: "left" }}>
+          <NextView project={project} onStart={onStartNext} />
+        </div>
+      )}
     </div>
   );
 }
@@ -199,7 +280,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, onOpenProject, run, onOpenRun,
+  onOpenDesign, onOpenProject, run, onOpenRun, onDropFiles,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -251,6 +332,8 @@ export function Terminal({
   run?: DevServerInfo | null;
   /** Open this project's TERMINAL tab (the run bar, logs and STOP). */
   onOpenRun?: () => void;
+  /** Files dropped on a fresh session's screen — the composer's attachments. */
+  onDropFiles?: (files: FileList) => void;
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
@@ -260,6 +343,11 @@ export function Terminal({
   const [cntHov, setCntHov] = useState(false);
   const isChat = view === "chat";
   const empty = isChat && turns.length === 0;
+  // A fresh session's whole screen is a drop target: a file dragged anywhere on
+  // it lands where a drop on the prompt box would. Files only — a row or text
+  // drag passes through untouched.
+  const [dropping, setDropping] = useState(false);
+  const fileDrag = (e: DragEvent) => empty && !!onDropFiles && e.dataTransfer.types.includes("Files");
 
   // The sticky peek names the turn you are *inside*: the last prompt that has
   // slid under the bar, not the session's last one. Two things fall out of that.
@@ -365,10 +453,19 @@ export function Terminal({
   const body = (
     <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
+      {dropping && (
+        <div aria-hidden style={{ position: "absolute", inset: 10, zIndex: 7, pointerEvents: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 26, border: "1px dashed color-mix(in srgb, var(--acc) 55%, transparent)", background: "color-mix(in srgb, var(--acc) 5%, transparent)", fontSize: "var(--t10)", letterSpacing: 3, color: "var(--acc)" }}>
+          DROP TO ATTACH
+        </div>
+      )}
       {/* OUTPUT STYLE is the whole session's idiom, not just its widgets: one
           attribute here and the ledger, the agent block, your prompt and the
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
-      <div ref={scrollRef} data-style={hud?.toolStyle ?? "stamp"} data-bg={hud?.chatBg ?? "none"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}>
+      <div ref={scrollRef} data-style={hud?.toolStyle ?? "stamp"} data-bg={hud?.chatBg ?? "none"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
+        onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
+        // relatedTarget is where the drag went: still inside, it only crossed a child
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
+        onDrop={(e) => { if (!fileDrag(e)) return; e.preventDefault(); setDropping(false); onDropFiles?.(e.dataTransfer.files); }}>
         {/* Top padding clears the bar so the first prompt starts below
             it: parked at the top there is nothing under the bar, so no
             bar — the transcript opens on its first message, not on a
@@ -387,7 +484,7 @@ export function Terminal({
           {empty && slowLoad ? (
             <ChannelTuning step={boot} />
           ) : empty && loading ? null : empty ? (
-            <FreshState project={sessionProject} />
+            <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} onStartNext={onStartNext} />
           ) : (
             <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
           )}

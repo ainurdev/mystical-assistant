@@ -186,7 +186,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
 export function Composer({
   disabled, running, model, models, usage, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
-  queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause, pills,
+  queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
 }: {
   disabled: boolean;
   running: boolean;
@@ -236,6 +236,9 @@ export function Composer({
   // Session readouts (agents, goal) rendered inside the composer's box, so a
   // lone pill never sits on bare panel between transcript and border.
   pills?: ReactNode;
+  // Pointed at addFiles, so a file dropped on the fresh session screen lands
+  // here the way one dropped on the box does.
+  fileSink?: { current: ((files: FileList) => void) | null };
 }) {
   const text = draft;
   const setText = onDraft;
@@ -465,6 +468,11 @@ export function Composer({
       r.readAsDataURL(f);
     });
   }
+  useEffect(() => {
+    if (!fileSink) return;
+    fileSink.current = addFiles;
+    return () => { fileSink.current = null; };
+  });
   // Paste and drop go through here, so this has to accept everything the file
   // picker does — anything, now — otherwise a dragged-in file vanishes with no
   // error, which reads as the app being broken. Pasted text is kind "string",

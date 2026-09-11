@@ -1450,6 +1450,9 @@ export function App() {
       (s) => s.dir === sessionProject || s.project === sessionProject) ?? null,
     [state, sessionProject]);
 
+  // The composer's addFiles, for the fresh screen's drop target (Terminal).
+  const composerFiles = useRef<((files: FileList) => void) | null>(null);
+
   // Footer git state for that tree. Same 10s cadence as the project badges;
   // clears on switch so the footer never shows the last session's branch.
   // Clearing is its own effect: a push bumps gitNonce to re-read now, and that
@@ -2022,6 +2025,7 @@ export function App() {
                 onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
+                onDropFiles={(f) => composerFiles.current?.(f)}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2068,6 +2072,7 @@ export function App() {
                       onEjectQueued={(id) => void ejectQueued(id)}
                       project={sessionProject}
                       onOpenMap={ai.graph && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
+                      fileSink={composerFiles}
                     />
                   </>
                 }

@@ -62,9 +62,10 @@ FEATURES = (
      "about": "Looks at the repos with recent session activity — dirty worktrees, "
               "unpushed commits, open issues, sessions that stopped mid-task — and "
               "ranks what is worth doing next, one item per click to start a "
-              "session on it. Only a repo whose git state moved is re-scouted, and "
-              "a free provider is tried before Claude quota. Off, the board is "
-              "hidden entirely."},
+              "session on it. A new session's empty screen shows the top three "
+              "for its own repo. Only a repo whose git state moved is re-scouted, "
+              "and a free provider is tried before Claude quota. Off, the board is "
+              "hidden entirely, that screen included."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",
