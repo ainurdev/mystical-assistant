@@ -210,6 +210,14 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
 
 type Hit = { tab: Tab; sec: string; row?: string; hint?: string };
 
+/** AI TUNING rows by the switch they tune: with it off they're noise, so the
+ *  panel and the search both drop them.
+ *  ponytail: matched on the env name's prefix, so a knob named any other way
+ *  stays visible; give envsettings a `feature` field if one ever is. */
+const TUNES: Record<string, string> = { RELEVANCE_: "relevance", NEXTUP_: "nextup" };
+const tunesOff = (key: string, ai: Record<string, boolean>) =>
+  Object.entries(TUNES).some(([pre, f]) => key.startsWith(pre) && !ai[f]);
+
 function search(q: string, env: EnvSetting[], hidden: Set<string>): Hit[] {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
@@ -2178,6 +2186,7 @@ function EnvPanel() {
   // Which row was refused, and why. A rejection belongs beside the field that
   // caused it — at the foot of eight scrolling blocks nobody sees it.
   const [err, setErr] = useState<{ key: string; message: string } | null>(null);
+  const ai = useAiFeatures();   // AI TUNING rows go with the switch they tune
 
   useEffect(() => {
     void api.envSettings().then((r) => setRows(r.settings)).catch(() => setRows([]));
@@ -2199,7 +2208,8 @@ function EnvPanel() {
   if (!rows.length)
     return <Placeholder icon={TriangleAlert}>This bridge is running a build without the settings registry. Restart it.</Placeholder>;
 
-  const groups = [...new Set(rows.map((r) => r.group))];
+  const shown = rows.filter((r) => !tunesOff(r.key, ai));
+  const groups = [...new Set(shown.map((r) => r.group))];
   const pending = rows.some((r) => r.source === "saved" && !r.live);
 
   return (
@@ -2216,7 +2226,7 @@ function EnvPanel() {
           }
         >
           <div style={CARD}>
-            {rows.filter((r) => r.group === g).map((s, i) => {
+            {shown.filter((r) => r.group === g).map((s, i) => {
               const desc = (
                 <>
                   {s.hint}
@@ -3516,7 +3526,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const hidden = new Set([
     ...(settings.pushSound ? [] : ["PER EVENT"]),
   ]);
-  const hits = search(q, env, hidden);
+  const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
     setTab(h.tab);
