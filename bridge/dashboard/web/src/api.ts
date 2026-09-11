@@ -130,7 +130,9 @@ export type RunEvent =
   // `images`: screenshots sent with the steer, as upload-dir paths (same as
   // tool_done's). Steers recorded before this landed carry none.
   | { type: "steer"; text: string; images?: string[] }
-  | { type: "permission"; request_id: string; tool_name: string; summary: string }
+  // `detail`: the full tool input, on MCP calls — a tracker comment is judged
+  // on its whole text, not on 120 chars of it.
+  | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
   | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
@@ -303,9 +305,60 @@ export interface ProjectSettings {
   run_cmd: string | null;
   prod_url: string | null;
   design_project: string | null;
+  /** "<connection id>:<tracker project id or key>" — see bridge/trackers.py */
+  tracker: string | null;
+  tracker_label: string | null;
   default_cmd: string;
   log_path: string;
 }
+
+// --- task trackers (Teamwork / Jira) — bridge/trackers.py -------------------
+export interface TrackerConnection {
+  id: string;
+  kind: "teamwork" | "jira";
+  name: string;
+  site: string;
+  email: string;
+  me: string;
+  cloud_id: string;
+  token: string;       // masked: "…" + last 4
+  mcp_server: string;  // the MCP entry an update turn switches on
+  mcp: boolean;        // that entry exists in ~/.claude.json
+  mcp_cmd: string;     // how to add it when it doesn't
+}
+export interface TrackerTask {
+  key: string;         // "ACME-12" | "tw-4512"
+  title: string;
+  status: string;
+  due: string;         // YYYY-MM-DD or ""
+  priority: string;
+  assignee: string;
+  mine: boolean;
+  url: string;
+  updated: string;
+  description: string;
+}
+export interface TrackerNext { kind: string; name: string; date: string }
+export interface TrackerTasks {
+  linked: boolean;
+  kind: "teamwork" | "jira" | "";
+  name: string;
+  label: string;
+  url: string;
+  me: string;
+  read: number | null;
+  stale: boolean;
+  error: string;
+  open: number;
+  done: number | null;
+  overdue: number;
+  due_week: number;
+  next: TrackerNext[];
+  tasks: TrackerTask[];
+  /** the task the given session's branch names, when a session_id was passed */
+  session_key?: string;
+}
+export interface TrackerStatus { id: string; name: string }
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -1306,7 +1359,8 @@ export const api = {
     req<ProjectSettings>(`/local/project/settings?${ctxQuery(ctx)}`),
   setProjectSettings: (
     ctx: RunCtx,
-    patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string },
+    patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string;
+             tracker?: string; tracker_label?: string },
   ) =>
     req<{
       ok: boolean;
@@ -1315,6 +1369,8 @@ export const api = {
       design_project?: string | null;
       hidden?: boolean;
       name?: string | null;
+      tracker?: string | null;
+      tracker_label?: string | null;
     }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
@@ -1329,6 +1385,27 @@ export const api = {
       method: "POST",
       body: { project, title, body },
     }),
+  // --- task trackers ---
+  trackers: () => req<{ connections: TrackerConnection[] }>("/local/trackers"),
+  addTracker: (body: { kind: "teamwork" | "jira"; name: string; site: string; email?: string; token: string }) =>
+    req<{ ok: boolean; connection: TrackerConnection }>("/local/trackers", {
+      method: "POST", body: { op: "add", ...body },
+    }),
+  removeTracker: (id: string) =>
+    req<{ ok: boolean }>("/local/trackers", { method: "POST", body: { op: "remove", id } }),
+  trackerProjects: (conn: string) =>
+    req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
+  trackerTasks: (project: string, sessionId?: string | null) =>
+    req<TrackerTasks>(`/local/tracker/tasks?project=${encodeURIComponent(project)}${
+      sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`),
+  trackerStatuses: (project: string, key: string) =>
+    req<{ statuses: TrackerStatus[] }>(
+      `/local/tracker/statuses?project=${encodeURIComponent(project)}&key=${encodeURIComponent(key)}`),
+  /** The update turn: a comment (and a status) posted from the session's own
+   *  context, every write behind an Allow card. */
+  trackerUpdate: (body: { project: string; session_id: string; key: string; status_id?: string;
+                          status_name?: string; note?: string }) =>
+    req<{ job_id: string; session_id: string }>("/local/tracker/update", { method: "POST", body }),
   // --- host vitals + weather (WORKSPACE panel ambient widgets) ---
   sysinfo: () => req<HostStats>("/local/sysinfo"),
   weather: () => req<Weather>("/local/weather"),

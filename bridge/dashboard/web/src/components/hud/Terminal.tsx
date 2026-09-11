@@ -280,7 +280,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow,
+  onOpenDesign, onOpenProject, onOpenTasks, run, onOpenRun, onDropFiles, chrome, gridRow,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -328,6 +328,8 @@ export function Terminal({
   onOpenDesign?: () => void;
   /** Open the project modal on its default tab. */
   onOpenProject?: () => void;
+  /** Open this project's TASKS tab (the linked Teamwork / Jira list). */
+  onOpenTasks?: () => void;
   /** The dev server the bridge is running for this project, if any. */
   run?: DevServerInfo | null;
   /** Open this project's TERMINAL tab (the run bar, logs and STOP). */
@@ -619,6 +621,12 @@ export function Terminal({
         {isChat && onOpenDesign && (
           <>
             <HeaderBtn label="◇ DESIGN SYSTEM" title="design system — link, pull & sync" onClick={onOpenDesign} />
+            <span style={hairline(11)} />
+          </>
+        )}
+        {isChat && onOpenTasks && (
+          <>
+            <HeaderBtn label="⌁ TASKS" title="tasks — the linked Teamwork / Jira list, and POST UPDATE" onClick={onOpenTasks} />
             <span style={hairline(11)} />
           </>
         )}

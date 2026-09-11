@@ -30,6 +30,7 @@ import {
   type McpInfo,
   type StartupState,
   type TimedEvent,
+  type TrackerConnection,
   type UpdateInfo,
   type Weather,
 } from "../../api";
@@ -2279,6 +2280,127 @@ function EnvPanel() {
   );
 }
 
+/* TRACKERS — the Teamwork / Jira connections (bridge/trackers.py). What exists
+   on the machine; which repo uses which lives in ANALYZE, beside the repo. */
+const KIND_LABEL = { teamwork: "TEAMWORK", jira: "JIRA" } as const;
+
+function TrackersPanel() {
+  const [rows, setRows] = useState<TrackerConnection[] | null>(null);
+  const [gone, setGone] = useState(false);     // an old bridge: the route 404s
+  const [kind, setKind] = useState<"teamwork" | "jira">("teamwork");
+  const [name, setName] = useState("");
+  const [site, setSite] = useState("");
+  const [email, setEmail] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+
+  useEffect(() => {
+    void api.trackers().then((r) => setRows(r.connections)).catch(() => { setRows([]); setGone(true); });
+  }, []);
+
+  async function add() {
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await api.addTracker({ kind, name, site, email: kind === "jira" ? email : undefined, token });
+      setRows((p) => [...(p ?? []), r.connection].sort((a, b) => a.name.localeCompare(b.name)));
+      setName(""); setSite(""); setEmail(""); setToken("");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not connect");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await api.removeTracker(id);
+      setRows((p) => (p ?? []).filter((c) => c.id !== id));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not remove");
+    }
+  }
+
+  if (rows === null) return <Placeholder icon={LoaderCircle} spin>Reading the tracker connections…</Placeholder>;
+  if (gone) return <Placeholder icon={TriangleAlert}>This bridge is running a build without trackers. Restart it.</Placeholder>;
+
+  const btn = (k: string, on: boolean): CSSProperties => ({
+    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
+    padding: "6px 12px", flex: "none",
+    border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 25%, transparent)"}`,
+    background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : hov === k ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
+    color: on ? "var(--txb)" : "var(--txm)",
+  });
+
+  return (
+    <>
+      {rows.length > 0 && (
+        <div style={CARD}>
+          {rows.map((c, i) => (
+            <Row key={c.id} first={!i}
+              label={<span>{c.name} <span style={{ color: "var(--txd)", letterSpacing: 1 }}>· {KIND_LABEL[c.kind]}</span></span>}
+              desc={
+                <>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.site}</span>
+                  {c.me && <> · as {c.me}</>}
+                  {" · token "}<span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.token}</span>
+                  <div style={{ marginTop: 4, color: c.mcp ? "var(--txd)" : "var(--warn)" }}>
+                    {c.mcp
+                      ? <>MCP entry <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.mcp_server}</span> ready — updates can post</>
+                      : <>MCP entry <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.mcp_server}</span> missing — updates cannot post until you run{" "}
+                          <code style={{ fontFamily: "'JetBrains Mono',monospace", userSelect: "all" }}>{c.mcp_cmd}</code>
+                          {" "}and sign in once{c.kind === "jira" ? " (a private window for a different Atlassian account)" : ""}.</>}
+                  </div>
+                </>
+              }
+            >
+              <button onClick={() => void remove(c.id)} {...hp(`rm:${c.id}`)}
+                style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === `rm:${c.id}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--err)" }}>
+                REMOVE
+              </button>
+            </Row>
+          ))}
+        </div>
+      )}
+      <div style={{ ...CARD, marginTop: rows.length ? 11 : 0 }}>
+        <Row first label="ADD A CONNECTION"
+          desc={kind === "teamwork"
+            ? "Your API key: Teamwork ▸ profile ▸ Edit My Details ▸ API & Mobile. Site is your Teamwork address."
+            : "An Atlassian API token (id.atlassian.com ▸ Security ▸ API tokens) with the account email it belongs to. Site is the atlassian.net address; a scoped token works too."}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => setKind("teamwork")} {...hp("k:tw")} style={btn("k:tw", kind === "teamwork")}>TEAMWORK</button>
+            <button onClick={() => setKind("jira")} {...hp("k:jira")} style={btn("k:jira", kind === "jira")}>JIRA</button>
+          </div>
+        </Row>
+        <div style={LINE}>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name (e.g. ACME)" spellCheck={false}
+            style={{ ...field, flex: "1 1 140px" }} />
+          <input value={site} onChange={(e) => setSite(e.target.value)} spellCheck={false}
+            placeholder={kind === "teamwork" ? "acme.teamwork.com" : "acme.atlassian.net"}
+            style={{ ...field, flex: "2 1 200px", fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0 }} />
+        </div>
+        <div style={LINE}>
+          {kind === "jira" && (
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="account email" spellCheck={false}
+              style={{ ...field, flex: "1 1 180px", letterSpacing: 0 }} />
+          )}
+          <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder={kind === "teamwork" ? "API key" : "API token"}
+            style={{ ...field, flex: "2 1 200px", fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0 }} />
+          <button onClick={() => void add()} disabled={busy || !site.trim() || !token.trim() || (kind === "jira" && !email.trim())}
+            {...hp("add")}
+            style={{ ...btn("add", false), border: "1px solid var(--acc)", color: "var(--txb)", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "TESTING…" : "TEST & ADD"}
+          </button>
+        </div>
+        {err && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 8 }}>{err}</div>}
+      </div>
+    </>
+  );
+}
+
 /* MCP — every server this machine can reach, and the four things you actually
    do to one: add it, drop it, sign in again when its token expires, or forget
    the token entirely. `claude mcp` runs all of it, so what shows here is what a
@@ -4025,6 +4147,16 @@ export function SettingsModal(props: SettingsModalProps) {
                   info="Updating pulls the bridge's own checkout, rebuilds this dashboard and restarts the bridge; running turns resume on their own."
                 >
                   <UpdatePanel onFeed={onFeed} />
+                </Section>
+
+                <Section
+                  title="TRACKERS"
+                  icon={ListTodo}
+                  top
+                  desc="Teamwork and Jira, by API token. A repo is linked to one of their projects from ANALYZE ▸ LINK TASKS; posting an update runs in the session with the tracker's MCP entry on for that one turn."
+                  info="The token is kept beside the session store (mode 0600), sent only to the tracker's own API, and never shown again in full. Reading — the TASKS tab, the first-turn digest, NEXT UP — is the bridge's own HTTP and spends no model call. Writing goes through the session: its claude turn gets the tracker's MCP server for that turn only, in manual mode, with an ask rule on the whole server, so every comment and status change shows an Allow card with the full text before it posts. Teamwork's MCP entry is shared; each Jira site needs its own (Atlassian's login is per site) — the row says how to add it."
+                >
+                  <TrackersPanel />
                 </Section>
 
                 {/* Everything config.py reads from the environment, which until

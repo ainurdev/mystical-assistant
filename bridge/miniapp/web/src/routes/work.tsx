@@ -3,15 +3,16 @@ import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, RefreshCw, X } from "lucide-react";
 import { rootRoute } from "./root";
-import { api, type Issue, type NextUpItem, type QueueSnapshot } from "../lib/api";
+import { api, type Issue, type NextUpItem, type QueueSnapshot, type TrackerTask } from "../lib/api";
 import { useChat } from "../lib/chat";
-import { Skeleton } from "../components/ui";
+import { Banner, Skeleton } from "../components/ui";
 
 /* WORK — everything you could hand Claude next, in one tab: prompts already
-   queued, the ranked next steps the scout found, and the repo's open issues.
-   All three end the same way — text in a chat — so they share a screen. */
+   queued, the ranked next steps the scout found, the repo's open issues, and
+   the tasks its tracker (Teamwork/Jira) holds. All four end the same way —
+   text in a chat — so they share a screen. */
 
-type Tab = "queue" | "next" | "issues";
+type Tab = "queue" | "next" | "issues" | "tasks";
 
 function ago(sec: number | null | undefined): string {
   if (!sec) return "";
@@ -29,6 +30,7 @@ const btnGhost =
 
 function WorkPage() {
   const [tab, setTab] = useState<Tab>("queue");
+  const { sessionId } = useChat();
   const queues = useQuery({
     queryKey: ["queues"],
     queryFn: () => api.getQueues(),
@@ -41,6 +43,12 @@ function WorkPage() {
   });
   // NEXT UP hides with its AI switch — the board's own read says which way it is.
   const nextup = useQuery({ queryKey: ["nextup"], queryFn: () => api.getNextUp() });
+  // Same key as TasksTab's query — react-query dedupes; this only feeds the label.
+  const tracker = useQuery({
+    queryKey: ["tracker", sessionId],
+    queryFn: () => api.getTrackerTasks(sessionId),
+    refetchInterval: 60000,
+  });
   const queued = (queues.data?.queues ?? []).reduce(
     (n, q) => n + q.items.filter((i) => i.status === "queued").length,
     0,
@@ -50,6 +58,7 @@ function WorkPage() {
     { id: "queue", label: `QUEUE${queued ? ` · ${queued}` : ""}` },
     ...(nextup.data?.enabled ? [{ id: "next" as Tab, label: "NEXT UP" }] : []),
     { id: "issues", label: `ISSUES${issues.data?.open_count ? ` · ${issues.data.open_count}` : ""}` },
+    { id: "tasks", label: `TASKS${tracker.data?.overdue ? ` · ${tracker.data.overdue}` : ""}` },
   ];
 
   return (
@@ -82,6 +91,7 @@ function WorkPage() {
       {tab === "queue" && <QueueTab queues={queues.data?.queues ?? []} loading={queues.isLoading} />}
       {tab === "next" && <NextUpTab />}
       {tab === "issues" && <IssuesTab />}
+      {tab === "tasks" && <TasksTab />}
     </div>
   );
 }
@@ -426,6 +436,243 @@ function IssuesTab() {
       {data && data.issues.length === 0 && (
         <div className="pt-8 text-center text-sm text-[var(--tg-hint)]">No open issues.</div>
       )}
+    </div>
+  );
+}
+
+/* ---------------------------------- TASKS --------------------------------- */
+
+/** Compose a prompt that hands a tracker task to Claude. */
+function taskPrompt(kind: string, t: TrackerTask): string {
+  return `Work on ${kind === "jira" ? "Jira issue" : "Teamwork task"} ${t.key}: ${t.title}\n\n${
+    t.description?.trim() || "(no description provided)"
+  }\n\n${t.due ? `Due ${t.due}. ` : ""}${t.assignee ? `Assigned to ${t.assignee}. ` : ""}${t.url}`;
+}
+
+const tag = "border border-border px-1.5 py-px text-[9px] tracking-wider";
+const input =
+  "w-full border border-input bg-[var(--tg-bg)] px-3 py-2 text-sm outline-none placeholder:text-[var(--tg-hint)]";
+
+function TasksTab() {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { setDraft, sessionId, model, effort, perm } = useChat();
+  const [mine, setMine] = useState(false);
+  const [updating, setUpdating] = useState<string | null>(null); // key of the open UPDATE sheet
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["tracker", sessionId],
+    queryFn: () => api.getTrackerTasks(sessionId),
+    refetchInterval: 60000,
+  });
+  // Local calendar date as ISO, so a task due today isn't red once UTC rolls over.
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+  // Prefill the composer with the task and jump to the chat to review/send.
+  function feed(t: TrackerTask) {
+    if (!data) return;
+    setDraft(taskPrompt(data.kind, t));
+    void navigate({ to: "/" });
+  }
+
+  async function queue(t: TrackerTask) {
+    if (!sessionId || !data) return;
+    try {
+      await api.queueOp({
+        op: "enqueue",
+        session_id: sessionId,
+        prompt: taskPrompt(data.kind, t),
+        model,
+        effort: effort || undefined,
+        permission_mode: perm || undefined,
+      });
+      void qc.invalidateQueries({ queryKey: ["queues"] });
+    } catch {
+      /* nothing queued — the tab still shows the task */
+    }
+  }
+
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (!data)
+    return (
+      <div className="pt-8 text-center text-sm text-[var(--tg-hint)]">
+        {error?.message || "Tracker unavailable."}
+      </div>
+    );
+  if (!data.linked)
+    return (
+      <div className="pt-8 text-center text-sm text-[var(--tg-hint)]">
+        No tracker linked to this project. Link one from the dashboard: ANALYZE › LINK TASKS.
+      </div>
+    );
+
+  const tasks = data.tasks.filter((t) => !mine || t.mine);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[11px]">
+        <span className="text-[var(--brand-soft)]">● {data.open} OPEN</span>
+        <span className={data.overdue > 0 ? "text-[var(--err)]" : "text-[var(--tg-hint)]"}>
+          {data.overdue} OVERDUE
+        </span>
+        <span className="text-[var(--tg-hint)]">{data.due_week} DUE THIS WEEK</span>
+        {data.done !== null && <span className="text-[var(--tg-hint)]">✓ {data.done} DONE</span>}
+        <span className="ml-auto flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-[var(--muted-2)]">{data.label}</span>
+          {data.stale && (
+            <span title={data.error} className={`${tag} text-amber-400`}>
+              STALE
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 px-0.5">
+        <span className="min-w-0 flex-1 truncate text-[10px] text-[var(--tg-hint)]">
+          {data.next.slice(0, 2).map((n) => (
+            <span key={`${n.kind}:${n.name}`} className="mr-3">
+              ⚑ {n.kind} {n.name} · {n.date}
+            </span>
+          ))}
+        </span>
+        <button
+          onClick={() => setMine((v) => !v)}
+          aria-pressed={mine}
+          className={`${btnGhost} shrink-0 ${mine ? "bg-[var(--ac-06)]" : ""}`}
+        >
+          ★ MINE
+        </button>
+      </div>
+
+      {tasks.map((t) => (
+        <div key={t.key} className="border border-border bg-[var(--tg-secondary-bg)] p-3">
+          <div className="flex items-baseline gap-2">
+            <span className="shrink-0 font-mono text-[10.5px] text-[var(--tg-hint)]">{t.key}</span>
+            <a
+              href={t.url}
+              target="_blank"
+              rel="noreferrer"
+              className="min-w-0 flex-1 text-[13.5px] leading-snug"
+            >
+              {t.mine && <span className="text-[var(--brand-soft)]">★ </span>}
+              {t.title}
+            </a>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] text-[var(--tg-hint)]">
+            {t.due ? (
+              <span className={t.due < today ? "text-[var(--err)]" : ""}>due {t.due}</span>
+            ) : (
+              <span className="text-[var(--muted-2)]">no due date</span>
+            )}
+            {t.assignee && <span>· {t.assignee}</span>}
+            {t.status && <span>· {t.status}</span>}
+            {t.key === data.session_key && (
+              <span className={`${tag} text-[var(--brand-soft)]`}>THIS SESSION</span>
+            )}
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button
+              onClick={() => feed(t)}
+              className="flex flex-1 items-center justify-center gap-1.5 bg-[var(--tg-button)] py-2.5 text-[10px] tracking-[1.5px] text-[var(--tg-button-text)] active:opacity-70"
+            >
+              FEED TO CLAUDE →
+            </button>
+            <button onClick={() => void queue(t)} disabled={!sessionId} className={btnGhost}>
+              ↥ QUEUE
+            </button>
+            <button
+              onClick={() => setUpdating((k) => (k === t.key ? null : t.key))}
+              disabled={!sessionId}
+              aria-expanded={updating === t.key}
+              className={`${btnGhost} ${updating === t.key ? "bg-[var(--ac-06)]" : ""}`}
+            >
+              UPDATE
+            </button>
+          </div>
+          {updating === t.key && sessionId && (
+            <UpdateSheet task={t} sessionId={sessionId} onClose={() => setUpdating(null)} />
+          )}
+        </div>
+      ))}
+
+      {tasks.length === 0 && (
+        <div className="pt-8 text-center text-sm text-[var(--tg-hint)]">
+          {mine ? "No open tasks of yours." : "No open tasks."}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Inline sheet under a task card: pick a status, add a note, and the session
+    runs the write-back as a turn (every write asks in the chat first). Mounted
+    only while open, so its statuses query loads for that one task. */
+function UpdateSheet({
+  task,
+  sessionId,
+  onClose,
+}: {
+  task: TrackerTask;
+  sessionId: string;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const [statusId, setStatusId] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const statuses = useQuery({
+    queryKey: ["tracker-statuses", task.key],
+    queryFn: () => api.getTrackerStatuses(task.key),
+  });
+  const options = statuses.data?.statuses ?? [];
+
+  async function start() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.trackerUpdate({
+        session_id: sessionId,
+        key: task.key,
+        status_id: statusId || undefined,
+        status_name: options.find((s) => s.id === statusId)?.name,
+        note: note.trim() || undefined,
+      });
+      onClose();
+      void navigate({ to: "/" }); // the chat shows the running turn
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e)); // a 409 = the session is busy
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2.5 space-y-2 border-t border-border pt-2.5">
+      <div className="text-[10.5px] leading-relaxed text-[var(--tg-hint)]">
+        Posts a comment from this session — and a status if you pick one. Every write shows an
+        Allow card in the chat first.
+      </div>
+      <select value={statusId} onChange={(e) => setStatusId(e.target.value)} className={input}>
+        <option value="">no status change</option>
+        {options.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <textarea
+        rows={2}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="note for Claude (optional)"
+        className={`${input} resize-y`}
+      />
+      {error && <Banner tone="error">{error}</Banner>}
+      <button
+        onClick={() => void start()}
+        disabled={busy}
+        className="flex w-full items-center justify-center bg-[var(--tg-button)] py-2.5 text-[10px] tracking-[1.5px] text-[var(--tg-button-text)] active:opacity-70 disabled:opacity-40"
+      >
+        {busy ? "STARTING…" : "START"}
+      </button>
     </div>
   );
 }

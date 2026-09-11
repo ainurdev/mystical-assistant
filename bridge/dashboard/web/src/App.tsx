@@ -2036,6 +2036,7 @@ export function App() {
                 onOpenFile={openFileRef}
                 onOpenDesign={ai.design && sessionProject ? () => openAnalyze(sessionProject, undefined, "design") : undefined}
                 onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
+                onOpenTasks={sessionProject ? () => openAnalyze(sessionProject, undefined, "tasks") : undefined}
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}
@@ -2136,6 +2137,7 @@ export function App() {
                 initialLine={analyzeFile?.line}
                 initialTab={analyzeTab} initialCommand={analyzeCommand}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
+                activeSession={selected?.id}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); toChat(); }}
                 onWorktreeSession={(rel, branch, create, parent, firstPrompt) => { void worktreeSession(rel, branch, create, parent, firstPrompt); setAnalyzeProject(null); }}

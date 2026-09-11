@@ -6,6 +6,7 @@ import { Button, Card, Spinner } from "./ui";
 export function PermissionCard({
   toolName,
   summary,
+  detail,
   active,
   resolved,
   stale,
@@ -14,6 +15,8 @@ export function PermissionCard({
 }: {
   toolName: string;
   summary?: string;
+  /** The full tool input (MCP calls) — what an Allow actually posts. */
+  detail?: string;
   active: boolean;
   resolved?: "allow" | "deny";
   /** Asked, never answered, and the run has since ended — the process that would
@@ -43,8 +46,13 @@ export function PermissionCard({
           Allow <span className="font-semibold">{toolName}</span>?
         </span>
       </div>
-      {summary && (
+      {summary && !detail && (
         <div className="break-all font-mono text-xs text-[var(--tg-hint)]">{summary}</div>
+      )}
+      {detail && (
+        <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words border border-[var(--tg-button)]/20 p-2 font-mono text-[11px] leading-relaxed text-[var(--tg-hint)]">
+          {detail}
+        </pre>
       )}
       {active ? (
         <div className="flex gap-2">

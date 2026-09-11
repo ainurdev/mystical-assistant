@@ -35,3 +35,19 @@ export function branchForSession(title: string, taken: string[] = []): string {
   while (taken.includes(`${base}-${n}`)) n++;
   return `${base}-${n}`;
 }
+
+/** A branch for a tracker task: `ACME-123-fix-login`, `tw-4512-fix-login`. The
+ *  key keeps its case — Jira only auto-links an uppercase key — and carries the
+ *  identity, so the bridge reads a session's task back off its branch
+ *  (bridge/trackers.py key_from_branch) and stores nothing new. */
+export function branchForTask(key: string, title: string): string {
+  const s = slug(title);
+  return s ? `${key}-${s}` : key;
+}
+
+/** The task key a branch names, or "". Mirrors trackers.key_from_branch. */
+export function keyFromBranch(branch: string | null | undefined, kind: string): string {
+  const m = kind === "teamwork" ? /\btw-(\d+)\b/.exec(branch || "") : /\b([A-Z][A-Z0-9]+-\d+)\b/.exec(branch || "");
+  if (!m) return "";
+  return kind === "teamwork" ? `tw-${m[1]}` : m[1];
+}

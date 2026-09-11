@@ -1331,6 +1331,20 @@ def _format_answers(questions: list, answers: list) -> str:
     return "The user answered. " + "; ".join(parts)
 
 
+def _mcp_detail(inp) -> str:
+    """An MCP call's input, readable: long strings raw (a comment body keeps
+    its lines), everything else as JSON."""
+    if not isinstance(inp, dict):
+        return json.dumps(inp, ensure_ascii=False)[:4000]
+    parts = []
+    for k, v in inp.items():
+        if isinstance(v, str) and ("\n" in v or len(v) > 60):
+            parts.append(f"{k}:\n{v}")
+        else:
+            parts.append(f"{k}: {v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)}")
+    return "\n".join(parts)[:4000]
+
+
 def _handle_control_request(job: Job, obj: dict):
     """A `can_use_tool` request: queue it as pending and surface a transcript
     event (a permission card, or a question card for AskUserQuestion)."""
@@ -1352,7 +1366,7 @@ def _handle_control_request(job: Job, obj: dict):
         if tool.startswith("mcp__"):
             # The whole call, not 120 chars of it: an MCP write (a tracker
             # comment, a status change) is judged on its full text.
-            ev["detail"] = json.dumps(req.get("input", {}), indent=1, ensure_ascii=False)[:4000]
+            ev["detail"] = _mcp_detail(req.get("input", {}))
         job.add(ev)
     notify_awaiting(job.chat_id, job.store_session_id,
                     "question" if tool == "AskUserQuestion" else "permission")

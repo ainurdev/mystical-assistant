@@ -204,3 +204,9 @@ def test_the_digest_rides_the_once_per_session_pack(monkeypatch):
     assert "DIGEST for /repo" in first[first.index("--append-system-prompt") + 1]
     second = runner._base_cmd("hi", CHAT, stream=False, claude_session_id=sid, project="/repo")
     assert "DIGEST" not in second[second.index("--append-system-prompt") + 1]
+
+
+def test_an_mcp_call_is_shown_whole_on_its_card():
+    d = runner._mcp_detail({"object": {"type": "tasks", "id": 4512}, "content_type": "TEXT",
+                            "body": "Fixed the loop.\n\nPR: https://x/1"})
+    assert d == 'object: {"type": "tasks", "id": 4512}\ncontent_type: TEXT\nbody:\nFixed the loop.\n\nPR: https://x/1'

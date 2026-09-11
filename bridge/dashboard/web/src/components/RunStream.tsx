@@ -1858,6 +1858,7 @@ export const RunStream = memo(function RunStream({
                 <PermissionCard
                   toolName={event.tool_name}
                   summary={event.summary}
+                  detail={event.detail}
                   active={!!onRespond && pendingIds.has(event.request_id)}
                   resolved={permResolved.get(event.request_id)}
                   // The run this belonged to is gone (restart, Stop, crash), so
