@@ -280,7 +280,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenDesign, onOpenProject, run, onOpenRun, onDropFiles, chrome,
+  onOpenDesign, onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -338,6 +338,9 @@ export function Terminal({
    *  weather, the bell — while the right panel is collapsed to its rail and
    *  its column has no room for them. */
   chrome?: ReactNode;
+  /** The shell grid rows the chat spans — the footer track too, when nothing
+   *  sits under it. */
+  gridRow?: string;
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
@@ -644,7 +647,9 @@ export function Terminal({
       data-ctx-type="terminal"
       // The centre column carries no frame of its own: the sidebars' hairlines
       // already say where it starts, and a border here would draw them twice.
-      style={{ background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      // Pinned to the centre track: a row with no column is placed before the
+      // auto-placed side columns, and would take the first track from SESSIONS.
+      style={{ gridColumn: 2, gridRow, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {header}
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .8s ease both .15s", flex: "none" }} />

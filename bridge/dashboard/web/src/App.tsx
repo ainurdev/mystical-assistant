@@ -25,7 +25,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, fmtReset, projectName, setProjectNames, useProjectTints, windowLabels } from "./lib/surfaces";
+import { ago, fmtReset, projectName, setProjectNames, useProjectTints, usageWindows } from "./lib/surfaces";
 import {
   autoBaseFont,
   fontStack,
@@ -1574,13 +1574,13 @@ export function App() {
     ...accounts.filter((a) => !a.disabled).map((a) => {
       // The countdowns are the answer to the question a 0% row makes you ask —
       // and a row never goes blank: no meter still says which kind of no.
-      const wins = windowLabels(a);
-      if (!wins.length) wins.push(a.logged_in === false ? "LOGIN EXPIRED" : "USAGE UNKNOWN");
+      const wins = usageWindows(a);
       return {
         id: `claude:${a.slot}`,
-        short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}`,
-        label: [`A${a.slot} · ${a.email ?? "unknown"}`, ...wins].join(" · "),
+        short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}${a.left === null ? "" : ` · ${a.left}%`}`,
+        label: [`A${a.slot} · ${a.email ?? "unknown"}`, a.plan, a.default && "DEFAULT"].filter(Boolean).join(" · "),
         free: false, def: a.default, left: a.left,
+        wins, note: wins.length ? undefined : a.logged_in === false ? "LOGIN EXPIRED" : "USAGE UNKNOWN",
       };
     }),
     ...freeAgents.map((p) => ({
@@ -1935,7 +1935,6 @@ export function App() {
   }
 
   const td = themeDef(settings.theme);
-  const wsRoot = (activeProject || "/").replace(/\/[^/]*$/, "") || "/";
   // One cluster, two homes: the right column's cap while the panel is open,
   // the chat header's end while it's folded to the rail (see Strip.tsx).
   const strip = (
@@ -1980,10 +1979,12 @@ export function App() {
                 fourth. Widths are the mock's: the sidebars give ground back to
                 the transcript on a narrow window instead of holding a fixed
                 px and squeezing it. No strip above them: the side columns cap
-                themselves (Brand, RightCap), so the transcript runs to the top. */}
+                themselves (Brand, RightCap), so the transcript runs to the top.
+                No footer row below either: StatusBar's cells sit in a second
+                track under the side columns, and the chat spans it. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
-              style={{ gridTemplateColumns: shellCols(settings.rightOpen), minWidth: 0 }}
+              style={{ gridTemplateColumns: shellCols(settings.rightOpen), gridTemplateRows: "minmax(0,1fr) 34px", minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
@@ -2039,6 +2040,10 @@ export function App() {
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={settings.rightOpen ? undefined : strip}
+                // Down through the footer track to the bottom edge — except
+                // with the panel folded, when the git chain keeps its strip
+                // under the chat.
+                gridRow={settings.rightOpen ? "1 / 3" : "1"}
                 composer={
                   <>
                     {checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2105,23 +2110,19 @@ export function App() {
                   project={sessionProject} branch={sessionBranch}
                 />
               </div>
-            </div>
 
-            <StatusBar
-              mount={wsRoot} usedPct={usedPct} resetLabel={resetLabel} accounts={accounts}
-              agent={activeAgent} rightOpen={settings.rightOpen}
-              // The footer reports the session you have open, not the bridge's
-              // active project — those differ while you read another session.
-              repo={sessionProject ?? "—"} git={sessionGit}
-              changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
-              ctxTokens={selected?.ctx_tokens ?? null}
-              ctxWindow={selected?.ctx_window ?? null}
-              sessionId={sessionId}
-              branch={sessionBranch}
-              onSynced={() => setGitNonce((n) => n + 1)}
-              onPalette={() => setPaletteOpen(true)}
-              agents={agentOpts} onPickAgent={setAgent}
-            />
+              <StatusBar
+                usedPct={usedPct} resetLabel={resetLabel}
+                agent={activeAgent} rightOpen={settings.rightOpen}
+                // The footer reports the session you have open, not the bridge's
+                // active project — those differ while you read another session.
+                repo={sessionProject ?? "—"} git={sessionGit}
+                changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
+                branch={sessionBranch}
+                onSynced={() => setGitNonce((n) => n + 1)}
+                onPalette={() => setPaletteOpen(true)}
+              />
+            </div>
 
             {analyzeProject && (
               <AnalyzeModal

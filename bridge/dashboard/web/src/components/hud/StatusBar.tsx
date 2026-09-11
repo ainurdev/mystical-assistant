@@ -1,8 +1,6 @@
-import { useState, type ReactNode } from "react";
-import { api, type AccountInfo, type GitStatus } from "../../api";
+import { useState, type CSSProperties, type ReactNode } from "react";
+import { api, type GitStatus } from "../../api";
 import type { AgentOption } from "../../models";
-import { hairline, shellCols, zoneRule } from "../../lib/shell";
-import { Drop } from "../Composer";
 
 /* Where the open session's branch stands against its remote. `upstream: ""`
    means the branch was never pushed — ahead/behind are 0 there too, so the
@@ -33,22 +31,12 @@ function syncChip(git: GitStatus): { text: string; warn: boolean; title: string 
 }
 
 export interface StatusBarProps {
-  mount: string;
   usedPct: number | null;      // null → usage unknown, shown as "—"
   resetLabel?: string | null;
-  accounts?: AccountInfo[];    // >1 → per-account chips (multi-login fallback)
-  agent?: AgentOption | null;  // who runs the next turn (composer's AGENT picker)
-  agents?: AgentOption[];      // everything that pick could land on
+  agent?: AgentOption | null;  // who runs the next turn — the meter is theirs
   repo: string;
   changes: number;
   git?: GitStatus | null;      // open session's working tree; null while loading
-  // Open session's context-window fill, measured on its last request. Both null
-  // until a turn has run under the meter, and then the chip stays hidden.
-  ctxTokens?: number | null;
-  ctxWindow?: number | null;
-  // Swap key for the CTX chip only — a new session is a new measurement even
-  // when the percent happens to match.
-  sessionId?: string | null;
   // The worktree the footer is reporting on, so PUBLISH pushes that tree and
   // not the project checkout. Same value the git status was fetched with.
   branch?: string | null;
@@ -56,31 +44,23 @@ export interface StatusBarProps {
   // chip you just changed, so the owner of that poll re-reads it now.
   onSynced?: () => void;
   onPalette: () => void;
-  // Same action as the composer's AGENT picker, so the footer switches who runs
-  // the turn rather than only reporting it. Takes an agent option id.
-  onPickAgent?: (id: string) => void;
   // Right panel expanded — the shell tracks (and zone layout) follow it.
   rightOpen: boolean;
 }
 
-/** Zone label — REPO / USED / RESET / CTX. */
+/** Zone label — USED / RESET. */
 const zlabel = (t: string): ReactNode => (
   <span style={{ fontSize: "var(--t95)", letterSpacing: "1.9px", color: "var(--txl)", flex: "none" }}>{t}</span>
 );
 
+/** The footer, as cells in the shell grid's bottom track rather than a row of
+ *  its own: usage under SESSIONS, the branch chain and ⌘K under the right
+ *  panel, and nothing under the chat, which runs to the bottom edge. Who runs
+ *  the turn (and every login's windows) is the composer's AGENT picker; the
+ *  context fill is its CTX lamps. */
 export function StatusBar(props: StatusBarProps) {
-  const { mount, usedPct, resetLabel, accounts = [], agent, agents = [], repo, changes,
-          git, ctxTokens, ctxWindow, sessionId, branch, onSynced, onPalette, onPickAgent,
-          rightOpen } = props;
-  // Window fill of the open session. Unmeasured (no turn yet under the meter)
-  // shows nothing rather than 0%, which would read as "plenty of room".
-  const ctxPct = ctxTokens && ctxWindow ? Math.round((ctxTokens / ctxWindow) * 100) : null;
+  const { usedPct, resetLabel, agent, repo, changes, git, branch, onSynced, onPalette, rightOpen } = props;
   const [hovered, setHovered] = useState(false);
-  const [pickOpen, setPickOpen] = useState(false);
-
-  // A picker over one option is just a label with extra clicks, so the plain
-  // read-only chip stays until there is somewhere else to land.
-  const canPick = Boolean(onPickAgent) && agents.length > 1;
 
   // A switch settles the session-scoped chips in the way the right panel's
   // .swapin regions do. Keyed on their VALUE, not the session — a chip whose
@@ -148,7 +128,7 @@ export function StatusBar(props: StatusBarProps) {
   const showReset = resetLabel && (!agent || agent.def);
 
   // The branch chain — one bordered group, under the CHANGES panel it
-  // describes (or at the end of the centre zone when that track is collapsed).
+  // describes (or at the end of the chat's strip when that track is collapsed).
   const chain = (
     <span className="chain" style={{
       // overflow hidden: at the narrowest widths the chain clips inside its own
@@ -214,35 +194,20 @@ export function StatusBar(props: StatusBarProps) {
     </span>
   );
 
-  return (
-    <div
-      style={{
-        flex: "none",
-        display: "grid",
-        gridTemplateColumns: shellCols(rightOpen),
-        height: 34,
-        borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
-        fontSize: "var(--t10)",
-        letterSpacing: "1.5px",
-        color: "var(--txl)",
-        animation: "enterUp .55s cubic-bezier(.2,.8,.2,1) both .36s",
-      }}
-    >
-      {/* L — the repo, on the SESSIONS head's gutter; mount right-aligned. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px", minWidth: 0 }}>
-        {zlabel("REPO")}
-        <span key={`repo:${repo}`} style={{ ...swap, fontFamily: "var(--mono)", fontSize: "var(--t105)", letterSpacing: "normal", color: "var(--acc)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
-          {repo}
-        </span>
-        <span style={{ flex: 1, minWidth: 8 }} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t95)", letterSpacing: "normal", color: "var(--txl)", flex: "none", whiteSpace: "nowrap" }}>
-          {mount}
-        </span>
-      </div>
+  // Each cell carries its column's hairline down to the bottom edge, the way
+  // the caps carry it up to the top.
+  const foot: CSSProperties = {
+    gridRow: 2, display: "flex", alignItems: "center", minWidth: 0,
+    borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
+    fontSize: "var(--t10)", letterSpacing: "1.5px", color: "var(--txl)",
+  };
+  const enter = "enterUp .55s cubic-bezier(.2,.8,.2,1) both .36s";
 
-      {/* C — the usage ledger, on the Terminal head's gutter. */}
-      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 11, padding: "0 14px", minWidth: 0 }}>
-        <span aria-hidden style={{ ...zoneRule, top: 6, bottom: 6 }} />
+  return (
+    <>
+      {/* L — the usage ledger, under SESSIONS. The track takes whatever the
+          column leaves, which is less than the old centre zone had. */}
+      <div style={{ ...foot, gridColumn: 1, gap: 11, padding: "0 12px", borderRight: "1px solid var(--border)", animation: enter }}>
         {free ? (
           <span style={{ color: "var(--warn)", flex: "none" }} title="Not your Claude subscription — no usage window to spend">
             NO CLAUDE QUOTA
@@ -255,13 +220,13 @@ export function StatusBar(props: StatusBarProps) {
             </span>
             <span
               style={{
-                width: "120px",
+                flex: 1,
+                minWidth: 24,
                 height: "4px",
                 background: "color-mix(in srgb, var(--acc) 12%, transparent)",
                 display: "inline-block",
                 position: "relative",
                 overflow: "hidden",
-                flex: "none",
               }}
               title={agent && !agent.def
                 ? `${agent.label} — percent of its tighter usage window spent`
@@ -287,141 +252,27 @@ export function StatusBar(props: StatusBarProps) {
             )}
           </>
         )}
-        {ctxPct !== null && (
-          <>
-            <span style={hairline(11)} />
-            <span
-              key={`ctx:${sessionId}`}
-              title={`This session's last request filled ${ctxTokens?.toLocaleString()} of ${ctxWindow?.toLocaleString()} context tokens. Right-click the session to change when it compacts.`}
-              style={{ ...swap, display: "flex", alignItems: "baseline", gap: 5, flex: "none" }}
-            >
-              {zlabel("CTX")}
-              <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", letterSpacing: "normal", color: ctxPct >= 75 ? "var(--warn)" : "var(--txh)" }}>{ctxPct}%</span>
-            </span>
-          </>
-        )}
-        {/* Who those numbers (and the next turn) belong to — and, once there is
-            more than one candidate, where you change it. Same options and same
-            action as the composer's AGENT picker; the menu opens upward, which
-            is what Drop already does for the composer. */}
-        {agent && canPick && (
-          <>
-            <span style={hairline(11)} />
-            {pickOpen && (
-              <div onClick={() => setPickOpen(false)}
-                   style={{ position: "fixed", inset: 0, zIndex: 25 }} />
-            )}
-            <span style={{ position: "relative", zIndex: 26, color: free ? "var(--warn)" : "var(--acc)" }}>
-              <Drop
-                label="AGENT"
-                value={agent.id}
-                // Dropping `short` leaves Drop on the full label, so the footer
-                // keeps reading "A1 · you@example.com · 68% LEFT" as it did.
-                options={agents.map((a) => ({ id: a.id, label: a.label }))}
-                minWidth={0}
-                open={pickOpen}
-                onToggle={() => setPickOpen((v) => !v)}
-                onPick={(id) => { onPickAgent?.(id); setPickOpen(false); }}
-              />
-            </span>
-          </>
-        )}
-        {agent && !canPick && (
-          <>
-            <span style={hairline(11)} />
-            <span
-              title={free
-                ? `Turns run on ${agent.label} via opencode — add another login or a free agent to switch`
-                : `Turns run on ${agent.label} — add another login or a free agent to switch`}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "var(--t10)", letterSpacing: "normal", color: free ? "var(--warn)" : "var(--txm)", minWidth: 0 }}
-            >
-              <span style={{ color: free ? "var(--warn)" : "var(--acc)", flex: "none" }}>{free ? "⚡" : "◉"}</span>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 230 }}>{agent.label}</span>
-            </span>
-          </>
-        )}
-        <span style={{ flex: 1, minWidth: 14 }} />
-        {accounts.length > 1 && (
-          // One joined group, not loose chips: segments split by the .chain
-          // hairline, the live login marked by an accent wash.
-          <span className="chain" style={{
-            display: "inline-flex", alignItems: "center", flex: "none",
-            fontFamily: "var(--mono)", fontSize: "var(--t95)", letterSpacing: "normal",
-            border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
-          }}>
-            {accounts.map((a) => {
-              const live = agent?.id === `claude:${a.slot}`;
-              // A disabled button covers both "this login is switched off" and
-              // "nobody wired a handler", so the chip stays one element either way.
-              const off = a.disabled || !onPickAgent;
-              return (
-                <button
-                  key={a.slot}
-                  type="button"
-                  disabled={off}
-                  aria-pressed={live}
-                  onClick={() => onPickAgent?.(`claude:${a.slot}`)}
-                  title={`${a.email ?? "unknown"}${a.default ? " (default)" : ""}${a.disabled ? " (disabled)" : ""}${live ? " — running your turns" : " — click to run your turns on this login"}`}
-                  style={{
-                    ...seg,
-                    font: "inherit",
-                    border: 0,
-                    background: live ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
-                    color: a.disabled ? "var(--txd)"
-                      : a.left !== null && a.left <= 1 ? "var(--warn)" : "var(--tx)",
-                    opacity: a.disabled ? 0.55 : 1,
-                    cursor: off ? "default" : "pointer",
-                  }}
-                >
-                  A{a.slot} {a.left === null ? "—" : `${a.left}%`}
-                </button>
-              );
-            })}
-          </span>
-        )}
-        {/* Collapsed right panel: the chain lands at the end of the centre
-            zone instead of losing its track. */}
-        {!rightOpen && chain}
       </div>
 
-      {/* R — the chain under the CHANGES panel it describes, + the 48px rail. */}
-      {rightOpen ? (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 48px" }}>
-          <div style={{ position: "relative", display: "flex", alignItems: "center", padding: "0 12px", minWidth: 0 }}>
-            <span aria-hidden style={{ ...zoneRule, top: 6, bottom: 6 }} />
+      {/* C — only while the right panel is folded to the rail: the chain keeps
+          the strip it has always had there. Open, the chat runs to the bottom
+          edge instead. */}
+      {!rightOpen && (
+        <div style={{ ...foot, gridColumn: 2, justifyContent: "flex-end", padding: "0 14px" }}>
+          {chain}
+        </div>
+      )}
+
+      {/* R — the chain under the CHANGES panel it describes, + ⌘K on the rail. */}
+      <div style={{ ...foot, gridColumn: 3, alignItems: "stretch", animation: enter }}>
+        {rightOpen && (
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--border)" }}>
             {chain}
           </div>
-          <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span aria-hidden style={{ ...zoneRule, top: 6, bottom: 6 }} />
-            <button
-              onClick={onPalette}
-              title="⌘K — command palette"
-              onMouseEnter={() => setHovered(true)}
-              onMouseLeave={() => setHovered(false)}
-              style={{
-                appearance: "none",
-                cursor: "pointer",
-                width: 26,
-                height: 22,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)",
-                background: hovered ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-                color: hovered ? "var(--txb)" : "var(--txm)",
-                fontFamily: "var(--mono)",
-                fontSize: "var(--t10)",
-                letterSpacing: "normal",
-                padding: 0,
-              }}
-            >
-              ⌘K
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span aria-hidden style={{ ...zoneRule, top: 6, bottom: 6 }} />
+        )}
+        {/* The rail's own width, hairline and ground, so the rail reads as
+            running to the bottom. */}
+        <div style={{ width: 48, flex: "none", marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center", borderLeft: "1px solid var(--border)", background: "var(--panel3)" }}>
           <button
             onClick={onPalette}
             title="⌘K — command palette"
@@ -447,7 +298,7 @@ export function StatusBar(props: StatusBarProps) {
             ⌘K
           </button>
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }

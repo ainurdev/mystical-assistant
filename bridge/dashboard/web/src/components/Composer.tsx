@@ -5,6 +5,7 @@ import { modelRows, type AgentOption } from "../models";
 import { ago } from "../lib/surfaces";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
+import { ICON_BODY } from "../lib/fileicons.gen";
 import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
 import { isExact, rankCommands, slashAt } from "../lib/slash";
 import { Tip } from "./ui/Tip";
@@ -60,8 +61,7 @@ const COMPACT_SUGGEST = 0.75;
 const CTX_SEGMENTS = 8;
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
-// Exported for the status bar, which offers the same AGENT pick from the footer.
-export function Drop<T extends string>({
+function Drop<T extends string>({
   label, code, value, options, open, onToggle, onPick, minWidth = 78,
 }: {
   label: string;
@@ -73,8 +73,9 @@ export function Drop<T extends string>({
   code?: ReactNode;
   value: T;
   // short → what the chip shows; group → a heading printed once above each run
-  // of rows sharing it; tail → right-aligned decoration (the model meters)
-  options: { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string }[];
+  // of rows sharing it; icon → a glyph ahead of the label (a provider's logo);
+  // tail → right-aligned decoration (the usage meters)
+  options: { id: T; label: string; short?: string; group?: string; icon?: ReactNode; tail?: ReactNode; title?: string }[];
   open: boolean;
   onToggle: () => void;
   onPick: (id: T) => void;
@@ -136,6 +137,7 @@ export function Drop<T extends string>({
                   }}
                 >
                   <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
+                  {o.icon}
                   <span style={{ flex: 1 }}>{o.label}</span>
                   {o.tail}
                 </button>
@@ -148,19 +150,33 @@ export function Drop<T extends string>({
   );
 }
 
-// A model row's fuel gauge in the MODEL menu: how much of its tightest usage
-// window is still unspent (fill = left, so a full bar is a full tank), in the
-// same track/fill idiom as the status bar's USED meter.
-function LeftMeter({ left, severity }: { left: number; severity?: string }) {
+// A fuel gauge in the MODEL and AGENT menus: how much of a usage window is
+// still unspent (fill = left, so a full bar is a full tank), in the same
+// track/fill idiom as the footer's USED meter. An AGENT row also names each
+// window and says when it refills.
+function LeftMeter({ left, severity, tag, reset }: { left: number; severity?: string; tag?: string; reset?: string }) {
   const c = severity === "critical" || severity === "exceeded" ? "var(--err)"
     : severity && severity !== "normal" ? "var(--warn)" : "var(--acc)";
+  const dim = { fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" };
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
+      {tag && <span style={dim}>{tag}</span>}
       <span style={{ width: 44, height: 3, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
         <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${left}%`, background: c }} />
       </span>
       <span style={{ minWidth: 30, textAlign: "right", fontSize: "var(--t9)", letterSpacing: .5 }}>{left}%</span>
+      {reset && <span style={{ ...dim, minWidth: 38 }}>{reset}</span>}
     </span>
+  );
+}
+
+// A Claude login's provider logo: simple-icons' Claude mark, already bundled
+// as CLAUDE.md's file icon. currentColor, so it takes each theme's accent the
+// way every other glyph does. Free agents keep their ⚡ label.
+function ClaudeLogo({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden style={{ flex: "none", color: "var(--acc)" }}
+      dangerouslySetInnerHTML={{ __html: ICON_BODY["si:claude"] }} />
   );
 }
 
@@ -258,6 +274,19 @@ export function Composer({
       ...r, tail: r.left === undefined ? undefined : <LeftMeter left={r.left} severity={r.severity} />,
     })),
     [models, usage, activeAgent],
+  );
+  // AGENT rows: a login leads with its provider's logo and ends in both its
+  // usage windows (or why it has none) — the footer's account chips used to
+  // carry that. A free agent's row is its label alone, as before.
+  const agentRows = useMemo(
+    () => agents.map((a) => a.free ? a : {
+      ...a,
+      icon: <ClaudeLogo />,
+      tail: a.wins?.length
+        ? a.wins.map((w) => <LeftMeter key={w.tag} left={w.left} severity={w.severity} tag={w.tag} reset={w.reset} />)
+        : <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: a.note === "LOGIN EXPIRED" ? "var(--warn)" : "var(--txd)" }}>{a.note}</span>,
+    }),
+    [agents],
   );
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -630,7 +659,7 @@ export function Composer({
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
           <div className="ctrl-set">
-            <Drop label="AGENT" code={<UserRound size={12} />} value={agent} options={agents} minWidth={104} open={openDrop === "agent"}
+            <Drop label="AGENT" code={activeAgent?.free ? <UserRound size={12} /> : <ClaudeLogo />} value={agent} options={agentRows} minWidth={104} open={openDrop === "agent"}
               onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
               onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
             {activeAgent?.free ? (

@@ -158,17 +158,28 @@ export function fmtReset(iso: string | null | undefined): string {
   return `${h}H${String(m).padStart(2, "0")}M`;
 }
 
-/** An account row's two usage windows: ["5H 95% 0H31M", "WK 70% 5D07H"]. Both,
-    because the weekly cap is usually the binding one but resets days out, so
-    only the 5-hour line answers "when does this login work again". Empty when
-    the meter won't read — the caller says why. */
-export function windowLabels(a: {
-  five_hour?: { percent: number; resets_at: string | null } | null;
-  seven_day?: { percent: number; resets_at: string | null } | null;
-}): string[] {
+/** One of a login's usage windows: how much is left and when it refills. */
+export interface UsageWindow { tag: "5H" | "WK"; left: number; severity: string; reset: string }
+
+/** An account's two usage windows, 5-hour then weekly. Both, because the
+    weekly cap is usually the binding one but resets days out, so only the
+    5-hour line answers "when does this login work again". Empty when the
+    meter won't read — the caller says why. */
+export function usageWindows(a: {
+  five_hour?: { percent: number; resets_at: string | null; severity?: string } | null;
+  seven_day?: { percent: number; resets_at: string | null; severity?: string } | null;
+}): UsageWindow[] {
   return ([["5H", a.five_hour], ["WK", a.seven_day]] as const)
     .filter(([, b]) => b)
-    .map(([tag, b]) => `${tag} ${Math.max(0, 100 - Math.round(b!.percent))}% ${fmtReset(b!.resets_at)}`);
+    .map(([tag, b]) => ({
+      tag, left: Math.max(0, 100 - Math.round(b!.percent)),
+      severity: b!.severity ?? "normal", reset: fmtReset(b!.resets_at),
+    }));
+}
+
+/** The same windows as an account row's labels: ["5H 95% 0H31M", "WK 70% 5D07H"]. */
+export function windowLabels(a: Parameters<typeof usageWindows>[0]): string[] {
+  return usageWindows(a).map((w) => `${w.tag} ${w.left}% ${w.reset}`);
 }
 
 /** "2h 14m" / "47m" / "30s" from a positive duration in seconds. */

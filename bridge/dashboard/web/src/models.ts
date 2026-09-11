@@ -1,4 +1,5 @@
 import type { UsageInfo } from "./api";
+import type { UsageWindow } from "./lib/surfaces";
 
 export interface ModelOption {
   id: string; // full model id (e.g. "claude-opus-4-8"), or a short CLI alias
@@ -17,10 +18,12 @@ export interface ModelRow extends ModelOption {
 export interface AgentOption {
   id: string; // 'claude:<slot>' | 'opencode:<provider>' — a turn's runtime tag
   short: string; // for the composer chip
-  label: string; // for the dropdown row and the status bar
+  label: string; // for the dropdown row and the settings picker
   free: boolean; // true = not Claude, so no subscription quota applies
   def: boolean; // the ambient ~/.claude login
   left: number | null; // % of this account's tighter usage window unspent
+  wins?: UsageWindow[]; // a login's 5H and WK windows, drawn as meters in the AGENT menu
+  note?: string; // why a login has no windows: LOGIN EXPIRED | USAGE UNKNOWN
 }
 
 // Shown only until /local/state delivers the live list (Anthropic Models API,
