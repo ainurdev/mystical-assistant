@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { type Weather } from "../../api";
-import { hairline } from "../../lib/shell";
 import { NotificationCenter } from "./Notifications";
 import { UpdateButton } from "./UpdateButton";
 import { WeekPanel } from "./WeekPanel";
@@ -10,8 +9,14 @@ import { WeekPanel } from "./WeekPanel";
  * This was a 38px strip across all three columns, and every pixel of it came
  * out of the transcript. Now its ends cap the side columns — Brand over
  * SESSIONS, RightCap over the right panel — and the transcript runs to the top
- * edge, its own header the top line. The middle folded into `Strip`, one
- * compact cluster: SHIP, the radio as four bars, clock & weather, the bell.
+ * edge, its own header the top line. The middle folded into `Strip`, split in
+ * two: an instrument on the left — the clock as the one big readout, the
+ * weather and Claude·FM stacked small beside it — and the actions on the
+ * right, SHIP and the bell, by the gear. It used to be one right-aligned run
+ * of five different treatments; splitting readouts from actions is what reads
+ * as order, and the gap between the halves takes up whatever width a theme's
+ * font adds or saves, so no theme moves an edge. Every text sits on a trimmed
+ * box (`.trim`, index.css) so Consolas and Courier New centre like JetBrains.
  * The clock is the handle for everything that used to sit beside it: a click
  * opens the dashboard's context menu (App builds the `weather` rows — week
  * report, clock & weather settings, next station, the dashboard rows).
@@ -195,94 +200,96 @@ export function Strip(props: StripProps) {
   const clockMini = fmt12 ? `${h24 % 12 || 12}:${mm}` : `${hh}:${mm}`;
   const ampm = h24 < 12 ? "AM" : "PM";
   const wxTempStr = weather.temp === null ? "—" : `${weather.temp}°${weather.unit}`;
+  // The cap reads the number alone; the popover below says which unit.
+  const wxTemp = weather.temp === null ? "—" : `${weather.temp}°`;
+
+  // The clock and the weather line beside it are one handle: a click re-fires
+  // as a contextmenu under the instrument and App builds the rows. A popover
+  // already open just closes — one thing under the clock at a time.
+  const openMenu = (el: HTMLElement) => {
+    if (clockOpen || weekOpen) { setClockOpen(false); setWeekOpen(false); return; }
+    const r = (anchorRef.current ?? el).getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: r.left, clientY: r.bottom + 8 }));
+  };
+  const clockHov = { onMouseEnter: () => setClockHover(true), onMouseLeave: () => setClockHover(false) };
+  const bare: CSSProperties = {
+    appearance: "none", cursor: "pointer", border: 0, background: "transparent", padding: 0,
+    fontFamily: "inherit", display: "flex", alignItems: "center", flex: "none",
+  };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none", marginLeft: "auto" }}>
-      <UpdateButton onFeed={onFeed} />
-
-      {/* Claude·FM reduced to its signal: four bars that dance while it plays
-          and lie flat while it doesn't. The station rides in the tooltip, the
-          skip in the clock's menu. */}
-      <button
-        className="fm"
-        onClick={onToggleRadio}
-        title={`Claude·FM — ${radio.title} · ${radio.artist}${radio.playing ? ` · ${radio.elapsed}` : ""} — click to ${radio.playing ? "pause" : "play"}`}
-        aria-label={radio.playing ? "Pause Claude·FM" : "Play Claude·FM"}
-        aria-pressed={radio.playing}
-        onMouseEnter={() => setFmHover(true)}
-        onMouseLeave={() => setFmHover(false)}
-        style={{
-          appearance: "none", cursor: "pointer", border: 0, background: "transparent",
-          padding: "0 3px", height: 26, flex: "none",
-          display: "flex", alignItems: "center", gap: 2,
-          color: radio.playing ? "var(--acc)" : fmHover ? "var(--txm)" : "var(--txl)",
-          // Glow, not shadow: the phosphor bleeds while it plays.
-          filter: radio.playing ? "drop-shadow(0 0 3px color-mix(in srgb, var(--acc) 60%, transparent))" : "none",
-          transition: "color .15s ease",
-        }}
-      >
-        {/* At rest, a still spectrum: flat ticks read as an ellipsis, a "more"
-            menu, not as a radio. */}
-        {[[0.45, 0], [0.8, 0.3], [0.6, 0.12], [1, 0.42]].map(([rest, d], i) => (
-          <span
-            key={i}
-            style={{
-              width: 2, height: 12, background: "currentColor", transformOrigin: "bottom",
-              transform: radio.playing ? undefined : `scaleY(${rest})`,
-              animation: radio.playing ? `eqbar ${0.72 + i * 0.13}s ease-in-out ${d}s infinite` : "none",
-            }}
-          />
-        ))}
-      </button>
-
+    // Relative here, not on the clock: both popovers hang off the cluster's
+    // right edge, which stays inside the right column (or at the chat header's
+    // end) wherever the clock itself sits.
+    <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flex: "1 1 auto", minWidth: 0 }}>
       <span
         ref={anchorRef}
-        style={{ position: "relative", flex: "none" }}
+        style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}
         data-ctx-type="weather" data-ctx-id="weather"
         data-ctx-label={[weather.cond, weather.loc].filter(Boolean).join(" · ")}
       >
-        {/* The clock is the menu's handle, the way the chat header's branch chip
-            is: the click re-fires as a contextmenu under it and App builds the
-            rows. A popover already open just closes — one thing under the
-            clock at a time. */}
-        <button
-          onClick={(e) => {
-            if (clockOpen || weekOpen) { setClockOpen(false); setWeekOpen(false); return; }
-            const r = e.currentTarget.getBoundingClientRect();
-            e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
-              { bubbles: true, clientX: r.left, clientY: r.bottom + 8 }));
-          }}
-          aria-haspopup="menu"
-          title="clock & weather — click for the menu"
-          onMouseEnter={() => setClockHover(true)}
-          onMouseLeave={() => setClockHover(false)}
-          style={{
-            appearance: "none",
-            cursor: "pointer",
-            border: 0,
-            background: "transparent",
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            padding: 0,
-            fontFamily: "inherit",
-          }}
-        >
-          {/* The clock stays the biggest type in the chrome. */}
-          <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t135)", color: "var(--txb)", letterSpacing: ".6px" }}>
+        {/* The one big readout. At t17 it outranks the chat's t14 title —
+            chosen over a quieter split, 2026-09-11. */}
+        <button onClick={(e) => openMenu(e.currentTarget)} aria-haspopup="menu" title="clock & weather — click for the menu" {...clockHov} style={{ ...bare, gap: 4, height: 26 }}>
+          <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t17)", color: "var(--txb)", letterSpacing: ".4px" }}>
             {clockMini}
           </span>
           {fmt12 && (
-            <span style={{ fontSize: "var(--t7)", letterSpacing: "1px", color: "var(--txd)" }}>{ampm}</span>
+            <span className="trim" style={{ fontSize: "var(--t8)", letterSpacing: "1px", color: "var(--txd)" }}>{ampm}</span>
           )}
-          <span className="wx" style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--warn)" strokeWidth="1.6" strokeLinecap="round" style={{ flex: "none" }}>
+        </button>
+        {/* Two small readouts stacked beside it: the weather (the clock's
+            handle again) over Claude·FM. */}
+        <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <button
+            className="wx"
+            onClick={(e) => openMenu(e.currentTarget)}
+            aria-haspopup="menu"
+            title={`${[weather.cond, weather.loc].filter(Boolean).join(" · ") || "weather"} — click for the menu`}
+            {...clockHov}
+            style={{ ...bare, gap: 5, height: 13, color: "var(--txd)" }}
+          >
+            <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" style={{ flex: "none" }}>
               <circle cx="12" cy="12" r="4" />
               <path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" />
             </svg>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", color: clockHover ? "var(--txh)" : "var(--txm)" }}>{wxTempStr}</span>
-          </span>
-        </button>
+            <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t95)", color: clockHover ? "var(--txh)" : "var(--txm)" }}>{wxTemp}</span>
+          </button>
+          <button
+            className="fm"
+            onClick={onToggleRadio}
+            title={`Claude·FM — ${radio.title} · ${radio.artist}${radio.playing ? ` · ${radio.elapsed}` : ""} — click to ${radio.playing ? "pause" : "play"}`}
+            aria-label={radio.playing ? "Pause Claude·FM" : "Play Claude·FM"}
+            aria-pressed={radio.playing}
+            onMouseEnter={() => setFmHover(true)}
+            onMouseLeave={() => setFmHover(false)}
+            style={{
+              ...bare, gap: 5, height: 13,
+              color: radio.playing ? "var(--acc)" : fmHover ? "var(--txm)" : "var(--txl)",
+              // Glow, not shadow: the phosphor bleeds while it plays.
+              filter: radio.playing ? "drop-shadow(0 0 3px color-mix(in srgb, var(--acc) 60%, transparent))" : "none",
+              transition: "color .15s ease",
+            }}
+          >
+            {/* At rest a note, not a still spectrum — four stepped bars read as
+                phone signal strength. The bars are for playing; the fixed slot
+                keeps FM from shifting when they swap. */}
+            <span style={{ width: 12, height: 10, flex: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 1.5 }}>
+              {radio.playing
+                ? [0, 0.3, 0.12, 0.42].map((d, i) => (
+                    <span key={i} style={{ width: 2, height: 10, background: "currentColor", transformOrigin: "bottom", animation: `eqbar ${0.72 + i * 0.13}s ease-in-out ${d}s infinite` }} />
+                  ))
+                : (
+                  <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18V5l12-2v13" />
+                    <circle cx="6" cy="18" r="3" />
+                    <circle cx="18" cy="16" r="3" />
+                  </svg>
+                )}
+            </span>
+            <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t8)", letterSpacing: "1.5px" }}>FM</span>
+          </button>
+        </span>
         {clockOpen && (
           <div
             style={{
@@ -332,8 +339,11 @@ export function Strip(props: StripProps) {
         {weekOpen && <WeekPanel />}
       </span>
 
-      <span style={hairline(16)} />
-      <NotificationCenter />
+      {/* The actions, by the gear: SHIP and the bell. */}
+      <span style={{ display: "flex", alignItems: "center", gap: 12, flex: "none" }}>
+        <UpdateButton onFeed={onFeed} />
+        <NotificationCenter />
+      </span>
     </div>
   );
 }

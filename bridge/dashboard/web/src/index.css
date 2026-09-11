@@ -354,14 +354,23 @@ body {
 .hudgrid {
   transition: grid-template-columns 0.26s var(--ease-hud);
 }
-/* The right column's cap: SHIP, the radio, clock & weather and the bell share
-   one row as wide as the panel. A narrow panel drops the temperature first,
-   then the radio, rather than spill into the transcript. The widths are the
-   whole cap, rail included — re-measure if the cluster grows. !important
-   because the elements carry an inline display. */
+/* The right column's cap: the clock instrument on the left, SHIP and the bell
+   on the right, one row as wide as the panel. Below a 326px cap (a ~1390px
+   window, just above where AUTO type drops to 11px) SHIP loses its verb —
+   arrow and count stay, the title says the rest — and with that the whole
+   cluster fits down to the narrowest panel in every theme, FOUNDRY's Space Mono
+   in 12H being the widest (2px to spare at the threshold), so the weather and
+   the radio never have to go. The width is the whole cap, rail included;
+   re-measure if the cluster grows. */
+/* ponytail: px, measured at AUTO type — a manual BASE FONT SIZE of 16 on a
+   small window can still spill; em-based thresholds if anyone runs that. */
 .rcap { container-type: inline-size; }
-@container (max-width: 337px) { .rcap .wx { display: none !important; } }
-@container (max-width: 289px) { .rcap .fm { display: none !important; } }
+@container (max-width: 326px) { .rcap .shipword { display: none; } }
+/* Centre the glyphs, not the font's line box. Flex centres a text's line box,
+   and where the glyphs sit inside it is each font's own metric: JetBrains Mono
+   lands centred, Consolas and Courier New ride 2-3px high. Trimmed to cap
+   height and baseline, every theme's mono sits on the same midline. */
+.trim { text-box: trim-both cap alphabetic; }
 /* A shell column is one flush surface, divided from its neighbour by a single
    hairline — so the panel that fills a column must not draw a second box
    inside it. This outranks the panels' own inline border on purpose: the same

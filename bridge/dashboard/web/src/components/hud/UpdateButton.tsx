@@ -144,9 +144,11 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
         {...hp("btn")}
         style={{
           appearance: "none", cursor: "pointer", flex: "none",
-          height: 22, padding: "0 9px", boxSizing: "border-box",
+          height: 24, padding: "0 9px", boxSizing: "border-box",
           border: `1px solid color-mix(in srgb, ${tone} 34%, transparent)`,
-          background: `color-mix(in srgb, ${tone} ${hov === "btn" ? 14 : 7}%, transparent)`,
+          // No fill at rest: the border already says button, and beside the
+          // cap's neutral readouts the tone alone is loud enough.
+          background: hov === "btn" ? `color-mix(in srgb, ${tone} 12%, transparent)` : "transparent",
           color: tone, fontFamily: "var(--mono)", fontSize: "var(--t95)", letterSpacing: 1.4,
           display: "flex", alignItems: "center", gap: 6,
           opacity: incoming || local ? 1 : 0.75,
@@ -157,10 +159,13 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
             : local ? <path d="M12 21V9M7 14l5-5 5 5M4 4h16" />
             : <path d="M20 6L9 17l-5-5" />}
         </svg>
-        {/* The count reads as the ledger's value, not part of the verb. */}
-        {phase !== "checking" && incoming && !local ? <>UPDATE <span style={{ color: "var(--txm)", letterSpacing: ".4px" }}>{incoming}</span></>
-          : phase !== "checking" && local && !incoming ? <>SHIP <span style={{ color: "var(--txm)", letterSpacing: ".4px" }}>{local}</span></>
-          : label}
+        {/* The count reads as the ledger's value, not part of the verb — and a
+            narrow cap drops the verb (index.css); the title still says it. */}
+        <span className="trim">
+          {phase !== "checking" && incoming && !local ? <><span className="shipword">UPDATE </span><span style={{ color: "var(--txm)", letterSpacing: ".4px" }}>{incoming}</span></>
+            : phase !== "checking" && local && !incoming ? <><span className="shipword">SHIP </span><span style={{ color: "var(--txm)", letterSpacing: ".4px" }}>{local}</span></>
+            : label}
+        </span>
       </button>
 
       {/* Portalled into the themed container: the Strip's own animation makes it a
