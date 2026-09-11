@@ -1030,8 +1030,9 @@ export function SessionsPanel(props: Props) {
                              cursor: order === "custom" && !sq ? "grab" : "pointer" }}
                   >
                     <span style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
+                    {/* A label, not a destination — a tier under the session titles so they read first. */}
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                   fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txb)" }}>{g.name}</span>
+                                   fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
                     <button
                       onClick={(e) => { e.stopPropagation(); openFor(g.rel); }}
