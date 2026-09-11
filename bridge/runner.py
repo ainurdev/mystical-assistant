@@ -90,6 +90,20 @@ def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
         return ""
 
 
+def _tasks_digest_for(project: "str | None", cwd: "str | None") -> str:
+    """Tracker digest for injection (bridge/trackers.py). Same contract as the
+    graph pack: best-effort, empty on anything, never blocks a turn past the
+    2 s the digest itself allows. `project` is the session's rel — a worktree's
+    cwd is not the project the link hangs off."""
+    try:
+        if not aifeatures.enabled("tasks"):
+            return ""
+        from bridge import trackers
+        return trackers.digest(project or rel(cwd or state.project_dir(0)))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
     """Keep an existing graph fresh after a successful turn (fire-and-forget;
     refresh_async no-ops for projects that were never mapped)."""
@@ -293,7 +307,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               claude_session_id: str | None = None, cwd: str | None = None,
               skip_pack: bool = False, new_session: bool = False,
               fork: bool = False, disabled_tools: list[str] | None = None,
-              autocompact: str | None = None) -> list[str]:
+              autocompact: str | None = None, project: str | None = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -353,6 +367,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         graph = ""
     else:
         graph = _graph_pack_for(chat_id, cwd)
+        # The task digest rides the same once-per-session gate: a list that
+        # moved between turns must not re-write the appended prompt.
+        graph = "\n\n".join(p for p in (graph, _tasks_digest_for(project, cwd)) if p)
         if claude_session_id:
             _packed_sessions.add(claude_session_id)
     cmd += ["--append-system-prompt", _compose_system_prompt(graph)]
@@ -556,6 +573,12 @@ class Job:
         # leaves the columns NULL — unknown rather than free.
         self.tokens: dict | None = None
         self.cwd: str | None = None       # where claude was spawned (set by _run_streaming)
+        self.project: str | None = None   # the session's project rel (a worktree cwd differs)
+        # A tracker update turn (bridge/trackers.py): the MCP server to switch on
+        # for this turn whatever the session's toggles say, and the argv extras
+        # (the --settings ask rule) that make every call on it show a card.
+        self.mcp_on: str | None = None
+        self.extra_args: list[str] = []
         self.work_cwd: str | None = None  # worktree the shell moved into, if any
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
         self.open_tools: dict[str, tuple[str, float]] = {}
@@ -1325,8 +1348,12 @@ def _handle_control_request(job: Job, obj: dict):
         summary = _summarize_tool(tool, req.get("input", {}))
         job.add_pending({"request_id": rid, "kind": "permission", "tool_name": tool,
                          "summary": summary, "input": req.get("input", {})})
-        job.add({"type": "permission", "request_id": rid,
-                 "tool_name": tool, "summary": summary})
+        ev = {"type": "permission", "request_id": rid, "tool_name": tool, "summary": summary}
+        if tool.startswith("mcp__"):
+            # The whole call, not 120 chars of it: an MCP write (a tracker
+            # comment, a status change) is judged on its full text.
+            ev["detail"] = json.dumps(req.get("input", {}), indent=1, ensure_ascii=False)[:4000]
+        job.add(ev)
     notify_awaiting(job.chat_id, job.store_session_id,
                     "question" if tool == "AskUserQuestion" else "permission")
 
@@ -1767,14 +1794,18 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         from bridge import toolsets  # local: toolsets imports runner
         job.boot = ("checking configured MCP servers"
                     if job.store_session_id and not toolsets.ready() else None)
+        denied = store.get_disabled_tools(job.store_session_id) if job.store_session_id else None
+        if job.mcp_on:
+            # On for this turn only — the session's own toggles are not written.
+            denied = [r for r in (store.default_disabled_tools() if denied is None else denied)
+                      if r != f"mcp__{job.mcp_on}"]
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
-                        new_session=job.new_session,
-                        disabled_tools=store.get_disabled_tools(job.store_session_id)
-                        if job.store_session_id else None,
+                        new_session=job.new_session, disabled_tools=denied,
                         autocompact=store.get_autocompact(job.store_session_id)
-                        if job.store_session_id else None)
+                        if job.store_session_id else None, project=job.project)
+        cmd += job.extra_args
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -2000,7 +2031,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         session_id: str | None = None,
                         origin: str | None = None, ponytail: str | None = None,
                         account_slot: int | None = None,
-                        runtime: str | None = None) -> Job | None:
+                        runtime: str | None = None,
+                        mcp_on: str | None = None,
+                        extra_args: list[str] | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -2025,6 +2058,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.resume_id, job.new_session, job.fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         job.account_slot = account_slot
+        job.project = session.get("project")
+        job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"
         job.runtime = runtime

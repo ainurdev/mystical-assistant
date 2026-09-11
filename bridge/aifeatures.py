@@ -124,6 +124,17 @@ FEATURES = (
               "ANALYZE gets the MAP tab. Off, nothing is built, refreshed or "
               "injected, /map answers that the switch is off, and both leave the "
               "dashboard. An existing graphify-out/ is left on disk."},
+    {"key": "tasks", "env": "TASKS_DIGEST", "label": "TASK DIGEST",
+     "hint": "what is open, overdue and due soon, on a session's first turn",
+     "cost": "no extra call, a prompt pack per session in a linked repo",
+     "tokens": "~300 tokens",
+     "about": "A repo linked to a Teamwork or Jira project (ANALYZE ▸ LINK TASKS) "
+              "opens every session with a dozen lines from the tracker: counts, "
+              "the next deadline, what is overdue, what is due this week, what is "
+              "yours — keys, titles and dates only, never a description. Read from "
+              "a two-minute cache, sent once per session so the prompt cache holds, "
+              "and never waits more than two seconds for the tracker. Off, "
+              "nothing is injected; the TASKS tab and FEED still work."},
     {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
      "hint": "writes a commit message from the diff you selected",
      "cost": "1 haiku call per press",

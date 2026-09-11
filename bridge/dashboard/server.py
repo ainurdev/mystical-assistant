@@ -34,8 +34,8 @@ from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     models, native, preview_detect, project_config,
                     pubsub, queue_manager, relevance, report, runner, selfupdate,
                     share,
-                    shell, skills, state, store, sysinfo, terminals, titler, usage,
-                    weather, wsutil)
+                    shell, skills, state, store, sysinfo, terminals, titler, trackers,
+                    usage, weather, wsutil)
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
@@ -475,6 +475,27 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(github.issues(abs_p))
+        if path == "/local/trackers":
+            return self._json({"connections": trackers.connections()})
+        if path == "/local/tracker/projects":
+            try:
+                return self._json({"projects": trackers.projects((qs.get("conn", [""])[0] or "").strip())})
+            except trackers.TrackerError as e:
+                return self._json({"error": str(e)}, 400)
+        if path == "/local/tracker/tasks":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(trackers.view(browser.rel(abs_p), (qs.get("session_id", [""])[0] or "").strip() or None))
+        if path == "/local/tracker/statuses":
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            key = (qs.get("key", [""])[0] or "").strip()
+            if abs_p is None or not key:
+                return self._json({"error": "invalid project or key"}, 400)
+            try:
+                return self._json({"statuses": trackers.statuses(browser.rel(abs_p), key)})
+            except trackers.TrackerError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/local/project/settings":
             abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
                      or _abs_project(qs.get("cwd_rel", [None])[0] or qs.get("project", [None])[0])
@@ -487,6 +508,8 @@ class Handler(BaseHTTPRequestHandler):
                 "prod_url": project_config.prod_url(rel, branch),
                 "design_project": project_config.design_project(rel, branch),
                 "name": project_config.name(rel),
+                "tracker": project_config.tracker(rel),
+                "tracker_label": project_config.tracker_label(rel),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
@@ -1148,7 +1171,37 @@ class Handler(BaseHTTPRequestHandler):
                 out["name"] = project_config.set_name(rel, (body.get("name") or "")[:60])
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
+            if "tracker" in body:
+                out["tracker"] = project_config.set_tracker(
+                    rel, (body.get("tracker") or "")[:120], (body.get("tracker_label") or "")[:120])
+                out["tracker_label"] = project_config.tracker_label(rel)
+                trackers.invalidate()
             return self._json(out)
+        if path == "/local/trackers":
+            op = body.get("op")
+            try:
+                if op == "add":
+                    return self._json({"ok": True, "connection": trackers.add_connection(
+                        (body.get("kind") or "").strip(), (body.get("name") or "")[:60],
+                        (body.get("site") or "")[:200], (body.get("email") or "")[:200],
+                        (body.get("token") or "")[:2000])})
+                if op == "remove":
+                    trackers.invalidate()
+                    return self._json({"ok": trackers.remove_connection((body.get("id") or "").strip())})
+            except trackers.TrackerError as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"error": "op must be add or remove"}, 400)
+        if path == "/local/tracker/update":
+            abs_p = _abs_project(body.get("project"))
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            job, err = trackers.start_update(
+                chat, browser.rel(abs_p), abs_p, (body.get("session_id") or "").strip(),
+                (body.get("key") or "")[:60], (body.get("status_id") or "")[:60],
+                (body.get("status_name") or "")[:80], (body.get("note") or "")[:2000], "dashboard")
+            if job is None:
+                return self._json({"error": err}, 409 if err == "busy" else 400)
+            return self._json({"job_id": job.id, "session_id": job.store_session_id})
         if path == "/local/git/checkout":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

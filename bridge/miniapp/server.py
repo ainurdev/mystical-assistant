@@ -21,8 +21,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, git, github,
                     hooks, httpgz, models, native, project_config, relevance,
-                    runner, state, store, transcript_jsonl, transcript_page,
-                    usage)
+                    runner, state, store, trackers, transcript_jsonl,
+                    transcript_page, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
 
@@ -346,6 +346,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(usage.get_usage())
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
+                if path == "/api/tracker/tasks":
+                    return self._json(trackers.view(browser.rel(state.project_dir(chat_id)),
+                                                    (qs.get("session_id", [""])[0] or "").strip() or None))
+                if path == "/api/tracker/statuses":
+                    key = (qs.get("key", [""])[0] or "").strip()
+                    if not key:
+                        return self._json({"error": "key required"}, 400)
+                    try:
+                        return self._json({"statuses": trackers.statuses(
+                            browser.rel(state.project_dir(chat_id)), key)})
+                    except trackers.TrackerError as e:
+                        return self._json({"error": str(e)}, 400)
                 if path == "/api/queue":
                     return self._api_queue_get(chat_id)
                 if path == "/api/commands":
@@ -422,6 +434,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_file_write(chat_id, body)
             if path == "/api/queue":
                 return self._api_queue_post(chat_id, body)
+            if path == "/api/tracker/update":
+                pd = state.project_dir(chat_id)
+                job, err = trackers.start_update(
+                    chat_id, browser.rel(pd), pd, (body.get("session_id") or "").strip(),
+                    (body.get("key") or "")[:60], (body.get("status_id") or "")[:60],
+                    (body.get("status_name") or "")[:80], (body.get("note") or "")[:2000], "miniapp")
+                if job is None:
+                    return self._json({"error": err}, 409 if err == "busy" else 400)
+                return self._json({"job_id": job.id, "session_id": job.store_session_id})
             if path == "/api/nextup/refresh":
                 from bridge import nextup
                 threading.Thread(target=nextup.refresh, args=(chat_id,),

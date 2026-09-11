@@ -124,9 +124,23 @@ def facts(chat_id: int, cwd: str) -> dict:
                             "prompt": (turns[-1].get("prompt") or "")[:300],
                             "status": turns[-1]["status"]})
 
+    try:
+        from bridge import trackers
+        tk = trackers.tasks(rel(cwd), wait=2.0)
+    except Exception:  # noqa: BLE001 — no link, no token, tracker down
+        tk = {}
+    today = datetime.date.today().isoformat()
+    week = (datetime.date.today() + datetime.timedelta(days=7)).isoformat()
+    due = [{"key": t["key"], "title": t["title"], "due": t["due"], "mine": t["mine"]}
+           for t in (tk.get("tasks") or []) if t.get("due") and t["due"] <= week]
+
     return {
         "cwd": cwd,
         "name": os.path.basename(cwd) or cwd,
+        "tracker": tk.get("label") or "",
+        # tracker tasks past due or due this week, soonest first — a deadline is
+        # the one fact here that can outrank a dirty tree
+        "tasks_due": [dict(t, overdue=t["due"] < today) for t in due][:8],
         "branch": st.get("branch", ""),
         "ahead": st.get("ahead", 0),
         "behind": st.get("behind", 0),
@@ -172,7 +186,8 @@ def cache_key(f: dict) -> str:
     # the untriaged tally is part of the key and the raw count is not enough.
     untriaged = sum(1 for i in f["issues"] if not i["labels"])
     raw = json.dumps([git.head_sha(f["cwd"]), f["branch"], f["ahead"], sorted(f["files"]),
-                      f["open_issues"], untriaged, len(f["stalled"])], sort_keys=True)
+                      f["open_issues"], untriaged, len(f["stalled"]),
+                      [t["key"] for t in f.get("tasks_due") or []]], sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -277,6 +292,11 @@ def _heuristic(f: dict) -> list[dict]:
         out.append({"title": f"Finish: {s['title']}", "effort": "medium",
                     "why": f"a session stopped mid-task ({s['status']})",
                     "evidence": s["prompt"][:120], "_rank": 0})
+    for t in [t for t in f.get("tasks_due") or [] if t["overdue"]][:2]:
+        out.append({"title": t["title"][:80], "effort": "medium",
+                    "why": f"{f.get('tracker') or 'tracker'} task overdue since {t['due']}"
+                           + (", assigned to you" if t["mine"] else ""),
+                    "evidence": t["key"], "_rank": 1})
     if f["dirty"]:
         out.append({"title": f"Land {f['dirty']} uncommitted file(s)",
                     "why": f"dirty worktree on {f['branch'] or 'HEAD'}"

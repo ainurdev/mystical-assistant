@@ -109,3 +109,13 @@ def create_pr(cwd: str, head: str, base: str, title: str,
     m = _PR_URL_RE.search(output)
     return rc == 0, {"output": output, "url": m.group(0) if m else "",
                      "number": int(m.group(1)) if m else None}
+
+
+def pr_url(cwd: str, branch: str) -> str:
+    """The open PR for `branch`, or "". What a tracker update links to."""
+    slug = remote_slug(cwd)
+    if slug is None or not branch:
+        return ""
+    rc, out, _ = _run("gh", "pr", "list", "-R", slug, "--head", branch, "--state", "open",
+                      "--limit", "1", "--json", "url", "--jq", ".[0].url // \"\"")
+    return out.strip() if rc == 0 else ""
