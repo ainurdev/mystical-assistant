@@ -1084,6 +1084,22 @@ input {
    width IS the viewport. 94vw drops under 560px at a 600px viewport. */
 .setbody { flex: 1; display: flex; min-height: 0; }
 
+/* The page a category opens: it rises and fades in, so switching reads as
+   turning to another page rather than the text under you flashing to other
+   text. No fill-mode on purpose — once it lands nothing stays transformed, and
+   a lingering transform would become the containing block of any fixed-position
+   popover inside the page. */
+.setpane { padding: 22px 26px 40px; }
+.setpage { animation: setpage 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes setpage {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+/* A pack sound row: hover is CSS so it can't fight the row's own "playing" /
+   "in use" fill, which is inline and wins. */
+.sndrow { transition: background-color 0.15s ease; }
+.sndrow:hover { background: color-mix(in srgb, var(--acc) 7%, transparent); }
+
 /* A modal that is a column of rows — a setting and its switch, a repo and its
    buttons — gains nothing from the width the dialogs took on a wide screen: the
    label sits against one edge and its control against the other, far enough
@@ -1148,6 +1164,7 @@ input {
   color: var(--txd);
   font-family: inherit;
   padding: 9px 12px;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 
 .setrail button.on {
@@ -1183,6 +1200,12 @@ input {
      with it: a caption stacked beside its own tabs reads as another tab. */
   .setrail .hint { display: none; }
   .setgroup { display: none; }
+  .setpane { padding: 16px 14px 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .setpage { animation: none; }
+  .setrail button,
+  .sndrow { transition: none; }
 }
 
 /* Session swap, slow case: the transcript you are leaving holds its place and

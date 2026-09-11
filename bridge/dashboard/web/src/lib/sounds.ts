@@ -116,6 +116,27 @@ export function soundsFor(
   return keys.filter((k) => byCat[k]?.length).map((k) => ({ cat: k, sounds: byCat[k] }));
 }
 
+/** What each PeonPing category is FOR, in the picker's words. The raw key names
+ *  the hook that fires it — "user.spam" is peon-ping's rapid-prompt detector —
+ *  not what its lines sound like. Hints follow peon-ping's own category list;
+ *  a key it doesn't know shows as itself, with no hint made up for it. */
+const CATS: Record<string, [label: string, hint: string]> = {
+  "task.complete": ["FINISHED", "a task is done"],
+  "input.required": ["NEEDS INPUT", "waiting on a permission or an answer"],
+  "task.error": ["ERROR", "something failed"],
+  "resource.limit": ["LIMIT", "a limit hit, or the context compacting"],
+  "session.start": ["GREETING", "a session opens"],
+  "session.end": ["GOODBYE", "a session closes"],
+  "task.acknowledge": ["ACKNOWLEDGE", "a prompt was received"],
+  "task.progress": ["PROGRESS", "still working"],
+  "user.spam": ["ANNOYED", "prompts sent too fast"],
+};
+
+export function catLabel(cat: string): { label: string; hint?: string } {
+  const c = CATS[cat];
+  return c ? { label: c[0], hint: c[1] } : { label: cat.toUpperCase() };
+}
+
 /** Where a manifest's `file` actually sits in the repo. Packs spell it three
  *  ways — "sounds/x.mp3", a bare "x.mp3", and occasionally "./sounds/x.mp3" —
  *  but every one of them stores the file at sounds/<basename>. This is the rule
@@ -149,13 +170,20 @@ function element(src: string): HTMLAudioElement {
     el = new Audio(src);
     el.preload = "auto";
     els.set(src, el);
+  } else if (el.error) {
+    // The one reset worth making: it never arrived (offline when the page
+    // opened), so ask again rather than blip in its place for the rest of the day.
+    el.load();
   }
   return el;
 }
 
-/** Warm a sound so the first real notification isn't the download. */
+/** Warm a sound so the first real notification isn't the download. Making the
+ *  element IS the warm-up — preload="auto" starts the fetch. Never load() one
+ *  that exists: that resets it, and picking a sound in the settings both plays
+ *  it and re-runs this, so the element being reset is the preview. */
 export function preloadSound(src: string | undefined): void {
-  if (src && src.startsWith("http")) { try { element(src).load(); } catch { /* ignore */ } }
+  if (src && src.startsWith("http")) { try { element(src); } catch { /* ignore */ } }
 }
 
 /** Play one choice. `fallback` is the legacy single tone, used when an event has
@@ -178,4 +206,41 @@ export function playSound(
   } catch {
     chime(fallback, volume);
   }
+}
+
+// The audition playing now, held as the function that stops it.
+let auditioning: (() => void) | null = null;
+
+/** The settings picker's ▶. Unlike playSound it holds one slot — auditioning is
+ *  clicking down a pack's lines, and the one you just clicked should cut the
+ *  last off, not talk over it — and it can be stopped: pass null. `onEnd` hears
+ *  exactly once when this audition stops, however it stops; `ok` is false only
+ *  when the sound itself is broken (its file 404s, won't decode, never came).
+ *  No fallback blip here: in the picker a blip in place of the line you tapped
+ *  is a lie about that line. A tone is a blip anyway, so it ends as it starts. */
+export function audition(
+  src: string | null,
+  volume: number,
+  onEnd?: (ok: boolean) => void,
+): void {
+  auditioning?.();
+  if (!src) return;
+  if (src.startsWith("tone:")) { chime(src.slice(5) as ToneKey, volume); onEnd?.(true); return; }
+  const el = element(src);
+  const end = (ok: boolean) => {
+    if (auditioning !== stop) return;   // already cut off: its late AbortError is noise
+    auditioning = null;
+    el.removeEventListener("ended", ended);
+    onEnd?.(ok);
+  };
+  const stop = () => { end(true); el.pause(); };
+  const ended = () => end(true);
+  auditioning = stop;
+  el.addEventListener("ended", ended);
+  el.volume = Math.max(0, Math.min(1, volume));
+  el.currentTime = 0;
+  // Broken is the element's verdict, not the rejection's: a real element sets
+  // .error before it rejects over a bad file, while a refusal (no user gesture
+  // behind the play, a pause cutting it off) rejects with the file untouched.
+  el.play().catch(() => end(!el.error));
 }

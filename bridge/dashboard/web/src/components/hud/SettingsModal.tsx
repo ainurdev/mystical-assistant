@@ -1,15 +1,15 @@
 import {
-  Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore,
+  Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from "react";
 import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
-  Ellipsis, FileCog, FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
+  FileCog, FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
   MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
   Power, Radio, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
-  ShieldQuestion, SlidersHorizontal, Sparkles, SquareTerminal, Sun, TriangleAlert, Type,
-  Upload, Volume2, Waypoints, X, type LucideIcon,
+  ShieldQuestion, SlidersHorizontal, Sparkles, Square, SquareTerminal, Sun, TriangleAlert, Type,
+  Upload, Volume2, Waypoints, type LucideIcon,
 } from "lucide-react";
 import { CHAT_BGS, TOOL_STYLES, type ChatBg, type ToolStyle } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
@@ -61,11 +61,13 @@ import { RADIO_STATIONS } from "../../lib/ambient";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import {
+  audition,
+  catLabel,
   loadPackSounds,
   loadPacks,
   OFF,
+  packBase,
   packChoice,
-  playSound,
   PUSH_EVENT_KEYS,
   PUSH_EVENTS,
   soundsFor,
@@ -129,22 +131,39 @@ type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notification
 // while working", "extras that spend model calls") gave every other row a
 // different height, and a rail whose rows are all different heights reads as
 // ten unrelated things rather than two groups of five.
-const TABS: { key: Tab; label: string; hint: string; icon: LucideIcon; group: string }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · type · CRT", icon: Palette, group: "THE HUD" },
-  { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD" },
-  { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD" },
-  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD" },
-  { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD" },
+//
+// `about` is the page's own first line: what the category is FOR, in a
+// sentence. The rail's hint names what's inside; nothing said why you'd open
+// it, so every page began on its first block and left you to work that out.
+const TABS: { key: Tab; label: string; hint: string; about: string; icon: LucideIcon; group: string }[] = [
+  { key: "appearance", label: "APPEARANCE", hint: "theme · type · CRT", icon: Palette, group: "THE HUD",
+    about: "How the dashboard looks: the palette it wears, its typeface and size, and the CRT effects laid over it." },
+  { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
+    about: "How a session reads: the style every message is drawn in, the texture behind it, and whether results start open." },
+  { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD",
+    about: "What the dashboard shows while a session is working: an equalizer, a nyan cat, or a piano to play while you wait." },
+  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD",
+    about: "What surrounds the work: the weather beside the header clock, and the Claude·FM radio." },
+  { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD",
+    about: "How the dashboard tells you a session finished, failed, or is waiting on you: a desktop banner, a sound, or both." },
   // First under THE WORK: the repo is the biggest unit of it, and this was a
   // modal behind SYSTEM ▸ MANAGE ▸ OPEN, which nobody found.
-  { key: "projects", label: "PROJECTS", hint: "name · hide · import", icon: FolderTree, group: "THE WORK" },
-  { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK" },
-  { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK" },
-  { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK" },
-  { key: "mcp", label: "MCP", hint: "servers · auth", icon: Plug, group: "THE WORK" },
-  { key: "hooks", label: "HOOKS", hint: "inbound events", icon: Radio, group: "THE WORK" },
-  { key: "accounts", label: "ACCOUNTS", hint: "logins · fallback", icon: KeyRound, group: "THE WORK" },
-  { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK" },
+  { key: "projects", label: "PROJECTS", hint: "name · hide · import", icon: FolderTree, group: "THE WORK",
+    about: "Every repo the bridge can run in. Rename one, hide it from the sidebar, or import a new one." },
+  { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK",
+    about: "What each new run starts with (model, agent, mode, effort), and profiles that save a set of them." },
+  { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK",
+    about: "Extras that call a model on your behalf, like titles, summaries and guards. Each spends tokens, so each has its own switch." },
+  { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK",
+    about: "The global files each AI tool reads on every run, such as Claude Code's CLAUDE.md and settings.json, edited in place." },
+  { key: "mcp", label: "MCP", hint: "servers · auth", icon: Plug, group: "THE WORK",
+    about: "The MCP servers Claude can call tools from. Add one, re-authorize an expired login, or remove one." },
+  { key: "hooks", label: "HOOKS", hint: "inbound events", icon: Radio, group: "THE WORK",
+    about: "URLs that GitHub, a CI job or your own script can POST to. Whatever arrives is pushed to you on Telegram." },
+  { key: "accounts", label: "ACCOUNTS", hint: "logins · fallback", icon: KeyRound, group: "THE WORK",
+    about: "The Claude logins runs use and what each has left, what a chat does when one runs out, and who takes over then." },
+  { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
+    about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
 ];
 
 // ---- SEARCH -----------------------------------------------------------------
@@ -295,15 +314,18 @@ const RULE = "1px solid color-mix(in srgb, var(--acc) 10%, transparent)";
 const CARD: CSSProperties = {
   border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
   background: "color-mix(in srgb, var(--panel) 55%, transparent)",
-  padding: "12px 13px",
+  padding: "14px 16px",
 };
 const KV: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between" };
-const KEY_TX: CSSProperties = { fontSize: "var(--t10)", letterSpacing: 1, color: "var(--txd)" };
-const NOTE: CSSProperties = { fontSize: "var(--t95)", color: "var(--txl)", marginTop: 11, lineHeight: 1.7 };
+// A setting's name at --txm, the lines that explain it at --txd. The explaining
+// used to sit at --txl — under 2.5:1 on the dark grounds — so the ⓘ you opened
+// in order to read something handed you text you could barely read.
+const KEY_TX: CSSProperties = { fontSize: "var(--t10)", letterSpacing: 1, color: "var(--txm)" };
+const NOTE: CSSProperties = { fontSize: "var(--t95)", color: "var(--txd)", marginTop: 11, lineHeight: 1.7 };
 // What an ⓘ unfolds. Ruled off on the left so it reads as an aside about the
 // row above it, not as another line of the panel.
 const ASIDE: CSSProperties = {
-  fontSize: "var(--t95)", color: "var(--txl)", lineHeight: 1.75, marginTop: 9,
+  fontSize: "var(--t95)", color: "var(--txd)", lineHeight: 1.75, marginTop: 9,
   borderLeft: "1px solid color-mix(in srgb, var(--acc) 32%, transparent)", paddingLeft: 10,
 };
 
@@ -372,6 +394,52 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "DEV SERVER": SquareTerminal,
 };
 
+// …and one visible line per block saying what it is FOR, looked up the same way
+// for the same reason. The long "why" stays behind the ⓘ; this is the line that
+// tells you, before you read any of that, whether you're in the right place.
+const SEC_DESC: Record<string, string> = {
+  "THEME · DARK": "Palettes on a dark ground. Click one to wear it.",
+  "THEME · LIGHT": "Palettes on a paper or daylight ground.",
+  "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
+  TYPE: "The typeface the HUD is set in, and the base size every other size scales from.",
+  "BOOT SEQUENCE": "The intro the dashboard plays when it opens.",
+  "OUTPUT STYLE": "How every message in a session is drawn. Each tile is a live preview.",
+  "THE GROUND": "The texture the transcript sits on.",
+  RESULTS: "Whether command output and diffs start open or folded.",
+  "WORKING INDICATOR": "The tab you pick is the one the dashboard shows while it works.",
+  "WEATHER · header clock": "The city and unit for the weather beside the header clock.",
+  "CLAUDE·FM": "The header radio: which station, and how loud.",
+  DESKTOP: "A system banner when a session you aren't watching finishes or needs you.",
+  SOUND: "A sound when that happens: the default tone, and the volume for every sound.",
+  "PER EVENT": "A different sound for each kind of news: a tone, a voice line from a pack, or nothing.",
+  "RUN DEFAULTS": "What each new run starts with. The composer's dropdowns are these same settings.",
+  PROFILES: "Saved sets of the settings above, applied in one click.",
+  "MODEL-SPENDING EXTRAS": "Features that call a model on their own. Each shows what one use costs.",
+  "CLAUDE CODE": "Claude Code's global instructions and settings, read by every run.",
+  OPENCODE: "opencode's global instructions and config.",
+  "MCP SERVERS": "Servers a session can call tools from: their health, their login, removing them.",
+  "ADD A SERVER": "Connect a new server by URL, or by the command that starts it.",
+  "INBOUND HOOKS": "Your hook URLs. Anything POSTed to one is pushed to Telegram.",
+  "ADD A HOOK": "Make a new URL for one sender, like GitHub, Sentry or a CI job.",
+  "RECENT EVENTS": "What your hooks received lately, newest first.",
+  "ON USAGE LIMIT": "What a chat does when its login runs out: ask you, fall back on its own, or wait.",
+  "CLAUDE LOGINS": "The Claude accounts runs can use, and how much of each is left.",
+  "FREE AGENTS": "Other providers that take the turn when every Claude login is spent.",
+  BRIDGE: "The address this dashboard is talking to.",
+  STARTUP: "Install the dashboard as its own app, and start it when you log in.",
+  "HTTP INSPECTOR": "Watch every API request a run makes, live.",
+  PLATFORM: "The bridge's version, and updating it in place.",
+  // …and the environment registry's groups, as they arrive from the bridge.
+  ACCESS: "Who may drive this bridge: the bot token, allowed chats, the dashboard's gate.",
+  PROJECTS: "Where the project browser starts, and the project a new chat opens in.",
+  RUNS: "How runs are launched and watched: timeouts, auto-resume, modes, flags.",
+  SERVERS: "The local servers the bridge runs, and their ports.",
+  TUNNEL: "The Cloudflare tunnel that gives the Mini App its public URL.",
+  UPLOADS: "Limits on attachments, and how long they're kept.",
+  "AI TUNING": "Models and limits for the new-session guard and the next-up scout.",
+  "DEV SERVER": "Defaults for /server: its start command, port and tunnel client.",
+};
+
 /** A titled block. The explanation that used to stand under every block as a
  *  paragraph folds behind the ⓘ beside the title instead — nine tabs of prose
  *  at rest is what made these panels read as a wall of text.
@@ -379,29 +447,40 @@ const SEC_ICONS: Record<string, LucideIcon> = {
  *  The icon is what you actually navigate by once a tab is longer than a
  *  screen: SYSTEM is twelve of these blocks, and twelve identical dim rules
  *  give the eye nothing to count off against while scrolling. */
-function Section({ title, icon, info, top, children }: {
+function Section({ title, icon, desc, info, top, children }: {
   title: ReactNode;
   icon?: LucideIcon;
+  desc?: ReactNode;   // defaults to SEC_DESC by title
   info?: ReactNode;
   top?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const Icon = icon ?? (typeof title === "string" ? SEC_ICONS[title] : undefined);
+  const sub = desc ?? (typeof title === "string" ? SEC_DESC[title] : undefined);
   return (
-    <div data-sec={typeof title === "string" ? title : undefined} style={{ marginTop: top ? 22 : 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        {Icon && (
-          <Icon size={13} strokeWidth={1.7} aria-hidden
-            style={{ flex: "none", color: "var(--acc)", opacity: .75 }} />
+    <div data-sec={typeof title === "string" ? title : undefined} style={{ marginTop: top ? 34 : 0 }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {Icon && (
+            <Icon size={13} strokeWidth={1.7} aria-hidden
+              style={{ flex: "none", color: "var(--acc)", opacity: .8 }} />
+          )}
+          <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txd)", flex: "none" }}>
+            {title}
+          </span>
+          {info && <InfoDot on={open} about={typeof title === "string" ? title : undefined} onClick={() => setOpen(!open)} />}
+          <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 12%, transparent)" }} />
+        </div>
+        {/* Indented past the icon to the title, so it reads as the title's own
+            caption rather than as the first line of the card below. */}
+        {sub && (
+          <div style={{ fontSize: "var(--t95)", color: "var(--txd)", lineHeight: 1.6, marginTop: 6, paddingLeft: Icon ? 21 : 0 }}>
+            {sub}
+          </div>
         )}
-        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>
-          {title}
-        </span>
-        {info && <InfoDot on={open} about={typeof title === "string" ? title : undefined} onClick={() => setOpen(!open)} />}
-        <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 12%, transparent)" }} />
+        {info && open && <div style={{ ...ASIDE, marginTop: 10 }}>{info}</div>}
       </div>
-      {info && open && <div style={{ ...ASIDE, marginTop: 0, marginBottom: 12 }}>{info}</div>}
       {children}
     </div>
   );
@@ -422,7 +501,7 @@ function Row({ label, desc, info, first, children }: {
   return (
     <div
       data-row={typeof label === "string" ? label : undefined}
-      style={{ marginTop: first ? 0 : 11, paddingTop: first ? 0 : 11, borderTop: first ? undefined : RULE }}
+      style={{ marginTop: first ? 0 : 13, paddingTop: first ? 0 : 13, borderTop: first ? undefined : RULE }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={KEY_TX}>{label}</span>
@@ -430,8 +509,31 @@ function Row({ label, desc, info, first, children }: {
         <span style={{ flex: 1, minWidth: 8 }} />
         {children}
       </div>
-      {desc && <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4 }}>{desc}</div>}
+      {desc && <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 5, lineHeight: 1.6 }}>{desc}</div>}
       {info && open && <div style={ASIDE}>{info}</div>}
+    </div>
+  );
+}
+
+/** The top of every category page: its name, and in one sentence what it is
+ *  for. The rail already said the first; nothing said the second. */
+function PageHead({ tab }: { tab: (typeof TABS)[number] }) {
+  return (
+    <div style={{ marginBottom: 30 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <tab.icon size={17} strokeWidth={1.6} aria-hidden style={{ flex: "none", color: "var(--acc)" }} />
+        <h2 className="glow" style={{ margin: 0, fontSize: "var(--t15)", fontWeight: 400, letterSpacing: 2, color: "var(--txb)" }}>
+          {tab.label}
+        </h2>
+      </div>
+      <p style={{ margin: "9px 0 0", maxWidth: 600, fontSize: "var(--t10)", lineHeight: 1.7, color: "var(--txm)" }}>
+        {tab.about}
+      </p>
+      {/* The panel's drawline: teal under the title, gone by the far edge. */}
+      <div style={{
+        height: 1, marginTop: 16,
+        background: "linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc) 8%, transparent) 60%, transparent)",
+      }} />
     </div>
   );
 }
@@ -596,42 +698,46 @@ function PickCell({
 
 // ---- NOTIFICATION SOUNDS ----------------------------------------------------
 
-/** One scrolling list, used for both halves of the browser. */
+/** One scrolling list, used for both halves of the browser. Tall enough to
+ *  compare lines in: at 168px a pack showed three at a time, and choosing one
+ *  was mostly scrolling. */
 const LIST: CSSProperties = {
-  maxHeight: 168, overflowY: "auto", marginTop: 6,
+  maxHeight: "min(340px, 46vh)", overflowY: "auto", marginTop: 8,
   border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
 };
+// No background of its own: the .sndrow hover lives in index.css, and an
+// inline background would beat it.
+const LIST_ROW: CSSProperties = {
+  display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left",
+  appearance: "none", cursor: "pointer", border: 0, color: "var(--tx)",
+  fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: .5, lineHeight: 1.45,
+  padding: "8px 10px",
+};
+const SOFT_RULE = "1px solid color-mix(in srgb, var(--acc) 8%, transparent)";
+const TAG: CSSProperties = { flex: "none", fontSize: "var(--t85)", letterSpacing: 1.2, color: "var(--acc)" };
 
-function ListRow({ on, children, onClick }: { on?: boolean; children: ReactNode; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: "block", width: "100%", textAlign: "left", appearance: "none", cursor: "pointer",
-        border: 0, borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
-        background: on ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent",
-        color: on ? "var(--txb)" : "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)",
-        letterSpacing: .5, padding: "7px 9px", lineHeight: 1.4,
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** Browse peonping.com: search the catalog, open a pack, click a sound to hear
- *  it and assign it. Every sound in the pack is offered, not just the ones
- *  written for this event — a victory line on FAILURE is a valid taste. */
-function PackBrowser({ cat, volume, onPick }: {
+/** Browse peonping.com: search the catalog, open a pack, tap a line to hear it,
+ *  USE to give it to the event. Hearing and choosing are two taps on purpose —
+ *  auditioning is clicking down thirty lines, and when every click also
+ *  assigned, browsing overwrote the sound you already had. Every line in the
+ *  pack is offered, not just the ones written for this event: a victory line on
+ *  FAILURE is a valid taste. */
+function PackBrowser({ cat, ev, volume, cur, onPick }: {
   cat: string;
+  ev: string;   // the event's label, as in "MADE FOR DONE"
   volume: number;
+  cur: SoundChoice | undefined;
   onPick: (c: SoundChoice) => void;
 }) {
   const [packs, setPacks] = useState<Pack[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);          // the catalog itself
   const [q, setQ] = useState("");
   const [pack, setPack] = useState<Pack | null>(null);
   const [byCat, setByCat] = useState<Record<string, PackSound[]> | null>(null);
+  const [packErr, setPackErr] = useState<string | null>(null);  // one pack's manifest
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [heard, setHeard] = useState<string | null>(null);      // the last line tapped gets USE
+  const [broken, setBroken] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let live = true;
@@ -639,82 +745,166 @@ function PackBrowser({ cat, volume, onPick }: {
       (e: Error) => { if (live) setErr(e.message); });
     return () => { live = false; };
   }, []);
+  // Closing the picker mid-line shouldn't leave the line talking.
+  useEffect(() => () => audition(null, 0), []);
 
   // Re-fetching a manifest is free (module-cached), so this just re-renders.
+  // A pack that fails is that pack's problem: its error used to be the
+  // catalog's, which replaced the whole browser — back button and all.
   useEffect(() => {
-    if (!pack) { setByCat(null); return; }
-    let live = true;
     setByCat(null);
+    setPackErr(null);
+    setHeard(null);
+    if (!pack) return;
+    let live = true;
     loadPackSounds(pack).then((m) => { if (live) setByCat(m); },
-      (e: Error) => { if (live) setErr(e.message); });
+      (e: Error) => { if (live) setPackErr(e.message); });
     return () => { live = false; };
   }, [pack]);
 
-  if (err) return <div style={{ ...NOTE, color: "var(--err)" }}>peonping.com unreachable — {err}</div>;
-  if (!packs) return <div style={NOTE}>Loading the pack catalog…</div>;
+  function hear(c: SoundChoice) {
+    setHeard(c.src);
+    if (playing === c.src) { audition(null, volume); return; }
+    setBroken((b) => {
+      if (!b.has(c.src)) return b;
+      const next = new Set(b);
+      next.delete(c.src);
+      return next;
+    });
+    setPlaying(c.src);
+    audition(c.src, volume, (fine) => {
+      setPlaying((p) => (p === c.src ? null : p));
+      if (!fine) setBroken((b) => new Set(b).add(c.src));
+    });
+  }
+
+  if (err) {
+    return (
+      <div style={{ ...NOTE, marginTop: 8, color: "var(--err)" }}>
+        Couldn&apos;t load the PeonPing catalog ({err}). The built-in sounds above still work.
+      </div>
+    );
+  }
+  if (!packs) return <div style={{ ...NOTE, marginTop: 8 }}>Loading the pack catalog…</div>;
 
   if (pack) {
     const groups = byCat ? soundsFor(byCat, cat) : [];
+    const lines = groups.reduce((n, g) => n + g.sounds.length, 0);
     return (
       <>
-        <ListRow onClick={() => setPack(null)}>← {packs.length} packs</ListRow>
-        <div style={{ ...NOTE, marginTop: 6 }}>{pack.display_name}</div>
-        {!byCat ? <div style={NOTE}>Loading sounds…</div> : (
-          <div style={LIST}>
-            {groups.map((g) => (
-              <div key={g.cat}>
-                <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", padding: "6px 9px 3px" }}>
-                  {g.cat === cat ? `${g.cat} — written for this` : g.cat}
-                </div>
-                {g.sounds.map((s) => {
-                  const choice = packChoice(pack, s);
-                  return (
-                    <ListRow key={choice.src} onClick={() => { playSound(choice, volume, "blip"); onPick(choice); }}>
-                      ♪ {choice.label.split(" · ").slice(1).join(" · ")}
-                    </ListRow>
-                  );
-                })}
-              </div>
-            ))}
-            {!groups.length && <div style={{ ...NOTE, padding: "0 9px 8px" }}>This pack ships no sounds.</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+          <MiniBtn onClick={() => { audition(null, volume); setPack(null); }}>← ALL PACKS</MiniBtn>
+          <span style={{ fontSize: "var(--t10)", letterSpacing: .5, color: "var(--txb)" }}>{pack.display_name}</span>
+          {byCat && <span style={{ fontSize: "var(--t9)", color: "var(--txd)" }}>{lines} lines</span>}
+        </div>
+        {pack.description && <div style={{ ...NOTE, marginTop: 8 }}>{pack.description}</div>}
+        {packErr ? (
+          <div style={{ ...NOTE, color: "var(--err)" }}>
+            This pack&apos;s sound list is missing from its repo ({packErr}), so there is nothing
+            in it to play. Pick another pack.
           </div>
+        ) : !byCat ? (
+          <div style={NOTE}>Loading {pack.display_name}…</div>
+        ) : (
+          <>
+            <div style={{ ...NOTE, marginTop: 8 }}>Tap a line to hear it, then USE to give it to {ev}.</div>
+            <div style={LIST}>
+              {groups.map((g) => {
+                const c = catLabel(g.cat);
+                return (
+                  <div key={g.cat}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "10px 10px 5px", fontSize: "var(--t85)" }}>
+                      <span style={{ letterSpacing: 1.5, color: "var(--txm)" }}>{c.label}</span>
+                      {c.hint && <span style={{ color: "var(--txd)" }}>{c.hint}</span>}
+                      {g.cat === cat && <span style={{ ...TAG, marginLeft: "auto" }}>MADE FOR {ev}</span>}
+                    </div>
+                    {g.sounds.map((s) => {
+                      const choice = packChoice(pack, s);
+                      const name = choice.label.slice(pack.display_name.length + 3);
+                      const inUse = choice.src === cur?.src;
+                      const on = playing === choice.src;
+                      return (
+                        <div key={choice.src} className="sndrow" style={{
+                          display: "flex", alignItems: "center", borderTop: SOFT_RULE,
+                          background: inUse ? "color-mix(in srgb, var(--acc) 14%, transparent)"
+                            : on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : undefined,
+                        }}>
+                          <button
+                            onClick={() => hear(choice)}
+                            aria-pressed={on}
+                            aria-label={`${on ? "stop" : "play"} ${name}`}
+                            style={{ ...LIST_ROW, flex: 1, minWidth: 0, color: inUse || on ? "var(--txb)" : "var(--tx)" }}
+                          >
+                            {on
+                              ? <Square size={10} strokeWidth={2.4} aria-hidden style={{ flex: "none", color: "var(--acc)" }} />
+                              : <Play size={10} strokeWidth={2.2} aria-hidden style={{ flex: "none", color: "var(--acc)", opacity: .7 }} />}
+                            <span style={{ minWidth: 0 }}>{name}</span>
+                          </button>
+                          <span style={{ flex: "none", paddingRight: 10 }}>
+                            {inUse ? <span style={TAG}>✓ IN USE</span>
+                              : broken.has(choice.src) ? <span style={{ ...TAG, color: "var(--err)" }}>WON&apos;T PLAY</span>
+                              : heard === choice.src && <MiniBtn onClick={() => onPick(choice)}>USE</MiniBtn>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {!groups.length && <div style={{ ...NOTE, padding: "0 10px 10px" }}>This pack ships no sounds.</div>}
+            </div>
+          </>
         )}
       </>
     );
   }
 
   const needle = q.trim().toLowerCase();
-  const hits = packs
-    // A pack without this event's category still has sounds you can assign, so
+  const matches = packs
+    // A pack without this event's category still has lines you can assign, so
     // it stays in the list — it just sorts below the ones written for it.
     .filter((p) => !needle || `${p.display_name} ${p.name} ${(p.tags ?? []).join(" ")}`.toLowerCase().includes(needle))
-    .sort((a, b) => Number(b.categories.includes(cat)) - Number(a.categories.includes(cat)))
-    .slice(0, 120);
+    .sort((a, b) => Number(b.categories.includes(cat)) - Number(a.categories.includes(cat)));
+  const hits = matches.slice(0, 120);
+  const curSrc = cur?.src ?? "";
   return (
     <>
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => {
+          // Otherwise Escape would close the whole modal from inside the box.
+          if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
+        }}
         placeholder={`search ${packs.length} packs — glados, peon, rick…`}
-        style={{ ...field, width: "100%", boxSizing: "border-box" }}
+        style={{ ...field, width: "100%", boxSizing: "border-box", marginTop: 8 }}
       />
       <div style={LIST}>
-        {hits.map((p) => (
-          <ListRow key={p.name} onClick={() => setPack(p)}>
-            {p.display_name}
-            <span style={{ color: "var(--txl)", fontSize: "var(--t9)" }}>
-              {"  "}· {p.sound_count ?? "?"} sounds{p.categories.includes(cat) ? "" : " · no clip for this event"}
+        {hits.map((p, i) => (
+          <button key={p.name} className="sndrow" onClick={() => setPack(p)}
+            style={{ ...LIST_ROW, borderTop: i ? SOFT_RULE : 0 }}>
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {p.display_name}
             </span>
-          </ListRow>
+            {curSrc.startsWith(`${packBase(p)}/`) && <span style={TAG}>✓ IN USE</span>}
+            <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txd)" }}>
+              {p.sound_count ?? "?"} lines{p.categories.includes(cat) ? "" : ` · none for ${ev}`}
+            </span>
+          </button>
         ))}
-        {!hits.length && <div style={{ ...NOTE, padding: "8px 9px" }}>No pack matches “{q}”.</div>}
+        {!hits.length && <div style={{ ...NOTE, padding: "0 10px 10px" }}>No pack matches “{q}”.</div>}
       </div>
+      {matches.length > hits.length && (
+        <div style={{ ...NOTE, marginTop: 6 }}>
+          Showing {hits.length} of {matches.length}. Search to narrow it down.
+        </div>
+      )}
     </>
   );
 }
 
 /** The per-event table: one assignable sound per thing the dashboard notifies
- *  about. An unassigned event falls back to the single TONE below, which is
+ *  about. An unassigned event falls back to the single TONE above, which is
  *  what every install sounded like before this panel existed. */
 // Six rows that differ only in wording otherwise — the icon is what makes
 // "the one that fires when something breaks" findable without reading all six.
@@ -732,18 +922,32 @@ function SoundBoard({ settings, onPatch }: {
   onPatch: (patch: Partial<HudSettings>) => void;
 }) {
   const [open, setOpen] = useState<PushEvent | null>(null);
-  // The browser is a tall thing that unfolds under whichever row you tapped, so
+  const [playing, setPlaying] = useState<PushEvent | null>(null);
+  // The picker is a tall thing that unfolds under whichever row you tapped, so
   // opening one on LIMIT — the last row — otherwise puts the search box and the
-  // whole pack list below the fold, with no hint that anything happened.
+  // whole pack list below the fold, with no hint that anything happened. The
+  // ROW goes to the top, not the picker "nearest": nearest stopped as soon as
+  // the picker's first line showed, which still left the list under the fold.
   const picker = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (open) picker.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (open) picker.current?.parentElement?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [open]);
+  // Leaving the tab mid-line shouldn't leave the line talking.
+  useEffect(() => () => audition(null, 0), []);
+  const vol = settings.pushVolume;
   const set = (ev: PushEvent, c: SoundChoice | undefined) => {
     const next = { ...settings.pushSounds };
     if (c) next[ev] = c; else delete next[ev];
     onPatch({ pushSounds: next });
   };
+  // A row's ▶ is play/stop for whatever that event rings now. It shares the one
+  // audition slot with the pack list, so a row and a line never talk at once.
+  function play(ev: PushEvent) {
+    if (playing === ev) { audition(null, vol); return; }
+    setPlaying(ev);
+    audition(settings.pushSounds[ev]?.src ?? `tone:${settings.pushTone}`, vol,
+      () => setPlaying((p) => (p === ev ? null : p)));
+  }
   return (
     <div>
       {PUSH_EVENT_KEYS.map((ev, i) => {
@@ -755,37 +959,43 @@ function SoundBoard({ settings, onPatch }: {
           <div key={ev} style={{
             // A rule between rows, not above the first one — the card already
             // draws that edge.
-            borderTop: i ? "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" : 0,
-            padding: i ? "9px 0" : "0 0 9px",
+            borderTop: i ? RULE : 0,
+            padding: i ? "12px 0" : "0 0 12px",
+            scrollMarginTop: 14,
           }}>
             {/* Wraps rather than crushes: on a phone panel the assigned sound
                 drops onto its own line under the event name instead of
                 squeezing the name down to two characters. */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <Icon size={14} strokeWidth={1.6} aria-hidden
-                style={{ flex: "none", color: "var(--acc)", opacity: cur?.src === "off" ? .3 : .75 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <Icon size={15} strokeWidth={1.6} aria-hidden
+                style={{ flex: "none", color: "var(--acc)", opacity: cur?.src === "off" ? .3 : .8 }} />
               <div style={{ flex: "1 1 150px", minWidth: 0 }}>
                 <div style={KEY_TX}>{meta.label}</div>
-                <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 3 }}>{meta.hint}</div>
+                <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 4 }}>{meta.hint}</div>
               </div>
               <div style={{ flex: "0 1 auto", display: "flex", alignItems: "center", gap: 6, minWidth: 0, marginLeft: "auto" }}>
-                <span style={{
-                  fontSize: "var(--t9)", letterSpacing: .5, minWidth: 0, overflow: "hidden",
+                <span title={cur?.label} style={{
+                  fontSize: "var(--t9)", letterSpacing: .5, minWidth: 0, maxWidth: 260, overflow: "hidden",
                   textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  color: cur ? "var(--acc)" : "var(--txl)",
+                  color: cur ? "var(--acc)" : "var(--txd)",
                 }}>
                   {cur ? cur.label : `${TONES[settings.pushTone].label} (default)`}
                 </span>
-                <MiniBtn title="play it" onClick={() => playSound(cur, settings.pushVolume, settings.pushTone)}>
-                  <Play size={11} strokeWidth={2} aria-hidden />
+                <MiniBtn title={playing === ev ? "stop" : "play it"} disabled={cur?.src === "off"} onClick={() => play(ev)}>
+                  {playing === ev
+                    ? <Square size={11} strokeWidth={2.2} aria-hidden />
+                    : <Play size={11} strokeWidth={2} aria-hidden />}
                 </MiniBtn>
-                <MiniBtn title={on ? "close" : "pick a sound"} onClick={() => setOpen(on ? null : ev)}>
-                  {on ? <X size={11} strokeWidth={2} aria-hidden /> : <Ellipsis size={11} strokeWidth={2} aria-hidden />}
-                </MiniBtn>
+                <MiniBtn onClick={() => setOpen(on ? null : ev)}>{on ? "CLOSE" : "CHANGE"}</MiniBtn>
               </div>
             </div>
             {on && (
-              <div ref={picker} style={{ marginTop: 9 }}>
+              <div ref={picker} style={{
+                marginTop: 12, padding: "14px 14px 16px",
+                border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+                background: "color-mix(in srgb, var(--panel3) 60%, transparent)",
+              }}>
+                <div style={{ ...CAPTION, width: "auto", marginBottom: 7 }}>BUILT-IN</div>
                 <Segmented
                   size="var(--t9)"
                   options={[
@@ -795,16 +1005,15 @@ function SoundBoard({ settings, onPatch }: {
                   ]}
                   value={cur?.src ?? ""}
                   onPick={(v) => {
-                    if (!v) { set(ev, undefined); playSound(undefined, settings.pushVolume, settings.pushTone); return; }
-                    const c = v === "off" ? OFF
+                    const c = !v ? undefined : v === "off" ? OFF
                       : { src: v, label: TONES[v.slice(5) as ToneKey].label };
                     set(ev, c);
-                    playSound(c, settings.pushVolume, settings.pushTone);
+                    // Every pick plays itself; OFF plays nothing, and stops what was.
+                    audition(v === "off" ? null : v || `tone:${settings.pushTone}`, vol);
                   }}
                 />
-                <div style={{ marginTop: 9 }}>
-                  <PackBrowser cat={meta.cat} volume={settings.pushVolume} onPick={(c) => set(ev, c)} />
-                </div>
+                <div style={{ ...CAPTION, width: "auto", marginTop: 18 }}>VOICE PACKS · PEONPING.COM</div>
+                <PackBrowser cat={meta.cat} ev={meta.label} volume={vol} cur={cur} onPick={(c) => set(ev, c)} />
               </div>
             )}
           </div>
@@ -2734,8 +2943,11 @@ function AccountsPanel() {
           </div>
         )}
         {rows?.map((a) => (
-          <div key={a.slot} style={{ ...KV, marginTop: a.slot === rows[0].slot ? 0 : 10 }}>
-            <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          // Wraps: on a phone the usage and the three buttons can't share one
+          // line with the email, plan and DEFAULT — neither side could shrink,
+          // so they printed over each other. Now the controls take a line.
+          <div key={a.slot} style={{ ...KV, flexWrap: "wrap", gap: "8px 12px", marginTop: a.slot === rows[0].slot ? 0 : 10 }}>
+            <span style={{ flex: "1 1 220px", minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ ...KEY_TX, color: "var(--acc)", flex: "none" }}>A{a.slot}</span>
               <span
                 style={{
@@ -2751,7 +2963,10 @@ function AccountsPanel() {
               {a.plan && <span style={{ ...CAPTION, width: "auto" }}>{a.plan}</span>}
               {a.default && <span style={{ ...CAPTION, width: "auto" }}>DEFAULT</span>}
             </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+            <span style={{
+              display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end",
+              gap: 10, flex: "0 1 auto", minWidth: 0, marginLeft: "auto",
+            }}>
               {windowLabels(a).map((w) => (
                 <span
                   key={w}
@@ -3212,6 +3427,12 @@ export function SettingsModal(props: SettingsModalProps) {
   useEffect(() => {
     rail.current?.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [tab]);
+  // A category opens at its top. The pane is one scroller shared by every page,
+  // so without this you landed wherever the last page left it — halfway down a
+  // short page, or past its end. A layout effect so the old offset never paints;
+  // a search hit still lands on its setting, because the jump effect above is a
+  // plain effect and runs after this one.
+  useLayoutEffect(() => { pane.current?.scrollTo(0, 0); }, [shown]);
   const autoBase = autoBaseFont(window.innerWidth, window.innerHeight);
   const [escHover, setEscHover] = useState(false);
   const [replayHover, setReplayHover] = useState(false);
@@ -3367,7 +3588,11 @@ export function SettingsModal(props: SettingsModalProps) {
             ))}
           </div>
 
-          <div ref={pane} className="mscroll mcol" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 18 }}>
+          <div ref={pane} className="mscroll mcol setpane" style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+            {/* Keyed on the page, so a new category remounts and its entrance
+                runs again (.setpage in index.css). Search is a page too. */}
+            <div key={shown} className="setpage">
+            {shown !== "search" && <PageHead tab={TABS.find((t) => t.key === shown)!} />}
             {shown === "search" && (
               <Section icon={Search} title={`SEARCH · ${hits.length} MATCH${hits.length === 1 ? "" : "ES"}`}>
                 {hits.length === 0 ? (
@@ -3502,7 +3727,8 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "projects" && (
               <Section
                 title="PROJECTS"
-                info="Every git repo the bridge found under your workspace. A name here is a label only — the path stays the key, so renaming moves nothing on disk and orphans no session."
+                desc="Every git repo the bridge found under your workspace."
+                info="A name here is a label only — the path stays the key, so renaming moves nothing on disk and orphans no session."
               >
                 <ProjectsSettings {...projects} />
               </Section>
@@ -3805,6 +4031,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 <EnvPanel />
               </>
             )}
+            </div>
           </div>
         </div>
 
