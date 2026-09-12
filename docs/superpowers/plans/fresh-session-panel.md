@@ -1113,13 +1113,18 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
 - [ ] **Step 3: Typecheck**
 
 Run: `cd bridge/dashboard/web && npx tsc -b`
-Expected: **PASS, clean.** (`tsc -p .` checks nothing here — see the project's
-shell-gotchas note; use `tsc -b` or `-p tsconfig.app.json`.)
+(`tsc -p .` checks nothing here — see the project's shell-gotchas note; use
+`tsc -b` or `-p tsconfig.app.json`.)
 
-This task is purely additive — `api.ts` gains three call shapes, `FreshPanel.tsx`
-is new and not yet imported by anything. Nothing it touches is yet consumed, so
-there is no expected-failure window. A red typecheck here is a real error in the
-new file, not a transient: fix it before committing.
+**Expected: exactly the 3 pre-existing errors listed in
+`.superpowers/sdd/fresh-session-panel/tsc-baseline.txt`, and nothing else.**
+Those 3 are all in `Transcript.tsx` and come from another session's commit that
+this worktree is based on — not from this plan. Diff your output against that
+file. Any 4th error is yours.
+
+This task is otherwise purely additive — `api.ts` gains three call shapes,
+`FreshPanel.tsx` is new and not yet imported by anything — so there is no
+expected-failure window of its own.
 
 - [ ] **Step 4: Commit**
 
@@ -1205,9 +1210,14 @@ screen's cut…") — that cut lives in `FreshPanel` now.
 
 - [ ] **Step 5: Typecheck and build**
 
-Run: `cd bridge/dashboard/web && npx tsc -b && npx vite build`
-Expected: both PASS. (`pnpm build` can trip on esbuild in a worktree — fall back
-to `npx vite build`.)
+Run: `cd bridge/dashboard/web && npx tsc -b; npx vite build`
+(Note the `;` not `&&` — `tsc -b` exits non-zero on the pre-existing errors, and
+the build must still run.)
+
+Expected: `tsc -b` prints **exactly the 3 pre-existing errors** in
+`.superpowers/sdd/fresh-session-panel/tsc-baseline.txt` and nothing else — diff
+your output against that file, any 4th error is yours — and `vite build`
+succeeds. (`pnpm build` can trip on esbuild in a worktree; use `npx vite build`.)
 
 - [ ] **Step 6: Run the backend suite**
 
