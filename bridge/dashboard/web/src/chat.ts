@@ -1,4 +1,4 @@
-import type { Question, RunEvent, StoreTurn, TimedEvent, Transcript } from "./api";
+import type { Question, RunEvent, StoreTurn, TimedEvent, Transcript, TurnOutcome } from "./api";
 
 export interface PendingRequest {
   request_id: string;
@@ -31,6 +31,10 @@ export interface Turn {
   // Total tokens this turn spent, or null when it never reported usage —
   // which must read as unknown, not as free.
   tokens?: number | null;
+  // Why it failed, on an error turn only (bridge/outcomes.py). Compared by
+  // .code, never by reference: the server sends a fresh object every poll and
+  // the merge below leans on object identity to skip re-rendering past turns.
+  outcome?: TurnOutcome | null;
 }
 
 /** A store turn's total token spend, or null when nothing was ever reported.
@@ -80,9 +84,10 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         ex.attachments?.length || !st.attachments.length ? ex.attachments : st.attachments;
       const prompt = ex.prompt || st.prompt;
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
-          || ex.runtime !== st.runtime || ex.sha !== st.sha)
+          || ex.runtime !== st.runtime || ex.sha !== st.sha
+          || ex.outcome?.code !== st.outcome?.code)
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
-                         sha: st.sha, tokens: tokensOf(st) });
+                         sha: st.sha, tokens: tokensOf(st), outcome: st.outcome });
       if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else
       map.set(st.id, {
@@ -96,6 +101,7 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         sha: st.sha,
         started: st.started,
         tokens: tokensOf(st),
+        outcome: st.outcome,
       });
   }
   for (const ev of t.events) {

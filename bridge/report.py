@@ -74,6 +74,15 @@ def _totals(rows: list[dict]) -> dict:
             "tokens": tokens}
 
 
+def _by_code(fails: list[dict]) -> list[dict]:
+    """Failures counted per outcome code, commonest first."""
+    n: dict = {}
+    for f in fails:
+        row = n.setdefault(f["code"], {"code": f["code"], "label": f["label"], "n": 0})
+        row["n"] += 1
+    return sorted(n.values(), key=lambda r: -r["n"])
+
+
 def weekly(chat_id: int, now: "float | None" = None, back: int = 0) -> dict:
     """One chat's week, grouped by project, busiest first. `back=1` is the
     completed week (what the Monday push sends); default is the running one."""
@@ -95,6 +104,9 @@ def weekly(chat_id: int, now: "float | None" = None, back: int = 0) -> dict:
         } for r in rows],
         "totals": _totals(rows),
         "days": store.week_by_day(chat_id, since, until),
+        # What went wrong, by outcome code (bridge/outcomes.py). Derived, so an
+        # older week re-reads with today's taxonomy instead of a frozen label.
+        "failures": _by_code(store.week_failures(chat_id, since, until)),
         "prev": {"turns": prev["turns"], "elapsed": prev["elapsed"],
                  "tokens": prev["tokens"] and sum(prev["tokens"].values())},
     }
@@ -169,6 +181,11 @@ def render(rep: dict) -> str:
         busy = max(rep["days"], key=lambda d: d["elapsed"])
         day = datetime.strptime(busy["day"], "%Y-%m-%d")
         lines += ["", f"busiest day: {day:%a} ({_dur(busy['elapsed'])})"]
+    if rep.get("failures"):
+        total = sum(f["n"] for f in rep["failures"])
+        lines += ["", f"**{_n(total, 'turn')} ended badly**"]
+        for f in rep["failures"]:
+            lines.append(f"      {f['n']}× {f['label'].lower()}")
     return "\n".join(lines)
 
 

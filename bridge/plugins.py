@@ -16,6 +16,7 @@ the state, we only ever ask it.
 
 import json
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 from bridge.runner import claude_bin
 
@@ -70,10 +71,16 @@ def _arg(value: str) -> "str | None":
 def listing() -> dict:
     """Marketplaces, plugins installed from them, and what else they offer.
 
-    Two calls: `list --available` returns installed and available together."""
-    both = _read("list", "--available", "--json") or {}
+    Two calls: `list --available` returns installed and available together.
+    They are independent and each pays the CLI's ~400ms of Node boot, so they
+    run concurrently — subprocesses, so the GIL never holds the second one up.
+    Measured on this machine: 827ms -> ~430ms, the cost of one call."""
+    with ThreadPoolExecutor(2) as pool:
+        f_both = pool.submit(_read, "list", "--available", "--json")
+        f_mkts = pool.submit(_read, "marketplace", "list", "--json")
+        both, mkts = f_both.result() or {}, f_mkts.result() or []
     return {
-        "marketplaces": _read("marketplace", "list", "--json") or [],
+        "marketplaces": mkts,
         "installed": [
             {"id": p.get("id"), "version": p.get("version"), "scope": p.get("scope"),
              "enabled": bool(p.get("enabled")), "mcp": sorted(p.get("mcpServers") or {})}

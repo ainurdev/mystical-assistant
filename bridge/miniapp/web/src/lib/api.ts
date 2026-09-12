@@ -71,12 +71,21 @@ export interface SessionBrief {
 // Mirrors bridge/dashboard/web/src/api.ts (the two clients are separate apps
 // with hand-kept copies — keep them in sync).
 
+/** Why a failed turn failed (bridge/outcomes.py) — derived server-side on every
+ *  read, present only on a turn whose status is "error". */
+export interface TurnOutcome {
+  code: string;
+  label: string;
+  detail: string;
+}
+
 export interface StoreTurn {
   id: string;
   seq: number;
   prompt: string;
   attachments: string[];
   status: "running" | "done" | "error";
+  outcome?: TurnOutcome | null;
   cost: number | null;
   elapsed: number | null;
   started: number;

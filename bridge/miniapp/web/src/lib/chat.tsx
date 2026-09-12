@@ -18,6 +18,7 @@ import type {
   SessionBrief,
   StoreTurn,
   Transcript,
+  TurnOutcome,
 } from "./api";
 import { usePersistentState } from "./persistentState";
 import { lastOpen, rememberOpen } from "./lastopen";
@@ -46,6 +47,10 @@ export interface Turn {
   started?: number; // epoch seconds — the run monitor's clock
   // Total tokens this turn spent; null = never reported (unknown, not free).
   tokens?: number | null;
+  // Why it failed, on an error turn only (bridge/outcomes.py). Compared by
+  // .code, never by reference: the server sends a fresh object every poll and
+  // the merge below leans on object identity to skip re-rendering past turns.
+  outcome?: TurnOutcome | null;
 }
 
 /** A store turn's total token spend, or null when nothing was ever reported.
@@ -123,9 +128,9 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         ex.attachments.length || !st.attachments.length ? ex.attachments : fromStore();
       const prompt = ex.prompt || st.prompt;
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
-          || ex.runtime !== st.runtime) {
+          || ex.runtime !== st.runtime || ex.outcome?.code !== st.outcome?.code) {
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
-                         tokens: tokensOf(st) });
+                         tokens: tokensOf(st), outcome: st.outcome });
       }
       if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else {
@@ -140,6 +145,7 @@ function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         runtime: st.runtime,
         started: st.started,
         tokens: tokensOf(st),
+        outcome: st.outcome,
       });
     }
   }

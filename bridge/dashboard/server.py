@@ -23,6 +23,7 @@ import socket
 import subprocess
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, quote, urlparse
@@ -412,20 +413,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"path": fpath, "diff": git.show_file(cwd, sha, fpath)})
             return self._json(git.commit_files(cwd, sha))
         if path == "/local/git/all":
-            repos = {}
-            seen = set()
+            seen, targets = set(), []
             for s in store.list_sessions_all(chat):
                 rel = s["project"]
                 if rel in seen:
                     continue
                 seen.add(rel)
                 abs_p = _abs_project(rel)
-                if abs_p is None:
-                    continue
-                b = git.badge(abs_p)
-                if b is not None:
-                    repos[rel] = b
-            return self._json({"repos": repos})
+                if abs_p is not None:
+                    targets.append((rel, abs_p))
+            # ponytail: 8 threads, not one per repo — every badge is four git
+            # subprocesses, so serial made this the slowest read on the page
+            # (158ms). Raise the cap if someone tracks more than ~30 projects.
+            with ThreadPoolExecutor(min(8, len(targets)) or 1) as pool:
+                badges = list(pool.map(lambda t: git.badge(t[1]), targets))
+            return self._json({"repos": {rel: b for (rel, _), b in zip(targets, badges)
+                                         if b is not None}})
         if path == "/local/git/diff":
             project = qs.get("project", [None])[0]
             abs_p = _abs_project(project)
