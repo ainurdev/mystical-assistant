@@ -34,11 +34,22 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
   const [git, setGit] = useState<GitStatus | null>(null);
   const [commit, setCommit] = useState<GitCommit | null>(null);
   const [board, setBoard] = useState<NextBoard | null>(null);
-  const [busy, setBusy] = useState(false);
+  /** Which (project, kind) a scout is running for, or null. Scoped rather than a
+   *  bare boolean so switching tabs mid-scout doesn't show SCOUTING… on a tab
+   *  nothing is scouting — and so the flag can still be cleared by the poll that
+   *  set it, whichever tab happens to be on screen when it finishes. */
+  const [busyScope, setBusyScope] = useState<string | null>(null);
   const [runCmd, setRunCmd] = useState<string | null | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [runErr, setRunErr] = useState("");
   const poll = useRef<number | null>(null);
+
+  const scope = `${project}|${kind}`;
+  const busy = busyScope === scope;
+  // Always the scope on screen right now. A ref, not state: an in-flight poll
+  // must compare against the CURRENT value, not the one it captured at click.
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
 
   useEffect(() => {
     let live = true;
@@ -55,25 +66,30 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
     let live = true;
     setBoard(null);
     api.nextBoard({ project, kind }).then((b) => live && setBoard(b)).catch(() => {});
-    return () => {
-      live = false;
-      if (poll.current) window.clearInterval(poll.current);
-    };
+    return () => { live = false; };
   }, [project, kind]);
+
+  // The poll outlives a tab switch on purpose: it is the only thing that can
+  // clear its own busy scope, and its writes are already scope-guarded. Only
+  // unmounting stops it.
+  useEffect(() => () => { if (poll.current) window.clearInterval(poll.current); }, []);
 
   useEffect(() => { setStarting(false); }, [run?.status, run?.pid]);
 
   async function refresh() {
-    setBusy(true);
-    await api.refreshNext({ project, kind }).catch(() => null);
+    const mine = { project, kind }, mineScope = scope;
+    setBusyScope(mineScope);
+    await api.refreshNext(mine).catch(() => null);
     if (poll.current) window.clearInterval(poll.current);
     poll.current = window.setInterval(async () => {
-      const b = await api.nextBoard({ project, kind }).catch(() => null);
-      if (b) setBoard(b);
+      const b = await api.nextBoard(mine).catch(() => null);
+      // Clearing the interval stops future ticks, never one already in flight —
+      // so a late answer is dropped here rather than landing on another tab.
+      if (b && scopeRef.current === mineScope) setBoard(b);
       if (b && !b.refreshing) {
         if (poll.current) window.clearInterval(poll.current);
         poll.current = null;
-        setBusy(false);
+        setBusyScope((cur) => (cur === mineScope ? null : cur));
       }
     }, 3000);
   }
