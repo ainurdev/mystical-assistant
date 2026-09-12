@@ -28,11 +28,15 @@ turns):
 - **Of the 384 error turns, only 109 carry an `error` event.** Its payload is
   `{"type": "error", "message": "claude exited -9"}` — that and
   "`claude` not found on PATH" are the common messages.
-- **275 error turns record no reason at all.** Split cleanly in two:
-  - **136 did real work first** — they have `text` events, cost and elapsed
-    (up to $15 and 37 minutes), then a `result` event whose `result` string is
-    empty. The user did get an answer in the transcript; the row says failure.
-  - **139 died instantly** — no `text`, cost 0, elapsed 0. Nothing was said.
+- **275 error turns record no reason at all.** Split by what their events do
+  and do not contain:
+  - **147 carry a non-blank `result`** — but 130 of those results *are* the
+    error ("API Error: Server is temporarily limiting requests", an expired
+    login). Only 17 are a real answer on a row that says failure.
+  - **57 carry a blank `result`** after the agent had been talking.
+  - **52 carry no `result` and no message** — the signature of
+    `claim_orphaned_turns`, which flips a restart's abandoned turns at boot.
+  - **19 carry a blank result and never spoke.**
 - **`log` events are hook output, not stderr.** 1,812 of 1,825 are
   `{"src": "hook", "label": …, "text": …, "error": false}`; only 13 are
   `src: "stderr"`. So stderr is not a reliable reason source, and a classifier
@@ -68,21 +72,31 @@ def outcome(turn: dict, events: list[dict]) -> dict | None
 `{"code": …, "label": …, "detail": …}` with the code decided in this order, first
 match winning:
 
-| code | test | label |
-|------|------|-------|
-| `restarted` | error message matches `exited -9` | the bridge restarted mid-turn |
-| `auth` | `limits.is_auth_error` or `not found on PATH` | Claude could not start |
-| `limit` | `limits.is_limit_error` | usage limit |
-| `overloaded` | `limits.is_server_error` | the API was overloaded |
-| `context` | `limits.is_context_error` | the context ran out |
-| `timeout` | `elapsed >= config.RUN_TIMEOUT` | hit the 30-minute cap |
-| `empty` | has `text` events, `result` event's `result` is blank | it worked, then returned nothing |
-| `silent` | no `text`, no cost, no elapsed | died before it said anything |
-| `stopped` | status `error` with a `stopped` event | you stopped it |
+The message is read first, from an `error` event or — the trap — from a result
+string that is itself an error. `elapsed` is never a test: RUN_TIMEOUT is a
+*silence* watchdog, so a healthy turn can run for an hour, and a hang kill says
+so in its own message.
 
-`empty` and `silent` are the 275-turn class the store cannot currently explain,
-and they are the two worth telling apart: `empty` means *read the transcript, the
-work is there*; `silent` means *nothing happened, re-send it*.
+| code | test | count |
+|------|------|-------|
+| `timeout` | message says "killed as hung" or "Timed out after" | 45 |
+| `restarted` | message says `exited -9` | 12 |
+| `auth` | `limits.is_auth_error` or `not found on PATH` | 10 |
+| `limit` | `limits.is_limit_error` | 43 |
+| `overloaded` | `limits.is_server_error` | 75 |
+| `context` | `limits.is_context_error` | 3 |
+| `crashed` | any other message | 51 |
+| `stopped` | a `stopped` event | – |
+| `interrupted` | no `result` event and no message | 52 |
+| `delivered` | a `result` that is not itself an error | 17 |
+| `empty` | blank `result`, but the agent had been talking | 57 |
+| `silent` | blank `result`, never spoke, nothing spent | 7 |
+| `failed` | anything left | 12 |
+
+The three worth telling apart are `delivered` (*read it, nothing to re-send*),
+`interrupted` (*a restart, recovery has it*) and `empty` (*partial work, re-send
+if it never got to the point*). Collapsing them into "failed" is what made the
+old blank row useless.
 
 Wiring, per the bridge-feature-slice order:
 

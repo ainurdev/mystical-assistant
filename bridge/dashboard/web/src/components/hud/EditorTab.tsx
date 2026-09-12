@@ -278,6 +278,13 @@ const crtTheme = EditorView.theme({
   },
 }, { dark: true });
 
+/* The modal unmounts this tab on every switch, and walking a repo again costs
+   ~130ms of empty explorer. The last tree per project+branch paints straight
+   away; the fresh walk still runs and replaces it.
+   ponytail: unbounded — one file list per project+branch opened this session. */
+const treeCache = new Map<string, { files: string[]; ignored: string[] }>();
+const treeKey = (project: string, branch: string) => `${project}\n${branch}`;
+
 export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFile, initialLine }: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
@@ -344,7 +351,10 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   const loadTree = () =>
     api.filesTree(project, branch || undefined)
-      .then((r) => { setPaths(r.files); setIgnored(r.ignored ?? []); })
+      .then((r) => {
+        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [] });
+        setPaths(r.files); setIgnored(r.ignored ?? []);
+      })
       .catch(() => { setPaths([]); setIgnored([]); });
 
   // Load the file list whenever the project/branch changes. An `initialFile`
@@ -359,14 +369,19 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     setTabs(initialFile ? [initialFile] : []); setPeek(null);
     setOpen(initialFile ?? null); setMeta(null);
     jumpRef.current = initialLine ?? 0;
+    // Closed by default — a repo tree fully expanded is thousands of rows to
+    // scroll past before reaching anything.
+    const shut = (files: string[]) =>
+      new Set(dirsOf(files).filter((d) => !initialFile || !underPath(d, initialFile)));
+    const seed = treeCache.get(treeKey(project, branch));
+    if (seed) { setPaths(seed.files); setIgnored(seed.ignored); setCollapsed(shut(seed.files)); }
     void api.filesTree(project, branch || undefined)
       .then((r) => {
         if (!live) return;
+        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [] });
         setPaths(r.files);
         setIgnored(r.ignored ?? []);
-        // Closed by default — a repo tree fully expanded is thousands of rows
-        // to scroll past before reaching anything.
-        setCollapsed(new Set(dirsOf(r.files).filter((d) => !initialFile || !underPath(d, initialFile))));
+        if (!seed) setCollapsed(shut(r.files));   // a seeded tree keeps folders you opened
       })
       .catch(() => { if (live) { setPaths([]); setIgnored([]); } });
     return () => { live = false; };
@@ -948,7 +963,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       : editable ? `${lang || "…"} · ${indentLabel} · utf-8 · ${lineCount}L` : "");
 
   return (
-    <div style={{ animation: "mslide .3s ease both", height: "100%" }}>
+    <div style={{ height: "100%" }}>
       {/* Fills the modal body exactly — no floor. A floor taller than the body
           made the whole modal scroll, so a long file list pushed the buffer out
           of view; explorer and buffer now scroll inside their own columns. */}

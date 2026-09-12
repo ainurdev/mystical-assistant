@@ -416,7 +416,6 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   const [st, setSt] = useState<GitStatus | null>(null);
   const [sel, setSel] = useState<string | null>(initialFile ?? null);
   const [diff, setDiff] = useState("");
-  const [nonce, setNonce] = useState(0);
   const [msg, setMsg] = useState("");
   const [genBusy, setGenBusy] = useState(false);
   const [gitOp, setGitOp] = useState("");
@@ -458,14 +457,13 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
     if (!selName) { setDiff(""); return; }
     let live = true;
     void api.gitDiff(project, selName, undefined, undefined, branch || undefined)
-      .then((d) => { if (live) { setDiff(d.diff); setNonce((x) => x + 1); } })
+      .then((d) => { if (live) setDiff(d.diff); })
       .catch(() => { if (live) setDiff(""); });
     return () => { live = false; };
   }, [selName, project, branch]);
 
   const rows = useMemo(() => parseDiffRows(diff), [diff]);
   const selFile = files.find((f) => f.path === selName);
-  const diffAnim = nonce % 2 ? "mdiffin" : "mdiffin2";
 
   async function genMsg() {
     if (genBusy || !checked.size) return;
@@ -504,7 +502,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   }
 
   return (
-    <div style={{ animation: "mslide .3s ease both", height: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {/* Header row always renders the branch switcher — inside the file grid it
           unmounted on a clean branch, leaving no way to switch back. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, flex: "none" }}>
@@ -617,7 +615,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
               {rows.map((d, i) => {
                 const v = DIFF_VIEW[d.kind];
                 return (
-                  <div key={`${nonce}:${i}`} style={{ display: "flex", background: v.bg, animation: `${diffAnim} .34s ease both`, animationDelay: `${i * 22}ms` }}>
+                  <div key={i} style={{ display: "flex", background: v.bg }}>
                     <span style={{ width: 36, flex: "none", textAlign: "right", paddingRight: 9, color: "var(--txg)", userSelect: "none", borderRight: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)" }}>{d.ln}</span>
                     <span style={{ width: 14, flex: "none", textAlign: "center", color: v.sign }}>{d.mark}</span>
                     <span style={{ color: v.color, whiteSpace: "pre", flex: 1 }}>{d.text || " "}</span>
