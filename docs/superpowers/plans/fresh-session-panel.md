@@ -338,9 +338,12 @@ def test_each_kind_lands_in_its_own_cache_slot(monkeypatch):
     d = _mkrepo(dirty=True)
     _session(d)
     monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    # "half-done" is unique to REVIEW's headline. Do NOT use "risky" — it also
+    # appears in NEXT's guidance ("anything that looks broken or risky"), so it
+    # matches both prompts and the stub answers the wrong question.
     _stub_agent(monkeypatch, lambda p: '[{"title": "%s item", "why": "because", '
                                        '"effort": "small", "evidence": "a.txt"}]'
-                                       % ("review" if "risky" in p else "next"))
+                                       % ("review" if "half-done" in p else "next"))
     nextup.refresh(CHAT, project="/d", kind="next")
     nextup.refresh(CHAT, project="/d", kind="review")
     assert nextup.board(CHAT, "/d", "next")["items"][0]["title"] == "next item"
@@ -361,7 +364,7 @@ def test_a_dead_scout_leaves_only_its_own_kind_on_the_heuristic(monkeypatch):
     d = _mkrepo(dirty=True)
     _session(d)
     monkeypatch.setattr(nextup, "_abs", lambda project: d)
-    _stub_agent(monkeypatch, lambda p: ("[]" if "risky" in p else
+    _stub_agent(monkeypatch, lambda p: ("[]" if "half-done" in p else
                 '[{"title": "Do a thing", "why": "because", '
                 '"effort": "small", "evidence": "a.txt"}]'))
     nextup.refresh(CHAT, project="/d", kind="next")
