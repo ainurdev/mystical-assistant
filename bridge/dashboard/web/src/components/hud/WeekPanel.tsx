@@ -68,9 +68,12 @@ function DayStrip({ rep }: { rep: WeeklyReport }) {
   );
 }
 
-/** Positioned against the nearest `position: relative` — the clock's anchor,
- *  which also closes it on an outside press. */
-export function WeekPanel() {
+/** Positioned against the nearest `position: relative` — the clock's anchor or
+ *  the brand cap, whichever opened it, and that anchor closes it on an outside
+ *  press. `left` hangs it off the left edge instead (the brand cap sits in the
+ *  left column); `inline` drops the popover chrome so the same panel is also
+ *  the REPORT settings page. */
+export function WeekPanel({ inline, left }: { inline?: boolean; left?: boolean }) {
   const [today, setToday] = useState<TodayInfo | null>(null);
   const [back, setBack] = useState(0);
   const [rep, setRep] = useState<WeeklyReport | null>(null);
@@ -96,8 +99,12 @@ export function WeekPanel() {
     : "";
 
   return (
-    <div style={{
-      position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 60, width: 360,
+    <div style={inline ? {
+      border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
+      background: "color-mix(in srgb, var(--panel) 55%, transparent)",
+    } : {
+      position: "absolute", top: "calc(100% + 8px)", ...(left ? { left: 0 } : { right: 0 }),
+      zIndex: 60, width: 360,
       border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
       background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
       boxShadow: "0 16px 44px var(--shadow-pop)", animation: "mslide .16s ease both",

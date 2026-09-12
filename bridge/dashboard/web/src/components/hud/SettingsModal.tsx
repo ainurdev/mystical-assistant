@@ -3,7 +3,7 @@ import {
   type CSSProperties, type ReactNode,
 } from "react";
 import {
-  Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
+  Activity, AudioLines, BarChart3, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
   FileCog, FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
   MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
@@ -18,6 +18,7 @@ import { toolAccent } from "../../lib/tools";
 
 import { ago, windowLabels } from "../../lib/surfaces";
 import { ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
+import { WeekPanel } from "./WeekPanel";
 import {
   api,
   type AccountInfo,
@@ -122,7 +123,8 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system";
+  | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system"
+  | "report";
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -165,6 +167,11 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "The Claude logins runs use and what each has left, what a chat does when one runs out, and who takes over then." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
     about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
+  // Not a setting — a readout. It lives here because the chrome that used to
+  // carry it (the strip's TODAY chip) is gone, and a page is a better home for
+  // it than the popover it also still is, on the brand cap and the clock's menu.
+  { key: "report", label: "REPORT", hint: "turns · time · tokens", icon: BarChart3, group: "THE WORK",
+    about: "Where the week went: turns, time and tokens per project, the rhythm day by day, and how it compares with the week before." },
 ];
 
 // ---- SEARCH -----------------------------------------------------------------
@@ -206,6 +213,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "projects", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
+  { tab: "report", sec: "WEEK", terms: "report weekly today turns time tokens usage spend per project rhythm" },
 ];
 
 type Hit = { tab: Tab; sec: string; row?: string; hint?: string };
@@ -4110,6 +4118,12 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
+
+            {shown === "report" && (
+              <Section title="WEEK" icon={BarChart3}>
+                <WeekPanel inline />
+              </Section>
+            )}
 
             {shown === "ai" && <AiPanel />}
 

@@ -50,10 +50,28 @@ const seg = (on: boolean): CSSProperties => ({
   fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: "1px", padding: "7px",
 });
 
-/** Left column cap: mark + wordmark, on the SESSIONS head's own gutter. */
+/** Left column cap: mark + wordmark, on the SESSIONS head's own gutter, and at
+ *  its end the week report — the readout the TODAY chip used to carry before
+ *  the strip became these caps. Its popover hangs off this cap's left edge;
+ *  the clock's menu still opens the same panel over on the right. */
 export function Brand() {
+  const [week, setWeek] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Closes on a press anywhere outside the cap, like the clock's popovers.
+  useEffect(() => {
+    if (!week) return;
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setWeek(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [week]);
+
   return (
-    <div style={{ flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    // Relative + a stacking context above the sessions list under it, so the
+    // report draws over the panel rather than behind it.
+    <div ref={ref} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
       <svg
         viewBox="0 0 100 100"
         style={{ width: 19, height: 19, flex: "none", overflow: "visible" }}
@@ -90,7 +108,34 @@ export function Brand() {
       <span style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
         MYSTICAL<span style={{ color: "var(--acc)" }}>//</span><span style={{ color: "var(--txd)" }}>ASSISTANT</span>
       </span>
+      <span style={{ flex: 1, minWidth: 6 }} />
+      <ReportButton on={week} onClick={() => setWeek((v) => !v)} />
+      {week && <WeekPanel left />}
     </div>
+  );
+}
+
+/** The bars are the report: turns, time and tokens per project. */
+function ReportButton({ on, onClick }: { on: boolean; onClick: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      aria-haspopup="dialog"
+      aria-expanded={on}
+      title="week report — turns, time and tokens per project"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        appearance: "none", cursor: "pointer", border: 0, background: "transparent", padding: 0,
+        flex: "none", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
+        color: on ? "var(--acc)" : hover ? "var(--txb)" : "var(--txd)", transition: "color .15s ease",
+      }}
+    >
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
+        <path d="M6 20v-6M12 20V4M18 20v-9" />
+      </svg>
+    </button>
   );
 }
 
