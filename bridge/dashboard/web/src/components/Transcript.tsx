@@ -4,11 +4,12 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { api, type AnswerSelection, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
-import { hhmm, RunStream, TURN_TAIL } from "./RunStream";
+import { RunStream, TURN_TAIL } from "./RunStream";
 import type { OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
 import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
+import { hhmm, useClock12 } from "../lib/surfaces";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
 
@@ -102,6 +103,7 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
  *  the width live in `.pbub-row` / `.pbub` (index.css), and nothing here decides
  *  either. Colours are there too — see `.abub` for why not inline. */
 export function PromptBubble({ text, at }: { text: string; at?: number }) {
+  const h12 = useClock12();
   return (
     <div className="pbub-row">
       <div
@@ -110,7 +112,7 @@ export function PromptBubble({ text, at }: { text: string; at?: number }) {
         <span className="block whitespace-pre-wrap break-words leading-relaxed text-foreground-bright">
           {text}
         </span>
-        {at != null && <span className="pstamp">{hhmm(at)}</span>}
+        {at != null && <span className="pstamp">{hhmm(at, h12)}</span>}
       </div>
     </div>
   );

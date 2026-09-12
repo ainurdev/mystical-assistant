@@ -3,6 +3,7 @@ import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
 import { UpdateButton } from "./UpdateButton";
 import { WeekPanel } from "./WeekPanel";
+import { setClock12 } from "../../lib/surfaces";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -207,7 +208,9 @@ export function Strip(props: StripProps) {
   // remount, a nonce bumped an hour ago would reopen its popover.
   const asked = useRef({ settings: openSettings, report: openReport });
 
-  useEffect(() => { localStorage.setItem("hud-clock12", fmt12 ? "1" : ""); }, [fmt12]);
+  // Through the store, not straight to localStorage: the turn clocks in the
+  // transcript read the same switch and have to hear it flick.
+  useEffect(() => { setClock12(fmt12); }, [fmt12]);
 
   useEffect(() => {
     if (openSettings === asked.current.settings) return;

@@ -135,6 +135,38 @@ export function projectTint(name: string | null | undefined): ProjectTint {
   };
 }
 
+/* --- the wall clock -------------------------------------------------------
+   12H is the header clock's switch, and a turn's two times have to answer to
+   it as well — so the flag is a store, not a prop threaded down through the
+   transcript. Strip writes it; PromptBubble and the RESULT box read it, and
+   subscribe so a flick of the switch re-stamps a transcript already on screen. */
+const CLOCK12_KEY = "hud-clock12";
+let clock12 = (() => {
+  try { return localStorage.getItem(CLOCK12_KEY) === "1"; } catch { return false; }
+})();
+const clockSubs = new Set<() => void>();
+
+export function setClock12(on: boolean): void {
+  clock12 = on;
+  try { localStorage.setItem(CLOCK12_KEY, on ? "1" : ""); } catch { /* ignore */ }
+  clockSubs.forEach((fn) => fn());
+}
+
+export function useClock12(): boolean {
+  return useSyncExternalStore(
+    (fn) => { clockSubs.add(fn); return () => { clockSubs.delete(fn); }; },
+    () => clock12,
+  );
+}
+
+/** When a prompt was sent, when its answer landed — in whichever of the two
+ *  spellings the header clock is wearing. */
+export function hhmm(sec: number, h12 = clock12): string {
+  return new Date(sec * 1000).toLocaleTimeString([], h12
+    ? { hour: "numeric", minute: "2-digit", hour12: true }
+    : { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 export function ago(sec: number | null): string {
   if (!sec) return "";
   const s = Math.max(0, Date.now() / 1000 - sec);

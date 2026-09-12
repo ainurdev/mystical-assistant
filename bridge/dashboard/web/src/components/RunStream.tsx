@@ -15,6 +15,7 @@ import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, MediaThumb, ZoomButton, isVideo, type Clip } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
+import { hhmm, useClock12 } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { ToolWidget } from "./ResultWidgets";
@@ -1983,12 +1984,6 @@ function AskBackBar({
   );
 }
 
-/** Wall clock, 24h — when a prompt was sent (PromptBubble), when its answer
- *  landed (the RESULT box). 24h rather than the locale's default, so a turn's
- *  two times read the same as the header clock above them. */
-export const hhmm = (sec: number): string =>
-  new Date(sec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-
 /** Lines a result prints before it folds — long enough that an ordinary answer
  *  never folds, short enough that a 300-line report doesn't bury the transcript. */
 const RESULT_FOLD_LINES = 30;
@@ -2018,6 +2013,7 @@ function FinalResult({
   onAnswer?: (text: string) => void;
   onQuote?: (text: string) => void;
 }) {
+  const h12 = useClock12();
   const flash = animate && !typedResults.has(idKey);
   const tone = isError ? "var(--err)" : label ? "var(--acc)" : "var(--ok)";
   // The model asked in prose instead of using a question card: lift the question
@@ -2042,7 +2038,7 @@ function FinalResult({
         <div className="res-head">
           <span className="res-lab">{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
           <span className="res-meta">
-            {at != null && <span title="when the answer landed">{hhmm(at)}</span>}
+            {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (
               <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
             )}
