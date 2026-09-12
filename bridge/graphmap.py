@@ -4,7 +4,7 @@ Shells out to the graphify CLI (pipx `graphifyy`; tree-sitter AST, no LLM for
 code) and serves/parses its artifacts. Postures mirror the rest of the bridge:
 binary resolution like runner.claude_bin(), best-effort like memory.py —
 failures yield empty/friendly values and never block a turn.
-See docs/superpowers/specs/2026-07-07-graphify-ponytail-features-design.md
+See docs/superpowers/specs/graphify-ponytail-features-design.md
 """
 
 import json

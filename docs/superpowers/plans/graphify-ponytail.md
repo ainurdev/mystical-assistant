@@ -4,7 +4,7 @@
 
 **Goal:** Give every surface a queryable visual map of the active project (graphify) and a per-run code-minimalism dial (ponytail): dashboard MAP tab, Mini App map route, `/map` bot command, ponytail intensity picker, and a graph-structure pack in the system prompt.
 
-**Architecture:** One new best-effort module, `bridge/graphmap.py`, shells out to the `graphify` CLI and parses its `graphify-out/` artifacts. Everything else hangs off existing seams: `runner.py` subprocess construction (env var + `--append-system-prompt`), the two HTTP servers' route tables, `dispatch.py`, and the two React composers. Spec: `docs/superpowers/specs/2026-07-07-graphify-ponytail-features-design.md`.
+**Architecture:** One new best-effort module, `bridge/graphmap.py`, shells out to the `graphify` CLI and parses its `graphify-out/` artifacts. Everything else hangs off existing seams: `runner.py` subprocess construction (env var + `--append-system-prompt`), the two HTTP servers' route tables, `dispatch.py`, and the two React composers. Spec: `docs/superpowers/specs/graphify-ponytail-features-design.md`.
 
 **Tech Stack:** Python 3 stdlib only (no new deps), pytest, React+TS (vite), graphify CLI 0.9.x (pipx), ponytail 4.8.4 (Claude Code plugin).
 
@@ -181,7 +181,7 @@ Shells out to the graphify CLI (pipx `graphifyy`; tree-sitter AST, no LLM for
 code) and serves/parses its artifacts. Postures mirror the rest of the bridge:
 binary resolution like runner.claude_bin(), best-effort like memory.py —
 failures yield empty/friendly values and never block a turn.
-See docs/superpowers/specs/2026-07-07-graphify-ponytail-features-design.md
+See docs/superpowers/specs/graphify-ponytail-features-design.md
 """
 
 import json

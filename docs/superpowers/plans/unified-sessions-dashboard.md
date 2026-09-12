@@ -16,7 +16,7 @@ queue + thread, and publishes to an in-process pub/sub broker that SSE handlers 
 **Tech Stack:** Python 3.14 stdlib only (`sqlite3` WAL, `http.server`, `queue`,
 `threading`); React + Vite + TanStack (two app roots); SSE for live streams.
 
-**Spec:** `docs/superpowers/specs/2026-06-23-unified-sessions-dashboard-design.md`
+**Spec:** `docs/superpowers/specs/unified-sessions-dashboard-design.md`
 (see §15 must-fix addendum — every item is a Global Constraint below).
 
 ## Global Constraints

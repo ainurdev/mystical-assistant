@@ -20,7 +20,7 @@ On your machine (printed on startup, localhost only, never tunneled):
 Conversations are the single source of truth in a SQLite store (~/.bridge_state/),
 shared by the bot, the Mini App, and the dashboard. Configure via run.sh
 (TELEGRAM_BOT_TOKEN, BASE_PATH, ALLOWED_CHAT_IDS, EXTRA_CLAUDE_ARGS, DASH_PORT, …).
-Design: docs/superpowers/specs/2026-06-23-unified-sessions-dashboard-design.md
+Design: docs/superpowers/specs/unified-sessions-dashboard-design.md
 
 Requirements
 ------------

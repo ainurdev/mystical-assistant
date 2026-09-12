@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from "react";
+import { rightBodyW } from "../lib/shell";
 
 export interface PanelTab {
   id: string;
@@ -34,8 +35,8 @@ export function scopeKey(tab: PanelTab, project?: string | null, branch?: string
  *  the outer edge. The bar is always visible — clicking the active icon
  *  collapses the body, any other icon opens on that tab.
  *
- *  The body states its own width rather than filling the column — the same
- *  clamp App's grid track uses, so the two agree — and the row clips: while
+ *  The body states its own width rather than filling the column — `rightBodyW`,
+ *  the same constant App's grid track is built from — and the row clips: while
  *  the column animates shut the body holds that width and slides off the left
  *  edge (justify-end overflows at the start), so only the transcript reflows.
  *  Collapsed, the track is the rail's 48px alone (App's grid track hardcodes
@@ -81,7 +82,7 @@ export function RightPanel({
           key={bodyKey}
           data-swap={shown.current.swap ? "" : undefined}
           className={`shellcol flex min-h-0 flex-none flex-col border-l border-border ${current?.ownScroll ? "" : "mscroll"}`}
-          style={{ width: "clamp(230px,20vw,296px)", animation: shown.current.swap ? undefined : TAB_ANIM }}
+          style={{ width: rightBodyW, animation: shown.current.swap ? undefined : TAB_ANIM }}
         >
           {current?.render()}
         </div>

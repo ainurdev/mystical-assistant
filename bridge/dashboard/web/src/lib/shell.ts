@@ -5,9 +5,22 @@
 // the numbers.
 import type { CSSProperties } from "react";
 
+/** The right panel's body width. RightPanel sizes the body from this too — it
+ *  used to re-type the clamp, and drifted a track-width behind, leaving a dead
+ *  column between the transcript and the panel's left border. */
+export const rightBodyW = "clamp(230px,20vw,340px)";
+
 export function shellCols(rightOpen: boolean): string {
-  return `clamp(260px,22vw,340px) minmax(0,1fr) ${rightOpen ? "calc(clamp(230px,20vw,296px) + 48px)" : "48px"}`;
+  return `clamp(260px,22vw,400px) minmax(0,1fr) ${rightOpen ? `calc(${rightBodyW} + 48px)` : "48px"}`;
 }
+
+/** Wide screens: the chat stops growing and the surplus becomes even gutters.
+ *  1120 at --fs:12 is the widest figure (--md-wide, 76em at t13 ≈ 988) plus the
+ *  scroller's padding; it rides --fsu so a larger BASE FONT SIZE moves the cap
+ *  with the text. Inline padding on the centre column, so the transcript, the
+ *  composer and its rule all sit on one measure — and the header island, which
+ *  is absolute against the same box, insets by the same amount. */
+export const chatPad = "max(0px, calc((100% - var(--fsu) * 1120) / 2))";
 
 /** Meta separator: a hairline separates meta, a border marks an action.
  *  22% accent, not the dark theme's old 14 — a 14% veil vanishes on the light

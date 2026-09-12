@@ -18,15 +18,15 @@ def _write(root, rel, body="body\n"):
 
 def test_lists_docs_with_title_and_subject_folder(tmp_path):
     root = str(tmp_path)
-    _write(root, "docs/superpowers/specs/2026-08-25-flow-native-chat.md",
+    _write(root, "docs/superpowers/specs/flow-native-chat.md",
            "# Flow-native chat\n\nthe spec body.\n")
     _write(root, "README.md", "no heading here, just prose\n")
 
     by_path = {a["path"]: a for a in docs.docs(root)}
     assert set(by_path) == {
-        "docs/superpowers/specs/2026-08-25-flow-native-chat.md", "README.md"}
+        "docs/superpowers/specs/flow-native-chat.md", "README.md"}
 
-    spec = by_path["docs/superpowers/specs/2026-08-25-flow-native-chat.md"]
+    spec = by_path["docs/superpowers/specs/flow-native-chat.md"]
     assert spec["dir"] == "docs/superpowers/specs"
     assert spec["title"] == "Flow-native chat"
     assert by_path["README.md"]["title"] == "README"

@@ -437,7 +437,7 @@ def _refresh(chat_id: int) -> dict:
                           "repo": f["name"], "branch": f["branch"],
                           # the logical project a session groups under; cwd is
                           # where it actually runs (they differ in a worktree)
-                          "project": rel(f["cwd"]),
+                          "project": rel(git.main_checkout(f["cwd"])),
                           "_active": r["last_active"]})
 
     ranked = rank(chat_id, items)

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python stdlib only (backend), React + TypeScript + Vite (dashboard), SQLite, pytest, `*.check.ts` files run by `node`.
 
-**Spec:** `docs/superpowers/specs/2026-08-25-canvas-ai-cards-design.md`
+**Spec:** `docs/superpowers/specs/canvas-ai-cards-design.md`
 
 ## Global Constraints
 

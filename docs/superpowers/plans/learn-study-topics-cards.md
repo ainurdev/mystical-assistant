@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python stdlib (backend), React + TypeScript (dashboard), pytest, `node --experimental-strip-types` check files.
 
-**Spec:** `docs/superpowers/specs/2026-08-24-learn-tab-study-topics-cards-design.md`
+**Spec:** `docs/superpowers/specs/learn-tab-study-topics-cards-design.md`
 
 ## Global Constraints
 

@@ -601,6 +601,39 @@ def worktree_name(cwd: str) -> str:
     return ""
 
 
+def main_checkout(cwd: str) -> str:
+    """The checkout a session in `cwd` belongs to — `cwd` itself, unless it sits
+    inside a linked worktree, in which case the repo that worktree was added
+    from. A worktree is a branch of a project, not a second project: a bridge
+    session already keeps the parent's rel as its project and the worktree as its
+    cwd, so anything else deriving a project from a cwd has to fold the same way
+    or the sidebar grows a group per branch.
+
+    A linked worktree's `.git` file reads `gitdir: <main>/.git/worktrees/<name>`,
+    so the parent is two levels above that — one file read, no subprocess (same
+    reason as worktree_name). A submodule's `.git` file points at
+    `<super>/.git/modules/<name>` and is deliberately left alone: it is a
+    different repository, not another view of this one."""
+    d = os.path.abspath(cwd) if cwd else ""
+    while d and not os.path.exists(os.path.join(d, ".git")):
+        d, up = os.path.dirname(d), d
+        if d == up:
+            return cwd
+    g = os.path.join(d, ".git") if d else ""
+    if not (g and os.path.isfile(g)):
+        return cwd                       # the main checkout, or no repo at all
+    try:
+        with open(g, encoding="utf-8") as fh:
+            gitdir = fh.read().strip().partition("gitdir:")[2].strip()
+    except OSError:
+        return cwd
+    head, sep, _name = gitdir.rpartition("/worktrees/")
+    if not sep:
+        return cwd
+    top = os.path.dirname(head)          # <main>/.git -> <main>
+    return top if os.path.isdir(os.path.join(top, ".git")) else cwd
+
+
 def head_sha(cwd: str) -> str:
     """The commit HEAD points at, "" outside a repo or on an unborn branch.
     Moves on every commit, which a branch name does not — the next-up cache keys

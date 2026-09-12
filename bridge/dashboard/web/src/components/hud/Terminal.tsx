@@ -4,7 +4,7 @@ import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
-import { hairline } from "../../lib/shell";
+import { chatPad, hairline } from "../../lib/shell";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import { useAiFeatures } from "../../lib/ai";
 import type { HudSettings } from "../../lib/theme";
@@ -455,7 +455,7 @@ export function Terminal({
       {/* OUTPUT STYLE is the whole session's idiom, not just its widgets: one
           attribute here and the ledger, the agent block, your prompt and the
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
-      <div ref={scrollRef} data-style={hud?.toolStyle ?? "stamp"} data-bg={hud?.chatBg ?? "none"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
+      <div ref={scrollRef} data-style={hud?.toolStyle ?? "stamp"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
         // relatedTarget is where the drag went: still inside, it only crossed a child
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
@@ -634,7 +634,7 @@ export function Terminal({
   const island = (
     <div className="panel" style={{
       ...(isChat
-        ? { position: "absolute", top: ISLE_TOP, left: ISLE_X, right: ISLE_X }
+        ? { position: "absolute", top: ISLE_TOP, left: `calc(${chatPad} + ${ISLE_X}px)`, right: `calc(${chatPad} + ${ISLE_X}px)` }
         : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
       zIndex: 12, flex: "none",
       border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
@@ -678,7 +678,8 @@ export function Terminal({
       // already say where it starts, and a border here would draw them twice.
       // Pinned to the centre track: a row with no column is placed before the
       // auto-placed side columns, and would take the first track from SESSIONS.
-      style={{ position: "relative", gridColumn: 2, gridRow, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      data-bg={hud?.chatBg ?? "none"}
+      style={{ position: "relative", gridColumn: 2, gridRow, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {island}
 

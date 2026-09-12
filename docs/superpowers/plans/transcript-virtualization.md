@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python stdlib (gzip), pytest, React 19, @tanstack/react-virtual 3.14.5 (already a dep), raw-CDP probe for measurement.
 
-**Spec:** `docs/superpowers/specs/2026-08-12-transcript-virtualization-design.md`
+**Spec:** `docs/superpowers/specs/transcript-virtualization-design.md`
 
 ## Global Constraints
 
@@ -596,7 +596,7 @@ git commit -m "feat(dashboard): open sessions at their tail, load older turns on
 - Modify: `bridge/dashboard/web/src/components/hud/Terminal.tsx` (pass `scrollRef`, `sessionKey`)
 - Modify: `bridge/dashboard/web/src/App.tsx` (delete anchor-correction ~546-608, keep stick)
 - Modify: `bridge/dashboard/web/src/components/ImageLightbox.tsx` (portal)
-- Modify: `docs/superpowers/specs/2026-08-12-transcript-virtualization-design.md` (record turn-granularity deviation)
+- Modify: `docs/superpowers/specs/transcript-virtualization-design.md` (record turn-granularity deviation)
 
 **Interfaces:**
 - Consumes: Task 4's Transcript props; `scrollRef: RefObject<HTMLDivElement | null>` (Terminal's scroller div, the `mscroll` at Terminal ~288).
@@ -726,7 +726,7 @@ Targets (@4x, big session): `settleMs` < 1000, scroll `p50` < 50ms, `heapMB` < 3
 Append to the spec's Layer 3 section: "Implemented at turn granularity (rows = turns; RunStream and its content-visibility cards unchanged inside a row). Event-level rows remain the escalation if a single giant turn ever janks; measured result: [numbers from Step 5]."
 
 ```bash
-git add bridge/dashboard/web/src bridge/dashboard/web/tools docs/superpowers/specs/2026-08-12-transcript-virtualization-design.md
+git add bridge/dashboard/web/src bridge/dashboard/web/tools docs/superpowers/specs/transcript-virtualization-design.md
 git commit -m "feat(dashboard): virtualize the transcript at turn granularity
 
 Rows are turns: RunStream and its content-visibility cards ride along
@@ -872,7 +872,7 @@ git commit -m "feat(miniapp): virtualized transcript with tail loading, ported f
 ### Task 8: final measurement, docs, memory
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-08-12-transcript-virtualization-design.md` (results table)
+- Modify: `docs/superpowers/specs/transcript-virtualization-design.md` (results table)
 - Create: memory `transcript-virtualization-shipped.md` + MEMORY.md line
 
 - [ ] **Step 1: Full suite + builds**

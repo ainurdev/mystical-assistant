@@ -35,7 +35,7 @@ preamble — put it in conftest, above the first bridge import.
   harvests them.
 - **Module docstrings carry the design rationale** — the *why not* as much as the
   what. Read the docstring before changing a module; write one for a new one.
-- Specs and plans live in `docs/superpowers/{specs,plans}/YYYY-MM-DD-slug.md`.
+- Specs and plans live in `docs/superpowers/{specs,plans}/slug.md` — named by topic, no date prefix (git has the date, and you search by subject).
 - Per-repo runtime state (git-ignored) goes in `.mystical/`: `dev.log`,
   `learn/` lessons, design-sync state, `docs/` for markdown that exists to be
   read in the DOCS tab. It self-ignores from git (`.mystical/.gitignore` is

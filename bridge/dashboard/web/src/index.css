@@ -2020,7 +2020,15 @@ input {
    four invisible grounds under one language. So both go through custom
    properties and are composed once, here: the ground over the wash, the order
    they would sit in on paper. */
-[data-style] { background-image: var(--ground, none), var(--wash, none); }
+/* The ground belongs to the box that OWNS data-bg, never to a descendant that
+   merely inherits `--ground` — custom properties inherit, and the transcript
+   scroller carries data-style, so composing the ground here had it repainted
+   inside the scroller at the scroller's own origin: a second lattice, out of
+   phase with the column's and undimmed by the column's wash, which is why a
+   wide window showed ten times the dots inside the measure as in its gutters.
+   So data-style composes the wash alone, and the ground goes with data-bg. */
+[data-style] { background-image: var(--wash, none); }
+[data-bg] { background-image: var(--ground, none), var(--wash, none); background-size: var(--gsize, auto); }
 
 [data-bg] { --gnd: color-mix(in srgb, var(--txg) 70%, transparent); }
 /* Light grounds need less of it. `--txg` is a ghost against a near-black
@@ -2041,7 +2049,7 @@ input {
    The sparsest of the four, so the loudest single mark. */
 [data-bg="dots"] {
   --ground: radial-gradient(circle at 1px 1px, var(--gnd) 1px, transparent 1.6px);
-  background-size: 22px 22px;
+  --gsize: 22px 22px;
 }
 /* RULED — the pitch is the transcript's own line box (13px × 1.6 ≈ 21px), so
    the rules sit between lines of prose rather than through them. */

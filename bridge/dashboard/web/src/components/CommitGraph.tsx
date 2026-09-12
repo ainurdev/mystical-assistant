@@ -87,9 +87,10 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
   }
 
   const { rows, width } = useMemo(() => layout(commits ?? []), [commits]);
-  // Squeeze the rails when a repo has many branches in flight, so the graph
-  // never eats the whole (narrow) panel.
-  const laneW = width > 7 ? Math.max(6, Math.floor(96 / width)) : 13;
+  // Every row pays for the deepest lane in the whole log, so a repo with five
+  // branch lines spent a quarter of the rail panel's row on rails no commit on
+  // screen uses. Cap the gutter near 48px; the pitch falls out of it.
+  const laneW = Math.max(6, Math.min(13, Math.floor(48 / width)));
   const gw = width * laneW;
   const x = (l: number) => l * laneW + laneW / 2;
   const path = (a: number, b: number, y1: number, y2: number) =>

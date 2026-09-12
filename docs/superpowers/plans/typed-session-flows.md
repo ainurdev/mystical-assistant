@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python stdlib only (backend), React+TS (two independent Vite apps: dashboard + Mini App), SQLite, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-08-24-typed-session-flows-design.md`
+**Spec:** `docs/superpowers/specs/typed-session-flows-design.md`
 
 ## Global Constraints
 

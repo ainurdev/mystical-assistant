@@ -1,5 +1,5 @@
 // Transcript cost probe — the acceptance instrument for
-// docs/superpowers/specs/2026-08-12-transcript-virtualization-design.md.
+// docs/superpowers/specs/transcript-virtualization-design.md.
 //
 // Drives the dashboard over raw CDP (no puppeteer/playwright modules in this
 // env): opens 127.0.0.1:8790, search-filters the session list, clicks into the

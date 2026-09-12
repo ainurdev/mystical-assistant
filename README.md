@@ -503,7 +503,7 @@ macOS and Linux, including WSL.
   the bridge).
 
 Design specs live in [docs/superpowers/specs/](docs/superpowers/specs/), including
-the [fallback ladder design](docs/superpowers/specs/2026-07-30-fallback-ladder-design.md).
+the [fallback ladder design](docs/superpowers/specs/fallback-ladder-design.md).
 
 <br />
 

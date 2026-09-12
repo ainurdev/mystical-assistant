@@ -585,7 +585,10 @@ export function Composer({
   ];
 
   return (
-    <div style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px" }}>
+    // Its own surface, at the island's strength: header and footer are the two
+    // pieces of chrome bracketing the transcript, and a ground running under
+    // them makes the chat look like it has no edges.
+    <div style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
       {pills}
       {/* Paused: shown even when idle, because that's exactly when you can't tell
           from the transcript that the queue and the goal loop are being held. */}

@@ -15,7 +15,7 @@ import os
 import threading
 import time
 
-from bridge import config, machine, store, transcript_jsonl
+from bridge import config, git, machine, store, transcript_jsonl
 from bridge.browser import rel, within_base
 
 _last_scan = 0.0
@@ -86,7 +86,7 @@ def _index_running(owner: int) -> int:
         if not sid or not os.path.isdir(cwd):
             continue
         store.upsert_native_session(
-            sid, owner, rel(cwd) if within_base(cwd) else short, cwd,
+            sid, owner, rel(git.main_checkout(cwd)) if within_base(cwd) else short, cwd,
             updated=r.get("last_active") or r.get("started"),
             origin="vscode" if r.get("source") == "vscode" else "terminal")
         count += 1
@@ -136,7 +136,8 @@ def scan(chat_id: int | None = None) -> int:
                 if title and _is_internal_oneshot(title):
                     indexed = False               # bridge-internal one-shot — never list
                 else:
-                    store.upsert_native_session(uid, owner, rel(cwd), cwd,
+                    store.upsert_native_session(uid, owner,
+                                                rel(git.main_checkout(cwd)), cwd,
                                                 title=title.strip()[:60] if title else None,
                                                 updated=mtime, origin=origin)
                     count += 1

@@ -23,7 +23,7 @@ Everything here was reverse-engineered from the product codebase:
   - `bridge/dashboard/web/` — the **Desktop Dashboard** (localhost HUD, the richest surface)
   - `bridge/miniapp/web/` — the **Telegram Mini App** (mobile control panel)
   - `bridge/dashboard/web/src/index.css` & `bridge/miniapp/web/src/index.css` — the shared token source (kept in sync between the two)
-  - `docs/superpowers/specs/2026-06-23-hud-redesign-design.md` — the canonical HUD redesign spec (palette table, layout, motion, motifs)
+  - `docs/superpowers/specs/hud-redesign-design.md` — the canonical HUD redesign spec (palette table, layout, motion, motifs)
 - **Design origin (referenced, not attached):** a Claude Design project
   "Mystical Assistant Dashboard" → `Mystical Assistant HUD.dc.html`, per the spec.
 

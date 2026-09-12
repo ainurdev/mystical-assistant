@@ -11,7 +11,7 @@ a turn or a page fails.
 Dollars are deliberately absent. The CLI's total_cost_usd prices these runs off the
 API list rate while they go through a subscription (see 9f612a4); time and tokens
 are the two numbers with something real behind them.
-See docs/superpowers/specs/2026-08-13-session-time-token-attribution-design.md
+See docs/superpowers/specs/session-time-token-attribution-design.md
 """
 
 import logging

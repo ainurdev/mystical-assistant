@@ -460,6 +460,23 @@ def test_worktree_name_only_names_a_linked_tree():
     assert g.worktree_name("") == ""
 
 
+def test_main_checkout_folds_a_worktree_into_its_repo():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    assert g.main_checkout(d) == d                       # already the main checkout
+    wt = os.path.join(tempfile.mkdtemp(), "side-tree")
+    _run(d, "worktree", "add", "-q", "-b", "side", wt)
+    assert os.path.realpath(g.main_checkout(wt)) == os.path.realpath(d)
+    deep = os.path.join(wt, "deep", "er")
+    os.makedirs(deep, exist_ok=True)
+    assert os.path.realpath(g.main_checkout(deep)) == os.path.realpath(d)
+    outside = tempfile.mkdtemp()                         # no repo -> unchanged
+    assert g.main_checkout(outside) == outside
+    assert g.main_checkout("") == ""
+
+
 def test_current_branch_detached_on_remote_ref_drops_the_remote():
     # a worktree parked on origin/foo after the local foo was deleted: the chip
     # should read "foo", not "origin/foo"

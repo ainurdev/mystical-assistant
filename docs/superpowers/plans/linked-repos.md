@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3 stdlib (bridge), pytest; React + TypeScript (dashboard web, `bridge/dashboard/web`); Claude Code CLI `--add-dir`.
 
-**Spec:** `docs/superpowers/specs/2026-09-02-linked-repos-design.md`
+**Spec:** `docs/superpowers/specs/linked-repos-design.md`
 
 ## Global Constraints
 

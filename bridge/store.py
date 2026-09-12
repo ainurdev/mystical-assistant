@@ -5,7 +5,7 @@ Stdlib only. One short-lived connection per operation (WAL + busy_timeout), so
 it is safe to call from the bridge's many threads and both HTTP servers without a
 shared-connection race. Multi-statement writes use an explicit BEGIN IMMEDIATE so
 event sequence allocation is atomic. See
-docs/superpowers/specs/2026-06-23-unified-sessions-dashboard-design.md
+docs/superpowers/specs/unified-sessions-dashboard-design.md
 """
 
 import json
@@ -254,7 +254,13 @@ def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str,
     claude_session_id: on re-scan it refreshes `updated` (monotonically) and
     backfills `cwd`, but preserves an existing title — and only ever rewrites an
     origin that is itself native, so a bridge-run session whose JSONL the scanner
-    re-encounters is not reclassified."""
+    re-encounters is not reclassified.
+
+    `project` is re-derived on every scan because it is a pure function of `cwd`
+    (native.scan folds a worktree cwd into its parent repo), so rows indexed
+    before that fold existed heal themselves instead of keeping a sidebar group
+    per branch. Nothing lets you move a native row to another project by hand,
+    so there is no human choice here to clobber."""
     now = updated if updated is not None else time.time()
     existing = get_by_claude_session_id(claude_sid)
     with closing(_connect()) as c:
@@ -265,11 +271,12 @@ def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str,
             # scanner could tell VS Code from terminal pick up their real surface.
             c.execute(
                 "UPDATE sessions SET updated=MAX(updated, ?), cwd=COALESCE(cwd, ?), "
+                "project=?, "
                 "title=CASE WHEN title IS NULL OR title='' OR title LIKE '<%' "
                 "THEN ? ELSE title END, "
                 "origin=CASE WHEN origin IN ('vscode','terminal') THEN ? ELSE origin END "
                 "WHERE id=?",
-                (now, cwd, title, origin, existing["id"]))
+                (now, cwd, project, title, origin, existing["id"]))
             return get_session(existing["id"])
         c.execute(
             "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"

@@ -53,7 +53,7 @@ function DayStrip({ rep }: { rep: WeeklyReport }) {
   });
   const peak = Math.max(...days.map((d) => d.elapsed), 1);
   return (
-    <div style={{ display: "flex", gap: 4, alignItems: "flex-end", padding: "2px 11px 10px", height: 34 }}>
+    <div style={{ display: "flex", gap: 4, alignItems: "flex-end", padding: "2px 11px 10px", minHeight: 34 }}>
       {days.map((d, i) => (
         <div key={i} title={`${d.key} — ${d.turns} turns · ${dur(d.elapsed)}`}
           style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, alignItems: "stretch" }}>

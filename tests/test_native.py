@@ -107,6 +107,39 @@ def test_scan_indexes_session_under_base():
     assert row["title"] == "build the thing"
 
 
+def test_scan_groups_a_worktree_session_under_its_repo():
+    """A worktree is a branch of a project, not a project — the row keeps the
+    worktree as its cwd but groups under the repo it was added from."""
+    import subprocess
+    repo = os.path.join(_BASE, "folded")
+    os.makedirs(repo, exist_ok=True)
+    run = lambda *a: subprocess.run(["git", "-C", repo, *a], capture_output=True)
+    subprocess.run(["git", "init", "-q", repo], capture_output=True)
+    run("config", "user.email", "t@t"), run("config", "user.name", "t")
+    open(os.path.join(repo, "a.txt"), "w").write("x\n")
+    run("add", "-A"), run("commit", "-qm", "init")
+    wt = os.path.join(_BASE, ".worktrees", "folded", "side")
+    run("worktree", "add", "-q", "-b", "side", wt)
+    _write_native("uuid-in-worktree", wt, first_user="work the branch")
+    native.scan(chat_id=OWNER)
+    row = store.get_by_claude_session_id("uuid-in-worktree")
+    assert row["project"] == "/folded", row["project"]
+    assert row["cwd"] == wt
+
+
+def test_rescan_heals_a_stale_worktree_project():
+    """Rows indexed before the fold existed carry the worktree's own rel; the
+    next cold scan re-derives project from cwd and folds them."""
+    store.upsert_native_session("uuid-stale-wt", OWNER, "/.worktrees/folded/side",
+                                os.path.join(_BASE, ".worktrees", "folded", "side"),
+                                title="old row", origin="terminal")
+    assert store.get_by_claude_session_id("uuid-stale-wt")["project"] == "/.worktrees/folded/side"
+    store.upsert_native_session("uuid-stale-wt", OWNER, "/folded",
+                                os.path.join(_BASE, ".worktrees", "folded", "side"),
+                                title="old row", origin="terminal")
+    assert store.get_by_claude_session_id("uuid-stale-wt")["project"] == "/folded"
+
+
 def test_scan_labels_origin_from_entrypoint():
     # Claude Code stamps the surface on every record; a terminal `claude` session
     # must not land on the VS Code chip. Missing entrypoint keeps the old default.
