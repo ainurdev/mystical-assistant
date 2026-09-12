@@ -399,3 +399,87 @@ def test_a_scoped_refresh_leaves_the_global_board_shape_intact(monkeypatch):
     for i in board["items"]:
         assert {"id", "title", "why", "effort", "evidence", "repo", "branch",
                 "cwd", "project", "prompt"} <= set(i)
+
+
+# --- the four questions ------------------------------------------------------
+
+def test_the_next_question_is_unchanged(monkeypatch):
+    """NEXT's rendered prompt must not drift when the frame is shared."""
+    d = _mkrepo(dirty=True)
+    seen = []
+    _stub_agent(monkeypatch, lambda p: seen.append(p) or "[]")
+    nextup.scout(CHAT, nextup.facts(CHAT, d), "next")
+    assert "what is most worth doing here next?" in seen[0]
+    assert "Consider four kinds of candidate" in seen[0]
+    assert "Reply with ONLY a JSON array" in seen[0]
+
+
+@pytest.mark.parametrize("kind,needle", [
+    ("review", "what is wrong, risky or half-done"),
+    ("research", "what open question"),
+    ("polish", "design system"),
+])
+def test_each_kind_asks_its_own_question(monkeypatch, kind, needle):
+    d = _mkrepo(dirty=True)
+    seen = []
+    _stub_agent(monkeypatch, lambda p: seen.append(p) or "[]")
+    nextup.scout(CHAT, nextup.facts(CHAT, d), kind)
+    assert needle in seen[0]
+
+
+def test_each_kind_lands_in_its_own_cache_slot(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    # "half-done" is unique to REVIEW's headline — NEXT's guidance also says
+    # "risky" (of "broken or risky"), so that word can't tell the two apart.
+    _stub_agent(monkeypatch, lambda p: '[{"title": "%s item", "why": "because", '
+                                       '"effort": "small", "evidence": "a.txt"}]'
+                                       % ("review" if "half-done" in p else "next"))
+    nextup.refresh(CHAT, project="/d", kind="next")
+    nextup.refresh(CHAT, project="/d", kind="review")
+    assert nextup.board(CHAT, "/d", "next")["items"][0]["title"] == "next item"
+    assert nextup.board(CHAT, "/d", "review")["items"][0]["title"] == "review item"
+
+
+def test_a_kind_never_scouted_has_no_items(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    nextup.refresh(CHAT, project="/d", kind="next")
+    assert nextup.board(CHAT, "/d", "polish")["items"] == []
+
+
+def test_a_dead_scout_leaves_only_its_own_kind_on_the_heuristic(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    # see the note above: "half-done" (not "risky") is what's unique to REVIEW.
+    _stub_agent(monkeypatch, lambda p: ("[]" if "half-done" in p else
+                '[{"title": "Do a thing", "why": "because", '
+                '"effort": "small", "evidence": "a.txt"}]'))
+    nextup.refresh(CHAT, project="/d", kind="next")
+    nextup.refresh(CHAT, project="/d", kind="review")
+    assert nextup.board(CHAT, "/d", "next")["items"][0]["title"] == "Do a thing"
+    review = nextup.board(CHAT, "/d", "review")["items"]
+    assert review, "a scout that answered nothing must still leave the facts"
+    assert review[0]["title"].startswith("Land ")   # _heuristic's dirty-tree item
+
+
+def test_polish_is_given_the_ui_files_and_the_token_source(monkeypatch):
+    d = _mkrepo()
+    os.makedirs(os.path.join(d, "lib"))
+    for p in ("lib/shell.ts", "app.tsx", "notes.md"):
+        with open(os.path.join(d, p), "w") as fh:
+            fh.write("x\n")
+    seen = []
+    _stub_agent(monkeypatch, lambda p: seen.append(p) or "[]")
+    nextup.scout(CHAT, nextup.facts(CHAT, d), "polish")
+    assert "app.tsx" in seen[0] and "lib/shell.ts" in seen[0]
+    assert '"ui_files"' in seen[0]
+
+
+def test_token_source_is_empty_when_the_repo_has_none():
+    assert nextup._token_source(_mkrepo()) == ""
