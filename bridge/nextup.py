@@ -15,6 +15,11 @@ nothing to survey, and at most three items, so nothing to rank. That cut is what
 the dashboard's fresh-session panel asks for, and it is why a refresh from that
 screen costs one scout instead of seven calls.
 
+One cache slot per repo, written by both paths, so it has one shape: board items
+(decorated, with an id and a prompt), never raw scout output. The sweep and the
+scoped refresh each read what the other wrote, and `board()` reads both — a slot
+holding half-built items is a KeyError on the next read, not a smaller write.
+
 Every stage fails open, as in bridge/relevance.py: a scout that times out leaves
 its repo represented by its raw facts, and a failed ranking falls back to a fixed
 heuristic order. There is always a list. Stdlib only.
@@ -58,6 +63,10 @@ def _read() -> dict:
 
 
 def _write(state: dict) -> None:
+    # ponytail: whole-file read-modify-write, no lock. Writers are seconds apart
+    # at worst (the slow part, scouting, happens outside the read→write window);
+    # if two surfaces ever write in the same millisecond, give the file an
+    # os.replace() of a temp copy and a threading.Lock around read+write.
     try:
         os.makedirs(os.path.dirname(_path()), exist_ok=True)
         with open(_path(), "w") as f:
@@ -67,9 +76,12 @@ def _write(state: dict) -> None:
 
 
 def dismiss(item_id: str) -> None:
-    """Hide one item. Ids carry the repo state they were derived from, so a
-    dismissal expires by itself the moment that state moves — there is nothing
-    to un-dismiss and nothing that can outlive its reason."""
+    """Hide one item from the project-scoped board. Ids carry the repo state they
+    were derived from, so a dismissal expires by itself the moment that state
+    moves — there is nothing to un-dismiss and nothing that can outlive its
+    reason. Scoped only on purpose: ids are positional within one scout run, so
+    the same id names a different item on the machine-wide board, and hiding
+    something there is not what the panel's ✕ was pressed for."""
     st = _read()
     st.setdefault("dismissed", {})[item_id] = time.time()
     _write(st)
@@ -78,6 +90,9 @@ def dismiss(item_id: str) -> None:
 def _prune_dismissed(st: dict) -> dict:
     """Drop dismissals whose repo state is gone. Called on every write, so the
     set is bounded by what is currently on the board, not by history."""
+    # ponytail: ids are `{key}-{kind}-{n}` and rsplit assumes no kind name has a
+    # hyphen in it. True for all four; a `half-done` kind would silently stop
+    # pruning. Store the key on the dismissal instead if a kind ever needs one.
     live = {slot.get("key") for slot in (st.get("cache") or {}).values()}
     st["dismissed"] = {k: v for k, v in (st.get("dismissed") or {}).items()
                        if k.rsplit("-", 2)[0] in live}
@@ -488,21 +503,29 @@ def _decorate(got: list[dict], f: dict, key: str, kind: str,
 def board(chat_id: int, project: "str | None" = None, kind: str = "next") -> dict:
     """The last computed board. Cheap: reads one JSON file, spawns nothing.
 
-    Unscoped it is the machine-wide ranked board, exactly as before — the shape
-    the Mini App and the Telegram board read. Given a project it is that one
-    repo's answer to one question, straight from the cache."""
+    Unscoped it is the machine-wide ranked board the Mini App and the Telegram
+    board read: every ranked item, dismissals included. Dismissal is the scoped
+    panel's concept — ids are positional inside one scout run, so item 0 of a
+    sweep and item 0 of a scoped scout are different work under the same id, and
+    filtering here would hide something nobody pressed ✕ on.
+
+    Given a project it is that one repo's answer to one question, straight from
+    the cache, minus what was dismissed at this repo state."""
     st = _read()
-    gone = set(st.get("dismissed") or {})
     if not project:
-        return {"items": [i for i in st.get("items", []) if i["id"] not in gone],
+        return {"items": st.get("items", []),
                 "generated": st.get("generated"),
                 "repos": st.get("repos", []),
                 "refreshing": (chat_id, None, "next") in _refreshing,
                 "enabled": aifeatures.enabled("nextup")}
+    gone = set(st.get("dismissed") or {})
     cwd = _abs(project)
     slot = (st.get("cache") or {}).get(cwd) or {}
     got = slot.get("items") if kind == "next" else (slot.get("kinds") or {}).get(kind)
-    items = [i for i in (got or []) if i["id"] not in gone]
+    # `i.get("id")`: a slot written before the sweep stored board items holds raw
+    # scout output with no id. Unusable here (nothing to start, nothing to
+    # dismiss), so it reads as empty until the next refresh rewrites the slot.
+    items = [i for i in (got or []) if i.get("id") and i["id"] not in gone]
     return {"items": items, "generated": slot.get("generated"),
             "repos": [os.path.basename(cwd)] if items else [],
             "refreshing": (chat_id, project, kind) in _refreshing,
@@ -536,7 +559,13 @@ def _refresh(chat_id: int) -> dict:
     cache = prev.get("cache") or {}
     gathered = [facts(chat_id, r["cwd"]) for r in repos]
     keys = {f["cwd"]: cache_key(f) for f in gathered}
-    stale = [f for f in gathered if cache.get(f["cwd"], {}).get("key") != keys[f["cwd"]]]
+    # `"items" not in slot`, not `not slot["items"]`: a scoped refresh of another
+    # kind resets the whole slot to its key alone when the repo moves, so a
+    # matching key with no items is a repo this sweep has never answered for —
+    # while an empty list is a genuine answer that must not be re-scouted forever.
+    stale = [f for f in gathered
+             if cache.get(f["cwd"], {}).get("key") != keys[f["cwd"]]
+             or "items" not in cache.get(f["cwd"], {})]
 
     if not stale and prev.get("items"):
         return board(chat_id)   # nothing moved: no scouts, no ranking, no cost
@@ -552,23 +581,33 @@ def _refresh(chat_id: int) -> dict:
                 except Exception:  # noqa: BLE001
                     fresh[f["cwd"]] = _heuristic(f)
 
-    items, new_cache = [], {}
+    items, new_cache, now = [], {}, time.time()
     for f, r in zip(gathered, repos):
         got = fresh.get(f["cwd"]) or cache.get(f["cwd"], {}).get("items") or []
-        slot = {"key": keys[f["cwd"]], "items": got}
+        # Decorate and prompt BEFORE storing: the slot is what the scoped board
+        # serves, and it must hold the same board items _refresh_one writes —
+        # not the raw scout output this used to keep. Re-decorating an already
+        # decorated cached list is a no-op, the id is derived from the same key
+        # and the same position.
+        got = _decorate(got, f, keys[f["cwd"]], "next", r["last_active"])
+        for it in got:
+            it["prompt"] = to_prompt(it)
+        slot = {"key": keys[f["cwd"]], "items": got, "generated": now}
         # `prev_slot`, not `prev` — `prev` is this function's `_read()` state and
-        # Task 3 reads `dismissed` off it after this loop.
+        # the dismissal re-read below is taken off the file, not off it.
         prev_slot = cache.get(f["cwd"]) or {}
         if prev_slot.get("key") == keys[f["cwd"]] and prev_slot.get("kinds"):
             slot["kinds"] = prev_slot["kinds"]
         new_cache[f["cwd"]] = slot
-        items.extend(_decorate(got, f, keys[f["cwd"]], "next", r["last_active"]))
+        items.extend(got)
 
     ranked = rank(chat_id, items)
     for it in ranked:
         it["prompt"] = to_prompt(it)
-    _write({"items": ranked, "generated": time.time(), "cache": new_cache,
-            "dismissed": prev.get("dismissed") or {},
+    # Re-read, don't reuse `prev`: the scouts above ran for minutes, and a
+    # dismissal made from the panel while they ran lives in the file by now.
+    _write({"items": ranked, "generated": now, "cache": new_cache,
+            "dismissed": _read().get("dismissed") or {},
             "repos": [f["name"] for f in gathered]})
     return board(chat_id)
 
@@ -581,15 +620,19 @@ def _refresh_one(chat_id: int, project: str, kind: str) -> dict:
         return board(chat_id, project, kind)
     f = facts(chat_id, cwd)
     key = cache_key(f)
+    items = _decorate(scout(chat_id, f, kind), f, key, kind)
+    for it in items:
+        it["prompt"] = to_prompt(it)
+    # Read AFTER the scout, never before. A scout costs up to
+    # NEXTUP_SCOUT_TIMEOUT and the panel's four tabs refresh independently, so a
+    # snapshot taken before the call would be written back over whatever another
+    # tab answered meanwhile — and would resurrect anything dismissed while it ran.
     st = _read()
     cache = st.setdefault("cache", {})
     slot = cache.get(cwd) or {}
     if slot.get("key") != key:
         # The repo moved, so every kind's answer is stale, not just this one.
         slot = {"key": key}
-    items = _decorate(scout(chat_id, f, kind), f, key, kind)
-    for it in items:
-        it["prompt"] = to_prompt(it)
     if kind == "next":
         slot["items"] = items
     else:

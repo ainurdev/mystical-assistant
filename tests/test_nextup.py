@@ -378,6 +378,57 @@ def test_an_unscoped_refresh_still_surveys_every_recent_repo(monkeypatch):
     assert sorted(set(calls)) == sorted([a, b])
 
 
+def test_a_sweep_leaves_a_slot_the_scoped_board_can_read(monkeypatch):
+    """The machine-wide sweep and the scoped refresh write the same cache slot,
+    so what one stores the other must be able to serve. This exact ordering —
+    unscoped refresh, then scoped read — is what used to raise KeyError: 'id'."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    nextup.refresh(CHAT)                       # the WORK tab's machine-wide sweep
+    scoped = nextup.board(CHAT, "/d", "next")  # the panel's first read
+    assert scoped["items"], "the sweep's slot must serve the scoped board"
+    assert scoped["generated"], "a swept slot must carry when it was generated"
+    for it in scoped["items"]:
+        assert it["id"] and it["prompt"] and it["cwd"] == d
+
+
+def test_a_scoped_refresh_of_another_kind_does_not_freeze_the_sweep(monkeypatch):
+    """A scoped REVIEW refresh after the repo moved drops every kind's answer and
+    stores the new key. The next sweep must still notice it has no NEXT items for
+    that repo, or the machine-wide board is frozen until the repo moves again."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    calls: list = []
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]', calls)
+    nextup.refresh(CHAT)
+    with open(os.path.join(d, "moved.txt"), "w") as fh:    # repo state moves
+        fh.write("x\n")
+    nextup.refresh(CHAT, project="/d", kind="review")      # resets the slot
+    before = len(calls)
+    nextup.refresh(CHAT)
+    assert len(calls) > before, "the sweep must re-scout a repo it has no items for"
+    assert nextup.board(CHAT)["items"], "and the global board must not go empty"
+
+
+def test_an_empty_answer_is_an_answer_and_is_not_re_scouted(monkeypatch):
+    """The staleness guard keys on the slot having `items` at all, never on them
+    being non-empty — a repo whose honest answer is nothing would otherwise be
+    re-scouted on every single sweep."""
+    d = _mkrepo("d")                           # clean: the heuristic finds nothing
+    _session(d)
+    calls: list = []
+    _stub_agent(monkeypatch, "[]", calls)
+    nextup.refresh(CHAT)
+    first = len(calls)
+    nextup.refresh(CHAT)
+    assert len(calls) == first
+
+
 def test_an_unknown_kind_is_rejected():
     with pytest.raises(ValueError):
         nextup.refresh(CHAT, project="/a", kind="haruspicy")
@@ -526,6 +577,41 @@ def test_dismissals_for_a_dead_repo_state_are_pruned(monkeypatch):
 def test_dismissing_an_unknown_id_is_harmless(monkeypatch):
     nextup.dismiss("no-such-item")
     assert nextup.board(CHAT)["items"] == []
+
+
+def test_a_dismissal_made_during_a_scout_is_not_resurrected(monkeypatch):
+    """The scoped refresh reads the board file after its scout returns, not
+    before: a scout runs for up to a minute and the panel's four tabs refresh
+    independently, so a dismissal landing mid-scout must survive its write."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+
+    # REVIEW's scout dismisses NEXT's item while it runs — the interleaving a
+    # second tab produces: read, (dismiss), write.
+    def reply(prompt):
+        nextup.dismiss(item["id"])
+        return ('[{"title": "Do a thing", "why": "because", '
+                '"effort": "small", "evidence": "a.txt"}]')
+    _stub_agent(monkeypatch, reply)
+    nextup.refresh(CHAT, project="/d", kind="review")
+
+    assert item["id"] in (nextup._read().get("dismissed") or {})
+    assert nextup.board(CHAT, "/d", "next")["items"] == []
+
+
+def test_a_panel_dismissal_never_touches_the_machine_wide_board(monkeypatch):
+    """Ids are positional inside one scout run, so the sweep and a scoped scout
+    mint the same ids for different work. Dismissal is the panel's concept; the
+    Mini App, /next and the WORK tab keep every ranked item."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    ranked = nextup.refresh(CHAT)["items"]
+    assert ranked
+    nextup.dismiss(ranked[0]["id"])
+    assert [i["id"] for i in nextup.board(CHAT)["items"]] == [i["id"] for i in ranked]
 
 
 def test_a_global_refresh_keeps_live_dismissals(monkeypatch):
