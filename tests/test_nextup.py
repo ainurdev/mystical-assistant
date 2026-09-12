@@ -483,3 +483,55 @@ def test_polish_is_given_the_ui_files_and_the_token_source(monkeypatch):
 
 def test_token_source_is_empty_when_the_repo_has_none():
     assert nextup._token_source(_mkrepo()) == ""
+
+
+# --- dismiss -----------------------------------------------------------------
+
+def _one_item_board(monkeypatch, d):
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    return nextup.refresh(CHAT, project="/d", kind="next")
+
+
+def test_a_dismissed_item_leaves_the_board(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    assert nextup.board(CHAT, "/d", "next")["items"] == []
+
+
+def test_a_dismissal_does_not_survive_the_repo_moving(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    with open(os.path.join(d, "c.txt"), "w") as fh:   # repo state moves
+        fh.write("x\n")
+    assert _one_item_board(monkeypatch, d)["items"], "a new repo state is a new item"
+
+
+def test_dismissals_for_a_dead_repo_state_are_pruned(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    with open(os.path.join(d, "c.txt"), "w") as fh:
+        fh.write("x\n")
+    _one_item_board(monkeypatch, d)
+    assert nextup._read().get("dismissed") == {}
+
+
+def test_dismissing_an_unknown_id_is_harmless(monkeypatch):
+    nextup.dismiss("no-such-item")
+    assert nextup.board(CHAT)["items"] == []
+
+
+def test_a_global_refresh_keeps_live_dismissals(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    nextup.refresh(CHAT)                       # the WORK tab's machine-wide sweep
+    assert item["id"] in (nextup._read().get("dismissed") or {})

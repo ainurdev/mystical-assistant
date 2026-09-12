@@ -61,9 +61,27 @@ def _write(state: dict) -> None:
     try:
         os.makedirs(os.path.dirname(_path()), exist_ok=True)
         with open(_path(), "w") as f:
-            json.dump(state, f)
+            json.dump(_prune_dismissed(state), f)
     except OSError:
         pass
+
+
+def dismiss(item_id: str) -> None:
+    """Hide one item. Ids carry the repo state they were derived from, so a
+    dismissal expires by itself the moment that state moves — there is nothing
+    to un-dismiss and nothing that can outlive its reason."""
+    st = _read()
+    st.setdefault("dismissed", {})[item_id] = time.time()
+    _write(st)
+
+
+def _prune_dismissed(st: dict) -> dict:
+    """Drop dismissals whose repo state is gone. Called on every write, so the
+    set is bounded by what is currently on the board, not by history."""
+    live = {slot.get("key") for slot in (st.get("cache") or {}).values()}
+    st["dismissed"] = {k: v for k, v in (st.get("dismissed") or {}).items()
+                       if k.rsplit("-", 2)[0] in live}
+    return st
 
 
 # ---------------------------------------------------------------------------
@@ -474,15 +492,17 @@ def board(chat_id: int, project: "str | None" = None, kind: str = "next") -> dic
     the Mini App and the Telegram board read. Given a project it is that one
     repo's answer to one question, straight from the cache."""
     st = _read()
+    gone = set(st.get("dismissed") or {})
     if not project:
-        return {"items": st.get("items", []), "generated": st.get("generated"),
+        return {"items": [i for i in st.get("items", []) if i["id"] not in gone],
+                "generated": st.get("generated"),
                 "repos": st.get("repos", []),
                 "refreshing": (chat_id, None, "next") in _refreshing,
                 "enabled": aifeatures.enabled("nextup")}
     cwd = _abs(project)
     slot = (st.get("cache") or {}).get(cwd) or {}
     got = slot.get("items") if kind == "next" else (slot.get("kinds") or {}).get(kind)
-    items = list(got or [])
+    items = [i for i in (got or []) if i["id"] not in gone]
     return {"items": items, "generated": slot.get("generated"),
             "repos": [os.path.basename(cwd)] if items else [],
             "refreshing": (chat_id, project, kind) in _refreshing,
@@ -548,6 +568,7 @@ def _refresh(chat_id: int) -> dict:
     for it in ranked:
         it["prompt"] = to_prompt(it)
     _write({"items": ranked, "generated": time.time(), "cache": new_cache,
+            "dismissed": prev.get("dismissed") or {},
             "repos": [f["name"] for f in gathered]})
     return board(chat_id)
 
