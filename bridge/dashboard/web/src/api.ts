@@ -799,6 +799,7 @@ export interface NextBoard {
   refreshing: boolean;
   enabled: boolean; // false → the list is the plain heuristic order
 }
+export type NextKind = "next" | "review" | "research" | "polish";
 /* Since local midnight, for this chat. `cost` is null when no turn in the
    window reported one — unknown, not $0.00 — and is priced at API list rate
    even on a subscription (9f612a4), so tokens are the honest number. */
@@ -1202,11 +1203,23 @@ export const api = {
       method: "POST",
       body: { login, window, profile: profile ?? null },
     }),
-  /** Cached board — never spawns anything. */
-  nextBoard: () => req<NextBoard>("/local/next"),
+  nextBoard: (opts?: { project?: string; kind?: NextKind }) =>
+    req<NextBoard>(
+      `/local/next${opts?.project
+        ? `?project=${encodeURIComponent(opts.project)}&kind=${opts.kind ?? "next"}`
+        : ""}`,
+    ),
   /** Recompute in the background; poll nextBoard() until `refreshing` clears. */
-  refreshNext: () =>
-    req<NextBoard & { ok: boolean }>("/local/next", { method: "POST", body: {} }),
+  refreshNext: (opts?: { project?: string; kind?: NextKind }) =>
+    req<NextBoard & { ok: boolean }>("/local/next", {
+      method: "POST",
+      body: { project: opts?.project, kind: opts?.kind ?? "next" },
+    }),
+  dismissNext: (id: string, opts?: { project?: string; kind?: NextKind }) =>
+    req<NextBoard & { ok: boolean }>("/local/next/dismiss", {
+      method: "POST",
+      body: { id, project: opts?.project, kind: opts?.kind ?? "next" },
+    }),
   setDefaultPolicy: (policy: string) =>
     req<{ ok: boolean; policy: string }>("/local/policy/default", {
       method: "POST",
