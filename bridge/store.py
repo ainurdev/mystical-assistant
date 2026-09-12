@@ -16,7 +16,7 @@ import time
 import uuid
 from contextlib import closing
 
-from bridge import config
+from bridge import config, outcomes
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -949,6 +949,30 @@ def today(chat_id: int, since: float) -> dict:
     return {"turns": r["turns"], "tokens": r["tokens"], "cost": r["cost"]}
 
 
+def week_failures(chat_id: int, since: float, until: float) -> list[dict]:
+    """Every failed turn in [since, until) with its outcome, for the weekly
+    report. Signals are gathered per session so the events read stays on the
+    (session_id, seq) primary key — `turn_id` has no index of its own, and a week
+    of failures spans few enough sessions for that to be a handful of lookups."""
+    with closing(_connect()) as c:
+        rows = [dict(r) for r in c.execute(
+            "SELECT t.*, s.project FROM turns t JOIN sessions s ON s.id = t.session_id "
+            "WHERE s.chat_id=? AND t.status='error' AND t.started >= ? AND t.started < ?",
+            (chat_id, since, until)).fetchall()]
+        by_session: dict = {}
+        for t in rows:
+            by_session.setdefault(t["session_id"], set()).add(t["id"])
+        signals = {}
+        for sid, ids in by_session.items():
+            signals.update(_outcome_signals(c, sid, ids))
+    out = []
+    for t in rows:
+        o = outcomes.outcome(t, signals.get(t["id"], {}))
+        if o:
+            out.append({"project": t["project"], "started": t["started"], **o})
+    return out
+
+
 def week_by_project(chat_id: int, since: float, until: float) -> list[dict]:
     """Per-project aggregates over turns started in [since, until): sessions
     touched (not created — an old session worked on this week counts), turns,
@@ -1047,6 +1071,36 @@ def claim_orphaned_turns() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _outcome_signals(c, session_id: str, turn_ids: set) -> dict:
+    """What the events say about each failed turn, for outcomes.outcome(). Read
+    by session rather than by `turn_id IN (…)` so the query takes one bind param
+    and can never hit SQLite's variable limit; the events table is keyed on
+    session_id, so it is the same index either way."""
+    sig = {t: {"errors": [], "has_text": False, "stopped": False,
+               "has_result": False, "result_empty": False, "result_text": ""}
+           for t in turn_ids}
+    for r in c.execute(
+            "SELECT turn_id,type,payload FROM events WHERE session_id=? AND "
+            "type IN ('error','stopped','result','text') ORDER BY seq", (session_id,)):
+        s = sig.get(r["turn_id"])
+        if s is None:
+            continue
+        if r["type"] == "text":
+            s["has_text"] = True
+        elif r["type"] == "stopped":
+            s["stopped"] = True
+        elif r["type"] == "error":
+            s["errors"].append(json.loads(r["payload"]).get("message") or "")
+        else:
+            res = str(json.loads(r["payload"]).get("result") or "")
+            s["has_result"] = True
+            s["result_empty"] = not res.strip()
+            # Only the head: outcomes reads this to spot a failure that rode the
+            # result string, and those are one-liners.
+            s["result_text"] = res[:300]
+    return sig
+
+
 def transcript(session_id: str, cursor: int = 0) -> dict:
     """Session + its turns + events with seq >= cursor. `next_cursor` is the seq
     to pass next time to get only newer events."""
@@ -1057,6 +1111,11 @@ def transcript(session_id: str, cursor: int = 0) -> dict:
         evrows = c.execute(
             "SELECT seq,turn_id,payload,ts FROM events WHERE session_id=? AND seq>=? ORDER BY seq",
             (session_id, cursor)).fetchall()
+        # Failed turns carry why they failed (bridge/outcomes.py). Derived on
+        # every read, including the incremental ones — a badge must not blink out
+        # when a poll re-sends the turn rows against a narrower event window.
+        failed = {t["id"] for t in turns if t["status"] == "error"}
+        signals = _outcome_signals(c, session_id, failed) if failed else {}
     events = []
     for r in evrows:
         d = json.loads(r["payload"])
@@ -1074,6 +1133,8 @@ def transcript(session_id: str, cursor: int = 0) -> dict:
         # turn id IS the run's upload dir, so old turns resolve too.
         t["attachments"] = [os.path.join(config.UPLOAD_DIR, t["id"], os.path.basename(n))
                             for n in json.loads(t["attachments"])]
+        if t["id"] in signals:
+            t["outcome"] = outcomes.outcome(t, signals[t["id"]])
     next_cursor = (events[-1]["seq"] + 1) if events else cursor
     return {"session": s, "turns": turns, "events": events, "next_cursor": next_cursor}
 
