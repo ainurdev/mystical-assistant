@@ -81,17 +81,21 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
     setBusyScope(mineScope);
     await api.refreshNext(mine).catch(() => null);
     if (poll.current) window.clearInterval(poll.current);
-    poll.current = window.setInterval(async () => {
+    // The callback clears its OWN id, and only releases the shared ref if it is
+    // still the owner — a later refresh may already have taken it, and clearing
+    // `poll.current` blindly would kill that one instead.
+    const id = window.setInterval(async () => {
       const b = await api.nextBoard(mine).catch(() => null);
       // Clearing the interval stops future ticks, never one already in flight —
       // so a late answer is dropped here rather than landing on another tab.
       if (b && scopeRef.current === mineScope) setBoard(b);
       if (b && !b.refreshing) {
-        if (poll.current) window.clearInterval(poll.current);
-        poll.current = null;
+        window.clearInterval(id);
+        if (poll.current === id) poll.current = null;
         setBusyScope((cur) => (cur === mineScope ? null : cur));
       }
     }, 3000);
+    poll.current = id;
   }
 
   async function dismiss(id: string) {
