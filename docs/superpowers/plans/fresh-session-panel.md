@@ -245,9 +245,11 @@ and ids gain their kind segment:
         # A survey only ever re-answers "next". The other kinds' answers survive
         # it if and only if the repo has not moved — the same rule that governs
         # `items`, just applied to a slot this path never scouts.
-        prev = cache.get(f["cwd"]) or {}
-        if prev.get("key") == keys[f["cwd"]] and prev.get("kinds"):
-            slot["kinds"] = prev["kinds"]
+        # `prev_slot`, not `prev` — `prev` is this function's `_read()` state and
+        # Task 3 reads `dismissed` off it after this loop.
+        prev_slot = cache.get(f["cwd"]) or {}
+        if prev_slot.get("key") == keys[f["cwd"]] and prev_slot.get("kinds"):
+            slot["kinds"] = prev_slot["kinds"]
         new_cache[f["cwd"]] = slot
         items.extend(_decorate(got, f, keys[f["cwd"]], "next", r["last_active"]))
 ```
