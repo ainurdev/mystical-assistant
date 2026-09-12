@@ -339,3 +339,63 @@ def test_prompt_carries_the_reasoning_not_just_the_title():
     p = nextup.to_prompt({"title": "Land the diff", "why": "it is half done",
                           "evidence": "bridge/git.py"})
     assert "Land the diff" in p and "half done" in p and "bridge/git.py" in p
+
+
+# --- project + kind scope ----------------------------------------------------
+
+def test_a_scoped_refresh_scouts_exactly_one_repo(monkeypatch):
+    a, b = _mkrepo("a", dirty=True), _mkrepo("b", dirty=True)
+    _session(a); _session(b)
+    calls = []
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]', calls)
+    monkeypatch.setattr(nextup, "_abs", lambda project: a)
+    monkeypatch.setattr(nextup, "recent_repos",
+                        lambda chat: pytest.fail("a scoped refresh must not survey repos"))
+    nextup.refresh(CHAT, project="/a", kind="next")
+    assert calls == [a]
+
+
+def test_a_scoped_board_returns_only_that_repos_items(monkeypatch):
+    a = _mkrepo("a", dirty=True)
+    _session(a)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    monkeypatch.setattr(nextup, "_abs", lambda project: a)
+    board = nextup.refresh(CHAT, project="/a", kind="next")
+    assert board["items"], "a scoped refresh must produce items"
+    assert {i["cwd"] for i in board["items"]} == {a}
+    assert board["repos"] == [os.path.basename(a)]
+
+
+def test_an_unscoped_refresh_still_surveys_every_recent_repo(monkeypatch):
+    a, b = _mkrepo("a", dirty=True), _mkrepo("b", dirty=True)
+    _session(a); _session(b)
+    calls = []
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]', calls)
+    nextup.refresh(CHAT)
+    assert sorted(set(calls)) == sorted([a, b])
+
+
+def test_an_unknown_kind_is_rejected():
+    with pytest.raises(ValueError):
+        nextup.refresh(CHAT, project="/a", kind="haruspicy")
+
+
+def test_a_scoped_refresh_leaves_the_global_board_shape_intact(monkeypatch):
+    """The Mini App and the Telegram board read the unscoped board — its shape,
+    and every field on its items, must survive the new arguments untouched."""
+    a = _mkrepo("a", dirty=True)
+    _session(a)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    monkeypatch.setattr(nextup, "_abs", lambda project: a)
+    nextup.refresh(CHAT, project="/a", kind="next")
+    nextup.refresh(CHAT)                       # the machine-wide sweep still runs
+    board = nextup.board(CHAT)
+    assert set(board) == {"items", "generated", "repos", "refreshing", "enabled"}
+    assert board["items"], "the unscoped board must still be populated"
+    for i in board["items"]:
+        assert {"id", "title", "why", "effort", "evidence", "repo", "branch",
+                "cwd", "project", "prompt"} <= set(i)

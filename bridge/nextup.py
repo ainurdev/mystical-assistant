@@ -10,6 +10,11 @@ each with no model at all, hand those facts to one read-only scout per repo, ran
 the merged result, cache it keyed on the repo state it was derived from. A repo
 whose state has not moved is served from cache and costs nothing.
 
+Scoped to one project the first and fourth stages drop out: there is one repo, so
+nothing to survey, and at most three items, so nothing to rank. That cut is what
+the dashboard's fresh-session panel asks for, and it is why a refresh from that
+screen costs one scout instead of seven calls.
+
 Every stage fails open, as in bridge/relevance.py: a scout that times out leaves
 its repo represented by its raw facts, and a failed ranking falls back to a fixed
 heuristic order. There is always a list. Stdlib only.
@@ -30,13 +35,14 @@ from bridge import aifeatures, config, freeagent, git, github, machine, runner, 
 from bridge.browser import rel
 
 _lock = threading.Lock()
-_refreshing: set = set()          # chat_ids with a refresh in flight
+_refreshing: set = set()          # (chat_id, project, kind) tuples in flight
 
 # What a scout may return, and what the heuristic invents when one can't run.
 _EFFORTS = ("small", "medium", "large")
 _MAX_ITEMS_PER_REPO = 3
 _MAX_BOARD = 10
 _STALE_DAYS = 30                  # untouched this long and an issue needs a decision
+KINDS = ("next",)                 # Task 2 adds review, research, polish
 
 
 def _path() -> str:
@@ -316,9 +322,9 @@ def _heuristic(f: dict) -> list[dict]:
     return out[:_MAX_ITEMS_PER_REPO]
 
 
-def scout(chat_id: int, f: dict) -> list[dict]:
-    """One repo's candidates. Never raises — a repo that can't be scouted still
-    contributes its facts."""
+def scout(chat_id: int, f: dict, kind: str = "next") -> list[dict]:
+    """One repo's candidates for one question. Never raises — a repo that can't
+    be scouted still contributes its facts."""
     if not aifeatures.enabled("nextup"):
         return _heuristic(f)
     try:
@@ -327,7 +333,7 @@ def scout(chat_id: int, f: dict) -> list[dict]:
         items = _parse_items(_agent(prompt, f["cwd"], chat_id,
                                     config.NEXTUP_SCOUT_TIMEOUT))
     except Exception as e:  # noqa: BLE001 — a scout must never break the board
-        print(f"[nextup] scout failed for {f['name']}: {e}", file=sys.stderr)
+        print(f"[nextup] {kind} scout failed for {f['name']}: {e}", file=sys.stderr)
         items = []
     return items[:_MAX_ITEMS_PER_REPO] or _heuristic(f)
 
@@ -380,26 +386,53 @@ def to_prompt(item: dict) -> str:
     return "\n".join(lines)
 
 
-def board(chat_id: int) -> dict:
-    """The last computed board. Cheap: reads one JSON file, spawns nothing."""
+def _decorate(got: list[dict], f: dict, key: str, kind: str,
+              active: float = 0.0) -> list[dict]:
+    """Scout output → board items. `cwd` is where a session would run; `project`
+    is the key it groups under (they differ in a worktree). `prompt` is left to
+    the caller: the global path composes it after ranking has rewritten `why`."""
+    return [{**it, "id": f"{key}-{kind}-{n}", "cwd": f["cwd"], "repo": f["name"],
+             "branch": f["branch"], "project": rel(f["cwd"]), "_active": active}
+            for n, it in enumerate(got)]
+
+
+def board(chat_id: int, project: "str | None" = None, kind: str = "next") -> dict:
+    """The last computed board. Cheap: reads one JSON file, spawns nothing.
+
+    Unscoped it is the machine-wide ranked board, exactly as before — the shape
+    the Mini App and the Telegram board read. Given a project it is that one
+    repo's answer to one question, straight from the cache."""
     st = _read()
-    return {"items": st.get("items", []), "generated": st.get("generated"),
-            "repos": st.get("repos", []), "refreshing": chat_id in _refreshing,
+    if not project:
+        return {"items": st.get("items", []), "generated": st.get("generated"),
+                "repos": st.get("repos", []),
+                "refreshing": (chat_id, None, "next") in _refreshing,
+                "enabled": aifeatures.enabled("nextup")}
+    cwd = _abs(project)
+    slot = (st.get("cache") or {}).get(cwd) or {}
+    got = slot.get("items") if kind == "next" else (slot.get("kinds") or {}).get(kind)
+    items = list(got or [])
+    return {"items": items, "generated": slot.get("generated"),
+            "repos": [os.path.basename(cwd)] if items else [],
+            "refreshing": (chat_id, project, kind) in _refreshing,
             "enabled": aifeatures.enabled("nextup")}
 
 
-def refresh(chat_id: int) -> dict:
+def refresh(chat_id: int, project: "str | None" = None, kind: str = "next") -> dict:
     """Recompute. Blocking and slow (that is what the scouts cost) — callers run
-    it off the request thread. Concurrent refreshes for one chat collapse to one."""
+    it off the request thread. Concurrent refreshes of the same scope collapse."""
+    if kind not in KINDS:
+        raise ValueError(f"unknown kind: {kind}")
+    guard = (chat_id, project, kind)
     with _lock:
-        if chat_id in _refreshing:
-            return board(chat_id)
-        _refreshing.add(chat_id)
+        if guard in _refreshing:
+            return board(chat_id, project, kind)
+        _refreshing.add(guard)
     try:
-        return _refresh(chat_id)
+        return _refresh_one(chat_id, project, kind) if project else _refresh(chat_id)
     finally:
         with _lock:
-            _refreshing.discard(chat_id)
+            _refreshing.discard(guard)
 
 
 def _refresh(chat_id: int) -> dict:
@@ -431,14 +464,15 @@ def _refresh(chat_id: int) -> dict:
     items, new_cache = [], {}
     for f, r in zip(gathered, repos):
         got = fresh.get(f["cwd"]) or cache.get(f["cwd"], {}).get("items") or []
-        new_cache[f["cwd"]] = {"key": keys[f["cwd"]], "items": got}
-        for n, it in enumerate(got):
-            items.append({**it, "id": f"{keys[f['cwd']]}-{n}", "cwd": f["cwd"],
-                          "repo": f["name"], "branch": f["branch"],
-                          # the logical project a session groups under; cwd is
-                          # where it actually runs (they differ in a worktree)
-                          "project": rel(f["cwd"]),
-                          "_active": r["last_active"]})
+        slot = {"key": keys[f["cwd"]], "items": got}
+        # A survey only ever re-answers "next". The other kinds' answers survive
+        # it if and only if the repo has not moved — the same rule that governs
+        # `items`, just applied to a slot this path never scouts.
+        prev = cache.get(f["cwd"]) or {}
+        if prev.get("key") == keys[f["cwd"]] and prev.get("kinds"):
+            slot["kinds"] = prev["kinds"]
+        new_cache[f["cwd"]] = slot
+        items.extend(_decorate(got, f, keys[f["cwd"]], "next", r["last_active"]))
 
     ranked = rank(chat_id, items)
     for it in ranked:
@@ -446,6 +480,33 @@ def _refresh(chat_id: int) -> dict:
     _write({"items": ranked, "generated": time.time(), "cache": new_cache,
             "repos": [f["name"] for f in gathered]})
     return board(chat_id)
+
+
+def _refresh_one(chat_id: int, project: str, kind: str) -> dict:
+    """One repo, one question. No survey, no ranking — with at most three items
+    there is nothing to rank, and the caller already said which repo it means."""
+    cwd = _abs(project)
+    if not git.is_repo(cwd):
+        return board(chat_id, project, kind)
+    f = facts(chat_id, cwd)
+    key = cache_key(f)
+    st = _read()
+    cache = st.setdefault("cache", {})
+    slot = cache.get(cwd) or {}
+    if slot.get("key") != key:
+        # The repo moved, so every kind's answer is stale, not just this one.
+        slot = {"key": key}
+    items = _decorate(scout(chat_id, f, kind), f, key, kind)
+    for it in items:
+        it["prompt"] = to_prompt(it)
+    if kind == "next":
+        slot["items"] = items
+    else:
+        slot.setdefault("kinds", {})[kind] = items
+    slot["generated"] = time.time()
+    cache[cwd] = slot
+    _write(st)
+    return board(chat_id, project, kind)
 
 
 def item(chat_id: int, item_id: str) -> "dict | None":
