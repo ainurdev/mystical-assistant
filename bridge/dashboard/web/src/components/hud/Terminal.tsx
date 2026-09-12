@@ -267,7 +267,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  run, onOpenRun, onDropFiles, chrome, gridRow,
+  onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -311,6 +311,8 @@ export function Terminal({
   onAnswer?: (text: string) => void;
   /** Move a typed session's stage — the rail's jumps and a gate's APPROVE. */
   /** Open a fresh typed session from a report card (PROBE -> FIX, and friends). */
+  /** Open the project modal on its default tab. */
+  onOpenProject?: () => void;
   /** The dev server the bridge is running for this project, if any. */
   run?: DevServerInfo | null;
   /** Open this project's TERMINAL tab (the run bar, logs and STOP). */
@@ -331,6 +333,7 @@ export function Terminal({
   const [projHov, setProjHov] = useState(false);
   const [brHov, setBrHov] = useState(false);
   const [titleHov, setTitleHov] = useState(false);
+  const [projBtnHov, setProjBtnHov] = useState(false);
   const [cntHov, setCntHov] = useState(false);
   const isChat = view === "chat";
   const empty = isChat && turns.length === 0;
@@ -587,6 +590,19 @@ export function Terminal({
       </div>
       <span style={{ flex: 1, minWidth: 12 }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+        {/* The row's one link. The project modal — files, git, worktrees, the
+            terminal — is worth a click of its own; its neighbours (design
+            system, tasks, issues) stay in the menu on the project's name. */}
+        {isChat && onOpenProject && (
+          <>
+            <button onClick={onOpenProject} title="project — files, git, worktrees, terminal"
+              onMouseEnter={() => setProjBtnHov(true)} onMouseLeave={() => setProjBtnHov(false)}
+              style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: 0, flex: "none", border: 0, background: "transparent", color: projBtnHov ? "var(--txb)" : "var(--txd)" }}>
+              ⊞ PROJECT
+            </button>
+            <span style={hairline(11)} />
+          </>
+        )}
         {/* No turns, no checkpoints, and no hairline left hanging in front of TIME. */}
         {isChat && turns.length > 0 && (
           <>

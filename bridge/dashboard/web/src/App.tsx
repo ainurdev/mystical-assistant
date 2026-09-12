@@ -2041,6 +2041,7 @@ export function App() {
                   } else void send(text, []);
                 }}
                 onOpenFile={openFileRef}
+                onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}
