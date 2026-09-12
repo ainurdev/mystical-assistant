@@ -173,6 +173,13 @@ NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback p
 LEARN_ENABLE = os.environ.get("LEARN_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 
+# Nightly pass over each repo's new lessons and failed turns, distilled into a
+# ten-line digest at .mystical/docs/dream.md that every later session in that
+# repo carries in its prompt pack. Runs on its own — nobody clicks it — so it
+# defaults OFF.
+DREAM_ENABLE = os.environ.get("DREAM_ENABLE", "0").lower() \
+    not in ("0", "false", "no", "")
+
 # Decide whether a turn that ENDED on a question is waiting on you or just being
 # polite. Free markers (auth failures, usage limits, "reply go") always count;
 # this is the fall-through to a model call for the ambiguous rest. Automatic —

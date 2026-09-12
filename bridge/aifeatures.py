@@ -89,6 +89,19 @@ FEATURES = (
               "A single repo can still opt out there. A turn that only answered "
               "a question or read files is skipped. Off, no lesson is written "
               "and the tab is hidden."},
+    {"key": "dream", "env": "DREAM_ENABLE", "label": "DREAMING",
+     "hint": "each night, distils what a repo taught you into the next session",
+     "cost": "1 haiku call per active repo per night",
+     "tokens": "~40k tokens",
+     "about": "Once a night, every repo you worked in gets its new LESSONS and "
+              "its failed turns read back, and the ten most durable lines — what "
+              "this codebase keeps teaching, what keeps going wrong — are written "
+              "to its .mystical/docs/dream.md. Every later session in that repo "
+              "opens carrying them (~400 tokens, once per session, beside the "
+              "project map), so the bridge stops starting from zero every "
+              "morning. Read it in the DOCS tab. Off, no pass runs, nothing is "
+              "injected, and the digest leaves the DOCS list; the file stays on "
+              "disk."},
     {"key": "tailstate", "env": "TAIL_STATE_AI", "label": "ENDED-ON-A-QUESTION",
      "hint": "flags a turn that finished needing you, instead of calling it done",
      "cost": "1 haiku call per turn ending in a question",

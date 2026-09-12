@@ -104,6 +104,16 @@ def _tasks_digest_for(project: "str | None", cwd: "str | None") -> str:
         return ""
 
 
+def _dream_pack_for(chat_id: int, cwd: "str | None") -> str:
+    """The repo's nightly digest for injection (bridge/dream.py). Same contract
+    as the graph pack: best-effort, empty on anything, never blocks a turn."""
+    try:
+        from bridge import dream
+        return dream.pack(cwd or state.project_dir(chat_id))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
     """Keep an existing graph fresh after a successful turn (fire-and-forget;
     refresh_async no-ops for projects that were never mapped)."""
@@ -367,9 +377,11 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         graph = ""
     else:
         graph = _graph_pack_for(chat_id, cwd)
-        # The task digest rides the same once-per-session gate: a list that
-        # moved between turns must not re-write the appended prompt.
-        graph = "\n\n".join(p for p in (graph, _tasks_digest_for(project, cwd)) if p)
+        # The task digest and the nightly digest ride the same once-per-session
+        # gate: something that moved between turns must not re-write the
+        # appended prompt.
+        graph = "\n\n".join(p for p in (graph, _tasks_digest_for(project, cwd),
+                                         _dream_pack_for(chat_id, cwd)) if p)
         if claude_session_id:
             _packed_sessions.add(claude_session_id)
     cmd += ["--append-system-prompt", _compose_system_prompt(graph)]

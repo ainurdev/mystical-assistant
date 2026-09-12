@@ -79,6 +79,11 @@ def docs(cwd: str) -> list[dict]:
     forward slashes (it round-trips through a URL); `dir` is what the tab groups
     by — the folder is the subject."""
     out: list[dict] = []
+    # A switched-off feature's output leaves the dashboard with it: the nightly
+    # digest is only a doc while DREAMING is on. The file itself stays on disk,
+    # the same posture as a graphify-out/ left behind by the project map.
+    from bridge import aifeatures
+    hidden = set() if aifeatures.enabled("dream") else {".mystical/docs/dream.md"}
     for root, dirs, names in os.walk(cwd):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         rel_root = os.path.relpath(root, cwd)
@@ -95,8 +100,11 @@ def docs(cwd: str) -> list[dict]:
                 continue
             if not st.st_size:
                 continue        # an empty file is not a doc
+            rel = os.path.relpath(p, cwd).replace(os.sep, "/")
+            if rel in hidden:
+                continue
             out.append({
-                "path": os.path.relpath(p, cwd).replace(os.sep, "/"),
+                "path": rel,
                 "dir": "" if rel_root == "." else rel_root.replace(os.sep, "/"),
                 "name": n,
                 "title": _title(p, at_root=rel_root == "."),
