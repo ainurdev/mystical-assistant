@@ -88,16 +88,21 @@ def test_an_unknown_kind_is_rejected():
 
 
 def test_a_scoped_refresh_leaves_the_global_board_shape_intact(monkeypatch):
+    """The Mini App and the Telegram board read the unscoped board — its shape,
+    and every field on its items, must survive the new arguments untouched."""
     a = _mkrepo("a", dirty=True)
     _session(a)
     _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
                              '"effort": "small", "evidence": "a.txt"}]')
     monkeypatch.setattr(nextup, "_abs", lambda project: a)
     nextup.refresh(CHAT, project="/a", kind="next")
+    nextup.refresh(CHAT)                       # the machine-wide sweep still runs
     board = nextup.board(CHAT)
     assert set(board) == {"items", "generated", "repos", "refreshing", "enabled"}
-    assert all({"id", "title", "why", "effort", "evidence", "repo", "branch",
-                "cwd", "project", "prompt"} <= set(i) for i in board["items"])
+    assert board["items"], "the unscoped board must still be populated"
+    for i in board["items"]:
+        assert {"id", "title", "why", "effort", "evidence", "repo", "branch",
+                "cwd", "project", "prompt"} <= set(i)
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -1100,29 +1105,22 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
 }
 ```
 
-- [ ] **Step 3: Drop `NextView`'s now-dead project cut**
-
-In `bridge/dashboard/web/src/components/NextView.tsx`: remove the `project` prop
-from the signature and the type, replace the filter line with `const items = all;`,
-and change `padding: project ? 0 : "18px 18px 40px"` to the constant
-`"18px 18px 40px"`. Trim the docstring's last sentence ("Given a `project` it is
-the fresh session screen's cut…") — that cut now lives in `FreshPanel`.
-
-- [ ] **Step 4: Typecheck**
+- [ ] **Step 3: Typecheck**
 
 Run: `cd bridge/dashboard/web && npx tsc -b`
-Expected: PASS. (`tsc -p .` checks nothing here — see the project's shell-gotchas note; `tsc -b` or `-p tsconfig.app.json`.)
+Expected: **PASS, clean.** (`tsc -p .` checks nothing here — see the project's
+shell-gotchas note; use `tsc -b` or `-p tsconfig.app.json`.)
 
-Two errors are expected at this point and are fine to fix now: `NextView` is
-still passed a `project` by `Terminal.tsx`, and `FreshPanel` is not yet imported.
-Task 6 resolves both; if `tsc -b` fails only on those two, proceed.
+This task is purely additive — `api.ts` gains three call shapes, `FreshPanel.tsx`
+is new and not yet imported by anything. Nothing it touches is yet consumed, so
+there is no expected-failure window. A red typecheck here is a real error in the
+new file, not a transient: fix it before committing.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add bridge/dashboard/web/src/api.ts \
-        bridge/dashboard/web/src/components/FreshPanel.tsx \
-        bridge/dashboard/web/src/components/NextView.tsx
+        bridge/dashboard/web/src/components/FreshPanel.tsx
 git commit -m "feat(fresh): one panel — this repo's standing, and four questions about it"
 ```
 
@@ -1132,6 +1130,7 @@ git commit -m "feat(fresh): one panel — this repo's standing, and four questio
 
 **Files:**
 - Modify: `bridge/dashboard/web/src/components/hud/Terminal.tsx:86-219` (`FreshState`)
+- Modify: `bridge/dashboard/web/src/components/NextView.tsx` (drop the now-dead `project` prop)
 - Modify: `bridge/aifeatures.py:58-68` (the `nextup` feature copy)
 
 **Interfaces:**
@@ -1168,7 +1167,18 @@ RUN are free facts and must not vanish with an AI switch. `useAiFeatures` may no
 be unused in this component; if so, remove the `ai` const and its import if
 nothing else in the file uses it.
 
-- [ ] **Step 3: Update the feature copy**
+- [ ] **Step 3: Drop `NextView`'s now-dead project cut**
+
+`Terminal.tsx` was its only caller with a `project`, and Step 1 deleted that call
+— so the prop goes in the same commit as its last use, keeping every task green.
+
+In `bridge/dashboard/web/src/components/NextView.tsx`: remove `project` from the
+signature and its type, replace the filter line with `const items = all;`, and
+change `padding: project ? 0 : "18px 18px 40px"` to the constant `"18px 18px 40px"`.
+Trim the docstring's last sentence ("Given a `project` it is the fresh session
+screen's cut…") — that cut lives in `FreshPanel` now.
+
+- [ ] **Step 4: Update the feature copy**
 
 `bridge/aifeatures.py`, the `nextup` entry — replace `hint` and `about`:
 
@@ -1188,22 +1198,23 @@ nothing else in the file uses it.
               "shows where the repo stands.",
 ```
 
-- [ ] **Step 4: Typecheck and build**
+- [ ] **Step 5: Typecheck and build**
 
 Run: `cd bridge/dashboard/web && npx tsc -b && npx vite build`
 Expected: both PASS. (`pnpm build` can trip on esbuild in a worktree — fall back
 to `npx vite build`.)
 
-- [ ] **Step 5: Run the backend suite**
+- [ ] **Step 6: Run the backend suite**
 
 Run: `python3 -m pytest tests/ -q`
 Expected: PASS. `tests/test_docs.py` and any aifeatures test are the ones the copy
 change could touch.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add bridge/dashboard/web/src/components/hud/Terminal.tsx bridge/aifeatures.py
+git add bridge/dashboard/web/src/components/hud/Terminal.tsx \
+        bridge/dashboard/web/src/components/NextView.tsx bridge/aifeatures.py
 git commit -m "feat(fresh): the empty session becomes one panel, not five strips"
 ```
 
