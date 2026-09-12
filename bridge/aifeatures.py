@@ -56,16 +56,19 @@ FEATURES = (
               "Short follow-ups and new sessions never pay for a check, and any "
               "failure lets the prompt through."},
     {"key": "nextup", "env": "NEXTUP_ENABLE", "label": "NEXT-UP BOARD",
-     "hint": "ranked next steps across the repos you touched recently",
-     "cost": "1 scout per changed repo, free rung first",
+     "hint": "four questions about the repo you are in, and a machine-wide board",
+     "cost": "1 scout per question per changed repo, free rung first",
      "tokens": "~150k tokens",
-     "about": "Looks at the repos with recent session activity — dirty worktrees, "
-              "unpushed commits, open issues, sessions that stopped mid-task — and "
-              "ranks what is worth doing next, one item per click to start a "
-              "session on it. A new session's empty screen shows the top three "
-              "for its own repo. Only a repo whose git state moved is re-scouted, "
-              "and a free provider is tried before Claude quota. Off, the board is "
-              "hidden entirely, that screen included."},
+     "about": "Looks at a repo's hard facts — dirty worktree, unpushed commits, "
+              "open issues, sessions that stopped mid-task — and answers four "
+              "questions about it: what to finish, what is wrong in what changed, "
+              "what has not been decided, and where the UI drifts from its own "
+              "design system. A new session's empty screen asks them one at a "
+              "time, about its own repo only; the WORK tab keeps the ranked board "
+              "across every repo you touched this week. Only a repo whose git "
+              "state moved is re-scouted, and a free provider is tried before "
+              "Claude quota. Off, the questions are hidden and the screen still "
+              "shows where the repo stands."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",

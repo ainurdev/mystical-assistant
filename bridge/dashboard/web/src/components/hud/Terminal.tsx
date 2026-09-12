@@ -1,17 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import { api, type AnswerSelection, type DevServerInfo, type EnrichedSession, type GitCommit, type NextItem, type SessionBrief } from "../../api";
+import { type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
-import { ago, projectName, projectTint } from "../../lib/surfaces";
+import { projectName, projectTint } from "../../lib/surfaces";
 import { hairline } from "../../lib/shell";
 import { useLoadingPhase } from "../../lib/loadingPhase";
-import { useAiFeatures } from "../../lib/ai";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
 import type { OpenFile } from "../Markdown";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
+import { FreshPanel } from "../FreshPanel";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
@@ -79,10 +79,10 @@ const FACES: { eyeL: EyeV; eyeR: EyeV; mouth: MouthV }[] = [
   { eyeL: "open", eyeR: "line", mouth: "smile" },   // a wink
 ];
 
-/** The empty-session intro: the mystical assistant face + a rotating quote,
- *  then where the project stands — its last commit, a RUN for its saved dev
- *  command, and NEXT's items for this repo. All reads of what the bridge already
- *  keeps; the one spend is NEXT's REFRESH, behind the NEXT-UP BOARD switch. */
+/** The empty-session intro: the mystical assistant face, a rotating quote and
+ *  a blinking "awaiting your command" caret, then FreshPanel — where the
+ *  project stands and what to start next. Mounted whenever a project is
+ *  known; unlike the strips it replaced, it does not wait on an AI switch. */
 function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
   project: string | null;
   branch?: string | null;
@@ -92,13 +92,6 @@ function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
 }) {
   const [qi, setQi] = useState(0);
   const [face, setFace] = useState(0);
-  const ai = useAiFeatures();
-  const [commit, setCommit] = useState<GitCommit | null>(null);
-  // undefined while asking (or unreadable): no run slot at all. null: nothing
-  // saved, so the slot offers the TERMINAL tab, where the command is set.
-  const [runCmd, setRunCmd] = useState<string | null | undefined>(undefined);
-  const [starting, setStarting] = useState(false);
-  const [runErr, setRunErr] = useState("");
   useEffect(() => {
     const id = setInterval(() => setQi((q) => q + 1), 7200);
     return () => clearInterval(id);
@@ -108,47 +101,14 @@ function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
     const id = setInterval(() => setFace((f) => (f + 1) % FACES.length), 10000);
     return () => clearInterval(id);
   }, []);
-  useEffect(() => {
-    setCommit(null);
-    setRunCmd(undefined);
-    if (!project) return;
-    let live = true;
-    api.gitLog(project, 1, branch || undefined)
-      .then((r) => { if (live) setCommit(r.commits[0] ?? null); })
-      .catch(() => {});
-    // The project's run, not the session's worktree: the one the TERMINAL tab
-    // starts and `run` (App's sessionRun) is matched against.
-    api.projectSettings({ project })
-      .then((s) => { if (live) setRunCmd(s.run_cmd); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, [project, branch]);
-  // Any move of the run — up, exited, restarted — settles STARTING…
-  useEffect(() => { setStarting(false); }, [run?.status, run?.pid]);
-
-  async function start() {
-    if (!project || starting) return;
-    setStarting(true);
-    setRunErr("");
-    try {
-      const r = await api.server("start", { project });
-      // Up: the 3s state poll brings the header's :port chip, and this slot goes.
-      if (r.server?.status !== "running") { setRunErr(r.message || "didn't start"); setStarting(false); }
-    } catch (e) {
-      setRunErr((e as Error).message || "start failed");
-      setStarting(false);
-    }
-  }
-  const runSlot = run?.status === "running" ? null
-    : runCmd ? "run" : runCmd === null && onOpenRun ? "setup" : null;
   return (
-    <div style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, textAlign: "center", animation: "mfadeup .5s ease both" }}>
-      <div style={{ position: "relative", width: 150, height: 150, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", animation: "mfadeup .5s ease both" }}>
+      <div style={{ position: "relative", width: 112, height: 112, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <svg viewBox="0 0 100 100" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", opacity: 0.5 }}>
           <circle cx="50" cy="50" r="46" fill="none" stroke="var(--acc)" strokeWidth="1" strokeDasharray="5 9" style={{ transformOrigin: "50px 50px", animation: "introspin 11s linear infinite" }} />
           <circle cx="50" cy="50" r="38" fill="none" stroke="color-mix(in srgb, var(--purple) 40%, transparent)" strokeWidth="1" strokeDasharray="3 13" style={{ transformOrigin: "50px 50px", animation: "introspinr 16s linear infinite" }} />
         </svg>
-        <div style={{ position: "relative", width: 92, height: 92, borderRadius: "50%", border: "1.5px solid color-mix(in srgb, var(--acc) 50%, transparent)", background: "radial-gradient(circle at 50% 36%,color-mix(in srgb, var(--acc) 16%, transparent),color-mix(in srgb, var(--panel2) 60%, transparent))", boxShadow: "0 0 28px color-mix(in srgb, var(--acc) 18%, transparent),inset 0 0 22px color-mix(in srgb, var(--acc) 10%, transparent)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, animation: "bob 4.5s ease-in-out infinite" }}>
+        <div style={{ position: "relative", width: 72, height: 72, borderRadius: "50%", border: "1.5px solid color-mix(in srgb, var(--acc) 50%, transparent)", background: "radial-gradient(circle at 50% 36%,color-mix(in srgb, var(--acc) 16%, transparent),color-mix(in srgb, var(--panel2) 60%, transparent))", boxShadow: "0 0 28px color-mix(in srgb, var(--acc) 18%, transparent),inset 0 0 22px color-mix(in srgb, var(--acc) 10%, transparent)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, animation: "bob 4.5s ease-in-out infinite" }}>
           {/* Expressions are stacked and crossfaded so the face dissolves
               between moods on the 10s interval rather than popping. */}
           <div style={{ position: "relative", width: 60, height: 42 }}>
@@ -185,36 +145,9 @@ function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
         <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>awaiting your command</span>
         <span style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
       </div>
-      {(commit || runSlot) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, maxWidth: "min(560px, 100%)", minWidth: 0, fontFamily: "var(--mono)", fontSize: "var(--t10)", color: "var(--txd)" }}>
-          {commit && (
-            <span title={`${commit.sha.slice(0, 7)} · ${commit.author}`} style={{ display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
-              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>LAST COMMIT</span>
-              <span style={{ color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{commit.subject}</span>
-              <span style={{ flex: "none" }}>{ago(commit.ts)}</span>
-            </span>
-          )}
-          {commit && runSlot && <span style={hairline(13)} />}
-          {/* RUN is an action, so it wears the border; SET UP RUN only opens a
-              tab, so it stays bare — the header's rule. */}
-          {runSlot === "run" && (
-            <button type="button" onClick={() => void start()} disabled={starting} title={runErr || `start ${runCmd}`}
-              style={{ appearance: "none", flex: "none", cursor: starting ? "default" : "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "4px 10px", background: "transparent", border: `1px solid color-mix(in srgb, ${runErr ? "var(--err) 45%" : "var(--acc) 30%"}, transparent)`, color: runErr ? "var(--err)" : starting ? "var(--txd)" : "var(--acc)" }}>
-              {starting ? "STARTING…" : runErr ? "FAILED" : "▸ RUN"}
-            </button>
-          )}
-          {runSlot === "setup" && (
-            <button type="button" onClick={onOpenRun} title="No run command saved for this project — set one in its TERMINAL tab"
-              style={{ appearance: "none", flex: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: 0, border: 0, background: "transparent", color: "var(--txd)" }}>
-              SET UP RUN
-            </button>
-          )}
-        </div>
-      )}
-      {ai.nextup && project && (
-        <div style={{ width: "min(560px, 100%)", textAlign: "left" }}>
-          <NextView project={project} onStart={onStartNext} />
-        </div>
+      {project && (
+        <FreshPanel project={project} branch={branch} run={run}
+                    onOpenRun={onOpenRun} onStart={onStartNext} />
       )}
     </div>
   );
