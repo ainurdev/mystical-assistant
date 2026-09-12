@@ -828,7 +828,9 @@ git commit -m "feat(next): /local/next takes a project and a question, and can d
 **Files:**
 - Modify: `bridge/dashboard/web/src/api.ts` (`NextKind`, `nextBoard`, `refreshNext`, `dismissNext`)
 - Create: `bridge/dashboard/web/src/components/FreshPanel.tsx`
-- Modify: `bridge/dashboard/web/src/components/NextView.tsx` (drop the dead `project` prop)
+
+(`NextView.tsx` is **not** touched here — its `project` prop is dropped in Task 6,
+in the same commit that removes its last caller, so every task ends green.)
 
 **Interfaces:**
 - Consumes: the three endpoints from Task 4; `api.git`, `api.gitLog`, `api.projectSettings`, `api.server` (all existing); `hairline` from `lib/shell`; `ago`, `projectName` from `lib/surfaces`.
