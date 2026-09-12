@@ -1203,12 +1203,16 @@ export const api = {
       method: "POST",
       body: { login, window, profile: profile ?? null },
     }),
-  nextBoard: (opts?: { project?: string; kind?: NextKind }) =>
-    req<NextBoard>(
-      `/local/next${opts?.project
-        ? `?project=${encodeURIComponent(opts.project)}&kind=${opts.kind ?? "next"}`
-        : ""}`,
-    ),
+  /** Cached board — never spawns anything. */
+  nextBoard: (opts?: { project?: string; kind?: NextKind }) => {
+    // `kind` rides along with or without a project — refreshNext already sends
+    // it either way. With neither, the bare path the WORK tab has always used.
+    const q = new URLSearchParams();
+    if (opts?.project) q.set("project", opts.project);
+    if (opts?.kind) q.set("kind", opts.kind);
+    const qs = q.toString();
+    return req<NextBoard>(`/local/next${qs ? `?${qs}` : ""}`);
+  },
   /** Recompute in the background; poll nextBoard() until `refreshing` clears. */
   refreshNext: (opts?: { project?: string; kind?: NextKind }) =>
     req<NextBoard & { ok: boolean }>("/local/next", {

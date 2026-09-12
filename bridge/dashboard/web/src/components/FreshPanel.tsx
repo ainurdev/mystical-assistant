@@ -23,6 +23,13 @@ const TABS: { id: NextKind; label: string; blurb: string }[] = [
 ];
 const EFFORT: Record<NextItem["effort"], string> = { small: "·", medium: "··", large: "···" };
 
+/** The panel's own rules, at the weights lib/shell.ts fixes for every theme:
+ *  22% accent is the floor a light ground (FOUNDRY) still shows. The separator
+ *  between folded items is half that — present, but subordinate to the rules
+ *  that divide the panel's sections, which is the hierarchy it has to read as. */
+const RULE = "color-mix(in srgb, var(--acc) 22%, transparent)";
+const ITEM_RULE = "color-mix(in srgb, var(--acc) 14%, transparent)";
+
 export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
   project: string;
   branch?: string | null;
@@ -99,8 +106,14 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
   }
 
   async function dismiss(id: string) {
+    const mineScope = scope;
     setBoard((b) => (b ? { ...b, items: b.items.filter((i) => i.id !== id) } : b));
-    await api.dismissNext(id, { project, kind }).catch(() => {});
+    // The server answers with the board the dismissal left behind. Take it — the
+    // optimistic removal above is a guess, and a dismiss that failed should stop
+    // looking exactly like one that worked. Scope-guarded like the poll: a slow
+    // answer must not land on whichever tab is open by the time it arrives.
+    const b = await api.dismissNext(id, { project, kind }).catch(() => null);
+    if (b && scopeRef.current === mineScope) setBoard(b);
   }
 
   async function startRun() {
@@ -123,11 +136,11 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
 
   return (
     <div style={{ width: "min(560px, 100%)", textAlign: "left",
-                  border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)" }}>
+                  border: `1px solid ${RULE}` }}>
       {/* status line — free facts, always present */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
                     fontFamily: "var(--mono)", fontSize: "var(--t9)", color: "var(--txd)",
-                    borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
+                    borderBottom: `1px solid ${RULE}` }}>
         <span style={{ color: "var(--txm)", flex: "none" }}>⎇ {git?.branch || branch || "—"}</span>
         {!!git?.dirty && <><span style={hairline(11)} /><span>{git.dirty} dirty</span></>}
         {!!git?.ahead && <><span style={hairline(11)} /><span>{git.ahead} ahead</span></>}
@@ -156,7 +169,7 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
       {commit && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 12px 9px",
                       fontFamily: "var(--mono)", fontSize: "var(--t9)", color: "var(--txd)",
-                      borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}
+                      borderBottom: `1px solid ${RULE}` }}
              title={`${commit.sha.slice(0, 7)} · ${commit.author}`}>
           <span style={{ letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>LAST</span>
           <span style={{ color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden",
@@ -233,7 +246,7 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
         )}
         {rest.map((it) => (
           <div key={it.id} style={{ display: "flex", gap: 10, alignItems: "baseline", marginTop: 10,
-                                    borderTop: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+                                    borderTop: `1px solid ${ITEM_RULE}`,
                                     paddingTop: 10 }}>
             <span style={{ minWidth: 0, flex: 1, fontSize: "var(--t10)", color: "var(--txm)",
                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

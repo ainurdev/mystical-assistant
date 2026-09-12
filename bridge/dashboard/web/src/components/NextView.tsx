@@ -56,8 +56,7 @@ export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
     }, 3000);
   }
 
-  const all = board?.items ?? [];
-  const items = all;
+  const items = board?.items ?? [];
 
   return (
     <div style={{ padding: "18px 18px 40px" }}>
