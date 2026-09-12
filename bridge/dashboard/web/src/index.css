@@ -1982,6 +1982,14 @@ input {
   border-left-color: var(--acc);
   background: var(--ac-06);
 }
+/* When you sent it. Inside the bubble, so every language carries it wherever it
+   puts the bubble; ghost-toned, because the time is a footnote to the prompt.
+   Its twin is the clock in .res-meta — when the answer came back. */
+.pstamp {
+  display: block; margin-top: 2px; text-align: right;
+  font-size: var(--t95); letter-spacing: 1px; color: var(--txd);
+  font-variant-numeric: tabular-nums;
+}
 
 /* === THE GROUND ============================================================
    OUTPUT STYLE says how a turn is drawn; this says what it is drawn ON, and

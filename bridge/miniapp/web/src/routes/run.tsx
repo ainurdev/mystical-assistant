@@ -17,6 +17,7 @@ import { ImageLightbox, MediaThumb, isVideo, type Shown } from "../components/Im
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
 import { useChatBg, useToolStyle } from "../lib/toolwidget";
+import { hhmm } from "../lib/utils";
 
 // Shared empty list — a fresh `[]` per render would defeat RunStream's memo.
 const NO_PENDING: PendingRequest[] = [];
@@ -383,6 +384,7 @@ function RunPage() {
                 {turn.prompt && (
                   <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
                     {turn.prompt}
+                    {turn.started != null && <span className="pstamp">{hhmm(turn.started)}</span>}
                   </div>
                 )}
               </div>
@@ -411,6 +413,7 @@ function RunPage() {
                 <RunStream
                   events={turn.events}
                   live={isActive}
+                  turnStarted={turn.started}
                   tokens={turn.tokens ?? null}
                   boot={isActive ? boot : null}
                   pending={isActive ? activeTurn.pending : NO_PENDING}
@@ -430,6 +433,23 @@ function RunPage() {
                   ended={turn.status !== "running"}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
+              </div>
+            )}
+            {/* Outside the block above on purpose: an interrupted or silent turn
+                has no events and no runtime, so that block draws nothing at all
+                — the blank row this badge exists to replace. `delivered` and
+                `interrupted` are good news and are not painted as errors. */}
+            {turn.outcome && (
+              <div className="pl-3 pt-1">
+                <div
+                  className="text-[11px] tracking-[0.5px]"
+                  style={{ color: turn.outcome.code === "delivered"
+                    || turn.outcome.code === "interrupted" ? "var(--brand)" : "var(--err)" }}
+                >
+                  {turn.outcome.code === "delivered" || turn.outcome.code === "interrupted"
+                    ? "◇ " : "✕ "}{turn.outcome.label}
+                </div>
+                <div className="text-[11px] text-[var(--tg-hint)]">{turn.outcome.detail}</div>
               </div>
             )}
           </div>

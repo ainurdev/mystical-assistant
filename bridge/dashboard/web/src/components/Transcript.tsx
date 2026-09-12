@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, type AnswerSelection } from "../api";
+import { api, type AnswerSelection, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
-import { RunStream, TURN_TAIL } from "./RunStream";
+import { hhmm, RunStream, TURN_TAIL } from "./RunStream";
 import type { OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
@@ -72,13 +72,36 @@ function RuntimeBadge({ runtime }: { runtime: string }) {
   );
 }
 
+/** Why a failed turn failed. The whole point of the feature: before this, an
+ *  interrupted or silent turn rendered as literally nothing — no events, no
+ *  runtime, so not even a row — and 384 error turns in the real store could not
+ *  say which of them had actually delivered their answer. `delivered` and
+ *  `interrupted` are good news, so they are not painted as errors. */
+function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
+  const good = outcome.code === "delivered" || outcome.code === "interrupted";
+  const tone = good ? "var(--warn)" : "var(--err)";
+  return (
+    <div className="ml-[var(--rail)] flex flex-col gap-0.5">
+      <span
+        className="self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
+        style={{ color: tone, borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
+      >
+        {good ? "◇ " : "✕ "}{outcome.label}
+      </span>
+      <span className="text-[length:var(--t95)] opacity-70" style={{ color: tone }}>
+        {outcome.detail}
+      </span>
+    </div>
+  );
+}
+
 /** What you said. WHICH SIDE it sits on is the language's call, not this
  *  component's: a log needs it full width to keep its T+ gutter, a press needs
  *  the measure for its margin label, a plate is stamped edge to edge — only HALO
  *  reads it as the right-hand half of a two-sided conversation. So the row and
  *  the width live in `.pbub-row` / `.pbub` (index.css), and nothing here decides
  *  either. Colours are there too — see `.abub` for why not inline. */
-export function PromptBubble({ text }: { text: string }) {
+export function PromptBubble({ text, at }: { text: string; at?: number }) {
   return (
     <div className="pbub-row">
       <div
@@ -87,6 +110,7 @@ export function PromptBubble({ text }: { text: string }) {
         <span className="block whitespace-pre-wrap break-words leading-relaxed text-foreground-bright">
           {text}
         </span>
+        {at != null && <span className="pstamp">{hhmm(at)}</span>}
       </div>
     </div>
   );
@@ -151,7 +175,7 @@ function TurnBlock({
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       {turn.prompt && (
         <div data-prompt-idx={promptIdx}>
-          <PromptBubble text={turn.prompt} />
+          <PromptBubble text={turn.prompt} at={turn.started} />
         </div>
       )}
       {turn.attachments && turn.attachments.length > 0 && (
@@ -187,6 +211,7 @@ function TurnBlock({
           {working && <WorkingIndicator hud={hud} />}
         </div>
       )}
+      {turn.outcome && <OutcomeBadge outcome={turn.outcome} />}
     </div>
   );
 }

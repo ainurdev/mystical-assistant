@@ -1832,6 +1832,9 @@ export const RunStream = memo(function RunStream({
               <FinalResult
                 key={i}
                 result={event.result}
+                // A stored event knows when it landed; a live one doesn't carry
+                // `at` yet, so the turn's own start plus its wall time says it.
+                at={event.at ?? (turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined)}
                 elapsed={event.elapsed}
                 tokens={tokens}
                 isError={event.is_error}
@@ -1980,12 +1983,19 @@ function AskBackBar({
   );
 }
 
+/** Wall clock, 24h — when a prompt was sent (PromptBubble), when its answer
+ *  landed (the RESULT box). 24h rather than the locale's default, so a turn's
+ *  two times read the same as the header clock above them. */
+export const hhmm = (sec: number): string =>
+  new Date(sec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
 /** Lines a result prints before it folds — long enough that an ordinary answer
  *  never folds, short enough that a 300-line report doesn't bury the transcript. */
 const RESULT_FOLD_LINES = 30;
 
 function FinalResult({
   result,
+  at,
   elapsed,
   tokens,
   isError,
@@ -1996,6 +2006,8 @@ function FinalResult({
   onQuote,
 }: {
   result: string;
+  /** Epoch seconds the answer landed, for the clock in the meta row. */
+  at?: number;
   elapsed?: number;
   tokens?: number | null;
   isError?: boolean;
@@ -2030,6 +2042,7 @@ function FinalResult({
         <div className="res-head">
           <span className="res-lab">{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
           <span className="res-meta">
+            {at != null && <span title="when the answer landed">{hhmm(at)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (
               <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
             )}

@@ -41,6 +41,7 @@ import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { askBack } from "../lib/askback";
+import { hhmm } from "../lib/utils";
 import { hostOf, mcpParts, toolAccent, toolKind, cmdKind, type CmdKind } from "../lib/tools";
 
 /** The two edges a tool's accent draws: the card's hairline and the tag's box. */
@@ -877,12 +878,15 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
 
 function FinalResult({
   result,
+  at,
   elapsed,
   tokens,
   onAnswer,
   onWrite,
 }: {
   result: string;
+  /** Epoch seconds the answer landed, for the clock on the meta line. */
+  at?: number;
   elapsed?: number;
   tokens?: number | null;
   onAnswer?: (text: string) => void;
@@ -939,7 +943,7 @@ function FinalResult({
       )}
       {typeof elapsed === "number" && (
         <div className="text-xs text-[var(--tg-hint)]">
-          {elapsed.toFixed(1)}s
+          {at != null ? `${hhmm(at)} · ` : ""}{elapsed.toFixed(1)}s
           {typeof tokens === "number" && tokens > 0
             ? ` · ${tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`} tok`
             : ""}
@@ -966,6 +970,7 @@ export const RunStream = memo(function RunStream({
   ended = false,
   boot = null,
   live = false,
+  turnStarted,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
@@ -982,6 +987,9 @@ export const RunStream = memo(function RunStream({
   /** Is this the turn streaming into the chat right now? Only it may run a
    *  clock — on an older turn the figure would start when you scrolled to it. */
   live?: boolean;
+  /** Epoch seconds the turn opened. With the result's own wall time this is the
+   *  clock on the answer, opposite the one on your prompt. */
+  turnStarted?: number;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -1241,6 +1249,9 @@ export const RunStream = memo(function RunStream({
                 <RailNode />
                 <FinalResult
                   result={event.result}
+                  // The Mini App's events carry no timestamp of their own, so
+                  // the turn's start plus the result's wall time is the answer's.
+                  at={turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined}
                   elapsed={event.elapsed}
                   tokens={tokens}
                   onAnswer={onAnswer}

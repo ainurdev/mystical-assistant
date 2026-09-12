@@ -1118,7 +1118,9 @@ export function App() {
       staleTurns.current = false;
       setTurns((prev) => [
         ...(held ? [] : prev),
-        { id: res.job_id, prompt: text, events: [], status: "running", pending: [], attachments: images },
+        { id: res.job_id, prompt: text, events: [], status: "running", pending: [], attachments: images,
+          // So the prompt's clock is stamped the moment you send it, not a poll later.
+          started: Date.now() / 1000 },
       ]);
     } catch (e) {
       // Lost the race: the run slot filled between our check and the request.

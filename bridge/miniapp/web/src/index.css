@@ -439,6 +439,14 @@ input {
   --plate-edge: color-mix(in srgb, var(--acc) 34%, transparent);
   --plate-cast: color-mix(in srgb, var(--acc) 16%, transparent);
 }
+/* When you sent it, inside your bubble — the twin of the clock on the answer's
+   meta line. Opacity, not a colour: every language fills the bubble its own
+   way, and inherited ink is legible on all of them. */
+.pstamp {
+  display: block; margin-top: 2px; text-align: right;
+  font-size: 10px; opacity: .65; font-variant-numeric: tabular-nums;
+}
+
 [data-style="stamp"] .pbub {
   border: 1.5px solid var(--plate-edge); border-radius: 0;
   background: var(--panel2); color: var(--txb); padding: 0 0 9px 0;
