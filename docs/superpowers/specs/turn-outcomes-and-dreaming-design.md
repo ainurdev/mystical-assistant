@@ -117,12 +117,29 @@ the digest cannot grow without bound.
 That file becomes the third prompt-pack source in `runner._base_cmd`, behind the
 same once-per-session gate, capped at the graph pack's ~400 tokens.
 
-Open question for the user, not decided here: whether the pass **writes the
-digest itself** or **proposes it on an approve card** the way permission prompts
-already work. Auto-write is the trend's actual claim (agents improve between
-runs, unattended); a card keeps a bad night from poisoning every session until
-someone notices.
+Decided 2026-09-12: the pass **writes the digest itself**, unattended — the
+trend's actual claim, and the version that works while you are away from the
+keyboard. The guards that replace the approve card are all in the writing: a
+model that declines (no bullets) leaves the previous digest in place, the digest
+replaces rather than grows, it is capped at ten lines / ~400 tokens, and the
+whole thing is one switch away from gone.
 
 Skipped deliberately: no touching `~/.claude/projects/*/memory/` — that is
 Claude Code's own auto-memory store, and two writers on one file is how drift
 starts. No new DB table; one markdown file per repo, git-ignored like `dev.log`.
+
+
+## Built
+
+Both phases shipped 2026-09-12: outcomes in `c2a3b1ce` + `996cf693`, dreaming in
+`e82ee4c4`. Two departures from the plan above, both because the code was
+already there:
+
+- **No new endpoints.** The outcome rides `store.transcript()`, which both
+  servers already call, so neither client needed a route, a client method or the
+  404 tolerance `SpendPanel` has. Rows 2–4 of the feature slice were skipped.
+- **No panel for the digest.** It is written into `.mystical/docs/`, which
+  `docs.py` already walks, so the DOCS tab reads it for nothing. `docs.py` hides
+  it while the switch is off, which is the whole of "its UI goes with it".
+
+Neither is live until the bridge restarts.
