@@ -68,7 +68,8 @@ def test_get_serves_the_cache_and_spawns_nothing(monkeypatch):
 
 def test_post_kicks_off_a_refresh_without_blocking(monkeypatch):
     started: list = []
-    monkeypatch.setattr(nextup, "refresh", lambda chat: started.append(chat))
+    monkeypatch.setattr(nextup, "refresh",
+                        lambda chat, project=None, kind="next": started.append(chat))
     h, box = _handler()
     h._post_api("/local/next", {})
     for _ in range(50):                      # the refresh runs on its own thread
@@ -76,3 +77,57 @@ def test_post_kicks_off_a_refresh_without_blocking(monkeypatch):
             break
         __import__("time").sleep(0.02)
     assert box["obj"]["ok"] is True and started
+
+
+# --- scoped board ------------------------------------------------------------
+
+def test_get_passes_project_and_kind_through(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(nextup, "board",
+                        lambda chat, project=None, kind="next":
+                        seen.update(project=project, kind=kind) or {"items": []})
+    h, box = _handler()
+    h._get_api("/local/next", {"project": ["/x"], "kind": ["review"]})
+    assert seen == {"project": "/x", "kind": "review"}
+    assert box["code"] == 200
+
+
+def test_get_rejects_an_unknown_kind():
+    h, box = _handler()
+    h._get_api("/local/next", {"kind": ["haruspicy"]})
+    assert box["code"] == 400
+
+
+def test_post_refreshes_the_named_scope(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(nextup, "refresh",
+                        lambda chat, project=None, kind="next":
+                        seen.update(project=project, kind=kind))
+    monkeypatch.setattr(dash, "Thread",
+                        lambda target, args, daemon: type(
+                            "T", (), {"start": lambda s: target(*args)})())
+    h, box = _handler()
+    h._post_api("/local/next", {"project": "/x", "kind": "polish"})
+    assert seen == {"project": "/x", "kind": "polish"}
+    assert box["obj"]["ok"] is True
+
+
+def test_post_rejects_an_unknown_kind():
+    h, box = _handler()
+    h._post_api("/local/next", {"kind": "haruspicy"})
+    assert box["code"] == 400
+
+
+def test_dismiss_forwards_the_id_and_answers_with_the_board(monkeypatch):
+    seen = []
+    monkeypatch.setattr(nextup, "dismiss", lambda item_id: seen.append(item_id))
+    h, box = _handler()
+    h._post_api("/local/next/dismiss", {"id": "abc-next-0", "project": "/x"})
+    assert seen == ["abc-next-0"]
+    assert box["obj"]["ok"] is True
+
+
+def test_dismiss_without_an_id_is_a_400():
+    h, box = _handler()
+    h._post_api("/local/next/dismiss", {})
+    assert box["code"] == 400

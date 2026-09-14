@@ -18,9 +18,8 @@ function when(ts: number | null): string {
 
 /** The ranked next steps across recently touched repos. Serves the cached board
  *  instantly; REFRESH is the only thing that spends anything, and only on repos
- *  whose git state has moved since last time. Given a `project` it is the fresh
- *  session screen's cut: that repo's top three, without the page's padding. */
-export function NextView({ onStart, project }: { onStart: (item: NextItem) => void; project?: string | null }) {
+ *  whose git state has moved since last time. */
+export function NextView({ onStart }: { onStart: (item: NextItem) => void }) {
   const [board, setBoard] = useState<NextBoard | null>(null);
   const [busy, setBusy] = useState(false);
   const poll = useRef<number | null>(null);
@@ -57,11 +56,10 @@ export function NextView({ onStart, project }: { onStart: (item: NextItem) => vo
     }, 3000);
   }
 
-  const all = board?.items ?? [];
-  const items = project ? all.filter((it) => it.project === project).slice(0, 3) : all;
+  const items = board?.items ?? [];
 
   return (
-    <div style={{ padding: project ? 0 : "18px 18px 40px" }}>
+    <div style={{ padding: "18px 18px 40px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 14 }}>
         <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>NEXT UP</span>
         <span style={{ fontSize: "var(--t9)", color: "var(--txd)" }}>

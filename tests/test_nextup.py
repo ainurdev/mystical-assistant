@@ -339,3 +339,285 @@ def test_prompt_carries_the_reasoning_not_just_the_title():
     p = nextup.to_prompt({"title": "Land the diff", "why": "it is half done",
                           "evidence": "bridge/git.py"})
     assert "Land the diff" in p and "half done" in p and "bridge/git.py" in p
+
+
+# --- project + kind scope ----------------------------------------------------
+
+def test_a_scoped_refresh_scouts_exactly_one_repo(monkeypatch):
+    a, b = _mkrepo("a", dirty=True), _mkrepo("b", dirty=True)
+    _session(a); _session(b)
+    calls = []
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]', calls)
+    monkeypatch.setattr(nextup, "_abs", lambda project: a)
+    monkeypatch.setattr(nextup, "recent_repos",
+                        lambda chat: pytest.fail("a scoped refresh must not survey repos"))
+    nextup.refresh(CHAT, project="/a", kind="next")
+    assert calls == [a]
+
+
+def test_a_scoped_board_returns_only_that_repos_items(monkeypatch):
+    a = _mkrepo("a", dirty=True)
+    _session(a)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    monkeypatch.setattr(nextup, "_abs", lambda project: a)
+    board = nextup.refresh(CHAT, project="/a", kind="next")
+    assert board["items"], "a scoped refresh must produce items"
+    assert {i["cwd"] for i in board["items"]} == {a}
+    assert board["repos"] == [os.path.basename(a)]
+
+
+def test_an_unscoped_refresh_still_surveys_every_recent_repo(monkeypatch):
+    a, b = _mkrepo("a", dirty=True), _mkrepo("b", dirty=True)
+    _session(a); _session(b)
+    calls = []
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]', calls)
+    nextup.refresh(CHAT)
+    assert sorted(set(calls)) == sorted([a, b])
+
+
+def test_a_sweep_leaves_a_slot_the_scoped_board_can_read(monkeypatch):
+    """The machine-wide sweep and the scoped refresh write the same cache slot,
+    so what one stores the other must be able to serve. This exact ordering —
+    unscoped refresh, then scoped read — is what used to raise KeyError: 'id'."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    nextup.refresh(CHAT)                       # the WORK tab's machine-wide sweep
+    scoped = nextup.board(CHAT, "/d", "next")  # the panel's first read
+    assert scoped["items"], "the sweep's slot must serve the scoped board"
+    assert scoped["generated"], "a swept slot must carry when it was generated"
+    for it in scoped["items"]:
+        assert it["id"] and it["prompt"] and it["cwd"] == d
+
+
+def test_a_scoped_refresh_of_another_kind_does_not_freeze_the_sweep(monkeypatch):
+    """A scoped REVIEW refresh after the repo moved drops every kind's answer and
+    stores the new key. The next sweep must still notice it has no NEXT items for
+    that repo, or the machine-wide board is frozen until the repo moves again."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    calls: list = []
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]', calls)
+    nextup.refresh(CHAT)
+    with open(os.path.join(d, "moved.txt"), "w") as fh:    # repo state moves
+        fh.write("x\n")
+    nextup.refresh(CHAT, project="/d", kind="review")      # resets the slot
+    before = len(calls)
+    nextup.refresh(CHAT)
+    assert len(calls) > before, "the sweep must re-scout a repo it has no items for"
+    assert nextup.board(CHAT)["items"], "and the global board must not go empty"
+
+
+def test_an_empty_answer_is_an_answer_and_is_not_re_scouted(monkeypatch):
+    """The staleness guard keys on the slot having `items` at all, never on them
+    being non-empty — a repo whose honest answer is nothing would otherwise be
+    re-scouted on every single sweep."""
+    d = _mkrepo("d")                           # clean: the heuristic finds nothing
+    _session(d)
+    calls: list = []
+    _stub_agent(monkeypatch, "[]", calls)
+    nextup.refresh(CHAT)
+    first = len(calls)
+    nextup.refresh(CHAT)
+    assert len(calls) == first
+
+
+def test_an_unknown_kind_is_rejected():
+    with pytest.raises(ValueError):
+        nextup.refresh(CHAT, project="/a", kind="haruspicy")
+
+
+def test_a_scoped_refresh_leaves_the_global_board_shape_intact(monkeypatch):
+    """The Mini App and the Telegram board read the unscoped board — its shape,
+    and every field on its items, must survive the new arguments untouched."""
+    a = _mkrepo("a", dirty=True)
+    _session(a)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    monkeypatch.setattr(nextup, "_abs", lambda project: a)
+    nextup.refresh(CHAT, project="/a", kind="next")
+    nextup.refresh(CHAT)                       # the machine-wide sweep still runs
+    board = nextup.board(CHAT)
+    assert set(board) == {"items", "generated", "repos", "refreshing", "enabled"}
+    assert board["items"], "the unscoped board must still be populated"
+    for i in board["items"]:
+        assert {"id", "title", "why", "effort", "evidence", "repo", "branch",
+                "cwd", "project", "prompt"} <= set(i)
+
+
+# --- the four questions ------------------------------------------------------
+
+def test_the_next_question_is_unchanged(monkeypatch):
+    """NEXT's rendered prompt must not drift when the frame is shared."""
+    d = _mkrepo(dirty=True)
+    seen = []
+    _stub_agent(monkeypatch, lambda p: seen.append(p) or "[]")
+    nextup.scout(CHAT, nextup.facts(CHAT, d), "next")
+    assert "what is most worth doing here next?" in seen[0]
+    assert "Consider four kinds of candidate" in seen[0]
+    assert "Reply with ONLY a JSON array" in seen[0]
+
+
+@pytest.mark.parametrize("kind,needle", [
+    ("review", "what is wrong, risky or half-done"),
+    ("research", "what open question"),
+    ("polish", "design system"),
+])
+def test_each_kind_asks_its_own_question(monkeypatch, kind, needle):
+    d = _mkrepo(dirty=True)
+    seen = []
+    _stub_agent(monkeypatch, lambda p: seen.append(p) or "[]")
+    nextup.scout(CHAT, nextup.facts(CHAT, d), kind)
+    assert needle in seen[0]
+
+
+def test_each_kind_lands_in_its_own_cache_slot(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    # "half-done" is unique to REVIEW's headline — NEXT's guidance also says
+    # "risky" (of "broken or risky"), so that word can't tell the two apart.
+    _stub_agent(monkeypatch, lambda p: '[{"title": "%s item", "why": "because", '
+                                       '"effort": "small", "evidence": "a.txt"}]'
+                                       % ("review" if "half-done" in p else "next"))
+    nextup.refresh(CHAT, project="/d", kind="next")
+    nextup.refresh(CHAT, project="/d", kind="review")
+    assert nextup.board(CHAT, "/d", "next")["items"][0]["title"] == "next item"
+    assert nextup.board(CHAT, "/d", "review")["items"][0]["title"] == "review item"
+
+
+def test_a_kind_never_scouted_has_no_items(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    nextup.refresh(CHAT, project="/d", kind="next")
+    assert nextup.board(CHAT, "/d", "polish")["items"] == []
+
+
+def test_a_dead_scout_leaves_only_its_own_kind_on_the_heuristic(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    # see the note above: "half-done" (not "risky") is what's unique to REVIEW.
+    _stub_agent(monkeypatch, lambda p: ("[]" if "half-done" in p else
+                '[{"title": "Do a thing", "why": "because", '
+                '"effort": "small", "evidence": "a.txt"}]'))
+    nextup.refresh(CHAT, project="/d", kind="next")
+    nextup.refresh(CHAT, project="/d", kind="review")
+    assert nextup.board(CHAT, "/d", "next")["items"][0]["title"] == "Do a thing"
+    review = nextup.board(CHAT, "/d", "review")["items"]
+    assert review, "a scout that answered nothing must still leave the facts"
+    assert review[0]["title"].startswith("Land ")   # _heuristic's dirty-tree item
+
+
+def test_polish_is_given_the_ui_files_and_the_token_source(monkeypatch):
+    d = _mkrepo()
+    os.makedirs(os.path.join(d, "lib"))
+    for p in ("lib/shell.ts", "app.tsx", "notes.md"):
+        with open(os.path.join(d, p), "w") as fh:
+            fh.write("x\n")
+    seen = []
+    _stub_agent(monkeypatch, lambda p: seen.append(p) or "[]")
+    nextup.scout(CHAT, nextup.facts(CHAT, d), "polish")
+    assert "app.tsx" in seen[0] and "lib/shell.ts" in seen[0]
+    assert '"ui_files"' in seen[0]
+
+
+def test_token_source_is_empty_when_the_repo_has_none():
+    assert nextup._token_source(_mkrepo()) == ""
+
+
+# --- dismiss -----------------------------------------------------------------
+
+def _one_item_board(monkeypatch, d):
+    monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    return nextup.refresh(CHAT, project="/d", kind="next")
+
+
+def test_a_dismissed_item_leaves_the_board(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    assert nextup.board(CHAT, "/d", "next")["items"] == []
+
+
+def test_a_dismissal_does_not_survive_the_repo_moving(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    with open(os.path.join(d, "c.txt"), "w") as fh:   # repo state moves
+        fh.write("x\n")
+    assert _one_item_board(monkeypatch, d)["items"], "a new repo state is a new item"
+
+
+def test_dismissals_for_a_dead_repo_state_are_pruned(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    with open(os.path.join(d, "c.txt"), "w") as fh:
+        fh.write("x\n")
+    _one_item_board(monkeypatch, d)
+    assert nextup._read().get("dismissed") == {}
+
+
+def test_dismissing_an_unknown_id_is_harmless(monkeypatch):
+    nextup.dismiss("no-such-item")
+    assert nextup.board(CHAT)["items"] == []
+
+
+def test_a_dismissal_made_during_a_scout_is_not_resurrected(monkeypatch):
+    """The scoped refresh reads the board file after its scout returns, not
+    before: a scout runs for up to a minute and the panel's four tabs refresh
+    independently, so a dismissal landing mid-scout must survive its write."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+
+    # REVIEW's scout dismisses NEXT's item while it runs — the interleaving a
+    # second tab produces: read, (dismiss), write.
+    def reply(prompt):
+        nextup.dismiss(item["id"])
+        return ('[{"title": "Do a thing", "why": "because", '
+                '"effort": "small", "evidence": "a.txt"}]')
+    _stub_agent(monkeypatch, reply)
+    nextup.refresh(CHAT, project="/d", kind="review")
+
+    assert item["id"] in (nextup._read().get("dismissed") or {})
+    assert nextup.board(CHAT, "/d", "next")["items"] == []
+
+
+def test_a_panel_dismissal_never_touches_the_machine_wide_board(monkeypatch):
+    """Ids are positional inside one scout run, so the sweep and a scoped scout
+    mint the same ids for different work. Dismissal is the panel's concept; the
+    Mini App, /next and the WORK tab keep every ranked item."""
+    d = _mkrepo("d", dirty=True)
+    _session(d)
+    _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
+                             '"effort": "small", "evidence": "a.txt"}]')
+    ranked = nextup.refresh(CHAT)["items"]
+    assert ranked
+    nextup.dismiss(ranked[0]["id"])
+    assert [i["id"] for i in nextup.board(CHAT)["items"]] == [i["id"] for i in ranked]
+
+
+def test_a_global_refresh_keeps_live_dismissals(monkeypatch):
+    d = _mkrepo(dirty=True)
+    _session(d)
+    item = _one_item_board(monkeypatch, d)["items"][0]
+    nextup.dismiss(item["id"])
+    nextup.refresh(CHAT)                       # the WORK tab's machine-wide sweep
+    assert item["id"] in (nextup._read().get("dismissed") or {})

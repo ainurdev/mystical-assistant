@@ -338,7 +338,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(startup.state())
         if path == "/local/next":
             from bridge import nextup
-            return self._json(nextup.board(chat))
+            kind = qs.get("kind", ["next"])[0]
+            if kind not in nextup.KINDS:
+                return self._json({"error": f"unknown kind: {kind}"}, 400)
+            return self._json(nextup.board(chat, qs.get("project", [None])[0], kind))
         if path == "/local/sessions":
             native.refresh(chat)           # surface VSCode sessions started since last poll
             project = qs.get("project", [None])[0]
@@ -909,10 +912,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "startup": st})
         if path == "/local/next":
             # Scouts take a minute; answer now with the cached board and let the
-            # client's poll pick up the new one. Concurrent refreshes collapse.
+            # client's poll pick up the new one. Concurrent refreshes of the same
+            # (chat, project, kind) collapse.
             from bridge import nextup
-            Thread(target=nextup.refresh, args=(chat,), daemon=True).start()
-            return self._json({"ok": True, **nextup.board(chat)})
+            project = body.get("project") or None
+            kind = str(body.get("kind") or "next")
+            if kind not in nextup.KINDS:
+                return self._json({"error": f"unknown kind: {kind}"}, 400)
+            Thread(target=nextup.refresh, args=(chat, project, kind),
+                   daemon=True).start()
+            return self._json({"ok": True, **nextup.board(chat, project, kind)})
+        if path == "/local/next/dismiss":
+            from bridge import nextup
+            item_id = str(body.get("id") or "")
+            if not item_id:
+                return self._json({"error": "id required"}, 400)
+            nextup.dismiss(item_id)
+            return self._json({"ok": True, **nextup.board(
+                chat, body.get("project") or None, str(body.get("kind") or "next"))})
         if path == "/local/freeagents":
             from bridge import freeagent
             try:

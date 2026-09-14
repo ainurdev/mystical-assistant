@@ -88,16 +88,21 @@ def test_an_unknown_kind_is_rejected():
 
 
 def test_a_scoped_refresh_leaves_the_global_board_shape_intact(monkeypatch):
+    """The Mini App and the Telegram board read the unscoped board — its shape,
+    and every field on its items, must survive the new arguments untouched."""
     a = _mkrepo("a", dirty=True)
     _session(a)
     _stub_agent(monkeypatch, '[{"title": "Do a thing", "why": "because", '
                              '"effort": "small", "evidence": "a.txt"}]')
     monkeypatch.setattr(nextup, "_abs", lambda project: a)
     nextup.refresh(CHAT, project="/a", kind="next")
+    nextup.refresh(CHAT)                       # the machine-wide sweep still runs
     board = nextup.board(CHAT)
     assert set(board) == {"items", "generated", "repos", "refreshing", "enabled"}
-    assert all({"id", "title", "why", "effort", "evidence", "repo", "branch",
-                "cwd", "project", "prompt"} <= set(i) for i in board["items"])
+    assert board["items"], "the unscoped board must still be populated"
+    for i in board["items"]:
+        assert {"id", "title", "why", "effort", "evidence", "repo", "branch",
+                "cwd", "project", "prompt"} <= set(i)
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -240,9 +245,11 @@ and ids gain their kind segment:
         # A survey only ever re-answers "next". The other kinds' answers survive
         # it if and only if the repo has not moved — the same rule that governs
         # `items`, just applied to a slot this path never scouts.
-        prev = cache.get(f["cwd"]) or {}
-        if prev.get("key") == keys[f["cwd"]] and prev.get("kinds"):
-            slot["kinds"] = prev["kinds"]
+        # `prev_slot`, not `prev` — `prev` is this function's `_read()` state and
+        # Task 3 reads `dismissed` off it after this loop.
+        prev_slot = cache.get(f["cwd"]) or {}
+        if prev_slot.get("key") == keys[f["cwd"]] and prev_slot.get("kinds"):
+            slot["kinds"] = prev_slot["kinds"]
         new_cache[f["cwd"]] = slot
         items.extend(_decorate(got, f, keys[f["cwd"]], "next", r["last_active"]))
 ```
@@ -331,9 +338,12 @@ def test_each_kind_lands_in_its_own_cache_slot(monkeypatch):
     d = _mkrepo(dirty=True)
     _session(d)
     monkeypatch.setattr(nextup, "_abs", lambda project: d)
+    # "half-done" is unique to REVIEW's headline. Do NOT use "risky" — it also
+    # appears in NEXT's guidance ("anything that looks broken or risky"), so it
+    # matches both prompts and the stub answers the wrong question.
     _stub_agent(monkeypatch, lambda p: '[{"title": "%s item", "why": "because", '
                                        '"effort": "small", "evidence": "a.txt"}]'
-                                       % ("review" if "risky" in p else "next"))
+                                       % ("review" if "half-done" in p else "next"))
     nextup.refresh(CHAT, project="/d", kind="next")
     nextup.refresh(CHAT, project="/d", kind="review")
     assert nextup.board(CHAT, "/d", "next")["items"][0]["title"] == "next item"
@@ -354,7 +364,7 @@ def test_a_dead_scout_leaves_only_its_own_kind_on_the_heuristic(monkeypatch):
     d = _mkrepo(dirty=True)
     _session(d)
     monkeypatch.setattr(nextup, "_abs", lambda project: d)
-    _stub_agent(monkeypatch, lambda p: ("[]" if "risky" in p else
+    _stub_agent(monkeypatch, lambda p: ("[]" if "half-done" in p else
                 '[{"title": "Do a thing", "why": "because", '
                 '"effort": "small", "evidence": "a.txt"}]'))
     nextup.refresh(CHAT, project="/d", kind="next")
@@ -818,7 +828,9 @@ git commit -m "feat(next): /local/next takes a project and a question, and can d
 **Files:**
 - Modify: `bridge/dashboard/web/src/api.ts` (`NextKind`, `nextBoard`, `refreshNext`, `dismissNext`)
 - Create: `bridge/dashboard/web/src/components/FreshPanel.tsx`
-- Modify: `bridge/dashboard/web/src/components/NextView.tsx` (drop the dead `project` prop)
+
+(`NextView.tsx` is **not** touched here — its `project` prop is dropped in Task 6,
+in the same commit that removes its last caller, so every task ends green.)
 
 **Interfaces:**
 - Consumes: the three endpoints from Task 4; `api.git`, `api.gitLog`, `api.projectSettings`, `api.server` (all existing); `hairline` from `lib/shell`; `ago`, `projectName` from `lib/surfaces`.
@@ -895,11 +907,22 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
   const [git, setGit] = useState<GitStatus | null>(null);
   const [commit, setCommit] = useState<GitCommit | null>(null);
   const [board, setBoard] = useState<NextBoard | null>(null);
-  const [busy, setBusy] = useState(false);
+  /** Which (project, kind) a scout is running for, or null. Scoped rather than a
+   *  bare boolean so switching tabs mid-scout doesn't show SCOUTING… on a tab
+   *  nothing is scouting — and so the flag can still be cleared by the poll that
+   *  set it, whichever tab happens to be on screen when it finishes. */
+  const [busyScope, setBusyScope] = useState<string | null>(null);
   const [runCmd, setRunCmd] = useState<string | null | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [runErr, setRunErr] = useState("");
   const poll = useRef<number | null>(null);
+
+  const scope = `${project}|${kind}`;
+  const busy = busyScope === scope;
+  // Always the scope on screen right now. A ref, not state: an in-flight poll
+  // must compare against the CURRENT value, not the one it captured at click.
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
 
   useEffect(() => {
     let live = true;
@@ -916,27 +939,36 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
     let live = true;
     setBoard(null);
     api.nextBoard({ project, kind }).then((b) => live && setBoard(b)).catch(() => {});
-    return () => {
-      live = false;
-      if (poll.current) window.clearInterval(poll.current);
-    };
+    return () => { live = false; };
   }, [project, kind]);
+
+  // The poll outlives a tab switch on purpose: it is the only thing that can
+  // clear its own busy scope, and its writes are already scope-guarded. Only
+  // unmounting stops it.
+  useEffect(() => () => { if (poll.current) window.clearInterval(poll.current); }, []);
 
   useEffect(() => { setStarting(false); }, [run?.status, run?.pid]);
 
   async function refresh() {
-    setBusy(true);
-    await api.refreshNext({ project, kind }).catch(() => null);
+    const mine = { project, kind }, mineScope = scope;
+    setBusyScope(mineScope);
+    await api.refreshNext(mine).catch(() => null);
     if (poll.current) window.clearInterval(poll.current);
-    poll.current = window.setInterval(async () => {
-      const b = await api.nextBoard({ project, kind }).catch(() => null);
-      if (b) setBoard(b);
+    // The callback clears its OWN id, and only releases the shared ref if it is
+    // still the owner — a later refresh may already have taken it, and clearing
+    // `poll.current` blindly would kill that one instead.
+    const id = window.setInterval(async () => {
+      const b = await api.nextBoard(mine).catch(() => null);
+      // Clearing the interval stops future ticks, never one already in flight —
+      // so a late answer is dropped here rather than landing on another tab.
+      if (b && scopeRef.current === mineScope) setBoard(b);
       if (b && !b.refreshing) {
-        if (poll.current) window.clearInterval(poll.current);
-        poll.current = null;
-        setBusy(false);
+        window.clearInterval(id);
+        if (poll.current === id) poll.current = null;
+        setBusyScope((cur) => (cur === mineScope ? null : cur));
       }
     }, 3000);
+    poll.current = id;
   }
 
   async function dismiss(id: string) {
@@ -1100,29 +1132,27 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
 }
 ```
 
-- [ ] **Step 3: Drop `NextView`'s now-dead project cut**
-
-In `bridge/dashboard/web/src/components/NextView.tsx`: remove the `project` prop
-from the signature and the type, replace the filter line with `const items = all;`,
-and change `padding: project ? 0 : "18px 18px 40px"` to the constant
-`"18px 18px 40px"`. Trim the docstring's last sentence ("Given a `project` it is
-the fresh session screen's cut…") — that cut now lives in `FreshPanel`.
-
-- [ ] **Step 4: Typecheck**
+- [ ] **Step 3: Typecheck**
 
 Run: `cd bridge/dashboard/web && npx tsc -b`
-Expected: PASS. (`tsc -p .` checks nothing here — see the project's shell-gotchas note; `tsc -b` or `-p tsconfig.app.json`.)
+(`tsc -p .` checks nothing here — see the project's shell-gotchas note; use
+`tsc -b` or `-p tsconfig.app.json`.)
 
-Two errors are expected at this point and are fine to fix now: `NextView` is
-still passed a `project` by `Terminal.tsx`, and `FreshPanel` is not yet imported.
-Task 6 resolves both; if `tsc -b` fails only on those two, proceed.
+**Expected: exactly the 3 pre-existing errors listed in
+`.superpowers/sdd/fresh-session-panel/tsc-baseline.txt`, and nothing else.**
+Those 3 are all in `Transcript.tsx` and come from another session's commit that
+this worktree is based on — not from this plan. Diff your output against that
+file. Any 4th error is yours.
 
-- [ ] **Step 5: Commit**
+This task is otherwise purely additive — `api.ts` gains three call shapes,
+`FreshPanel.tsx` is new and not yet imported by anything — so there is no
+expected-failure window of its own.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add bridge/dashboard/web/src/api.ts \
-        bridge/dashboard/web/src/components/FreshPanel.tsx \
-        bridge/dashboard/web/src/components/NextView.tsx
+        bridge/dashboard/web/src/components/FreshPanel.tsx
 git commit -m "feat(fresh): one panel — this repo's standing, and four questions about it"
 ```
 
@@ -1132,6 +1162,7 @@ git commit -m "feat(fresh): one panel — this repo's standing, and four questio
 
 **Files:**
 - Modify: `bridge/dashboard/web/src/components/hud/Terminal.tsx:86-219` (`FreshState`)
+- Modify: `bridge/dashboard/web/src/components/NextView.tsx` (drop the now-dead `project` prop)
 - Modify: `bridge/aifeatures.py:58-68` (the `nextup` feature copy)
 
 **Interfaces:**
@@ -1168,7 +1199,18 @@ RUN are free facts and must not vanish with an AI switch. `useAiFeatures` may no
 be unused in this component; if so, remove the `ai` const and its import if
 nothing else in the file uses it.
 
-- [ ] **Step 3: Update the feature copy**
+- [ ] **Step 3: Drop `NextView`'s now-dead project cut**
+
+`Terminal.tsx` was its only caller with a `project`, and Step 1 deleted that call
+— so the prop goes in the same commit as its last use, keeping every task green.
+
+In `bridge/dashboard/web/src/components/NextView.tsx`: remove `project` from the
+signature and its type, replace the filter line with `const items = all;`, and
+change `padding: project ? 0 : "18px 18px 40px"` to the constant `"18px 18px 40px"`.
+Trim the docstring's last sentence ("Given a `project` it is the fresh session
+screen's cut…") — that cut lives in `FreshPanel` now.
+
+- [ ] **Step 4: Update the feature copy**
 
 `bridge/aifeatures.py`, the `nextup` entry — replace `hint` and `about`:
 
@@ -1188,22 +1230,28 @@ nothing else in the file uses it.
               "shows where the repo stands.",
 ```
 
-- [ ] **Step 4: Typecheck and build**
+- [ ] **Step 5: Typecheck and build**
 
-Run: `cd bridge/dashboard/web && npx tsc -b && npx vite build`
-Expected: both PASS. (`pnpm build` can trip on esbuild in a worktree — fall back
-to `npx vite build`.)
+Run: `cd bridge/dashboard/web && npx tsc -b; npx vite build`
+(Note the `;` not `&&` — `tsc -b` exits non-zero on the pre-existing errors, and
+the build must still run.)
 
-- [ ] **Step 5: Run the backend suite**
+Expected: `tsc -b` prints **exactly the 3 pre-existing errors** in
+`.superpowers/sdd/fresh-session-panel/tsc-baseline.txt` and nothing else — diff
+your output against that file, any 4th error is yours — and `vite build`
+succeeds. (`pnpm build` can trip on esbuild in a worktree; use `npx vite build`.)
+
+- [ ] **Step 6: Run the backend suite**
 
 Run: `python3 -m pytest tests/ -q`
 Expected: PASS. `tests/test_docs.py` and any aifeatures test are the ones the copy
 change could touch.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add bridge/dashboard/web/src/components/hud/Terminal.tsx bridge/aifeatures.py
+git add bridge/dashboard/web/src/components/hud/Terminal.tsx \
+        bridge/dashboard/web/src/components/NextView.tsx bridge/aifeatures.py
 git commit -m "feat(fresh): the empty session becomes one panel, not five strips"
 ```
 
