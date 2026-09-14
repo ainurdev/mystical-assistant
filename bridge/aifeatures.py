@@ -67,8 +67,8 @@ FEATURES = (
               "time, about its own repo only; the WORK tab keeps the ranked board "
               "across every repo you touched this week. Only a repo whose git "
               "state moved is re-scouted, and a free provider is tried before "
-              "Claude quota. Off, the questions are hidden and the screen still "
-              "shows where the repo stands."},
+              "Claude quota. Off, nothing is scouted and the screen still shows "
+              "where the repo stands."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",
