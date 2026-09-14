@@ -36,3 +36,10 @@ eq(md(h("div", { class: "md-admonition" }, h("div", { class: "md-admonition-labe
 eq(md(h("p", {}, "a"), h("hr", {}), h("p", {}, "b")), "a\n\n---\n\nb", "rule between paragraphs");
 
 console.log("selmd ok");
+
+// The copy glyph (CopyBtn in components/Markdown.tsx) is icon-only so that a
+// selection dragged across it contributes nothing to the markdown.
+eq(md(h("blockquote", {}, h("button", { class: "md-copy" }, h("svg", {})), h("p", {}, "quoted"))),
+  "> quoted", "copy glyph adds nothing to a quote");
+eq(md(h("p", {}, h("a", { href: "https://x.y" }, "x"), h("button", { class: "md-copy" }, h("svg", {})), " end")),
+  "[x](https://x.y) end", "copy glyph adds nothing after a link");

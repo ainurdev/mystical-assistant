@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, memo, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Check, Copy } from "lucide-react";
 import { selectionMd } from "../lib/selmd";
 import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
@@ -24,6 +25,35 @@ function textOf(n: unknown): string {
   return "";
 }
 
+/** The one control a rendered reply grows: a glyph that puts the thing it sits
+ *  on — a link's URL, a quote's text, a fence's code — on the clipboard as it
+ *  reads, not as markdown. Selecting and copying still yields the markdown
+ *  (selmd); this is the way out when the markdown is the problem: a message
+ *  drafted in a quote pastes without its `> `, a URL without its `[label]()`.
+ *  Icon-only on purpose — a text label would be selected along with the quote
+ *  and leak into that markdown. `text` is a function when the source is the
+ *  drawn element itself: a quote copies what it shows, blank lines included. */
+function CopyBtn({ text, title }: { text: string | ((btn: HTMLElement) => string); title: string }) {
+  const [hit, setHit] = useState(false);
+  return (
+    <button
+      type="button"
+      className="md-copy"
+      title={title}
+      aria-label={title}
+      onClick={(e) => {
+        const t = typeof text === "function" ? text(e.currentTarget) : text;
+        void navigator.clipboard?.writeText(t).then(() => {
+          setHit(true);
+          setTimeout(() => setHit(false), 1200);
+        }).catch(() => {});
+      }}
+    >
+      {hit ? <Check size={12} aria-hidden /> : <Copy size={12} aria-hidden />}
+    </button>
+  );
+}
+
 /** A fenced block drawn as its own panel: the language named in the header rail,
  *  the code highlighted with the editor's own grammars (unknown language, or a
  *  block too big to parse, just prints). */
@@ -44,6 +74,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   return (
     <div className="md-code">
       {lang && <div className="md-code-lang">{lang}</div>}
+      <CopyBtn title="Copy code" text={code} />
       <pre>
         <code>
           {toks
@@ -184,7 +215,14 @@ export const Markdown = memo(function Markdown({
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          // The glyph after a link copies its URL; a footnote's own `#fn1` hop
+          // is not a link anyone wants on the clipboard.
+          a: ({ node, href, children, ...props }) => (
+            <>
+              <a href={href} target="_blank" rel="noreferrer" {...props}>{children}</a>
+              {href && !href.startsWith("#") && <CopyBtn title="Copy link" text={href} />}
+            </>
+          ),
           // A short bold ending in a colon is a lead-in label ("Root cause:",
           // "Fix:"), not emphasis — it gets rank instead of the wash. The bound
           // is what keeps a bold *clause* out: `**72 passed, 1 failed**` has no
@@ -207,7 +245,15 @@ export const Markdown = memo(function Markdown({
           blockquote: ({ children }) => {
             const kind = ADMONITION_RE.exec(textOf(children))?.[1]?.toLowerCase();
             const spec = kind ? ADMONITIONS[kind] : undefined;
-            if (!spec) return <blockquote>{children}</blockquote>;
+            // The glyph goes first so it can float at the head of the quote and
+            // the first line wraps around it. innerText, not the markdown: a
+            // quote is copied as it reads.
+            if (!spec) return (
+              <blockquote>
+                <CopyBtn title="Copy quote" text={(b) => (b.parentElement as HTMLElement).innerText.trim()} />
+                {children}
+              </blockquote>
+            );
             return (
               <div className="md-admonition" style={{ ["--adm" as string]: spec.color }}>
                 <div className="md-admonition-label">{spec.label}</div>

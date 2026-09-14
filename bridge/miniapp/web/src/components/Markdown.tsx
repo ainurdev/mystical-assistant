@@ -1,6 +1,7 @@
-import { cloneElement, isValidElement, memo, type ReactNode } from "react";
+import { cloneElement, isValidElement, memo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Check, Copy } from "lucide-react";
 import { selectionMd } from "../lib/selmd";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
 import type { ToolStyle } from "../lib/toolwidget";
@@ -27,6 +28,36 @@ function textOf(n: unknown): string {
   if (n && typeof n === "object" && "props" in n)
     return textOf((n as { props: { children?: unknown } }).props.children);
   return "";
+}
+
+/** Mirrors the dashboard's CopyBtn — 14px here, and index.css pads it out to a
+ *  thumb-sized target. The one control a rendered reply grows: a glyph that puts the thing it sits
+ *  on — a link's URL, a quote's text, a fence's code — on the clipboard as it
+ *  reads, not as markdown. Selecting and copying still yields the markdown
+ *  (selmd); this is the way out when the markdown is the problem: a message
+ *  drafted in a quote pastes without its `> `, a URL without its `[label]()`.
+ *  Icon-only on purpose — a text label would be selected along with the quote
+ *  and leak into that markdown. `text` is a function when the source is the
+ *  drawn element itself: a quote copies what it shows, blank lines included. */
+function CopyBtn({ text, title }: { text: string | ((btn: HTMLElement) => string); title: string }) {
+  const [hit, setHit] = useState(false);
+  return (
+    <button
+      type="button"
+      className="md-copy"
+      title={title}
+      aria-label={title}
+      onClick={(e) => {
+        const t = typeof text === "function" ? text(e.currentTarget) : text;
+        void navigator.clipboard?.writeText(t).then(() => {
+          setHit(true);
+          setTimeout(() => setHit(false), 1200);
+        }).catch(() => {});
+      }}
+    >
+      {hit ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+    </button>
+  );
 }
 
 /** GitHub-flavoured callouts: `> [!NOTE]` and friends. */
@@ -80,7 +111,14 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          // The glyph after a link copies its URL; a footnote's own `#fn1` hop
+          // is not a link anyone wants on the clipboard.
+          a: ({ node, href, children, ...props }) => (
+            <>
+              <a href={href} target="_blank" rel="noreferrer" {...props}>{children}</a>
+              {href && !href.startsWith("#") && <CopyBtn title="Copy link" text={href} />}
+            </>
+          ),
           // A short bold ending in a colon is a lead-in label ("Root cause:",
           // "Fix:"), not emphasis — it gets rank instead of the wash. Worth more
           // here than on the desktop: on 390px of glass the labels are most of
@@ -101,7 +139,15 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
           blockquote: ({ children }) => {
             const kind = ADMONITION_RE.exec(textOf(children))?.[1]?.toLowerCase();
             const spec = kind ? ADMONITIONS[kind] : undefined;
-            if (!spec) return <blockquote>{children}</blockquote>;
+            // The glyph goes first so it can float at the head of the quote and
+            // the first line wraps around it. innerText, not the markdown: a
+            // quote is copied as it reads.
+            if (!spec) return (
+              <blockquote>
+                <CopyBtn title="Copy quote" text={(b) => (b.parentElement as HTMLElement).innerText.trim()} />
+                {children}
+              </blockquote>
+            );
             return (
               <div className="md-admonition" style={{ ["--adm" as string]: spec.color }}>
                 <div className="md-admonition-label">{spec.label}</div>
@@ -129,6 +175,7 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
             return (
               <div className="md-code">
                 {lang && <div className="md-code-lang">{lang}</div>}
+                <CopyBtn title="Copy code" text={code} />
                 <pre><code>{code}</code></pre>
               </div>
             );

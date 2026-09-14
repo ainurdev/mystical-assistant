@@ -313,6 +313,21 @@ input {
   border-left: 3px solid var(--border);
   color: var(--muted-foreground);
 }
+/* The copy glyph a link, a quote and a fence carry (CopyBtn in Markdown.tsx):
+   the URL, the quote as it reads, the code without its fence. Always shown —
+   there is no hover on glass — and padded out to a thumb-sized target, the
+   padding pulled back with negative margins so a line of prose does not grow
+   around it. Floats at the head of a quote so the first line wraps around it;
+   pinned to a fence's top-right corner. Icon-only, so a selection dragged
+   across it adds nothing to the markdown selmd builds. */
+.md-copy {
+  appearance: none; border: 0; background: none; margin: 0; padding: 4px;
+  color: var(--muted-2); cursor: pointer; line-height: 0;
+}
+.md-copy:active { color: var(--acc); }
+.md a + .md-copy { display: inline-block; vertical-align: middle; margin: -4px 0 -4px 1px; }
+.md blockquote > .md-copy { float: right; margin: 0 -2px 2px 6px; }
+.md-code > .md-copy { position: absolute; top: 2px; right: 3px; }
 .md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--ac-22); }
 /* On a phone a table wider than the screen gets squeezed to one word per line
    and a row goes six lines tall. It keeps its natural width and scrolls in its
@@ -1600,7 +1615,7 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
    A fenced block and a `> [!NOTE]` callout render on both surfaces now
    (components/Markdown). Unhighlighted here on purpose — colouring it would
    pull the editor's grammars into a phone bundle. */
-.md-code { margin: 0.7em 0; background: var(--code-bg, var(--panel3)); border: 1px solid var(--border, var(--ac-12)); }
+.md-code { position: relative; margin: 0.7em 0; background: var(--code-bg, var(--panel3)); border: 1px solid var(--border, var(--ac-12)); }
 .md-code-lang {
   padding: 3px 10px; font-size: var(--t8); letter-spacing: 1.6px; text-transform: uppercase;
   color: var(--txf); border-bottom: 1px solid var(--ac-08);

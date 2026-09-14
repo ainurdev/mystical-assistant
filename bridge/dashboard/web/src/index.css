@@ -908,7 +908,7 @@ input {
 .md-fileref svg { flex: none; }
 /* A fenced block is a panel, not a paragraph: sunken well, hairline edge, and
    the language named on a rail across the top (see CodeBlock in Markdown.tsx). */
-.md-code { margin: 0.7em 0; background: var(--code-bg); border: 1px solid var(--border); }
+.md-code { position: relative; margin: 0.7em 0; background: var(--code-bg); border: 1px solid var(--border); }
 .md-code-lang {
   padding: 0.3em 0.75em;
   border-bottom: 1px solid var(--border);
@@ -948,6 +948,27 @@ input {
   background: var(--ac-03);
   color: var(--muted-foreground);
 }
+/* The copy glyph a link, a quote and a fence carry (CopyBtn in Markdown.tsx):
+   the URL, the quote as it reads, the code without its fence. Revealed by
+   hovering the thing it copies — the same reveal as a message's own COPY — or
+   by keyboard focus; a touch screen has no hover, so there it just shows. It
+   floats at the head of a quote so the first line wraps around it instead of
+   running under it; a fence pins it to its top-right corner, in the language
+   rail when there is one. Icon-only, so a selection dragged across it adds
+   nothing to the markdown selmd builds. */
+.md-copy {
+  appearance: none; border: 0; background: none; margin: 0; padding: 2px;
+  color: var(--muted-2); cursor: pointer; line-height: 0;
+  opacity: 0; transition: opacity 120ms;
+}
+.md-copy:hover, .md-copy:focus-visible { color: var(--acc); opacity: 1; }
+.md a + .md-copy { display: inline-block; vertical-align: middle; margin-left: 1px; }
+.md a:hover + .md-copy { opacity: 1; }
+.md blockquote > .md-copy { float: right; margin: 0.15em 0 0.2em 0.5em; }
+.md blockquote:hover > .md-copy { opacity: 1; }
+.md-code > .md-copy { position: absolute; top: 0.3em; right: 0.45em; }
+.md-code:hover > .md-copy { opacity: 1; }
+@media (hover: none) { .md-copy { opacity: 1; } }
 .md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--ac-16); }
 /* A table is columns, so it is ruled rather than gridded: a border on every
    cell turns five rows into graph paper and buries the one thing worth seeing.
