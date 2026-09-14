@@ -289,10 +289,17 @@ class Handler(BaseHTTPRequestHandler):
             if not browser.within_base(cur) or not os.path.isdir(cur):
                 cur = config.BASE_PATH
             real = os.path.realpath(cur)
+            projects = browser.list_projects()
             return self._json({"rel": browser.rel(cur), "at_base": real == config.BASE_PATH,
                                "can_up": real != config.BASE_PATH,
                                "dirs": browser.list_dirs(cur),
-                               "projects": browser.list_projects(),
+                               "projects": projects,
+                               # Which GitHub repo a folder actually points at —
+                               # the folder tree says ainurhq, origin may say
+                               # ainurdev.
+                               "remotes": {r: slug for r in projects
+                                           if (slug := github.origin_slug(
+                                               os.path.join(config.BASE_PATH, r.lstrip("/"))))},
                                "hidden": project_config.hidden_projects(),
                                "names": project_config.names()})
         if path == "/local/history":

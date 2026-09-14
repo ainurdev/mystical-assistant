@@ -64,6 +64,27 @@ def test_remote_slug_none():
     assert gh.remote_slug(d) is None
 
 
+def test_origin_slug_reads_config():
+    """The no-subprocess reader agrees with git, and isn't fooled by a pushurl
+    or by a second remote's url."""
+    d = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "-q", d], check=True)
+    subprocess.run(["git", "-C", d, "remote", "add", "upstream",
+                    "git@github.com:other/fork.git"], check=True)
+    subprocess.run(["git", "-C", d, "remote", "add", "origin",
+                    "git@github.com:acme/widget.git"], check=True)
+    subprocess.run(["git", "-C", d, "remote", "set-url", "--push", "origin",
+                    "git@github.com:acme/pushmirror.git"], check=True)
+    assert gh.origin_slug(d) == "acme/widget" == gh.remote_slug(d)
+
+
+def test_origin_slug_no_remote():
+    d = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "-q", d], check=True)
+    assert gh.origin_slug(d) is None
+    assert gh.origin_slug(os.path.join(d, "nope")) is None
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

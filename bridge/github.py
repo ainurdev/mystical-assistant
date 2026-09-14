@@ -2,6 +2,7 @@
 Stdlib + subprocess; the slug is derived from the repo's `origin` remote."""
 
 import json
+import pathlib
 import re
 import subprocess
 
@@ -35,6 +36,25 @@ def _run(*args: str, cwd: str | None = None, timeout: int = 15) -> tuple[int, st
 def remote_slug(cwd: str) -> str | None:
     rc, out, _ = _run("git", "-C", cwd, "remote", "get-url", "origin")
     return _parse_slug(out) if rc == 0 else None
+
+
+# The url line inside the [remote "origin"] section: `[^[` can't leave the
+# section, `^\s*url` can't be fooled by a pushurl.
+_ORIGIN_URL_RE = re.compile(r'\[remote "origin"\][^\[]*?^\s*url\s*=\s*(\S+)',
+                            re.MULTILINE)
+
+
+def origin_slug(repo_dir: str) -> str | None:
+    """Same answer as remote_slug, read straight out of .git/config. The
+    dashboard wants it for every repo it lists, every ten seconds; that is a
+    file read each, not a git process each."""
+    try:
+        cfg = (pathlib.Path(repo_dir) / ".git" / "config").read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    m = _ORIGIN_URL_RE.search(cfg)
+    return _parse_slug(m.group(1)) if m else None
 
 
 def _count(slug: str, state: str) -> int:

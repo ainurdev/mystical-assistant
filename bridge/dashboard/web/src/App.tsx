@@ -266,6 +266,9 @@ export function App() {
   // Git repos discovered on disk (org-folder nesting included) — so sessionless
   // projects still show up in the PROJECTS panel.
   const [discovered, setDiscovered] = useState<string[]>([]);
+  // rel -> owner/repo of its origin: the folder tree and the GitHub org don't
+  // have to agree, and two folders can be two repos of the same name.
+  const [projectRemotes, setProjectRemotes] = useState<Record<string, string>>({});
 
   // HUD chrome state.
   const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
@@ -554,6 +557,7 @@ export function App() {
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
       setProjectNames(p.names ?? {});
+      setProjectRemotes(p.remotes ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
     } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
   }, [markBoot]);
@@ -2172,6 +2176,7 @@ export function App() {
                   groups: projectGroups.filter((g) => !removedProjects[g.rel]),
                   imported: importedProjects.filter((rel) => !removedProjects[rel]),
                   hidden: hiddenProjects,
+                  remotes: projectRemotes,
                   onSetHidden: setHidden,
                   onRemove: (rel) => setRemovedProjects((p) => ({ ...p, [rel]: true })),
                   onRename: renameProject,

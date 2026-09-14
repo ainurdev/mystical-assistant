@@ -213,6 +213,7 @@ export interface ProjectsListing {
   projects?: string[]; // git repos under BASE_PATH, org-folder nesting included
   hidden?: string[]; // rels the bridge remembers as HIDDEN (project_config.json)
   names?: Record<string, string>; // rel -> the display name you gave it
+  remotes?: Record<string, string>; // rel -> owner/repo of origin, absent if not GitHub
 }
 
 export interface GitFile {

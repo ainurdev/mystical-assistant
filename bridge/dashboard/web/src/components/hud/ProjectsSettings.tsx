@@ -12,6 +12,7 @@ export interface ProjectsSettingsProps {
   groups: ProjectGroup[]; // manageable projects (removed ones filtered out; hidden included)
   imported: string[];     // locally imported repo paths — TODO(phase2-data): no bridge endpoint yet
   hidden: Record<string, boolean>;
+  remotes: Record<string, string>; // rel -> owner/repo of origin (GitHub only)
   onSetHidden: (rels: string[], hidden: boolean) => void; // one row, or a whole org
   onRemove: (rel: string) => void;
   onRename: (rel: string, name: string) => void; // blank restores the directory name
@@ -24,7 +25,7 @@ function basename(rel: string): string {
 }
 
 export function ProjectsSettings(props: ProjectsSettingsProps) {
-  const { groups, imported, hidden, onSetHidden, onRemove, onRename, onImport } = props;
+  const { groups, imported, hidden, remotes, onSetHidden, onRemove, onRename, onImport } = props;
   const [importPath, setImportPath] = useState("");
   const [hov, setHov] = useState("");
   // Rename in place: the name chip becomes an input. Esc has to blur (not just
@@ -70,7 +71,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
 
   return (
     <>
-      <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>CLICK A NAME TO RENAME · HIDE keeps a project out of the sidebar · REMOVE detaches it</div>
+      <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>CLICK A NAME TO RENAME · THE SLUG IS WHERE ITS origin PUSHES · HIDE keeps a project out of the sidebar · REMOVE detaches it</div>
           {sections.map(({ parent, rows: srows }) => {
             const segs = parent ? parent.split("/") : [];
             const allHidden = srows.every((r) => hidden[r.rel]);
@@ -125,6 +126,12 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                     <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", padding: "1px 5px", flex: "none" }}>HIDDEN</span>
                   )}
                   <span style={{ flex: 1 }} />
+                  {remotes[r.rel] && (
+                    <a href={`https://github.com/${remotes[r.rel]}`} target="_blank" rel="noreferrer"
+                      title={`origin — github.com/${remotes[r.rel]}`} {...hp(`gh:${r.rel}`)}
+                      style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: hov === `gh:${r.rel}` ? "var(--acc)" : "var(--txd)", textDecoration: "none", flex: "none", whiteSpace: "nowrap" }}>
+                      {remotes[r.rel]}</a>
+                  )}
                   <span style={{ fontSize: "var(--t9)", color: "var(--txd)", flex: "none" }}>{r.sessionCount} sess</span>
                   <button onClick={() => onSetHidden([r.rel], !isHidden)} title="hide / show in sidebar" {...hp(`hide:${r.rel}`)}
                     style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `hide:${r.rel}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: 1, padding: "5px 10px", flex: "none" }}>{isHidden ? "SHOW" : "HIDE"}</button>
