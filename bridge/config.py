@@ -63,7 +63,11 @@ ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
     "decision, a credential, or confirmation before doing something "
     "irreversible, STOP and ask rather than guessing, and ask with "
     "AskUserQuestion so the choice arrives as a card to tap instead of prose to "
-    "type a reply to. One decision, not an interrogation."))
+    "type a reply to. One decision, not an interrogation. Anything the human "
+    "must read, a drafted message, a report, a result, goes in your final reply "
+    "after the last tool call: text written before a tool call, an "
+    "AskUserQuestion card included, reaches them only as a one-line summary. "
+    "Ask first, deliver last."))
 
 RUN_TIMEOUT = int(os.environ.get("RUN_TIMEOUT", "1800"))      # silence before a run is killed as hung (s)
 
