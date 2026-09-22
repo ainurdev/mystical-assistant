@@ -369,6 +369,42 @@ export interface TrackerTasks {
 }
 export interface TrackerStatus { id: string; name: string }
 
+// --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
+/** Live connection status of one instance's websocket worker. */
+export interface RivendellStatus {
+  state: "off" | "connecting" | "connected" | "error";
+  detail?: string;              // ws url when up, or the error/reason
+  since?: number;               // epoch seconds of the last state change
+  connected_since?: number | null;  // epoch seconds the current link came up
+  last_event_at?: number | null;    // epoch seconds of the last request seen
+}
+export interface RivendellInstance {
+  id: string;
+  name: string;
+  enable: boolean;
+  api_url: string;
+  ws_url: string;
+  model: string;
+  workdir: string;
+  review_timeout: number;
+  impl_timeout: number;
+  origin: string;      // "rivendell:<name>" — its runs' session origin
+  token: string;       // masked: "…" + last 4, or "set"/"" ; never sent back to keep
+  status: RivendellStatus;  // live; merged in by the GET route, not stored
+}
+/** A create/edit payload. token blank on edit keeps the stored one. */
+export interface RivendellInput {
+  name: string;
+  enable: boolean;
+  api_url: string;
+  token: string;
+  ws_url: string;
+  model: string;
+  workdir: string;
+  review_timeout: number;
+  impl_timeout: number;
+}
+
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -1402,6 +1438,18 @@ export const api = {
     }),
   removeTracker: (id: string) =>
     req<{ ok: boolean }>("/local/trackers", { method: "POST", body: { op: "remove", id } }),
+  // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
+  rivendell: () => req<{ instances: RivendellInstance[] }>("/local/rivendell"),
+  addRivendell: (body: RivendellInput) =>
+    req<{ ok: boolean; instance: RivendellInstance }>("/local/rivendell", {
+      method: "POST", body: { op: "add", ...body },
+    }),
+  updateRivendell: (id: string, body: RivendellInput) =>
+    req<{ ok: boolean; instance: RivendellInstance }>("/local/rivendell", {
+      method: "POST", body: { op: "update", id, ...body },
+    }),
+  removeRivendell: (id: string) =>
+    req<{ ok: boolean }>("/local/rivendell", { method: "POST", body: { op: "remove", id } }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>

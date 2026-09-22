@@ -260,12 +260,22 @@ RIVENDELL_REVIEW_TIMEOUT = int(os.environ.get("RIVENDELL_REVIEW_TIMEOUT", "3600"
 # tests and push — routinely 2-3x a review's wall clock, hence the 3h default.
 RIVENDELL_IMPL_TIMEOUT = int(os.environ.get("RIVENDELL_IMPL_TIMEOUT", "10800"))
 
-# Session origins that belong to plugin workers. Their sessions are listed even
-# when their project is a container dir (a plugin's default workdir is
-# BASE_PATH itself, whose rel is "/" — normally never a project), so a plugin
-# run can't be invisible in the dashboards. Not an env var — a code registry
-# that grows with each plugin, mirrored by the dashboard's PLUGINS tab.
+# Session-origin PREFIXES that belong to plugin workers. Their sessions are
+# listed even when their project is a container dir (a plugin's default workdir
+# is BASE_PATH itself, whose rel is "/" — normally never a project), so a plugin
+# run can't be invisible in the dashboards. Prefixes, not exact names: a plugin
+# with several instances tags each run "rivendell:<instance>" (see
+# rivendell_instances.origin_for), and all of them must still match. Not an env
+# var — a code registry that grows with each plugin, mirrored by the dashboard's
+# PLUGINS tab.
 PLUGIN_ORIGINS = ("rivendell",)
+
+
+def is_plugin_origin(origin) -> bool:
+    """Does this session origin belong to a plugin worker? Matches the base
+    origin ("rivendell") and every per-instance one ("rivendell:prod")."""
+    return bool(origin) and any(
+        origin == p or origin.startswith(p + ":") for p in PLUGIN_ORIGINS)
 
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))

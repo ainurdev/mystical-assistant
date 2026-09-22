@@ -33,7 +33,8 @@ import re
 from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
                     models, native, preview_detect, project_config,
-                    pubsub, queue_manager, relevance, report, runner, selfupdate,
+                    pubsub, queue_manager, relevance, report, rivendell,
+                    rivendell_instances, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, trackers,
                     usage, weather, wsutil)
@@ -349,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
             # Plugin-worker sessions are exempt: their default workdir is
             # BASE_PATH itself ("/", never a project), and a run the PLUGINS
             # tab exists to show must not be filtered into invisibility.
-            rows = [r for r in rows if r.get("origin") in config.PLUGIN_ORIGINS
+            rows = [r for r in rows if config.is_plugin_origin(r.get("origin"))
                     or browser.project_exists(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
@@ -484,6 +485,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(github.issues(abs_p))
         if path == "/local/trackers":
             return self._json({"connections": trackers.connections()})
+        if path == "/local/rivendell":
+            live = rivendell.status()
+            insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
+                     for i in rivendell_instances.instances()]
+            return self._json({"instances": insts})
         if path == "/local/tracker/projects":
             try:
                 return self._json({"projects": trackers.projects((qs.get("conn", [""])[0] or "").strip())})
@@ -1198,6 +1204,37 @@ class Handler(BaseHTTPRequestHandler):
             except trackers.TrackerError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"error": "op must be add or remove"}, 400)
+        if path == "/local/rivendell":
+            op = body.get("op")
+            fields = {
+                "name": (body.get("name") or "")[:60],
+                "enable": body.get("enable", True),
+                "api_url": (body.get("api_url") or "")[:400],
+                "token": (body.get("token") or "")[:2000],
+                "ws_url": (body.get("ws_url") or "")[:400],
+                "model": (body.get("model") or "")[:60],
+                "workdir": (body.get("workdir") or "")[:1000],
+                "review_timeout": body.get("review_timeout"),
+                "impl_timeout": body.get("impl_timeout"),
+            }
+            try:
+                if op == "add":
+                    inst = rivendell_instances.add_instance(**fields)
+                elif op == "update":
+                    inst = rivendell_instances.update_instance(
+                        (body.get("id") or "").strip(), **fields)
+                elif op == "remove":
+                    gone = rivendell_instances.remove_instance((body.get("id") or "").strip())
+                    rivendell.reconfigure()
+                    return self._json({"ok": gone})
+                else:
+                    return self._json({"error": "op must be add, update or remove"}, 400)
+            except rivendell_instances.RivendellError as e:
+                return self._json({"error": str(e)}, 400)
+            # A saved add/update takes effect now: the worker manager diffs the
+            # store and starts/stops/rewires to match.
+            rivendell.reconfigure()
+            return self._json({"ok": True, "instance": inst})
         if path == "/local/tracker/update":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

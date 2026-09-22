@@ -595,7 +595,7 @@ class Handler(BaseHTTPRequestHandler):
         # stay out of the lists; their transcripts remain viewable by id.
         # Plugin-worker sessions are exempt (their workdir may be BASE_PATH
         # itself, whose rel "/" is never a project) — see dashboard/server.py.
-        rows = [r for r in rows if r.get("origin") in config.PLUGIN_ORIGINS
+        rows = [r for r in rows if config.is_plugin_origin(r.get("origin"))
                 or browser.project_exists(r["project"])]
         self._json({"sessions": [_session_brief(s) for s in rows]})
 
