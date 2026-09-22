@@ -42,7 +42,7 @@ import sys
 
 from bridge import (config, devserver, dream, envsettings, landing, limits,
                     native_activity, onboard, pubsub, recovery, report,
-                    selfupdate, state, store, toolsets, tunnel)
+                    rivendell, selfupdate, state, store, toolsets, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -109,6 +109,8 @@ def _on_stop_signal(signum, frame):
 
 def _shutdown():
     state.shutting_down = True
+    if config.RIVENDELL_ENABLE:
+        rivendell.stop()
     native_activity.stop()
     devserver.stop_all()      # every registered dev server, not just the primary
     if config.MINIAPP_ENABLE:
@@ -164,6 +166,8 @@ def main():
         if config.TOKEN:
             report.boot()              # Monday-morning weekly report (catches up a dark Monday)
         dream.boot()                   # nightly per-repo digest (catches up a night asleep)
+        if config.RIVENDELL_ENABLE:
+            rivendell.start()          # rivendell-api PR-review websocket client
         # Telegram LAST: the login launcher blocks on the dashboard port above,
         # and a cold boot's not-yet-ready network must not gate the window. A
         # failed getMe is a warning, not an exit — get_updates already retries

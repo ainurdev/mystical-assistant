@@ -232,6 +232,38 @@ COMMIT_MSG_AI = os.environ.get("COMMIT_MSG_AI", "1").lower() \
 DESIGN_SYNC_ENABLE = os.environ.get("DESIGN_SYNC_ENABLE", "1").lower() \
     not in ("0", "false", "no", "")
 
+# --- Rivendell PR review plugin ----------------------------------------------
+# A websocket client that connects to a rivendell-api instance, listens for
+# pr-review-request events, runs each review as an autonomous Claude session,
+# and POSTs the result back. An automatic outbound integration that executes
+# work on its own, so it defaults OFF (NEXTUP/LEARN precedent) and needs an
+# explicit API URL + bearer token (minted in Rivendell: Profile -> Tokens, with
+# the LLM capability) to do anything.
+RIVENDELL_ENABLE = os.environ.get("RIVENDELL_ENABLE", "0").lower() \
+    not in ("0", "false", "no", "")
+RIVENDELL_API_URL = os.environ.get("RIVENDELL_API_URL", "").rstrip("/")
+# Optional explicit websocket address. Empty -> derived from the API URL at
+# CONNECT time (http->ws, path /agent; see rivendell._ws_url) so a URL changed
+# live from the dashboard's PLUGINS settings is honoured on the next reconnect.
+RIVENDELL_WS_URL = os.environ.get("RIVENDELL_WS_URL", "")
+RIVENDELL_TOKEN = os.environ.get("RIVENDELL_TOKEN", "")
+# Model the review sessions run with (passed straight to `claude --model`).
+RIVENDELL_MODEL = os.environ.get("RIVENDELL_MODEL", "opus")
+# Where review sessions run. Empty -> BASE_PATH. A checkout under BASE_PATH
+# keeps the dashboard's project label clean.
+RIVENDELL_WORKDIR = os.path.realpath(os.path.expanduser(
+    os.environ.get("RIVENDELL_WORKDIR", ""))) if os.environ.get("RIVENDELL_WORKDIR") \
+    else ""
+# Wall-clock cap for one review before it is interrupted and reported failed.
+RIVENDELL_REVIEW_TIMEOUT = int(os.environ.get("RIVENDELL_REVIEW_TIMEOUT", "3600"))
+
+# Session origins that belong to plugin workers. Their sessions are listed even
+# when their project is a container dir (a plugin's default workdir is
+# BASE_PATH itself, whose rel is "/" — normally never a project), so a plugin
+# run can't be invisible in the dashboards. Not an env var — a code registry
+# that grows with each plugin, mirrored by the dashboard's PLUGINS tab.
+PLUGIN_ORIGINS = ("rivendell",)
+
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))
 UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")

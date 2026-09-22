@@ -247,6 +247,55 @@ SETTINGS = (
     {"key": "TUNNEL_CONFIG_FILE", "type": "path", "live": False,
      "group": "TUNNEL", "label": "CONFIG FILE", "hint": "optional client config",
      "about": "Passed to the tunnel client when set."},
+
+    # --- plugins ------------------------------------------------------------
+    # External workers the bridge runs on someone else's behalf. All live: the
+    # rivendell worker re-reads config per connection/review, and saving any of
+    # these nudges it (see _side_effects) — no bridge restart needed.
+    {"key": "RIVENDELL_ENABLE", "type": "bool", "live": True,
+     "group": "PLUGINS", "label": "RIVENDELL REVIEWS",
+     "hint": "run PR reviews requested from a Rivendell dashboard",
+     "about": "Holds a websocket open to a rivendell-api instance and turns its "
+              "\"Request review\" button into autonomous Claude runs (origin "
+              "\"rivendell\" in the session list). Each review runs with full "
+              "autonomy (bypassPermissions) in the WORKDIR below, so only enable "
+              "this against an API you own. Needs the API URL and TOKEN set."},
+    {"key": "RIVENDELL_API_URL", "type": "str", "live": True,
+     "group": "PLUGINS", "label": "RIVENDELL API URL",
+     "hint": "base URL of the rivendell-api instance",
+     "placeholder": "http://localhost:3001",
+     "about": "Where review prompts are fetched and results posted. The "
+              "websocket address is derived from it (http→ws, path /agent) "
+              "unless WS URL overrides it."},
+    {"key": "RIVENDELL_TOKEN", "type": "secret", "live": True,
+     "group": "PLUGINS", "label": "RIVENDELL TOKEN",
+     "hint": "bearer token minted in Rivendell → Profile → Tokens (LLM capability)",
+     "about": "Authenticates both the websocket and the REST calls. Shown "
+              "masked and never returned in full; revoke it from the Rivendell "
+              "dashboard if it leaks."},
+    {"key": "RIVENDELL_WS_URL", "type": "str", "live": True,
+     "group": "PLUGINS", "label": "RIVENDELL WS URL",
+     "hint": "optional; overrides the address derived from the API URL",
+     "placeholder": "ws://localhost:3001/agent",
+     "about": "Only needed when the websocket lives somewhere the simple "
+              "http→ws derivation can't reach (a different host or path)."},
+    {"key": "RIVENDELL_MODEL", "type": "str", "live": True,
+     "group": "PLUGINS", "label": "RIVENDELL MODEL",
+     "hint": "model review sessions run with (passed to claude --model)",
+     "about": "Any id the claude CLI accepts. Applies from the next review."},
+    {"key": "RIVENDELL_WORKDIR", "type": "path", "live": True, "allow_empty": True,
+     "group": "PLUGINS", "label": "RIVENDELL WORKDIR",
+     "hint": "where review sessions run; empty falls back to BASE_PATH",
+     "about": "Reviews check out branches and read diffs here, one at a time. "
+              "Point it at a dedicated checkout under BASE_PATH so the "
+              "dashboard's project label stays clean and your own working "
+              "trees are never touched."},
+    {"key": "RIVENDELL_REVIEW_TIMEOUT", "type": "int", "live": True,
+     "min": 60, "max": 86400, "unit": "seconds",
+     "group": "PLUGINS", "label": "RIVENDELL REVIEW TIMEOUT",
+     "hint": "wall-clock cap for one review before it is failed",
+     "about": "A review that outlives this is interrupted and reported FAILED "
+              "back to rivendell-api; the transcript stays in the dashboard."},
 )
 
 _BY_KEY = {s["key"]: s for s in SETTINGS}
@@ -375,6 +424,20 @@ def set_value(key: str, raw) -> None:
         except OSError:
             pass                         # the in-memory value still holds for this process
     apply()
+    _side_effects(key)
+
+
+def _side_effects(key: str) -> None:
+    """Live consequences beyond a config attribute. Settings whose consumer is a
+    long-lived thread (not a per-call config read) get nudged here so a save
+    takes effect now rather than on the next start. Never raises: the save
+    itself already succeeded."""
+    if key.startswith("RIVENDELL_"):
+        try:
+            from bridge import rivendell   # local import: not needed at boot
+            rivendell.reconfigure()
+        except Exception:  # noqa: BLE001 — a plugin hiccup must not fail the save
+            pass
 
 
 def _shown(spec: dict, value):
