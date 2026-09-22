@@ -256,6 +256,9 @@ RIVENDELL_WORKDIR = os.path.realpath(os.path.expanduser(
     else ""
 # Wall-clock cap for one review before it is interrupted and reported failed.
 RIVENDELL_REVIEW_TIMEOUT = int(os.environ.get("RIVENDELL_REVIEW_TIMEOUT", "3600"))
+# Wall-clock cap for one task implementation. Implementations write code, run
+# tests and push — routinely 2-3x a review's wall clock, hence the 3h default.
+RIVENDELL_IMPL_TIMEOUT = int(os.environ.get("RIVENDELL_IMPL_TIMEOUT", "10800"))
 
 # Session origins that belong to plugin workers. Their sessions are listed even
 # when their project is a container dir (a plugin's default workdir is

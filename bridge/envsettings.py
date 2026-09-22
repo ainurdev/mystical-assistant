@@ -296,6 +296,14 @@ SETTINGS = (
      "hint": "wall-clock cap for one review before it is failed",
      "about": "A review that outlives this is interrupted and reported FAILED "
               "back to rivendell-api; the transcript stays in the dashboard."},
+    {"key": "RIVENDELL_IMPL_TIMEOUT", "type": "int", "live": True,
+     "min": 60, "max": 86400, "unit": "seconds",
+     "group": "PLUGINS", "label": "RIVENDELL IMPL TIMEOUT",
+     "hint": "wall-clock cap for one task implementation before it is failed",
+     "about": "Implementations write code, run tests and push, so they get a "
+              "longer leash than reviews. One that outlives this is "
+              "interrupted and reported FAILED back to rivendell-api; the "
+              "transcript stays in the dashboard."},
 )
 
 _BY_KEY = {s["key"]: s for s in SETTINGS}

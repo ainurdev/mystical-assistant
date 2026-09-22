@@ -135,12 +135,31 @@ def test_handle_message_filters_and_dedups():
     rivendell._seen.clear()
     _drain_queue()
     event = json.dumps({"type": "pr-review-request", "requestId": "abc",
-                        "pullRequest": {"number": 7}}).encode()
+                        "pullRequest": {"number": 7,
+                                        "repositoryFullName": "acme/app"}}).encode()
     rivendell._handle_message(event)
     rivendell._handle_message(event)                       # duplicate: dropped
     rivendell._handle_message(b"not json at all")          # noise: ignored
     rivendell._handle_message(json.dumps({"type": "other"}).encode())
-    assert _drain_queue() == ["abc"]
+    assert _drain_queue() == [("review", "abc", "acme/app")]
+
+
+def test_handle_message_implementation_requests():
+    """task-implementation-request events queue as "impl" with the repo slug;
+    dedup is per kind, so a review and an implementation may share an id."""
+    rivendell._seen.clear()
+    _drain_queue()
+    impl = json.dumps({"type": "task-implementation-request",
+                       "requestId": "abc",
+                       "task": {"name": "Add login"},
+                       "repository": {"fullName": "acme/app-mirror"}}).encode()
+    review = json.dumps({"type": "pr-review-request", "requestId": "abc",
+                         "pullRequest": {"number": 7}}).encode()
+    rivendell._handle_message(impl)
+    rivendell._handle_message(impl)                        # duplicate: dropped
+    rivendell._handle_message(review)                      # other kind: kept
+    assert _drain_queue() == [("impl", "abc", "acme/app-mirror"),
+                              ("review", "abc", None)]
 
 
 # --- job waiting -------------------------------------------------------------
@@ -157,25 +176,97 @@ class _StubJob:
 
 
 def test_wait_job_done_returns_result():
-    ok, text = rivendell._wait_job(_StubJob("done", result="LGTM"))
+    ok, text = rivendell._wait_job(_StubJob("done", result="LGTM"), 60)
     assert ok and text == "LGTM"
 
 
 def test_wait_job_done_falls_back_to_texts():
-    ok, text = rivendell._wait_job(_StubJob("done", texts=["a", "b"]))
+    ok, text = rivendell._wait_job(_StubJob("done", texts=["a", "b"]), 60)
     assert ok and text == "ab"
 
 
 def test_wait_job_error_returns_message():
-    ok, text = rivendell._wait_job(_StubJob("error", error_msg="boom"))
+    ok, text = rivendell._wait_job(_StubJob("error", error_msg="boom"), 60)
     assert not ok and text == "boom"
 
 
-def test_wait_job_timeout_interrupts(monkeypatch):
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_REVIEW_TIMEOUT", 0)
+def test_wait_job_timeout_interrupts():
     job = _StubJob("running")
-    ok, text = rivendell._wait_job(job)
+    ok, text = rivendell._wait_job(job, 0)
     assert not ok and job.interrupted and "timed out" in text
+
+
+# --- repo discovery ----------------------------------------------------------
+
+def _reset_checkout_cache():
+    with rivendell._checkout_lock:
+        rivendell._checkout_cache = {}
+        rivendell._checkout_cache_at = 0.0
+
+
+def test_find_checkout_matches_case_insensitively(monkeypatch):
+    _reset_checkout_cache()
+    monkeypatch.setattr(rivendell.config, "RIVENDELL_WORKDIR", "")
+    monkeypatch.setattr("bridge.browser.list_projects",
+                        lambda: ["/acme/app", "/acme/lib"])
+    monkeypatch.setattr(
+        "bridge.github.remote_slug",
+        lambda path: {"app": "Acme/App", "lib": "acme/lib"}[
+            os.path.basename(path)])
+    expected = os.path.join(rivendell.config.BASE_PATH, "acme/app")
+    assert rivendell._find_checkout("acme/app") == expected
+    assert rivendell._find_checkout("ACME/APP") == expected
+    assert rivendell._find_checkout(None) is None
+
+
+def test_find_checkout_miss_rescans_and_ttl_expires(monkeypatch):
+    _reset_checkout_cache()
+    monkeypatch.setattr(rivendell.config, "RIVENDELL_WORKDIR", "")
+    projects = ["/acme/app"]
+    scans = []
+    monkeypatch.setattr("bridge.browser.list_projects",
+                        lambda: scans.append(1) or list(projects))
+    monkeypatch.setattr("bridge.github.remote_slug",
+                        lambda path: f"acme/{os.path.basename(path)}")
+
+    assert rivendell._find_checkout("acme/new") is None    # miss: scanned once
+    projects.append("/acme/new")
+    assert rivendell._find_checkout("acme/new") is not None  # miss: rescan finds it
+    assert rivendell._find_checkout("acme/app") is not None  # hit: cache, no scan
+    assert len(scans) == 2
+
+    # An expired cache rescans even on a hit.
+    rivendell._checkout_cache_at = 0.0
+    assert rivendell._find_checkout("acme/app") is not None
+    assert len(scans) == 3
+
+
+def test_find_checkout_prefers_matching_workdir(monkeypatch):
+    _reset_checkout_cache()
+    monkeypatch.setattr(rivendell.config, "RIVENDELL_WORKDIR", "/dedicated/app")
+    monkeypatch.setattr("bridge.github.remote_slug",
+                        lambda path: "acme/app" if path == "/dedicated/app" else None)
+    monkeypatch.setattr("bridge.browser.list_projects", lambda: [])
+    assert rivendell._find_checkout("acme/app") == "/dedicated/app"
+
+
+def test_run_implementation_fails_without_checkout(monkeypatch):
+    """No local checkout for the slug -> FAILED result, never a fallback run."""
+    posted = []
+    monkeypatch.setattr(rivendell, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "do it",
+                                                "repositoryFullName": "acme/gone"})
+    monkeypatch.setattr(rivendell, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(rivendell, "_post_result",
+                        lambda kind_path, rid, ok, text:
+                        posted.append((kind_path, rid, ok, text)))
+    monkeypatch.setattr(
+        rivendell, "_start_run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    rivendell._run_implementation("r1", "acme/other")
+    assert posted == [("implementation-requests", "r1", False,
+                       f"no local checkout for 'acme/gone' under "
+                       f"{rivendell.config.BASE_PATH}")]
 
 
 # --- config ------------------------------------------------------------------
