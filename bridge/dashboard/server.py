@@ -356,7 +356,11 @@ class Handler(BaseHTTPRequestHandler):
                     else store.list_sessions_all(chat))
             # Sessions of a since-deleted dir (e.g. a removed worktree checkout)
             # stay out of the lists; their transcripts remain viewable by id.
-            rows = [r for r in rows if browser.project_exists(r["project"])]
+            # Plugin-worker sessions are exempt: their default workdir is
+            # BASE_PATH itself ("/", never a project), and a run the PLUGINS
+            # tab exists to show must not be filtered into invisibility.
+            rows = [r for r in rows if r.get("origin") in config.PLUGIN_ORIGINS
+                    or browser.project_exists(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
         # (it takes the first path segment and ignores the rest).

@@ -593,7 +593,10 @@ class Handler(BaseHTTPRequestHandler):
                 else store.list_sessions_all(chat_id))    # no project -> all sessions
         # Sessions of a since-deleted dir (e.g. a removed worktree checkout)
         # stay out of the lists; their transcripts remain viewable by id.
-        rows = [r for r in rows if browser.project_exists(r["project"])]
+        # Plugin-worker sessions are exempt (their workdir may be BASE_PATH
+        # itself, whose rel "/" is never a project) — see dashboard/server.py.
+        rows = [r for r in rows if r.get("origin") in config.PLUGIN_ORIGINS
+                or browser.project_exists(r["project"])]
         self._json({"sessions": [_session_brief(s) for s in rows]})
 
     def _api_sessions_create(self, chat_id: int, body: dict):

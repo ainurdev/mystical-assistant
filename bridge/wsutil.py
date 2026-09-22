@@ -1,15 +1,19 @@
-"""Minimal server-side WebSocket framing (RFC 6455) for the dashboard terminal.
+"""Minimal WebSocket framing (RFC 6455) for the dashboard terminal + clients.
 
 Stdlib only. Localhost, single-user, same trust boundary as the rest of the
 dashboard — so this is deliberately minimal: server frames are sent unmasked,
-client frames are always masked and unmasked here, and only unfragmented frames
-are handled (terminal keystrokes + small control messages never fragment). The
-HTTP Upgrade handshake itself is written by the dashboard Handler using
-``accept_key``; this module only deals with the framing once the socket is hijacked.
+client frames are always masked (``encode_frame(masked=True)`` — the rivendell
+plugin uses this as a websocket CLIENT, where the spec requires masking), and
+only unfragmented frames are handled (terminal keystrokes + small control
+messages never fragment). ``decode_frame`` reads the mask bit per-frame, so it
+works for both directions. The HTTP Upgrade handshake itself is written by the
+dashboard Handler using ``accept_key``; this module only deals with the framing
+once the socket is hijacked.
 """
 
 import base64
 import hashlib
+import os
 import struct
 
 # RFC 6455 magic GUID appended to the client key before hashing.
@@ -29,18 +33,28 @@ def accept_key(client_key: str) -> str:
     return base64.b64encode(digest).decode()
 
 
-def encode_frame(payload: bytes, opcode: int = OP_BINARY) -> bytes:
-    """One final, unmasked server frame carrying ``payload``."""
+def encode_frame(payload: bytes, opcode: int = OP_BINARY, masked: bool = False) -> bytes:
+    """One final frame carrying ``payload``.
+
+    Unmasked by default (server->client). ``masked=True`` produces a client
+    frame with a fresh random masking key, as RFC 6455 requires for anything a
+    client sends.
+    """
     n = len(payload)
     header = bytearray([0x80 | opcode])
+    mask_bit = 0x80 if masked else 0x00
     if n < 126:
-        header.append(n)
+        header.append(mask_bit | n)
     elif n < 65536:
-        header.append(126)
+        header.append(mask_bit | 126)
         header += struct.pack(">H", n)
     else:
-        header.append(127)
+        header.append(mask_bit | 127)
         header += struct.pack(">Q", n)
+    if masked:
+        key = os.urandom(4)
+        header += key
+        payload = bytes(b ^ key[i % 4] for i, b in enumerate(payload))
     return bytes(header) + payload
 
 

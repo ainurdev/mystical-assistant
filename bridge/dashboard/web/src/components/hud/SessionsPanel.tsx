@@ -40,7 +40,7 @@ interface Props {
   onCreateProject: (name: string, prompt: string) => void;
 }
 
-type Mode = "attention" | "projects" | "recent";
+type Mode = "attention" | "projects" | "plugins" | "recent";
 /** Which pieces of a row's provenance it prints. Independent, because the four
  *  presets this replaced could not express the obvious wants — a sidebar that
  *  names the project but not the branch was simply not on the menu. */
@@ -69,8 +69,17 @@ const fieldsFor = (mode: Mode) => (mode === "projects" ? FIELDS.filter((f) => f.
 const DETAIL_DEFAULT: Record<Mode, Detail> = {
   attention: { proj: true, branch: true, wt: true },
   projects: { proj: false, branch: true, wt: true },
+  plugins: { proj: true, branch: true, wt: true },
   recent: { proj: true, branch: true, wt: true },
 };
+
+/** Session origins that belong to plugin workers — the PLUGINS tab's rows. One
+ *  entry per worker the bridge can run, so a second plugin lands as a new lane
+ *  here, not a redesign. The tab itself appears once a plugin is configured
+ *  (its ENABLE setting) or has left sessions behind. */
+const PLUGINS: { origin: string; label: string; flag: string }[] = [
+  { origin: "rivendell", label: "RIVENDELL", flag: "RIVENDELL_ENABLE" },
+];
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -82,7 +91,7 @@ function loadPrefs(): Prefs {
     const r = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") as Partial<Prefs> & { tab?: string };
     // Pre-v3 prefs stored {tab: "recent"|"grouped"} — carry the choice over once.
     const mode: Mode =
-      r.mode === "attention" || r.mode === "projects" || r.mode === "recent" ? r.mode
+      r.mode === "attention" || r.mode === "projects" || r.mode === "plugins" || r.mode === "recent" ? r.mode
         : r.tab === "grouped" ? "projects" : r.tab === "recent" ? "recent" : "attention";
     return {
       mode,
@@ -288,6 +297,16 @@ export function SessionsPanel(props: Props) {
 
   // Browser state — mode + project order remembered across reloads.
   const [mode, setMode] = useState<Mode>(() => loadPrefs().mode);
+  // Whether any plugin worker is configured (its ENABLE flag in the settings
+  // registry) — decides the PLUGINS tab. Read once per load: the flag changes
+  // through the SETTINGS modal, and the next reload is soon enough for a tab.
+  const [pluginsConfigured, setPluginsConfigured] = useState(false);
+  useEffect(() => {
+    void api.envSettings().then((r) =>
+      setPluginsConfigured(PLUGINS.some((p) =>
+        r.settings.some((s) => s.key === p.flag && s.value === true))),
+    ).catch(() => {});
+  }, []);
   const [order, setOrder] = useState<OrderMode>(() => loadPrefs().order);
   const [customOrder, setCustomOrder] = useState<string[]>(() => loadPrefs().custom);
   const [orderMenu, setOrderMenu] = useState(false);
@@ -404,6 +423,16 @@ export function SessionsPanel(props: Props) {
         rows: folds && folded ? all.slice(0, 4) : all,
         fold: folds ? (folded ? `${all.length - 4} more idle ↓` : "show less ↑") : "",
       }];
+    });
+  } else if (mode === "plugins") {
+    // PLUGINS: one lane per worker. An empty lane stays — "RIVENDELL 0" is the
+    // "configured, nothing yet" answer this tab exists to give.
+    lanes = PLUGINS.map(({ origin, label }) => {
+      const rows = sorted.filter((s) => s.origin === origin);
+      return {
+        label, tint: "var(--purple)", count: rows.length,
+        pulse: rows.some((s) => laneOf(s) === "work"), rows, fold: "",
+      };
     });
   } else if (mode === "recent") {
     // RECENT is one flat stream, cut into time buckets — no project grouping.
@@ -787,9 +816,15 @@ export function SessionsPanel(props: Props) {
     </div>
   );
 
+  // The PLUGINS tab earns its slot three ways: a worker is configured, plugin
+  // sessions exist from before, or you are already standing on it (a stale
+  // pref must not strand the pill on a tab that isn't rendered).
+  const pluginRows = sorted.filter((s) => PLUGINS.some((p) => p.origin === s.origin));
+  const showPlugins = pluginsConfigured || pluginRows.length > 0 || mode === "plugins";
   const modeTabs: { id: Mode; label: string; count: number; tip: string }[] = [
     { id: "attention", label: "Attention", count: sorted.filter((s) => laneOf(s) !== "idle").length, tip: "Grouped by what each session wants from you" },
     { id: "projects", label: "Projects", count: groups.length, tip: "Grouped by project" },
+    ...(showPlugins ? [{ id: "plugins" as Mode, label: "Plugins", count: pluginRows.length, tip: "Sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", count: sorted.length, tip: "One flat stream, newest first" },
   ];
 
