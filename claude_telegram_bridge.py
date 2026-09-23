@@ -166,8 +166,12 @@ def main():
         if config.TOKEN:
             report.boot()              # Monday-morning weekly report (catches up a dark Monday)
         dream.boot()                   # nightly per-repo digest (catches up a night asleep)
-        if config.RIVENDELL_ENABLE:
-            rivendell.start()          # rivendell-api PR-review websocket client
+        # Always reconcile: the enabled set lives per-instance in the instances
+        # store (dashboard PLUGINS tab), not in the RIVENDELL_ENABLE env flag —
+        # which now only seeds the migrated "production" instance. start() is a
+        # no-op when nothing is enabled, and dials every enabled instance the
+        # moment the bridge is up, without waiting for a settings save.
+        rivendell.start()              # rivendell-api agent websocket client(s)
         # Telegram LAST: the login launcher blocks on the dashboard port above,
         # and a cold boot's not-yet-ready network must not gate the window. A
         # failed getMe is a warning, not an exit — get_updates already retries

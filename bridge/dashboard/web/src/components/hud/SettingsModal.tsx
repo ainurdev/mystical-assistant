@@ -2448,6 +2448,7 @@ function riStatusView(s?: RivendellStatus) {
     case "connected": return { color: "var(--ok)", label: "CONNECTED", glow: true };
     case "connecting": return { color: "var(--warn)", label: "CONNECTING…", glow: false };
     case "error": return { color: "var(--err)", label: "DISCONNECTED", glow: false };
+    case "auth_error": return { color: "var(--err)", label: "TOKEN REJECTED", glow: false };
     default: return { color: "var(--txd)", label: "OFF", glow: false };
   }
 }
@@ -2637,6 +2638,11 @@ function RivendellPanel() {
                       : null}
                     {st === "error" && c.status?.detail
                       ? <div style={{ marginTop: 4, color: "var(--err)" }}>reconnecting — {c.status.detail}</div>
+                      : null}
+                    {st === "auth_error"
+                      ? <div style={{ marginTop: 4, color: "var(--err)" }}>
+                          token rejected — not reconnecting until you change it{c.status?.detail ? <> · {c.status.detail}</> : null}
+                        </div>
                       : null}
                     <div style={{ marginTop: 4, ...dim }}>
                       workdir <span style={mono}>{c.workdir || "BASE_PATH"}</span>
