@@ -105,6 +105,19 @@ def test_an_unrecognised_error_event_still_shows_its_message():
     assert "boom" in o["detail"]
 
 
+def test_old_cli_rejected_by_the_api_reads_as_outdated_not_out_of_context():
+    """2026-09-22, verbatim. It starts "Prompt is too long", so it used to be
+    labelled OUT OF CONTEXT, which says to compact, and compacting is the call
+    the API rejected. What fixes it is `claude update`."""
+    text = ("Prompt is too long · automatic compaction failed: API Error: 400 "
+            "Claude Code 2.1.263 does not support this model; version 2.1.280 or "
+            "newer is required. Run 'claude update', or update the Claude desktop "
+            "app, then try again.")
+    o = outcomes.outcome(_turn(elapsed=3, cost=0),
+                         _sig(has_text=True, has_result=True, result_text=text))
+    assert o["code"] == "outdated"
+
+
 def test_stopped_by_the_user_is_not_a_failure_to_explain():
     o = outcomes.outcome(_turn(), _sig(stopped=True, has_text=True))
     assert o["code"] == "stopped"

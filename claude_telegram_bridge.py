@@ -204,6 +204,9 @@ def main():
     # The dashboard's "update" pulled new commits and asked for a restart: re-exec
     # now that everything is stopped, so the fresh code runs in this same PID.
     if selfupdate.restart_requested:
+        if selfupdate.claude_update_requested:
+            print("↻ Updating Claude Code…")
+            selfupdate.run_claude_update()
         print("↻ Restarting after update…")
         selfupdate.exec_self()
 

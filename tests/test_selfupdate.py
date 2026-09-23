@@ -118,6 +118,54 @@ def test_restart_endpoint_arms_a_restart():
     assert box["code"] == 200 and box["obj"] == {"ok": True}
 
 
+def test_claude_update_endpoint_arms_the_update_and_a_restart():
+    """POST /local/claude/update doesn't install anything itself: it flags the
+    update and restarts, and the install runs once the bridge is down."""
+    called = []
+    saved_restart, saved_flag = selfupdate.restart, selfupdate.claude_update_requested
+    selfupdate.restart = lambda *a, **k: called.append(True)
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    try:
+        h._post_api("/local/claude/update", {})
+        assert selfupdate.claude_update_requested is True
+    finally:
+        selfupdate.restart = saved_restart
+        selfupdate.claude_update_requested = saved_flag
+    assert called == [True]
+    assert box["code"] == 200 and box["obj"] == {"ok": True}
+
+
+def test_claude_update_stops_live_claude_children_before_it_runs():
+    """The install must not share the machine with running sessions. A child is
+    terminated, not job.stop()ped: that would mark its turn user-stopped, and
+    boot recovery has to resume it like after any restart."""
+    from bridge import runner
+    tmp = tempfile.mkdtemp()
+    seen = os.path.join(tmp, "seen")
+    child = subprocess.Popen(["sleep", "60"])
+    fake = os.path.join(tmp, "claude")
+    with open(fake, "w") as f:
+        f.write(f"#!/bin/sh\n(kill -0 {child.pid} 2>/dev/null && echo alive"
+                f" || echo dead) > {seen}\necho \"$@\" >> {seen}\n")
+    os.chmod(fake, 0o755)
+    job = runner.Job("j-upd", 555)
+    job.proc = child
+    runner._jobs[job.id] = job
+    saved_bin = runner.claude_bin
+    runner.claude_bin = lambda: fake
+    try:
+        selfupdate.run_claude_update()
+    finally:
+        runner.claude_bin = saved_bin
+        runner._jobs.pop(job.id, None)
+        child.kill()
+    with open(seen) as f:
+        assert f.read().split() == ["dead", "update"]
+    assert not job.interrupted
+
+
 def test_no_upstream_yields_nothing():
     d = tempfile.mkdtemp()
     subprocess.run(["git", "init", "-q", d], check=True)

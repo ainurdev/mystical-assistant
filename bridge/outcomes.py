@@ -70,6 +70,9 @@ _SAYS = {
     "context": ("OUT OF CONTEXT",
                 "The conversation outgrew the window. Start a fresh session, or "
                 "let autocompact take it."),
+    "outdated": ("CLAUDE CODE OUTDATED",
+                 "This model is newer than the installed Claude Code, so the API "
+                 "turned it away. Update Claude Code, then re-send."),
     "stopped": ("YOU STOPPED IT", "Stopped from a surface, not a failure."),
     "empty": ("NO ANSWER",
               "It was working and then handed back a blank result. The partial "
@@ -144,6 +147,10 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
             code = "limit"
         elif limits.is_server_error(msg):
             code = "overloaded"
+        elif limits.is_outdated_error(msg):
+            # Before context: it can ride a failed compaction ("Prompt is too
+            # long · …"), and compacting is the call the API refused.
+            code = "outdated"
         elif limits.is_context_error(msg):
             code = "context"
         else:

@@ -1075,6 +1075,7 @@ export const api = {
     req<{ ok: boolean; output: string; message: string }>(
       "/local/update/publish", { method: "POST", body: {} }),
   restart: () => req<{ ok: boolean }>("/local/restart", { method: "POST", body: {} }),
+  updateClaude: () => req<{ ok: boolean }>("/local/claude/update", { method: "POST", body: {} }),
   projects: (dir?: string) =>
     req<ProjectsListing>(`/local/projects${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`),
   sessions: (project?: string) =>

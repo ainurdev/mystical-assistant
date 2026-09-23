@@ -129,6 +129,51 @@ def test_is_context_error_matches_real_shapes():
         assert not limits.is_context_error(t), f"should NOT match: {t!r}"
 
 
+# 2026-09-22, verbatim: a model newer than the installed CLI. The 400 came back
+# on the auto-compaction call, so it also reads as a context error.
+OUTDATED = ("Prompt is too long · automatic compaction failed: API Error: 400 "
+            "Claude Code 2.1.263 does not support this model; version 2.1.280 or "
+            "newer is required. Run 'claude update', or update the Claude desktop "
+            "app, then try again.")
+
+
+def test_is_outdated_error_matches_the_api_rejecting_an_old_cli():
+    assert limits.is_outdated_error(OUTDATED)
+    no = [
+        "Prompt is too long",
+        "API Error: 529 Overloaded",
+        # Only a warning: on 2026-09-02 it was the whole stderr of a turn that
+        # died of something else.
+        '[claude-code:unrecognized_model] {"model":"claude-fable-5-1"}',
+        "",
+        None,
+    ]
+    for t in no:
+        assert not limits.is_outdated_error(t), f"should NOT match: {t!r}"
+
+
+def test_runner_outdated_cli_says_update_not_compact():
+    """Compacting is the very call the API rejected, so the context advice
+    ("run /compact") fails the same way. No resume either: the same CLI would
+    be rejected again."""
+    s = store.create_session(CHAT, "old", cwd="/tmp/old")
+    store.set_claude_session_id(s["id"], "c-old")
+    job = runner.Job("j-old", CHAT, s["id"])
+    job.status = "error"
+    job.result = OUTDATED
+
+    notes = []
+    saved_notify, saved_auto = runner._notify, config.AUTO_RESUME
+    runner._notify = lambda chat, text, kb=None: notes.append(text)
+    config.AUTO_RESUME = True
+    try:
+        assert runner._maybe_auto_resume(job, "/tmp/old", "opus", None) is False
+    finally:
+        runner._notify, config.AUTO_RESUME = saved_notify, saved_auto
+    assert len(notes) == 1 and "claude update" in notes[0]
+    assert "compact" not in notes[0]
+
+
 def test_is_auth_error_matches_the_dead_login_shapes():
     yes = [
         "Failed to authenticate: OAuth session expired and could not be refreshed",

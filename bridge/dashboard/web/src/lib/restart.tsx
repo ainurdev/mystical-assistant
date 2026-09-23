@@ -45,9 +45,9 @@ export function RestartIntro(props: { theme: ThemeKey; scanlines: boolean }) {
 }
 
 /** Ride out a re-exec behind the overlay and reload into the new process, for
-    whoever asked for one — the restart action here, or PULL & RESTART. Returns
-    only if the bridge never came back. */
-export async function watchRestart(signal = "SIGINT") {
+    whoever asked for one — the restart action here, PULL & RESTART, or UPDATE
+    CLAUDE. Returns only if the bridge never came back. */
+export async function watchRestart(signal = "SIGINT", tries = 60) {
   let steps: BootStep[] = STEPS.map((s) => ({ ...s, phase: "wait", detail: "" }));
   const mark = (key: string, phase: "ok" | "fail", detail: string) => {
     steps = steps.map((s) => (s.key === key && s.phase === "wait" ? { ...s, phase, detail } : s));
@@ -57,7 +57,7 @@ export async function watchRestart(signal = "SIGINT") {
 
   // Every request fails while it re-execs; the first one that lands is the new
   // process, so reload into it.
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < tries; i++) {
     await new Promise((r) => setTimeout(r, 1500));
     try {
       await api.state();
@@ -88,4 +88,22 @@ export async function restartBridge() {
     return;
   }
   await watchRestart();
+}
+
+/** For a turn the API refused because the CLI is older than the model: the same
+    re-exec, with `claude update` run while the bridge is down. The install can
+    take minutes on a slow link (the server gives it 300s), so wait up to 6. */
+export async function updateClaude() {
+  const ok = await askConfirm(
+    "Update Claude Code and restart the bridge? Running turns stop while it installs " +
+    "and resume after; the dashboard reloads itself when it's back.",
+  );
+  if (!ok) return;
+  try {
+    await api.updateClaude();
+  } catch (e) {
+    notify("error", (e as Error).message);
+    return;
+  }
+  await watchRestart("CLAUDE UPDATE", 240);
 }

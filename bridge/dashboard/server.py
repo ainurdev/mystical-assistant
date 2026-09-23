@@ -1132,6 +1132,10 @@ class Handler(BaseHTTPRequestHandler):
             # dashboard) so code already on disk becomes the code running.
             selfupdate.restart()
             return self._json({"ok": True})
+        if path == "/local/claude/update":
+            # the same re-exec, with `claude update` run while the bridge is down
+            selfupdate.update_claude()
+            return self._json({"ok": True})
         if path == "/local/files/write":
             # EDITOR tab :w / Ctrl-S — save a working-tree file to disk
             cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())

@@ -7,6 +7,11 @@ claude_telegram_bridge.py by absolute path from it), so "update" is a
 reuses the normal SIGINT path — clean shutdown, then `os.execv` re-runs the same
 interpreter/argv/env in place, so the PID (and `mystical`'s pidfile) survives and
 startup recovery resumes the turns the restart interrupted. Stdlib only.
+
+The same restart also carries the Claude CLI's own update, for when a new model
+outruns the installed CLI and the API starts refusing it. `claude update` runs
+in the gap between shutdown and re-exec, once the Claude children are stopped.
+Running it by hand with the bridge up lagged the whole machine (2026-09-22).
 """
 
 import os
@@ -15,12 +20,14 @@ import subprocess
 import sys
 import threading
 
-from bridge import git
+from bridge import git, runner
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Set by restart(); read by the entry point after its shutdown finishes.
 restart_requested = False
+# Set by update_claude(); the entry point runs run_claude_update() before re-exec.
+claude_update_requested = False
 
 
 def check() -> dict:
@@ -81,6 +88,26 @@ def restart(delay: float = 0.5) -> None:
     global restart_requested
     restart_requested = True
     threading.Timer(delay, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
+
+
+def update_claude() -> None:
+    global claude_update_requested
+    claude_update_requested = True
+    restart()
+
+
+def run_claude_update() -> None:
+    """Stop the Claude children, then install the new CLI. Their turns stay
+    'running' (shutdown has set state.shutting_down), so boot recovery resumes
+    them on the new binary. A failed update still restarts, because getting the
+    bridge back matters more. The output goes to the bridge log."""
+    runner.stop_children()
+    try:
+        p = subprocess.run([runner.claude_bin(), "update"], capture_output=True,
+                           text=True, timeout=300)
+        print(f"claude update → {p.returncode}\n{(p.stdout + p.stderr).strip()}")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"claude update failed: {e}", file=sys.stderr)
 
 
 def exec_self() -> None:

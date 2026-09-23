@@ -98,6 +98,15 @@ def is_context_error(text: "str | None") -> bool:
     return bool(_CONTEXT_RE.search(text or ""))
 
 
+# The API turning away a CLI older than the model (2026-09-22: "Claude Code
+# 2.1.263 does not support this model; version 2.1.280 or newer is required").
+# It can arrive as a failed auto-compaction, "Prompt is too long · automatic
+# compaction failed: API Error: 400 …", so callers ask this before
+# is_context_error. Neither a wait nor a retry: only `claude update` clears it.
+def is_outdated_error(text: "str | None") -> bool:
+    return "does not support this model" in (text or "")
+
+
 # Turn-death texts that mean "the login behind this turn is dead". Also not a
 # wait: no reset and no retry clears it — only a fresh sign-in does — so like
 # the context error it gets no defer() counterpart. The caller stops and hands

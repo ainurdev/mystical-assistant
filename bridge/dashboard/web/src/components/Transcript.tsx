@@ -8,6 +8,7 @@ import { RunStream, TURN_TAIL } from "./RunStream";
 import type { OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
+import { updateClaude } from "../lib/restart";
 import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
@@ -92,6 +93,16 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
       <span className="text-[length:var(--t95)] opacity-70" style={{ color: tone }}>
         {outcome.detail}
       </span>
+      {outcome.code === "outdated" && (
+        <button
+          type="button"
+          onClick={() => void updateClaude()}
+          className="mt-0.5 self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px] hover:bg-accent"
+          style={{ color: "var(--acc)", borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
+        >
+          UPDATE CLAUDE & RESTART
+        </button>
+      )}
     </div>
   );
 }

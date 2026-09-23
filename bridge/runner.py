@@ -757,6 +757,21 @@ def get_job(job_id: str) -> Job | None:
         return _jobs.get(job_id)
 
 
+def stop_children() -> None:
+    """SIGTERM every live child and wait for it (SIGKILL after 10s). Not
+    Job.stop(): that marks the turn user-stopped, and turns a restart stops
+    must stay resumable."""
+    with _jobs_lock:
+        procs = [j.proc for j in _jobs.values() if j.proc and j.proc.poll() is None]
+    for p in procs:
+        p.terminate()
+    for p in procs:
+        try:
+            p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+
+
 def _with_images(prompt: str, image_paths: list[str] | None) -> str:
     """Point the model at what it was sent. Attachments stay on disk (the upload
     dir) rather than going inline: a screenshot is a megabyte of base64, and the
@@ -1195,6 +1210,16 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         # prompt to the same expired token and fail identically, five times
         # over, so stop and hand back the way back in instead.
         _auth_stop(job.chat_id, sid, job.account_slot, cwd, model, effort)
+        return False
+    if limits.is_outdated_error(job.result or job.error_msg):
+        # The API refused this CLI for the model. A resume runs the same CLI and
+        # is refused again. It can arrive as a failed compaction, so it goes
+        # before the context branch, whose "/compact" would fail the same way.
+        _notify(job.chat_id,
+                f"⬆️ {_session_label(sid)}: this model needs a newer Claude Code. "
+                f"Run claude update (or UPDATE CLAUDE on the failed turn in the "
+                f"dashboard), then re-send.",
+                _session_kb(job.chat_id, sid, "🛠 Open session"))
         return False
     if limits.is_context_error(job.result or job.error_msg):
         # The transcript no longer fits the window. A resume resends the same
