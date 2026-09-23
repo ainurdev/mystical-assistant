@@ -1,9 +1,11 @@
 """Unit tests for the rivendell PR-review plugin (bridge/rivendell.py).
 
-Covers the pure/mechanical parts: client-frame masking round-trips through the
-server-side decoder (the same code rivendell-api's `ws` library implements),
-the RFC 6455 client handshake against a socketpair-backed fake server, event
-filtering/dedup, job waiting, and the WS-URL derivation. No network, no Claude.
+Covers the pure/mechanical parts of one Worker (one rivendell-api connection):
+client-frame masking round-trips through the server-side decoder (the same code
+rivendell-api's `ws` library implements), the RFC 6455 client handshake against
+a socketpair-backed fake server, event filtering/dedup, job waiting, the WS-URL
+derivation, and the manager that starts/stops/rewires workers to match the
+enabled instances. No network, no Claude.
 """
 
 import base64
@@ -17,14 +19,26 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-os.environ["BASE_PATH"] = tempfile.mkdtemp()
+os.environ.setdefault("BASE_PATH", tempfile.mkdtemp())
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
-os.environ["ALLOWED_CHAT_IDS"] = "555"
-os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
-os.environ["RIVENDELL_API_URL"] = "http://api.example:3001"
-os.environ["RIVENDELL_TOKEN"] = "rvd_testtoken"
+os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
+os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 from bridge import rivendell, wsutil  # noqa: E402
+
+
+def _inst(**kw):
+    """A worker config dict with sensible defaults; override per test."""
+    d = {"id": "t1", "name": "test", "enable": True,
+         "api_url": "http://api.example:3001", "token": "rvd_testtoken",
+         "ws_url": "", "model": "opus", "workdir": "",
+         "review_timeout": 3600, "impl_timeout": 10800}
+    d.update(kw)
+    return d
+
+
+def _worker(**kw):
+    return rivendell.Worker(_inst(**kw))
 
 
 # --- framing -----------------------------------------------------------------
@@ -57,16 +71,11 @@ def test_unmasked_default_unchanged():
 # --- handshake ---------------------------------------------------------------
 
 def test_client_handshake(monkeypatch):
-    """_connect sends a well-formed upgrade (with the bearer header) and
-    verifies the Sec-WebSocket-Accept echo."""
+    """_connect sends a well-formed upgrade (with the instance's bearer header)
+    and verifies the Sec-WebSocket-Accept echo."""
     server, client = socket.socketpair()
-    monkeypatch.setattr(
-        "socket.create_connection", lambda *a, **k: client)
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_WS_URL",
-                        "ws://api.example:3001/agent")
-    # Pinned here, not via os.environ at module import: another test file may
-    # have imported bridge.config first, freezing the env before ours applied.
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_TOKEN", "rvd_testtoken")
+    monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
+    w = _worker(ws_url="ws://api.example:3001/agent", token="rvd_testtoken")
 
     captured = {}
 
@@ -86,7 +95,7 @@ def test_client_handshake(monkeypatch):
 
     t = threading.Thread(target=fake_server, daemon=True)
     t.start()
-    sock, rfile = rivendell._connect()
+    sock, rfile = w._connect()
     t.join(timeout=5)
 
     assert "GET /agent HTTP/1.1" in captured["request"]
@@ -102,8 +111,7 @@ def test_client_handshake(monkeypatch):
 def test_client_handshake_rejects_bad_accept(monkeypatch):
     server, client = socket.socketpair()
     monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_WS_URL",
-                        "ws://api.example:3001/agent")
+    w = _worker(ws_url="ws://api.example:3001/agent")
 
     def fake_server():
         request = b""
@@ -114,7 +122,7 @@ def test_client_handshake_rejects_bad_accept(monkeypatch):
 
     threading.Thread(target=fake_server, daemon=True).start()
     try:
-        rivendell._connect()
+        w._connect()
         raised = False
     except ConnectionError:
         raised = True
@@ -124,23 +132,94 @@ def test_client_handshake_rejects_bad_accept(monkeypatch):
 
 # --- event handling ----------------------------------------------------------
 
-def _drain_queue():
+def _drain(w):
     drained = []
-    while not rivendell._queue.empty():
-        drained.append(rivendell._queue.get_nowait())
+    while not w._queue.empty():
+        drained.append(w._queue.get_nowait())
     return drained
 
 
 def test_handle_message_filters_and_dedups():
-    rivendell._seen.clear()
-    _drain_queue()
+    w = _worker()
     event = json.dumps({"type": "pr-review-request", "requestId": "abc",
-                        "pullRequest": {"number": 7}}).encode()
-    rivendell._handle_message(event)
-    rivendell._handle_message(event)                       # duplicate: dropped
-    rivendell._handle_message(b"not json at all")          # noise: ignored
-    rivendell._handle_message(json.dumps({"type": "other"}).encode())
-    assert _drain_queue() == ["abc"]
+                        "pullRequest": {"number": 7,
+                                        "repositoryFullName": "acme/app"}}).encode()
+    w._handle_message(event)
+    w._handle_message(event)                       # duplicate: dropped
+    w._handle_message(b"not json at all")          # noise: ignored
+    w._handle_message(json.dumps({"type": "other"}).encode())
+    assert _drain(w) == [("review", "abc", "acme/app")]
+
+
+def test_handle_message_implementation_requests():
+    """task-implementation-request events queue as "impl" with the repo slug;
+    dedup is per kind, so a review and an implementation may share an id."""
+    w = _worker()
+    impl = json.dumps({"type": "task-implementation-request",
+                       "requestId": "abc",
+                       "task": {"name": "Add login"},
+                       "repository": {"fullName": "acme/app-mirror"}}).encode()
+    review = json.dumps({"type": "pr-review-request", "requestId": "abc",
+                         "pullRequest": {"number": 7}}).encode()
+    w._handle_message(impl)
+    w._handle_message(impl)                        # duplicate: dropped
+    w._handle_message(review)                      # other kind: kept
+    assert _drain(w) == [("impl", "abc", "acme/app-mirror"),
+                         ("review", "abc", None)]
+
+
+def test_handle_message_todolist_requests():
+    """project-todolist-request events queue as "todolist" with the project
+    name; they carry no repo (the prompt has the whole project context)."""
+    w = _worker()
+    tl = json.dumps({"type": "project-todolist-request",
+                     "requestId": "t9",
+                     "project": {"id": "p1", "name": "Rivendell"}}).encode()
+    w._handle_message(tl)
+    w._handle_message(tl)                          # duplicate: dropped
+    assert _drain(w) == [("todolist", "t9", "Rivendell")]
+
+
+def test_todolist_dedup_is_separate_from_review_and_impl():
+    """The three kinds have separate id spaces — the same id in each is kept."""
+    w = _worker()
+    for typ, extra in (("pr-review-request", {"pullRequest": {}}),
+                       ("task-implementation-request",
+                        {"task": {}, "repository": {}}),
+                       ("project-todolist-request", {"project": {}})):
+        w._handle_message(json.dumps({"type": typ, "requestId": "same", **extra}).encode())
+    kinds = [k for (k, _rid, _s) in _drain(w)]
+    assert kinds == ["review", "impl", "todolist"]
+
+
+def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
+    """A todolist needs no repo match: it runs in the worker's workdir and never
+    calls _find_checkout."""
+    w = _worker(workdir="/dedicated")
+    posted, ran = [], []
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "make a checklist"})
+    monkeypatch.setattr(w, "_find_checkout",
+                        lambda slug: (_ for _ in ()).throw(AssertionError("no checkout for todolists")))
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir: ran.append((prompt, workdir)) or _StubJob("done", result="- [ ] do it"))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    w._run_todolist("t1", "Rivendell")
+    assert ran == [("make a checklist", "/dedicated")]
+    assert posted == [("todolist-requests", "t1", True, "- [ ] do it")]
+
+
+def test_workers_have_independent_queues():
+    """Two instances dedup and queue separately — the same request id in each
+    is two runs, not one deduped away."""
+    a, b = _worker(id="a", name="prod"), _worker(id="b", name="local")
+    event = json.dumps({"type": "pr-review-request", "requestId": "x",
+                        "pullRequest": {"repositoryFullName": "acme/app"}}).encode()
+    a._handle_message(event)
+    b._handle_message(event)
+    assert _drain(a) == [("review", "x", "acme/app")]
+    assert _drain(b) == [("review", "x", "acme/app")]
 
 
 # --- job waiting -------------------------------------------------------------
@@ -157,64 +236,208 @@ class _StubJob:
 
 
 def test_wait_job_done_returns_result():
-    ok, text = rivendell._wait_job(_StubJob("done", result="LGTM"))
+    ok, text = _worker()._wait_job(_StubJob("done", result="LGTM"), 60)
     assert ok and text == "LGTM"
 
 
 def test_wait_job_done_falls_back_to_texts():
-    ok, text = rivendell._wait_job(_StubJob("done", texts=["a", "b"]))
+    ok, text = _worker()._wait_job(_StubJob("done", texts=["a", "b"]), 60)
     assert ok and text == "ab"
 
 
 def test_wait_job_error_returns_message():
-    ok, text = rivendell._wait_job(_StubJob("error", error_msg="boom"))
+    ok, text = _worker()._wait_job(_StubJob("error", error_msg="boom"), 60)
     assert not ok and text == "boom"
 
 
-def test_wait_job_timeout_interrupts(monkeypatch):
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_REVIEW_TIMEOUT", 0)
+def test_wait_job_timeout_interrupts():
     job = _StubJob("running")
-    ok, text = rivendell._wait_job(job)
+    ok, text = _worker()._wait_job(job, 0)
     assert not ok and job.interrupted and "timed out" in text
 
 
-# --- config ------------------------------------------------------------------
+# --- repo discovery ----------------------------------------------------------
 
-def test_ws_url_derived_from_api_url(monkeypatch):
-    """http -> ws with /agent appended, read live from config per attempt."""
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_WS_URL", "")
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_API_URL",
-                        "http://api.example:3001")
-    assert rivendell._ws_url() == "ws://api.example:3001/agent"
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_API_URL",
-                        "https://api.example")
-    assert rivendell._ws_url() == "wss://api.example/agent"
+def _reset_checkout_cache():
+    with rivendell._checkout_lock:
+        rivendell._checkout_cache = {}
+        rivendell._checkout_cache_at = 0.0
 
 
-def test_ws_url_override_wins(monkeypatch):
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_WS_URL", "ws://elsewhere/sock")
-    assert rivendell._ws_url() == "ws://elsewhere/sock"
+def test_find_checkout_matches_case_insensitively(monkeypatch):
+    _reset_checkout_cache()
+    w = _worker(workdir="")
+    monkeypatch.setattr("bridge.browser.list_projects",
+                        lambda: ["/acme/app", "/acme/lib"])
+    monkeypatch.setattr(
+        "bridge.github.remote_slug",
+        lambda path: {"app": "Acme/App", "lib": "acme/lib"}[
+            os.path.basename(path)])
+    expected = os.path.join(rivendell.config.BASE_PATH, "acme/app")
+    assert w._find_checkout("acme/app") == expected
+    assert w._find_checkout("ACME/APP") == expected
+    assert w._find_checkout(None) is None
 
 
-# --- live reconfiguration (dashboard PLUGINS settings) ------------------------
+def test_find_checkout_miss_rescans_and_ttl_expires(monkeypatch):
+    _reset_checkout_cache()
+    w = _worker(workdir="")
+    projects = ["/acme/app"]
+    scans = []
+    monkeypatch.setattr("bridge.browser.list_projects",
+                        lambda: scans.append(1) or list(projects))
+    monkeypatch.setattr("bridge.github.remote_slug",
+                        lambda path: f"acme/{os.path.basename(path)}")
 
-def test_reconfigure_stops_when_disabled(monkeypatch):
-    started = []
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_ENABLE", False)
-    monkeypatch.setattr(rivendell, "start", lambda: started.append(True))
-    rivendell._stop.clear()
-    rivendell.reconfigure()
-    assert rivendell._stop.is_set() and not started
-    rivendell._stop.clear()
+    assert w._find_checkout("acme/new") is None    # miss: scanned once
+    projects.append("/acme/new")
+    assert w._find_checkout("acme/new") is not None  # miss: rescan finds it
+    assert w._find_checkout("acme/app") is not None  # hit: cache, no scan
+    assert len(scans) == 2
+
+    # An expired cache rescans even on a hit.
+    rivendell._checkout_cache_at = 0.0
+    assert w._find_checkout("acme/app") is not None
+    assert len(scans) == 3
 
 
-def test_reconfigure_starts_and_kicks_when_enabled(monkeypatch):
+def test_find_checkout_prefers_matching_workdir(monkeypatch):
+    _reset_checkout_cache()
+    w = _worker(workdir="/dedicated/app")
+    monkeypatch.setattr("bridge.github.remote_slug",
+                        lambda path: "acme/app" if path == "/dedicated/app" else None)
+    monkeypatch.setattr("bridge.browser.list_projects", lambda: [])
+    assert w._find_checkout("acme/app") == "/dedicated/app"
+
+
+def test_run_implementation_fails_without_checkout(monkeypatch):
+    """No local checkout for the slug -> FAILED result, never a fallback run."""
+    w = _worker()
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "do it",
+                                                "repositoryFullName": "acme/gone"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text:
+                        posted.append((kind_path, rid, ok, text)))
+    monkeypatch.setattr(
+        w, "_start_run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    w._run_implementation("r1", "acme/other")
+    assert posted == [("implementation-requests", "r1", False,
+                       f"no local checkout for 'acme/gone' under "
+                       f"{rivendell.config.BASE_PATH}")]
+
+
+# --- ws-url derivation -------------------------------------------------------
+
+def test_ws_url_derived_from_api_url():
+    """http -> ws with /agent appended, read live from the instance."""
+    assert _worker(ws_url="", api_url="http://api.example:3001")._ws_url() \
+        == "ws://api.example:3001/agent"
+    assert _worker(ws_url="", api_url="https://api.example")._ws_url() \
+        == "wss://api.example/agent"
+
+
+def test_ws_url_override_wins():
+    assert _worker(ws_url="ws://elsewhere/sock")._ws_url() == "ws://elsewhere/sock"
+
+
+def test_origin_is_namespaced_per_instance():
+    """A run's session origin names its instance, under the rivendell prefix so
+    it stays visible in the dashboards (config.is_plugin_origin)."""
+    assert _worker(name="production").origin == "rivendell:production"
+    assert _worker(name="Local Dev").origin == "rivendell:local-dev"
+    assert rivendell.config.is_plugin_origin("rivendell:production")
+    assert rivendell.config.is_plugin_origin("rivendell")
+    assert not rivendell.config.is_plugin_origin("dashboard")
+
+
+# --- manager (reconfigure) ---------------------------------------------------
+
+def _patch_worker_lifecycle(monkeypatch, calls):
+    monkeypatch.setattr(rivendell.Worker, "start",
+                        lambda self: calls.append(("start", self.id)))
+    monkeypatch.setattr(rivendell.Worker, "stop",
+                        lambda self: calls.append(("stop", self.id)))
+    monkeypatch.setattr(rivendell.Worker, "_drop_connection",
+                        lambda self: calls.append(("drop", self.id)))
+
+
+def test_reconfigure_starts_enabled_and_stops_removed(monkeypatch):
     calls = []
-    monkeypatch.setattr(rivendell.config, "RIVENDELL_ENABLE", True)
-    monkeypatch.setattr(rivendell, "start", lambda: calls.append("start"))
-    monkeypatch.setattr(rivendell, "_drop_connection", lambda: calls.append("drop"))
+    insts = [_inst(id="a", enable=True)]
+    monkeypatch.setattr("bridge.rivendell_instances.raw_instances", lambda: list(insts))
+    _patch_worker_lifecycle(monkeypatch, calls)
+    rivendell._workers.clear()
+
     rivendell.reconfigure()
-    assert calls == ["start", "drop"], "must (re)start then force a reconnect"
+    assert ("start", "a") in calls and "a" in rivendell._workers
+
+    # Disabled instances are stopped and dropped from the running set.
+    insts[:] = [_inst(id="a", enable=False)]
+    rivendell.reconfigure()
+    assert ("stop", "a") in calls and "a" not in rivendell._workers
+    rivendell._workers.clear()
+
+
+def test_reconfigure_swaps_changed_config_in_place(monkeypatch):
+    """A URL/token edit keeps the same worker (so an in-flight review survives)
+    and only forces a reconnect with the new config."""
+    calls = []
+    insts = [_inst(id="a", enable=True, api_url="http://one")]
+    monkeypatch.setattr("bridge.rivendell_instances.raw_instances", lambda: list(insts))
+    _patch_worker_lifecycle(monkeypatch, calls)
+    rivendell._workers.clear()
+
+    rivendell.reconfigure()
+    w = rivendell._workers["a"]
+    insts[:] = [_inst(id="a", enable=True, api_url="http://two")]
+    rivendell.reconfigure()
+
+    assert rivendell._workers["a"] is w, "must reuse the worker, not replace it"
+    assert w.inst["api_url"] == "http://two"
+    assert ("drop", "a") in calls
+    rivendell._workers.clear()
+
+
+def test_status_snapshot_tracks_state():
+    w = _worker()
+    assert w.status_snapshot()["state"] == "off"
+    w._set_status("connecting", "ws://x/agent")
+    assert w.status_snapshot()["state"] == "connecting"
+    assert w.connected_since is None
+    w._set_status("connected", "ws://x/agent")
+    snap = w.status_snapshot()
+    assert snap["state"] == "connected" and snap["connected_since"] is not None
+    w._set_status("error", "boom")
+    snap = w.status_snapshot()
+    assert snap["state"] == "error" and snap["detail"] == "boom"
+    assert snap["connected_since"] is None, "an error clears the connected clock"
+
+
+def test_manager_status_exposes_running_workers(monkeypatch):
+    monkeypatch.setattr("bridge.rivendell_instances.raw_instances",
+                        lambda: [_inst(id="a", enable=True)])
+    monkeypatch.setattr(rivendell.Worker, "start", lambda self: None)
+    monkeypatch.setattr(rivendell.Worker, "_drop_connection", lambda self: None)
+    rivendell._workers.clear()
+    rivendell.reconfigure()
+    assert rivendell.status()["a"]["state"] == "off"   # started but not yet dialed
+    rivendell._workers.clear()
+
+
+def test_reconfigure_skips_instances_without_url_or_token(monkeypatch):
+    calls = []
+    monkeypatch.setattr("bridge.rivendell_instances.raw_instances",
+                        lambda: [_inst(id="a", enable=True, token=""),
+                                 _inst(id="b", enable=True, api_url="")])
+    _patch_worker_lifecycle(monkeypatch, calls)
+    rivendell._workers.clear()
+    rivendell.reconfigure()
+    assert not rivendell._workers and not calls
+    rivendell._workers.clear()
 
 
 if __name__ == "__main__":

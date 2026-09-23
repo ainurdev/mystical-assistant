@@ -29,6 +29,9 @@ import {
   type HooksInfo,
   type FreeAgents,
   type McpInfo,
+  type RivendellInstance,
+  type RivendellInput,
+  type RivendellStatus,
   type StartupState,
   type TimedEvent,
   type TrackerConnection,
@@ -123,7 +126,8 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts" | "system"
+  | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts"
+  | "plugins" | "system"
   | "report";
 
 // The rail carries the same three-way split the comment above describes, but
@@ -165,6 +169,8 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "URLs that GitHub, a CI job or your own script can POST to. Whatever arrives is pushed to you on Telegram." },
   { key: "accounts", label: "ACCOUNTS", hint: "logins · fallback", icon: KeyRound, group: "THE WORK",
     about: "The Claude logins runs use and what each has left, what a chat does when one runs out, and who takes over then." },
+  { key: "plugins", label: "PLUGINS", hint: "rivendell instances", icon: Waypoints, group: "THE WORK",
+    about: "External dashboards the bridge runs work for. Rivendell's \"Request review\" and \"Implement using AI\" buttons become autonomous Claude runs here — one connection per Rivendell (production, local, staging)." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
     about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
   // Not a setting — a readout. It lives here because the chrome that used to
@@ -208,6 +214,8 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "accounts", sec: "ON USAGE LIMIT", terms: "policy wait switch fallback reset quota" },
   { tab: "accounts", sec: "CLAUDE LOGINS", terms: "account add sign in oauth profile" },
   { tab: "accounts", sec: "FREE AGENTS", terms: "api key gemini openai provider fallback handover" },
+  { tab: "plugins", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout" },
+  { tab: "plugins", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "projects", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label" },
@@ -2419,6 +2427,260 @@ function TrackersPanel() {
   );
 }
 
+/* PLUGINS ▸ RIVENDELL — the rivendell-api connections the PR-review plugin runs
+   (bridge/rivendell_instances.py). One bridge, several Rivendells: a production
+   dashboard, a local one, staging later. Each is an independent websocket
+   worker with its own URL, token, model and workdir; a run it makes is tagged
+   with which one it came from (origin "rivendell:<name>"). What existed as one
+   flat RIVENDELL_* block under SYSTEM until this became a keyed collection. */
+
+function riToInput(c: RivendellInstance): RivendellInput {
+  return {
+    name: c.name, enable: c.enable, api_url: c.api_url, token: "",
+    ws_url: c.ws_url, model: c.model, workdir: c.workdir,
+    review_timeout: c.review_timeout, impl_timeout: c.impl_timeout,
+  };
+}
+
+/** The colour + label the status pip shows for one instance's live socket. */
+function riStatusView(s?: RivendellStatus) {
+  switch (s?.state) {
+    case "connected": return { color: "var(--ok)", label: "CONNECTED", glow: true };
+    case "connecting": return { color: "var(--warn)", label: "CONNECTING…", glow: false };
+    case "error": return { color: "var(--err)", label: "DISCONNECTED", glow: false };
+    default: return { color: "var(--txd)", label: "OFF", glow: false };
+  }
+}
+
+function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
+  initial?: RivendellInstance;   // present when editing; absent for a new one
+  busy: boolean;
+  err: string;
+  onSubmit: (v: RivendellInput) => void;
+  onCancel?: () => void;
+}) {
+  const editing = !!initial;
+  const [name, setName] = useState(initial?.name ?? "");
+  const [apiUrl, setApiUrl] = useState(initial?.api_url ?? "");
+  const [token, setToken] = useState("");     // blank when editing = keep stored
+  const [wsUrl, setWsUrl] = useState(initial?.ws_url ?? "");
+  const [model, setModel] = useState(initial?.model ?? "opus");
+  const [workdir, setWorkdir] = useState(initial?.workdir ?? "");
+  const [review, setReview] = useState(String(initial?.review_timeout ?? 3600));
+  const [impl, setImpl] = useState(String(initial?.impl_timeout ?? 10800));
+  const [enable, setEnable] = useState(initial?.enable ?? true);
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+
+  const canSave = !!name.trim() && !!apiUrl.trim() && (editing || !!token.trim());
+  const submit = () => onSubmit({
+    name: name.trim(), enable, api_url: apiUrl.trim(), token: token.trim(),
+    ws_url: wsUrl.trim(), model: model.trim() || "opus", workdir: workdir.trim(),
+    review_timeout: Number(review) || 3600, impl_timeout: Number(impl) || 10800,
+  });
+  const mono = { ...field, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0 } as CSSProperties;
+  const btn = (k: string, primary: boolean): CSSProperties => ({
+    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
+    padding: "6px 12px", flex: "none",
+    border: `1px solid ${primary ? "var(--acc)" : "color-mix(in srgb, var(--acc) 25%, transparent)"}`,
+    background: hov === k ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
+    color: primary ? "var(--txb)" : "var(--txm)", opacity: busy ? 0.6 : 1,
+  });
+
+  return (
+    <div style={{ ...CARD, marginTop: 11 }}>
+      <Row first label={editing ? `EDIT · ${initial!.name}` : "ADD AN INSTANCE"}
+        desc={editing
+          ? "A blank token keeps the one stored. Saving reconnects this instance with the new settings."
+          : "Point it at a rivendell-api base URL with a token minted there (Profile ▸ Tokens, LLM capability). It runs reviews autonomously, so only add an API you own."}>
+        <Switch on={enable} onClick={() => setEnable(!enable)} />
+      </Row>
+      <div style={LINE}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name (e.g. production)" spellCheck={false}
+          style={{ ...field, flex: "1 1 140px" }} />
+        <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="http://localhost:3001" spellCheck={false}
+          style={{ ...mono, flex: "2 1 220px" }} />
+      </div>
+      <div style={LINE}>
+        <input value={token} onChange={(e) => setToken(e.target.value)} type="password"
+          placeholder={editing ? `token ${initial!.token || "set"} — blank keeps it` : "rvd_… bearer token"}
+          style={{ ...mono, flex: "2 1 220px" }} />
+        <input value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} placeholder="ws url (optional; derived from api url)" spellCheck={false}
+          style={{ ...mono, flex: "2 1 220px" }} />
+      </div>
+      <div style={LINE}>
+        <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="model (opus)" spellCheck={false}
+          style={{ ...field, flex: "1 1 120px" }} />
+        <input value={workdir} onChange={(e) => setWorkdir(e.target.value)} placeholder="workdir (optional; falls back to BASE_PATH)" spellCheck={false}
+          style={{ ...mono, flex: "2 1 220px" }} />
+      </div>
+      <div style={LINE}>
+        <input value={review} onChange={(e) => setReview(e.target.value)} inputMode="numeric" placeholder="review timeout (s)"
+          style={{ ...field, flex: "1 1 120px", textAlign: "right" }} />
+        <input value={impl} onChange={(e) => setImpl(e.target.value)} inputMode="numeric" placeholder="impl timeout (s)"
+          style={{ ...field, flex: "1 1 120px", textAlign: "right" }} />
+        <span style={{ flex: 1 }} />
+        {onCancel && <button onClick={onCancel} {...hp("cancel")} style={btn("cancel", false)}>CANCEL</button>}
+        <button onClick={submit} disabled={busy || !canSave} {...hp("save")} style={btn("save", true)}>
+          {busy ? "SAVING…" : editing ? "SAVE" : "ADD"}
+        </button>
+      </div>
+      {err && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 8 }}>{err}</div>}
+    </div>
+  );
+}
+
+function RivendellPanel() {
+  const [rows, setRows] = useState<RivendellInstance[] | null>(null);
+  const [gone, setGone] = useState(false);     // an old bridge: the route 404s
+  const [editing, setEditing] = useState<string | null>(null);   // instance id, "new", or null
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+
+  useEffect(() => {
+    void api.rivendell().then((r) => setRows(r.instances)).catch(() => { setRows([]); setGone(true); });
+  }, []);
+
+  // The socket goes up and down on its own (reconnect-forever with backoff), so
+  // poll for the live status while the panel is open. A save/remove is skipped
+  // (busy) so the poll can't clobber its optimistic result mid-flight.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (busy) return;
+      void api.rivendell().then((r) => setRows(r.instances)).catch(() => {});
+    }, 4000);
+    return () => clearInterval(t);
+  }, [busy]);
+
+  const byName = (a: RivendellInstance, b: RivendellInstance) => a.name.localeCompare(b.name);
+  const upsert = (inst: RivendellInstance) =>
+    setRows((p) => {
+      const rest = (p ?? []).filter((x) => x.id !== inst.id);
+      return [...rest, inst].sort(byName);
+    });
+
+  async function save(input: RivendellInput, id: string | null) {
+    setBusy(true); setErr("");
+    try {
+      const r = id && id !== "new"
+        ? await api.updateRivendell(id, input)
+        : await api.addRivendell(input);
+      upsert(r.instance);
+      setEditing(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not save");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggle(inst: RivendellInstance) {
+    setErr("");
+    try {
+      const r = await api.updateRivendell(inst.id, { ...riToInput(inst), enable: !inst.enable });
+      upsert(r.instance);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not save");
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await api.removeRivendell(id);
+      setRows((p) => (p ?? []).filter((c) => c.id !== id));
+      if (editing === id) setEditing(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not remove");
+    }
+  }
+
+  if (rows === null) return <Placeholder icon={LoaderCircle} spin>Reading the rivendell instances…</Placeholder>;
+  if (gone) return <Placeholder icon={TriangleAlert}>This bridge is running a build without the rivendell plugin. Restart it.</Placeholder>;
+
+  const dim = { color: "var(--txd)" };
+  const mono = { fontFamily: "'JetBrains Mono',monospace" };
+
+  return (
+    <Section
+      title="RIVENDELL"
+      icon={Waypoints}
+      desc="Rivendell's Request review and Implement using AI buttons, turned into autonomous Claude runs. One connection per Rivendell — production, local, staging."
+      info="Each instance holds a websocket open to a rivendell-api /agent endpoint and runs every request it sends with full autonomy (bypassPermissions) in its own workdir, so only connect an API you own. The token is minted in that Rivendell (Profile ▸ Tokens, LLM capability), kept beside the session store (mode 0600) and never shown again in full; revoke it there if it leaks. Runs appear in the session list tagged with the instance name. The first instance is seeded from your .env RIVENDELL_* values; edit or add more here — a save reconnects without a restart."
+    >
+      {rows.length > 0 && (
+        <div style={CARD}>
+          {rows.map((c, i) => {
+            const sv = riStatusView(c.status);
+            const st = c.status?.state ?? "off";
+            return (
+            <Fragment key={c.id}>
+              <Row first={!i}
+                label={<span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span>{c.name}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                    title={c.status?.detail || sv.label}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: sv.color, flex: "none",
+                      boxShadow: sv.glow ? `0 0 6px ${sv.color}` : undefined }} />
+                    <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: sv.color }}>{sv.label}</span>
+                  </span>
+                  <span style={{ ...dim, ...mono, letterSpacing: 0 }}>· {c.origin}</span>
+                </span>}
+                desc={
+                  <>
+                    <span style={mono}>{c.api_url}</span>
+                    {" · "}model <span style={mono}>{c.model}</span>
+                    {" · token "}<span style={mono}>{c.token || "not set"}</span>
+                    {st === "connected" && c.status?.last_event_at
+                      ? <> · last request {ago(c.status.last_event_at)} ago</>
+                      : null}
+                    {st === "error" && c.status?.detail
+                      ? <div style={{ marginTop: 4, color: "var(--err)" }}>reconnecting — {c.status.detail}</div>
+                      : null}
+                    <div style={{ marginTop: 4, ...dim }}>
+                      workdir <span style={mono}>{c.workdir || "BASE_PATH"}</span>
+                      {" · review "}{c.review_timeout}s · impl {c.impl_timeout}s
+                    </div>
+                  </>
+                }
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
+                  <Switch on={c.enable} onClick={() => void toggle(c)} />
+                  <button onClick={() => setEditing(editing === c.id ? null : c.id)} {...hp(`ed:${c.id}`)}
+                    style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `ed:${c.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)" }}>
+                    {editing === c.id ? "CLOSE" : "EDIT"}
+                  </button>
+                  <button onClick={() => void remove(c.id)} {...hp(`rm:${c.id}`)}
+                    style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === `rm:${c.id}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--err)" }}>
+                    REMOVE
+                  </button>
+                </div>
+              </Row>
+              {editing === c.id && (
+                <InstanceForm initial={c} busy={busy} err={err}
+                  onSubmit={(v) => void save(v, c.id)} onCancel={() => setEditing(null)} />
+              )}
+            </Fragment>
+            );
+          })}
+        </div>
+      )}
+      {editing === "new" ? (
+        <InstanceForm busy={busy} err={err}
+          onSubmit={(v) => void save(v, null)} onCancel={() => setEditing(null)} />
+      ) : (
+        <button onClick={() => { setErr(""); setEditing("new"); }}
+          {...hp("add")}
+          style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "8px 14px", marginTop: 11, border: "1px solid var(--acc)", background: hov === "add" ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txb)" }}>
+          + ADD AN INSTANCE
+        </button>
+      )}
+      {err && editing === null && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 8 }}>{err}</div>}
+    </Section>
+  );
+}
+
 /* MCP — every server this machine can reach, and the four things you actually
    do to one: add it, drop it, sign in again when its token expires, or forget
    the token entirely. `claude mcp` runs all of it, so what shows here is what a
@@ -4132,6 +4394,7 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "mcp" && <McpPanel />}
             {shown === "hooks" && <HooksPanel />}
             {shown === "accounts" && <AccountsPanel />}
+            {shown === "plugins" && <RivendellPanel />}
 
             {shown === "system" && (
               <>

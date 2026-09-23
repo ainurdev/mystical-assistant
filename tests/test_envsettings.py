@@ -146,6 +146,12 @@ def test_every_env_var_config_reads_has_a_home():
     read = set(re.findall(r'os\.environ\.get\("([A-Z_]+)"', src))
     covered = set(KEYS) | {f["env"] for f in aifeatures.FEATURES} | {
         "FALLBACK_POLICY",     # ACCOUNTS tab (ladder.default_policy)
+        # The rivendell plugin's flat RIVENDELL_* block became a keyed store
+        # (bridge/rivendell_instances.py), edited from the PLUGINS tab; these
+        # env vars now only seed the first instance on migration.
+        "RIVENDELL_ENABLE", "RIVENDELL_API_URL", "RIVENDELL_WS_URL",
+        "RIVENDELL_TOKEN", "RIVENDELL_MODEL", "RIVENDELL_WORKDIR",
+        "RIVENDELL_REVIEW_TIMEOUT", "RIVENDELL_IMPL_TIMEOUT",
     }
     assert read - covered == set(), f"no way to set these outside .env: {read - covered}"
 
