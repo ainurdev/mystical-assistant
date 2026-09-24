@@ -16,6 +16,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -130,6 +131,31 @@ def test_client_handshake_rejects_bad_accept(monkeypatch):
     server.close()
 
 
+def test_client_handshake_401_is_an_auth_error(monkeypatch):
+    """A proxy/app rejecting the upgrade with 401 is a token problem, surfaced as
+    _AuthError so the listener stops dialing rather than backing off."""
+    server, client = socket.socketpair()
+    monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
+    w = _worker(ws_url="ws://api.example:3001/agent")
+
+    def fake_server():
+        request = b""
+        while b"\r\n\r\n" not in request:
+            request += server.recv(4096)
+        server.sendall(b"HTTP/1.1 401 Unauthorized\r\n\r\n")
+
+    threading.Thread(target=fake_server, daemon=True).start()
+    raised = None
+    try:
+        w._connect()
+    except rivendell._AuthError:
+        raised = "auth"
+    except ConnectionError:
+        raised = "conn"
+    assert raised == "auth", "a 401 handshake must raise _AuthError, not ConnectionError"
+    server.close()
+
+
 # --- event handling ----------------------------------------------------------
 
 def _drain(w):
@@ -180,16 +206,31 @@ def test_handle_message_todolist_requests():
     assert _drain(w) == [("todolist", "t9", "Rivendell")]
 
 
-def test_todolist_dedup_is_separate_from_review_and_impl():
-    """The three kinds have separate id spaces — the same id in each is kept."""
+def test_handle_message_task_description_requests():
+    """task-description-request events queue as "taskdesc" with the task name;
+    they carry no repo (the whole task/project context is in the prompt, and
+    rivendell-api writes the result straight onto the Teamwork task)."""
+    w = _worker()
+    td = json.dumps({"type": "task-description-request",
+                     "requestId": "d3",
+                     "task": {"id": "k1", "name": "Add login",
+                              "htmlUrl": "https://tw/1"}}).encode()
+    w._handle_message(td)
+    w._handle_message(td)                          # duplicate: dropped
+    assert _drain(w) == [("taskdesc", "d3", "Add login")]
+
+
+def test_dedup_is_separate_across_all_kinds():
+    """The kinds have separate id spaces — the same id in each is kept."""
     w = _worker()
     for typ, extra in (("pr-review-request", {"pullRequest": {}}),
                        ("task-implementation-request",
                         {"task": {}, "repository": {}}),
-                       ("project-todolist-request", {"project": {}})):
+                       ("project-todolist-request", {"project": {}}),
+                       ("task-description-request", {"task": {}})):
         w._handle_message(json.dumps({"type": typ, "requestId": "same", **extra}).encode())
     kinds = [k for (k, _rid, _s) in _drain(w)]
-    assert kinds == ["review", "impl", "todolist"]
+    assert kinds == ["review", "impl", "todolist", "taskdesc"]
 
 
 def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
@@ -208,6 +249,25 @@ def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
     w._run_todolist("t1", "Rivendell")
     assert ran == [("make a checklist", "/dedicated")]
     assert posted == [("todolist-requests", "t1", True, "- [ ] do it")]
+
+
+def test_run_taskdesc_runs_in_workdir_without_checkout(monkeypatch):
+    """A task description needs no repo match: it runs in the worker's workdir
+    and never calls _find_checkout — the result posts back to the task-
+    description endpoint (rivendell-api writes it onto the Teamwork task)."""
+    w = _worker(workdir="/dedicated")
+    posted, ran = [], []
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "write a description"})
+    monkeypatch.setattr(w, "_find_checkout",
+                        lambda slug: (_ for _ in ()).throw(AssertionError("no checkout for task descriptions")))
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir: ran.append((prompt, workdir)) or _StubJob("done", result="## Context\n…"))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    w._run_taskdesc("d1", "Add login")
+    assert ran == [("write a description", "/dedicated")]
+    assert posted == [("task-description-requests", "d1", True, "## Context\n…")]
 
 
 def test_workers_have_independent_queues():
@@ -438,6 +498,91 @@ def test_reconfigure_skips_instances_without_url_or_token(monkeypatch):
     rivendell.reconfigure()
     assert not rivendell._workers and not calls
     rivendell._workers.clear()
+
+
+# --- token rejection: idle until the token changes ---------------------------
+
+def _wait_until(pred, timeout=3.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pred():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition not met within timeout")
+
+
+def test_block_on_token_records_failing_token_and_status():
+    w = _worker(token="bad")
+    w._block_on_token("token rejected by gateway (4401)")
+    assert w._blocked_token == "bad"
+    assert w.status == "auth_error"
+    assert w.status_snapshot()["connected_since"] is None
+
+
+def test_auth_error_stops_dialing_until_token_changes(monkeypatch):
+    """A rejected token idles the listener — no reconnect churn — until the token
+    is changed, at which point _wake resumes a single fresh dial."""
+    w = _worker(token="bad")
+    attempts = []
+
+    def fake_connect():
+        attempts.append(w.token)
+        raise rivendell._AuthError("token rejected by gateway (4401)")
+
+    monkeypatch.setattr(w, "_connect", fake_connect)
+    monkeypatch.setattr(w, "_catch_up", lambda: 0)
+
+    t = threading.Thread(target=w._listen, daemon=True)
+    t.start()
+    try:
+        _wait_until(lambda: len(attempts) == 1)
+        assert w.status == "auth_error" and w._blocked_token == "bad"
+        # It parks on the bad token — no busy re-dialing.
+        time.sleep(0.2)
+        assert len(attempts) == 1, "must not re-dial a rejected token"
+
+        # Change the token and wake it: exactly one fresh dial, with the new token.
+        w.inst = _inst(token="good")
+        w._wake.set()
+        _wait_until(lambda: len(attempts) == 2)
+        assert attempts[1] == "good"
+    finally:
+        w.stop()
+        t.join(timeout=2)
+
+
+def test_gateway_close_4403_is_treated_as_token_rejection(monkeypatch):
+    """The gateway accepts the upgrade then closes 4401/4403 for a bad/insufficient
+    token; the listener must read that close code as a token rejection (park), not
+    a transient drop (backoff-reconnect)."""
+    server, client = socket.socketpair()
+    monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
+    w = _worker(ws_url="ws://api.example:3001/agent", token="bad")
+    monkeypatch.setattr(w, "_catch_up", lambda: 0)
+
+    def fake_server():
+        request = b""
+        while b"\r\n\r\n" not in request:
+            request += server.recv(4096)
+        key = [line.split(": ", 1)[1] for line in request.decode().split("\r\n")
+               if line.lower().startswith("sec-websocket-key")][0]
+        server.sendall((
+            "HTTP/1.1 101 Switching Protocols\r\n"
+            f"Sec-WebSocket-Accept: {wsutil.accept_key(key)}\r\n\r\n").encode())
+        payload = (4403).to_bytes(2, "big") + b"LLM capability required"
+        server.sendall(wsutil.encode_frame(payload, wsutil.OP_CLOSE, masked=False))
+
+    threading.Thread(target=fake_server, daemon=True).start()
+    t = threading.Thread(target=w._listen, daemon=True)
+    t.start()
+    try:
+        _wait_until(lambda: w.status == "auth_error")
+        assert w._blocked_token == "bad"
+        assert "4403" in w.status_detail
+    finally:
+        w.stop()
+        t.join(timeout=2)
+        server.close()
 
 
 if __name__ == "__main__":

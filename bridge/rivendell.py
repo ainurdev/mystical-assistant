@@ -12,14 +12,17 @@ per-worker consumer turns each request event into an autonomous Claude run:
     pr-review-request          -> GET  /plugin/review-requests/<id>/prompt
     task-implementation-request-> GET  /plugin/implementation-requests/<id>/prompt
     project-todolist-request   -> GET  /plugin/todolist-requests/<id>/prompt
+    task-description-request    -> GET  /plugin/task-description-requests/<id>/prompt
           (each GET claims the request: PENDING -> IN_PROGRESS)
           -> runner.start_streaming_job(...)            (bypassPermissions,
                                                          the instance's model)
           -> POST /plugin/<kind>-requests/<id>/result   (COMPLETED | FAILED)
 
 Reviews and implementations need a local checkout of the named repository;
-todolists need none — the whole project context is rendered into the prompt
-server-side, so they run in the worker's workdir like a generic read task.
+todolists and task descriptions need none — the whole project/task context is
+rendered into the prompt server-side, so they run in the worker's workdir like a
+generic read task (rivendell-api writes a task description back onto the Teamwork
+task itself; the bridge only returns the generated text).
 
 Runs go through the normal runner (not a bare subprocess) on purpose: each run
 gets its own store session (origin "rivendell:<instance>"), so it shows up in
@@ -47,8 +50,16 @@ still resumes the Claude turn, but its result is never POSTed). The catch-up
 endpoints therefore return IN_PROGRESS requests too, so the restarted worker
 re-claims and redoes them — an interrupted run costs a re-run, never a request
 stuck IN_PROGRESS forever. In-process duplicates are prevented by each worker's
-_seen set (keys "review:<id>" / "impl:<id>" / "todolist:<id>", since the three
-request kinds have separate id spaces).
+_seen set (keys "review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>",
+since the request kinds have separate id spaces).
+
+A token/auth failure is treated apart from a transient network fault: the gateway
+accepts the upgrade and then closes with 4401/4403 (or a proxy rejects the
+handshake with 401/403). Re-dialing a rejected token only hammers the API to no
+effect, so the worker stops dialing and idles on that token until it is changed —
+reconfigure nudges the paused listener (self._wake) when the config, and thus
+possibly the token, is edited. Every other error keeps the reconnect-forever
+backoff.
 
 The manager (reconfigure/start/stop) diffs the desired set of enabled instances
 against the running workers on every save: it starts new ones, stops removed or
@@ -80,6 +91,16 @@ _HTTP_TIMEOUT = 30        # prompt fetch / result post
 _RESULT_RETRIES = (2, 10, 30)   # a finished run is expensive; retry the POST
 _POLL_INTERVAL = 2.0      # job status poll cadence
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
+
+# WebSocket close codes the gateway uses to reject a bad/insufficient token (see
+# rivendell-api's AgentGateway: it accepts the upgrade, then closes).
+_WS_AUTH_CLOSE_CODES = (4401, 4403)
+
+
+class _AuthError(Exception):
+    """The token was rejected (handshake 401/403, or a 4401/4403 close). Distinct
+    from a transient fault: the worker must stop dialing until the token changes,
+    not back off and retry the same doomed credential."""
 
 # The BASE_PATH slug->checkout scan is instance-independent, so it is shared
 # across every worker rather than rescanned per connection.
@@ -122,6 +143,12 @@ class Worker:
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
         self._worker_thread: threading.Thread | None = None
+        # A token that was rejected: while it is still the configured token the
+        # listener idles instead of reconnecting. Cleared when the token changes.
+        self._blocked_token: str | None = None
+        # Nudges a listener parked on a rejected token — set by reconfigure (the
+        # token may have changed) and by stop().
+        self._wake = threading.Event()
         # Live connection status, read by the dashboard's PLUGINS panel so an
         # operator can see whether the socket is actually up. "off" until the
         # listener starts; "connecting" while dialing; "connected" once the
@@ -260,6 +287,12 @@ class Worker:
         rfile = sock.makefile("rb")
         status = rfile.readline().decode(errors="replace")
         if "101" not in status:
+            # A proxy or the app rejecting the upgrade with 401/403 is a token
+            # problem, not a transient fault. (The gateway itself accepts the
+            # upgrade and closes with 4401/4403 instead — caught in _listen.)
+            fields = status.split()
+            if len(fields) > 1 and fields[1] in ("401", "403"):
+                raise _AuthError(f"token rejected at handshake: {status.strip()}")
             raise ConnectionError(f"handshake rejected: {status.strip()}")
         accept = None
         while True:
@@ -297,6 +330,11 @@ class Worker:
                 self._enqueue("todolist", item["id"], item.get("projectName"))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: todolist catch-up failed: {e}")
+        try:
+            for item in self._api("/plugin/task-description-requests"):
+                self._enqueue("taskdesc", item["id"], item.get("taskName"))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: task-description catch-up failed: {e}")
         return self._queue.qsize() - before
 
     def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None) -> None:
@@ -331,16 +369,47 @@ class Worker:
             print(f"rivendell[{self.name}]: todolist requested for project "
                   f"{project.get('name', '?')}")
             self._enqueue("todolist", obj["requestId"], project.get("name"))
+        elif (obj.get("type") == "task-description-request"
+              and obj.get("requestId")):
+            task = obj.get("task") or {}
+            print(f"rivendell[{self.name}]: task description requested for "
+                  f"{task.get('name', '?')}")
+            self._enqueue("taskdesc", obj["requestId"], task.get("name"))
+
+    def _block_on_token(self, detail: str) -> None:
+        """A token was rejected: pin the failing token and stop dialing it. The
+        listener idles at the top of _listen until the token is changed."""
+        self._blocked_token = self.token
+        if not self._stop.is_set():
+            self._set_status("auth_error", detail)
+            print(f"rivendell[{self.name}]: {detail}; not retrying until the "
+                  "token is changed")
 
     def _listen(self) -> None:
-        """Connection loop: connect, catch up, pump frames; reconnect on error."""
+        """Connection loop: connect, catch up, pump frames; reconnect on error.
+        A token rejection idles the loop (no backoff-retry) until the token
+        changes — see the module docstring."""
         backoff = _BACKOFF_MIN
         while not self._stop.is_set():
+            # A token rejected on the last attempt: idle until it is changed.
+            # Re-dialing a known-bad credential would hammer the API forever.
+            if self._blocked_token is not None:
+                if self.token != self._blocked_token:
+                    self._blocked_token = None          # token edited — try it
+                    backoff = _BACKOFF_MIN
+                else:
+                    self._wake.wait()                   # reconfigure/stop wakes us
+                    self._wake.clear()
+                    continue
+
             url = self._ws_url()
             self._set_status("connecting", url)
             print(f"rivendell[{self.name}]: connecting to {url}")
             try:
                 sock, rfile = self._connect()
+            except _AuthError as e:
+                self._block_on_token(str(e))
+                continue
             except Exception as e:  # noqa: BLE001 — reconnect-forever by design
                 if not self._stop.is_set():
                     self._set_status("error", str(e))
@@ -378,11 +447,23 @@ class Worker:
                     elif opcode == wsutil.OP_TEXT:
                         self._handle_message(payload)
                     elif opcode == wsutil.OP_CLOSE:
+                        # The gateway accepts the upgrade, then closes with
+                        # 4401/4403 for a bad/insufficient token — a token
+                        # problem, not a transient drop.
+                        code = (int.from_bytes(payload[:2], "big")
+                                if len(payload) >= 2 else 0)
+                        if code in _WS_AUTH_CLOSE_CODES:
+                            reason = payload[2:].decode(errors="replace").strip()
+                            raise _AuthError(
+                                f"token rejected by gateway ({code}"
+                                + (f" {reason}" if reason else "") + ")")
                         raise ConnectionError("close frame received")
                     elif opcode == wsutil.OP_CONT:
                         # Fragmentation is unsupported (see wsutil) — resync.
                         raise ConnectionError("unexpected continuation frame")
                     # OP_PONG / anything else: arrival already reset `missed`.
+            except _AuthError as e:
+                self._block_on_token(str(e))
             except Exception as e:  # noqa: BLE001 — reconnect-forever by design
                 if not self._stop.is_set():
                     self._set_status("error", str(e))
@@ -545,10 +626,41 @@ class Worker:
               f"{'completed' if ok else 'failed'}")
         self._post_result("todolist-requests", request_id, ok, text)
 
+    def _run_taskdesc(self, request_id: str, task: "str | None") -> None:
+        """An AI task-description generation. Like a todolist it needs NO checkout
+        — the task, its project and sibling context are rendered into the prompt
+        server-side — so it always runs in the worker's workdir. rivendell-api
+        writes the generated text back onto the Teamwork task itself; the bridge
+        only returns it. Reviews' timeout governs it."""
+        try:
+            prompt = self._fetch_prompt(
+                "task-description-requests", request_id)["prompt"]
+        except Exception as e:  # noqa: BLE001 — report, don't crash the worker
+            print(f"rivendell[{self.name}]: prompt fetch failed for "
+                  f"{request_id}: {e}")
+            self._post_result("task-description-requests", request_id, False,
+                              f"prompt fetch failed: {e}")
+            return
+
+        workdir = self._workdir()
+        print(f"rivendell[{self.name}]: task description {request_id} "
+              f"({task or '?'}) running in {workdir}")
+        job = self._start_run(prompt, workdir)
+        if job is None:  # can't happen for a fresh session; never hang the queue
+            self._post_result("task-description-requests", request_id, False,
+                              "could not start a Claude run (session busy)")
+            return
+
+        ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
+        print(f"rivendell[{self.name}]: task description {request_id} "
+              f"{'completed' if ok else 'failed'}")
+        self._post_result("task-description-requests", request_id, ok, text)
+
     _KIND_PATH = {
         "impl": "implementation-requests",
         "review": "review-requests",
         "todolist": "todolist-requests",
+        "taskdesc": "task-description-requests",
     }
 
     def _consume(self) -> None:
@@ -565,6 +677,8 @@ class Worker:
                     self._run_implementation(request_id, slug)
                 elif kind == "todolist":
                     self._run_todolist(request_id, slug)
+                elif kind == "taskdesc":
+                    self._run_taskdesc(request_id, slug)
                 else:
                     self._run_review(request_id, slug)
             except Exception as e:  # noqa: BLE001 — worker must outlive any run
@@ -590,6 +704,7 @@ class Worker:
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()            # release a listener parked on a bad token
         self._set_status("off", "stopped")
         self._drop_connection()
 
@@ -645,6 +760,7 @@ def reconfigure() -> None:
                 print(f"rivendell[{w.name}]: config changed — reconnecting")
                 w.inst = inst              # atomic ref swap; threads read it live
                 w.start()                  # revive any dead thread
+                w._wake.set()              # release a listener parked on a bad token
                 w._drop_connection()       # reconnect now with the new config
 
 

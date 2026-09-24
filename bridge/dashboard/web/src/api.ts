@@ -373,8 +373,10 @@ export interface TrackerStatus { id: string; name: string }
 // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
 /** Live connection status of one instance's websocket worker. */
 export interface RivendellStatus {
-  state: "off" | "connecting" | "connected" | "error";
+  state: "off" | "connecting" | "connected" | "error" | "auth_error";
   detail?: string;              // ws url when up, or the error/reason
+  // "auth_error": the token was rejected; the worker is idle, not reconnecting,
+  // until the token is changed (see bridge/rivendell.py).
   since?: number;               // epoch seconds of the last state change
   connected_since?: number | null;  // epoch seconds the current link came up
   last_event_at?: number | null;    // epoch seconds of the last request seen
