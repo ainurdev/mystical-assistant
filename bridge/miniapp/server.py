@@ -143,7 +143,7 @@ def _session_brief(s: dict) -> dict:
     # working path either way.
     work = wt if wt_branch else (cwd or "")
     return {"id": s["id"], "title": s["title"], "project": s["project"],
-            "updated": s["updated"], "archived": s["archived"],
+            "created": s.get("created"), "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
             "fallback_policy": s.get("fallback_policy"),
             "ctx_tokens": s.get("ctx_tokens"),

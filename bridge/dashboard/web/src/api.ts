@@ -28,6 +28,7 @@ export interface SessionBrief {
   id: string;
   title: string | null;
   project: string;
+  created?: number; // epoch seconds the session was created (PLUGINS tab sorts by this)
   updated: number;
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
@@ -406,6 +407,18 @@ export interface RivendellInput {
   workdir: string;
   review_timeout: number;
   impl_timeout: number;
+}
+/** One request held PENDING in a worker's queue, awaiting accept/reject. The
+ *  kinds match bridge/rivendell.py: a PR review, a task implementation, a project
+ *  todolist, or an AI task description. */
+export interface RivendellQueueItem {
+  instance_id: string;     // which worker holds it
+  instance: string;        // that instance's display name
+  key: string;             // "<kind>:<request_id>" — the accept/reject handle
+  kind: "review" | "impl" | "todolist" | "taskdesc";
+  request_id: string;
+  slug: string | null;     // repo (review/impl), project (todolist) or task (taskdesc)
+  created_at: number;      // epoch seconds it was first seen
 }
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
@@ -1471,6 +1484,12 @@ export const api = {
     }),
   removeRivendell: (id: string) =>
     req<{ ok: boolean }>("/local/rivendell", { method: "POST", body: { op: "remove", id } }),
+  // The PENDING request queue behind the accept/reject gate (bridge/rivendell.py).
+  rivendellQueue: () => req<{ queue: RivendellQueueItem[] }>("/local/rivendell/queue"),
+  acceptRivendell: (instance_id: string, key: string) =>
+    req<{ ok: boolean }>("/local/rivendell/queue", { method: "POST", body: { op: "accept", instance_id, key } }),
+  rejectRivendell: (instance_id: string, key: string) =>
+    req<{ ok: boolean }>("/local/rivendell/queue", { method: "POST", body: { op: "reject", instance_id, key } }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>

@@ -5,6 +5,7 @@ import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
 import { useStickyObj } from "../../lib/prefs";
 import type { ProjectGroup } from "./ProjectsPanel";
+import { RivendellQueue } from "./RivendellQueue";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
  *  unsent text in the composer, a relevance check in flight, or a held card
@@ -80,6 +81,20 @@ const DETAIL_DEFAULT: Record<Mode, Detail> = {
 const PLUGINS: { origin: string; label: string; flag: string }[] = [
   { origin: "rivendell", label: "RIVENDELL", flag: "RIVENDELL_ENABLE" },
 ];
+
+/** A session belongs to a plugin worker when its origin is that worker's — but a
+ *  run actually carries "<origin>:<instance>" (rivendell origin_for, e.g.
+ *  "rivendell:prod"), so an exact match against the bare origin missed every real
+ *  run and left the PLUGINS tab empty. Match the prefix. */
+const originMatches = (origin: string | null | undefined, base: string) =>
+  !!origin && (origin === base || origin.startsWith(base + ":"));
+const isPluginOrigin = (origin: string | null | undefined) =>
+  PLUGINS.some((p) => originMatches(origin, p.origin));
+/** The PLUGINS tab orders by when a session was created, not last touched — a
+ *  plugin run is a job you triaged, read newest-first. `created` is optional on
+ *  older payloads, so fall back to `updated`. */
+const byCreated = (a: SessionBrief, b: SessionBrief) =>
+  (b.created ?? b.updated) - (a.created ?? a.updated);
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -428,7 +443,7 @@ export function SessionsPanel(props: Props) {
     // PLUGINS: one lane per worker. An empty lane stays — "RIVENDELL 0" is the
     // "configured, nothing yet" answer this tab exists to give.
     lanes = PLUGINS.map(({ origin, label }) => {
-      const rows = sorted.filter((s) => s.origin === origin);
+      const rows = sorted.filter((s) => originMatches(s.origin, origin)).sort(byCreated);
       return {
         label, tint: "var(--purple)", count: rows.length,
         pulse: rows.some((s) => laneOf(s) === "work"), rows, fold: "",
@@ -819,7 +834,7 @@ export function SessionsPanel(props: Props) {
   // The PLUGINS tab earns its slot three ways: a worker is configured, plugin
   // sessions exist from before, or you are already standing on it (a stale
   // pref must not strand the pill on a tab that isn't rendered).
-  const pluginRows = sorted.filter((s) => PLUGINS.some((p) => p.origin === s.origin));
+  const pluginRows = sorted.filter((s) => isPluginOrigin(s.origin));
   const showPlugins = pluginsConfigured || pluginRows.length > 0 || mode === "plugins";
   const modeTabs: { id: Mode; label: string; count: number; tip: string }[] = [
     { id: "attention", label: "Attention", count: sorted.filter((s) => laneOf(s) !== "idle").length, tip: "Grouped by what each session wants from you" },
@@ -1005,6 +1020,8 @@ export function SessionsPanel(props: Props) {
       <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
         {nsOpen && !nsScoped && nsForm}
         {npOpen && mode === "projects" && npForm}
+        {/* Pending plugin requests sit above the sessions they become on accept. */}
+        <RivendellQueue active={mode === "plugins"} />
 
         {mode !== "projects" ? (
           <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>

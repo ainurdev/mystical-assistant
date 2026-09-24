@@ -500,6 +500,16 @@ class Handler(BaseHTTPRequestHandler):
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
                      for i in rivendell_instances.instances()]
             return self._json({"instances": insts})
+        if path == "/local/rivendell/queue":
+            # One flat, oldest-first stream across every instance — each row
+            # carries its instance name so the PLUGINS queue can label it.
+            names = {i["id"]: (i.get("name") or i["id"])
+                     for i in rivendell_instances.instances()}
+            rows = [{**item, "instance_id": wid, "instance": names.get(wid, wid)}
+                    for wid, pending in rivendell.queue().items()
+                    for item in pending]
+            rows.sort(key=lambda r: r["created_at"])
+            return self._json({"queue": rows})
         if path == "/local/tracker/projects":
             try:
                 return self._json({"projects": trackers.projects((qs.get("conn", [""])[0] or "").strip())})
@@ -1263,6 +1273,17 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/rivendell/queue":
+            # Accept/reject one pending request. A stale click (already
+            # accepted/rejected, or the worker gone) simply returns ok:false.
+            op = body.get("op")
+            iid = (body.get("instance_id") or "").strip()
+            key = (body.get("key") or "").strip()
+            if op == "accept":
+                return self._json({"ok": rivendell.accept(iid, key)})
+            if op == "reject":
+                return self._json({"ok": rivendell.reject(iid, key)})
+            return self._json({"error": "op must be accept or reject"}, 400)
         if path == "/local/tracker/update":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

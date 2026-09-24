@@ -6,17 +6,23 @@ dashboard, a local one you develop against, a staging one later — so the plugi
 runs one independent ``Worker`` per enabled instance (see
 ``bridge/rivendell_instances.py`` for the config store). Each worker holds a
 persistent WebSocket to its instance's /agent endpoint (bearer token minted in
-that Rivendell under Profile -> Tokens with the LLM capability), and a single
-per-worker consumer turns each request event into an autonomous Claude run:
+that Rivendell under Profile -> Tokens with the LLM capability). Request events
+are NOT run on sight: each is held in a per-worker PENDING queue, surfaced in the
+dashboard's PLUGINS tab, and only turned into an autonomous Claude run when an
+operator ACCEPTS it. A human deciding what runs, and when, is the whole reason
+the queue exists — REJECT declines a request instead (there is no reject endpoint,
+so it claims the request and POSTs FAILED, which is what makes the decision stick):
 
-    pr-review-request          -> GET  /plugin/review-requests/<id>/prompt
-    task-implementation-request-> GET  /plugin/implementation-requests/<id>/prompt
-    project-todolist-request   -> GET  /plugin/todolist-requests/<id>/prompt
-    task-description-request    -> GET  /plugin/task-description-requests/<id>/prompt
-          (each GET claims the request: PENDING -> IN_PROGRESS)
+    pr-review-request           held PENDING in the worker's queue
+    task-implementation-request        |
+    project-todolist-request           v  operator ACCEPT (dashboard PLUGINS tab)
+    task-description-request    -> GET  /plugin/<kind>-requests/<id>/prompt
+          (the GET claims the request: PENDING -> IN_PROGRESS)
           -> runner.start_streaming_job(...)            (bypassPermissions,
                                                          the instance's model)
           -> POST /plugin/<kind>-requests/<id>/result   (COMPLETED | FAILED)
+
+          operator REJECT -> claim + POST FAILED ("declined by operator")
 
 Reviews and implementations need a local checkout of the named repository;
 todolists and task descriptions need none — the whole project/task context is
@@ -38,20 +44,22 @@ checkout matches (the prompt carries the PR reference, so a generic dir degrades
 gracefully); implementations FAIL instead — an autonomous code-writing run must
 never land in the wrong directory.
 
-A worker processes its requests one at a time: two autonomous runs may share a
-checkout (same repo, or the shared fallback workdir) and would race each other's
-working tree. Distinct instances run concurrently — they are separate queues —
-which is fine as long as their WORKDIRs differ. The websocket is
-reconnect-forever with capped backoff; missed events are recovered on each
-(re)connect via the PENDING catch-up endpoints.
+Accepted runs are concurrent: the request prompts instruct each run to work in
+its own git worktree, so runs no longer race a shared checkout the way the old
+single serial consumer had to guard against. Each accept spawns its own run
+thread; distinct instances were already concurrent (separate queues) and still
+are. The websocket is reconnect-forever with capped backoff; missed events are
+recovered on each (re)connect via the PENDING catch-up endpoints, which
+re-populate the queue.
 
-A bridge restart mid-run loses a worker's waiter for the running job (recovery
-still resumes the Claude turn, but its result is never POSTed). The catch-up
-endpoints therefore return IN_PROGRESS requests too, so the restarted worker
-re-claims and redoes them — an interrupted run costs a re-run, never a request
-stuck IN_PROGRESS forever. In-process duplicates are prevented by each worker's
-_seen set (keys "review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>",
-since the request kinds have separate id spaces).
+A request stays PENDING server-side until it is accepted, so nothing is lost
+across a bridge restart: the queue is rebuilt from the catch-up endpoints. Those
+also return IN_PROGRESS requests, so a run interrupted mid-flight by a restart
+comes back into the queue for a fresh accept rather than sticking IN_PROGRESS
+forever. In-process duplicates are prevented by each worker's _seen set (keys
+"review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>", since the request
+kinds have separate id spaces); a rejected request is claimed+FAILED, so catch-up
+never resurrects it.
 
 A token/auth failure is treated apart from a transient network fault: the gateway
 accepts the upgrade and then closes with 4401/4403 (or a proxy rejects the
@@ -71,7 +79,6 @@ without interrupting an in-flight review).
 import base64
 import json
 import os
-import queue
 import socket
 import ssl
 import threading
@@ -130,19 +137,22 @@ def _rescan_checkouts() -> dict:
 # --- One connection into one rivendell-api instance ---------------------------
 
 class Worker:
-    """A single rivendell-api connection: its listener, its one-at-a-time run
-    consumer, and the config it reads per iteration (so a live edit lands on the
-    next reconnect/review without a restart)."""
+    """A single rivendell-api connection: its listener, its PENDING request queue
+    behind the operator accept/reject gate, and the config it reads per iteration
+    (so a live edit lands on the next reconnect/review without a restart)."""
 
     def __init__(self, inst: dict):
         self.inst = inst                     # config dict; swapped, never mutated
         self._stop = threading.Event()
-        self._queue: queue.Queue = queue.Queue()   # (kind, request_id, slug|None)
+        # Requests awaiting the operator's decision: key "<kind>:<id>" -> a plain
+        # dict the dashboard renders. Ordered by insertion (created-at order),
+        # which is how the PLUGINS tab shows them.
+        self._pending: "dict[str, dict]" = {}
+        self._q_lock = threading.Lock()      # guards _pending
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
-        self._worker_thread: threading.Thread | None = None
         # A token that was rejected: while it is still the configured token the
         # listener idles instead of reconnecting. Cleared when the token changes.
         self._blocked_token: str | None = None
@@ -314,7 +324,8 @@ class Worker:
         were newly queued. Each kind is fetched independently: an older
         rivendell-api without the implementation or todolist endpoint must not
         break review catch-up."""
-        before = self._queue.qsize()
+        with self._q_lock:
+            before = len(self._pending)
         try:
             for item in self._api("/plugin/review-requests"):
                 self._enqueue("review", item["id"], item.get("repositoryFullName"))
@@ -335,16 +346,24 @@ class Worker:
                 self._enqueue("taskdesc", item["id"], item.get("taskName"))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: task-description catch-up failed: {e}")
-        return self._queue.qsize() - before
+        with self._q_lock:
+            return len(self._pending) - before
 
     def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None) -> None:
+        """Hold a request PENDING for the operator, deduped per _seen. It does not
+        run until accept() claims it — the accept/reject gate is the point."""
+        key = f"{kind}:{request_id}"
         with self._seen_lock:
-            key = f"{kind}:{request_id}"
             if key in self._seen:
                 return
             self._seen.add(key)
-        self.last_event_at = time.time()
-        self._queue.put((kind, request_id, slug))
+        now = time.time()
+        self.last_event_at = now
+        with self._q_lock:
+            self._pending[key] = {
+                "key": key, "kind": kind, "request_id": request_id,
+                "slug": slug, "created_at": now,
+            }
 
     def _handle_message(self, raw: bytes) -> None:
         try:
@@ -663,44 +682,85 @@ class Worker:
         "taskdesc": "task-description-requests",
     }
 
-    def _consume(self) -> None:
-        """Single consumer: one run at a time (runs may share a checkout — see
-        the module docstring)."""
-        while not self._stop.is_set():
-            try:
-                kind, request_id, slug = self._queue.get(timeout=1)
-            except queue.Empty:
-                continue
-            kind_path = self._KIND_PATH.get(kind, "review-requests")
-            try:
-                if kind == "impl":
-                    self._run_implementation(request_id, slug)
-                elif kind == "todolist":
-                    self._run_todolist(request_id, slug)
-                elif kind == "taskdesc":
-                    self._run_taskdesc(request_id, slug)
-                else:
-                    self._run_review(request_id, slug)
-            except Exception as e:  # noqa: BLE001 — worker must outlive any run
-                print(f"rivendell[{self.name}]: {kind} {request_id} crashed: {e}")
-                self._post_result(kind_path, request_id, False, f"bridge error: {e}")
+    # -- accept/reject gate --
+    def queue_snapshot(self) -> list:
+        """The PENDING requests awaiting a decision, oldest first — the rows the
+        dashboard's PLUGINS queue renders."""
+        with self._q_lock:
+            items = sorted(self._pending.values(), key=lambda r: r["created_at"])
+        return [dict(r) for r in items]
+
+    def accept(self, key: str) -> bool:
+        """Claim and run one pending request, concurrently with any others (its
+        prompt isolates it in its own worktree). Returns False if the key is not
+        pending (already accepted/rejected, or a stale click)."""
+        with self._q_lock:
+            item = self._pending.pop(key, None)
+        if item is None:
+            return False
+        threading.Thread(
+            target=self._run_accepted, args=(dict(item),),
+            name=f"rivendell-run-{self.id}", daemon=True).start()
+        return True
+
+    def reject(self, key: str) -> bool:
+        """Decline one pending request. There is no reject endpoint, so this
+        claims it (PENDING -> IN_PROGRESS) and POSTs FAILED — that is what makes
+        the decision stick server-side and keeps catch-up from resurrecting it.
+        Runs off-thread so a slow POST never blocks the HTTP handler."""
+        with self._q_lock:
+            item = self._pending.pop(key, None)
+        if item is None:
+            return False
+        threading.Thread(
+            target=self._do_reject, args=(dict(item),),
+            name=f"rivendell-reject-{self.id}", daemon=True).start()
+        return True
+
+    def _run_accepted(self, item: dict) -> None:
+        """Dispatch one accepted request to its runner; a crash lands it FAILED so
+        the request never sticks IN_PROGRESS. The worker outlives any run."""
+        kind, request_id, slug = item["kind"], item["request_id"], item["slug"]
+        kind_path = self._KIND_PATH.get(kind, "review-requests")
+        try:
+            if kind == "impl":
+                self._run_implementation(request_id, slug)
+            elif kind == "todolist":
+                self._run_todolist(request_id, slug)
+            elif kind == "taskdesc":
+                self._run_taskdesc(request_id, slug)
+            else:
+                self._run_review(request_id, slug)
+        except Exception as e:  # noqa: BLE001 — worker must outlive any run
+            print(f"rivendell[{self.name}]: {kind} {request_id} crashed: {e}")
+            self._post_result(kind_path, request_id, False, f"bridge error: {e}")
+
+    def _do_reject(self, item: dict) -> None:
+        kind_path = self._KIND_PATH.get(item["kind"], "review-requests")
+        request_id = item["request_id"]
+        # Claim first: the result endpoint expects a claimed (IN_PROGRESS) request.
+        # A claim failure (already gone, older API) is fine — still try to FAIL it.
+        try:
+            self._fetch_prompt(kind_path, request_id)
+        except Exception as e:  # noqa: BLE001 — best-effort claim
+            print(f"rivendell[{self.name}]: reject claim failed for "
+                  f"{request_id}: {e}")
+        print(f"rivendell[{self.name}]: {item['kind']} {request_id} "
+              "rejected by operator")
+        self._post_result(kind_path, request_id, False, "declined by operator")
 
     # -- lifecycle --
     def start(self) -> None:
-        """Launch the listener + consumer (idempotent). Threads are pure loops
-        driven by ``self._stop`` and read config per iteration, so a start after
-        a recent stop may simply revive still-alive threads by clearing the
-        flag; each is only respawned once dead."""
+        """Launch the listener (idempotent). The listener is a pure loop driven by
+        ``self._stop`` that reads config per iteration, so a start after a recent
+        stop may simply revive a still-alive thread by clearing the flag; it is
+        only respawned once dead. Accepted runs get their own threads on demand —
+        there is no standing consumer to launch."""
         self._stop.clear()
         if self._listen_thread is None or not self._listen_thread.is_alive():
             self._listen_thread = threading.Thread(
                 target=self._listen, name=f"rivendell-ws-{self.id}", daemon=True)
             self._listen_thread.start()
-        if self._worker_thread is None or not self._worker_thread.is_alive():
-            self._worker_thread = threading.Thread(
-                target=self._consume, name=f"rivendell-worker-{self.id}",
-                daemon=True)
-            self._worker_thread.start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -770,6 +830,29 @@ def status() -> dict:
     absent — the panel shows them "off"."""
     with _manager_lock:
         return {wid: w.status_snapshot() for wid, w in _workers.items()}
+
+
+def queue() -> dict:
+    """PENDING requests per instance id, for the dashboard's PLUGINS queue.
+    Disabled/removed instances have no worker and are simply absent."""
+    with _manager_lock:
+        return {wid: w.queue_snapshot() for wid, w in _workers.items()}
+
+
+def accept(instance_id: str, key: str) -> bool:
+    """Accept one pending request on the named instance. False if the instance
+    has no running worker or the key is no longer pending."""
+    with _manager_lock:
+        w = _workers.get(instance_id)
+    return bool(w and w.accept(key))
+
+
+def reject(instance_id: str, key: str) -> bool:
+    """Reject one pending request on the named instance. False if the instance
+    has no running worker or the key is no longer pending."""
+    with _manager_lock:
+        w = _workers.get(instance_id)
+    return bool(w and w.reject(key))
 
 
 # Boot entry point (claude_telegram_bridge.py) and the settings save hook both

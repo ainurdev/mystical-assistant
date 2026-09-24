@@ -159,10 +159,11 @@ def test_client_handshake_401_is_an_auth_error(monkeypatch):
 # --- event handling ----------------------------------------------------------
 
 def _drain(w):
-    drained = []
-    while not w._queue.empty():
-        drained.append(w._queue.get_nowait())
-    return drained
+    """The pending requests as (kind, request_id, slug) tuples, oldest first —
+    requests are held PENDING for the operator now, not auto-consumed."""
+    items = w.queue_snapshot()
+    w._pending.clear()
+    return [(it["kind"], it["request_id"], it["slug"]) for it in items]
 
 
 def test_handle_message_filters_and_dedups():
@@ -280,6 +281,81 @@ def test_workers_have_independent_queues():
     b._handle_message(event)
     assert _drain(a) == [("review", "x", "acme/app")]
     assert _drain(b) == [("review", "x", "acme/app")]
+
+
+# --- accept/reject gate ------------------------------------------------------
+
+def test_enqueue_holds_pending_until_accepted():
+    """A request event is held PENDING, exposed to the dashboard — it does not
+    run on sight; the operator's accept is what starts it."""
+    w = _worker()
+    w._handle_message(json.dumps({"type": "pr-review-request", "requestId": "r1",
+                                  "pullRequest": {"repositoryFullName": "acme/app"}}).encode())
+    snap = w.queue_snapshot()
+    assert len(snap) == 1
+    assert snap[0]["kind"] == "review"
+    assert snap[0]["request_id"] == "r1"
+    assert snap[0]["slug"] == "acme/app"
+    assert snap[0]["key"] == "review:r1"
+
+
+def test_accept_pops_pending_and_runs(monkeypatch):
+    """accept() removes the request from the queue and dispatches it once; a
+    second accept of the same key is a no-op (already gone)."""
+    w = _worker()
+    w._enqueue("review", "r1", "acme/app")
+    seen, ev = [], threading.Event()
+    monkeypatch.setattr(w, "_run_accepted", lambda item: (seen.append(item), ev.set()))
+    assert w.accept("review:r1") is True
+    assert ev.wait(2), "accept must dispatch the run"
+    assert seen[0]["request_id"] == "r1"
+    assert w.queue_snapshot() == []
+    assert w.accept("review:r1") is False
+
+
+def test_run_accepted_dispatches_by_kind(monkeypatch):
+    """_run_accepted routes each kind to its runner with (request_id, slug)."""
+    w = _worker()
+    calls = []
+    monkeypatch.setattr(w, "_run_review", lambda rid, slug: calls.append(("review", rid, slug)))
+    monkeypatch.setattr(w, "_run_implementation", lambda rid, slug: calls.append(("impl", rid, slug)))
+    monkeypatch.setattr(w, "_run_todolist", lambda rid, slug: calls.append(("todolist", rid, slug)))
+    monkeypatch.setattr(w, "_run_taskdesc", lambda rid, slug: calls.append(("taskdesc", rid, slug)))
+    w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})
+    w._run_accepted({"kind": "todolist", "request_id": "t1", "slug": "Proj"})
+    w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
+    assert calls == [("impl", "i1", "acme/app"), ("todolist", "t1", "Proj"),
+                     ("review", "r1", None)]
+
+
+def test_reject_claims_then_fails(monkeypatch):
+    """reject() has no reject endpoint to call: it claims the request (so the
+    result POST is accepted) and posts FAILED "declined by operator", then drops
+    it. A second reject of the same key is a no-op."""
+    w = _worker()
+    w._enqueue("impl", "i1", "acme/app")
+    claimed, posted, ev = [], [], threading.Event()
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kp, rid: claimed.append((kp, rid)) or {"prompt": "x"})
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)) or ev.set())
+    assert w.reject("impl:i1") is True
+    assert ev.wait(2), "reject must post a result"
+    assert claimed == [("implementation-requests", "i1")]
+    assert posted == [("implementation-requests", "i1", False, "declined by operator")]
+    assert w.queue_snapshot() == []
+    assert w.reject("impl:i1") is False
+
+
+def test_rejected_request_is_not_re_added_by_catch_up():
+    """A rejected key stays in _seen, so a catch-up that still lists it (before the
+    server marks it FAILED) does not put it back in the queue."""
+    w = _worker()
+    w._enqueue("review", "r1", "acme/app")
+    with w._q_lock:
+        w._pending.pop("review:r1")            # reject() removed it; _seen kept
+    w._enqueue("review", "r1", "acme/app")      # a catch-up re-offer
+    assert w.queue_snapshot() == []
 
 
 # --- job waiting -------------------------------------------------------------
