@@ -89,6 +89,9 @@ import { restartBridge } from "../../lib/restart";
 export interface SettingsModalProps {
   host: string;
   port: string;
+  /** Which tab to land on, when the opener asked for one by name (a dead-login
+   *  badge sends you to ACCOUNTS). Read once: the modal mounts per open. */
+  startTab?: Tab;
   settings: HudSettings;
   onTheme: (t: ThemeKey) => void;
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
@@ -125,7 +128,7 @@ export interface SettingsModalProps {
 // is there; likewise the prompt-box and transcript switches sat under SESSION
 // among the model/mode/effort knobs they have nothing to do with.
 
-type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
+export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
   | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts"
   | "plugins" | "system"
   | "report";
@@ -1780,11 +1783,10 @@ const AI_ICONS: Record<string, LucideIcon> = {
  *  line by line; as cards, which ones are spending is visible from across the
  *  grid — the question this tab exists to answer. The cost line sits on the
  *  card's floor (marginTop:auto) so it lines up across a row whatever the
- *  hints do. */
-function AiCard({ f, busy, err, onToggle }: {
-  f: AiFeature; busy: boolean; err?: string; onToggle: () => void;
+ *  hints do — until an ⓘ opens; see openKey in AiPanel. */
+function AiCard({ f, busy, err, open, onToggle, onInfo }: {
+  f: AiFeature; busy: boolean; err?: string; open: boolean; onToggle: () => void; onInfo: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const Icon = AI_ICONS[f.key] ?? Sparkles;
   return (
     <div style={{
@@ -1801,7 +1803,7 @@ function AiCard({ f, busy, err, onToggle }: {
         <Icon size={13} strokeWidth={1.7} aria-hidden
           style={{ flex: "none", color: f.enabled ? "var(--acc)" : "var(--txd)" }} />
         <span style={{ ...KEY_TX, color: f.enabled ? "var(--txb)" : "var(--txd)" }}>{f.label}</span>
-        {f.about && <InfoDot on={open} about={f.label} onClick={() => setOpen(!open)} />}
+        {f.about && <InfoDot on={open} about={f.label} onClick={onInfo} />}
         <span style={{ flex: 1, minWidth: 8 }} />
         <Switch on={f.enabled} onClick={() => (busy ? null : onToggle())} />
       </div>
@@ -1828,6 +1830,10 @@ function AiPanel() {
   // Keyed by feature: a failure belongs on the card whose switch just refused
   // to move, not in a line under ten of them.
   const [err, setErr] = useState<{ key: string; msg: string } | null>(null);
+  // Which card's ⓘ is unfolded. Held here, not per card, because the grid has
+  // to know: its rows stretch so the cost lines align across a row, and one
+  // open aside would stretch its neighbour into a card that is mostly gap.
+  const [openKey, setOpenKey] = useState<string | null>(null);
 
   useEffect(() => {
     void api
@@ -1868,14 +1874,17 @@ function AiPanel() {
       <div style={{ fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txd)", marginBottom: 11 }}>
         {on} OF {rows.length} SPENDING
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(258px,1fr))", gap: 9 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(258px,1fr))", gap: 9,
+                    alignItems: openKey ? "start" : "stretch" }}>
         {rows.map((f) => (
           <AiCard
             key={f.key}
             f={f}
             busy={busy === f.key}
             err={err?.key === f.key ? err.msg : undefined}
+            open={openKey === f.key}
             onToggle={() => void toggle(f)}
+            onInfo={() => setOpenKey(openKey === f.key ? null : f.key)}
           />
         ))}
       </div>
@@ -3781,9 +3790,10 @@ export function SettingsModal(props: SettingsModalProps) {
     onSessionTools,
     onOpenInspector,
     projects,
+    startTab,
   } = props;
 
-  const [tab, setTab] = useState<Tab>("appearance");
+  const [tab, setTab] = useState<Tab>(startTab ?? "appearance");
   const aiFeatures = useAiFeatures();   // the PONYTAIL level hides with its switch
   // Search. A query replaces the panel with its results; picking one puts the
   // tab back and scrolls to the setting, so `q` is also "which view is this".

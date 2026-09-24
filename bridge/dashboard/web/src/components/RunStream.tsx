@@ -2015,10 +2015,14 @@ function FinalResult({
 }) {
   const h12 = useClock12();
   const flash = animate && !typedResults.has(idKey);
-  const tone = isError ? "var(--err)" : label ? "var(--acc)" : "var(--ok)";
+  // The CLI answers a slash command it doesn't have with one line and a clean
+  // exit, so the turn arrives is_error:false and drew green — "RESULT // OK",
+  // body "Unknown command: /design-first". Nothing ran; say so.
+  const bad = isError || result.startsWith("Unknown command:");
+  const tone = bad ? "var(--err)" : label ? "var(--acc)" : "var(--ok)";
   // The model asked in prose instead of using a question card: lift the question
   // out of the body so it reads as an ask, and offer the answers it expected.
-  const ask = onAnswer && !isError ? askBack(result) : null;
+  const ask = onAnswer && !bad ? askBack(result) : null;
   const body = ask ? ask.body : result;
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
@@ -2036,7 +2040,7 @@ function FinalResult({
         style={flash ? { animation: "resultflash 1.2s ease both" } : undefined}
       >
         <div className="res-head">
-          <span className="res-lab">{label ?? `RESULT // ${isError ? "ERROR" : "OK"}`}</span>
+          <span className="res-lab">{label ?? `RESULT // ${bad ? "ERROR" : "OK"}`}</span>
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (

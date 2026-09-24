@@ -8,6 +8,7 @@ import { RunStream, TURN_TAIL } from "./RunStream";
 import type { OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
+import { openSettings } from "../lib/opensettings";
 import { updateClaude } from "../lib/restart";
 import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
 import { hhmm, useClock12 } from "../lib/surfaces";
@@ -93,6 +94,19 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
       <span className="text-[length:var(--t95)] opacity-70" style={{ color: tone }}>
         {outcome.detail}
       </span>
+      {/* The detail says "check ACCOUNTS" and, until this button, left you to
+       *  find them: the dead login is the one failure the user can fix from
+       *  here, so the way in sits on the badge that reports it. */}
+      {outcome.code === "auth" && (
+        <button
+          type="button"
+          onClick={() => openSettings("accounts")}
+          className="mt-0.5 self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px] hover:bg-accent"
+          style={{ color: "var(--acc)", borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
+        >
+          OPEN SETTINGS ▸ ACCOUNTS
+        </button>
+      )}
       {outcome.code === "outdated" && (
         <button
           type="button"

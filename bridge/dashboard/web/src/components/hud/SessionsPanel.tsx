@@ -864,7 +864,11 @@ export function SessionsPanel(props: Props) {
               >
                 <span style={{ flex: "none", fontSize: "var(--t95)", letterSpacing: ".14em", textTransform: "uppercase",
                                color: on ? "var(--txb)" : "var(--txf)", transition: "color .15s ease" }}>{m.label}</span>
-                <span style={{ flex: "none", fontSize: "var(--t9)", color: on ? "var(--acc)" : "var(--txl)" }}>{m.count}</span>
+                {/* Only ATTENTION's count is a number you act on; the other two
+                    just measure the list you are already looking at. */}
+                {m.id === "attention" && (
+                  <span style={{ flex: "none", fontSize: "var(--t9)", color: on ? "var(--acc)" : "var(--txl)" }}>{m.count}</span>
+                )}
               </button>
             );
           })}

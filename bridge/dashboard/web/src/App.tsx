@@ -74,7 +74,7 @@ import { shellCols } from "./lib/shell";
 import { notify, setNoticeSound } from "./components/hud/Notifications";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
-import { SettingsModal } from "./components/hud/SettingsModal";
+import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
 import { AskDialog, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
 import { RestartIntro, restartBridge } from "./lib/restart";
@@ -273,6 +273,9 @@ export function App() {
   // HUD chrome state.
   const [settings, setSettings] = useState<HudSettings>(() => loadSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Which tab the next open lands on, when something asked for one by name
+  // (lib/opensettings) — cleared on close, so the menus keep their default.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
   // The composer's four run knobs live in settings so they survive a reload —
   // the SESSION tab and the composer's dropdowns write the same state.
   const model = settings.model as ModelId;
@@ -1011,6 +1014,16 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctxMenu, toolsFor, inspectorOpen, paletteOpen, settingsOpen, analyzeProject]);
+
+  // "Open SETTINGS on this tab", from anywhere (lib/opensettings.ts).
+  useEffect(() => {
+    const open = (e: Event) => {
+      setSettingsTab((e as CustomEvent<SettingsTab>).detail);
+      setSettingsOpen(true);
+    };
+    window.addEventListener("hud:settings", open);
+    return () => window.removeEventListener("hud:settings", open);
+  }, []);
 
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
@@ -2165,7 +2178,7 @@ export function App() {
             )}
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             {settingsOpen && (
-              <SettingsModal host={host.host} port={location.port || "8790"}
+              <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
                 models={modelOpts} agents={agentOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
@@ -2182,7 +2195,8 @@ export function App() {
                   onRename: renameProject,
                   onImport: importProject,
                 }}
-                onReplayBoot={replayBoot} onClose={() => setSettingsOpen(false)} />
+                onReplayBoot={replayBoot}
+                onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}
             {filePick && (
