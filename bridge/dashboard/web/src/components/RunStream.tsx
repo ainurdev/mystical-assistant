@@ -18,6 +18,7 @@ import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
+import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
 import { ToolWidget } from "./ResultWidgets";
 import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
@@ -593,54 +594,92 @@ function GapMark({ ms }: { ms: number }) {
   );
 }
 
-function ThinkingRow({ ms, text, animate }: { ms?: number; text?: string; animate: boolean }) {
-  const [open, setOpen] = useState(false);
-  // The row costs its height either way — the first line of the reasoning is
-  // what makes it worth reading, and it is the one thing the tool cards can't say.
-  const peek = (text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
-  const head = (
-    <>
-      <span className="thk-lab flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1.5px]">
-        <Brain size={11} aria-hidden />
-        THOUGHT
-      </span>
-      {peek && !open ? (
-        <span className="thk-peek min-w-0 flex-1 truncate text-[length:var(--t11)] italic opacity-75">{peek}</span>
-      ) : (
-        <span aria-hidden className="h-px flex-1 bg-border" />
-      )}
-      <span className="thk-ms flex-none text-[length:var(--t95)] tracking-[1px]">{slow(ms)}</span>
-      {text ? (
-        <ChevronDown
-          size={12}
-          aria-hidden
-          className={`flex-none transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
-        />
-      ) : null}
-    </>
-  );
+/** What a fold's header says about the work under it: still going, how much
+ *  of it failed, how many pieces, how long the lot took. */
+type FoldStat = { running?: boolean; failed?: number; count?: string; ms?: number };
+
+/** A stretch of the model's work under one row — THINKING (what it reasoned)
+ *  or STEPS (what it ran, edited, read; see lib/segments). The prose either
+ *  side stays in the flow at full size; this is what makes it readable.
+ *
+ *  The row wears the thought row's chrome (`.thk`, `.thk-lab`, `.thk-peek`,
+ *  `.thk-ms`): every language already draws that row its own way, and a fold
+ *  is the same row said of more than one event. `data-kind` lets a language
+ *  tell the two apart where it wants to. The body is a SIBLING of the row, not
+ *  a child — STAMP hatches the row's plate and SIGNAL pads it a gutter and a
+ *  level cell to the right, and neither belongs on the rows inside.
+ *
+ *  Shut or open on mount is the reader's setting (HudSettings.foldsOpen); a
+ *  change to it re-sets every mounted fold, and a click moves only that fold. */
+function Fold({ kind, label, icon, title, peek, stat, defaultOpen, animate, children }: {
+  kind: "thinking" | "steps";
+  label: string;
+  icon: ReactNode;
+  /** Always shown — the steps fold's summary is the row's name. */
+  title?: string;
+  /** Shown only while shut — the thinking fold's first line. */
+  peek?: string;
+  stat: FoldStat;
+  defaultOpen: boolean;
+  animate: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
+  const line = title ?? (open ? "" : peek ?? "");
+  const what = label.toLowerCase();
   return (
     <div
-      className="thk ml-[var(--rail)] text-muted-2"
+      className="fold ml-[var(--rail)]"
+      data-kind={kind}
+      data-open={open ? "" : undefined}
+      data-run={stat.running ? "" : undefined}
+      data-err={stat.failed ? "" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      {text ? (
+      <div className="thk text-muted-2">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          title={open ? "hide the reasoning" : "show the reasoning"}
+          aria-expanded={open}
+          title={open ? `hide the ${what}` : `show the ${what}`}
           className="flex w-full items-center gap-2.5 py-0.5 text-left"
         >
-          {head}
+          <span className="thk-lab flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1.5px]">
+            {icon}
+            {label}
+          </span>
+          {line ? (
+            <span className={`thk-peek min-w-0 flex-1 truncate text-[length:var(--t11)] ${title ? "" : "italic opacity-75"}`}>
+              {line}
+            </span>
+          ) : (
+            <span aria-hidden className="h-px flex-1 bg-border" />
+          )}
+          <span className="thk-ms flex flex-none items-center gap-2 text-[length:var(--t95)] tracking-[1px]">
+            {stat.count ? <span>{stat.count}</span> : null}
+            {stat.failed ? <span className="fold-fail">{"\u2715"} {stat.failed} FAILED</span> : null}
+            {stat.running ? <span className="fold-run">RUNNING</span> : slow(stat.ms) ? <span>{dur(stat.ms)}</span> : null}
+          </span>
+          <ChevronDown
+            size={12}
+            aria-hidden
+            className={`flex-none transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
+          />
         </button>
-      ) : (
-        <div className="flex items-center gap-2.5 py-0.5">{head}</div>
-      )}
-      {open && text ? (
-        <div className="mt-1 whitespace-pre-wrap border-l border-border pl-2.5 text-[length:var(--t11)] leading-relaxed">
-          {text}
-        </div>
-      ) : null}
+      </div>
+      {open ? <div className="fold-body space-y-2">{children}</div> : null}
+    </div>
+  );
+}
+
+/** One thought inside the THINKING fold, as recorded — Claude Code keeps the
+ *  reasoning on the stream and on disk, it just never prints it. */
+function Thought({ ms, text }: { ms?: number; text: string }) {
+  return (
+    <div className="thought whitespace-pre-wrap text-[length:var(--t11)] leading-relaxed text-muted-2">
+      {slow(ms) ? <span className="thought-ms">{dur(ms)}</span> : null}
+      {text}
     </div>
   );
 }
@@ -1475,6 +1514,7 @@ export const RunStream = memo(function RunStream({
   ended = false,
   showAll = false,
   boot = null,
+  foldsOpen = false,
 }: {
   events: TimedEvent[];
   pending?: PendingRequest[];
@@ -1503,6 +1543,10 @@ export const RunStream = memo(function RunStream({
   /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
    *  browser's find is about to look for. */
   showAll?: boolean;
+  /** Whether a THINKING or STEPS fold mounts open (the COLLAPSE THINKING &
+   *  STEPS switch, inverted). Off by default: the work sits under one line
+   *  until you ask for it, and the words stay the thing you see. */
+  foldsOpen?: boolean;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -1546,7 +1590,12 @@ export const RunStream = memo(function RunStream({
   // fetch or an MCP call each carry their own block and break the run instead.
   // A glance that came back with a shot carries one too: chips would hide the
   // picture, which is the whole result.
-  const { folds, headOf } = foldChips(events, (i) => {
+  // A thought no longer sits between the rows it fell between — it lives in
+  // the block's THINKING fold (lib/segments) — so for folding and grouping it is
+  // a pause: two Bash calls either side of one are one terminal, not two.
+  // Positions are kept, so every index below is still into `events`.
+  const shape = events.map((e) => (e.type === "thinking" ? { type: "thinking" } : e));
+  const { folds, headOf } = foldChips(shape, (i) => {
     const e = events[i];
     if (e.type !== "tool") return false;
     const d = doneOf(e);
@@ -1570,7 +1619,7 @@ export const RunStream = memo(function RunStream({
       return doneOf(e)?.images?.length ? "shots" : null; // the quiet ones fold into chips
     return kind;
   };
-  const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
+  const { folds: groups, headOf: groupOf } = runsOf(shape, groupKey, 2);
 
   // Never cut a folded run away from the head that draws it. A cut that ends up
   // hiding only a handful buys nothing and reads as a button in front of
@@ -1597,6 +1646,372 @@ export const RunStream = memo(function RunStream({
     return false;
   };
 
+  /** One event as its row. Indices stay absolute: foldChips, runsOf and the
+   *  tool_done pairing all key off position in the full array. */
+  const renderEvent = (i: number): ReactNode => {
+    const event = events[i];
+    switch (event.type) {
+      case "text": {
+        const text = event.text;
+        if (!text) return null;
+        if (resultText && text.trim() === resultText) return null;
+        if (asksNext(i))
+          return (
+            <FinalResult
+              key={i}
+              result={text}
+              label="RESULT // ASK"
+              animate={animate}
+              idKey={`${turnId}:${i}`}
+            />
+          );
+        return (
+          <div
+            key={i}
+            className="group/msg relative flex items-start pl-[var(--rail)]"
+            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+          >
+            <RailNode />
+            {/* The agent talking. Bare prose between boxed, labelled cards was
+                the one thing in a turn with nothing to catch a scrolling eye —
+                and it is the part worth reading — so it gets a bubble of its
+                own (MessageBlock) and a node on the rail where it starts. */}
+            <MessageBlock text={text} onQuote={onQuote}>
+              <Markdown className="leading-relaxed" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
+            </MessageBlock>
+          </div>
+        );
+      }
+      case "tool": {
+        const head = headOf.get(i);
+        if (head !== undefined && !openFolds.has(head)) return null;
+        const fold = folds.get(i);
+        if (fold && !openFolds.has(i))
+          return (
+            <FoldedChips
+              key={i}
+              names={fold.map((j) => (events[j] as { name: string }).name)}
+              onOpen={() => setOpenFolds((s) => new Set(s).add(i))}
+            />
+          );
+        const done = doneOf(event);
+        if (groupOf.has(i)) return null; // drawn by the run's head
+        const run = groups.get(i) ?? [i];
+        // What structure the run's results carried, if any. Null keeps the
+        // plain row — which is every tool without a table entry. Built from
+        // the whole run rather than this event: the head draws the group's
+        // one card, so a member's shots or sources would be drawn by nobody.
+        const spec = widgetForRun(run.map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
+        // Hung under whichever card this tool got, not just the default one:
+        // a Read of a PNG returns an image and takes the ReadCard branch, and
+        // that is 715 of the 729 image results in this store — a widget only
+        // the default branch could show would be one almost nobody sees.
+        // Every style draws its widget now: PLAIN, the one that opted out
+        // of them, has no column on the sheet and was replaced by a fifth
+        // look (lib/toolwidget TOOL_STYLES).
+        const extra = spec ? (
+          <div className="ml-[var(--rail)]">
+            <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
+          </div>
+        ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
+        const withExtra = (node: ReactNode) =>
+          extra ? <div key={i}>{node}{extra}</div> : node;
+        // A delegation is a turn nested inside this one, so it is drawn as
+        // its own framed block — and a run of them as one fan, not as N
+        // identical rows or a generic "AGENT · 4 CALLS" box.
+        if (toolKind(event.name) === "agent") {
+          const runs = run.map((j) => {
+            const e = events[j] as { name: string; summary: string; agent?: AgentMeta };
+            const d = doneOf(events[j]);
+            return { name: e.name, summary: e.summary, meta: e.agent, ms: d?.ms,
+                     stat: d?.stat, error: d?.is_error, running: !d };
+          });
+          return runs.length > 1
+            ? <AgentFan key={i} runs={runs} animate={animate} />
+            : <AgentBlock key={i} run={runs[0]} animate={animate} />;
+        }
+        if (event.name === "Bash")
+          return (
+            <TerminalGroup
+              key={i}
+              cmds={run.map((j) => ({
+                command: (events[j] as { summary: string }).summary,
+                done: doneOf(events[j]),
+              }))}
+              animate={animate}
+              autoOpen={openResults}
+              onRerun={onRunCommand}
+            />
+          );
+        if (done?.patch)
+          return (
+            <EditGroup
+              key={i}
+              edits={run.map((j) => {
+                const e = events[j] as { name: string; summary: string };
+                const d = doneOf(events[j]);
+                return { name: e.name, path: e.summary, patch: d?.patch, ms: d?.ms,
+                         error: d?.is_error };
+              })}
+              animate={animate}
+              autoOpen={openResults}
+            />
+          );
+        if (run.length > 1)
+          return withExtra(
+            <CallGroup
+              key={i}
+              name={event.name}
+              calls={run.map((j) => {
+                const e = events[j] as { name: string; summary: string };
+                const d = doneOf(events[j]);
+                return { name: e.name, summary: e.summary, ms: d?.ms, stat: d?.stat,
+                         error: d?.is_error };
+              })}
+              animate={animate}
+            />
+          );
+        const kind = toolKind(event.name);
+        if (kind === "read" && event.summary)
+          return withExtra(
+            <ReadCard
+              key={i}
+              path={event.summary}
+              ms={done?.ms}
+              stat={done?.stat}
+              error={done?.is_error}
+              animate={animate}
+              t={clockAt(event)}
+            />
+          );
+        if (kind === "write" && event.summary)
+          return withExtra(
+            <WriteCard
+              key={i}
+              name={event.name}
+              path={event.summary}
+              ms={done?.ms}
+              stat={done?.stat}
+              error={done?.is_error}
+              animate={animate}
+              t={clockAt(event)}
+            />
+          );
+        return (
+          <div key={i}>
+            <ToolCard
+              name={event.name}
+              summary={event.summary}
+              ms={done?.ms}
+              stat={done?.is_error ? undefined : done?.stat}
+              error={done?.is_error}
+              animate={animate}
+              t={clockAt(event)}
+            />
+            {done?.is_error && done.stat ? (
+              <div className="mt-2 ml-[var(--rail)]"><ErrLine text={done.stat} /></div>
+            ) : null}
+            {extra}
+          </div>
+        );
+      }
+      case "thinking":
+        // A thought is drawn by its block's THINKING fold. A pause swallowed by
+        // a group is drawn by nobody: its mark would land at the foot of the
+        // card instead of between the rows it fell between, and two of them
+        // would stack on the same pixel.
+        if (!event.text)
+          return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
+        return null;
+      case "log":
+        return (
+          <LogRow
+            key={i}
+            src={event.src}
+            label={event.label}
+            text={event.text}
+            error={event.error}
+            animate={animate}
+          />
+        );
+      case "tool_done":
+        return null;
+      case "steer":
+        // Sent into this turn while it was already running — drawn with the
+        // prompt bubble's geometry (right-aligned, bordered, tinted) so it
+        // reads as the user speaking, not another agent row; violet + the
+        // STEER tag keep it distinct from the turn-opening prompt.
+        return (
+          <div key={i} id={ckId(turnId, steerKey(i))} className="my-2 flex scroll-mt-[94px] justify-end">
+            <div
+              className="max-w-[78%] border border-r-[3px] px-3 py-1.5"
+              style={{
+                borderColor: "color-mix(in srgb, var(--violet) 26%, transparent)",
+                borderRightColor: "var(--violet)",
+                background: "color-mix(in srgb, var(--violet) 7%, transparent)",
+              }}
+            >
+              <div className="mb-0.5 flex items-center justify-end gap-1.5 text-[length:var(--t10)] tracking-[1.6px] text-[var(--violet)]">
+                STEER <SteerIcon size={11} />
+              </div>
+              <span className="block whitespace-pre-wrap break-words text-[length:var(--t12)] leading-relaxed text-foreground-bright">
+                {event.text}
+              </span>
+              {event.images && event.images.length > 0 && (
+                <ToolImages paths={event.images} />
+              )}
+            </div>
+          </div>
+        );
+      case "result":
+        return (
+          <FinalResult
+            key={i}
+            result={event.result}
+            // A stored event knows when it landed; a live one doesn't carry
+            // `at` yet, so the turn's own start plus its wall time says it.
+            at={event.at ?? (turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined)}
+            elapsed={event.elapsed}
+            tokens={tokens}
+            isError={event.is_error}
+            animate={animate}
+            idKey={`${turnId}:${i}`}
+            onAnswer={onAnswer}
+            onQuote={onQuote}
+          />
+        );
+      case "error":
+        return (
+          <div
+            key={i}
+            className="ml-[var(--rail)] flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
+            style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+          >
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
+            <span>{event.message}</span>
+          </div>
+        );
+      case "permission":
+        return (
+          <div key={i} className="ml-[var(--rail)]">
+            <PermissionCard
+              toolName={event.tool_name}
+              summary={event.summary}
+              detail={event.detail}
+              active={!!onRespond && pendingIds.has(event.request_id)}
+              resolved={permResolved.get(event.request_id)}
+              // The run this belonged to is gone (restart, Stop, crash), so
+              // nothing is listening for an answer any more.
+              stale={ended && !permResolved.has(event.request_id)}
+              onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
+              onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
+            />
+          </div>
+        );
+      case "question":
+        return (
+          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+            <QuestionCard
+              questions={event.questions}
+              requestId={event.request_id}
+              active={!!onRespond && pendingIds.has(event.request_id)}
+              answered={qAnswered.get(event.request_id)}
+              stale={ended && !qAnswered.has(event.request_id)}
+              onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
+            />
+          </div>
+        );
+      case "stopped":
+        return (
+          <div
+            key={i}
+            className="ml-[var(--rail)] flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
+          >
+            <CircleStop
+              size={14}
+              className="shrink-0 text-[var(--brand-soft)]"
+              aria-hidden
+            />
+            <span>Stopped — send a message to continue.</span>
+          </div>
+        );
+      case "permission_resolved":
+      case "question_answered":
+        return null; // shown inside the relevant card
+    }
+  };
+
+  /** What one step was, for the STEPS fold's title. An Edit still running has
+   *  no patch yet but is an edit all the same; only Write makes a file. */
+  const catOf = (e: { name: string }, d: Done | undefined): StepCat => {
+    if (e.name === "Bash") return "command";
+    if (d?.patch) return "edit";
+    switch (toolKind(e.name)) {
+      case "write": return e.name === "Write" ? "write" : "edit";
+      case "read": return "read";
+      case "search": return "search";
+      case "web": return "fetch";
+      case "mcp": return "call";
+      case "agent": return "agent";
+      default: return "step";
+    }
+  };
+
+  const stepsFold = (seg: Seg) => {
+    const cats: StepCat[] = [];
+    let ms = 0, failed = 0, running = false, live = "";
+    for (const i of seg.idx) {
+      const e = events[i];
+      if (e.type === "log") { cats.push("log"); if (e.error) failed++; continue; }
+      if (e.type !== "tool") continue;
+      const d = doneOf(e);
+      cats.push(catOf(e, d));
+      if (!d) { running = true; live = e.summary; }
+      else { ms += d.ms ?? 0; if (d.is_error) failed++; }
+    }
+    const title = stepsTitle(cats);
+    return (
+      <Fold
+        key={`f${seg.idx[0]}`}
+        kind="steps"
+        label="STEPS"
+        icon={<Layers size={11} aria-hidden />}
+        // While one is out, the row names it: on a phone this line is the
+        // whole view of what the machine is doing right now.
+        title={running && live ? `${title} \u2014 ${live}` : title}
+        stat={{ running, failed, ms }}
+        defaultOpen={foldsOpen}
+        animate={animate}
+      >
+        {seg.idx.map(renderEvent)}
+      </Fold>
+    );
+  };
+
+  const thinkingFold = (seg: Seg) => {
+    const thoughts = seg.idx.map((i) => events[i] as { ms?: number; text?: string });
+    const ms = thoughts.reduce((t, e) => t + (e.ms ?? 0), 0);
+    const peek = (thoughts[0].text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
+    return (
+      <Fold
+        key={`f${seg.idx[0]}`}
+        kind="thinking"
+        label="THINKING"
+        icon={<Brain size={11} aria-hidden />}
+        peek={peek}
+        stat={{ ms, count: thoughts.length > 1 ? `${thoughts.length} THOUGHTS` : undefined }}
+        defaultOpen={foldsOpen}
+        animate={animate}
+      >
+        {/* One thought's clock is already on the row; only a run of them
+            needs a figure per thought. */}
+        {thoughts.map((e, k) => (
+          <Thought key={seg.idx[k]} ms={thoughts.length > 1 ? e.ms : undefined} text={e.text ?? ""} />
+        ))}
+      </Fold>
+    );
+  };
+
   return (
     // vskip-card: a turn runs to hundreds of events, so each card skips layout
     // and paint while it's off-screen (see .vskip-card in index.css).
@@ -1612,299 +2027,11 @@ export const RunStream = memo(function RunStream({
           {from} EARLIER STEP{from === 1 ? "" : "S"}
         </button>
       )}
-      {/* Indices stay absolute: foldChips, runsOf and the tool_done pairing all
-          key off position in the full array. */}
-      {events.slice(from).map((event, k) => {
-        const i = k + from;
-        switch (event.type) {
-          case "text": {
-            const text = event.text;
-            if (!text) return null;
-            if (resultText && text.trim() === resultText) return null;
-            if (asksNext(i))
-              return (
-                <FinalResult
-                  key={i}
-                  result={text}
-                  label="RESULT // ASK"
-                  animate={animate}
-                  idKey={`${turnId}:${i}`}
-                />
-              );
-            return (
-              <div
-                key={i}
-                className="group/msg relative flex items-start pl-[var(--rail)]"
-                style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
-              >
-                <RailNode />
-                {/* The agent talking. Bare prose between boxed, labelled cards was
-                    the one thing in a turn with nothing to catch a scrolling eye —
-                    and it is the part worth reading — so it gets a bubble of its
-                    own (MessageBlock) and a node on the rail where it starts. */}
-                <MessageBlock text={text} onQuote={onQuote}>
-                  <Markdown className="leading-relaxed" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
-                </MessageBlock>
-              </div>
-            );
-          }
-          case "tool": {
-            const head = headOf.get(i);
-            if (head !== undefined && !openFolds.has(head)) return null;
-            const fold = folds.get(i);
-            if (fold && !openFolds.has(i))
-              return (
-                <FoldedChips
-                  key={i}
-                  names={fold.map((j) => (events[j] as { name: string }).name)}
-                  onOpen={() => setOpenFolds((s) => new Set(s).add(i))}
-                />
-              );
-            const done = doneOf(event);
-            if (groupOf.has(i)) return null; // drawn by the run's head
-            const run = groups.get(i) ?? [i];
-            // What structure the run's results carried, if any. Null keeps the
-            // plain row — which is every tool without a table entry. Built from
-            // the whole run rather than this event: the head draws the group's
-            // one card, so a member's shots or sources would be drawn by nobody.
-            const spec = widgetForRun(run.map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
-            // Hung under whichever card this tool got, not just the default one:
-            // a Read of a PNG returns an image and takes the ReadCard branch, and
-            // that is 715 of the 729 image results in this store — a widget only
-            // the default branch could show would be one almost nobody sees.
-            // Every style draws its widget now: PLAIN, the one that opted out
-            // of them, has no column on the sheet and was replaced by a fifth
-            // look (lib/toolwidget TOOL_STYLES).
-            const extra = spec ? (
-              <div className="ml-[var(--rail)]">
-                <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
-              </div>
-            ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
-            const withExtra = (node: ReactNode) =>
-              extra ? <div key={i}>{node}{extra}</div> : node;
-            // A delegation is a turn nested inside this one, so it is drawn as
-            // its own framed block — and a run of them as one fan, not as N
-            // identical rows or a generic "AGENT · 4 CALLS" box.
-            if (toolKind(event.name) === "agent") {
-              const runs = run.map((j) => {
-                const e = events[j] as { name: string; summary: string; agent?: AgentMeta };
-                const d = doneOf(events[j]);
-                return { name: e.name, summary: e.summary, meta: e.agent, ms: d?.ms,
-                         stat: d?.stat, error: d?.is_error, running: !d };
-              });
-              return runs.length > 1
-                ? <AgentFan key={i} runs={runs} animate={animate} />
-                : <AgentBlock key={i} run={runs[0]} animate={animate} />;
-            }
-            if (event.name === "Bash")
-              return (
-                <TerminalGroup
-                  key={i}
-                  cmds={run.map((j) => ({
-                    command: (events[j] as { summary: string }).summary,
-                    done: doneOf(events[j]),
-                  }))}
-                  animate={animate}
-                  autoOpen={openResults}
-                  onRerun={onRunCommand}
-                />
-              );
-            if (done?.patch)
-              return (
-                <EditGroup
-                  key={i}
-                  edits={run.map((j) => {
-                    const e = events[j] as { name: string; summary: string };
-                    const d = doneOf(events[j]);
-                    return { name: e.name, path: e.summary, patch: d?.patch, ms: d?.ms,
-                             error: d?.is_error };
-                  })}
-                  animate={animate}
-                  autoOpen={openResults}
-                />
-              );
-            if (run.length > 1)
-              return withExtra(
-                <CallGroup
-                  key={i}
-                  name={event.name}
-                  calls={run.map((j) => {
-                    const e = events[j] as { name: string; summary: string };
-                    const d = doneOf(events[j]);
-                    return { name: e.name, summary: e.summary, ms: d?.ms, stat: d?.stat,
-                             error: d?.is_error };
-                  })}
-                  animate={animate}
-                />
-              );
-            const kind = toolKind(event.name);
-            if (kind === "read" && event.summary)
-              return withExtra(
-                <ReadCard
-                  key={i}
-                  path={event.summary}
-                  ms={done?.ms}
-                  stat={done?.stat}
-                  error={done?.is_error}
-                  animate={animate}
-                  t={clockAt(event)}
-                />
-              );
-            if (kind === "write" && event.summary)
-              return withExtra(
-                <WriteCard
-                  key={i}
-                  name={event.name}
-                  path={event.summary}
-                  ms={done?.ms}
-                  stat={done?.stat}
-                  error={done?.is_error}
-                  animate={animate}
-                  t={clockAt(event)}
-                />
-              );
-            return (
-              <div key={i}>
-                <ToolCard
-                  name={event.name}
-                  summary={event.summary}
-                  ms={done?.ms}
-                  stat={done?.is_error ? undefined : done?.stat}
-                  error={done?.is_error}
-                  animate={animate}
-                  t={clockAt(event)}
-                />
-                {done?.is_error && done.stat ? (
-                  <div className="mt-2 ml-[var(--rail)]"><ErrLine text={done.stat} /></div>
-                ) : null}
-                {extra}
-              </div>
-            );
-          }
-          case "thinking":
-            // A pause swallowed by a group is drawn by nobody: its mark would
-            // land at the foot of the card instead of between the rows it fell
-            // between, and two of them would stack on the same pixel.
-            if (!event.text)
-              return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
-            return <ThinkingRow key={i} ms={event.ms} text={event.text} animate={animate} />;
-          case "log":
-            return (
-              <LogRow
-                key={i}
-                src={event.src}
-                label={event.label}
-                text={event.text}
-                error={event.error}
-                animate={animate}
-              />
-            );
-          case "tool_done":
-            return null;
-          case "steer":
-            // Sent into this turn while it was already running — drawn with the
-            // prompt bubble's geometry (right-aligned, bordered, tinted) so it
-            // reads as the user speaking, not another agent row; violet + the
-            // STEER tag keep it distinct from the turn-opening prompt.
-            return (
-              <div key={i} id={ckId(turnId, steerKey(i))} className="my-2 flex scroll-mt-[94px] justify-end">
-                <div
-                  className="max-w-[78%] border border-r-[3px] px-3 py-1.5"
-                  style={{
-                    borderColor: "color-mix(in srgb, var(--violet) 26%, transparent)",
-                    borderRightColor: "var(--violet)",
-                    background: "color-mix(in srgb, var(--violet) 7%, transparent)",
-                  }}
-                >
-                  <div className="mb-0.5 flex items-center justify-end gap-1.5 text-[length:var(--t10)] tracking-[1.6px] text-[var(--violet)]">
-                    STEER <SteerIcon size={11} />
-                  </div>
-                  <span className="block whitespace-pre-wrap break-words text-[length:var(--t12)] leading-relaxed text-foreground-bright">
-                    {event.text}
-                  </span>
-                  {event.images && event.images.length > 0 && (
-                    <ToolImages paths={event.images} />
-                  )}
-                </div>
-              </div>
-            );
-          case "result":
-            return (
-              <FinalResult
-                key={i}
-                result={event.result}
-                // A stored event knows when it landed; a live one doesn't carry
-                // `at` yet, so the turn's own start plus its wall time says it.
-                at={event.at ?? (turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined)}
-                elapsed={event.elapsed}
-                tokens={tokens}
-                isError={event.is_error}
-                animate={animate}
-                idKey={`${turnId}:${i}`}
-                onAnswer={onAnswer}
-                onQuote={onQuote}
-              />
-            );
-          case "error":
-            return (
-              <div
-                key={i}
-                className="ml-[var(--rail)] flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
-                style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
-              >
-                <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
-                <span>{event.message}</span>
-              </div>
-            );
-          case "permission":
-            return (
-              <div key={i} className="ml-[var(--rail)]">
-                <PermissionCard
-                  toolName={event.tool_name}
-                  summary={event.summary}
-                  detail={event.detail}
-                  active={!!onRespond && pendingIds.has(event.request_id)}
-                  resolved={permResolved.get(event.request_id)}
-                  // The run this belonged to is gone (restart, Stop, crash), so
-                  // nothing is listening for an answer any more.
-                  stale={ended && !permResolved.has(event.request_id)}
-                  onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
-                  onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
-                />
-              </div>
-            );
-          case "question":
-            return (
-              <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
-                <QuestionCard
-                  questions={event.questions}
-                  requestId={event.request_id}
-                  active={!!onRespond && pendingIds.has(event.request_id)}
-                  answered={qAnswered.get(event.request_id)}
-                  stale={ended && !qAnswered.has(event.request_id)}
-                  onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
-                />
-              </div>
-            );
-          case "stopped":
-            return (
-              <div
-                key={i}
-                className="ml-[var(--rail)] flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
-              >
-                <CircleStop
-                  size={14}
-                  className="shrink-0 text-[var(--brand-soft)]"
-                  aria-hidden
-                />
-                <span>Stopped — send a message to continue.</span>
-              </div>
-            );
-          case "permission_resolved":
-          case "question_answered":
-            return null; // shown inside the relevant card
-        }
-      })}
+      {/* The words in the flow, the work under a row each (lib/segments). */}
+      {segmentsOf(events, from).map((seg) =>
+        seg.kind === "prose" ? renderEvent(seg.idx[0])
+        : seg.kind === "thinking" ? thinkingFold(seg)
+        : stepsFold(seg))}
     </div>
   );
 });

@@ -1630,3 +1630,34 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
   font-size: var(--t8); letter-spacing: 1.8px; color: var(--adm); margin-bottom: 3px;
 }
 .md-admonition > :last-child { margin-bottom: 0; }
+
+/* ══ THE FOLDS ══ words in the flow, work under a row ══════════════════════
+   Between two things the agent says, its work sits under one row each:
+   THINKING and STEPS (lib/segments, RunStream's Fold). The row IS the thought
+   row (`.thk` and its parts), so every language above already draws it; this
+   adds the body and the two kinds' difference. */
+.fold { font-size: 11px; }
+.fold .thk { color: var(--muted-2); }
+.fold[data-kind="steps"] .thk-peek { color: var(--tg-text); }
+.fold-run { color: var(--warning); animation: caret 1.1s steps(1) infinite; }
+.fold-fail { color: var(--danger); }
+.fold[data-err] .thk-lab { color: var(--danger); }
+/* open, the body steps in from its row: a rule down the left, the rows inset */
+.fold-body {
+  margin: 6px 0 2px 8px; padding-left: 8px;
+  border-left: 1px solid var(--ac-12);
+}
+.fold-body > * { content-visibility: auto; contain-intrinsic-size: auto 60px; }
+.thought + .thought { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ac-06); }
+.thought-ms { float: right; margin-left: 8px; font-size: 9.5px; letter-spacing: 1px; opacity: .7; }
+[data-style="stamp"] .fold[data-kind="steps"] .thk { background: var(--panel2); }
+[data-style="wire"] .fold[data-kind="steps"] .thk { border-left-style: solid; }
+[data-style="press"] .fold[data-kind="steps"] .thk-lab {
+  display: inline-flex; font-family: var(--ui); font-style: normal;
+  font-size: 8px; letter-spacing: 2px; color: var(--txf);
+}
+[data-style="press"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }
+[data-style="halo"] .fold[data-kind="steps"] .thk-lab { gap: 6px; font-size: 10px; letter-spacing: 1px; }
+[data-style="halo"] .fold[data-kind="steps"] .thk-lab::before { content: none; animation: none; }
+[data-style="halo"] .fold[data-kind="steps"] .thk-lab > svg { display: block; }
+[data-style="halo"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }

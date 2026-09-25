@@ -18,9 +18,11 @@ import { CHAT_BGS, TOOL_STYLES, useChatBg, useToolStyle, type ChatBg, type ToolS
    The previews are `inert`: a picture, not a document — their rows and links
    take neither a tap nor a tab stop from the row that owns them. */
 const PREVIEW_TURN: RunEvent[] = [
-  // One of each tier, because tier is what the ledger draws differently: a
-  // `mark` that changed a file, then a `reach` that left the phone and came
-  // back with structure, then the reply.
+  // A thought first, so the well shows the THINKING fold; then one of each
+  // tier, because tier is what the ledger draws differently: a `mark` that
+  // changed a file, then a `reach` that left the phone and came back with
+  // structure, then the reply.
+  { type: "thinking", ms: 1400, text: "The table lists four idioms and the type has five — the fifth needs a row." },
   { type: "tool", name: "Edit", summary: "lib/toolwidget.ts", id: "s1" },
   { type: "tool_done", id: "s1", ms: 240, stat: "1 edit" },
   { type: "tool", name: "WebSearch", summary: "css subgrid support", id: "s2" },
@@ -47,7 +49,7 @@ function Well({ style, bg, prompt }: { style: ToolStyle; bg: ChatBg; prompt: str
           </div>
         </div>
       </div>
-      <RunStream events={PREVIEW_TURN} />
+      <RunStream events={PREVIEW_TURN} foldsOpen />
     </div>
   );
 }

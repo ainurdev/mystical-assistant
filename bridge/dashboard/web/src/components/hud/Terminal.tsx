@@ -565,7 +565,9 @@ export function Terminal({
   // a soft radius in the reading ones. The blur sits on a layer of its own so
   // it isn't the containing block for anything fixed inside the row.
   const island = (
-    <div className="panel" style={{
+    // `isle` / `isle-glass`: VOID re-inks both (index.css) — the border and the
+    // glass are inline here, and a theme can only outrank an inline rule by name.
+    <div className="panel isle" style={{
       ...(isChat
         ? { position: "absolute", top: ISLE_TOP, left: `calc(${chatPad} + ${ISLE_X}px)`, right: `calc(${chatPad} + ${ISLE_X}px)` }
         : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
@@ -573,7 +575,7 @@ export function Terminal({
       border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
       boxShadow: "0 10px 28px var(--shadow-pop)",
     }}>
-      <div aria-hidden style={{ position: "absolute", inset: 0, borderRadius: "inherit", background: "color-mix(in srgb, var(--panel) 88%, transparent)", backdropFilter: "blur(10px) saturate(1.15)" }} />
+      <div aria-hidden className="isle-glass" style={{ position: "absolute", inset: 0, borderRadius: "inherit", background: "color-mix(in srgb, var(--panel) 88%, transparent)", backdropFilter: "blur(10px) saturate(1.15)" }} />
       <div style={{ position: "relative" }}>
         {header}
         {isChat && !empty && (

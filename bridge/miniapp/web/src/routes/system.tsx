@@ -5,6 +5,7 @@ import { rootRoute } from "./root";
 import { api } from "../lib/api";
 import { ThemeCards } from "../components/ThemePicker";
 import { TOOL_STYLES, useToolStyle } from "../lib/toolwidget";
+import { useFoldsOpen } from "../lib/folds";
 
 /* SYSTEM — the controls that belong to the app rather than to one chat: the
    palette, and what's left of the Claude limits this phone is spending. */
@@ -81,6 +82,7 @@ function SystemPage() {
       <div className="space-y-2">
         <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">OUTPUT STYLE</div>
         <OutputStyleRow />
+        <FoldsRow />
       </div>
 
       <div className="space-y-2">
@@ -120,5 +122,37 @@ function OutputStyleRow() {
       </div>
       <ChevronRight size={14} className="shrink-0 text-[var(--tg-hint)]" aria-hidden />
     </Link>
+  );
+}
+
+/** Between two things the agent says, its thinking and its steps each sit
+ *  under one row. On (the default) those rows mount shut, so the words are
+ *  what you see; off, they mount open and a turn reads as the whole ledger.
+ *  A tap on any one row still moves only that row. */
+function FoldsRow() {
+  const [open, setOpen] = useFoldsOpen();
+  const on = !open;
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(!open)}
+      aria-pressed={on}
+      className="flex w-full items-center gap-2.5 bg-[var(--tg-secondary-bg)] px-3 py-2.5 text-left active:opacity-70"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[11px] tracking-[1.5px]">COLLAPSE THINKING &amp; STEPS</div>
+        <div className="text-[10px] leading-snug text-[var(--tg-hint)]">
+          {on ? "The work sits under one row each until you open it." : "Every thought and step mounts open."}
+        </div>
+      </div>
+      <span
+        className="flex flex-none border p-[2px] text-[9px] tracking-[1px]"
+        style={{ borderColor: "color-mix(in srgb, var(--acc) 25%, transparent)" }}
+        aria-hidden
+      >
+        <span className="px-2 py-[3px]" style={{ background: on ? "var(--acc)" : "transparent", color: on ? "var(--acc-on)" : "var(--muted-2)" }}>ON</span>
+        <span className="px-2 py-[3px]" style={{ background: on ? "transparent" : "var(--ac-12)", color: on ? "var(--muted-2)" : "var(--foreground-bright)" }}>OFF</span>
+      </span>
+    </button>
   );
 }

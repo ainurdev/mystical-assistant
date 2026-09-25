@@ -223,6 +223,7 @@ function TurnBlock({
               turnId={turn.id}
               tokens={turn.tokens ?? null}
               openResults={hud?.openResults ?? false}
+              foldsOpen={hud?.foldsOpen ?? false}
               toolStyle={hud?.toolStyle ?? "stamp"}
               turnStarted={turn.started}
               onRunCommand={onRunCommand}

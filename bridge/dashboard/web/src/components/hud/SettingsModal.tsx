@@ -1248,9 +1248,11 @@ function ThemeCardGrid({
  *  The wells are `inert`: a preview is a picture, so its rows and links neither
  *  take a click nor a tab stop away from the tile that owns them. */
 const STYLE_PREVIEW_TURN: TimedEvent[] = [
-  // One of each tier, because tier is what the ledger draws differently: a
-  // `mark` that changed a file, a `reach` that left the machine and came back
-  // with structure, then the reply and the answer.
+  // A thought first, so the tile shows the THINKING fold; then one of each
+  // tier, because tier is what the ledger draws differently: a `mark` that
+  // changed a file, a `reach` that left the machine and came back with
+  // structure, then the reply and the answer.
+  { type: "thinking", ms: 1400, text: "The table lists four idioms and the type has five — the fifth needs a row before the map does.", at: 2 },
   { type: "tool", name: "Edit", summary: "lib/toolwidget.ts", id: "s1", at: 3 },
   { type: "tool_done", id: "s1", ms: 240, stat: "1 edit", at: 3 },
   { type: "tool", name: "WebSearch", summary: "css subgrid support", id: "s2", at: 5 },
@@ -1311,6 +1313,9 @@ function TranscriptWell({ style, bg, children }: {
               toolStyle={style}
               turnStarted={0}
               openResults
+              // The tile exists to show how the ledger draws, so its one fold
+              // is open whatever the reader's own setting says.
+              foldsOpen
               turnId={`prev:${style}:${bg}`}
             />
           </div>
@@ -1366,9 +1371,10 @@ function ChatBgPicker({
               <div className="relative space-y-1.5">
                 <AgentRail />
                 <RunStream
-                  events={STYLE_PREVIEW_TURN.slice(0, 2).concat(STYLE_PREVIEW_TURN.slice(4))}
+                  events={STYLE_PREVIEW_TURN.slice(0, 3).concat(STYLE_PREVIEW_TURN.slice(5))}
                   toolStyle={style}
                   turnStarted={0}
+                  foldsOpen
                   turnId={`bg:${o.key}`}
                 />
               </div>
@@ -4193,6 +4199,15 @@ export function SettingsModal(props: SettingsModalProps) {
                       <Switch
                         on={settings.openResults}
                         onClick={() => onPatch({ openResults: !settings.openResults })}
+                      />
+                    </Row>
+                    <Row
+                      label="COLLAPSE THINKING & STEPS"
+                      info="Between two things the agent says, everything it thought sits under one THINKING row and everything it ran, edited or read under one STEPS row — the row names the count. On, both mount shut and the words are what you see; off, they mount open and the transcript reads as the full ledger. A click on any one row moves only that row."
+                    >
+                      <Switch
+                        on={!settings.foldsOpen}
+                        onClick={() => onPatch({ foldsOpen: !settings.foldsOpen })}
                       />
                     </Row>
                   </div>

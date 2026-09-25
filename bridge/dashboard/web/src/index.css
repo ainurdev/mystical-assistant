@@ -3627,3 +3627,86 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    read as two borders, one behind the other. Hidden, not removed — the bar is
    a grid item, and taking it out slides every cell one column left. */
 [data-style] .ax-window > .actrow > .ax-bar { background: none; }
+
+/* === THE FOLDS =============================================================
+   Between two things the agent says, its work sits under one row each:
+   THINKING (what it reasoned) and STEPS (what it ran, edited, read) — see
+   lib/segments and RunStream's Fold. The row IS the thought row (`.thk` and its
+   parts), so every language above already draws it; what is added here is the
+   body, the two kinds' difference, and the one thing the whole cut is for: the
+   words carry the full text tier and sit in the flow, the work sits two tiers
+   under them until you open it. */
+.fold { font-size: var(--t11); }
+.fold .thk { color: var(--txd); }
+.fold .thk-ms { color: var(--txf); }
+/* the steps row's name is its summary — a count, not a peek, so not italic
+   and one tier up from the thought's first line */
+.fold[data-kind="steps"] .thk-peek { color: var(--txm); }
+.fold-run { color: var(--warn); animation: blink 1.1s steps(1) infinite; }
+.fold-fail { color: var(--err); }
+.fold[data-err] .thk-lab { color: var(--err); }
+/* Open, the body steps in from its row: a rule down the left and the rows
+   inset past it, so what belongs to the fold reads as under it and the prose
+   that follows steps back out to the measure. */
+.fold-body {
+  margin: 6px 0 2px 12px; padding-left: 10px;
+  border-left: 1px solid var(--ac-12);
+}
+/* the rows inside keep skipping layout and paint off-screen, as they did when
+   they were the turn's own children (see .vskip-card) */
+.fold-body > * { content-visibility: auto; contain-intrinsic-size: auto 60px; }
+.thought + .thought { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ac-06); }
+.thought-ms {
+  float: right; margin-left: 10px;
+  font-size: var(--t95); letter-spacing: 1px; color: var(--txf);
+}
+/* the reply, one notch louder: with the work folded the two bubbles are the
+   transcript, and a 6% wash under the agent's words was the same wash the
+   rows behind them wore */
+.abub { background: var(--ac-08); }
+/* STAMP hatches the thought's plate because nothing is on it; the steps row
+   has a count on it, so it is a plain plate */
+[data-style="stamp"] .fold[data-kind="steps"] .thk { background: var(--panel2); }
+/* WIRE gives a thought a dashed circle on the bus; a step is a solid square */
+[data-style="wire"] .fold[data-kind="steps"] .thk::before { border-style: solid; border-radius: 0; }
+/* PRESS drops the thought's label (a marginal note is known by where it sits)
+   and italicises it; the steps row keeps a small-caps label and roman text */
+[data-style="press"] .fold[data-kind="steps"] .thk-lab {
+  display: inline-flex; font-family: var(--ui); font-style: normal;
+  font-size: var(--t8); letter-spacing: 2px; color: var(--txf);
+}
+[data-style="press"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }
+/* HALO breathes three dots for a thought; a steps row wears its word and glyph */
+[data-style="halo"] .fold[data-kind="steps"] .thk-lab { gap: 6px; font-size: var(--t10); letter-spacing: 1.5px; }
+[data-style="halo"] .fold[data-kind="steps"] .thk-lab::before { content: none; animation: none; }
+[data-style="halo"] .fold[data-kind="steps"] .thk-lab > svg { display: block; }
+[data-style="halo"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }
+
+/* === VOID · THE SHELLS =====================================================
+   The side columns and the session's header were black on black. A #121212
+   panel at 86% over a #000 canvas is a 1.07:1 step; the quiet inks (txl
+   #828282, txg #565656) were set for a grey ground; and every `--ac-NN`
+   hairline is white at 6–12%, which on true black is nothing. So the two
+   side columns and the header island stand on their own grey, with the quiet
+   tiers and the hairlines lifted INSIDE them — only inside them, so the
+   transcript keeps the black the theme is named for. Inline rules read the
+   nearest custom property, which is why re-declaring the tokens here reaches
+   the rows' own `style={{ color: "var(--txl)" }}`. */
+[data-theme="void"] .shellcol {
+  background: #0d0d0d;
+  --panel: #171717; --panel2: #111111; --panel3: #0b0b0b;
+  --border: #2e2e2e;
+  --txg: #6c6c6c; --txl: #9e9e9e; --txf: #ababab; --txd: #bababa; --txm: #d4d4d4;
+  --ac-03: rgba(255, 255, 255, 0.06); --ac-06: rgba(255, 255, 255, 0.10);
+  --ac-08: rgba(255, 255, 255, 0.13); --ac-12: rgba(255, 255, 255, 0.19);
+  --ac-16: rgba(255, 255, 255, 0.25); --ac-22: rgba(255, 255, 255, 0.32);
+}
+/* the island's border and glass are inline (hud/Terminal.tsx), so these
+   outrank them by name */
+[data-theme="void"] .isle {
+  border-color: #3c3c3c !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.9), 0 0 0 1px #121212 !important;
+  --txl: #9e9e9e; --txd: #bababa; --txm: #d4d4d4;
+  --purple-d: #d2b4ff; --purple-h: #e6d3ff; --purple-g: #a48fcc;
+}
+[data-theme="void"] .isle-glass { background: rgba(25, 25, 25, 0.94) !important; }

@@ -379,6 +379,10 @@ export interface HudSettings {
   baseFont: number; // BASE FONT SIZE in px — the whole type scale is derived
                     // from it (index.css --fs); 0 = AUTO (from the viewport)
   openResults: boolean; // bash output and edit diffs draw themselves open
+  // The THINKING and STEPS folds mount open. False = the work between two
+  // pieces of prose sits under one row each until you open it (the default:
+  // the COLLAPSE THINKING & STEPS switch is on).
+  foldsOpen: boolean;
   // The composer's four run knobs. Kept here so they survive a reload — the
   // SESSION tab and the composer's dropdowns are the same state.
   model: string; // model id, or a short CLI alias
@@ -412,7 +416,7 @@ const DEFAULTS: HudSettings = {
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
   tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6,
-  font: "", baseFont: 0, openResults: false,
+  font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "stamp", chatBg: "none",
@@ -508,6 +512,7 @@ export function loadSettings(): HudSettings {
             ? Math.round(BASE_FONT * p.textScale)
             : 0,
         openResults: p.openResults === true,
+        foldsOpen: p.foldsOpen === true,
         // A stored model id that the live Models API no longer offers is
         // snapped to an available one on load (see App's modelOpts effect).
         model: str(p.model, "opus"),

@@ -36,6 +36,8 @@ import { useToolStyle, widgetForRun, type WebSource } from "../lib/toolwidget";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
+import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
+import { useFoldsOpen } from "../lib/folds";
 import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
@@ -126,48 +128,86 @@ function GapMark({ ms }: { ms: number }) {
   );
 }
 
-function ThinkingRow({ ms, text }: { ms?: number; text?: string }) {
-  const [open, setOpen] = useState(false);
-  // The row costs its height either way — the first line of the reasoning is what
-  // makes it worth reading. Empty when the model recorded only the pause.
-  const peek = (text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
-  const head = (
-    <>
-      <Brain size={12} className="thk-lab flex-none" aria-hidden />
-      <span className="thk-lab flex-none text-[10px] tracking-[1px]">THOUGHT</span>
-      {peek && !open ? (
-        <span className="thk-peek min-w-0 flex-1 truncate text-[11px] italic opacity-75">{peek}</span>
-      ) : (
-        <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
-      )}
-      <span className="thk-ms flex-none text-[9.5px] tracking-[1px]">{slow(ms)}</span>
-      {text ? (
-        <ChevronDown
-          size={12}
-          aria-hidden
-          className={`flex-none transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
-        />
-      ) : null}
-    </>
-  );
+/** What a fold's header says about the work under it: still going, how much
+ *  of it failed, how many pieces, how long the lot took. */
+type FoldStat = { running?: boolean; failed?: number; count?: string; ms?: number };
+
+/** A stretch of the model's work under one row — THINKING (what it reasoned)
+ *  or STEPS (what it ran, edited, read; see lib/segments). The prose either
+ *  side stays in the flow at full size, which on a phone is most of what makes
+ *  a turn readable at all.
+ *
+ *  The row wears the thought row's chrome (`.thk` and its parts): every
+ *  language already draws that row its own way, and a fold is the same row
+ *  said of more than one event. The body is a sibling of the row, not a child
+ *  — STAMP hatches the row's plate, and that does not belong on the rows
+ *  inside. Shut or open on mount is the reader's setting (lib/folds); a change
+ *  to it re-sets every mounted fold, and a tap moves only that fold. */
+function Fold({ kind, label, icon, title, peek, stat, defaultOpen, children }: {
+  kind: "thinking" | "steps";
+  label: string;
+  icon: ReactNode;
+  /** Always shown — the steps fold's summary is the row's name. */
+  title?: string;
+  /** Shown only while shut — the thinking fold's first line. */
+  peek?: string;
+  stat: FoldStat;
+  defaultOpen: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
+  const line = title ?? (open ? "" : peek ?? "");
   return (
-    <div className="thk text-[var(--muted-2)]">
-      {text ? (
+    <div
+      className="fold"
+      data-kind={kind}
+      data-open={open ? "" : undefined}
+      data-run={stat.running ? "" : undefined}
+      data-err={stat.failed ? "" : undefined}
+    >
+      <div className="thk text-[var(--muted-2)]">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
           className="flex w-full items-center gap-2 py-0.5 text-left"
         >
-          {head}
+          <span className="thk-lab flex flex-none items-center gap-1.5 text-[10px] tracking-[1px]">
+            {icon}
+            {label}
+          </span>
+          {line ? (
+            <span className={`thk-peek min-w-0 flex-1 truncate text-[11px] ${title ? "" : "italic opacity-75"}`}>
+              {line}
+            </span>
+          ) : (
+            <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
+          )}
+          <span className="thk-ms flex flex-none items-center gap-1.5 text-[9.5px] tracking-[1px]">
+            {stat.count ? <span>{stat.count}</span> : null}
+            {stat.failed ? <span className="fold-fail">{"\u2715"} {stat.failed} FAILED</span> : null}
+            {stat.running ? <span className="fold-run">RUNNING</span> : slow(stat.ms) ? <span>{dur(stat.ms)}</span> : null}
+          </span>
+          <ChevronDown
+            size={12}
+            aria-hidden
+            className={`flex-none transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
+          />
         </button>
-      ) : (
-        <div className="flex items-center gap-2 py-0.5">{head}</div>
-      )}
-      {open && text ? (
-        <div className="mt-1 whitespace-pre-wrap border-l border-[var(--muted-2)]/25 pl-2 text-[12px] leading-relaxed">
-          {text}
-        </div>
-      ) : null}
+      </div>
+      {open ? <div className="fold-body space-y-2">{children}</div> : null}
+    </div>
+  );
+}
+
+/** One thought inside the THINKING fold, as recorded — Claude Code keeps the
+ *  reasoning on the stream and on disk, it just never prints it. */
+function Thought({ ms, text }: { ms?: number; text: string }) {
+  return (
+    <div className="thought whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--muted-2)]">
+      {slow(ms) ? <span className="thought-ms">{dur(ms)}</span> : null}
+      {text}
     </div>
   );
 }
@@ -971,6 +1011,7 @@ export const RunStream = memo(function RunStream({
   boot = null,
   live = false,
   turnStarted,
+  foldsOpen: foldsOpenProp,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
@@ -990,6 +1031,10 @@ export const RunStream = memo(function RunStream({
   /** Epoch seconds the turn opened. With the result's own wall time this is the
    *  clock on the answer, opposite the one on your prompt. */
   turnStarted?: number;
+  /** Whether a THINKING or STEPS fold mounts open. Unset, the reader's own
+   *  setting (lib/folds); the OUTPUT STYLE previews pass true, because a tile
+   *  exists to show the ledger. */
+  foldsOpen?: boolean;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -1005,6 +1050,8 @@ export const RunStream = memo(function RunStream({
   // Read here rather than threaded down: the Mini App has no settings blob
   // to ride along with (the dashboard passes it as a prop from HudSettings).
   const [toolStyle] = useToolStyle();
+  const [foldsPref] = useFoldsOpen();
+  const foldsOpen = foldsOpenProp ?? foldsPref;
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
   // Derived from the length rather than stored as an index, so a running turn's
   // window slides with its tail instead of freezing where it was opened.
@@ -1027,7 +1074,12 @@ export const RunStream = memo(function RunStream({
   // Only the quiet steps fold away. A terminal, a diff, a delegated run, a fetch
   // or an MCP call each carry their own block and break the run instead —
   // otherwise the cards they just earned never get drawn.
-  const { folds, headOf } = foldChips(events, (i) => {
+  // A thought no longer sits between the rows it fell between — it lives in
+  // the block's THINKING fold (lib/segments) — so for folding and grouping it is
+  // a pause: two reads either side of one are one run, not two. Positions are
+  // kept, so every index below is still into `events`.
+  const shape = events.map((e) => (e.type === "thinking" ? { type: "thinking" } : e));
+  const { folds, headOf } = foldChips(shape, (i) => {
     const e = events[i];
     if (e.type !== "tool") return false;
     const d = doneOf(e);
@@ -1052,7 +1104,7 @@ export const RunStream = memo(function RunStream({
       return doneOf(e)?.images?.length ? "shots" : null;   // the quiet ones fold into chips
     return kind;
   };
-  const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
+  const { folds: groups, headOf: groupOf } = runsOf(shape, groupKey, 2);
 
   // Never cut a folded run away from the head that draws it. A cut that ends up
   // hiding only a handful buys nothing and reads as a button in front of
@@ -1076,6 +1128,303 @@ export const RunStream = memo(function RunStream({
     return false;
   };
 
+  /** One event as its row. Indices stay absolute: the folding, grouping and
+   *  tool_done pairing all key off position in the full array. */
+  const renderEvent = (i: number): ReactNode => {
+    const event = events[i];
+    switch (event.type) {
+      case "text": {
+        const text = event.text;
+        if (!text) return null;
+        if (resultText && text.trim() === resultText) return null;
+        // A turn ending on an AskUserQuestion emits no result event, so the
+        // prose explaining the card used to render bare while every other
+        // answer got a card. Box it like one.
+        if (asksNext(i))
+          return (
+            <div key={i} className="relative -ml-3 pl-3">
+              <RailNode />
+              <Card className="chatcard border border-[var(--tg-button)]/30">
+                <Markdown className="text-sm leading-normal" toolStyle={toolStyle}>{text}</Markdown>
+              </Card>
+            </div>
+          );
+        // The agent talking, drawn as the mirror of your bubble: rounded and
+        // tailed at the bottom-left where yours is at the bottom-right, at most
+        // the same 85%, shrink-wrapped, with a node on the rail where it
+        // starts. Bare prose between filled cards was the one thing in a turn
+        // with nothing to catch a scrolling eye — and it is the part worth
+        // reading.
+        return (
+          <div key={i} className="relative -ml-3 flex pl-3">
+            <RailNode />
+            <Markdown className="abub min-w-0 max-w-[85%] break-words rounded-2xl rounded-bl-sm border border-border bg-[var(--ac-06)] px-3 py-2 text-sm leading-normal" toolStyle={toolStyle}>
+              {text}
+            </Markdown>
+          </div>
+        );
+      }
+      case "tool": {
+        const head = headOf.get(i);
+        if (head !== undefined && !openFolds.has(head)) return null;
+        const fold = folds.get(i);
+        if (fold && !openFolds.has(i))
+          return (
+            <FoldedChips
+              key={i}
+              names={fold.map((j) => (events[j] as { name: string }).name)}
+              onOpen={() => setOpenFolds((s) => new Set(s).add(i))}
+            />
+          );
+        const done = doneOf(event);
+        const run = groups.get(i);
+        // What structure the run's results carried, if any. Null keeps the
+        // plain row — which is every tool without a table entry. Built from
+        // the whole run rather than this event: the head draws the group's
+        // one card, so a member's shots or sources would be drawn by nobody.
+        const spec = widgetForRun((run ?? [i]).map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
+        // Hung under whichever card this tool got, not just the default one:
+        // a run of Reads collapses into a CallGroup, and a Read of a PNG is
+        // how almost every image result in this store arrives.
+        // Every style draws its widget now: PLAIN, the one that opted out
+        // of them, has no column on the sheet and was replaced by a fifth
+        // look (lib/toolwidget TOOL_STYLES).
+        const extra = spec ? (
+          <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
+        ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
+        const withExtra = (node: ReactNode) =>
+          extra ? <div key={i} className="space-y-2">{node}{extra}</div> : node;
+        if (event.name === "Bash")
+          return <TerminalBlock key={i} command={event.summary} done={done} />;
+        if (groupOf.has(i)) return null;   // drawn by the run's head
+        // A delegation is a turn nested inside this one, so it is drawn as
+        // its own framed block — and a run of them as one fan, not as N
+        // identical cards or a generic "AGENT · 4 CALLS" box.
+        if (toolKind(event.name) === "agent") {
+          const runs = (run ?? [i]).map((j) => {
+            const e = events[j] as { name: string; summary: string; agent?: AgentMeta };
+            const d = doneOf(events[j]);
+            return { name: e.name, summary: e.summary, meta: e.agent, ms: d?.ms,
+                     stat: d?.stat, error: d?.is_error, running: !d };
+          });
+          return runs.length > 1
+            ? <AgentFan key={i} runs={runs} live={live} />
+            : <AgentBlock key={i} run={runs[0]} live={live} />;
+        }
+        if (done?.patch)
+          return (
+            <EditGroup
+              key={i}
+              edits={(run ?? [i]).map((j) => {
+                const e = events[j] as { name: string; summary: string };
+                const d = doneOf(events[j]);
+                return { name: e.name, path: e.summary, patch: d?.patch, ms: d?.ms,
+                         error: d?.is_error };
+              })}
+            />
+          );
+        if (run)
+          return withExtra(
+            <CallGroup
+              key={i}
+              name={event.name}
+              calls={run.map((j) => {
+                const e = events[j] as { name: string; summary: string };
+                const d = doneOf(events[j]);
+                return { name: e.name, summary: e.summary, ms: d?.ms, stat: d?.stat,
+                         error: d?.is_error };
+              })}
+            />
+          );
+        return (
+          <div key={i} className="space-y-2">
+            <ToolCard
+              name={event.name}
+              summary={event.summary}
+              ms={done?.ms}
+              stat={done?.is_error ? undefined : done?.stat}
+              error={done?.is_error}
+            />
+            {done?.is_error && done.stat ? <ErrLine text={done.stat} /> : null}
+            {extra}
+          </div>
+        );
+      }
+      case "thinking":
+        // A thought is drawn by its block's THINKING fold. A pause swallowed by
+        // a group is drawn by nobody: its mark would land at the foot of the
+        // card instead of between the rows it fell between, and two of them
+        // would stack on the same pixel.
+        if (!event.text)
+          return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
+        return null;
+      case "log":
+        return (
+          <LogRow key={i} src={event.src} label={event.label}
+                  text={event.text} error={event.error} />
+        );
+      case "tool_done":
+        return null;
+      case "steer":
+        // Sent into this turn while it was already running — drawn as your
+        // bubble (right-aligned, button color, out of the agent rail) so
+        // mid-turn words read as yours; the tag marks them as a steer.
+        return (
+          <div key={i} className="-ml-3 flex justify-end">
+            <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
+              <div className="mb-0.5 flex items-center justify-end gap-1 text-[11px] uppercase tracking-wide opacity-70">
+                steer <Merge size={11} strokeWidth={1.8} style={{ transform: "rotate(90deg)" }} aria-hidden />
+              </div>
+              {event.text}
+              {event.images && event.images.length > 0 && (
+                <ToolImages paths={event.images} />
+              )}
+            </div>
+          </div>
+        );
+      case "result":
+        return (
+          <div key={i} className="relative -ml-3 pl-3">
+            <RailNode />
+            <FinalResult
+              result={event.result}
+              // The Mini App's events carry no timestamp of their own, so
+              // the turn's start plus the result's wall time is the answer's.
+              at={turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined}
+              elapsed={event.elapsed}
+              tokens={tokens}
+              onAnswer={onAnswer}
+              onWrite={onWrite}
+            />
+          </div>
+        );
+      case "error":
+        return (
+          <div
+            key={i}
+            className="flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
+          >
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
+            <span>{event.message}</span>
+          </div>
+        );
+      case "permission":
+        return (
+          <PermissionCard
+            key={i}
+            toolName={event.tool_name}
+            summary={event.summary}
+            detail={event.detail}
+            active={!!onRespond && pendingIds.has(event.request_id)}
+            resolved={permResolved.get(event.request_id)}
+            // The run this belonged to is gone (restart, Stop, crash), so
+            // nothing is listening for an answer any more.
+            stale={ended && !permResolved.has(event.request_id)}
+            onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
+            onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
+          />
+        );
+      case "question":
+        return (
+          <QuestionCard
+            key={i}
+            questions={event.questions}
+            requestId={event.request_id}
+            active={!!onRespond && pendingIds.has(event.request_id)}
+            answered={qAnswered.get(event.request_id)}
+            stale={ended && !qAnswered.has(event.request_id)}
+            onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
+          />
+        );
+      case "stopped":
+        return (
+          <div
+            key={i}
+            className="flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
+          >
+            <CircleStop
+              size={14}
+              className="shrink-0 text-[var(--brand-soft)]"
+              aria-hidden
+            />
+            <span>Stopped — send a message to continue.</span>
+          </div>
+        );
+      case "permission_resolved":
+      case "question_answered":
+        return null; // shown inside the relevant card
+    }
+  };
+
+  /** What one step was, for the STEPS fold's title. An Edit still running has
+   *  no patch yet but is an edit all the same; only Write makes a file. */
+  const catOf = (e: { name: string }, d: Done | undefined): StepCat => {
+    if (e.name === "Bash") return "command";
+    if (d?.patch) return "edit";
+    switch (toolKind(e.name)) {
+      case "write": return e.name === "Write" ? "write" : "edit";
+      case "read": return "read";
+      case "search": return "search";
+      case "web": return "fetch";
+      case "mcp": return "call";
+      case "agent": return "agent";
+      default: return "step";
+    }
+  };
+
+  const stepsFold = (seg: Seg) => {
+    const cats: StepCat[] = [];
+    let ms = 0, failed = 0, running = false, now = "";
+    for (const i of seg.idx) {
+      const e = events[i];
+      if (e.type === "log") { cats.push("log"); if (e.error) failed++; continue; }
+      if (e.type !== "tool") continue;
+      const d = doneOf(e);
+      cats.push(catOf(e, d));
+      if (!d) { running = true; now = e.summary; }
+      else { ms += d.ms ?? 0; if (d.is_error) failed++; }
+    }
+    const title = stepsTitle(cats);
+    return (
+      <Fold
+        key={`f${seg.idx[0]}`}
+        kind="steps"
+        label="STEPS"
+        icon={<Layers size={11} aria-hidden />}
+        // While one is out, the row names it: on a phone this line is the
+        // whole view of what the machine is doing right now.
+        title={running && now ? `${title} \u2014 ${now}` : title}
+        stat={{ running, failed, ms }}
+        defaultOpen={foldsOpen}
+      >
+        {seg.idx.map(renderEvent)}
+      </Fold>
+    );
+  };
+
+  const thinkingFold = (seg: Seg) => {
+    const thoughts = seg.idx.map((i) => events[i] as { ms?: number; text?: string });
+    const ms = thoughts.reduce((t, e) => t + (e.ms ?? 0), 0);
+    const peek = (thoughts[0].text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
+    return (
+      <Fold
+        key={`f${seg.idx[0]}`}
+        kind="thinking"
+        label="THINKING"
+        icon={<Brain size={11} aria-hidden />}
+        peek={peek}
+        stat={{ ms, count: thoughts.length > 1 ? `${thoughts.length} THOUGHTS` : undefined }}
+        defaultOpen={foldsOpen}
+      >
+        {/* One thought's clock is already on the row; only a run of them
+            needs a figure per thought. */}
+        {thoughts.map((e, k) => (
+          <Thought key={seg.idx[k]} ms={thoughts.length > 1 ? e.ms : undefined} text={e.text ?? ""} />
+        ))}
+      </Fold>
+    );
+  };
+
   return (
     // vskip-card: off-screen event cards skip layout/paint (see index.css).
     <div className="space-y-2 vskip-card">
@@ -1090,232 +1439,11 @@ export const RunStream = memo(function RunStream({
           {from} earlier step{from === 1 ? "" : "s"}
         </button>
       )}
-      {/* Indices stay absolute: the folding, grouping and tool_done pairing all
-          key off position in the full array. */}
-      {events.slice(from).map((event, k) => {
-        const i = k + from;
-        switch (event.type) {
-          case "text": {
-            const text = event.text;
-            if (!text) return null;
-            if (resultText && text.trim() === resultText) return null;
-            // A turn ending on an AskUserQuestion emits no result event, so the
-            // prose explaining the card used to render bare while every other
-            // answer got a card. Box it like one.
-            if (asksNext(i))
-              return (
-                <div key={i} className="relative -ml-3 pl-3">
-                  <RailNode />
-                  <Card className="chatcard border border-[var(--tg-button)]/30">
-                    <Markdown className="text-sm leading-normal" toolStyle={toolStyle}>{text}</Markdown>
-                  </Card>
-                </div>
-              );
-            // The agent talking, drawn as the mirror of your bubble: rounded and
-            // tailed at the bottom-left where yours is at the bottom-right, at most
-            // the same 85%, shrink-wrapped, with a node on the rail where it
-            // starts. Bare prose between filled cards was the one thing in a turn
-            // with nothing to catch a scrolling eye — and it is the part worth
-            // reading.
-            return (
-              <div key={i} className="relative -ml-3 flex pl-3">
-                <RailNode />
-                <Markdown className="abub min-w-0 max-w-[85%] break-words rounded-2xl rounded-bl-sm border border-border bg-[var(--ac-06)] px-3 py-2 text-sm leading-normal" toolStyle={toolStyle}>
-                  {text}
-                </Markdown>
-              </div>
-            );
-          }
-          case "tool": {
-            const head = headOf.get(i);
-            if (head !== undefined && !openFolds.has(head)) return null;
-            const fold = folds.get(i);
-            if (fold && !openFolds.has(i))
-              return (
-                <FoldedChips
-                  key={i}
-                  names={fold.map((j) => (events[j] as { name: string }).name)}
-                  onOpen={() => setOpenFolds((s) => new Set(s).add(i))}
-                />
-              );
-            const done = doneOf(event);
-            const run = groups.get(i);
-            // What structure the run's results carried, if any. Null keeps the
-            // plain row — which is every tool without a table entry. Built from
-            // the whole run rather than this event: the head draws the group's
-            // one card, so a member's shots or sources would be drawn by nobody.
-            const spec = widgetForRun((run ?? [i]).map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
-            // Hung under whichever card this tool got, not just the default one:
-            // a run of Reads collapses into a CallGroup, and a Read of a PNG is
-            // how almost every image result in this store arrives.
-            // Every style draws its widget now: PLAIN, the one that opted out
-            // of them, has no column on the sheet and was replaced by a fifth
-            // look (lib/toolwidget TOOL_STYLES).
-            const extra = spec ? (
-              <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
-            ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
-            const withExtra = (node: ReactNode) =>
-              extra ? <div key={i} className="space-y-2">{node}{extra}</div> : node;
-            if (event.name === "Bash")
-              return <TerminalBlock key={i} command={event.summary} done={done} />;
-            if (groupOf.has(i)) return null;   // drawn by the run's head
-            // A delegation is a turn nested inside this one, so it is drawn as
-            // its own framed block — and a run of them as one fan, not as N
-            // identical cards or a generic "AGENT · 4 CALLS" box.
-            if (toolKind(event.name) === "agent") {
-              const runs = (run ?? [i]).map((j) => {
-                const e = events[j] as { name: string; summary: string; agent?: AgentMeta };
-                const d = doneOf(events[j]);
-                return { name: e.name, summary: e.summary, meta: e.agent, ms: d?.ms,
-                         stat: d?.stat, error: d?.is_error, running: !d };
-              });
-              return runs.length > 1
-                ? <AgentFan key={i} runs={runs} live={live} />
-                : <AgentBlock key={i} run={runs[0]} live={live} />;
-            }
-            if (done?.patch)
-              return (
-                <EditGroup
-                  key={i}
-                  edits={(run ?? [i]).map((j) => {
-                    const e = events[j] as { name: string; summary: string };
-                    const d = doneOf(events[j]);
-                    return { name: e.name, path: e.summary, patch: d?.patch, ms: d?.ms,
-                             error: d?.is_error };
-                  })}
-                />
-              );
-            if (run)
-              return withExtra(
-                <CallGroup
-                  key={i}
-                  name={event.name}
-                  calls={run.map((j) => {
-                    const e = events[j] as { name: string; summary: string };
-                    const d = doneOf(events[j]);
-                    return { name: e.name, summary: e.summary, ms: d?.ms, stat: d?.stat,
-                             error: d?.is_error };
-                  })}
-                />
-              );
-            return (
-              <div key={i} className="space-y-2">
-                <ToolCard
-                  name={event.name}
-                  summary={event.summary}
-                  ms={done?.ms}
-                  stat={done?.is_error ? undefined : done?.stat}
-                  error={done?.is_error}
-                />
-                {done?.is_error && done.stat ? <ErrLine text={done.stat} /> : null}
-                {extra}
-              </div>
-            );
-          }
-          case "thinking":
-            // A pause swallowed by a group is drawn by nobody: its mark would
-            // land at the foot of the card instead of between the rows it fell
-            // between, and two of them would stack on the same pixel.
-            if (!event.text)
-              return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
-            return <ThinkingRow key={i} ms={event.ms} text={event.text} />;
-          case "log":
-            return (
-              <LogRow key={i} src={event.src} label={event.label}
-                      text={event.text} error={event.error} />
-            );
-          case "tool_done":
-            return null;
-          case "steer":
-            // Sent into this turn while it was already running — drawn as your
-            // bubble (right-aligned, button color, out of the agent rail) so
-            // mid-turn words read as yours; the tag marks them as a steer.
-            return (
-              <div key={i} className="-ml-3 flex justify-end">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
-                  <div className="mb-0.5 flex items-center justify-end gap-1 text-[11px] uppercase tracking-wide opacity-70">
-                    steer <Merge size={11} strokeWidth={1.8} style={{ transform: "rotate(90deg)" }} aria-hidden />
-                  </div>
-                  {event.text}
-                  {event.images && event.images.length > 0 && (
-                    <ToolImages paths={event.images} />
-                  )}
-                </div>
-              </div>
-            );
-          case "result":
-            return (
-              <div key={i} className="relative -ml-3 pl-3">
-                <RailNode />
-                <FinalResult
-                  result={event.result}
-                  // The Mini App's events carry no timestamp of their own, so
-                  // the turn's start plus the result's wall time is the answer's.
-                  at={turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined}
-                  elapsed={event.elapsed}
-                  tokens={tokens}
-                  onAnswer={onAnswer}
-                  onWrite={onWrite}
-                />
-              </div>
-            );
-          case "error":
-            return (
-              <div
-                key={i}
-                className="flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
-              >
-                <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
-                <span>{event.message}</span>
-              </div>
-            );
-          case "permission":
-            return (
-              <PermissionCard
-                key={i}
-                toolName={event.tool_name}
-                summary={event.summary}
-                detail={event.detail}
-                active={!!onRespond && pendingIds.has(event.request_id)}
-                resolved={permResolved.get(event.request_id)}
-                // The run this belonged to is gone (restart, Stop, crash), so
-                // nothing is listening for an answer any more.
-                stale={ended && !permResolved.has(event.request_id)}
-                onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
-                onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
-              />
-            );
-          case "question":
-            return (
-              <QuestionCard
-                key={i}
-                questions={event.questions}
-                requestId={event.request_id}
-                active={!!onRespond && pendingIds.has(event.request_id)}
-                answered={qAnswered.get(event.request_id)}
-                stale={ended && !qAnswered.has(event.request_id)}
-                onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
-              />
-            );
-          case "stopped":
-            return (
-              <div
-                key={i}
-                className="flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
-              >
-                <CircleStop
-                  size={14}
-                  className="shrink-0 text-[var(--brand-soft)]"
-                  aria-hidden
-                />
-                <span>Stopped — send a message to continue.</span>
-              </div>
-            );
-          case "permission_resolved":
-          case "question_answered":
-            return null; // shown inside the relevant card
-        }
-      })}
+      {/* The words in the flow, the work under a row each (lib/segments). */}
+      {segmentsOf(events, from).map((seg) =>
+        seg.kind === "prose" ? renderEvent(seg.idx[0])
+        : seg.kind === "thinking" ? thinkingFold(seg)
+        : stepsFold(seg))}
     </div>
   );
 });
