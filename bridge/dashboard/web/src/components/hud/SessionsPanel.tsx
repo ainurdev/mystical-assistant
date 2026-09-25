@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { BellRing, FolderTree, History, Puzzle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
@@ -836,11 +838,13 @@ export function SessionsPanel(props: Props) {
   // pref must not strand the pill on a tab that isn't rendered).
   const pluginRows = sorted.filter((s) => isPluginOrigin(s.origin));
   const showPlugins = pluginsConfigured || pluginRows.length > 0 || mode === "plugins";
-  const modeTabs: { id: Mode; label: string; count: number; tip: string }[] = [
-    { id: "attention", label: "Attention", count: sorted.filter((s) => laneOf(s) !== "idle").length, tip: "Grouped by what each session wants from you" },
-    { id: "projects", label: "Projects", count: groups.length, tip: "Grouped by project" },
-    ...(showPlugins ? [{ id: "plugins" as Mode, label: "Plugins", count: pluginRows.length, tip: "Sessions started by configured plugin workers" }] : []),
-    { id: "recent", label: "Recent", count: sorted.length, tip: "One flat stream, newest first" },
+  // Tabs are icons only — the label survives as the tooltip and the
+  // accessible name, so the bar stays narrow and never wraps.
+  const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
+    { id: "attention", label: "Attention", Icon: BellRing, count: sorted.filter((s) => laneOf(s) !== "idle").length, tip: "Attention — grouped by what each session wants from you" },
+    { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
+    ...(showPlugins ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
+    { id: "recent", label: "Recent", Icon: History, count: sorted.length, tip: "Recent — one flat stream, newest first" },
   ];
 
   const laneHead = (it: Extract<LaneItem, { k: "head" }>) => (
@@ -872,13 +876,12 @@ export function SessionsPanel(props: Props) {
             const on = mode === m.id;
             return (
               <button
-                key={m.id} onClick={() => setMode(m.id)} title={m.tip}
-                style={{ position: "relative", flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                key={m.id} onClick={() => setMode(m.id)} title={m.tip} aria-label={m.label} aria-pressed={on}
+                style={{ position: "relative", flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                          height: 27, border: 0, borderRadius: 3, padding: 0, margin: 0, background: "transparent",
-                         cursor: "pointer", fontFamily: "inherit" }}
+                         cursor: "pointer", fontFamily: "inherit", color: on ? "var(--txb)" : "var(--txf)", transition: "color .15s ease" }}
               >
-                <span style={{ flex: "none", fontSize: "var(--t95)", letterSpacing: ".14em", textTransform: "uppercase",
-                               color: on ? "var(--txb)" : "var(--txf)", transition: "color .15s ease" }}>{m.label}</span>
+                <m.Icon size={14} strokeWidth={1.8} aria-hidden style={{ flex: "none" }} />
                 {/* Only ATTENTION's count is a number you act on; the other two
                     just measure the list you are already looking at. */}
                 {m.id === "attention" && (
