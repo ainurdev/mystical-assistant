@@ -408,6 +408,23 @@ export interface HudSettings {
   toolStyle: ToolStyle;
   // The texture under all of it — independent of the language (see lib/toolwidget).
   chatBg: ChatBg;
+  // How the chat column is laid out. DEFAULT is the nameplate header over a
+  // four-dropdown control row. COMPACT reads as a chat: your prompt on the
+  // right, replies capped short of the far edge, the header shrunk to a pill of
+  // readouts, and model/permission/effort folded into one popover over SEND.
+  layout: ChatLayout;
+}
+
+export type ChatLayout = "default" | "compact";
+export const CHAT_LAYOUTS: ChatLayout[] = ["default", "compact"];
+
+/** `?layout=compact` (or `default`) on the dashboard URL sets the layout and
+ *  the setting remembers it — a link can switch a browser you are not sat at. */
+function urlLayout(): ChatLayout | null {
+  try {
+    const v = new URLSearchParams(window.location.search).get("layout");
+    return CHAT_LAYOUTS.includes(v as ChatLayout) ? (v as ChatLayout) : null;
+  } catch { return null; }
 }
 
 const KEY = "hud-settings";
@@ -420,6 +437,7 @@ const DEFAULTS: HudSettings = {
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "stamp", chatBg: "none",
+  layout: "default",
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -532,6 +550,7 @@ export function loadSettings(): HudSettings {
         pushSounds: soundChoices(p.pushSounds),
         toolStyle: toToolStyle(p.toolStyle),
         chatBg: toChatBg(p.chatBg),
+        layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
       };
     }
   } catch {
@@ -540,11 +559,11 @@ export function loadSettings(): HudSettings {
   // Migrate the old single-key theme if present.
   try {
     const old = localStorage.getItem("hud-theme");
-    if (old && (THEMES as string[]).includes(old)) return { ...DEFAULTS, theme: old as ThemeKey };
+    if (old && (THEMES as string[]).includes(old)) return { ...DEFAULTS, theme: old as ThemeKey, layout: urlLayout() ?? "default" };
   } catch {
     /* ignore */
   }
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, layout: urlLayout() ?? "default" };
 }
 
 export function saveSettings(s: HudSettings): void {

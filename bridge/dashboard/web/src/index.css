@@ -1074,6 +1074,20 @@ input {
    rather than push the row onto a second line. The field code stays. */
 @container (max-width: 700px) { .drop-btn { min-width: 0; } }
 
+/* COMPACT layout's control row: the session's nameplate on the left, the tools
+   packed right. The nameplate is the one thing allowed to shrink. The verbs
+   always sit behind their ···, whatever the width. */
+.ctrl-row-compact { flex-wrap: nowrap; gap: 12px; }
+.ctrl-lead { flex: 1 1 auto; min-width: 0; display: flex; }
+.ctrl-row-compact .ctrl-ctx { margin-left: 0; }
+.ctrl-verbs-compact { padding-left: 0; border-left: 0; }
+.ctrl-verbs-compact .ctrl-more { display: inline-flex; }
+.ctrl-row-compact .ctrl-set { flex: none; }
+@container (max-width: 560px) { .ctrl-row-compact .ctrl-ctx .seg { display: none; } }
+/* The effort slider: a native range, re-inked to the accent. */
+.effort-slider { width: 100%; margin: 0; accent-color: var(--acc); cursor: pointer; height: 14px; }
+.run-trigger:hover > span { color: var(--acc) !important; }
+
 /* Composer action cluster — exactly one primary. STOP and PAUSE are rare,
    modal, and one of them is destructive: they stay recessive until reached
    for. STEER is the alternate target for the same text. QUEUE/SEND is what
@@ -2001,6 +2015,15 @@ input {
   border-left-color: var(--acc);
   background: var(--ac-06);
 }
+/* COMPACT layout reads the transcript as a chat in every language: your prompt
+   on the right, the agent's prose and its RESULT on the left, and neither side
+   ever wider than 80% of the column. Keyed off the chat column's data-layout,
+   one level above [data-style], so it outranks each language's own geometry. */
+[data-layout="compact"] [data-style] .pbub-row { justify-content: flex-end; }
+[data-layout="compact"] [data-style] .pbub { max-width: 80%; }
+[data-layout="compact"] [data-style] .abub { max-width: 80%; }
+[data-layout="compact"] [data-style] .res { max-width: 80%; }
+
 /* When you sent it. Inside the bubble, so every language carries it wherever it
    puts the bubble; ghost-toned, because the time is a footnote to the prompt.
    Its twin is the clock in .res-meta — when the answer came back. */

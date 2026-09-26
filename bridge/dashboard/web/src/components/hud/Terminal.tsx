@@ -15,6 +15,7 @@ import { FreshPanel } from "../FreshPanel";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
+import { ChatChromeContext } from "../../lib/chatchrome";
 
 /** The header is an island this far in from the chat column's top and sides;
  *  16 clears the ScrollRail on the right edge. */
@@ -270,6 +271,9 @@ export function Terminal({
   const [cntHov, setCntHov] = useState(false);
   const isChat = view === "chat";
   const empty = isChat && turns.length === 0;
+  // COMPACT: the nameplate leaves the header for the composer's control row,
+  // and the header shrinks to a pill of readouts on the right.
+  const compact = hud?.layout === "compact";
   // A fresh session's whole screen is a drop target: a file dragged anywhere on
   // it lands where a drop on the prompt box would. Files only — a row or text
   // drag passes through untouched.
@@ -464,8 +468,7 @@ export function Terminal({
     e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
       { bubbles: true, clientX: r.left, clientY: r.bottom }));
   };
-  const header = (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px", height: 40, flex: "none", minWidth: 0 }}>
+  const nameplate = (
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, flex: "0 1 auto", minWidth: 0 }}>
         <button
           title={sessionId ? "session — rename, pin, move to a worktree…" : undefined}
@@ -521,7 +524,8 @@ export function Terminal({
           )}
         </div>
       </div>
-      <span style={{ flex: 1, minWidth: 12 }} />
+  );
+  const readouts = (
       <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
         {/* The row's one link. The project modal — files, git, worktrees, the
             terminal — is worth a click of its own; its neighbours (design
@@ -554,6 +558,16 @@ export function Terminal({
           </>
         )}
       </div>
+  );
+  const header = compact ? (
+    <div style={{ display: "flex", alignItems: "center", padding: "0 16px", height: 34, flex: "none", minWidth: 0 }}>
+      {readouts}
+    </div>
+  ) : (
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px", height: 40, flex: "none", minWidth: 0 }}>
+      {nameplate}
+      <span style={{ flex: 1, minWidth: 12 }} />
+      {readouts}
     </div>
   );
 
@@ -567,18 +581,26 @@ export function Terminal({
   const island = (
     // `isle` / `isle-glass`: VOID re-inks both (index.css) — the border and the
     // glass are inline here, and a theme can only outrank an inline rule by name.
-    <div className="panel isle" style={{
-      ...(isChat
-        ? { position: "absolute", top: ISLE_TOP, left: `calc(${chatPad} + ${ISLE_X}px)`, right: `calc(${chatPad} + ${ISLE_X}px)` }
-        : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
+    // COMPACT: the same island shrink-wrapped to its readouts and parked on the
+    // right as a pill — a thing that holds numbers, not a bar pretending to be
+    // the column's top edge. No corner brackets: they belong to a rectangle.
+    <div className={compact ? "isle isle-pill" : "panel isle"} style={{
+      ...(compact
+        ? isChat
+          ? { position: "absolute", top: ISLE_TOP, right: `calc(${chatPad} + ${ISLE_X}px)`, maxWidth: `calc(100% - 2 * (${chatPad} + ${ISLE_X}px))` }
+          : { position: "relative", alignSelf: "flex-end", margin: `${ISLE_TOP}px ${ISLE_X}px 0` }
+        : isChat
+          ? { position: "absolute", top: ISLE_TOP, left: `calc(${chatPad} + ${ISLE_X}px)`, right: `calc(${chatPad} + ${ISLE_X}px)` }
+          : { margin: `${ISLE_TOP}px ${ISLE_X}px 0` }),
       zIndex: 12, flex: "none",
+      borderRadius: compact ? 999 : undefined,
       border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
       boxShadow: "0 10px 28px var(--shadow-pop)",
     }}>
-      <div aria-hidden className="isle-glass" style={{ position: "absolute", inset: 0, borderRadius: "inherit", background: "color-mix(in srgb, var(--panel) 88%, transparent)", backdropFilter: "blur(10px) saturate(1.15)" }} />
+      <div aria-hidden className="isle-glass" style={{ position: "absolute", inset: 0, borderRadius: "inherit", background: `color-mix(in srgb, var(--panel) ${compact ? 97 : 88}%, transparent)`, backdropFilter: "blur(10px) saturate(1.15)" }} />
       <div style={{ position: "relative" }}>
         {header}
-        {isChat && !empty && (
+        {isChat && !empty && !compact && (
           // Stays mounted and folds: mounting it on the crossing popped a row
           // into place mid-scroll. A fixed height is what lets the observer's
           // edge and the anchors' scroll-margin agree on where the island ends.
@@ -614,6 +636,7 @@ export function Terminal({
       // Pinned to the centre track: a row with no column is placed before the
       // auto-placed side columns, and would take the first track from SESSIONS.
       data-bg={hud?.chatBg ?? "none"}
+      data-layout={compact ? "compact" : "default"}
       style={{ position: "relative", gridColumn: 2, gridRow, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {island}
@@ -629,7 +652,9 @@ export function Terminal({
       ) : (
         <>
           {body}
-          {composer}
+          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null }}>
+            {composer}
+          </ChatChromeContext.Provider>
         </>
       )}
     </div>

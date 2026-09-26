@@ -9,6 +9,7 @@ import { ICON_BODY } from "../lib/fileicons.gen";
 import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
 import { isExact, rankCommands, slashAt } from "../lib/slash";
 import { Tip } from "./ui/Tip";
+import { useChatChrome } from "../lib/chatchrome";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -61,8 +62,58 @@ const COMPACT_SUGGEST = 0.75;
 const CTX_SEGMENTS = 8;
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
+type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; icon?: ReactNode; tail?: ReactNode; title?: string };
+
+/** The rows of a picker menu — shared by the chip dropdowns and the COMPACT
+ *  layout's run popover, which lists the same models (with the same usage
+ *  meters) and the same permission modes inline. */
+function MenuRows<T extends string>({ options, value, onPick }: {
+  options: DropOption<T>[];
+  value: T;
+  onPick: (id: T) => void;
+}) {
+  return (
+    <>
+      {options.map((o, i) => {
+        const on = o.id === value;
+        const heading = o.group && o.group !== options[i - 1]?.group ? o.group : null;
+        return (
+          <Fragment key={o.id}>
+            {heading && (
+              <div style={{
+                fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", whiteSpace: "nowrap",
+                padding: i ? "10px 11px 4px" : "8px 11px 4px",
+                borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+              }}>
+                {heading}
+              </div>
+            )}
+            <button
+              onClick={() => onPick(o.id)}
+              title={o.title}
+              style={{
+                width: "100%", appearance: "none", cursor: "pointer", border: 0,
+                borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+                background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
+                color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
+                letterSpacing: ".3px", textAlign: "left", padding: "8px 11px",
+                display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap",
+              }}
+            >
+              <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
+              {o.icon}
+              <span style={{ flex: 1 }}>{o.label}</span>
+              {o.tail}
+            </button>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
 function Drop<T extends string>({
-  label, code, value, options, open, onToggle, onPick, minWidth = 78,
+  label, code, value, options, open, onToggle, onPick, minWidth = 78, align = "left",
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -80,6 +131,9 @@ function Drop<T extends string>({
   onToggle: () => void;
   onPick: (id: T) => void;
   minWidth?: number;
+  // Which edge the menu hangs from. "right" for a chip at the row's far end,
+  // whose menu would otherwise run off the column.
+  align?: "left" | "right";
 }) {
   const cur = options.find((o) => o.id === value) ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
@@ -105,45 +159,12 @@ function Drop<T extends string>({
           style={{
             // max-content: the menu sizes to its longest row instead of wrapping
             // labels inside the chip-wide box that positions it.
-            position: "absolute", bottom: "calc(100% + 5px)", left: 0, minWidth: 132, width: "max-content",
+            position: "absolute", bottom: "calc(100% + 5px)", ...(align === "right" ? { right: 0 } : { left: 0 }), minWidth: 132, width: "max-content",
             zIndex: 30, border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
             boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
           }}
         >
-          {options.map((o, i) => {
-            const on = o.id === value;
-            const heading = o.group && o.group !== options[i - 1]?.group ? o.group : null;
-            return (
-              <Fragment key={o.id}>
-                {heading && (
-                  <div style={{
-                    fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", whiteSpace: "nowrap",
-                    padding: i ? "10px 11px 4px" : "8px 11px 4px",
-                    borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
-                  }}>
-                    {heading}
-                  </div>
-                )}
-                <button
-                  onClick={() => onPick(o.id)}
-                  title={o.title}
-                  style={{
-                    width: "100%", appearance: "none", cursor: "pointer", border: 0,
-                    borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
-                    background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
-                    color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
-                    letterSpacing: ".3px", textAlign: "left", padding: "8px 11px",
-                    display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap",
-                  }}
-                >
-                  <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
-                  {o.icon}
-                  <span style={{ flex: 1 }}>{o.label}</span>
-                  {o.tail}
-                </button>
-              </Fragment>
-            );
-          })}
+          <MenuRows options={options} value={value} onPick={onPick} />
         </div>
       )}
     </div>
@@ -197,6 +218,116 @@ const chip: CSSProperties = {
 // turn: two strands come in from the left and leave as one, pointing forward.
 export function SteerIcon({ size = 13 }: { size?: number }) {
   return <Merge size={size} strokeWidth={1.8} style={{ transform: "rotate(90deg)", flex: "none" }} aria-hidden />;
+}
+
+/** COMPACT layout's one run control: the model, the permission mode and the
+ *  effort, which the default layout spreads over three chips. The model is what
+ *  you come here for, so it is the headline; the mode rides beside it smaller;
+ *  effort is almost always AUTO, so it is a stepped slider below rather than a
+ *  menu. The trigger names only what differs from the default: the model
+ *  always, the mode and effort only once they are set. Lists open inline, so
+ *  the popover never stacks a second floating menu over the transcript. */
+function RunPopover<M extends string>({
+  open, onToggle, model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, freeLabel,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  model: M;
+  modelOpts: DropOption<M>[];
+  onModel: (m: M) => void;
+  perm: string;
+  permOpts: { id: string; label: string; title?: string }[];
+  onPerm: (p: string) => void;
+  effort: EffortLevel | "";
+  onEffort: (e: EffortLevel | "") => void;
+  /** A free agent runs its own model with no effort knob: its name stands in
+   *  for the model and the slider goes. */
+  freeLabel?: string;
+}) {
+  const [sub, setSub] = useState<"" | "model" | "perm">("");
+  useEffect(() => { if (!open) setSub(""); }, [open]);
+  const cur = modelOpts.find((o) => o.id === model) ?? modelOpts[0];
+  const modelName = freeLabel ?? (cur ? cur.short ?? cur.label : String(model));
+  const permRow = permOpts.find((o) => o.id === perm) ?? permOpts[0];
+  const effIdx = Math.max(0, EFFORTS.findIndex((e) => e.id === effort));
+  const effRow = EFFORTS[effIdx];
+  const dim: CSSProperties = { fontStyle: "italic", color: "var(--txl)", fontSize: "var(--t95)" };
+  const list: CSSProperties = {
+    marginTop: 8, maxHeight: 232, overflowY: "auto",
+    border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
+    background: "color-mix(in srgb, var(--panel3) 70%, transparent)",
+  };
+  return (
+    <div style={{ position: "relative", display: "flex", justifyContent: "flex-end", minWidth: 0 }}>
+      <button className="run-trigger" onClick={onToggle}
+        title={`Model ${modelName} · mode ${permRow?.label ?? "Session"} · effort ${effRow.label}`}
+        style={{ appearance: "none", cursor: "pointer", border: 0, padding: 0, background: "transparent",
+                 fontFamily: "inherit", display: "inline-flex", alignItems: "baseline", gap: 7,
+                 whiteSpace: "nowrap", minWidth: 0, maxWidth: "100%" }}>
+        <span style={{ fontWeight: 600, color: open ? "var(--acc)" : "var(--txb)", fontSize: "var(--t105)", overflow: "hidden", textOverflow: "ellipsis" }}>{modelName}</span>
+        {perm !== "" && permRow && <span style={dim}>{permRow.label.toLowerCase()}</span>}
+        {!freeLabel && effort !== "" && <span style={dim}>{effRow.label.toLowerCase()}</span>}
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Model, mode and effort"
+          style={{
+            position: "absolute", bottom: "calc(100% + 9px)", right: 0, zIndex: 30, width: 320,
+            padding: "12px 14px 13px", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
+            background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
+            boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
+          }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
+            {/* The model is plain text: the name is the control, no chevron. */}
+            <button onClick={() => !freeLabel && setSub((v) => (v === "model" ? "" : "model"))}
+              disabled={!!freeLabel}
+              title={freeLabel ? "This turn runs on opencode — the provider's own model" : "Change model"}
+              style={{ appearance: "none", border: 0, padding: 0, background: "transparent", fontFamily: "inherit",
+                       cursor: freeLabel ? "default" : "pointer", fontSize: "var(--t15)", letterSpacing: ".3px",
+                       color: sub === "model" ? "var(--acc)" : "var(--txb)", whiteSpace: "nowrap",
+                       overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+              {modelName}
+            </button>
+            <button onClick={() => setSub((v) => (v === "perm" ? "" : "perm"))}
+              title={permRow?.title ?? "Permission mode"}
+              style={{ appearance: "none", border: 0, padding: 0, background: "transparent", fontFamily: "inherit",
+                       cursor: "pointer", fontSize: "var(--t10)", letterSpacing: ".4px", flex: "none",
+                       color: sub === "perm" ? "var(--acc)" : "var(--txl)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {permRow?.label ?? "Session"}
+              <span aria-hidden style={{ fontSize: "var(--t8)" }}>▾</span>
+            </button>
+          </div>
+          {sub === "model" && (
+            <div style={list}>
+              <MenuRows options={modelOpts} value={model} onPick={(id) => { onModel(id); setSub(""); }} />
+            </div>
+          )}
+          {sub === "perm" && (
+            <div style={list}>
+              <MenuRows options={permOpts} value={perm} onPick={(id) => { onPerm(id); setSub(""); }} />
+            </div>
+          )}
+          {!freeLabel && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: "var(--t8)", letterSpacing: 1.6, color: "var(--txd)" }}>EFFORT</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontSize: "var(--t10)", letterSpacing: .5, color: effort === "" ? "var(--txm)" : "var(--acc)" }}>{effRow.label}</span>
+              </div>
+              <input type="range" className="effort-slider" min={0} max={EFFORTS.length - 1} step={1} value={effIdx}
+                aria-label="Effort" aria-valuetext={effRow.label}
+                onChange={(e) => onEffort(EFFORTS[Number(e.target.value)].id)} />
+              {/* One tick per stop, so the track reads as steps, not a dial. */}
+              <div aria-hidden style={{ display: "flex", justifyContent: "space-between", padding: "0 6px", marginTop: 2 }}>
+                {EFFORTS.map((e, i) => (
+                  <span key={e.id || "auto"} style={{ width: 1, height: 4, background: i === effIdx ? "var(--acc)" : "color-mix(in srgb, var(--acc) 25%, transparent)" }} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Composer({
@@ -261,7 +392,8 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony" | "verbs">("");
+  const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony" | "verbs" | "run">("");
+  const { compact, lead } = useChatChrome();
   // A free agent brings its own model, has no effort knob, and takes different
   // permission modes, so three of these dropdowns would be lying about what
   // runs — swap them for what actually will.
@@ -584,6 +716,128 @@ export function Composer({
     }] : []),
   ];
 
+
+  // Pieces both layouts place: DEFAULT strings them along one control row;
+  // COMPACT moves the account and ponytail chips to the row's right end and
+  // folds model / mode / effort into the RunPopover over SEND.
+  const agentDrop = (right: boolean) => (
+    <Drop label="AGENT" code={activeAgent?.free ? <UserRound size={12} /> : <ClaudeLogo />} value={agent} options={agentRows} minWidth={104} align={right ? "right" : "left"} open={openDrop === "agent"}
+      onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
+      onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
+  );
+  const ponyDrop = (right: boolean) => showPonytail && (
+    <Tip text={PONYTAIL_TIP} pin={false}>
+      <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
+        onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
+        onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
+    </Tip>
+  );
+  const verbMenu = openDrop === "verbs" && (
+    <div style={{
+      position: "absolute", bottom: "calc(100% + 6px)", left: 0, minWidth: 158, width: "max-content", zIndex: 30,
+      border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
+      background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
+      boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
+    }}>
+      {verbs.map((v) => (
+        <button key={v.key} onClick={() => { setOpenDrop(""); v.onClick(); }} disabled={v.disabled} title={v.tip}
+          style={{
+            width: "100%", appearance: "none", cursor: v.disabled ? "not-allowed" : "pointer", border: 0,
+            borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
+            background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
+            letterSpacing: 1.4, textAlign: "left", padding: "7px 11px", opacity: v.disabled ? 0.4 : 1,
+            display: "flex", alignItems: "center", gap: 10, whiteSpace: "nowrap",
+          }}>
+          <span style={{ flex: 1 }}>{v.label}</span>
+          {v.stamp && <span style={{ color: v.stampTone ?? "var(--txl)", letterSpacing: .6 }}>{v.stamp}</span>}
+        </button>
+      ))}
+    </div>
+  );
+  const ctxBlock = (
+    <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}`}>
+      <span className="lbl">CTX</span>
+      <span className="seg">
+        {Array.from({ length: CTX_SEGMENTS }, (_, i) => (
+          <i key={i} style={i < ctxSegs ? { background: ctxColor } : undefined} />
+        ))}
+      </span>
+      <span style={{ color: suggest ? ctxColor : "var(--txd)", fontSize: "var(--t10)", letterSpacing: .5, flex: "none" }}>{ctxPct}%</span>
+      {suggest && ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
+      {onCompact && (
+        // Whatever is in the box rides along as compaction instructions ("keep
+        // the auth work, drop the log spelunking") — Piebald opens a dialog for
+        // this; we already have a text box right there.
+        <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
+          title={text.trim()
+            ? "Compact the context, keeping what you've typed in mind"
+            : "Compact context (/compact) — type first to steer what the summary keeps"}
+          style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer",
+                   opacity: disabled || running ? 0.4 : 1,
+                   ...(suggest ? { border: `1px solid ${ctxColor}`, color: ctxColor } : null) }}>
+          COMPACT
+        </button>
+      )}
+    </div>
+  );
+
+  const actionCluster = (
+    <>
+    {/* No accept=: the model reads whatever lands in the upload dir, so a
+        .csv or a PDF is as good an attachment as a screenshot — and a
+        filter that hides them is what made it look image-only. */}
+    <input ref={fileRef} type="file" multiple style={{ display: "none" }}
+      onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+    <button onClick={() => fileRef.current?.click()} title="Attach a file"
+      style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
+      <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
+    {/* Exactly one primary. STOP and PAUSE are rare and modal and one of
+        them is destructive, so they sit as recessive glyphs and only take
+        their colour when you reach for them — their labels live in the
+        tooltip. STEER is the alternate target for the same text, so it
+        stays an outline. QUEUE/SEND is what Enter does, so it is the only
+        filled control on the line. */}
+    {running ? (
+      <>
+        <button className="act-glyph stop" onClick={onStop} aria-label="Stop"
+          title="STOP — interrupt this turn now">
+          <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+        {/* The graceful counterpart to STOP: no interrupt, no half-written
+            file — the turn lands, then the loop holds. It keeps its armed
+            state here so the banner is confirmation, not the only tell. */}
+        {onTogglePause && (
+          <button className={`act-glyph hold${paused ? " armed" : ""}`} onClick={onTogglePause}
+            aria-label={paused ? "Resume" : "Pause"}
+            title={paused
+              ? "PAUSED — nothing starts after this turn. Click to resume."
+              : "PAUSE — let this turn finish, then hold; no queued prompt or goal nudge starts after it"}>
+            <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+        )}
+        <span className="act-fence" aria-hidden />
+        <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
+          title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
+          DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
+        {onSteer && (
+          <button className="act-alt" onClick={steer} disabled={!text.trim()}
+            title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
+            STEER <SteerIcon /></button>
+        )}
+        <button className="act-pri queue" onClick={submit} disabled={disabled || !text.trim()}
+          title="QUEUE — run this prompt after the current turn (Enter)">
+          QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
+      </>
+    ) : (
+      <>
+        <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
+          title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
+          DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
+        <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()}>
+          SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
+      </>
+    )}
+    </>
+  );
+
   return (
     // Its own surface, at the island's strength: header and footer are the two
     // pieces of chrome bracketing the transcript, and a ground running under
@@ -659,12 +913,29 @@ export function Composer({
           spending a whole row of its own on a track that is empty most of the
           time. Layout ladder lives in index.css. */}
       {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
+      {compact ? (
+        // COMPACT: the session's nameplate on the left (moved down from the
+        // header), everything left in this row packed to the right.
+        <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
+          <div className="ctrl-row ctrl-row-compact">
+            <div className="ctrl-lead">{lead}</div>
+            <div className="ctrl-verbs ctrl-verbs-compact">
+              <button className="ctrl-more" onClick={() => setOpenDrop((d) => (d === "verbs" ? "" : "verbs"))}
+                title="More actions">···</button>
+              {verbMenu}
+            </div>
+            {ctxBlock}
+            <div className="ctrl-set">
+              {agentDrop(true)}
+              {ponyDrop(true)}
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
           <div className="ctrl-set">
-            <Drop label="AGENT" code={activeAgent?.free ? <UserRound size={12} /> : <ClaudeLogo />} value={agent} options={agentRows} minWidth={104} open={openDrop === "agent"}
-              onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
-              onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
+            {agentDrop(false)}
             {activeAgent?.free ? (
               <Tip text="This turn runs on opencode, not your Claude subscription — the provider's own model, no effort setting, and its work is worth reviewing.">
                 <span
@@ -687,13 +958,7 @@ export function Composer({
             <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} open={openDrop === "mode"} minWidth={104}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
-            {showPonytail && (
-              <Tip text={PONYTAIL_TIP} pin={false}>
-                <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} open={openDrop === "pony"}
-                  onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
-                  onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
-              </Tip>
-            )}
+            {ponyDrop(false)}
           </div>
           {/* One verb list, rendered twice: inline across the row, and inside
               the ··· popover the container query swaps in once the row runs out
@@ -711,58 +976,15 @@ export function Composer({
             ))}
             <button className="ctrl-more" onClick={() => setOpenDrop((d) => (d === "verbs" ? "" : "verbs"))}
               title="More actions">···</button>
-            {openDrop === "verbs" && (
-              <div style={{
-                position: "absolute", bottom: "calc(100% + 6px)", left: 0, minWidth: 158, width: "max-content", zIndex: 30,
-                border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
-                background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
-                boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
-              }}>
-                {verbs.map((v) => (
-                  <button key={v.key} onClick={() => { setOpenDrop(""); v.onClick(); }} disabled={v.disabled} title={v.tip}
-                    style={{
-                      width: "100%", appearance: "none", cursor: v.disabled ? "not-allowed" : "pointer", border: 0,
-                      borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)",
-                      background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
-                      letterSpacing: 1.4, textAlign: "left", padding: "7px 11px", opacity: v.disabled ? 0.4 : 1,
-                      display: "flex", alignItems: "center", gap: 10, whiteSpace: "nowrap",
-                    }}>
-                    <span style={{ flex: 1 }}>{v.label}</span>
-                    {v.stamp && <span style={{ color: v.stampTone ?? "var(--txl)", letterSpacing: .6 }}>{v.stamp}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
+            {verbMenu}
           </div>
           {/* CONTEXT as an instrument: eight segments that only recolour when
               the window is actually filling, and a COMPACT that is always
               there, dim until past the point where pressing it is the right call. */}
-          <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}`}>
-            <span className="lbl">CTX</span>
-            <span className="seg">
-              {Array.from({ length: CTX_SEGMENTS }, (_, i) => (
-                <i key={i} style={i < ctxSegs ? { background: ctxColor } : undefined} />
-              ))}
-            </span>
-            <span style={{ color: suggest ? ctxColor : "var(--txd)", fontSize: "var(--t10)", letterSpacing: .5, flex: "none" }}>{ctxPct}%</span>
-            {suggest && ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
-            {onCompact && (
-              // Whatever is in the box rides along as compaction instructions ("keep
-              // the auth work, drop the log spelunking") — Piebald opens a dialog for
-              // this; we already have a text box right there.
-              <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
-                title={text.trim()
-                  ? "Compact the context, keeping what you've typed in mind"
-                  : "Compact context (/compact) — type first to steer what the summary keeps"}
-                style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer",
-                         opacity: disabled || running ? 0.4 : 1,
-                         ...(suggest ? { border: `1px solid ${ctxColor}`, color: ctxColor } : null) }}>
-                COMPACT
-              </button>
-            )}
-          </div>
+          {ctxBlock}
         </div>
       </div>
+      )}
 
       {/* command line */}
       <div
@@ -865,58 +1087,20 @@ export function Composer({
           rows={1}
           style={{ flex: 1, minWidth: 0, display: "block", maxHeight: 180, overflowY: "auto", resize: "none", background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.5 }}
         />
-        {/* No accept=: the model reads whatever lands in the upload dir, so a
-            .csv or a PDF is as good an attachment as a screenshot — and a
-            filter that hides them is what made it look image-only. */}
-        <input ref={fileRef} type="file" multiple style={{ display: "none" }}
-          onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-        <button onClick={() => fileRef.current?.click()} title="Attach a file"
-          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
-          <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
-        {/* Exactly one primary. STOP and PAUSE are rare and modal and one of
-            them is destructive, so they sit as recessive glyphs and only take
-            their colour when you reach for them — their labels live in the
-            tooltip. STEER is the alternate target for the same text, so it
-            stays an outline. QUEUE/SEND is what Enter does, so it is the only
-            filled control on the line. */}
-        {running ? (
-          <>
-            <button className="act-glyph stop" onClick={onStop} aria-label="Stop"
-              title="STOP — interrupt this turn now">
-              <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
-            {/* The graceful counterpart to STOP: no interrupt, no half-written
-                file — the turn lands, then the loop holds. It keeps its armed
-                state here so the banner is confirmation, not the only tell. */}
-            {onTogglePause && (
-              <button className={`act-glyph hold${paused ? " armed" : ""}`} onClick={onTogglePause}
-                aria-label={paused ? "Resume" : "Pause"}
-                title={paused
-                  ? "PAUSED — nothing starts after this turn. Click to resume."
-                  : "PAUSE — let this turn finish, then hold; no queued prompt or goal nudge starts after it"}>
-                <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
-            )}
-            <span className="act-fence" aria-hidden />
-            <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
-              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
-              DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
-            {onSteer && (
-              <button className="act-alt" onClick={steer} disabled={!text.trim()}
-                title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
-                STEER <SteerIcon /></button>
-            )}
-            <button className="act-pri queue" onClick={submit} disabled={disabled || !text.trim()}
-              title="QUEUE — run this prompt after the current turn (Enter)">
-              QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
-          </>
-        ) : (
-          <>
-            <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
-              title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
-              DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
-            <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()}>
-              SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
-          </>
-        )}
+        {compact ? (
+          // COMPACT: the run popover's trigger sits over the send cluster, on
+          // its own line, so the box's right edge reads model-then-send.
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7, flex: "none", maxWidth: "50%", position: "relative", zIndex: 27 }}>
+            <RunPopover open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
+              model={model} modelOpts={modelOpts} onModel={onModel}
+              perm={perm} permOpts={activeAgent?.free ? FREE_PERMS : PERMS} onPerm={onPerm}
+              effort={effort} onEffort={onEffort}
+              freeLabel={activeAgent?.free ? activeAgent.label.replace("⚡ ", "") : undefined} />
+            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              {actionCluster}
+            </div>
+          </div>
+        ) : actionCluster}
       </div>
     </div>
   );

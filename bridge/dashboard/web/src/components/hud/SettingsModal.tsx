@@ -197,6 +197,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
   { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
   { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
+  { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions" },
   { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style control plate stamp wire signal log ledger press halo instrument terminal note plain sources screens preview" },
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
   { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
@@ -4167,7 +4168,25 @@ export function SettingsModal(props: SettingsModalProps) {
                     was waiting for. Still a reading preference, so it stays
                     under THE HUD rather than with the run knobs. */}
                 <Section
+                  title="LAYOUT"
+                  info="DEFAULT is the nameplate header over a row of run dropdowns. COMPACT reads as a chat: your prompt on the right and replies on the left, neither wider than 80%; the header shrinks to a pill of readouts on the right; the session's title, project and branch move down beside the context meter; and model, permission mode and effort fold into one popover above SEND."
+                >
+                  <div style={CARD}>
+                    <Row first label="CHAT LAYOUT" desc="how the chat column is arranged">
+                      <div style={{ width: 220 }}>
+                        <Segmented
+                          options={[{ label: "DEFAULT", value: "default" }, { label: "COMPACT", value: "compact" }]}
+                          value={settings.layout}
+                          onPick={(layout) => onPatch({ layout })}
+                        />
+                      </div>
+                    </Row>
+                  </div>
+                </Section>
+
+                <Section
                   title="OUTPUT STYLE"
+                  top
                   info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Five languages, one per column of the Chat Elements sheet: each is a whole grammar rather than a border swap. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does."
                 >
                   <OutputStylePicker
