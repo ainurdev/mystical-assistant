@@ -418,6 +418,9 @@ export interface RivendellQueueItem {
   kind: "review" | "impl" | "todolist" | "taskdesc" | "changelog";
   request_id: string;
   slug: string | null;     // repo (review/impl), project (todolist/changelog) or task (taskdesc)
+  /** A todolist's step: task recommendations first, then the todolist itself.
+   *  Null when rivendell-api did not say (older API). */
+  step?: "recommendations" | "todolist" | null;
   created_at: number;      // epoch seconds it was first seen
 }
 
