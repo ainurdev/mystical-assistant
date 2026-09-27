@@ -6,6 +6,7 @@ import { askConfirm } from "../ui/Ask";
 
 const KIND_LABEL: Record<RivendellQueueItem["kind"], string> = {
   review: "REVIEW", impl: "IMPLEMENT", todolist: "TODOLIST", taskdesc: "TASK DESC",
+  changelog: "CHANGELOG",
 };
 
 // The same request id can sit in two instances' queues (separate id spaces), so

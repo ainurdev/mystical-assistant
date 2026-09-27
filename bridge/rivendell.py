@@ -16,7 +16,8 @@ so it claims the request and POSTs FAILED, which is what makes the decision stic
     pr-review-request           held PENDING in the worker's queue
     task-implementation-request        |
     project-todolist-request           v  operator ACCEPT (dashboard PLUGINS tab)
-    task-description-request    -> GET  /plugin/<kind>-requests/<id>/prompt
+    task-description-request           |
+    changelog-request           -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
           -> runner.start_streaming_job(...)            (bypassPermissions,
                                                          the instance's model)
@@ -25,7 +26,8 @@ so it claims the request and POSTs FAILED, which is what makes the decision stic
           operator REJECT -> claim + POST FAILED ("declined by operator")
 
 Reviews and implementations need a local checkout of the named repository;
-todolists and task descriptions need none — the whole project/task context is
+todolists, task descriptions and changelogs need none — the whole project/task
+context (for a changelog: the tasks, pull requests and commits the user picked) is
 rendered into the prompt server-side, so they run in the worker's workdir like a
 generic read task (rivendell-api writes a task description back onto the Teamwork
 task itself; the bridge only returns the generated text).
@@ -57,7 +59,8 @@ across a bridge restart: the queue is rebuilt from the catch-up endpoints. Those
 also return IN_PROGRESS requests, so a run interrupted mid-flight by a restart
 comes back into the queue for a fresh accept rather than sticking IN_PROGRESS
 forever. In-process duplicates are prevented by each worker's _seen set (keys
-"review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>", since the request
+"review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>",
+since the request
 kinds have separate id spaces); a rejected request is claimed+FAILED, so catch-up
 never resurrects it.
 
@@ -346,6 +349,11 @@ class Worker:
                 self._enqueue("taskdesc", item["id"], item.get("taskName"))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: task-description catch-up failed: {e}")
+        try:
+            for item in self._api("/plugin/changelog-requests"):
+                self._enqueue("changelog", item["id"], item.get("projectName"))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: changelog catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
@@ -394,6 +402,11 @@ class Worker:
             print(f"rivendell[{self.name}]: task description requested for "
                   f"{task.get('name', '?')}")
             self._enqueue("taskdesc", obj["requestId"], task.get("name"))
+        elif obj.get("type") == "changelog-request" and obj.get("requestId"):
+            project = obj.get("project") or {}
+            print(f"rivendell[{self.name}]: changelog requested for project "
+                  f"{project.get('name', '?')}")
+            self._enqueue("changelog", obj["requestId"], project.get("name"))
 
     def _block_on_token(self, detail: str) -> None:
         """A token was rejected: pin the failing token and stop dialing it. The
@@ -618,68 +631,57 @@ class Worker:
         self._post_result("implementation-requests", request_id, ok, text)
 
     def _run_todolist(self, request_id: str, project: "str | None") -> None:
-        """A project todolist generation. Unlike a review or implementation this
-        needs NO checkout — the whole project context is rendered into the
-        prompt server-side — so it always runs in the worker's workdir (never a
-        repo match), read-only in spirit. Reviews' timeout governs it."""
-        try:
-            prompt = self._fetch_prompt("todolist-requests", request_id)["prompt"]
-        except Exception as e:  # noqa: BLE001 — report, don't crash the worker
-            print(f"rivendell[{self.name}]: prompt fetch failed for "
-                  f"{request_id}: {e}")
-            self._post_result("todolist-requests", request_id, False,
-                              f"prompt fetch failed: {e}")
-            return
-
-        workdir = self._workdir()
-        print(f"rivendell[{self.name}]: todolist {request_id} "
-              f"({project or '?'}) running in {workdir}")
-        job = self._start_run(prompt, workdir)
-        if job is None:  # can't happen for a fresh session; never hang the queue
-            self._post_result("todolist-requests", request_id, False,
-                              "could not start a Claude run (session busy)")
-            return
-
-        ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
-        print(f"rivendell[{self.name}]: todolist {request_id} "
-              f"{'completed' if ok else 'failed'}")
-        self._post_result("todolist-requests", request_id, ok, text)
+        """A project todolist generation — no checkout (see _run_in_workdir)."""
+        self._run_in_workdir("todolist", "todolist-requests", request_id, project)
 
     def _run_taskdesc(self, request_id: str, task: "str | None") -> None:
-        """An AI task-description generation. Like a todolist it needs NO checkout
-        — the task, its project and sibling context are rendered into the prompt
-        server-side — so it always runs in the worker's workdir. rivendell-api
-        writes the generated text back onto the Teamwork task itself; the bridge
-        only returns it. Reviews' timeout governs it."""
+        """An AI task-description generation — no checkout (see _run_in_workdir).
+        rivendell-api writes the generated text back onto the Teamwork task
+        itself; the bridge only returns it."""
+        self._run_in_workdir("task description", "task-description-requests",
+                             request_id, task)
+
+    def _run_changelog(self, request_id: str, project: "str | None") -> None:
+        """A changelog generation from the sources the user picked — no checkout
+        (see _run_in_workdir). The markdown returned IS the changelog; rivendell
+        keeps it as the generator's history."""
+        self._run_in_workdir("changelog", "changelog-requests", request_id, project)
+
+    def _run_in_workdir(self, what: str, kind_path: str, request_id: str,
+                        name: "str | None") -> None:
+        """Run a request that needs NO checkout: its whole context is rendered
+        into the prompt server-side, so it always runs in the worker's workdir
+        (never a repo match), read-only in spirit. Reviews' timeout governs it.
+        `what` names it in the log, `name` is the project/task it is about."""
         try:
-            prompt = self._fetch_prompt(
-                "task-description-requests", request_id)["prompt"]
+            prompt = self._fetch_prompt(kind_path, request_id)["prompt"]
         except Exception as e:  # noqa: BLE001 — report, don't crash the worker
             print(f"rivendell[{self.name}]: prompt fetch failed for "
                   f"{request_id}: {e}")
-            self._post_result("task-description-requests", request_id, False,
+            self._post_result(kind_path, request_id, False,
                               f"prompt fetch failed: {e}")
             return
 
         workdir = self._workdir()
-        print(f"rivendell[{self.name}]: task description {request_id} "
-              f"({task or '?'}) running in {workdir}")
+        print(f"rivendell[{self.name}]: {what} {request_id} "
+              f"({name or '?'}) running in {workdir}")
         job = self._start_run(prompt, workdir)
         if job is None:  # can't happen for a fresh session; never hang the queue
-            self._post_result("task-description-requests", request_id, False,
+            self._post_result(kind_path, request_id, False,
                               "could not start a Claude run (session busy)")
             return
 
         ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
-        print(f"rivendell[{self.name}]: task description {request_id} "
+        print(f"rivendell[{self.name}]: {what} {request_id} "
               f"{'completed' if ok else 'failed'}")
-        self._post_result("task-description-requests", request_id, ok, text)
+        self._post_result(kind_path, request_id, ok, text)
 
     _KIND_PATH = {
         "impl": "implementation-requests",
         "review": "review-requests",
         "todolist": "todolist-requests",
         "taskdesc": "task-description-requests",
+        "changelog": "changelog-requests",
     }
 
     # -- accept/reject gate --
@@ -729,6 +731,8 @@ class Worker:
                 self._run_todolist(request_id, slug)
             elif kind == "taskdesc":
                 self._run_taskdesc(request_id, slug)
+            elif kind == "changelog":
+                self._run_changelog(request_id, slug)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run
