@@ -221,6 +221,18 @@ def test_handle_message_task_description_requests():
     assert _drain(w) == [("taskdesc", "d3", "Add login")]
 
 
+def test_handle_message_changelog_requests():
+    """changelog-request events queue as "changelog" with the project name; the
+    picked tasks/PRs/commits are rendered into the prompt server-side."""
+    w = _worker()
+    cl = json.dumps({"type": "changelog-request",
+                     "requestId": "c7",
+                     "project": {"id": "p1", "name": "Rivendell"}}).encode()
+    w._handle_message(cl)
+    w._handle_message(cl)                          # duplicate: dropped
+    assert _drain(w) == [("changelog", "c7", "Rivendell")]
+
+
 def test_dedup_is_separate_across_all_kinds():
     """The kinds have separate id spaces — the same id in each is kept."""
     w = _worker()
@@ -228,10 +240,11 @@ def test_dedup_is_separate_across_all_kinds():
                        ("task-implementation-request",
                         {"task": {}, "repository": {}}),
                        ("project-todolist-request", {"project": {}}),
-                       ("task-description-request", {"task": {}})):
+                       ("task-description-request", {"task": {}}),
+                       ("changelog-request", {"project": {}})):
         w._handle_message(json.dumps({"type": typ, "requestId": "same", **extra}).encode())
     kinds = [k for (k, _rid, _s) in _drain(w)]
-    assert kinds == ["review", "impl", "todolist", "taskdesc"]
+    assert kinds == ["review", "impl", "todolist", "taskdesc", "changelog"]
 
 
 def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
@@ -269,6 +282,24 @@ def test_run_taskdesc_runs_in_workdir_without_checkout(monkeypatch):
     w._run_taskdesc("d1", "Add login")
     assert ran == [("write a description", "/dedicated")]
     assert posted == [("task-description-requests", "d1", True, "## Context\n…")]
+
+
+def test_run_changelog_runs_in_workdir_without_checkout(monkeypatch):
+    """A changelog needs no repo match: it runs in the worker's workdir and
+    posts the markdown back to the changelog endpoint."""
+    w = _worker(workdir="/dedicated")
+    posted, ran = [], []
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "write a changelog"})
+    monkeypatch.setattr(w, "_find_checkout",
+                        lambda slug: (_ for _ in ()).throw(AssertionError("no checkout for changelogs")))
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir: ran.append((prompt, workdir)) or _StubJob("done", result="## Unreleased"))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    w._run_changelog("c1", "Rivendell")
+    assert ran == [("write a changelog", "/dedicated")]
+    assert posted == [("changelog-requests", "c1", True, "## Unreleased")]
 
 
 def test_workers_have_independent_queues():
@@ -321,11 +352,13 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     monkeypatch.setattr(w, "_run_implementation", lambda rid, slug: calls.append(("impl", rid, slug)))
     monkeypatch.setattr(w, "_run_todolist", lambda rid, slug: calls.append(("todolist", rid, slug)))
     monkeypatch.setattr(w, "_run_taskdesc", lambda rid, slug: calls.append(("taskdesc", rid, slug)))
+    monkeypatch.setattr(w, "_run_changelog", lambda rid, slug: calls.append(("changelog", rid, slug)))
     w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})
     w._run_accepted({"kind": "todolist", "request_id": "t1", "slug": "Proj"})
+    w._run_accepted({"kind": "changelog", "request_id": "c1", "slug": "Proj"})
     w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
     assert calls == [("impl", "i1", "acme/app"), ("todolist", "t1", "Proj"),
-                     ("review", "r1", None)]
+                     ("changelog", "c1", "Proj"), ("review", "r1", None)]
 
 
 def test_reject_claims_then_fails(monkeypatch):
