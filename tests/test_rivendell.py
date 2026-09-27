@@ -207,6 +207,60 @@ def test_handle_message_todolist_requests():
     assert _drain(w) == [("todolist", "t9", "Rivendell")]
 
 
+def test_handle_message_records_the_todolist_step():
+    """A todolist's two steps share the event and the "todolist" kind; the
+    event's `kind` only records which step it is (None from an older API)."""
+    w = _worker()
+    for rid, kind in (("a", "RECOMMENDATIONS"), ("b", "TODOLIST"), ("c", None)):
+        w._handle_message(json.dumps({
+            "type": "project-todolist-request", "requestId": rid,
+            **({"kind": kind} if kind else {}),
+            "project": {"id": "p1", "name": "Rivendell"}}).encode())
+    steps = [(r["key"], r["step"]) for r in w.queue_snapshot()]
+    assert steps == [("todolist:a", "recommendations"),
+                     ("todolist:b", "todolist"), ("todolist:c", None)]
+
+
+def test_catch_up_records_the_todolist_step(monkeypatch):
+    """Catch-up reads the step from each listed request's `kind` too."""
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/todolist-requests":
+            return [{"id": "t1", "projectName": "Proj", "kind": "RECOMMENDATIONS"}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["step"]) for r in w.queue_snapshot()] == [
+        ("todolist:t1", "recommendations")]
+
+
+def test_recommendations_are_labelled_as_such():
+    """The Telegram ping names a recommendations run for what it is."""
+    w = _worker(name="prod")
+    item = {"key": "todolist:t1", "kind": "todolist", "request_id": "t1",
+            "slug": "Proj", "step": "recommendations", "created_at": 0.0}
+    text, _kb = w._queued_message(item, "tok")
+    assert "task recommendations" in text and "Proj" in text
+    item["step"] = "todolist"
+    assert "Rivendell todolist queued" in w._queued_message(item, "tok")[0]
+
+
+def test_run_todolist_posts_recommendations_json_verbatim(monkeypatch):
+    """A recommendations run answers JSON; the bridge posts it untouched to the
+    same todolist endpoint — rivendell-api parses it by the request's kind."""
+    w = _worker(workdir="/dedicated")
+    answer = '{"recommendations": [{"action": "create", "title": "Fix it"}]}'
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {"prompt": "recommend"})
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir: _StubJob("done", result=answer))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    w._run_todolist("t1", "Proj", "recommendations")
+    assert posted == [("todolist-requests", "t1", True, answer)]
+
+
 def test_handle_message_task_description_requests():
     """task-description-request events queue as "taskdesc" with the task name;
     they carry no repo (the whole task/project context is in the prompt, and
@@ -350,7 +404,7 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     calls = []
     monkeypatch.setattr(w, "_run_review", lambda rid, slug: calls.append(("review", rid, slug)))
     monkeypatch.setattr(w, "_run_implementation", lambda rid, slug: calls.append(("impl", rid, slug)))
-    monkeypatch.setattr(w, "_run_todolist", lambda rid, slug: calls.append(("todolist", rid, slug)))
+    monkeypatch.setattr(w, "_run_todolist", lambda rid, slug, step=None: calls.append(("todolist", rid, slug)))
     monkeypatch.setattr(w, "_run_taskdesc", lambda rid, slug: calls.append(("taskdesc", rid, slug)))
     monkeypatch.setattr(w, "_run_changelog", lambda rid, slug: calls.append(("changelog", rid, slug)))
     w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})

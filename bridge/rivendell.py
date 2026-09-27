@@ -30,6 +30,13 @@ what makes the decision stick):
 
           DISMISS/REJECT -> claim + POST FAILED ("declined by operator")
 
+A project todolist comes in two steps on the same event and endpoints, told
+apart by the event's ``kind``: RECOMMENDATIONS (the agent proposes Teamwork tasks
+to create or change, answering in JSON) and TODOLIST (the prioritized checklist,
+in markdown). The bridge runs both the same way and posts the answer verbatim —
+rivendell-api parses it by the request's kind — and only uses the step to label
+the request in the log, the Telegram ping and the dashboard queue.
+
 Reviews and implementations need a local checkout of the named repository;
 todolists, task descriptions and changelogs need none — the whole project/task
 context (for a changelog: the tasks, pull requests and commits the user picked) is
@@ -350,7 +357,9 @@ class Worker:
             print(f"rivendell[{self.name}]: implementation catch-up failed: {e}")
         try:
             for item in self._api("/plugin/todolist-requests"):
-                self._apply_policy(self._enqueue("todolist", item["id"], item.get("projectName")))
+                self._apply_policy(self._enqueue(
+                    "todolist", item["id"], item.get("projectName"),
+                    step=_todolist_step(item.get("kind"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: todolist catch-up failed: {e}")
         try:
@@ -366,11 +375,14 @@ class Worker:
         with self._q_lock:
             return len(self._pending) - before
 
-    def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None) -> "str | None":
+    def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None,
+                 step: "str | None" = None) -> "str | None":
         """Hold a request PENDING for the operator, deduped per _seen. Pure: it
         adds the row and nothing more — running (or auto-accepting, or pinging
         Telegram) is _apply_policy's job, kept separate so the dedup/parse tests
-        stay hermetic. Returns the new key, or None if it was a duplicate."""
+        stay hermetic. Returns the new key, or None if it was a duplicate.
+        `step` tells a todolist's two steps apart ("recommendations" /
+        "todolist"); None when the sender did not say (an older rivendell-api)."""
         key = f"{kind}:{request_id}"
         with self._seen_lock:
             if key in self._seen:
@@ -381,7 +393,7 @@ class Worker:
         with self._q_lock:
             self._pending[key] = {
                 "key": key, "kind": kind, "request_id": request_id,
-                "slug": slug, "created_at": now,
+                "slug": slug, "step": step, "created_at": now,
             }
         return key
 
@@ -423,9 +435,12 @@ class Worker:
         if (obj.get("type") == "project-todolist-request"
                 and obj.get("requestId")):
             project = obj.get("project") or {}
-            print(f"rivendell[{self.name}]: todolist requested for project "
-                  f"{project.get('name', '?')}")
-            return self._enqueue("todolist", obj["requestId"], project.get("name"))
+            step = _todolist_step(obj.get("kind"))
+            print(f"rivendell[{self.name}]: "
+                  f"{'task recommendations' if step == 'recommendations' else 'todolist'} "
+                  f"requested for project {project.get('name', '?')}")
+            return self._enqueue("todolist", obj["requestId"], project.get("name"),
+                                 step=step)
         if (obj.get("type") == "task-description-request"
                 and obj.get("requestId")):
             task = obj.get("task") or {}
@@ -661,9 +676,13 @@ class Worker:
               f"{'completed' if ok else 'failed'}")
         self._post_result("implementation-requests", request_id, ok, text)
 
-    def _run_todolist(self, request_id: str, project: "str | None") -> None:
-        """A project todolist generation — no checkout (see _run_in_workdir)."""
-        self._run_in_workdir("todolist", "todolist-requests", request_id, project)
+    def _run_todolist(self, request_id: str, project: "str | None",
+                      step: "str | None" = None) -> None:
+        """One step of a project todolist — task recommendations (JSON) or the
+        prioritized todolist (markdown). No checkout (see _run_in_workdir); the
+        answer posts back verbatim and rivendell-api parses it by step."""
+        what = "task recommendations" if step == "recommendations" else "todolist"
+        self._run_in_workdir(what, "todolist-requests", request_id, project)
 
     def _run_taskdesc(self, request_id: str, task: "str | None") -> None:
         """An AI task-description generation — no checkout (see _run_in_workdir).
@@ -724,13 +743,20 @@ class Worker:
         "changelog": "changelog",
     }
 
+    def _label(self, item: dict) -> str:
+        """What to call a queued request: its kind, except that a todolist's
+        first step reads as the task recommendations it is."""
+        if item["kind"] == "todolist" and item.get("step") == "recommendations":
+            return "task recommendations"
+        return self._KIND_LABEL.get(item["kind"], item["kind"])
+
     def _queued_message(self, item: dict, token: str) -> tuple:
         """The Telegram text + Approve/Dismiss keyboard for one queued request.
         Pure (no I/O), so the wording and callback wiring are unit-testable. The
         buttons carry a short token (callback_data is capped at 64 bytes, and a
         request id can be a full UUID) that resolve_token maps back to this
         worker + key."""
-        what = self._KIND_LABEL.get(item["kind"], item["kind"])
+        what = self._label(item)
         target = item.get("slug") or "?"
         text = (f"🧩 Rivendell {what} queued — {target}\n"
                 f"Instance: {self.name}\n"
@@ -814,7 +840,7 @@ class Worker:
             if kind == "impl":
                 self._run_implementation(request_id, slug)
             elif kind == "todolist":
-                self._run_todolist(request_id, slug)
+                self._run_todolist(request_id, slug, item.get("step"))
             elif kind == "taskdesc":
                 self._run_taskdesc(request_id, slug)
             elif kind == "changelog":
@@ -943,6 +969,16 @@ def queue() -> dict:
 # ping finds nothing and is reported "already handled").
 _tg_tokens: "dict[str, tuple[str, str]]" = {}
 _tg_tokens_lock = threading.Lock()
+
+
+def _todolist_step(kind: "str | None") -> "str | None":
+    """A todolist request's step from rivendell-api's ``kind`` (RECOMMENDATIONS
+    / TODOLIST); None when it sent none (an API from before the two steps)."""
+    if kind == "RECOMMENDATIONS":
+        return "recommendations"
+    if kind == "TODOLIST":
+        return "todolist"
+    return None
 
 
 def _register_token(instance_id: str, key: str) -> str:

@@ -9,6 +9,10 @@ const KIND_LABEL: Record<RivendellQueueItem["kind"], string> = {
   changelog: "CHANGELOG",
 };
 
+/** The badge for a row: a todolist's first step reads as the recommendations it is. */
+const labelOf = (it: RivendellQueueItem) =>
+  it.kind === "todolist" && it.step === "recommendations" ? "RECOMMEND" : KIND_LABEL[it.kind];
+
 // The same request id can sit in two instances' queues (separate id spaces), so
 // a row's React key / busy-key must carry the instance too.
 const rid = (it: RivendellQueueItem) => `${it.instance_id}|${it.key}`;
@@ -37,7 +41,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
   const decide = async (it: RivendellQueueItem, accept: boolean) => {
     if (!accept) {
       const ok = await askConfirm(
-        `Reject this ${KIND_LABEL[it.kind]} request${it.slug ? ` — ${it.slug}` : ""}? ` +
+        `Reject this ${labelOf(it)} request${it.slug ? ` — ${it.slug}` : ""}? ` +
         `It will be marked failed on ${it.instance}.`);
       if (!ok) return;
     }
@@ -81,7 +85,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
             >
               <span style={{ flex: "none", fontSize: "var(--t8)", letterSpacing: 1, padding: "2px 6px",
                              border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)",
-                             color: "var(--purple-h)" }}>{KIND_LABEL[it.kind]}</span>
+                             color: "var(--purple-h)" }}>{labelOf(it)}</span>
               <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
                 <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                fontSize: "var(--t115)", color: "var(--txh)" }}>{it.slug || "(no repo)"}</span>
