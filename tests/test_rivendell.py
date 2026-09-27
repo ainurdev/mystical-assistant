@@ -391,6 +391,122 @@ def test_rejected_request_is_not_re_added_by_catch_up():
     assert w.queue_snapshot() == []
 
 
+# --- auto-accept policy: first into an idle queue runs, the rest ping ---------
+
+def test_lone_request_auto_accepts_and_next_pings(monkeypatch):
+    """The first request into an idle queue is auto-accepted with no Telegram ping;
+    a second, arriving while the first is still pending, is held and pinged."""
+    w = _worker()
+    accepted, pinged = [], []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: pinged.append(key))
+    w._apply_policy(w._enqueue("review", "r1", "acme/app"))
+    assert accepted == ["review:r1"] and pinged == []
+    # accept() was stubbed (r1 stays pending), so the queue is no longer idle.
+    w._apply_policy(w._enqueue("review", "r2", "acme/app"))
+    assert accepted == ["review:r1"] and pinged == ["review:r2"]
+
+
+def test_apply_policy_ignores_duplicate_enqueue(monkeypatch):
+    """A duplicate _enqueue returns None; _apply_policy must neither accept nor
+    ping on it."""
+    w = _worker()
+    hits = []
+    monkeypatch.setattr(w, "accept", lambda key: hits.append(("a", key)) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: hits.append(("n", key)))
+    w._apply_policy(w._enqueue("review", "r1"))    # first: auto-accepted
+    w._apply_policy(w._enqueue("review", "r1"))    # duplicate: None -> no-op
+    assert hits == [("a", "review:r1")]
+
+
+def test_active_run_keeps_queue_busy_so_next_pings(monkeypatch):
+    """A request that arrives while an accepted run is still in flight is held and
+    pinged — not auto-accepted a second time — even though the queue is empty."""
+    w = _worker()
+    pinged = []
+    monkeypatch.setattr(w, "_notify_queued", lambda key: pinged.append(key))
+    monkeypatch.setattr(w, "_run_accepted", lambda item: None)   # don't really run
+    w._apply_policy(w._enqueue("review", "r1"))     # real accept: pops, marks busy
+    assert w.queue_snapshot() == [] and w._active_runs == 1 and pinged == []
+    w._apply_policy(w._enqueue("review", "r2"))     # queue empty but a run is live
+    assert [r["key"] for r in w.queue_snapshot()] == ["review:r2"]
+    assert pinged == ["review:r2"]
+
+
+def test_run_accepted_releases_active_run(monkeypatch):
+    """_run_accepted always drops the active-run count in its finally, and clamps
+    so a stray call never drives it negative."""
+    w = _worker()
+    monkeypatch.setattr(w, "_run_review", lambda rid, slug: None)
+    with w._q_lock:
+        w._active_runs = 1
+    w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
+    assert w._active_runs == 0
+    w._run_accepted({"kind": "review", "request_id": "r2", "slug": None})
+    assert w._active_runs == 0                       # clamped, not -1
+
+
+# --- Telegram ping for queued requests ---------------------------------------
+
+def test_queued_message_has_approve_dismiss_buttons():
+    w = _worker(name="prod")
+    item = {"key": "review:r1", "kind": "review", "request_id": "r1",
+            "slug": "acme/app", "created_at": 0.0}
+    text, kb = w._queued_message(item, "tok123")
+    assert "PR review" in text and "acme/app" in text and "prod" in text
+    buttons = kb["inline_keyboard"][0]
+    assert [b["callback_data"] for b in buttons] == ["rv:a:tok123", "rv:d:tok123"]
+
+
+def test_notify_queued_pings_when_pending(monkeypatch):
+    w = _worker()
+    w._enqueue("impl", "i1", "acme/app")
+    sent = []
+    monkeypatch.setattr(w, "_deliver_telegram",
+                        lambda text, kb: sent.append((text, kb)))
+    w._notify_queued("impl:i1")
+    _wait_until(lambda: len(sent) == 1)             # delivery is off-thread
+    text, kb = sent[0]
+    assert "implementation" in text
+    assert kb["inline_keyboard"][0][0]["callback_data"].startswith("rv:a:")
+
+
+def test_notify_queued_noop_when_already_decided(monkeypatch):
+    """A ping fired for a request that was decided in the meantime sends nothing."""
+    w = _worker()
+    calls = []
+    monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: calls.append(1))
+    w._notify_queued("review:gone")                 # never queued
+    time.sleep(0.05)
+    assert calls == []
+
+
+def test_deliver_telegram_sends_to_dash_chat(monkeypatch):
+    import bridge.telegram as tg_mod
+    sent = []
+    monkeypatch.setattr(tg_mod, "send", lambda chat, text, kb: sent.append((chat, text, kb)))
+    monkeypatch.setattr(rivendell.config, "NOTIFY_ENABLE", True)
+    monkeypatch.setattr(rivendell.config, "TOKEN", "x")
+    monkeypatch.setattr(rivendell.config, "DASH_CHAT_ID", 555)
+    _worker()._deliver_telegram("hi", {"inline_keyboard": []})
+    assert sent == [(555, "hi", {"inline_keyboard": []})]
+
+
+def test_deliver_telegram_silent_without_telegram(monkeypatch):
+    import bridge.telegram as tg_mod
+    monkeypatch.setattr(tg_mod, "send",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not send")))
+    monkeypatch.setattr(rivendell.config, "TOKEN", "")
+    _worker()._deliver_telegram("hi", {})           # no TOKEN -> silent
+
+
+def test_token_registry_resolves_once():
+    tok = rivendell._register_token("inst", "review:r1")
+    assert rivendell.resolve_token(tok) == ("inst", "review:r1")
+    assert rivendell.resolve_token(tok) is None      # one-shot: consumed
+    assert rivendell.resolve_token("nope") is None
+
+
 # --- job waiting -------------------------------------------------------------
 
 class _StubJob:

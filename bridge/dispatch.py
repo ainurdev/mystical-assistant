@@ -133,6 +133,30 @@ def _next_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
                      args=(chat_id, item["prompt"], session), daemon=True).start()
 
 
+def _rivendell_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
+    """Approve/Dismiss a queued Rivendell plugin request from its Telegram ping.
+    The button token resolves (one-shot) to the instance + request; a stale or
+    already-handled click just says so. Runs in a thread — accept/reject dispatch
+    or claim off the HTTP-less path but still touch the network."""
+    from bridge import rivendell
+    _, op, token = data.split(":", 2)
+    resolved = rivendell.resolve_token(token)
+    if resolved is None:
+        answer_cb(cb["id"], "Already handled.")
+        return
+    instance_id, key = resolved
+    if op == "a":
+        ok = rivendell.accept(instance_id, key)
+        answer_cb(cb["id"], "Approved — running ✅" if ok else "Already handled.")
+        note = "✅ Approved — running" if ok else "(no longer pending)"
+    else:
+        ok = rivendell.reject(instance_id, key)
+        answer_cb(cb["id"], "Dismissed" if ok else "Already handled.")
+        note = "🚫 Dismissed" if ok else "(no longer pending)"
+    # Drop the buttons and record the decision on the original ping.
+    edit(chat_id, msg_id, (cb["message"].get("text") or "").strip() + f"\n\n{note}")
+
+
 def on_message(msg: dict):
     chat_id = msg["chat"]["id"]
     text = (msg.get("text") or "").strip()
@@ -417,6 +441,10 @@ def handle_callback(cb: dict):
 
     elif data.startswith("nx:"):
         threading.Thread(target=_next_callback,
+                         args=(cb, chat_id, msg_id, data), daemon=True).start()
+
+    elif data.startswith("rv:"):
+        threading.Thread(target=_rivendell_callback,
                          args=(cb, chat_id, msg_id, data), daemon=True).start()
 
     else:

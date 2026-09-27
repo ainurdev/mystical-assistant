@@ -7,23 +7,28 @@ runs one independent ``Worker`` per enabled instance (see
 ``bridge/rivendell_instances.py`` for the config store). Each worker holds a
 persistent WebSocket to its instance's /agent endpoint (bearer token minted in
 that Rivendell under Profile -> Tokens with the LLM capability). Request events
-are NOT run on sight: each is held in a per-worker PENDING queue, surfaced in the
-dashboard's PLUGINS tab, and only turned into an autonomous Claude run when an
-operator ACCEPTS it. A human deciding what runs, and when, is the whole reason
-the queue exists — REJECT declines a request instead (there is no reject endpoint,
-so it claims the request and POSTs FAILED, which is what makes the decision stick):
+are held in a per-worker PENDING queue, surfaced in the dashboard's PLUGINS tab,
+behind an operator ACCEPT/DISMISS gate — with one convenience: a request that
+arrives into an *idle* queue (nothing pending, nothing running) is auto-accepted
+immediately, so a lone request never waits on a click. The gate still matters the
+moment work stacks up: anything that lands while a run is in flight (or other
+requests are already pending) is held for a decision AND pushed to Telegram with
+Approve/Dismiss buttons, so it can be decided from the phone. The auto-accepted
+first request needs no ping — it is already running. REJECT declines a request
+(there is no reject endpoint, so it claims the request and POSTs FAILED, which is
+what makes the decision stick):
 
     pr-review-request           held PENDING in the worker's queue
-    task-implementation-request        |
-    project-todolist-request           v  operator ACCEPT (dashboard PLUGINS tab)
-    task-description-request           |
+    task-implementation-request        |  (the first into an idle queue is
+    project-todolist-request           |   auto-accepted; the rest ping Telegram)
+    task-description-request           v  ACCEPT (dashboard PLUGINS tab / Telegram)
     changelog-request           -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
           -> runner.start_streaming_job(...)            (bypassPermissions,
                                                          the instance's model)
           -> POST /plugin/<kind>-requests/<id>/result   (COMPLETED | FAILED)
 
-          operator REJECT -> claim + POST FAILED ("declined by operator")
+          DISMISS/REJECT -> claim + POST FAILED ("declined by operator")
 
 Reviews and implementations need a local checkout of the named repository;
 todolists, task descriptions and changelogs need none — the whole project/task
@@ -151,7 +156,11 @@ class Worker:
         # dict the dashboard renders. Ordered by insertion (created-at order),
         # which is how the PLUGINS tab shows them.
         self._pending: "dict[str, dict]" = {}
-        self._q_lock = threading.Lock()      # guards _pending
+        # How many accepted requests are running right now (auto- or operator-
+        # accepted). Guarded by _q_lock alongside _pending: together they answer
+        # "is the queue idle?" — the condition for auto-accepting a lone request.
+        self._active_runs = 0
+        self._q_lock = threading.Lock()      # guards _pending and _active_runs
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
         self._sock: socket.socket | None = None    # so stop() can unblock reads
@@ -331,39 +340,41 @@ class Worker:
             before = len(self._pending)
         try:
             for item in self._api("/plugin/review-requests"):
-                self._enqueue("review", item["id"], item.get("repositoryFullName"))
+                self._apply_policy(self._enqueue("review", item["id"], item.get("repositoryFullName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: review catch-up failed: {e}")
         try:
             for item in self._api("/plugin/implementation-requests"):
-                self._enqueue("impl", item["id"], item.get("repositoryFullName"))
+                self._apply_policy(self._enqueue("impl", item["id"], item.get("repositoryFullName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: implementation catch-up failed: {e}")
         try:
             for item in self._api("/plugin/todolist-requests"):
-                self._enqueue("todolist", item["id"], item.get("projectName"))
+                self._apply_policy(self._enqueue("todolist", item["id"], item.get("projectName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: todolist catch-up failed: {e}")
         try:
             for item in self._api("/plugin/task-description-requests"):
-                self._enqueue("taskdesc", item["id"], item.get("taskName"))
+                self._apply_policy(self._enqueue("taskdesc", item["id"], item.get("taskName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: task-description catch-up failed: {e}")
         try:
             for item in self._api("/plugin/changelog-requests"):
-                self._enqueue("changelog", item["id"], item.get("projectName"))
+                self._apply_policy(self._enqueue("changelog", item["id"], item.get("projectName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: changelog catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
-    def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None) -> None:
-        """Hold a request PENDING for the operator, deduped per _seen. It does not
-        run until accept() claims it — the accept/reject gate is the point."""
+    def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None) -> "str | None":
+        """Hold a request PENDING for the operator, deduped per _seen. Pure: it
+        adds the row and nothing more — running (or auto-accepting, or pinging
+        Telegram) is _apply_policy's job, kept separate so the dedup/parse tests
+        stay hermetic. Returns the new key, or None if it was a duplicate."""
         key = f"{kind}:{request_id}"
         with self._seen_lock:
             if key in self._seen:
-                return
+                return None
             self._seen.add(key)
         now = time.time()
         self.last_event_at = now
@@ -372,41 +383,61 @@ class Worker:
                 "key": key, "kind": kind, "request_id": request_id,
                 "slug": slug, "created_at": now,
             }
+        return key
 
-    def _handle_message(self, raw: bytes) -> None:
+    def _apply_policy(self, key: "str | None") -> None:
+        """Decide what happens to a just-queued request. The first request into an
+        idle queue (nothing else pending, nothing running) is auto-accepted so a
+        lone request never waits on a click; anything behind running or pending
+        work is left for the operator and pushed to Telegram with Approve/Dismiss
+        buttons. A no-op on None (a duplicate _enqueue dropped)."""
+        if key is None:
+            return
+        with self._q_lock:
+            idle = len(self._pending) == 1 and self._active_runs == 0
+        if idle:
+            self.accept(key)            # auto-accept: run it now, no Telegram ping
+        else:
+            self._notify_queued(key)    # held for a decision — ping Telegram
+
+    def _handle_message(self, raw: bytes) -> "str | None":
+        """Parse and route one websocket frame into the queue (pure enqueue —
+        _listen applies the accept/notify policy to the key returned). Returns the
+        newly queued key, or None if the frame was noise or a duplicate."""
         try:
             obj = json.loads(raw.decode())
         except (UnicodeDecodeError, json.JSONDecodeError):
-            return
+            return None
         if obj.get("type") == "pr-review-request" and obj.get("requestId"):
             pr = obj.get("pullRequest") or {}
             print(f"rivendell[{self.name}]: review requested for "
                   f"{pr.get('repositoryFullName', '?')}#{pr.get('number', '?')}")
-            self._enqueue("review", obj["requestId"], pr.get("repositoryFullName"))
-        elif (obj.get("type") == "task-implementation-request"
-              and obj.get("requestId")):
+            return self._enqueue("review", obj["requestId"], pr.get("repositoryFullName"))
+        if (obj.get("type") == "task-implementation-request"
+                and obj.get("requestId")):
             task = obj.get("task") or {}
             repo = obj.get("repository") or {}
             print(f"rivendell[{self.name}]: implementation requested in "
                   f"{repo.get('fullName', '?')}: {task.get('name', '?')}")
-            self._enqueue("impl", obj["requestId"], repo.get("fullName"))
-        elif (obj.get("type") == "project-todolist-request"
-              and obj.get("requestId")):
+            return self._enqueue("impl", obj["requestId"], repo.get("fullName"))
+        if (obj.get("type") == "project-todolist-request"
+                and obj.get("requestId")):
             project = obj.get("project") or {}
             print(f"rivendell[{self.name}]: todolist requested for project "
                   f"{project.get('name', '?')}")
-            self._enqueue("todolist", obj["requestId"], project.get("name"))
-        elif (obj.get("type") == "task-description-request"
-              and obj.get("requestId")):
+            return self._enqueue("todolist", obj["requestId"], project.get("name"))
+        if (obj.get("type") == "task-description-request"
+                and obj.get("requestId")):
             task = obj.get("task") or {}
             print(f"rivendell[{self.name}]: task description requested for "
                   f"{task.get('name', '?')}")
-            self._enqueue("taskdesc", obj["requestId"], task.get("name"))
-        elif obj.get("type") == "changelog-request" and obj.get("requestId"):
+            return self._enqueue("taskdesc", obj["requestId"], task.get("name"))
+        if obj.get("type") == "changelog-request" and obj.get("requestId"):
             project = obj.get("project") or {}
             print(f"rivendell[{self.name}]: changelog requested for project "
                   f"{project.get('name', '?')}")
-            self._enqueue("changelog", obj["requestId"], project.get("name"))
+            return self._enqueue("changelog", obj["requestId"], project.get("name"))
+        return None
 
     def _block_on_token(self, detail: str) -> None:
         """A token was rejected: pin the failing token and stop dialing it. The
@@ -477,7 +508,7 @@ class Worker:
                     if opcode == wsutil.OP_PING:
                         self._send(sock, payload, wsutil.OP_PONG)
                     elif opcode == wsutil.OP_TEXT:
-                        self._handle_message(payload)
+                        self._apply_policy(self._handle_message(payload))
                     elif opcode == wsutil.OP_CLOSE:
                         # The gateway accepts the upgrade, then closes with
                         # 4401/4403 for a bad/insufficient token — a token
@@ -684,6 +715,57 @@ class Worker:
         "changelog": "changelog-requests",
     }
 
+    # -- Telegram ping for queued (non-auto-accepted) requests --
+    _KIND_LABEL = {
+        "review": "PR review",
+        "impl": "implementation",
+        "todolist": "todolist",
+        "taskdesc": "task description",
+        "changelog": "changelog",
+    }
+
+    def _queued_message(self, item: dict, token: str) -> tuple:
+        """The Telegram text + Approve/Dismiss keyboard for one queued request.
+        Pure (no I/O), so the wording and callback wiring are unit-testable. The
+        buttons carry a short token (callback_data is capped at 64 bytes, and a
+        request id can be a full UUID) that resolve_token maps back to this
+        worker + key."""
+        what = self._KIND_LABEL.get(item["kind"], item["kind"])
+        target = item.get("slug") or "?"
+        text = (f"🧩 Rivendell {what} queued — {target}\n"
+                f"Instance: {self.name}\n"
+                "Something is already running. Approve to run it too, or dismiss.")
+        kb = {"inline_keyboard": [[
+            {"text": "✅ Approve", "callback_data": f"rv:a:{token}"},
+            {"text": "🚫 Dismiss", "callback_data": f"rv:d:{token}"},
+        ]]}
+        return text, kb
+
+    def _notify_queued(self, key: str) -> None:
+        """Ping Telegram that a request is waiting behind running work, with
+        Approve/Dismiss buttons so it can be decided from the phone. Best-effort
+        and off-thread — a slow Telegram call must never stall the listener."""
+        with self._q_lock:
+            item = self._pending.get(key)
+        if item is None:                      # decided already (a fast click)
+            return
+        token = _register_token(self.id, key)
+        text, kb = self._queued_message(item, token)
+        threading.Thread(target=self._deliver_telegram, args=(text, kb),
+                         name=f"rivendell-tg-{self.id}", daemon=True).start()
+
+    def _deliver_telegram(self, text: str, kb: dict) -> None:
+        """Send one queued-request ping to the operator's chat. Silent when
+        Telegram is not configured ("if available"): the request still shows in
+        the dashboard's PLUGINS queue regardless."""
+        if not config.NOTIFY_ENABLE or not config.TOKEN or not config.DASH_CHAT_ID:
+            return
+        try:
+            from bridge import telegram   # local import: telegram pulls state/config
+            telegram.send(config.DASH_CHAT_ID, text, kb)
+        except Exception as e:  # noqa: BLE001 — a ping failure must never crash a worker
+            print(f"rivendell[{self.name}]: queue Telegram ping failed: {e}")
+
     # -- accept/reject gate --
     def queue_snapshot(self) -> list:
         """The PENDING requests awaiting a decision, oldest first — the rows the
@@ -698,8 +780,12 @@ class Worker:
         pending (already accepted/rejected, or a stale click)."""
         with self._q_lock:
             item = self._pending.pop(key, None)
-        if item is None:
-            return False
+            if item is None:
+                return False
+            # Count it running before the thread starts, so a request that lands
+            # between now and the run finishing sees a busy queue (and pings)
+            # rather than racing in as another "lone" auto-accept.
+            self._active_runs += 1
         threading.Thread(
             target=self._run_accepted, args=(dict(item),),
             name=f"rivendell-run-{self.id}", daemon=True).start()
@@ -738,6 +824,12 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — worker must outlive any run
             print(f"rivendell[{self.name}]: {kind} {request_id} crashed: {e}")
             self._post_result(kind_path, request_id, False, f"bridge error: {e}")
+        finally:
+            # Release the run slot so the queue reads idle again once nothing is in
+            # flight (clamped: a direct _run_accepted with no matching accept()
+            # increment must not drive the count negative).
+            with self._q_lock:
+                self._active_runs = max(0, self._active_runs - 1)
 
     def _do_reject(self, item: dict) -> None:
         kind_path = self._KIND_PATH.get(item["kind"], "review-requests")
@@ -841,6 +933,30 @@ def queue() -> dict:
     Disabled/removed instances have no worker and are simply absent."""
     with _manager_lock:
         return {wid: w.queue_snapshot() for wid, w in _workers.items()}
+
+
+# --- Telegram callback tokens -------------------------------------------------
+# A queued-request ping's Approve/Dismiss buttons can't carry (instance_id, key)
+# directly: callback_data is capped at 64 bytes and a request id can be a full
+# UUID. Each ping mints a short token here mapping back to (instance_id, key);
+# the dispatch callback resolves it once (one-shot: a second click on a handled
+# ping finds nothing and is reported "already handled").
+_tg_tokens: "dict[str, tuple[str, str]]" = {}
+_tg_tokens_lock = threading.Lock()
+
+
+def _register_token(instance_id: str, key: str) -> str:
+    token = uuid.uuid4().hex[:10]
+    with _tg_tokens_lock:
+        _tg_tokens[token] = (instance_id, key)
+    return token
+
+
+def resolve_token(token: str) -> "tuple[str, str] | None":
+    """Map a Telegram button token back to (instance_id, key), consuming it so a
+    repeated click is a no-op. None if unknown (already used, or a stale ping)."""
+    with _tg_tokens_lock:
+        return _tg_tokens.pop(token, None)
 
 
 def accept(instance_id: str, key: str) -> bool:
