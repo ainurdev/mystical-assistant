@@ -1632,10 +1632,10 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
 .md-admonition > :last-child { margin-bottom: 0; }
 
 /* ══ THE FOLDS ══ words in the flow, work under a row ══════════════════════
-   Between two things the agent says, its work sits under one row each:
-   THINKING and STEPS (lib/segments, RunStream's Fold). The row IS the thought
-   row (`.thk` and its parts), so every language above already draws it; this
-   adds the body and the two kinds' difference. */
+   Between two things the agent says, its work sits under one STEPS row
+   (lib/segments, RunStream's Fold). The row IS the thought row (`.thk` and
+   its parts), so every language above already draws it; this adds the body
+   and how it differs from a thought. */
 .fold { font-size: 11px; }
 .fold .thk { color: var(--muted-2); }
 .fold[data-kind="steps"] .thk-peek { color: var(--tg-text); }
@@ -1648,16 +1648,34 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
   border-left: 1px solid var(--ac-12);
 }
 .fold-body > * { content-visibility: auto; contain-intrinsic-size: auto 60px; }
-.thought + .thought { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ac-06); }
-.thought-ms { float: right; margin-left: 8px; font-size: 9.5px; letter-spacing: 1px; opacity: .7; }
-[data-style="stamp"] .fold[data-kind="steps"] .thk { background: var(--panel2); }
+/* A THOUGHT is words, so it sits in the flow as well: the thought row with the
+   whole text in it, at the reply's size and measure and one ink tier under it.
+   Where a language gives the reply its own ground the thought takes one too;
+   where the reply is bare text, so is the thought. The text is a `.md`, which
+   HALO pads as a bubble — here the row is the surface, so it sits flush. */
+.thought { max-width: 85%; }
+[data-style] .thought-text { color: var(--txm); padding: 0; }
+[data-style="stamp"] .fold[data-kind="steps"] .thk,
+[data-style="stamp"] .thought { background: var(--panel2); }
 [data-style="wire"] .fold[data-kind="steps"] .thk { border-left-style: solid; }
 [data-style="press"] .fold[data-kind="steps"] .thk-lab {
   display: inline-flex; font-family: var(--ui); font-style: normal;
   font-size: 8px; letter-spacing: 2px; color: var(--txf);
 }
 [data-style="press"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }
+/* PRESS sets a thought where the reply's words start, its clock (when it has
+   one) in the margin beside it — on the one-line row the clock's own width
+   made that margin, so a thought with no clock began at the page's edge */
+[data-style="press"] .thought { position: relative; padding-left: var(--press-mar); }
+[data-style="press"] .thought .thk-ms { position: absolute; left: 0; }
 [data-style="halo"] .fold[data-kind="steps"] .thk-lab { gap: 6px; font-size: 10px; letter-spacing: 1px; }
 [data-style="halo"] .fold[data-kind="steps"] .thk-lab::before { content: none; animation: none; }
 [data-style="halo"] .fold[data-kind="steps"] .thk-lab > svg { display: block; }
 [data-style="halo"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }
+/* …and a thought that says something lies on a surface of its own: the
+   reply's, corner pointing at the agent, but flat — the reply is the one that
+   floats */
+[data-style="halo"] .thought {
+  border-radius: 6px 20px 20px 20px; padding: 9px 14px 10px 12px;
+  background: var(--panel2);
+}

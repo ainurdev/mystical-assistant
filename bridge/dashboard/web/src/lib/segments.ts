@@ -5,20 +5,24 @@
 // paragraph, a thought, an edit, the answer — and the paragraph, which is the
 // one thing in it you came to read, was a row like the others. So the stream is
 // cut at every piece of prose, and everything between two pieces of prose is
-// folded into at most two rows: THINKING (what the model reasoned) and STEPS
-// (what it ran, edited, read). The prose stays in the flow at full size; the
-// work sits under a one-line header until you open it.
+// folded into one STEPS row (what it ran, edited, read). The prose stays in the
+// flow at full size; the work sits under a one-line header until you open it.
 //
-// Why two folds and not one: a thought is the model talking to itself and a
-// command is the model touching the machine — the reader who wants one rarely
-// wants the other, and a single "work" fold would put a 40-line reasoning block
-// above the diff you opened it for.
+// A thought is prose. What reaches us as `thinking` with text is the agent's
+// own status line — "the list is right now; next, the two console errors" —
+// and the CLI sometimes hands back a message written just before a tool call
+// as exactly that, reworded, so the same kind of sentence lands as `text` one
+// time and `thinking` the next. It used to sit under its own THINKING fold,
+// shut: the messages that happened to be reworded were the ones you never saw,
+// and a block's thoughts sat in one pile away from the steps they named. Now
+// each stays where it was said, and the steps after it fold under it:
+// thought, steps, thought, steps.
 
 /** Only what the cut reads: the discriminator, plus the text that decides
  *  whether a `thinking` event is a thought or just a pause. */
 type Ev = { type: string; text?: string };
 
-export type SegKind = "prose" | "thinking" | "steps";
+export type SegKind = "prose" | "steps";
 
 /** A contiguous-in-meaning slice of a turn: `idx` are indices into the events
  *  array, ascending. A prose segment is always exactly one event. */
@@ -36,12 +40,10 @@ const PROSE = new Set(["text", "result", "steer", "permission", "question", "err
 const STEP = new Set(["tool", "log"]);
 
 /**
- * Cut `events[from..]` into prose, thinking and steps segments. Between two
- * prose events there are at most two folds, ordered by where each began —
- * thinking first when the model reasoned before it acted, steps first when it
- * acted and reasoned afterwards. A block with no thought yields only STEPS; a
- * block with no visible step yields only THINKING; a block of nothing but
- * bookkeeping events is dropped (they render nothing).
+ * Cut `events[from..]` into prose and steps segments: every prose event and
+ * every thought with text is its own segment, and whatever lies between two of
+ * them is one steps fold — dropped when nothing in it draws (bookkeeping, a
+ * textless thinking, which is a pause).
  *
  * `inFlow(i)` cuts a step out as if it were prose: a tool that came back with a
  * picture, which a shut fold would hide. The caller decides — the picture rides
@@ -49,30 +51,20 @@ const STEP = new Set(["tool", "log"]);
  */
 export function segmentsOf(events: Ev[], from = 0, inFlow: (i: number) => boolean = () => false): Seg[] {
   const out: Seg[] = [];
-  let think: number[] = [];
   let steps: number[] = [];
   let stepsSeen = false;
 
   const flush = () => {
-    const t: Seg | null = think.length ? { kind: "thinking", idx: think } : null;
-    const s: Seg | null = steps.length && stepsSeen ? { kind: "steps", idx: steps } : null;
-    if (t && s) {
-      if (t.idx[0] < s.idx[0]) out.push(t, s);
-      else out.push(s, t);
-    } else if (t) out.push(t);
-    else if (s) out.push(s);
-    think = [];
+    if (steps.length && stepsSeen) out.push({ kind: "steps", idx: steps });
     steps = [];
     stepsSeen = false;
   };
 
   for (let i = from; i < events.length; i++) {
     const e = events[i];
-    if (PROSE.has(e.type) || inFlow(i)) {
+    if (PROSE.has(e.type) || (e.type === "thinking" && e.text) || inFlow(i)) {
       flush();
       out.push({ kind: "prose", idx: [i] });
-    } else if (e.type === "thinking" && e.text) {
-      think.push(i);
     } else {
       steps.push(i);
       if (STEP.has(e.type)) stepsSeen = true;

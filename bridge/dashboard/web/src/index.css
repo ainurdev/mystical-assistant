@@ -2021,7 +2021,8 @@ input {
    one level above [data-style], so it outranks each language's own geometry. */
 [data-layout="compact"] [data-style] .pbub-row { justify-content: flex-end; }
 [data-layout="compact"] [data-style] .pbub { max-width: 80%; }
-[data-layout="compact"] [data-style] .abub { max-width: 80%; }
+[data-layout="compact"] [data-style] .abub,
+[data-layout="compact"] [data-style] .thought { max-width: 80%; }
 [data-layout="compact"] [data-style] .res { max-width: 80%; }
 
 /* When you sent it. Inside the bubble, so every language carries it wherever it
@@ -3652,18 +3653,17 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-style] .ax-window > .actrow > .ax-bar { background: none; }
 
 /* === THE FOLDS =============================================================
-   Between two things the agent says, its work sits under one row each:
-   THINKING (what it reasoned) and STEPS (what it ran, edited, read) — see
-   lib/segments and RunStream's Fold. The row IS the thought row (`.thk` and its
-   parts), so every language above already draws it; what is added here is the
-   body, the two kinds' difference, and the one thing the whole cut is for: the
-   words carry the full text tier and sit in the flow, the work sits two tiers
-   under them until you open it. */
+   Between two things the agent says, its work sits under one STEPS row (what
+   it ran, edited, read) — see lib/segments and RunStream's Fold. The row IS
+   the thought row (`.thk` and its parts), so every language above already
+   draws it; what is added here is the body, how it differs from a thought, and
+   the one thing the whole cut is for: the words carry the full text tier and
+   sit in the flow, the work sits two tiers under them until you open it. */
 .fold { font-size: var(--t11); }
 .fold .thk { color: var(--txd); }
 .fold .thk-ms { color: var(--txf); }
 /* the steps row's name is its summary — a count, not a peek, so not italic
-   and one tier up from the thought's first line */
+   and one tier up from the row's own ink */
 .fold[data-kind="steps"] .thk-peek { color: var(--txm); }
 .fold-run { color: var(--warn); animation: blink 1.1s steps(1) infinite; }
 .fold-fail { color: var(--err); }
@@ -3678,18 +3678,24 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the rows inside keep skipping layout and paint off-screen, as they did when
    they were the turn's own children (see .vskip-card) */
 .fold-body > * { content-visibility: auto; contain-intrinsic-size: auto 60px; }
-.thought + .thought { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ac-06); }
-.thought-ms {
-  float: right; margin-left: 10px;
-  font-size: var(--t95); letter-spacing: 1px; color: var(--txf);
-}
+/* A THOUGHT is words, so it sits in the flow as well: the thought row with
+   the whole text in it, at the reply's size and measure and one ink tier
+   under it. It used to be a first line in the second-quietest ink, and the
+   rest two clicks away. Where a language gives the reply its own ground the
+   thought takes one too, so the pattern stops at its edge instead of running
+   through the letters; where the reply is bare text, so is the thought. The
+   reply's 78%, except where that is too narrow to read beside a label (a
+   style tile, a thin pane): there it takes the width it needs. */
+.thought { align-items: baseline; max-width: max(78%, 46ch); }
+.thought-text { color: var(--txm); }
 /* the reply, one notch louder: with the work folded the two bubbles are the
    transcript, and a 6% wash under the agent's words was the same wash the
    rows behind them wore */
 .abub { background: var(--ac-08); }
-/* STAMP hatches the thought's plate because nothing is on it; the steps row
-   has a count on it, so it is a plain plate */
-[data-style="stamp"] .fold[data-kind="steps"] .thk { background: var(--panel2); }
+/* STAMP hatches a plate with nothing on it; the steps row has a count on it
+   and a thought its words, so each is a plain plate */
+[data-style="stamp"] .fold[data-kind="steps"] .thk,
+[data-style="stamp"] .thought { background: var(--panel2); }
 /* WIRE gives a thought a dashed circle on the bus; a step is a solid square */
 [data-style="wire"] .fold[data-kind="steps"] .thk::before { border-style: solid; border-radius: 0; }
 /* PRESS drops the thought's label (a marginal note is known by where it sits)
@@ -3699,11 +3705,23 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   font-size: var(--t8); letter-spacing: 2px; color: var(--txf);
 }
 [data-style="press"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }
+/* PRESS sets a thought where the reply's words start, its clock (when it has
+   one) in the margin beside it — on the one-line row the clock's own width
+   made that margin, so a thought with no clock began at the page's edge */
+[data-style="press"] .thought { position: relative; padding-left: var(--press-mar); }
+[data-style="press"] .thought .thk-ms { position: absolute; left: 0; }
 /* HALO breathes three dots for a thought; a steps row wears its word and glyph */
 [data-style="halo"] .fold[data-kind="steps"] .thk-lab { gap: 6px; font-size: var(--t10); letter-spacing: 1.5px; }
 [data-style="halo"] .fold[data-kind="steps"] .thk-lab::before { content: none; animation: none; }
 [data-style="halo"] .fold[data-kind="steps"] .thk-lab > svg { display: block; }
 [data-style="halo"] .fold[data-kind="steps"] .thk-peek { font-style: normal; }
+/* …and a thought that says something lies on a surface of its own: the
+   reply's, with the corner pointing at the agent, but flat — the reply is the
+   one that lifts */
+[data-style="halo"] .thought {
+  border-radius: 6px 16px 16px 16px; padding: 8px 14px 8px 12px;
+  background: var(--panel2);
+}
 
 /* === VOID · THE SHELLS =====================================================
    The side columns and the session's header were black on black. A #121212

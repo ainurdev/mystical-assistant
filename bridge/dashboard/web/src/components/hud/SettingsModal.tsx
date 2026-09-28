@@ -1249,7 +1249,7 @@ function ThemeCardGrid({
  *  The wells are `inert`: a preview is a picture, so its rows and links neither
  *  take a click nor a tab stop away from the tile that owns them. */
 const STYLE_PREVIEW_TURN: TimedEvent[] = [
-  // A thought first, so the tile shows the THINKING fold; then one of each
+  // A thought first, so the tile shows how a thought reads; then one of each
   // tier, because tier is what the ledger draws differently: a `mark` that
   // changed a file, a `reach` that left the machine and came back with
   // structure, then the reply and the answer.
@@ -4221,8 +4221,8 @@ export function SettingsModal(props: SettingsModalProps) {
                       />
                     </Row>
                     <Row
-                      label="COLLAPSE THINKING & STEPS"
-                      info="Between two things the agent says, everything it thought sits under one THINKING row and everything it ran, edited or read under one STEPS row — the row names the count. On, both mount shut and the words are what you see; off, they mount open and the transcript reads as the full ledger. A click on any one row moves only that row."
+                      label="COLLAPSE STEPS"
+                      info="Between two things the agent says or thinks, everything it ran, edited or read sits under one STEPS row — the row names the count. On, it mounts shut and the words are what you see; off, it mounts open and the transcript reads as the full ledger. A click on any one row moves only that row. Thoughts are never folded."
                     >
                       <Switch
                         on={!settings.foldsOpen}

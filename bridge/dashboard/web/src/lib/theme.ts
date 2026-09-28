@@ -379,9 +379,9 @@ export interface HudSettings {
   baseFont: number; // BASE FONT SIZE in px — the whole type scale is derived
                     // from it (index.css --fs); 0 = AUTO (from the viewport)
   openResults: boolean; // bash output and edit diffs draw themselves open
-  // The THINKING and STEPS folds mount open. False = the work between two
-  // pieces of prose sits under one row each until you open it (the default:
-  // the COLLAPSE THINKING & STEPS switch is on).
+  // The STEPS folds mount open. False = the work between two pieces of prose
+  // sits under one row until you open it (the default: the COLLAPSE STEPS
+  // switch is on). Thoughts are prose and never fold (lib/segments).
   foldsOpen: boolean;
   // The composer's four run knobs. Kept here so they survive a reload — the
   // SESSION tab and the composer's dropdowns are the same state.

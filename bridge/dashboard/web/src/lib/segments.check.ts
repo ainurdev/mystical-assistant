@@ -10,23 +10,23 @@ const t = (type: string, text?: string) => ({ type, text });
 const kinds = (evs: { type: string; text?: string }[], from = 0) =>
   segmentsOf(evs, from).map((s) => `${s.kind}:${s.idx.join(",")}`).join(" ");
 
-// A thought, two commands, a paragraph, then the answer: two folds and two prose rows.
+// A thought, two commands, a paragraph, then the answer: one fold, four prose rows.
 {
   const evs = [t("thinking", "hm"), t("tool"), t("tool_done"), t("tool"), t("tool_done"), t("text", "here"), t("result")];
-  ok(kinds(evs) === "thinking:0 steps:1,2,3,4 prose:5 prose:6", `basic cut: ${kinds(evs)}`);
+  ok(kinds(evs) === "prose:0 steps:1,2,3,4 prose:5 prose:6", `basic cut: ${kinds(evs)}`);
 }
 
-// Acting before reasoning keeps the order the turn had.
+// Acting before a thought keeps the order the turn had.
 {
   const evs = [t("tool"), t("tool_done"), t("thinking", "so"), t("text", "x")];
-  ok(kinds(evs) === "steps:0,1 thinking:2 prose:3", `steps-first block: ${kinds(evs)}`);
+  ok(kinds(evs) === "steps:0,1 prose:2 prose:3", `steps-first block: ${kinds(evs)}`);
 }
 
-// Thoughts interleaved with tools all land in the block's one THINKING fold,
-// and the tools in its one STEPS fold — a block has at most two headers.
+// A thought stays where it was said, and the tools after it fold under it —
+// thought, steps, thought, steps, never all the thoughts in one pile.
 {
   const evs = [t("thinking", "a"), t("tool"), t("thinking", "b"), t("tool"), t("thinking", "c"), t("result")];
-  ok(kinds(evs) === "thinking:0,2,4 steps:1,3 prose:5", `interleaved: ${kinds(evs)}`);
+  ok(kinds(evs) === "prose:0 steps:1 prose:2 steps:3 prose:4 prose:5", `interleaved: ${kinds(evs)}`);
 }
 
 // A textless thinking is a pause, not a thought: it rides with the steps.
@@ -72,7 +72,7 @@ const kinds = (evs: { type: string; text?: string }[], from = 0) =>
 // `from` starts the cut mid-turn and indices stay absolute.
 {
   const evs = [t("tool"), t("text", "a"), t("thinking", "b"), t("tool"), t("result")];
-  ok(kinds(evs, 2) === "thinking:2 steps:3 prose:4", `from=2: ${kinds(evs, 2)}`);
+  ok(kinds(evs, 2) === "prose:2 steps:3 prose:4", `from=2: ${kinds(evs, 2)}`);
   ok(kinds([]) === "", "empty turn, no segments");
 }
 

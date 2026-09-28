@@ -125,10 +125,10 @@ function OutputStyleRow() {
   );
 }
 
-/** Between two things the agent says, its thinking and its steps each sit
- *  under one row. On (the default) those rows mount shut, so the words are
- *  what you see; off, they mount open and a turn reads as the whole ledger.
- *  A tap on any one row still moves only that row. */
+/** Between two things the agent says or thinks, its steps sit under one row.
+ *  On (the default) that row mounts shut, so the words are what you see; off,
+ *  it mounts open and a turn reads as the whole ledger. A tap on any one row
+ *  still moves only that row. Thoughts are never folded (lib/segments). */
 function FoldsRow() {
   const [open, setOpen] = useFoldsOpen();
   const on = !open;
@@ -140,9 +140,9 @@ function FoldsRow() {
       className="flex w-full items-center gap-2.5 bg-[var(--tg-secondary-bg)] px-3 py-2.5 text-left active:opacity-70"
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] tracking-[1.5px]">COLLAPSE THINKING &amp; STEPS</div>
+        <div className="truncate text-[11px] tracking-[1.5px]">COLLAPSE STEPS</div>
         <div className="text-[10px] leading-snug text-[var(--tg-hint)]">
-          {on ? "The work sits under one row each until you open it." : "Every thought and step mounts open."}
+          {on ? "The work sits under one row until you open it." : "Every step mounts open."}
         </div>
       </div>
       <span

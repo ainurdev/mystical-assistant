@@ -32,7 +32,7 @@ import {
   Container,
 } from "lucide-react";
 import { ToolWidget } from "./ResultWidgets";
-import { useToolStyle, widgetForRun, type WebSource } from "../lib/toolwidget";
+import { useToolStyle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
@@ -129,13 +129,13 @@ function GapMark({ ms }: { ms: number }) {
 }
 
 /** What a fold's header says about the work under it: still going, how much
- *  of it failed, how many pieces, how long the lot took. */
-type FoldStat = { running?: boolean; failed?: number; count?: string; ms?: number };
+ *  of it failed, how long the lot took. */
+type FoldStat = { running?: boolean; failed?: number; ms?: number };
 
-/** A stretch of the model's work under one row — THINKING (what it reasoned)
- *  or STEPS (what it ran, edited, read; see lib/segments). The prose either
- *  side stays in the flow at full size, which on a phone is most of what makes
- *  a turn readable at all.
+/** A stretch of the model's work under one row — STEPS, what it ran, edited,
+ *  read (see lib/segments). The prose and thoughts either side stay in the
+ *  flow at full size, which on a phone is most of what makes a turn readable
+ *  at all.
  *
  *  The row wears the thought row's chrome (`.thk` and its parts): every
  *  language already draws that row its own way, and a fold is the same row
@@ -143,25 +143,21 @@ type FoldStat = { running?: boolean; failed?: number; count?: string; ms?: numbe
  *  — STAMP hatches the row's plate, and that does not belong on the rows
  *  inside. Shut or open on mount is the reader's setting (lib/folds); a change
  *  to it re-sets every mounted fold, and a tap moves only that fold. */
-function Fold({ kind, label, icon, title, peek, stat, defaultOpen, children }: {
-  kind: "thinking" | "steps";
+function Fold({ label, icon, title, stat, defaultOpen, children }: {
   label: string;
   icon: ReactNode;
-  /** Always shown — the steps fold's summary is the row's name. */
-  title?: string;
-  /** Shown only while shut — the thinking fold's first line. */
-  peek?: string;
+  /** The fold's summary is the row's name. */
+  title: string;
   stat: FoldStat;
   defaultOpen: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
-  const line = title ?? (open ? "" : peek ?? "");
   return (
     <div
       className="fold"
-      data-kind={kind}
+      data-kind="steps"
       data-open={open ? "" : undefined}
       data-run={stat.running ? "" : undefined}
       data-err={stat.failed ? "" : undefined}
@@ -177,15 +173,14 @@ function Fold({ kind, label, icon, title, peek, stat, defaultOpen, children }: {
             {icon}
             {label}
           </span>
-          {line ? (
-            <span className={`thk-peek min-w-0 flex-1 truncate text-[11px] ${title ? "" : "italic opacity-75"}`}>
-              {line}
+          {title ? (
+            <span className="thk-peek min-w-0 flex-1 truncate text-[11px]">
+              {title}
             </span>
           ) : (
             <span aria-hidden className="h-px flex-1 bg-[var(--muted-2)] opacity-25" />
           )}
           <span className="thk-ms flex flex-none items-center gap-1.5 text-[9.5px] tracking-[1px]">
-            {stat.count ? <span>{stat.count}</span> : null}
             {stat.failed ? <span className="fold-fail">{"\u2715"} {stat.failed} FAILED</span> : null}
             {stat.running ? <span className="fold-run">RUNNING</span> : slow(stat.ms) ? <span>{dur(stat.ms)}</span> : null}
           </span>
@@ -201,13 +196,23 @@ function Fold({ kind, label, icon, title, peek, stat, defaultOpen, children }: {
   );
 }
 
-/** One thought inside the THINKING fold, as recorded — Claude Code keeps the
- *  reasoning on the stream and on disk, it just never prints it. */
-function Thought({ ms, text }: { ms?: number; text: string }) {
+/** A thought, in the flow where it was said (lib/segments) — the agent's own
+ *  status line, often a message the CLI handed back reworded. It is the `.thk`
+ *  row every language already draws a thought as, with the whole text in it:
+ *  the reply's size and markdown, one ink tier under the reply. The label
+ *  sits over the text, not beside it: beside it, a phone's column of text is
+ *  eighty pixels narrower on every line. */
+function ThoughtRow({ ms, text, toolStyle }: { ms?: number; text: string; toolStyle: ToolStyle }) {
   return (
-    <div className="thought whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--muted-2)]">
-      {slow(ms) ? <span className="thought-ms">{dur(ms)}</span> : null}
-      {text}
+    <div className="thk thought text-[var(--muted-2)]">
+      <div className="flex items-center gap-2">
+        <span className="thk-lab flex flex-none items-center gap-1.5 text-[10px] tracking-[1px]">
+          <Brain size={11} aria-hidden />
+          THOUGHT
+        </span>
+        {slow(ms) ? <span className="thk-ms ml-auto flex-none text-[9.5px] tracking-[1px]">{dur(ms)}</span> : null}
+      </div>
+      <Markdown className="thought-text mt-1 text-sm leading-normal" toolStyle={toolStyle}>{text}</Markdown>
     </div>
   );
 }
@@ -1031,7 +1036,7 @@ export const RunStream = memo(function RunStream({
   /** Epoch seconds the turn opened. With the result's own wall time this is the
    *  clock on the answer, opposite the one on your prompt. */
   turnStarted?: number;
-  /** Whether a THINKING or STEPS fold mounts open. Unset, the reader's own
+  /** Whether a STEPS fold mounts open. Unset, the reader's own
    *  setting (lib/folds); the OUTPUT STYLE previews pass true, because a tile
    *  exists to show the ledger. */
   foldsOpen?: boolean;
@@ -1074,12 +1079,9 @@ export const RunStream = memo(function RunStream({
   // Only the quiet steps fold away. A terminal, a diff, a delegated run, a fetch
   // or an MCP call each carry their own block and break the run instead —
   // otherwise the cards they just earned never get drawn.
-  // A thought no longer sits between the rows it fell between — it lives in
-  // the block's THINKING fold (lib/segments) — so for folding and grouping it is
-  // a pause: two reads either side of one are one run, not two. Positions are
-  // kept, so every index below is still into `events`.
-  const shape = events.map((e) => (e.type === "thinking" ? { type: "thinking" } : e));
-  const { folds, headOf } = foldChips(shape, (i) => {
+  // A thought breaks a run the way prose does: lib/segments draws it between
+  // the rows it fell between, so a card can't span one.
+  const { folds, headOf } = foldChips(events, (i) => {
     const e = events[i];
     if (e.type !== "tool") return false;
     const d = doneOf(e);
@@ -1104,7 +1106,7 @@ export const RunStream = memo(function RunStream({
       return doneOf(e)?.images?.length ? "shots" : null;   // the quiet ones fold into chips
     return kind;
   };
-  const { folds: groups, headOf: groupOf } = runsOf(shape, groupKey, 2);
+  const { folds: groups, headOf: groupOf } = runsOf(events, groupKey, 2);
   // A picture is the result, so a run that came back with one is drawn in the
   // flow with the words — a shut STEPS fold would hide it. The whole run goes:
   // its head draws every member, and a member left behind would head an empty fold.
@@ -1256,13 +1258,12 @@ export const RunStream = memo(function RunStream({
         );
       }
       case "thinking":
-        // A thought is drawn by its block's THINKING fold. A pause swallowed by
-        // a group is drawn by nobody: its mark would land at the foot of the
-        // card instead of between the rows it fell between, and two of them
-        // would stack on the same pixel.
+        // A pause swallowed by a group is drawn by nobody: its mark would land
+        // at the foot of the card instead of between the rows it fell between,
+        // and two of them would stack on the same pixel.
         if (!event.text)
           return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
-        return null;
+        return <ThoughtRow key={i} ms={event.ms} text={event.text} toolStyle={toolStyle} />;
       case "log":
         return (
           <LogRow key={i} src={event.src} label={event.label}
@@ -1393,7 +1394,6 @@ export const RunStream = memo(function RunStream({
     return (
       <Fold
         key={`f${seg.idx[0]}`}
-        kind="steps"
         label="STEPS"
         icon={<Layers size={11} aria-hidden />}
         // While one is out, the row names it: on a phone this line is the
@@ -1403,29 +1403,6 @@ export const RunStream = memo(function RunStream({
         defaultOpen={foldsOpen}
       >
         {seg.idx.map(renderEvent)}
-      </Fold>
-    );
-  };
-
-  const thinkingFold = (seg: Seg) => {
-    const thoughts = seg.idx.map((i) => events[i] as { ms?: number; text?: string });
-    const ms = thoughts.reduce((t, e) => t + (e.ms ?? 0), 0);
-    const peek = (thoughts[0].text ?? "").trim().split("\n").find((l) => l.trim()) ?? "";
-    return (
-      <Fold
-        key={`f${seg.idx[0]}`}
-        kind="thinking"
-        label="THINKING"
-        icon={<Brain size={11} aria-hidden />}
-        peek={peek}
-        stat={{ ms, count: thoughts.length > 1 ? `${thoughts.length} THOUGHTS` : undefined }}
-        defaultOpen={foldsOpen}
-      >
-        {/* One thought's clock is already on the row; only a run of them
-            needs a figure per thought. */}
-        {thoughts.map((e, k) => (
-          <Thought key={seg.idx[k]} ms={thoughts.length > 1 ? e.ms : undefined} text={e.text ?? ""} />
-        ))}
       </Fold>
     );
   };
@@ -1446,9 +1423,7 @@ export const RunStream = memo(function RunStream({
       )}
       {/* The words in the flow, the work under a row each (lib/segments). */}
       {segmentsOf(events, from, inFlow).map((seg) =>
-        seg.kind === "prose" ? renderEvent(seg.idx[0])
-        : seg.kind === "thinking" ? thinkingFold(seg)
-        : stepsFold(seg))}
+        seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg))}
     </div>
   );
 });

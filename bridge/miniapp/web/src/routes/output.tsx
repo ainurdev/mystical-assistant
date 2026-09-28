@@ -18,7 +18,7 @@ import { CHAT_BGS, TOOL_STYLES, useChatBg, useToolStyle, type ChatBg, type ToolS
    The previews are `inert`: a picture, not a document — their rows and links
    take neither a tap nor a tab stop from the row that owns them. */
 const PREVIEW_TURN: RunEvent[] = [
-  // A thought first, so the well shows the THINKING fold; then one of each
+  // A thought first, so the well shows how a thought reads; then one of each
   // tier, because tier is what the ledger draws differently: a `mark` that
   // changed a file, then a `reach` that left the phone and came back with
   // structure, then the reply.
