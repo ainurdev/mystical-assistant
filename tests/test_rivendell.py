@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -487,21 +488,54 @@ def test_active_run_keeps_queue_busy_so_next_pings(monkeypatch):
     assert pinged == ["review:r2"]
 
 
-def test_implementation_without_checkout_is_left_for_another_bridge(monkeypatch):
-    """Every connected bridge gets every request. An implementation for a repo
-    with no local checkout is dropped here — never accepted (that claims it, only
-    to FAIL it) and never pinged — so a bridge that has the repo can take it.
+def test_implementation_without_checkout_is_passed_on(monkeypatch):
+    """An implementation for a repo with no local checkout is dropped here —
+    never accepted (that claims it, only to FAIL it) and never pinged — and
+    passed on, so rivendell-api offers it to the bridges that may have the repo.
     One whose repo is checked out still auto-accepts as usual."""
     w = _worker()
-    hits = []
+    hits, calls = [], []
     monkeypatch.setattr(w, "_find_checkout",
                         lambda slug: "/co/app" if slug == "acme/app" else None)
     monkeypatch.setattr(w, "accept", lambda key: hits.append(("a", key)) or True)
     monkeypatch.setattr(w, "_notify_queued", lambda key: hits.append(("n", key)))
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: calls.append((path, payload)))
     w._apply_policy(w._enqueue("impl", "i1", "acme/elsewhere"))
     assert hits == [] and w.queue_snapshot() == []
+    assert calls == [("/plugin/implementation-requests/i1/pass", {})]
     w._apply_policy(w._enqueue("impl", "i2", "acme/app"))   # queue idle again
-    assert hits == [("a", "impl:i2")]
+    assert hits == [("a", "impl:i2")] and len(calls) == 1
+
+
+def _conflict(kind_path, rid):
+    raise urllib.error.HTTPError(f"http://api/{kind_path}/{rid}/prompt", 409,
+                                 "Conflict", None, None)
+
+
+def test_claim_refused_with_409_posts_nothing(monkeypatch):
+    """A 409 on claim means the request is another bridge's (claimed, or waiting
+    for its requester's own bridge) or already finished: not ours to fail, so
+    nothing runs and nothing is posted. Any other claim error still lands FAILED."""
+    w = _worker()
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", _conflict)
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
+    monkeypatch.setattr(
+        w, "_start_run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    w._run_implementation("i1", "acme/app")
+    w._run_review("r1", "acme/app")
+    w._run_todolist("t1", "Proj")
+    w._do_reject({"kind": "impl", "request_id": "i2", "slug": "acme/app"})
+    assert posted == []
+
+    def down(kind_path, rid):
+        raise urllib.error.URLError("down")
+    monkeypatch.setattr(w, "_fetch_prompt", down)
+    w._run_review("r2", "acme/app")
+    assert posted == [("review-requests", "r2", False,
+                       "prompt fetch failed: <urlopen error down>")]
 
 
 def test_run_accepted_releases_active_run(monkeypatch):
