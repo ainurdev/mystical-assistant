@@ -487,6 +487,23 @@ def test_active_run_keeps_queue_busy_so_next_pings(monkeypatch):
     assert pinged == ["review:r2"]
 
 
+def test_implementation_without_checkout_is_left_for_another_bridge(monkeypatch):
+    """Every connected bridge gets every request. An implementation for a repo
+    with no local checkout is dropped here — never accepted (that claims it, only
+    to FAIL it) and never pinged — so a bridge that has the repo can take it.
+    One whose repo is checked out still auto-accepts as usual."""
+    w = _worker()
+    hits = []
+    monkeypatch.setattr(w, "_find_checkout",
+                        lambda slug: "/co/app" if slug == "acme/app" else None)
+    monkeypatch.setattr(w, "accept", lambda key: hits.append(("a", key)) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: hits.append(("n", key)))
+    w._apply_policy(w._enqueue("impl", "i1", "acme/elsewhere"))
+    assert hits == [] and w.queue_snapshot() == []
+    w._apply_policy(w._enqueue("impl", "i2", "acme/app"))   # queue idle again
+    assert hits == [("a", "impl:i2")]
+
+
 def test_run_accepted_releases_active_run(monkeypatch):
     """_run_accepted always drops the active-run count in its finally, and clamps
     so a stray call never drives it negative."""

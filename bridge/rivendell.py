@@ -55,8 +55,10 @@ local checkout under BASE_PATH by matching git origin remotes (the scan is
 BASE_PATH-wide, so it is shared across workers; each worker's own WORKDIR still
 wins for its runs). Reviews fall back to the worker's WORKDIR/BASE_PATH when no
 checkout matches (the prompt carries the PR reference, so a generic dir degrades
-gracefully); implementations FAIL instead — an autonomous code-writing run must
-never land in the wrong directory.
+gracefully); implementations never do — an autonomous code-writing run must
+never land in the wrong directory. A bridge with no checkout doesn't take the
+request at all (_apply_policy), leaving it PENDING for a bridge that has the
+repo; the FAIL in _run_implementation is only the backstop.
 
 Accepted runs are concurrent: the request prompts instruct each run to work in
 its own git worktree, so runs no longer race a shared checkout the way the old
@@ -402,8 +404,25 @@ class Worker:
         idle queue (nothing else pending, nothing running) is auto-accepted so a
         lone request never waits on a click; anything behind running or pending
         work is left for the operator and pushed to Telegram with Approve/Dismiss
-        buttons. A no-op on None (a duplicate _enqueue dropped)."""
+        buttons. A no-op on None (a duplicate _enqueue dropped).
+
+        An implementation for a repo with no local checkout is dropped instead:
+        every connected bridge gets every request, so it stays PENDING server-side
+        for a bridge that has the repo, rather than being claimed here only to
+        FAIL. It stays in _seen, so catch-up doesn't re-offer (and rescan) it on
+        every reconnect."""
         if key is None:
+            return
+        with self._q_lock:
+            item = self._pending.get(key, {})
+        if item.get("kind") == "impl" and self._find_checkout(item["slug"]) is None:
+            # ponytail: a repo cloned after this is only picked up after a
+            # bridge restart (the key is in _seen); a rescan per reconnect costs more.
+            with self._q_lock:
+                self._pending.pop(key, None)
+            print(f"rivendell[{self.name}]: implementation {item['request_id']} "
+                  f"left for another bridge: no local checkout for "
+                  f"{item['slug']!r} under {config.BASE_PATH}")
             return
         with self._q_lock:
             idle = len(self._pending) == 1 and self._active_runs == 0
