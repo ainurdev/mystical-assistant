@@ -55,6 +55,14 @@ const kinds = (evs: { type: string; text?: string }[], from = 0) =>
   }
 }
 
+// A step the caller marks as in the flow (a tool that came back with a picture)
+// breaks the work like prose does — a shut STEPS fold would hide the picture.
+{
+  const evs = [t("tool"), t("tool_done"), t("tool"), t("tool_done"), t("tool"), t("text", "x")];
+  const cut = segmentsOf(evs, 0, (i) => i === 2).map((s) => `${s.kind}:${s.idx.join(",")}`).join(" ");
+  ok(cut === "steps:0,1 prose:2 steps:3,4 prose:5", `a shot leaves the fold: ${cut}`);
+}
+
 // A log line is a step; a hook's output belongs with the work, not the words.
 {
   const evs = [t("log", "hook said"), t("text", "x")];

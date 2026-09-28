@@ -45,8 +45,12 @@ const STEP = new Set(["tool", "log"]);
  * acted and reasoned afterwards. A block with no thought yields only STEPS; a
  * block with no visible step yields only THINKING; a block of nothing but
  * bookkeeping events is dropped (they render nothing).
+ *
+ * `inFlow(i)` cuts a step out as if it were prose: a tool that came back with a
+ * picture, which a shut fold would hide. The caller decides — the picture rides
+ * on the paired tool_done, which this doesn't read.
  */
-export function segmentsOf(events: Ev[], from = 0): Seg[] {
+export function segmentsOf(events: Ev[], from = 0, inFlow: (i: number) => boolean = () => false): Seg[] {
   const out: Seg[] = [];
   let think: number[] = [];
   let steps: number[] = [];
@@ -67,7 +71,7 @@ export function segmentsOf(events: Ev[], from = 0): Seg[] {
 
   for (let i = from; i < events.length; i++) {
     const e = events[i];
-    if (PROSE.has(e.type)) {
+    if (PROSE.has(e.type) || inFlow(i)) {
       flush();
       out.push({ kind: "prose", idx: [i] });
     } else if (e.type === "thinking" && e.text) {

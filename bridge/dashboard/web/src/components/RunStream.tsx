@@ -1620,6 +1620,11 @@ export const RunStream = memo(function RunStream({
     return kind;
   };
   const { folds: groups, headOf: groupOf } = runsOf(shape, groupKey, 2);
+  // A picture is the result, so a run that came back with one is drawn in the
+  // flow with the words — a shut STEPS fold would hide it. The whole run goes:
+  // its head draws every member, and a member left behind would head an empty fold.
+  const inFlow = (i: number) =>
+    (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length);
 
   // Never cut a folded run away from the head that draws it. A cut that ends up
   // hiding only a handful buys nothing and reads as a button in front of
@@ -2028,7 +2033,7 @@ export const RunStream = memo(function RunStream({
         </button>
       )}
       {/* The words in the flow, the work under a row each (lib/segments). */}
-      {segmentsOf(events, from).map((seg) =>
+      {segmentsOf(events, from, inFlow).map((seg) =>
         seg.kind === "prose" ? renderEvent(seg.idx[0])
         : seg.kind === "thinking" ? thinkingFold(seg)
         : stepsFold(seg))}
