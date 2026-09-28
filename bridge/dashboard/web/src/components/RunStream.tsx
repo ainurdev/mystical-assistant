@@ -1525,6 +1525,7 @@ export const RunStream = memo(function RunStream({
   showAll = false,
   boot = null,
   foldsOpen = false,
+  compact = false,
 }: {
   events: TimedEvent[];
   pending?: PendingRequest[];
@@ -1557,6 +1558,9 @@ export const RunStream = memo(function RunStream({
    *  Off by default: the work sits under one line until you ask for it, and
    *  the words stay the thing you see. */
   foldsOpen?: boolean;
+  /** The COMPACT chat layout: a run that came back with pictures is drawn as
+   *  its pictures alone. */
+  compact?: boolean;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -1728,6 +1732,9 @@ export const RunStream = memo(function RunStream({
         ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i}>{node}{extra}</div> : node;
+        // COMPACT reads as a chat, and there the pictures are the reply: the
+        // Read or Attach that fetched them is plumbing, so its row goes.
+        if (compact && extra && inFlow(i)) return <div key={i}>{extra}</div>;
         // A delegation is a turn nested inside this one, so it is drawn as
         // its own framed block — and a run of them as one fan, not as N
         // identical rows or a generic "AGENT · 4 CALLS" box.

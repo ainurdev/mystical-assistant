@@ -225,6 +225,7 @@ function TurnBlock({
               openResults={hud?.openResults ?? false}
               foldsOpen={hud?.foldsOpen ?? false}
               toolStyle={hud?.toolStyle ?? "stamp"}
+              compact={hud?.layout === "compact"}
               turnStarted={turn.started}
               onRunCommand={onRunCommand}
               onQuote={onQuote}
