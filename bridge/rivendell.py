@@ -15,20 +15,35 @@ moment work stacks up: anything that lands while a run is in flight (or other
 requests are already pending) is held for a decision AND pushed to Telegram with
 Approve/Dismiss buttons, so it can be decided from the phone. The auto-accepted
 first request needs no ping — it is already running. REJECT declines a request
-(there is no reject endpoint, so it claims the request and POSTs FAILED, which is
-what makes the decision stick):
+by refusing it (below):
 
     pr-review-request           held PENDING in the worker's queue
-    task-implementation-request        |  (the first into an idle queue is
-    project-todolist-request           |   auto-accepted; the rest ping Telegram)
-    task-description-request           v  ACCEPT (dashboard PLUGINS tab / Telegram)
-    changelog-request           -> GET  /plugin/<kind>-requests/<id>/prompt
+    task-implementation-request        |  -> POST .../<id>/ack  received | queued
+    project-todolist-request           |  (the first into an idle queue is
+    task-description-request           |   auto-accepted; the rest ping Telegram)
+    changelog-request                  v  ACCEPT (dashboard PLUGINS tab / Telegram)
+          -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
           -> runner.start_streaming_job(...)            (bypassPermissions,
                                                          the instance's model)
           -> POST /plugin/<kind>-requests/<id>/result   (COMPLETED | FAILED)
 
-          DISMISS/REJECT -> claim + POST FAILED ("declined by operator")
+          DISMISS/REJECT, or an implementation with no local checkout
+          -> POST /plugin/<kind>-requests/<id>/refuse   (dismissed | no-checkout)
+
+The ack/refuse handshake: Rivendell re-sends a job's event to its requester's
+bridge every ~20s until that bridge acks or refuses it (for up to two minutes),
+so a job lost in a reconnect gap is not silently stranded. Every newly queued
+job is acked — "received" when auto-accepted, "queued" when held for the
+operator — and a duplicate event for a job still held here is re-acked
+"queued" (the first ack was lost). Acks are best-effort and off-thread. A
+refusal does not hand the job to some other bridge behind the requester's back:
+Rivendell asks the requester whether another bridge may run it, to keep
+waiting, or to cancel. On "keep waiting" it clears the refusal and re-sends
+once, so a refused key is forgotten from _seen and that re-send goes through
+the policy afresh. Older rivendell-apis 404 the new endpoints: acks are just
+logged, a no-checkout refusal falls back to /pass, and a dismissal falls back
+to claim + POST FAILED ("declined by operator").
 
 A project todolist comes in two steps on the same event and endpoints, told
 apart by the event's ``kind``: RECOMMENDATIONS (the agent proposes Teamwork tasks
@@ -57,15 +72,18 @@ wins for its runs). Reviews fall back to the worker's WORKDIR/BASE_PATH when no
 checkout matches (the prompt carries the PR reference, so a generic dir degrades
 gracefully); implementations never do — an autonomous code-writing run must
 never land in the wrong directory. A bridge with no checkout doesn't take the
-request at all but passes it on (_apply_policy), leaving it PENDING for a bridge
-that has the repo; the FAIL in _run_implementation is only the backstop.
+request at all but refuses it (_apply_policy), leaving it PENDING for the
+requester to offer elsewhere; the FAIL in _run_implementation is only the
+backstop.
 
 Which bridge gets a request is rivendell-api's call: it runs on its requester's
 own bridge (the one holding their token). While that bridge is online only it
 hears about the request, and catch-up and claims follow the same rule; the
-first claim is exclusive. Passing an implementation on is what offers it to
-every other bridge. A claim refused with 409 (another bridge's, or waiting for
-its requester's) is simply not ours: nothing runs and nothing is posted.
+first claim is exclusive. Only the requester agreeing after a refusal offers it
+to other bridges — catch-up never lists another user's jobs otherwise, nor the
+ones this bridge refused while the requester is deciding. A claim refused with
+409 (another bridge's, or waiting for its requester's) is simply not ours:
+nothing runs and nothing is posted.
 
 Accepted runs are concurrent: the request prompts instruct each run to work in
 its own git worktree, so runs no longer race a shared checkout the way the old
@@ -81,9 +99,14 @@ also return IN_PROGRESS requests, so a run interrupted mid-flight by a restart
 comes back into the queue for a fresh accept rather than sticking IN_PROGRESS
 forever. In-process duplicates are prevented by each worker's _seen set (keys
 "review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>",
-since the request
-kinds have separate id spaces); a rejected request is claimed+FAILED, so catch-up
-never resurrects it.
+since the request kinds have separate id spaces). A refused request leaves
+_seen (catch-up no longer lists it, so that costs no rescan per reconnect);
+on an older API a dismissed one is claimed+FAILED, so catch-up never
+resurrects it.
+
+The listener reads with a socket timeout so a quiet interval can ping. A
+timed-out read leaves Python's socket file unusable, so the listener rebuilds
+it over the same socket rather than dropping a healthy connection (see _listen).
 
 A token/auth failure is treated apart from a transient network fault: the gateway
 accepts the upgrade and then closes with 4401/4403 (or a proxy rejects the
@@ -409,17 +432,27 @@ class Worker:
 
     def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None,
                  step: "str | None" = None) -> "str | None":
-        """Hold a request PENDING for the operator, deduped per _seen. Pure: it
-        adds the row and nothing more — running (or auto-accepting, or pinging
-        Telegram) is _apply_policy's job, kept separate so the dedup/parse tests
-        stay hermetic. Returns the new key, or None if it was a duplicate.
+        """Hold a request PENDING for the operator, deduped per _seen. It adds
+        the row and nothing more — running (or auto-accepting, or pinging
+        Telegram, or acking) is _apply_policy's job, kept separate so the
+        dedup/parse tests stay hermetic; the one exception is re-acking a
+        duplicate that is still pending (see below). Returns the new key, or
+        None if it was a duplicate.
         `step` tells a todolist's two steps apart ("recommendations" /
         "todolist"); None when the sender did not say (an older rivendell-api)."""
         key = f"{kind}:{request_id}"
         with self._seen_lock:
-            if key in self._seen:
-                return None
+            dup = key in self._seen
             self._seen.add(key)
+        if dup:
+            # Rivendell re-sends a job until it hears an ack, so a duplicate
+            # of one still waiting here means our ack was lost: say it again.
+            # A duplicate of a running/finished one is just noise.
+            with self._q_lock:
+                waiting = key in self._pending
+            if waiting:
+                self._ack(key, "queued")
+            return None
         now = time.time()
         self.last_event_at = now
         with self._q_lock:
@@ -434,39 +467,81 @@ class Worker:
         idle queue (nothing else pending, nothing running) is auto-accepted so a
         lone request never waits on a click; anything behind running or pending
         work is left for the operator and pushed to Telegram with Approve/Dismiss
-        buttons. A no-op on None (a duplicate _enqueue dropped).
+        buttons. Either way Rivendell is told (ack "received" / "queued"), which
+        stops its re-sends. A no-op on None (a duplicate _enqueue dropped).
 
         An implementation for a repo with no local checkout is dropped instead,
-        and passed on: rivendell-api then offers it to every other bridge (a
-        no-op there unless this is its requester's bridge), so it stays PENDING
-        for one that has the repo rather than being claimed here only to FAIL.
-        It stays in _seen, so catch-up doesn't re-offer (and rescan) it on every
-        reconnect."""
+        and refused ("no-checkout"): rivendell-api then asks the requester
+        whether another bridge may run it, rather than it being claimed here
+        only to FAIL. The refusal forgets the key, so the re-send after a "keep
+        waiting" goes through this policy again (and finds a repo cloned since)."""
         if key is None:
             return
         with self._q_lock:
             item = self._pending.get(key, {})
         if item.get("kind") == "impl" and self._find_checkout(item["slug"]) is None:
-            # ponytail: a repo cloned after this is only picked up after a
-            # bridge restart (the key is in _seen); a rescan per reconnect costs more.
             with self._q_lock:
                 self._pending.pop(key, None)
-            print(f"rivendell[{self.name}]: implementation {item['request_id']} "
-                  f"passed on: no local checkout for "
-                  f"{item['slug']!r} under {config.BASE_PATH}")
-            try:
-                self._api(f"/plugin/implementation-requests/"
-                          f"{item['request_id']}/pass", {})
-            except Exception as e:  # noqa: BLE001 — an older rivendell-api has no pass
-                print(f"rivendell[{self.name}]: pass failed for "
-                      f"{item['request_id']}: {e}")
+            rid = item["request_id"]
+            print(f"rivendell[{self.name}]: implementation {rid} refused: no "
+                  f"local checkout for {item['slug']!r} under {config.BASE_PATH}")
+            if not self._refuse("impl", rid, "no-checkout"):
+                # An older rivendell-api (no refuse): pass it on the old way.
+                # ponytail: the key stays in _seen on this path, so a repo
+                # cloned later is only picked up after a bridge restart; the
+                # old API's catch-up keeps listing passed jobs, and forgetting
+                # would rescan BASE_PATH for them on every reconnect.
+                try:
+                    self._api(f"/plugin/implementation-requests/{rid}/pass", {})
+                except Exception as e:  # noqa: BLE001 — an even older API has no pass
+                    print(f"rivendell[{self.name}]: pass failed for {rid}: {e}")
             return
         with self._q_lock:
             idle = len(self._pending) == 1 and self._active_runs == 0
         if idle:
+            self._ack(key, "received")
             self.accept(key)            # auto-accept: run it now, no Telegram ping
         else:
+            self._ack(key, "queued")
             self._notify_queued(key)    # held for a decision — ping Telegram
+
+    def _ack(self, key: str, state: str) -> None:
+        """Tell Rivendell a job arrived: "received" (about to start) or "queued"
+        (held for the operator). Rivendell re-sends the event until it hears
+        one. Best-effort and off-thread — the listener must not stall on HTTP,
+        and an older rivendell-api 404s it (only logged)."""
+        kind, _, request_id = key.partition(":")
+        path = f"/plugin/{self._KIND_PATH.get(kind, 'review-requests')}/{request_id}/ack"
+        threading.Thread(target=self._post_ack, args=(path, state),
+                         name=f"rivendell-ack-{self.id}", daemon=True).start()
+
+    def _post_ack(self, path: str, state: str) -> None:
+        try:
+            self._api(path, {"state": state})
+        except Exception as e:  # noqa: BLE001 — an ack is best-effort
+            print(f"rivendell[{self.name}]: ack {state} failed ({path}): {e}")
+
+    def _refuse(self, kind: str, request_id: str, reason: str) -> bool:
+        """Refuse a job ("no-checkout" / "dismissed"): Rivendell then asks its
+        requester whether another bridge may run it, keep waiting, or cancel.
+        Returns False only when the endpoint is missing (404: an older
+        rivendell-api) so the caller falls back to the old path; any other
+        failure is logged and counts as done (a 409 is a job not ours, or
+        finished). The key is forgotten from _seen either way, so the re-send
+        after "keep waiting" — or a catch-up still listing a refusal that
+        didn't land — is handled as a new job."""
+        path = f"/plugin/{self._KIND_PATH.get(kind, 'review-requests')}/{request_id}/refuse"
+        try:
+            self._api(path, {"reason": reason})
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False
+            print(f"rivendell[{self.name}]: refuse failed for {request_id}: {e}")
+        except Exception as e:  # noqa: BLE001 — best-effort, see docstring
+            print(f"rivendell[{self.name}]: refuse failed for {request_id}: {e}")
+        with self._seen_lock:
+            self._seen.discard(f"{kind}:{request_id}")
+        return True
 
     def _handle_message(self, raw: bytes) -> "str | None":
         """Parse and route one websocket frame into the queue (pure enqueue —
@@ -567,6 +642,22 @@ class Worker:
                         frame = wsutil.decode_frame(rfile)
                     except (socket.timeout, TimeoutError):
                         # Quiet interval: ping. Too many without ANY frame -> dead.
+                        # A timed-out read poisons the SocketIO under rfile for
+                        # good (every later read: "cannot read from timed out
+                        # object"), which used to drop this healthy connection
+                        # and redial every quiet interval. So read on through a
+                        # fresh file over the same socket. Safe at a frame
+                        # boundary: the buffered reader only goes to the socket
+                        # once its buffer is drained, so the timeout hit the
+                        # wait for a new frame and nothing buffered is lost.
+                        # ponytail: a peer stalling a whole interval MID-frame
+                        # loses the partial frame's bytes and desyncs the
+                        # stream; garbage frames then don't reset `missed`, so
+                        # the dead-peer check redials within a few intervals —
+                        # a reconnect, not a wedge. Tracking partial reads
+                        # would need an unbuffered reader; not worth it.
+                        rfile.close()
+                        rfile = sock.makefile("rb")
                         missed += 1
                         if missed > _MAX_MISSED_PONGS:
                             raise ConnectionError("peer stopped answering pings")
@@ -861,10 +952,10 @@ class Worker:
         return True
 
     def reject(self, key: str) -> bool:
-        """Decline one pending request. There is no reject endpoint, so this
-        claims it (PENDING -> IN_PROGRESS) and POSTs FAILED — that is what makes
-        the decision stick server-side and keeps catch-up from resurrecting it.
-        Runs off-thread so a slow POST never blocks the HTTP handler."""
+        """Decline one pending request: refuse it ("dismissed"), which hands the
+        decision back to its requester (see _do_reject for the older-API
+        fallback). Runs off-thread so a slow POST never blocks the HTTP
+        handler."""
         with self._q_lock:
             item = self._pending.pop(key, None)
         if item is None:
@@ -903,6 +994,14 @@ class Worker:
     def _do_reject(self, item: dict) -> None:
         kind_path = self._KIND_PATH.get(item["kind"], "review-requests")
         request_id = item["request_id"]
+        # Refuse, don't fail: the requester decides whether another bridge runs
+        # it. Nothing is claimed, so it stays PENDING server-side meanwhile.
+        if self._refuse(item["kind"], request_id, "dismissed"):
+            print(f"rivendell[{self.name}]: {item['kind']} {request_id} "
+                  "dismissed by operator (refused)")
+            return
+        # An older rivendell-api (no refuse endpoint): there is no reject either,
+        # so claim it and POST FAILED — what makes the decision stick there.
         # Claim first: the result endpoint expects a claimed (IN_PROGRESS) request.
         # A refused claim (409) is someone else's request, or finished — leave it.
         # Any other claim failure (older API) is fine — still try to FAIL it.

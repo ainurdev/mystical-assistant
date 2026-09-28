@@ -26,7 +26,32 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ.setdefault("ALLOWED_CHAT_IDS", "555")
 os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
+import pytest  # noqa: E402
+
 from bridge import rivendell, wsutil  # noqa: E402
+
+_real_ack = rivendell.Worker._ack
+
+
+@pytest.fixture(autouse=True)
+def acks(monkeypatch):
+    """Acks go off-thread over HTTP; record them instead, so no test reaches the
+    network. The (key, state) pairs sent, in order."""
+    sent = []
+    monkeypatch.setattr(rivendell.Worker, "_ack",
+                        lambda self, key, state: sent.append((key, state)))
+    return sent
+
+
+def _http_error(code, path="/x"):
+    return urllib.error.HTTPError(f"http://api{path}", code, "err", None, None)
+
+
+def _raise_http(code):
+    """An _api stand-in that fails every call with HTTP `code`."""
+    def api(path, payload=None):
+        raise _http_error(code, path)
+    return api
 
 
 def _inst(**kw):
@@ -416,13 +441,36 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
                      ("changelog", "c1", "Proj"), ("review", "r1", None)]
 
 
-def test_reject_claims_then_fails(monkeypatch):
-    """reject() has no reject endpoint to call: it claims the request (so the
-    result POST is accepted) and posts FAILED "declined by operator", then drops
-    it. A second reject of the same key is a no-op."""
+def test_reject_refuses_as_dismissed_without_claiming(monkeypatch):
+    """reject() refuses the request ("dismissed") so Rivendell asks its requester
+    what to do; it neither claims nor FAILs it, and forgets the key so the
+    re-send after "keep waiting" is queued afresh. A second reject is a no-op."""
+    w = _worker()
+    w._enqueue("impl", "i1", "acme/app")
+    calls = []
+    monkeypatch.setattr(w, "_api",
+                        lambda path, payload=None: calls.append((path, payload)))
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kp, rid: (_ for _ in ()).throw(AssertionError("must not claim")))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda *a: (_ for _ in ()).throw(AssertionError("must not FAIL")))
+    assert w.reject("impl:i1") is True
+    _wait_until(lambda: "impl:i1" not in w._seen)       # reject is off-thread
+    assert calls == [("/plugin/implementation-requests/i1/refuse",
+                      {"reason": "dismissed"})]
+    assert w.queue_snapshot() == []
+    assert w.reject("impl:i1") is False
+    assert w._enqueue("impl", "i1", "acme/app") == "impl:i1"   # the re-send
+
+
+def test_reject_falls_back_to_claim_and_fail_on_older_api(monkeypatch):
+    """An older rivendell-api 404s refuse: reject() then claims the request (so
+    the result POST is accepted) and posts FAILED "declined by operator". The
+    key stays in _seen — a FAILED job is not re-offered."""
     w = _worker()
     w._enqueue("impl", "i1", "acme/app")
     claimed, posted, ev = [], [], threading.Event()
+    monkeypatch.setattr(w, "_api", _raise_http(404))
     monkeypatch.setattr(w, "_fetch_prompt",
                         lambda kp, rid: claimed.append((kp, rid)) or {"prompt": "x"})
     monkeypatch.setattr(w, "_post_result",
@@ -431,17 +479,27 @@ def test_reject_claims_then_fails(monkeypatch):
     assert ev.wait(2), "reject must post a result"
     assert claimed == [("implementation-requests", "i1")]
     assert posted == [("implementation-requests", "i1", False, "declined by operator")]
-    assert w.queue_snapshot() == []
-    assert w.reject("impl:i1") is False
+    assert "impl:i1" in w._seen
 
 
-def test_rejected_request_is_not_re_added_by_catch_up():
-    """A rejected key stays in _seen, so a catch-up that still lists it (before the
-    server marks it FAILED) does not put it back in the queue."""
+def test_reject_refuse_409_posts_nothing(monkeypatch):
+    """A 409 on refuse is a job not ours (or finished): no fallback claim/FAIL."""
+    w = _worker()
+    monkeypatch.setattr(w, "_api", _raise_http(409))
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kp, rid: (_ for _ in ()).throw(AssertionError("must not claim")))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda *a: (_ for _ in ()).throw(AssertionError("must not FAIL")))
+    w._do_reject({"kind": "review", "request_id": "r1", "slug": None})
+
+
+def test_accepted_request_is_not_re_added_by_catch_up():
+    """A key that left the queue for a run stays in _seen, so a catch-up that
+    still lists it (IN_PROGRESS) does not put it back in the queue."""
     w = _worker()
     w._enqueue("review", "r1", "acme/app")
     with w._q_lock:
-        w._pending.pop("review:r1")            # reject() removed it; _seen kept
+        w._pending.pop("review:r1")            # accept() removed it; _seen kept
     w._enqueue("review", "r1", "acme/app")      # a catch-up re-offer
     assert w.queue_snapshot() == []
 
@@ -488,11 +546,13 @@ def test_active_run_keeps_queue_busy_so_next_pings(monkeypatch):
     assert pinged == ["review:r2"]
 
 
-def test_implementation_without_checkout_is_passed_on(monkeypatch):
+def test_implementation_without_checkout_is_refused(monkeypatch, acks):
     """An implementation for a repo with no local checkout is dropped here —
-    never accepted (that claims it, only to FAIL it) and never pinged — and
-    passed on, so rivendell-api offers it to the bridges that may have the repo.
-    One whose repo is checked out still auto-accepts as usual."""
+    never accepted (that claims it, only to FAIL it), pinged or acked — and
+    refused ("no-checkout"), so rivendell-api asks its requester whether another
+    bridge may run it. The key is forgotten, so the re-send after "keep
+    waiting" goes through the policy again. One whose repo is checked out
+    still auto-accepts as usual."""
     w = _worker()
     hits, calls = [], []
     monkeypatch.setattr(w, "_find_checkout",
@@ -501,10 +561,88 @@ def test_implementation_without_checkout_is_passed_on(monkeypatch):
     monkeypatch.setattr(w, "_notify_queued", lambda key: hits.append(("n", key)))
     monkeypatch.setattr(w, "_api", lambda path, payload=None: calls.append((path, payload)))
     w._apply_policy(w._enqueue("impl", "i1", "acme/elsewhere"))
-    assert hits == [] and w.queue_snapshot() == []
-    assert calls == [("/plugin/implementation-requests/i1/pass", {})]
+    assert hits == [] and acks == [] and w.queue_snapshot() == []
+    assert calls == [("/plugin/implementation-requests/i1/refuse",
+                      {"reason": "no-checkout"})]
+    assert "impl:i1" not in w._seen
+    # "keep waiting": the re-sent event is a new job, and is refused again.
+    w._apply_policy(w._enqueue("impl", "i1", "acme/elsewhere"))
+    assert len(calls) == 2 and hits == []
     w._apply_policy(w._enqueue("impl", "i2", "acme/app"))   # queue idle again
-    assert hits == [("a", "impl:i2")] and len(calls) == 1
+    assert hits == [("a", "impl:i2")] and len(calls) == 2
+
+
+def test_implementation_without_checkout_falls_back_to_pass(monkeypatch):
+    """An older rivendell-api 404s refuse: the implementation is passed on the
+    old way instead, and stays in _seen (that API's catch-up keeps listing it)."""
+    w = _worker()
+    calls = []
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+
+    def api(path, payload=None):
+        calls.append((path, payload))
+        if path.endswith("/refuse"):
+            raise _http_error(404, path)
+    monkeypatch.setattr(w, "_api", api)
+    w._apply_policy(w._enqueue("impl", "i1", "acme/elsewhere"))
+    assert calls == [
+        ("/plugin/implementation-requests/i1/refuse", {"reason": "no-checkout"}),
+        ("/plugin/implementation-requests/i1/pass", {})]
+    assert "impl:i1" in w._seen and w.queue_snapshot() == []
+
+
+# --- acks: tell Rivendell the job arrived, so it stops re-sending -------------
+
+def test_auto_accept_acks_received(monkeypatch, acks):
+    w = _worker()
+    monkeypatch.setattr(w, "accept", lambda key: True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: None)
+    w._apply_policy(w._enqueue("review", "r1", "acme/app"))
+    assert acks == [("review:r1", "received")]
+
+
+def test_left_for_operator_acks_queued(monkeypatch, acks):
+    w = _worker()
+    monkeypatch.setattr(w, "accept", lambda key: True)       # r1 stays pending
+    monkeypatch.setattr(w, "_notify_queued", lambda key: None)
+    w._apply_policy(w._enqueue("review", "r1"))
+    w._apply_policy(w._enqueue("changelog", "c1", "Proj"))
+    assert acks == [("review:r1", "received"), ("changelog:c1", "queued")]
+
+
+def test_duplicate_while_pending_re_acks_queued(monkeypatch, acks):
+    """Rivendell re-sends until it hears an ack: a duplicate of a job still held
+    here re-acks "queued"; one for a job that already left the queue (running
+    or finished) is ignored, and neither re-runs the policy."""
+    w = _worker()
+    hits = []
+    monkeypatch.setattr(w, "accept", lambda key: hits.append(key) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: hits.append(key))
+    event = json.dumps({"type": "task-description-request", "requestId": "d1",
+                        "task": {"name": "Add login"}}).encode()
+    assert w._handle_message(event) == "taskdesc:d1"
+    w._apply_policy(w._handle_message(event))                # re-send
+    assert acks == [("taskdesc:d1", "queued")] and hits == []
+    with w._q_lock:
+        w._pending.clear()                                   # now running
+    w._apply_policy(w._handle_message(event))
+    assert acks == [("taskdesc:d1", "queued")] and hits == []
+
+
+def test_ack_posts_state_and_swallows_errors(monkeypatch):
+    """_ack POSTs {"state": ...} to the kind's ack endpoint off-thread; an older
+    API's 404 is only logged."""
+    w = _worker()
+    calls, ev = [], threading.Event()
+
+    def api(path, payload=None):
+        calls.append((path, payload))
+        ev.set()
+        raise _http_error(404, path)
+    monkeypatch.setattr(w, "_api", api)
+    _real_ack(w, "impl:i1", "queued")
+    assert ev.wait(2), "ack must be posted"
+    assert calls == [("/plugin/implementation-requests/i1/ack", {"state": "queued"})]
 
 
 def _conflict(kind_path, rid):
@@ -527,6 +665,8 @@ def test_claim_refused_with_409_posts_nothing(monkeypatch):
     w._run_implementation("i1", "acme/app")
     w._run_review("r1", "acme/app")
     w._run_todolist("t1", "Proj")
+    # An older API (refuse 404s) falls back to claim+FAIL: a 409 claim stops it.
+    monkeypatch.setattr(w, "_api", _raise_http(404))
     w._do_reject({"kind": "impl", "request_id": "i2", "slug": "acme/app"})
     assert posted == []
 
@@ -909,6 +1049,48 @@ def test_gateway_close_4403_is_treated_as_token_rejection(monkeypatch):
         _wait_until(lambda: w.status == "auth_error")
         assert w._blocked_token == "bad"
         assert "4403" in w.status_detail
+    finally:
+        w.stop()
+        t.join(timeout=2)
+        server.close()
+
+
+# --- quiet intervals keep the connection -------------------------------------
+
+def test_quiet_interval_pings_and_keeps_the_connection(monkeypatch):
+    """A read timeout (quiet interval) poisons the socket file; the listener
+    must ping and read on over the SAME connection — not redial every interval
+    ("cannot read from timed out object") — and deliver the next frame."""
+    server, client = socket.socketpair()
+    monkeypatch.setattr(rivendell, "_PING_INTERVAL", 0.2)
+    w = _worker()
+    connects, queued = [], []
+
+    def fake_connect():
+        connects.append(1)
+        if len(connects) > 1:
+            raise ConnectionError("redialed")
+        return client, client.makefile("rb")
+    monkeypatch.setattr(w, "_connect", fake_connect)
+    monkeypatch.setattr(w, "_catch_up", lambda: 0)
+    monkeypatch.setattr(w, "_apply_policy", lambda key: queued.append(key))
+
+    def fake_server():
+        srv = server.makefile("rb")
+        # Stay silent until the client times out and pings, then send an event.
+        while wsutil.decode_frame(srv)[0] != wsutil.OP_PING:
+            pass
+        event = json.dumps({"type": "pr-review-request", "requestId": "r1",
+                            "pullRequest": {"repositoryFullName": "acme/app"}})
+        server.sendall(wsutil.encode_frame(event.encode(), wsutil.OP_TEXT))
+
+    threading.Thread(target=fake_server, daemon=True).start()
+    t = threading.Thread(target=w._listen, daemon=True)
+    t.start()
+    try:
+        _wait_until(lambda: queued == ["review:r1"])
+        assert connects == [1], "a quiet interval must not drop the connection"
+        assert w.status == "connected"
     finally:
         w.stop()
         t.join(timeout=2)
