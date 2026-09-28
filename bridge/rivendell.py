@@ -57,8 +57,15 @@ wins for its runs). Reviews fall back to the worker's WORKDIR/BASE_PATH when no
 checkout matches (the prompt carries the PR reference, so a generic dir degrades
 gracefully); implementations never do — an autonomous code-writing run must
 never land in the wrong directory. A bridge with no checkout doesn't take the
-request at all (_apply_policy), leaving it PENDING for a bridge that has the
-repo; the FAIL in _run_implementation is only the backstop.
+request at all but passes it on (_apply_policy), leaving it PENDING for a bridge
+that has the repo; the FAIL in _run_implementation is only the backstop.
+
+Which bridge gets a request is rivendell-api's call: it runs on its requester's
+own bridge (the one holding their token). While that bridge is online only it
+hears about the request, and catch-up and claims follow the same rule; the
+first claim is exclusive. Passing an implementation on is what offers it to
+every other bridge. A claim refused with 409 (another bridge's, or waiting for
+its requester's) is simply not ours: nothing runs and nothing is posted.
 
 Accepted runs are concurrent: the request prompts instruct each run to work in
 its own git worktree, so runs no longer race a shared checkout the way the old
@@ -125,6 +132,12 @@ class _AuthError(Exception):
     """The token was rejected (handshake 401/403, or a 4401/4403 close). Distinct
     from a transient fault: the worker must stop dialing until the token changes,
     not back off and retry the same doomed credential."""
+
+
+def _refused(e: Exception) -> bool:
+    """rivendell-api refused a claim with 409: the request is another bridge's
+    (claimed, or waiting for its requester's own bridge) or already finished."""
+    return isinstance(e, urllib.error.HTTPError) and e.code == 409
 
 # The BASE_PATH slug->checkout scan is instance-independent, so it is shared
 # across every worker rather than rescanned per connection.
@@ -258,6 +271,23 @@ class Worker:
         """Claim the request (PENDING -> IN_PROGRESS) and return the response
         (prompt, plus repositoryFullName for implementation requests)."""
         return self._api(f"/plugin/{kind_path}/{request_id}/prompt")
+
+    def _claim(self, kind_path: str, request_id: str) -> "dict | None":
+        """_fetch_prompt for a run: the claim response, or None when this bridge
+        must not run it. A refused claim (409) is someone else's request, so
+        nothing is posted; any other error lands it FAILED."""
+        try:
+            return self._fetch_prompt(kind_path, request_id)
+        except Exception as e:  # noqa: BLE001 — report, don't crash the worker
+            if _refused(e):
+                print(f"rivendell[{self.name}]: {request_id} is not ours "
+                      f"to run: {e}")
+                return None
+            print(f"rivendell[{self.name}]: prompt fetch failed for "
+                  f"{request_id}: {e}")
+            self._post_result(kind_path, request_id, False,
+                              f"prompt fetch failed: {e}")
+            return None
 
     def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str) -> None:
         """Report the outcome, retrying — the run was expensive."""
@@ -406,11 +436,12 @@ class Worker:
         work is left for the operator and pushed to Telegram with Approve/Dismiss
         buttons. A no-op on None (a duplicate _enqueue dropped).
 
-        An implementation for a repo with no local checkout is dropped instead:
-        every connected bridge gets every request, so it stays PENDING server-side
-        for a bridge that has the repo, rather than being claimed here only to
-        FAIL. It stays in _seen, so catch-up doesn't re-offer (and rescan) it on
-        every reconnect."""
+        An implementation for a repo with no local checkout is dropped instead,
+        and passed on: rivendell-api then offers it to every other bridge (a
+        no-op there unless this is its requester's bridge), so it stays PENDING
+        for one that has the repo rather than being claimed here only to FAIL.
+        It stays in _seen, so catch-up doesn't re-offer (and rescan) it on every
+        reconnect."""
         if key is None:
             return
         with self._q_lock:
@@ -421,8 +452,14 @@ class Worker:
             with self._q_lock:
                 self._pending.pop(key, None)
             print(f"rivendell[{self.name}]: implementation {item['request_id']} "
-                  f"left for another bridge: no local checkout for "
+                  f"passed on: no local checkout for "
                   f"{item['slug']!r} under {config.BASE_PATH}")
+            try:
+                self._api(f"/plugin/implementation-requests/"
+                          f"{item['request_id']}/pass", {})
+            except Exception as e:  # noqa: BLE001 — an older rivendell-api has no pass
+                print(f"rivendell[{self.name}]: pass failed for "
+                      f"{item['request_id']}: {e}")
             return
         with self._q_lock:
             idle = len(self._pending) == 1 and self._active_runs == 0
@@ -634,14 +671,10 @@ class Worker:
             session_id=session["id"], origin=self.origin)
 
     def _run_review(self, request_id: str, slug: "str | None") -> None:
-        try:
-            prompt = self._fetch_prompt("review-requests", request_id)["prompt"]
-        except Exception as e:  # noqa: BLE001 — report, don't crash the worker
-            print(f"rivendell[{self.name}]: prompt fetch failed for "
-                  f"{request_id}: {e}")
-            self._post_result("review-requests", request_id, False,
-                              f"prompt fetch failed: {e}")
+        resp = self._claim("review-requests", request_id)
+        if resp is None:
             return
+        prompt = resp["prompt"]
 
         # Reviews degrade gracefully outside the repo (the prompt names the PR),
         # so an unknown slug falls back to the configured workdir.
@@ -659,13 +692,8 @@ class Worker:
         self._post_result("review-requests", request_id, ok, text)
 
     def _run_implementation(self, request_id: str, slug: "str | None") -> None:
-        try:
-            resp = self._fetch_prompt("implementation-requests", request_id)
-        except Exception as e:  # noqa: BLE001 — report, don't crash the worker
-            print(f"rivendell[{self.name}]: prompt fetch failed for "
-                  f"{request_id}: {e}")
-            self._post_result("implementation-requests", request_id, False,
-                              f"prompt fetch failed: {e}")
+        resp = self._claim("implementation-requests", request_id)
+        if resp is None:
             return
         prompt = resp["prompt"]
         slug = resp.get("repositoryFullName") or slug
@@ -722,14 +750,10 @@ class Worker:
         into the prompt server-side, so it always runs in the worker's workdir
         (never a repo match), read-only in spirit. Reviews' timeout governs it.
         `what` names it in the log, `name` is the project/task it is about."""
-        try:
-            prompt = self._fetch_prompt(kind_path, request_id)["prompt"]
-        except Exception as e:  # noqa: BLE001 — report, don't crash the worker
-            print(f"rivendell[{self.name}]: prompt fetch failed for "
-                  f"{request_id}: {e}")
-            self._post_result(kind_path, request_id, False,
-                              f"prompt fetch failed: {e}")
+        resp = self._claim(kind_path, request_id)
+        if resp is None:
             return
+        prompt = resp["prompt"]
 
         workdir = self._workdir()
         print(f"rivendell[{self.name}]: {what} {request_id} "
@@ -880,10 +904,15 @@ class Worker:
         kind_path = self._KIND_PATH.get(item["kind"], "review-requests")
         request_id = item["request_id"]
         # Claim first: the result endpoint expects a claimed (IN_PROGRESS) request.
-        # A claim failure (already gone, older API) is fine — still try to FAIL it.
+        # A refused claim (409) is someone else's request, or finished — leave it.
+        # Any other claim failure (older API) is fine — still try to FAIL it.
         try:
             self._fetch_prompt(kind_path, request_id)
         except Exception as e:  # noqa: BLE001 — best-effort claim
+            if _refused(e):
+                print(f"rivendell[{self.name}]: {request_id} is not ours "
+                      f"to reject: {e}")
+                return
             print(f"rivendell[{self.name}]: reject claim failed for "
                   f"{request_id}: {e}")
         print(f"rivendell[{self.name}]: {item['kind']} {request_id} "
