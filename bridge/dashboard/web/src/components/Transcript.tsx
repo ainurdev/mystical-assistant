@@ -237,7 +237,7 @@ function TurnBlock({
               showAll={showAll}
             />
           )}
-          {working && <WorkingIndicator hud={hud} />}
+          {working && <WorkingIndicator hud={hud} events={turn.events} boot={boot} started={turn.started} />}
         </div>
       )}
       {turn.outcome && <OutcomeBadge outcome={turn.outcome} />}

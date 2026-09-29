@@ -355,7 +355,7 @@ export const RIGHT_TABS = ["files", "changes", "git", "learn", "docs", "queue"] 
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 /** What the transcript shows while the agent works. */
-export const INDICATORS = ["bar", "nyan", "piano", "tiles"] as const;
+export const INDICATORS = ["bar", "nyan", "piano", "tiles", "status"] as const;
 export type Indicator = (typeof INDICATORS)[number];
 
 export interface HudSettings {

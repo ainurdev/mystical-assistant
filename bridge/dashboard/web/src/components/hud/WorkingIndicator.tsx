@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { TimedEvent } from "../../api";
 import { themeCompensator, themeUnfilter, type HudSettings } from "../../lib/theme";
 import { nyanGif, nyanLook, nyanTrack, type NyanMode } from "../../lib/nyan";
+import { workState, type WorkState } from "../../lib/workstate";
 import { PianoIndicator } from "./PianoIndicator";
 import { TilesIndicator } from "./TilesIndicator";
 
@@ -18,18 +20,34 @@ const PHRASES = [
 /** The "agent is working" line for the HUD terminal. `hud.indicator` picks the
  *  form: the stock braille spinner + equalizer, a nyan.cat ride, a playable
  *  piano, or a game of piano tiles. All of them share the tick, the cycling
- *  phrase and the elapsed count. */
-export function WorkingIndicator({ hud }: { hud?: HudSettings }) {
+ *  phrase and the elapsed count. STATUS alone drops the phrase for what the
+ *  turn is actually doing (lib/workstate). */
+export function WorkingIndicator({
+  hud,
+  events,
+  boot,
+  started,
+}: {
+  hud?: HudSettings;
+  /** The live turn's events. Absent on the trailing row, which has no turn. */
+  events?: TimedEvent[];
+  boot?: string | null;
+  started?: number;
+}) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 90);
     return () => clearInterval(id);
   }, []);
+  const state = useMemo(() => (events ? workState(events, boot, started) : null), [events, boot, started]);
 
   const frame = SPIN[tick % SPIN.length];
   const elapsed = Math.floor((tick * 90) / 1000);
   const phrase = PHRASES[Math.floor(tick / 20) % PHRASES.length];
 
+  if (hud?.indicator === "status") {
+    return <StatusLine frame={frame} state={state} elapsed={elapsed} />;
+  }
   if (hud?.indicator === "nyan") {
     return <NyanIndicator hud={hud} mode={hud.nyan} phrase={phrase} elapsed={elapsed} />;
   }
@@ -59,6 +77,27 @@ export function WorkingIndicator({ hud }: { hud?: HudSettings }) {
         className="inline-block h-[12px] w-[7px] bg-primary"
         style={{ animation: "caret 1.05s steps(1) infinite" }}
       />
+    </div>
+  );
+}
+
+/** The STATUS form: one bare line, no box and no bars. With no turn to read
+ *  (`state` null) it can only say WORKING. */
+function StatusLine({ frame, state, elapsed }: { frame: string; state: WorkState | null; elapsed: number }) {
+  // Seconds in this state, on the store's clock so the count survives the row
+  // remounting. The mount clock covers an event the store hasn't stamped yet.
+  const secs = state?.since != null ? Math.max(0, Math.floor(Date.now() / 1000 - state.since)) : elapsed;
+  return (
+    <div className="my-1 ml-[18px] flex min-w-0 items-center gap-2.5 px-3 py-1">
+      <span aria-hidden className="text-[length:var(--t14)] leading-none text-primary">{frame}</span>
+      <span className="whitespace-nowrap text-[length:var(--t11)] uppercase tracking-[2.5px] text-primary">
+        {state?.tag ?? "WORKING"}
+      </span>
+      {state?.detail && <span className="min-w-0 truncate text-muted-foreground">{state.detail}</span>}
+      {!!state?.more && <span className="whitespace-nowrap text-[length:var(--t10)] text-muted-2">+{state.more}</span>}
+      <span className="ml-auto whitespace-nowrap font-mono text-[length:var(--t10)] tracking-[1px] text-muted-2">
+        {secs}s
+      </span>
     </div>
   );
 }

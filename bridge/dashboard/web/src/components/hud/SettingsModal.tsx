@@ -306,6 +306,7 @@ const INDICATOR_TABS: { key: Indicator; label: string; blurb: string; help?: Rea
       </>
     ),
   },
+  { key: "status", label: "STATUS", blurb: "one quiet line — what's running right now, and for how long" },
 ];
 
 // 0 = AUTO (viewport-derived); the rest are the base the type scale hangs off.
