@@ -157,6 +157,44 @@ def test_client_handshake_401_is_an_auth_error(monkeypatch):
     server.close()
 
 
+def test_connection_survives_a_quiet_ping_interval(monkeypatch):
+    """A read that times out (a quiet ping interval) must leave the reader
+    usable. socket.makefile() refuses every read after one timeout ("cannot read
+    from timed out object"), which dropped the connection every ~30 s. A frame
+    that arrives in the same packet as the handshake is not lost either."""
+    server, client = socket.socketpair()
+    monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
+    w = _worker(ws_url="ws://api.example:3001/agent")
+
+    def fake_server():
+        request = b""
+        while b"\r\n\r\n" not in request:
+            request += server.recv(4096)
+        key = next(line.split(": ", 1)[1] for line in request.decode().split("\r\n")
+                   if line.lower().startswith("sec-websocket-key"))
+        server.sendall((
+            "HTTP/1.1 101 Switching Protocols\r\n"
+            f"Sec-WebSocket-Accept: {wsutil.accept_key(key)}\r\n"
+            "\r\n").encode() + wsutil.encode_frame(b"first", wsutil.OP_TEXT))
+
+    t = threading.Thread(target=fake_server, daemon=True)
+    t.start()
+    sock, rfile = w._connect()
+    t.join(timeout=5)
+    sock.settimeout(0.05)
+    assert wsutil.decode_frame(rfile) == (wsutil.OP_TEXT, b"first")
+    timed_out = False
+    try:
+        wsutil.decode_frame(rfile)                   # nothing sent: quiet interval
+    except TimeoutError:
+        timed_out = True
+    assert timed_out
+    server.sendall(wsutil.encode_frame(b"after", wsutil.OP_TEXT))
+    assert wsutil.decode_frame(rfile) == (wsutil.OP_TEXT, b"after")
+    sock.close()
+    server.close()
+
+
 # --- event handling ----------------------------------------------------------
 
 def _drain(w):
@@ -486,6 +524,29 @@ def test_active_run_keeps_queue_busy_so_next_pings(monkeypatch):
     w._apply_policy(w._enqueue("review", "r2"))     # queue empty but a run is live
     assert [r["key"] for r in w.queue_snapshot()] == ["review:r2"]
     assert pinged == ["review:r2"]
+
+
+def test_held_request_starts_once_the_bridge_is_free(monkeypatch):
+    """A request held because a run was in flight starts on its own when that
+    run finishes and nothing else runs — it does not wait on an Approve forever.
+    (The ping still lets the operator start it early, or dismiss it.)"""
+    w = _worker()
+    ran, release, second_done = [], threading.Event(), threading.Event()
+    monkeypatch.setattr(w, "_notify_queued", lambda key: None)
+
+    def run_review(rid, slug):
+        ran.append(rid)
+        if rid == "r1":
+            release.wait(2)                          # busy until released
+        else:
+            second_done.set()
+    monkeypatch.setattr(w, "_run_review", run_review)
+    w._apply_policy(w._enqueue("review", "r1"))     # idle: auto-accepted, running
+    w._apply_policy(w._enqueue("review", "r2"))     # busy: held
+    assert [r["key"] for r in w.queue_snapshot()] == ["review:r2"]
+    release.set()                                    # r1 finishes
+    assert second_done.wait(2), "the held request must start once the bridge is free"
+    assert ran == ["r1", "r2"] and w.queue_snapshot() == []
 
 
 def test_implementation_without_checkout_is_passed_on(monkeypatch):

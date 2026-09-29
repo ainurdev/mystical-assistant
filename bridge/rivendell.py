@@ -13,7 +13,9 @@ arrives into an *idle* queue (nothing pending, nothing running) is auto-accepted
 immediately, so a lone request never waits on a click. The gate still matters the
 moment work stacks up: anything that lands while a run is in flight (or other
 requests are already pending) is held for a decision AND pushed to Telegram with
-Approve/Dismiss buttons, so it can be decided from the phone. The auto-accepted
+Approve/Dismiss buttons, so it can be decided from the phone — and if nobody
+decides, the oldest held request starts on its own once nothing is running
+(_drain), so a request never waits on a click forever. The auto-accepted
 first request needs no ping — it is already running. REJECT declines a request
 (there is no reject endpoint, so it claims the request and POSTs FAILED, which is
 what makes the decision stick):
@@ -138,6 +140,39 @@ def _refused(e: Exception) -> bool:
     """rivendell-api refused a claim with 409: the request is another bridge's
     (claimed, or waiting for its requester's own bridge) or already finished."""
     return isinstance(e, urllib.error.HTTPError) and e.code == 409
+
+
+class _SockReader:
+    """readline()/read(n) straight over sock.recv, for the handshake and the
+    frame decoder. Not socket.makefile(): once one read on that times out,
+    SocketIO refuses every later read ("cannot read from timed out object"), so
+    each quiet ping interval dropped the connection (~every 30 s). A timeout
+    here keeps what arrived buffered; `taken` counts bytes handed out since the
+    caller zeroed it — none means a quiet interval, some means a frame stalled
+    halfway and the stream is out of sync."""
+
+    def __init__(self, sock):
+        self._sock, self._buf, self.taken = sock, b"", 0
+
+    def _fill(self) -> bool:
+        chunk = self._sock.recv(65536)
+        self._buf += chunk
+        return bool(chunk)
+
+    def _take(self, n: int) -> bytes:
+        out, self._buf = self._buf[:n], self._buf[n:]
+        self.taken += len(out)
+        return out
+
+    def read(self, n: int) -> bytes:
+        while len(self._buf) < n and self._fill():
+            pass
+        return self._take(n)
+
+    def readline(self) -> bytes:
+        while b"\n" not in self._buf and self._fill():
+            pass
+        return self._take(self._buf.find(b"\n") + 1 or len(self._buf))
 
 # The BASE_PATH slug->checkout scan is instance-independent, so it is shared
 # across every worker rather than rescanned per connection.
@@ -345,7 +380,7 @@ class Worker:
             "\r\n"
         ).encode())
 
-        rfile = sock.makefile("rb")
+        rfile = _SockReader(sock)
         status = rfile.readline().decode(errors="replace")
         if "101" not in status:
             # A proxy or the app rejecting the upgrade with 401/403 is a token
@@ -563,9 +598,12 @@ class Worker:
             sock.settimeout(_PING_INTERVAL)
             try:
                 while not self._stop.is_set():
+                    rfile.taken = 0
                     try:
                         frame = wsutil.decode_frame(rfile)
                     except (socket.timeout, TimeoutError):
+                        if rfile.taken:          # stalled mid-frame: out of sync
+                            raise ConnectionError("frame stalled mid-read")
                         # Quiet interval: ping. Too many without ANY frame -> dead.
                         missed += 1
                         if missed > _MAX_MISSED_PONGS:
@@ -899,6 +937,17 @@ class Worker:
             # increment must not drive the count negative).
             with self._q_lock:
                 self._active_runs = max(0, self._active_runs - 1)
+            self._drain()
+
+    def _drain(self) -> None:
+        """A run just finished: with nothing else running, start the oldest held
+        request. A stale one (another bridge's by now) is refused at claim and
+        simply drains on to the next."""
+        with self._q_lock:
+            if self._active_runs or not self._pending:
+                return
+            key = next(iter(self._pending))
+        self.accept(key)
 
     def _do_reject(self, item: dict) -> None:
         kind_path = self._KIND_PATH.get(item["kind"], "review-requests")
