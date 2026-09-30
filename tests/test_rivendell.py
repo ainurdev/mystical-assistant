@@ -854,6 +854,52 @@ def test_find_checkout_miss_rescans_and_ttl_expires(monkeypatch):
     assert len(scans) == 3
 
 
+def test_project_dir_is_the_folder_holding_the_projects_checkouts(monkeypatch):
+    """A project-level job runs beside this machine's checkouts of the
+    project's repos: a checkout matches on ANY remote (a fork's origin and its
+    upstream alike), several matches give the folder holding them, one gives
+    the repo itself — and nothing here, or only BASE_PATH in common, is None."""
+    monkeypatch.setattr("bridge.browser.list_projects",
+                        lambda: ["/org/nr/apex", "/org/nr/apex-app",
+                                 "/org/nr/portal", "/solo"])
+    remotes = {"apex": {"ainurdev/apex", "nationalerijschool/apex"},
+               "apex-app": {"ainurdev/apex-app"},
+               "portal": {"nationalerijschool/portal"},
+               "solo": {"me/solo"}}
+    monkeypatch.setattr("bridge.github.remote_slugs",
+                        lambda path: remotes[os.path.basename(path)])
+    base = rivendell.config.BASE_PATH
+    nr = os.path.join(base, "org/nr")
+
+    assert rivendell._project_dir(["NationaleRijschool/Apex",
+                                   "nationalerijschool/portal",
+                                   "nationalerijschool/not-cloned"]) == nr
+    # Path components, not characters: apex + apex-app is org/nr, not ".../apex".
+    assert rivendell._project_dir(["ainurdev/apex", "ainurdev/apex-app"]) == nr
+    assert rivendell._project_dir(["me/solo"]) == os.path.join(base, "solo")
+    assert rivendell._project_dir(["ainurdev/apex", "me/solo"]) is None
+    assert rivendell._project_dir(["x/unknown"]) is None
+    assert rivendell._project_dir([]) is None
+    assert rivendell._project_dir(None) is None
+
+
+def test_run_todolist_files_under_the_projects_checkouts(monkeypatch):
+    """A claim that names the project's repositories runs beside this machine's
+    checkouts of them, not in the generic workdir — so its session lands under
+    that project instead of BASE_PATH's root."""
+    w = _worker(workdir="")
+    ran = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {
+        "prompt": "make a checklist", "repositories": ["acme/app"]})
+    monkeypatch.setattr(rivendell, "_project_dir",
+                        lambda repos: "/projects/acme/app" if repos == ["acme/app"] else None)
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir: ran.append(workdir) or _StubJob("done", result="- [ ] do it"))
+    monkeypatch.setattr(w, "_post_result", lambda *a: None)
+    w._run_todolist("t1", "Acme")
+    assert ran == ["/projects/acme/app"]
+
+
 def test_find_checkout_prefers_matching_workdir(monkeypatch):
     _reset_checkout_cache()
     w = _worker(workdir="/dedicated/app")

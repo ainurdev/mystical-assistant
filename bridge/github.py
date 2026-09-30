@@ -38,6 +38,19 @@ def remote_slug(cwd: str) -> str | None:
     return _parse_slug(out) if rc == 0 else None
 
 
+def remote_slugs(cwd: str) -> set[str]:
+    """Every remote's slug, not just origin's: a fork cloned from a mirror
+    (origin ainurdev/apex) tracks the upstream under another name (nr ->
+    nationalerijschool/apex). Fetch urls only — a push url can be some other
+    repo entirely."""
+    rc, out, _ = _run("git", "-C", cwd, "remote", "-v")
+    if rc != 0:
+        return set()
+    slugs = (_parse_slug(line.split()[1]) for line in out.splitlines()
+             if line.endswith("(fetch)"))
+    return {s for s in slugs if s}
+
+
 # The url line inside the [remote "origin"] section: `[^[` can't leave the
 # section, `^\s*url` can't be fooled by a pushurl.
 _ORIGIN_URL_RE = re.compile(r'\[remote "origin"\][^\[]*?^\s*url\s*=\s*(\S+)',

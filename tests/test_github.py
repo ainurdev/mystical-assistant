@@ -64,6 +64,21 @@ def test_remote_slug_none():
     assert gh.remote_slug(d) is None
 
 
+def test_remote_slugs_reads_every_fetch_remote():
+    """A fork tracks its upstream under another name — every remote counts,
+    but a push-only mirror url is some other repo."""
+    d = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "-q", d], check=True)
+    subprocess.run(["git", "-C", d, "remote", "add", "origin",
+                    "git@github.com:ainurdev/apex.git"], check=True)
+    subprocess.run(["git", "-C", d, "remote", "add", "nr",
+                    "https://github.com/nationalerijschool/apex.git"], check=True)
+    subprocess.run(["git", "-C", d, "remote", "set-url", "--push", "origin",
+                    "git@github.com:acme/pushmirror.git"], check=True)
+    assert gh.remote_slugs(d) == {"ainurdev/apex", "nationalerijschool/apex"}
+    assert gh.remote_slugs(tempfile.mkdtemp()) == set()    # not a repo
+
+
 def test_origin_slug_reads_config():
     """The no-subprocess reader agrees with git, and isn't fooled by a pushurl
     or by a second remote's url."""

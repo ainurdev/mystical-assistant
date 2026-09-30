@@ -59,7 +59,11 @@ todolists, task descriptions and changelogs need none — the whole project/task
 context (for a changelog: the tasks, pull requests and commits the user picked) is
 rendered into the prompt server-side, so they run in the worker's workdir like a
 generic read task (rivendell-api writes a task description back onto the Teamwork
-task itself; the bridge only returns the generated text).
+task itself; the bridge only returns the generated text). The exception is a
+claim that names the project's repositories (todolists and changelogs, from a
+rivendell-api that sends them): it runs in the folder holding this machine's
+checkouts of those repos, matched on any git remote (_project_dir), so its
+session lands under that project rather than BASE_PATH's root.
 
 Runs go through the normal runner (not a bare subprocess) on purpose: each run
 gets its own store session (origin "rivendell:<instance>"), so it shows up in
@@ -187,6 +191,32 @@ def _rescan_checkouts() -> dict:
         if slug:
             found.setdefault(slug.lower(), path)
     return found
+
+
+def _project_dir(repos) -> "str | None":
+    """Where a project-level job runs: the folder holding this machine's
+    checkouts of the project's repos — its repo for a one-repo project, the
+    shared parent for several (NR's under ~/projects/ainurhq/nationale-
+    rijschool) — so the session files under that project, not BASE_PATH. A
+    checkout matches on ANY git remote, not just origin: a fork cloned from
+    the mirror still tracks the linked repo under another name. None when the
+    claim named no repos (an older rivendell-api), none is cloned here, or the
+    matches share nothing below BASE_PATH."""
+    wanted = {r.lower() for r in repos or () if r}
+    if not wanted:
+        return None
+    from bridge import github                 # local import: subprocess-heavy
+    from bridge.browser import list_projects  # local import: pulls telegram
+
+    # ponytail: uncached, one `git remote -v` per repo per job — project-level
+    # jobs come a few a day; share _checkout_cache's TTL if they get frequent.
+    paths = [path for path in (os.path.join(config.BASE_PATH, r.lstrip("/"))
+                               for r in list_projects())
+             if wanted & {s.lower() for s in github.remote_slugs(path)}]
+    if not paths:
+        return None
+    common = os.path.commonpath(paths)
+    return common if common != config.BASE_PATH else None
 
 
 # --- One connection into one rivendell-api instance ---------------------------
@@ -840,15 +870,17 @@ class Worker:
     def _run_in_workdir(self, what: str, kind_path: str, request_id: str,
                         name: "str | None") -> None:
         """Run a request that needs NO checkout: its whole context is rendered
-        into the prompt server-side, so it always runs in the worker's workdir
-        (never a repo match), read-only in spirit. Reviews' timeout governs it.
-        `what` names it in the log, `name` is the project/task it is about."""
+        into the prompt server-side, read-only in spirit. A claim that names
+        the project's repositories runs beside this machine's checkouts of them
+        (_project_dir) so it files under that project; anything else runs in
+        the worker's workdir. Reviews' timeout governs it. `what` names it in
+        the log, `name` is the project/task it is about."""
         resp = self._claim(kind_path, request_id)
         if resp is None:
             return
         prompt = resp["prompt"]
 
-        workdir = self._workdir()
+        workdir = _project_dir(resp.get("repositories")) or self._workdir()
         print(f"rivendell[{self.name}]: {what} {request_id} "
               f"({name or '?'}) running in {workdir}")
         job = self._start_run(prompt, workdir)
