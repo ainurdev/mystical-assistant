@@ -1587,6 +1587,11 @@ export const RunStream = memo(function RunStream({
   const [wholeTurn, setWholeTurn] = useState(false);
   const tailFrom = wholeTurn || showAll ? 0 : Math.max(0, events.length - TURN_TAIL);
   const pendingIds = new Set(pending.map((p) => p.request_id));
+  // A card still waiting on you draws at the turn's foot (lib/segments atFoot).
+  const waiting = (i: number) => {
+    const e = events[i];
+    return (e.type === "question" || e.type === "permission") && pendingIds.has(e.request_id);
+  };
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
   const toolDone = new Map<string, Done>();
@@ -2024,7 +2029,7 @@ export const RunStream = memo(function RunStream({
         </button>
       )}
       {/* The words in the flow, the work under a row each (lib/segments). */}
-      {segmentsOf(events, from, inFlow).map((seg) =>
+      {segmentsOf(events, from, inFlow, waiting).map((seg) =>
         seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg))}
     </div>
   );

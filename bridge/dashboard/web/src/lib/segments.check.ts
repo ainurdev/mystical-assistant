@@ -76,6 +76,16 @@ const kinds = (evs: { type: string; text?: string }[], from = 0) =>
   ok(kinds([]) === "", "empty turn, no segments");
 }
 
+// A card still waiting on you draws last, even from behind the cut: background
+// agents stream on after an ask, and the work either side of it is one fold.
+{
+  const evs = [t("tool"), t("question"), t("tool"), t("text", "x"), t("tool")];
+  const foot = (from: number) =>
+    segmentsOf(evs, from, undefined, (i) => i === 1).map((s) => `${s.kind}:${s.idx.join(",")}`).join(" ");
+  ok(foot(0) === "steps:0,2 prose:3 steps:4 prose:1", `waiting card at the foot: ${foot(0)}`);
+  ok(foot(3) === "prose:3 steps:4 prose:1", `waiting card behind the cut: ${foot(3)}`);
+}
+
 // The title counts, pluralises and orders: what changed the machine first.
 {
   ok(stepsTitle(["read", "command", "read", "edit", "command", "command"]) === "3 commands · 1 edit · 2 files read",

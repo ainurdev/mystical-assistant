@@ -51,8 +51,17 @@ const STEP = new Set(["tool", "log"]);
  * `inFlow(i)` cuts a step out as if it were prose: a tool that came back with a
  * picture, which a shut fold would hide. The caller decides — the picture rides
  * on the paired tool_done, which this doesn't read.
+ *
+ * `atFoot(i)` lifts an event out of the flow and draws it last, from behind
+ * `from` too: a card still waiting on you. Background agents keep streaming
+ * after the main thread asks, which pushed the card up the turn and then behind
+ * EARLIER STEPS while the sidebar said NEEDS YOU. Once answered it goes back to
+ * where it was asked.
  */
-export function segmentsOf(events: Ev[], from = 0, inFlow: (i: number) => boolean = () => false): Seg[] {
+export function segmentsOf(
+  events: Ev[], from = 0, inFlow: (i: number) => boolean = () => false,
+  atFoot: (i: number) => boolean = () => false,
+): Seg[] {
   const out: Seg[] = [];
   let steps: number[] = [];
   let stepsSeen = false;
@@ -63,7 +72,11 @@ export function segmentsOf(events: Ev[], from = 0, inFlow: (i: number) => boolea
     stepsSeen = false;
   };
 
+  const foot: Seg[] = [];
+  for (let i = 0; i < events.length; i++) if (atFoot(i)) foot.push({ kind: "prose", idx: [i] });
+
   for (let i = from; i < events.length; i++) {
+    if (atFoot(i)) continue;
     const e = events[i];
     if (PROSE.has(e.type) || (e.type === "thinking" && e.text) || inFlow(i)) {
       flush();
@@ -74,7 +87,7 @@ export function segmentsOf(events: Ev[], from = 0, inFlow: (i: number) => boolea
     }
   }
   flush();
-  return out;
+  return out.concat(foot);
 }
 
 /** What one step was, for the fold's header. The renderer classifies (it has
