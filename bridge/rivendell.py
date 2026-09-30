@@ -127,6 +127,10 @@ against the running workers on every save: it starts new ones, stops removed or
 disabled ones, and for a changed one swaps the config live (the worker reads its
 config per iteration, so a URL/token edit takes effect on the next reconnect
 without interrupting an in-flight review).
+
+The dashboard's RIVENDELL tab goes through here as well (tasks / implement, at
+the bottom). It lists a repo's open tasks, and IMPLEMENT only asks Rivendell to
+create the request. The run itself comes back over the socket like any other.
 """
 
 import base64
@@ -139,7 +143,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from bridge import config, wsutil
 
@@ -240,6 +244,10 @@ class Worker:
         self._q_lock = threading.Lock()      # guards _pending and _active_runs
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
+        # Implementation request id -> the store session running it, while it
+        # runs: the RIVENDELL tab's OPEN SESSION. ponytail: memory only — a
+        # restart ends the run anyway (catch-up re-queues it), so nothing is lost.
+        self._impl_sessions: "dict[str, str]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
         # A token that was rejected: while it is still the configured token the
@@ -841,7 +849,11 @@ class Worker:
                               "could not start a Claude run (session busy)")
             return
 
-        ok, text = self._wait_job(job, self.inst.get("impl_timeout", 10800))
+        self._impl_sessions[request_id] = job.store_session_id
+        try:
+            ok, text = self._wait_job(job, self.inst.get("impl_timeout", 10800))
+        finally:
+            self._impl_sessions.pop(request_id, None)
         print(f"rivendell[{self.name}]: implementation {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result("implementation-requests", request_id, ok, text)
@@ -1201,6 +1213,88 @@ def reject(instance_id: str, key: str) -> bool:
     with _manager_lock:
         w = _workers.get(instance_id)
     return bool(w and w.reject(key))
+
+
+# --- The dashboard's RIVENDELL tab ---------------------------------------------
+# A repo's open tasks, and IMPLEMENT on one. The button is Rivendell's own
+# "Implement using AI" pressed from here: the request is created as this token's
+# owner, Rivendell sends it back to this bridge over the socket, and
+# _apply_policy takes it like any other — auto-run when idle, else held in the
+# queue. Nothing here runs anything. Design: docs/superpowers/specs/
+# rivendell-tasks-tab.md.
+
+class TasksError(Exception):
+    """One line for the RIVENDELL tab, with a `code` the tab turns into a state:
+    token_rejected | not_deployed | refused | unreachable | no_instance."""
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+
+
+def _explain(e: Exception) -> TasksError:
+    """What a failed plugin call means to the tab. A 404 is ambiguous: Nest says
+    "Cannot GET /…" for a route this rivendell-api doesn't have yet, anything
+    else (a task not found) is Rivendell's own words — as is every other 4xx,
+    e.g. create()'s "No repository is linked to this task's project."."""
+    if not isinstance(e, urllib.error.HTTPError):
+        return TasksError("unreachable", f"unreachable: {getattr(e, 'reason', e)}")
+    if e.code in (401, 403):
+        return TasksError("token_rejected", "Rivendell refused the token")
+    try:
+        msg = json.loads(e.read().decode() or "{}").get("message")
+    except (ValueError, OSError, AttributeError):
+        msg = None
+    if isinstance(msg, list):            # class-validator answers with a list
+        msg = "; ".join(map(str, msg))
+    if e.code == 404 and (not msg or str(msg).startswith("Cannot ")):
+        return TasksError("not_deployed", "this Rivendell has no task routes yet")
+    return TasksError("refused", str(msg or f"HTTP {e.code}"))
+
+
+def _ask(w: Worker, path: str, payload: "dict | None" = None):
+    try:
+        return w._api(path, payload)
+    except Exception as e:  # noqa: BLE001 — every failure becomes one line
+        raise _explain(e) from None
+
+
+def tasks(slug: str) -> dict:
+    """Open tasks of the Rivendell projects that link the repo `slug`, from
+    every running instance, merged. Each project and task is tagged with its
+    instance (IMPLEMENT goes back to the same one); a task whose request runs
+    here also carries the session running it. A failing instance is one entry in
+    `errors`, never an exception — the rest still list. A worker parked on a
+    rejected token isn't asked: the tab polls, and re-sending a dead token every
+    few seconds is exactly the hammering _listen avoids."""
+    with _manager_lock:
+        running = list(_workers.values())
+    out: dict = {"instances": len(running), "projects": [], "tasks": [], "errors": []}
+    for w in running:
+        try:
+            if w.status == "auth_error":
+                raise TasksError("token_rejected", w.status_detail or "token rejected")
+            got = _ask(w, "/plugin/tasks?repository=" + quote(slug, safe="/"))
+        except TasksError as e:
+            out["errors"].append({"instance_id": w.id, "instance": w.name,
+                                  "error": e.code, "detail": str(e)})
+            continue
+        out["projects"] += [{**p, "instance_id": w.id} for p in got.get("projects") or []]
+        for t in got.get("tasks") or []:
+            req = t.get("implementation") or {}
+            out["tasks"].append({**t, "instance_id": w.id,
+                                 "session_id": w._impl_sessions.get(req.get("id"))})
+    return out
+
+
+def implement(instance_id: str, task_id: str) -> dict:
+    """Ask the instance to implement `task_id` as this bridge's token owner.
+    Returns the new request ({id, status, …}); raises TasksError."""
+    with _manager_lock:
+        w = _workers.get(instance_id)
+    if w is None:
+        raise TasksError("no_instance", "that Rivendell connection is off")
+    return _ask(w, "/plugin/implementation-requests", {"taskId": task_id})
 
 
 # Boot entry point (claude_telegram_bridge.py) and the settings save hook both

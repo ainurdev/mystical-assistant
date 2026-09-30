@@ -510,6 +510,17 @@ class Handler(BaseHTTPRequestHandler):
                     for item in pending]
             rows.sort(key=lambda r: r["created_at"])
             return self._json({"queue": rows})
+        if path == "/local/rivendell/tasks":
+            # The RIVENDELL tab: open tasks for the repo this checkout's origin
+            # names. No GitHub origin -> nothing to ask Rivendell about.
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            slug = github.origin_slug(abs_p) or github.remote_slug(abs_p)
+            if slug is None:
+                return self._json({"slug": None, "instances": None,
+                                   "projects": [], "tasks": [], "errors": []})
+            return self._json({"slug": slug, **rivendell.tasks(slug)})
         if path == "/local/tracker/projects":
             try:
                 return self._json({"projects": trackers.projects((qs.get("conn", [""])[0] or "").strip())})
@@ -1284,6 +1295,18 @@ class Handler(BaseHTTPRequestHandler):
             if op == "reject":
                 return self._json({"ok": rivendell.reject(iid, key)})
             return self._json({"error": "op must be accept or reject"}, 400)
+        if path == "/local/rivendell/implement":
+            # IMPLEMENT on the RIVENDELL tab: Rivendell creates the request and
+            # sends it back to this bridge; the queue takes it from there.
+            iid = (body.get("instance_id") or "").strip()
+            tid = (body.get("task_id") or "").strip()
+            if not iid or not tid:
+                return self._json({"error": "instance_id and task_id are required"}, 400)
+            try:
+                return self._json({"ok": True, "request": rivendell.implement(iid, tid)})
+            except rivendell.TasksError as e:
+                return self._json({"error": str(e), "code": e.code},
+                                  502 if e.code == "unreachable" else 400)
         if path == "/local/tracker/update":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

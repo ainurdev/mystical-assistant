@@ -1166,6 +1166,158 @@ def test_quiet_interval_pings_and_keeps_the_connection(monkeypatch):
         server.close()
 
 
+# --- the RIVENDELL tab: a repo's open tasks, and IMPLEMENT --------------------
+
+@pytest.fixture
+def workers():
+    """The running-worker registry, emptied around the test."""
+    rivendell._workers.clear()
+    yield rivendell._workers
+    rivendell._workers.clear()
+
+
+def _answering(answer, calls=None):
+    """An _api stand-in that records each call and returns `answer`."""
+    def api(path, payload=None):
+        if calls is not None:
+            calls.append((path, payload))
+        return json.loads(json.dumps(answer))
+    return api
+
+
+_TASKS = {
+    "projects": [{"id": "p1", "name": "Rivendell", "url": "https://rv/projects/p1"}],
+    "tasks": [
+        {"id": "t1", "name": "Inbox", "implementation":
+            {"id": "r1", "status": "IN_PROGRESS", "createdAt": "x", "completedAt": None}},
+        {"id": "t2", "name": "Docs", "implementation": None},
+    ],
+}
+
+
+def test_tasks_asks_every_running_instance_and_tags_its_rows(workers):
+    calls = []
+    a, b = _worker(id="a", name="prod"), _worker(id="b", name="local")
+    a._api = _answering(_TASKS, calls)
+    b._api = _answering({"projects": [], "tasks": [{"id": "t9", "name": "Other",
+                                                    "implementation": None}]})
+    workers.update(a=a, b=b)
+
+    out = rivendell.tasks("acme/app")
+
+    assert calls == [("/plugin/tasks?repository=acme/app", None)]
+    assert [(t["id"], t["instance_id"]) for t in out["tasks"]] == \
+        [("t1", "a"), ("t2", "a"), ("t9", "b")]
+    assert out["projects"] == [{**_TASKS["projects"][0], "instance_id": "a"}]
+    assert out["errors"] == [] and out["instances"] == 2
+
+
+def test_tasks_quotes_the_repository(workers):
+    calls = []
+    w = _worker(id="a")
+    w._api = _answering({"projects": [], "tasks": []}, calls)
+    workers["a"] = w
+    rivendell.tasks("acme/app&x=1")
+    assert calls[0][0] == "/plugin/tasks?repository=acme/app%26x%3D1"
+
+
+def test_tasks_reports_each_failing_instance_and_keeps_the_rest(workers):
+    ok, bad_token, old, down = (_worker(id=i, name=i) for i in ("ok", "tok", "old", "down"))
+    ok._api = _answering(_TASKS)
+    bad_token._api = _raise_http(401)
+    old._api = _raise_http(404)
+
+    def unreachable(path, payload=None):
+        raise urllib.error.URLError("connection refused")
+    down._api = unreachable
+    workers.update(ok=ok, tok=bad_token, old=old, down=down)
+
+    out = rivendell.tasks("acme/app")
+
+    assert [t["id"] for t in out["tasks"]] == ["t1", "t2"]
+    assert {e["instance_id"]: e["error"] for e in out["errors"]} == {
+        "tok": "token_rejected", "old": "not_deployed", "down": "unreachable"}
+    assert all(e["instance"] == e["instance_id"] and e["detail"] for e in out["errors"])
+
+
+def test_tasks_does_not_call_an_instance_parked_on_a_rejected_token(workers):
+    """The listener already knows the token is dead; a poll every few seconds
+    must not hammer the API with it (the same reason the socket stops dialing)."""
+    w = _worker(id="a")
+    w._set_status("auth_error", "token rejected by gateway (4401)")
+    w._api = lambda path, payload=None: (_ for _ in ()).throw(AssertionError("called"))
+    workers["a"] = w
+    out = rivendell.tasks("acme/app")
+    assert out["tasks"] == [] and [e["error"] for e in out["errors"]] == ["token_rejected"]
+
+
+def test_tasks_names_the_session_running_a_request_here(workers):
+    w = _worker(id="a")
+    w._api = _answering(_TASKS)
+    w._impl_sessions["r1"] = "sess-1"
+    workers["a"] = w
+    by_id = {t["id"]: t for t in rivendell.tasks("acme/app")["tasks"]}
+    assert by_id["t1"]["session_id"] == "sess-1"
+    assert by_id["t2"]["session_id"] is None
+
+
+def test_tasks_with_no_running_instance_says_so(workers):
+    assert rivendell.tasks("acme/app") == {
+        "instances": 0, "projects": [], "tasks": [], "errors": []}
+
+
+def test_implement_asks_the_instance_to_create_the_request(workers):
+    calls = []
+    w = _worker(id="a")
+    w._api = _answering({"id": "r7", "status": "PENDING"}, calls)
+    workers["a"] = w
+    assert rivendell.implement("a", "t1") == {"id": "r7", "status": "PENDING"}
+    assert calls == [("/plugin/implementation-requests", {"taskId": "t1"})]
+
+
+def test_implement_on_an_unknown_instance_is_an_error(workers):
+    with pytest.raises(rivendell.TasksError) as e:
+        rivendell.implement("nope", "t1")
+    assert e.value.code == "no_instance"
+
+
+def test_implement_explains_a_refusal_in_rivendells_words(workers):
+    """A 400 from create() carries an actionable line (e.g. no repo linked to
+    the task's project); that line is what the operator needs to see."""
+    body = io.BytesIO(json.dumps({"message": "No repository is linked to this "
+                                  "task's project.", "statusCode": 400}).encode())
+
+    def refuse(path, payload=None):
+        raise urllib.error.HTTPError("http://api/x", 400, "Bad Request", None, body)
+    w = _worker(id="a")
+    w._api = refuse
+    workers["a"] = w
+    with pytest.raises(rivendell.TasksError) as e:
+        rivendell.implement("a", "t1")
+    assert e.value.code == "refused"
+    assert str(e.value) == "No repository is linked to this task's project."
+
+
+def test_run_implementation_names_its_session_only_while_it_runs(monkeypatch):
+    """OPEN SESSION needs request -> session while the run is live; once the
+    result is posted the card shows DONE/FAILED and the entry is gone."""
+    w = _worker()
+    seen = []
+
+    class _Job:
+        store_session_id = "sess-9"
+
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {"prompt": "do it"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/tmp")
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir: _Job())
+    monkeypatch.setattr(w, "_wait_job",
+                        lambda job, timeout: (seen.append(dict(w._impl_sessions)), (True, "ok"))[1])
+    monkeypatch.setattr(w, "_post_result", lambda *a: None)
+    w._run_implementation("r1", "acme/app")
+    assert seen == [{"r1": "sess-9"}]
+    assert w._impl_sessions == {}
+
+
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))

@@ -423,6 +423,40 @@ export interface RivendellQueueItem {
   step?: "recommendations" | "todolist" | null;
   created_at: number;      // epoch seconds it was first seen
 }
+/** One open task on the RIVENDELL tab (bridge/rivendell.py tasks()): in a
+ *  Teamwork project linked to a Rivendell project that links this repo. */
+export interface RivendellTask {
+  id: string;
+  name: string;
+  htmlUrl: string | null;    // the task in Teamwork
+  projectName: string;       // its Teamwork project
+  column: string | null;     // its board column
+  dueDate: string | null;
+  priority: string | null;
+  assignees: { id: string; name: string }[];
+  mine: boolean;
+  /** The task's newest implementation request, any status. */
+  implementation: null | {
+    id: string;
+    status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED";
+    createdAt: string;
+    completedAt: string | null;
+  };
+  instance_id: string;       // the connection it came from — IMPLEMENT goes back there
+  session_id: string | null; // the session running its request on this bridge
+}
+export interface RivendellTasks {
+  slug: string | null;       // the checkout's origin; null = no GitHub origin, nothing asked
+  instances: number | null;  // running connections asked
+  projects: { id: string; name: string; url: string; instance_id: string }[];
+  tasks: RivendellTask[];
+  errors: {
+    instance_id: string;
+    instance: string;
+    error: "token_rejected" | "not_deployed" | "refused" | "unreachable";
+    detail: string;
+  }[];
+}
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -1493,6 +1527,13 @@ export const api = {
     req<{ ok: boolean }>("/local/rivendell/queue", { method: "POST", body: { op: "accept", instance_id, key } }),
   rejectRivendell: (instance_id: string, key: string) =>
     req<{ ok: boolean }>("/local/rivendell/queue", { method: "POST", body: { op: "reject", instance_id, key } }),
+  // The RIVENDELL tab: a repo's open tasks, and IMPLEMENT on one.
+  rivendellTasks: (project: string) =>
+    req<RivendellTasks>(`/local/rivendell/tasks?project=${encodeURIComponent(project)}`),
+  rivendellImplement: (instance_id: string, task_id: string) =>
+    req<{ ok: boolean; request: { id: string; status: string } }>("/local/rivendell/implement", {
+      method: "POST", body: { instance_id, task_id },
+    }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FileDiff, FileText, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
+  Castle, FileDiff, FileText, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
 } from "lucide-react";
 import {
   api,
@@ -60,6 +60,7 @@ import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
 import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
+import { RivendellTasks } from "./components/hud/RivendellTasks";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
@@ -1510,6 +1511,13 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [ai.learn]);
   const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
+  // The RIVENDELL tab exists only with a Rivendell connection to ask. Re-read
+  // whenever SETTINGS closes — that is where one is added or removed.
+  const [rivendellOn, setRivendellOn] = useState(false);
+  useEffect(() => {
+    if (settingsOpen) return;
+    api.rivendell().then((r) => setRivendellOn(r.instances.length > 0)).catch(() => { /* ignore */ });
+  }, [settingsOpen]);
   // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
   // and what its rail badge counts. sessionGit is per-worktree, so two branches
   // of the same repo get their own number; gitBadges is only keyed by project,
@@ -1562,6 +1570,12 @@ export function App() {
       render: () => <DocsPanel project={sessionProject} />,
     },
     { id: "queue", label: "Queue", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
+    ...(rivendellOn ? [{
+      id: "rivendell", label: "Rivendell tasks", icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const,
+      render: () => (
+        <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />
+      ),
+    }] : []),
   ];
 
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
