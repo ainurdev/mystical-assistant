@@ -313,6 +313,20 @@ class Handler(BaseHTTPRequestHandler):
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else
                               {"session_id": "", "seq": 0, "paused": False, "items": []})
+        if path == "/local/queue/all":
+            # The QUEUE tab: every session of this project that still holds
+            # queued prompts (all projects when none is named) — the Mini App's
+            # WORK tab, keyed by project instead of chat.
+            rel_p = (qs.get("project", [""])[0] or "").strip()
+            out = []
+            for sid in queue_manager.get().sessions():
+                s = store.get_session(sid)
+                if not s or (rel_p and s.get("project") != rel_p):
+                    continue
+                snap = queue_manager.snapshot(sid)
+                out.append({"session_id": sid, "title": s.get("title"), "project": s.get("project"),
+                            "paused": snap["paused"], "items": snap["items"]})
+            return self._json({"sessions": out})
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/today":
@@ -501,13 +515,16 @@ class Handler(BaseHTTPRequestHandler):
                      for i in rivendell_instances.instances()]
             return self._json({"instances": insts})
         if path == "/local/rivendell/queue":
-            # One flat, oldest-first stream across every instance — each row
-            # carries its instance name so the PLUGINS queue can label it.
+            # One flat, oldest-first stream across every instance — the rows
+            # held for a decision and the runs in flight, each with its
+            # instance name so the PLUGINS and QUEUE panels can label it.
             names = {i["id"]: (i.get("name") or i["id"])
                      for i in rivendell_instances.instances()}
-            rows = [{**item, "instance_id": wid, "instance": names.get(wid, wid)}
+            rows = [{**item, "status": "held", "instance_id": wid, "instance": names.get(wid, wid)}
                     for wid, pending in rivendell.queue().items()
                     for item in pending]
+            rows += [{**r, "status": "running", "instance": names.get(r["instance_id"], r["instance_id"])}
+                     for r in rivendell.running()]
             rows.sort(key=lambda r: r["created_at"])
             return self._json({"queue": rows})
         if path == "/local/rivendell/tasks":
