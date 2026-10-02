@@ -778,10 +778,12 @@ def test_token_registry_resolves_once():
 # --- job waiting -------------------------------------------------------------
 
 class _StubJob:
-    def __init__(self, status, result=None, error_msg=None, texts=()):
+    def __init__(self, status, result=None, error_msg=None, texts=(), exited=None):
         self.status, self.result = status, result
         self.error_msg, self.texts = error_msg, list(texts)
         self.interrupted = False
+        if exited is not None:      # a real Job always has one; stubs opt in
+            self.exited = exited
 
     def interrupt(self):
         self.interrupted = True
@@ -807,6 +809,37 @@ def test_wait_job_timeout_interrupts():
     job = _StubJob("running")
     ok, text = _worker()._wait_job(job, 0)
     assert not ok and job.interrupted and "timed out" in text
+
+
+def test_wait_job_waits_for_the_process_to_exit_not_the_first_result(monkeypatch):
+    """claude -p emits `result` when the model ends its turn with a background
+    subagent pending, then keeps the process alive and wakes the model again:
+    the wait must hold until the runner's finally sets `exited`."""
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.01)
+    gone = threading.Event()
+    job = _StubJob("done", result="interim", exited=gone)
+    out = []
+    t = threading.Thread(target=lambda: out.append(_worker()._wait_job(job, 5)), daemon=True)
+    t.start()
+    time.sleep(0.2)
+    assert out == [], "must not return on status alone"
+    job.result = "final"
+    gone.set()
+    t.join(5)
+    assert out == [(True, "final")]
+
+
+def test_wait_job_times_out_when_the_process_never_exits():
+    job = _StubJob("done", result="interim", exited=threading.Event())
+    ok, text = _worker()._wait_job(job, 0)
+    assert not ok and job.interrupted and "timed out" in text
+
+
+def test_wait_job_reads_an_exited_job_by_its_status():
+    gone = threading.Event()
+    gone.set()
+    ok, text = _worker()._wait_job(_StubJob("error", error_msg="boom", exited=gone), 60)
+    assert not ok and text == "boom"
 
 
 # --- repo discovery ----------------------------------------------------------

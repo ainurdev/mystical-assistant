@@ -769,12 +769,22 @@ class Worker:
 
     # -- request runs --
     def _wait_job(self, job, timeout: float) -> tuple:
-        """Block until the job leaves "running" (or times out). -> (ok, text)."""
+        """Block until the run is over (or the wait times out). -> (ok, text).
+        Over means the child has exited: the first `result` event is not the end,
+        because claude -p keeps the process alive while a background subagent
+        finishes and then wakes the model again (runner.py, the assistant branch).
+        The runner's finally sets `job.exited` once the slot is free; a job
+        without that flag (a stub) is waited on by status, as before."""
         deadline = time.time() + timeout
-        while job.status == "running" and time.time() < deadline:
+        exited = getattr(job, "exited", None)
+
+        def over() -> bool:
+            return exited.is_set() if exited is not None else job.status != "running"
+
+        while not over() and time.time() < deadline:
             if self._stop.wait(_POLL_INTERVAL):
                 break
-        if job.status == "running":
+        if not over():
             job.interrupt()
             return False, f"run timed out after {timeout}s"
         if job.status == "done":

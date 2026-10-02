@@ -559,6 +559,11 @@ class Job:
         self.fork = False                # duplicated session: --resume + --fork-session
         self.events: list[dict] = []
         self.status = "running"          # running | done | error
+        # Set in _run_streaming's finally once the child has exited and the
+        # session's run slot is free. `status` alone cannot say that: a turn
+        # that ends with a background agent pending reads "done" and goes back
+        # to "running" when the agent reports (see the assistant branch).
+        self.exited = threading.Event()
         # What this turn is waiting on before its first token, or None once the
         # child starts talking. Deliberately NOT an event: it is a live status,
         # and an event would persist "starting Claude" into every transcript.
@@ -1987,6 +1992,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                     job.result, job.cost, job.elapsed)
             except Exception:  # noqa: BLE001 — never let the queue break a run
                 pass
+        job.exited.set()
         resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
         if not resumed and not restart_killed:
             # An active goal queues its own next turn. After auto-resume, so a
