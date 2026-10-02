@@ -448,6 +448,8 @@ class Worker:
             print(f"rivendell[{self.name}]: review catch-up failed: {e}")
         try:
             for item in self._api("/plugin/implementation-requests"):
+                if self._reattach(item):
+                    continue
                 self._apply_policy(self._enqueue("impl", item["id"], item.get("repositoryFullName"),
                                                  batch=_batch_of(item.get("batch"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
@@ -804,24 +806,28 @@ class Worker:
             return False, "run finished without producing any result text"
         return False, job.error_msg or job.result or "run errored"
 
+    def _new_session(self, workdir: str) -> str:
+        """A fresh store session in `workdir` for one autonomous run. Pre-created:
+        ensure_session with an unknown id would silently fall back to the
+        project's LATEST session and resume the previous run."""
+        from bridge import store                 # local import: heavy module
+        from bridge.browser import rel
+        session = store.create_session(
+            config.DASH_CHAT_ID, rel(workdir), session_id=uuid.uuid4().hex,
+            origin=self.origin, cwd=workdir, permission_mode="bypassPermissions")
+        return session["id"]
+
     def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None):
         """One autonomous Claude run in `workdir` through the normal runner.
         `hang_timeout` is the silence the watchdog allows it (the kind's own
         timeout for a review or an implementation). Returns the job, or None if
         a run could not be started."""
-        from bridge import runner, store      # local import: heavy modules
-        from bridge.browser import rel
-
-        # Pre-create the session: ensure_session with an unknown id would
-        # silently fall back to the project's LATEST session and resume the
-        # previous run.
-        session = store.create_session(
-            config.DASH_CHAT_ID, rel(workdir), session_id=uuid.uuid4().hex,
-            origin=self.origin, cwd=workdir, permission_mode="bypassPermissions")
+        from bridge import runner                # local import: heavy module
         return runner.start_streaming_job(
             config.DASH_CHAT_ID, prompt, [], project=workdir,
             model=self.model, permission_mode="bypassPermissions",
-            session_id=session["id"], origin=self.origin, hang_timeout=hang_timeout)
+            session_id=self._new_session(workdir), origin=self.origin,
+            hang_timeout=hang_timeout)
 
     def _run_review(self, request_id: str, slug: "str | None") -> None:
         resp = self._claim("review-requests", request_id)
@@ -863,6 +869,11 @@ class Worker:
                               f"{config.BASE_PATH}")
             return
 
+        steps = resp.get("steps") or []
+        if steps:
+            self._run_batch_queue(request_id, resp, steps, workdir)
+            return
+
         print(f"rivendell[{self.name}]: implementation {request_id} "
               f"running in {workdir}")
         job = self._start_run(prompt, workdir, hang_timeout=self.inst.get("impl_timeout", 10800))
@@ -881,6 +892,120 @@ class Worker:
         print(f"rivendell[{self.name}]: implementation {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result("implementation-requests", request_id, ok, text)
+
+    def _run_batch_queue(self, request_id: str, resp: dict, steps: list, workdir: str) -> None:
+        """Queue mode: one queued turn per step in a fresh session, in order, and
+        one result at the end. The steps are the composer queue's own rows —
+        pausable, reorderable, persisted — tagged `ref` so this worker finds them
+        again after a restart (_reattach). COMPLETED carries the last turn's
+        answer, the closing step's summary; a failed turn drops the rest and
+        lands FAILED."""
+        from bridge import queue_manager
+        batch = resp.get("batch") or {}
+        ref = f"{self.id}:{request_id}"
+        sid = self._new_session(workdir)
+        q = queue_manager.get()
+        # Listed before its turns exist: no queue row without its run.
+        self._track(request_id, "impl", resp.get("repositoryFullName"), sid,
+                    label=batch.get("name"), link=batch.get("url"))
+        try:
+            for i, step in enumerate(steps):
+                name = step.get("name") or f"step {i + 1}"
+                q.enqueue(sid, text=name, prompt=step["prompt"], images=[], model=self.model,
+                          effort=None, permission_mode="bypassPermissions", width=0, sel=[],
+                          surface="rivendell", chat_id=config.DASH_CHAT_ID, project=workdir,
+                          label=f"{name} · {i + 1}/{len(steps)}", link=step.get("url"), ref=ref)
+            print(f"rivendell[{self.name}]: implementation {request_id} queued as "
+                  f"{len(steps)} turns in session {sid}")
+            ok, text = self._wait_queue(sid, ref, self.inst.get("impl_timeout", 10800))
+        finally:
+            self._untrack(request_id)
+        print(f"rivendell[{self.name}]: implementation {request_id} "
+              f"{'completed' if ok else 'failed'}")
+        self._post_result("implementation-requests", request_id, ok, text)
+
+    def _wait_queue(self, sid: str, ref: str, timeout: float) -> tuple:
+        """Block until every turn tagged `ref` in session `sid` is over (or the
+        wait times out). -> (ok, text): the last turn's answer when all are done;
+        the first failed turn's error, with the turns still queued removed; or
+        "cancelled on the bridge" when the operator removed them all. A paused
+        queue just waits — the operator paused it — until the timeout, which
+        cancels the running turn and drops the rest."""
+        from bridge import queue_manager
+        q = queue_manager.get()
+        deadline = time.time() + timeout
+        mine = lambda: [it for it in q.snapshot(sid)["items"] if it.get("ref") == ref]  # noqa: E731
+        while time.time() < deadline:
+            items = mine()
+            if not items:
+                return False, "cancelled on the bridge"
+            failed = next((it for it in items if it["status"] == "failed"), None)
+            if failed is not None:
+                for it in items:
+                    if it["status"] == "queued":
+                        q.remove(sid, it["id"])
+                return False, failed.get("error") or "a turn failed"
+            if all(it["status"] == "done" for it in items):
+                text = items[-1].get("result") or ""
+                if text.strip():
+                    return True, text
+                return False, "run finished without producing any result text"
+            if self._stop.wait(_POLL_INTERVAL):
+                break
+        for it in mine():
+            if it["status"] == "running":
+                q.cancel(sid, it["id"])
+            elif it["status"] == "queued":
+                q.remove(sid, it["id"])
+        return False, f"run timed out after {timeout}s"
+
+    def _reattach(self, item: dict) -> bool:
+        """A queue-mode batch this bridge was running when it last stopped: its
+        turns are still in the queue store (a loaded bucket re-queues what was
+        running and advances nothing by itself), so wait on them instead of
+        claiming and starting the batch over. Even turns that had all finished
+        are re-attached: the result post is what a restart may have cut off."""
+        from bridge import queue_manager
+        request_id = item["id"]
+        ref = f"{self.id}:{request_id}"
+        sid = queue_manager.get().find_ref(ref)
+        if sid is None:
+            return False
+        with self._seen_lock:
+            # Catch-up lists IN_PROGRESS requests too, so every reconnect lists
+            # the batch this process already waits on: _enqueue dedups that.
+            if f"impl:{request_id}" in self._seen:
+                return False
+            self._seen.add(f"impl:{request_id}")
+        with self._q_lock:
+            self._active_runs += 1
+        batch = item.get("batch") or {}
+        self._track(request_id, "impl", item.get("repositoryFullName"), sid,
+                    label=batch.get("name"), link=batch.get("url"))
+        print(f"rivendell[{self.name}]: implementation {request_id} resumes its "
+              f"queued turns in session {sid}")
+        threading.Thread(target=self._resume_batch_queue, args=(request_id, sid, ref),
+                         name=f"rivendell-run-{self.id}", daemon=True).start()
+        return True
+
+    def _resume_batch_queue(self, request_id: str, sid: str, ref: str) -> None:
+        from bridge import queue_manager
+        try:
+            # ponytail: resume() also unpauses a queue the operator had paused
+            # before the restart; the restart already lost that intent.
+            queue_manager.get().resume(sid)
+            ok, text = self._wait_queue(sid, ref, self.inst.get("impl_timeout", 10800))
+            print(f"rivendell[{self.name}]: implementation {request_id} "
+                  f"{'completed' if ok else 'failed'}")
+            self._post_result("implementation-requests", request_id, ok, text)
+        except Exception as e:  # noqa: BLE001 — worker must outlive any run
+            print(f"rivendell[{self.name}]: impl {request_id} crashed: {e}")
+            self._post_result("implementation-requests", request_id, False, f"bridge error: {e}")
+        finally:
+            self._untrack(request_id)
+            with self._q_lock:
+                self._active_runs = max(0, self._active_runs - 1)
+            self._drain()
 
     def _run_todolist(self, request_id: str, project: "str | None",
                       step: "str | None" = None) -> None:

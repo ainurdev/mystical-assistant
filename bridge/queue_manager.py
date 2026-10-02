@@ -55,6 +55,12 @@ class QueueItem:
     created: float = 0.0
     started: "float | None" = None
     agent: "str | None" = None      # who runs it (ladder.resolve_agent vocabulary)
+    # A Rivendell queue-mode batch's turns: what the row says, where it links,
+    # and the "<instance id>:<request id>" its worker finds them by (also after
+    # a restart — these persist with the item).
+    label: "str | None" = None
+    link: "str | None" = None
+    ref: "str | None" = None
 
     def public(self) -> dict:
         """The shape the frontend renders — omits the run payload (prompt/images/
@@ -66,6 +72,7 @@ class QueueItem:
             "permission_mode": self.permission_mode, "job_id": self.job_id,
             "result": self.result, "error": self.error, "cost": self.cost,
             "elapsed": self.elapsed, "created": self.created, "started": self.started,
+            "label": self.label, "link": self.link, "ref": self.ref,
         }
 
 
@@ -125,7 +132,11 @@ class PreviewQueue:
             return
         if any(it.status == "running" for it in b["items"]):
             return
-        nxt = next((it for it in b["items"] if it.status == "queued"), None)
+        # A tagged batch is over at its first failed turn: never start its next
+        # one (its worker removes them, see rivendell.Worker._wait_queue).
+        dead = {it.ref for it in b["items"] if it.ref and it.status == "failed"}
+        nxt = next((it for it in b["items"]
+                    if it.status == "queued" and it.ref not in dead), None)
         if nxt is None:
             return
         job_id = self._run_fn(nxt)
@@ -139,7 +150,7 @@ class PreviewQueue:
 
     def enqueue(self, sid: str, *, text, prompt, images, model, effort,
                 permission_mode, width, sel, surface, chat_id, project,
-                run_job_id=None, agent=None) -> str:
+                run_job_id=None, agent=None, label=None, link=None, ref=None) -> str:
         with self._lock:
             b = self._bucket(sid)
             item = QueueItem(
@@ -147,7 +158,7 @@ class PreviewQueue:
                 text=text, prompt=prompt, images=list(images or []), model=model,
                 effort=effort, permission_mode=permission_mode, width=width,
                 sel=list(sel or []), surface=surface, run_job_id=run_job_id,
-                agent=agent, created=time.time())
+                agent=agent, label=label, link=link, ref=ref, created=time.time())
             b["items"].append(item)
             self._advance(sid, b)
             self._touch(sid, b)
@@ -311,6 +322,15 @@ class PreviewQueue:
         every queued prompt at once, not one session's."""
         with self._lock:
             return [sid for sid, b in self._q.items() if b["items"]]
+
+    def find_ref(self, ref: str) -> "str | None":
+        """The session whose queue holds an item tagged `ref`, in any state —
+        a finished one still counts: its result may never have been posted."""
+        with self._lock:
+            for sid, b in self._q.items():
+                if any(it.ref == ref for it in b["items"]):
+                    return sid
+        return None
 
     # --- persistence -------------------------------------------------------
 

@@ -53,6 +53,7 @@ def _enq(q, sid="s1", text="t", **kw):
         permission_mode=kw.get("permission_mode"), width=kw.get("width", 1280),
         sel=kw.get("sel", []), surface=kw.get("surface", "dashboard"),
         chat_id=kw.get("chat_id", 555), project=kw.get("project", "/repo"),
+        label=kw.get("label"), link=kw.get("link"), ref=kw.get("ref"),
     )
 
 
@@ -325,6 +326,47 @@ def test_persistence_roundtrip_resets_running(tmp_path):
     # The previously-running item is reset to queued (its job died with the server).
     assert items[0]["status"] in ("queued", "running")
     assert items[0]["job_id"] is None
+
+
+# --- tagged items (Rivendell queue-mode batches) ---------------------------
+
+def test_tagged_items_keep_their_label_link_and_ref_and_are_found_by_ref():
+    q, _ = _q()
+    _enq(q, sid="s1", text="a", ref="w:r1", label="A · 1/2", link="https://rv/t/1")
+    _enq(q, sid="s2", text="b")
+    it = _items(q, "s1")[0]
+    assert it["ref"] == "w:r1" and it["label"] == "A · 1/2" and it["link"] == "https://rv/t/1"
+    assert _items(q, "s2")[0]["ref"] is None
+    assert q.find_ref("w:r1") == "s1"
+    assert q.find_ref("w:none") is None
+
+
+def test_find_ref_still_names_the_session_once_its_items_are_done():
+    """A restart between the last step and the result post must re-attach, not re-run."""
+    q, fake = _q()
+    _enq(q, sid="s1", text="a", ref="w:r1")
+    q.notify_job_done("s1", "job1", "done", "PR #9", None, 1)
+    assert q.find_ref("w:r1") == "s1"
+
+
+def test_tagged_items_survive_a_reload(tmp_path):
+    path = str(tmp_path / "q.json")
+    q = PreviewQueue(run_fn=lambda item: None, persist_path=path)   # busy runner: stays queued
+    _enq(q, sid="s1", text="a", ref="w:r1", label="L", link="https://rv")
+    again = PreviewQueue(run_fn=lambda item: None, persist_path=path)
+    it = again.snapshot("s1")["items"][0]
+    assert (it["ref"], it["label"], it["link"]) == ("w:r1", "L", "https://rv")
+
+
+def test_a_failed_tagged_item_holds_back_the_rest_of_its_batch():
+    """notify_job_done advances at once: without this, a batch's next turn would
+    start before its worker could remove it. Untagged items still run."""
+    q, _ = _q()
+    _enq(q, text="a", ref="w:r1")
+    _enq(q, text="b", ref="w:r1")
+    _enq(q, text="c")
+    q.notify_job_done("s1", "job1", "error", None, None, None, error="red")
+    assert [it["status"] for it in _items(q)] == ["failed", "queued", "running"]
 
 
 if __name__ == "__main__":

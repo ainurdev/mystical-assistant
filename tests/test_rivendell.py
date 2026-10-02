@@ -1484,6 +1484,249 @@ def test_run_implementation_names_its_session_only_while_it_runs(monkeypatch):
     assert w.running_snapshot() == []
 
 
+# --- queue mode -------------------------------------------------------------
+
+def _fake_queue(monkeypatch):
+    """queue_manager.get() -> an in-memory PreviewQueue whose runner never runs
+    Claude: an item starts "running" at once and a test ends it with _drive."""
+    from bridge import queue_manager
+    from bridge.queue_manager import PreviewQueue
+    counter = {"n": 0}
+
+    def run_fn(item):
+        counter["n"] += 1
+        return f"job{counter['n']}"
+    q = PreviewQueue(run_fn=run_fn, persist_path=None)
+    monkeypatch.setattr(queue_manager, "_instance", q)
+    return q
+
+
+def _drive(q, sid, outcomes):
+    """End the running item once per outcome, in order: (status, result, error)."""
+    for status, result, error in outcomes:
+        for _ in range(500):
+            run = next((it for it in q.snapshot(sid)["items"] if it["status"] == "running"), None)
+            if run is not None:
+                q.notify_job_done(sid, run["job_id"], status, result, None, 1, error=error)
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("no running item to finish")
+
+
+def _wait_items(q, sid, n):
+    for _ in range(500):
+        if len(q.snapshot(sid)["items"]) == n:
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"expected {n} items in {sid}")
+
+
+def _queue_claim(n=2):
+    steps = [{"taskId": f"t{i}", "externalId": str(i), "name": f"Task {i}",
+              "url": f"https://rv/t/{i}", "prompt": f"do task {i}"} for i in range(1, n + 1)]
+    steps.append({"taskId": None, "externalId": None, "name": "Push and open the pull request",
+                  "url": "https://rv/s/1", "prompt": "open the PR"})
+    return {"requestId": "b1", "status": "IN_PROGRESS", "prompt": "whole batch",
+            "repositoryFullName": "acme/app",
+            "batch": {"id": "bb", "name": "Login fixes", "mode": "queue",
+                      "branch": "batch/login-fixes", "url": "https://rv/s/1"},
+            "steps": steps}
+
+
+def _queue_worker(monkeypatch, claim, **inst):
+    w = _worker(**inst)
+    posted = []
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.01)
+    monkeypatch.setattr(w, "_claim", lambda kind_path, rid: claim)
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/repo")
+    monkeypatch.setattr(w, "_new_session", lambda workdir: "sess-1")
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir, hang_timeout=None: (_ for _ in ()).throw(AssertionError("queue mode starts no single turn")))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    return w, posted
+
+
+def _run_in_thread(w):
+    t = threading.Thread(target=w._run_implementation, args=("b1", "acme/app"), daemon=True)
+    t.start()
+    return t
+
+
+def test_queue_mode_enqueues_one_turn_per_step_and_posts_the_last_answer(monkeypatch):
+    q = _fake_queue(monkeypatch)
+    w, posted = _queue_worker(monkeypatch, _queue_claim(2))
+    t = _run_in_thread(w)
+    _wait_items(q, "sess-1", 3)
+    items = q.snapshot("sess-1")["items"]
+    assert [it["label"] for it in items] == ["Task 1 · 1/3", "Task 2 · 2/3", "Push and open the pull request · 3/3"]
+    assert [it["link"] for it in items] == ["https://rv/t/1", "https://rv/t/2", "https://rv/s/1"]
+    assert {it["ref"] for it in items} == {"t1:b1"}
+    assert {it["surface"] for it in items} == {"rivendell"}
+    assert [it["status"] for it in items] == ["running", "queued", "queued"]
+    assert w.running_snapshot()[0]["session_id"] == "sess-1"
+    assert w.running_snapshot()[0]["label"] == "Login fixes"
+    _drive(q, "sess-1", [("done", "did 1", None), ("done", "did 2", None), ("done", "PR #7 opened", None)])
+    t.join(5)
+    assert posted == [("implementation-requests", "b1", True, "PR #7 opened")]
+    assert w.running_snapshot() == []
+
+
+def test_queue_mode_runs_the_turns_with_the_instance_model_and_no_permission_prompts(monkeypatch):
+    q = _fake_queue(monkeypatch)
+    w, _ = _queue_worker(monkeypatch, _queue_claim(1), model="sonnet")
+    t = _run_in_thread(w)
+    _wait_items(q, "sess-1", 2)
+    it = q.snapshot("sess-1")["items"][0]
+    assert it["model"] == "sonnet" and it["permission_mode"] == "bypassPermissions"
+    w.stop()                               # end the waiter: nothing drives this batch
+    t.join(5)
+
+
+def test_queue_mode_failed_step_drops_the_rest_and_lands_failed(monkeypatch):
+    q = _fake_queue(monkeypatch)
+    w, posted = _queue_worker(monkeypatch, _queue_claim(2))
+    t = _run_in_thread(w)
+    _wait_items(q, "sess-1", 3)
+    _drive(q, "sess-1", [("done", "did 1", None), ("error", None, "tests red")])
+    t.join(5)
+    assert posted == [("implementation-requests", "b1", False, "tests red")]
+    # The closing step was removed before it could run.
+    assert [it["status"] for it in q.snapshot("sess-1")["items"]] == ["done", "failed"]
+
+
+def test_queue_mode_every_turn_removed_lands_failed(monkeypatch):
+    q = _fake_queue(monkeypatch)
+    q.pause("sess-1")                      # nothing starts, so everything can be removed
+    w, posted = _queue_worker(monkeypatch, _queue_claim(1))
+    t = _run_in_thread(w)
+    _wait_items(q, "sess-1", 2)
+    for it in q.snapshot("sess-1")["items"]:
+        q.remove("sess-1", it["id"])
+    t.join(5)
+    assert posted == [("implementation-requests", "b1", False, "cancelled on the bridge")]
+
+
+def test_queue_mode_paused_queue_keeps_waiting(monkeypatch):
+    """Review focus 1: a paused queue posts nothing; the batch waits for the operator."""
+    q = _fake_queue(monkeypatch)
+    q.pause("sess-1")
+    w, posted = _queue_worker(monkeypatch, _queue_claim(1))
+    t = _run_in_thread(w)
+    _wait_items(q, "sess-1", 2)
+    time.sleep(0.2)
+    assert posted == [] and t.is_alive()
+    q.resume("sess-1")
+    _drive(q, "sess-1", [("done", "did 1", None), ("done", "PR", None)])
+    t.join(5)
+    assert posted == [("implementation-requests", "b1", True, "PR")]
+
+
+def test_queue_mode_times_out_and_drops_its_turns(monkeypatch):
+    q = _fake_queue(monkeypatch)
+    q.pause("sess-1")
+    w, posted = _queue_worker(monkeypatch, _queue_claim(1), impl_timeout=0)
+    w._run_implementation("b1", "acme/app")
+    assert posted == [("implementation-requests", "b1", False, "run timed out after 0s")]
+    assert q.snapshot("sess-1")["items"] == []
+
+
+def _reattach_worker(monkeypatch, listing_row):
+    w = _worker()
+    posted = []
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.01)
+    monkeypatch.setattr(w, "_claim", lambda *a: (_ for _ in ()).throw(AssertionError("no claim on re-attach")))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    monkeypatch.setattr(w, "_api", lambda path, payload=None:
+                        [listing_row] if path == "/plugin/implementation-requests" else [])
+    return w, posted
+
+
+def _await_posted(posted):
+    for _ in range(500):
+        if posted:
+            return
+        time.sleep(0.01)
+    raise AssertionError("nothing posted")
+
+
+def _tagged(q, sid="sess-1", ref="t1:b1"):
+    q.enqueue(sid, text="Task 1", prompt="p", images=[], model=None, effort=None,
+              permission_mode="bypassPermissions", width=0, sel=[], surface="rivendell",
+              chat_id=555, project="/repo", label="Task 1 · 1/1", link=None, ref=ref)
+
+
+def test_catch_up_reattaches_a_batch_whose_turns_are_in_the_queue(monkeypatch):
+    """After a restart the turns are back from disk (queued, nothing advancing):
+    the worker resumes the bucket, waits on them and posts. No claim, no new run."""
+    q = _fake_queue(monkeypatch)
+    q.pause("sess-1")                      # what a loaded bucket looks like: nothing moving
+    _tagged(q)
+    w, posted = _reattach_worker(monkeypatch, {
+        "id": "b1", "repositoryFullName": "acme/app",
+        "batch": {"id": "bb", "name": "Login fixes", "mode": "queue", "url": "https://rv/s/1", "tasks": []}})
+    assert w._catch_up() == 0
+    assert w.queue_snapshot() == []                       # not held: it runs again
+    [row] = w.running_snapshot()
+    assert row["session_id"] == "sess-1" and row["label"] == "Login fixes" and row["link"] == "https://rv/s/1"
+    for _ in range(500):
+        if q.snapshot("sess-1")["paused"] is False:
+            break
+        time.sleep(0.01)
+    assert q.snapshot("sess-1")["paused"] is False        # resumed by the worker
+    _drive(q, "sess-1", [("done", "PR", None)])
+    _await_posted(posted)
+    assert posted == [("implementation-requests", "b1", True, "PR")]
+    for _ in range(500):
+        if not w.running_snapshot() and w._active_runs == 0:
+            break
+        time.sleep(0.01)
+    assert w.running_snapshot() == [] and w._active_runs == 0
+
+
+def test_catch_up_reattaches_even_when_every_turn_had_finished(monkeypatch):
+    """Review focus 2: the result post is what may have been lost; never run again."""
+    q = _fake_queue(monkeypatch)
+    _tagged(q)
+    running = q.snapshot("sess-1")["items"][0]
+    q.notify_job_done("sess-1", running["job_id"], "done", "PR #9", None, 1)
+    w, posted = _reattach_worker(monkeypatch, {"id": "b1", "repositoryFullName": "acme/app"})
+    w._catch_up()
+    _await_posted(posted)
+    assert posted == [("implementation-requests", "b1", True, "PR #9")]
+
+
+def test_catch_up_ignores_the_queue_for_a_request_it_never_queued(monkeypatch):
+    q = _fake_queue(monkeypatch)
+    _tagged(q, ref="t1:other")
+    w, posted = _reattach_worker(monkeypatch, {"id": "b1", "repositoryFullName": "acme/app"})
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+    assert w._catch_up() == 1                             # held as usual
+    assert [r["request_id"] for r in w.queue_snapshot()] == ["b1"]
+
+
+def test_queue_mode_reconnect_does_not_reattach_a_batch_running_here(monkeypatch):
+    """Catch-up lists IN_PROGRESS requests too, so a reconnect lists the batch
+    this process is waiting on: a second waiter would post its result twice."""
+    q = _fake_queue(monkeypatch)
+    w, posted = _queue_worker(monkeypatch, _queue_claim(1))
+    monkeypatch.setattr(w, "_api", lambda path, payload=None:
+                        [{"id": "b1", "repositoryFullName": "acme/app"}]
+                        if path == "/plugin/implementation-requests" else [])
+    w.accept(w._enqueue("impl", "b1", "acme/app"))
+    _wait_items(q, "sess-1", 2)
+    assert w._catch_up() == 0
+    assert len(w.running_snapshot()) == 1 and w._active_runs == 1
+    _drive(q, "sess-1", [("done", "did 1", None), ("done", "PR", None)])
+    for _ in range(500):
+        if w._active_runs == 0:
+            break
+        time.sleep(0.01)
+    assert posted == [("implementation-requests", "b1", True, "PR")] and w._active_runs == 0
+
+
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))
