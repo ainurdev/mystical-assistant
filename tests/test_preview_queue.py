@@ -367,6 +367,22 @@ def test_tagged_items_survive_a_reload(tmp_path):
     assert (it["ref"], it["label"], it["link"]) == ("w:r1", "L", "https://rv")
 
 
+def test_owns_session_while_a_tagged_item_is_queued_or_running():
+    """After a restart such a session's next turn is the queue's, not boot
+    recovery's nudge (recovery.recover)."""
+    q, _ = _q()
+    q.pause("s1")
+    _enq(q, sid="s1", text="a", ref="w:r1")
+    assert q.owns_session("s1")                      # queued
+    q.resume("s1")
+    assert q.owns_session("s1")                      # running
+    q.notify_job_done("s1", "job1", "done", "ok", None, 1)
+    assert not q.owns_session("s1")                  # done: nothing left to drive
+    _enq(q, sid="s2", text="b")
+    assert not q.owns_session("s2")                  # untagged: the composer's
+    assert not q.owns_session("nope")
+
+
 def test_a_failed_tagged_item_holds_back_the_rest_of_its_batch():
     """notify_job_done advances at once: without this, a batch's next turn would
     start before its worker could remove it. Untagged items still run."""

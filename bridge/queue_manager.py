@@ -332,6 +332,14 @@ class PreviewQueue:
                     return sid
         return None
 
+    def owns_session(self, sid: str) -> bool:
+        """True when a Rivendell batch's turns (items tagged `ref`) are still
+        queued or running here: after a restart the queue, not boot recovery,
+        drives this session's next turn (rivendell.Worker._reattach)."""
+        with self._lock:
+            b = self._q.get(sid)
+            return bool(b) and any(it.ref and it.status in ("queued", "running") for it in b["items"])
+
     # --- persistence -------------------------------------------------------
 
     def _save(self) -> None:
@@ -440,6 +448,10 @@ def backfill(sid, cursor):
 
 def sessions():
     return get().sessions()
+
+
+def owns_session(sid):
+    return get().owns_session(sid)
 
 
 def pause(sid):

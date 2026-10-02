@@ -14,7 +14,7 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "12345:TESTTOKEN")
 os.environ["ALLOWED_CHAT_IDS"] = "555"
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 
-from bridge import config, recovery, store  # noqa: E402
+from bridge import config, queue_manager, recovery, store  # noqa: E402
 
 store.init()
 
@@ -149,6 +149,41 @@ def test_recover_disabled_flips_but_does_not_resume():
         config.AUTO_RESUME = saved
     assert n == 0 and run.calls == []
     assert sid not in store.running_session_ids(CHAT)  # claim still ran (UI hygiene)
+
+
+def _queue_with(sid, ref):
+    """Swap queue_manager's singleton for an in-memory queue holding one queued
+    item in `sid` (its runner never starts one). Returns the restore."""
+    saved = queue_manager._instance
+    q = queue_manager.PreviewQueue(run_fn=lambda item: None, persist_path=None)
+    q.enqueue(sid, text="step", prompt="p", images=[], model=None, effort=None,
+              permission_mode=None, width=0, sel=[], surface="rivendell",
+              chat_id=CHAT, project="/tmp/proj", ref=ref)
+    queue_manager._instance = q
+    return lambda: setattr(queue_manager, "_instance", saved)
+
+
+def test_recover_leaves_a_session_whose_queue_owns_its_next_turn():
+    """A Rivendell batch's queue re-runs its killed step after a restart
+    (rivendell.Worker._reattach): a nudge on top would run that step twice."""
+    sid = _orphan("rv-batch", claude_sid="c-rv")
+    restore = _queue_with(sid, "w:r1")
+    try:
+        run = _Rec()
+        assert _recover(run) == 0 and run.calls == []
+    finally:
+        restore()
+    assert sid not in store.running_session_ids(CHAT)  # still flipped (UI hygiene)
+
+
+def test_recover_still_nudges_a_session_holding_only_composer_items():
+    sid = _orphan("composer", claude_sid="c-cmp")
+    restore = _queue_with(sid, None)
+    try:
+        run = _Rec()
+        assert _recover(run) == 1 and [c["session_id"] for c in run.calls] == [sid]
+    finally:
+        restore()
 
 
 if __name__ == "__main__":

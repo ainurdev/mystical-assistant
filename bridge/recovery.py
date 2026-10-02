@@ -11,7 +11,7 @@ lives in the runner's mid-run auto-resume (runner.AUTO_RESUME_MAX).
 
 import sys
 
-from bridge import config, ladder, runner, store, telegram
+from bridge import config, ladder, queue_manager, runner, store, telegram
 
 NUDGE = (
     "⏮ You were interrupted mid-task by a bridge restart — not by the user. "
@@ -40,6 +40,8 @@ def recover(*, run=None, notify=None) -> int:
             continue                                  # died before init — nothing to resume
         if not config.is_owner(t["chat_id"]):
             continue
+        if queue_manager.owns_session(sid):
+            continue                                  # a Rivendell batch's queue resumes it, not a nudge
         resumed_sessions.add(sid)
         try:
             slot, runtime = ladder.same_agent(t["runtime"])
