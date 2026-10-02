@@ -842,6 +842,34 @@ def test_wait_job_reads_an_exited_job_by_its_status():
     assert not ok and text == "boom"
 
 
+def test_interrupt_acts_while_the_child_is_alive_even_after_an_interim_result():
+    """A turn that reported `result` with a background agent pending reads "done"
+    while its process lives on; a timeout (or a dashboard Stop) must still stop it."""
+    from bridge import runner
+
+    class Proc:
+        stdin = None
+        def poll(self):
+            return None            # alive
+        def terminate(self):
+            pass
+    job = runner.Job("j1", 555)
+    job.proc = Proc()
+    job.status = "done"
+    try:
+        assert job.interrupt() is True
+        assert job.interrupted is True
+    finally:
+        job._interrupt_timer.cancel()
+
+    class Gone(Proc):
+        def poll(self):
+            return 0               # exited
+    done = runner.Job("j2", 555)
+    done.proc = Gone()
+    assert done.interrupt() is False
+
+
 # --- repo discovery ----------------------------------------------------------
 
 def _reset_checkout_cache():

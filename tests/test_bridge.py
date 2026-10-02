@@ -549,9 +549,13 @@ def test_interrupt_writes_control_request_and_marks_job():
     assert sent["request"]["subtype"] == "interrupt"
 
 
-def test_interrupt_not_running_returns_false():
+def test_interrupt_already_exited_returns_false():
+    """status alone no longer gates this: a "done" turn whose process is still
+    alive (a background agent pending) must still be interruptible — only an
+    already-exited child makes interrupt() a no-op."""
     job = runner.Job("i2", 555)
     job.proc = _FakeProc()
+    job.proc._returncode = 0   # already exited
     job.status = "done"
     assert job.interrupt() is False
 

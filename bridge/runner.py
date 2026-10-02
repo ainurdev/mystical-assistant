@@ -651,10 +651,10 @@ class Job:
     def interrupt(self) -> bool:
         """Stop the current turn: ask Claude to interrupt over the control
         channel, then escalate to SIGTERM/SIGKILL if it doesn't exit. The
-        session is preserved, so the next message resumes. Returns False if the
-        job is not running."""
+        session is preserved, so the next message resumes. Returns False once
+        the child has exited."""
         proc = self.proc
-        if self.status != "running" or proc is None:
+        if proc is None or proc.poll() is not None:
             return False
         self.interrupted = True
         self._write_stdin({"type": "control_request",
