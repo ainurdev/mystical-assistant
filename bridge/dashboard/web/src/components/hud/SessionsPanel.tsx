@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
+import { orderBranches } from "../../lib/branchorder";
 import { useStickyObj } from "../../lib/prefs";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
@@ -51,6 +52,7 @@ type Detail = { proj: boolean; branch: boolean; wt: boolean };
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
+const BRANCH_CAP = 8; // branch chips shown before "SHOW ALL"
 
 const ORDER_LABEL: Record<OrderMode, string> = {
   recent: "recently used", alpha: "a → z", biggest: "biggest", custom: "custom",
@@ -310,6 +312,9 @@ export function SessionsPanel(props: Props) {
   const [npPrompt, setNpPrompt] = useState("");
   const [projAll, setProjAll] = useState(false);
   const [branchQ, setBranchQ] = useState("");
+  const [branchAll, setBranchAll] = useState(false);
+  // Branches already checked out — the project checkout and every linked worktree.
+  const [held, setHeld] = useState<Set<string>>(new Set());
   const [parentMenu, setParentMenu] = useState(false);
 
   // Browser state — mode + project order remembered across reloads.
@@ -390,7 +395,13 @@ export function SessionsPanel(props: Props) {
   useEffect(() => {
     if (!nsOpen || !nsProject) return;
     let live = true;
-    void api.branches(nsProject).then((b) => {
+    // Which branches are checked out rides along with the list, so the chips
+    // order once instead of reshuffling when a second answer lands. It only
+    // ranks and marks them: if it fails, the list still loads in git's order.
+    void Promise.all([
+      api.branches(nsProject),
+      api.worktrees(nsProject).then((w) => w.worktrees.map((x) => x.branch), () => [] as string[]),
+    ]).then(([b, wt]) => {
       if (!live) return;
       const cur = b.current || b.branches[0] || "main";
       // Default to the branch of the session you're in when it's this project —
@@ -399,6 +410,7 @@ export function SessionsPanel(props: Props) {
       const pick = mine?.project === nsProject && mine.branch && b.branches.includes(mine.branch)
         ? mine.branch : cur;
       setBranches(b.branches);
+      setHeld(new Set(wt));
       setCurrent(cur);
       setNsBranch(pick);
       setNsParent(pick);
@@ -546,7 +558,7 @@ export function SessionsPanel(props: Props) {
 
   function resetForm() {
     setBranches([]); setCurrent(""); setNsBranch(""); setNsParent("");
-    setNsNewOpen(false); setNsNewBranch(""); setBranchQ("");
+    setNsNewOpen(false); setNsNewBranch(""); setBranchQ(""); setBranchAll(false);
   }
 
   function toggleForm() {
@@ -600,7 +612,37 @@ export function SessionsPanel(props: Props) {
   const projShown = projAll ? projList : projList.slice(0, PROJ_CAP);
   const projHidden = projList.length - projShown.length;
   const bq = branchQ.trim().toLowerCase();
-  const branchList = bq ? branches.filter((b) => b.toLowerCase().includes(bq)) : branches;
+  // Same collapse as the projects, at a larger scale: a repo keeps hundreds of
+  // branches and has a handful checked out, so those are the ones worth a chip.
+  const branchList = orderBranches(bq ? branches.filter((b) => b.toLowerCase().includes(bq)) : branches, nsBranch, held);
+  const branchOpen = branchAll && branchList.length > BRANCH_CAP;
+  const branchesShown = branchOpen ? branchList : branchList.slice(0, BRANCH_CAP);
+  const branchesHidden = branchList.length - branchesShown.length;
+  const branchChips = branchesShown.map((b) => {
+    const on = !nsNewOpen && b === nsBranch;
+    const h = chipHov === `b:${b}`;
+    // ⧉ is the mark session rows already use for "runs in a linked worktree".
+    const linked = held.has(b) && b !== current;
+    // A pick folds the opened list: it sorts first, so staying scrolled where
+    // you clicked would leave the chip you just chose out of view.
+    return (
+      <button
+        key={b} onClick={() => { setNsBranch(b); setNsNewOpen(false); setBranchAll(false); }}
+        onMouseEnter={() => setChipHov(`b:${b}`)} onMouseLeave={() => setChipHov("")}
+        title={`${b} · ${linked ? "has a worktree" : b === current ? "the project checkout" : "no worktree yet — starting here makes one"}`}
+        style={{
+          appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+          border: `1px solid ${on || h ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`,
+          background: on ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)",
+          color: on ? "var(--purple-b)" : "var(--purple-h)",
+          fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "5px 8px", maxWidth: "100%", minWidth: 0,
+        }}
+      >
+        <span style={{ color: "var(--purple)", flex: "none" }}>{linked ? "⧉" : "⎇"}</span>
+        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
+      </button>
+    );
+  });
 
   // The form renders under whatever opened it: the NEW SESSION button (pinned
   // above the scroller) or a project header's + NEW.
@@ -680,32 +722,35 @@ export function SessionsPanel(props: Props) {
         <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>WORKTREE</span>
         {branches.length > 5 && (
           <input
-            value={branchQ} onChange={(e) => setBranchQ(e.target.value)} placeholder="search branches…"
+            value={branchQ} onChange={(e) => setBranchQ(e.target.value)} placeholder={`search ${branches.length} branches…`}
             style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 7px" }}
           />
         )}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {branchList.map((b) => {
-          const on = !nsNewOpen && b === nsBranch;
-          const h = chipHov === `b:${b}`;
-          return (
-            <button
-              key={b} onClick={() => { setNsBranch(b); setNsNewOpen(false); }}
-              onMouseEnter={() => setChipHov(`b:${b}`)} onMouseLeave={() => setChipHov("")}
-              style={{
-                appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-                border: `1px solid ${on || h ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`,
-                background: on ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)",
-                color: on ? "var(--purple-b)" : "var(--purple-h)",
-                fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "5px 8px", maxWidth: "100%", minWidth: 0,
-              }}
-            >
-              <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
-            </button>
-          );
-        })}
+        {/* Opened, the chips scroll inside a fixed box: SHOW ALL on a repo with
+            hundreds of branches must not push START SESSION out of reach again.
+            Eight and a half rows at any font scale (a chip is 1.5 lines of
+            --t95 plus 12px, rows 5px apart) — the cut row is what says there
+            is more. Keyed on the query so a new search starts at its first match. */}
+        {branchOpen
+          ? <div key={bq} style={{ flex: "1 0 100%", display: "flex", flexWrap: "wrap", gap: 5, maxHeight: "calc(var(--t95) * 12.75 + 142px)", overflowY: "auto", overscrollBehavior: "contain" }}>{branchChips}</div>
+          : branchChips}
+        {bq && branchList.length === 0 && (
+          <span style={{ fontSize: "var(--t95)", color: "var(--txd)", padding: "4px 2px" }}>no branch matches “{branchQ}”</span>
+        )}
+        {branchesHidden > 0 && (
+          <button
+            onClick={() => setBranchAll(true)}
+            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--purple) 30%, transparent)", background: "transparent", color: "var(--purple-d)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 0.5, padding: "4px 8px" }}
+          >SHOW ALL · {branchesHidden} MORE</button>
+        )}
+        {branchOpen && (
+          <button
+            onClick={() => setBranchAll(false)}
+            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--purple) 30%, transparent)", background: "transparent", color: "var(--purple-d)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 0.5, padding: "4px 8px" }}
+          >COLLAPSE</button>
+        )}
         <button
           onClick={() => setNsNewOpen((o) => !o)} title="create a new worktree branch"
           style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: nsNewOpen ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 0.5, padding: "5px 9px" }}
