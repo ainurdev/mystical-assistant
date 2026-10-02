@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FileDiff, FileText, FolderTree, GitBranch, GraduationCap, ListTodo, Sparkles,
+  Castle, FileDiff, FileText, FolderTree, GitBranch, GraduationCap, ListOrdered, ListTodo, Sparkles,
 } from "lucide-react";
 import {
   api,
@@ -60,6 +60,7 @@ import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
 import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
+import { QueuePanel } from "./components/hud/QueuePanel";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
@@ -1569,7 +1570,11 @@ export function App() {
       id: "docs", label: "Docs", icon: <FileText {...RAIL} />, ownScroll: true,
       render: () => <DocsPanel project={sessionProject} />,
     },
-    { id: "queue", label: "Queue", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
+    { id: "todo", label: "To-do", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
+    {
+      id: "queue", label: "Queue", icon: <ListOrdered {...RAIL} />, ownScroll: true, scope: "project" as const,
+      render: () => <QueuePanel project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />,
+    },
     ...(rivendellOn ? [{
       id: "rivendell", label: "Rivendell tasks", icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const,
       render: () => (

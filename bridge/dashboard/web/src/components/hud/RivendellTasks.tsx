@@ -158,14 +158,15 @@ export function RivendellTasks({ project, onOpenSession }: {
         }}
       >{working ? "…" : label}</button>
     );
+    const href = t.url ?? t.htmlUrl;
     return (
       <div
         key={id}
-        onClick={() => t.htmlUrl && window.open(t.htmlUrl, "_blank", "noopener")}
+        onClick={() => href && window.open(href, "_blank", "noopener")}
         onMouseEnter={() => setHov(id)} onMouseLeave={() => setHov("")}
-        title={t.htmlUrl ? "Open in Teamwork" : undefined}
+        title={t.url ? "Open in Rivendell" : t.htmlUrl ? "Open in Teamwork" : undefined}
         style={{
-          margin: "0 8px 8px", padding: "9px 10px 10px", cursor: t.htmlUrl ? "pointer" : "default",
+          margin: "0 8px 8px", padding: "9px 10px 10px", cursor: href ? "pointer" : "default",
           border: `1px solid color-mix(in srgb, var(--acc) ${on ? 24 : 12}%, transparent)`,
           background: "color-mix(in srgb, var(--panel2) 70%, transparent)",
           transition: "border-color .13s ease", animation: "mfadeup .35s ease both",

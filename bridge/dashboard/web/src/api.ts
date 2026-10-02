@@ -422,6 +422,11 @@ export interface RivendellQueueItem {
    *  Null when rivendell-api did not say (older API). */
   step?: "recommendations" | "todolist" | null;
   created_at: number;      // epoch seconds it was first seen
+  status: "held" | "running";  // held for ACCEPT/REJECT, or a run in flight
+  label: string | null;        // the batch's name, else the slug
+  link: string | null;         // the batch's Rivendell page
+  mode?: "queue" | "subagents" | null;
+  session_id?: string | null;  // running rows: the session here that runs it
 }
 /** One open task on the RIVENDELL tab (bridge/rivendell.py tasks()): in a
  *  Teamwork project linked to a Rivendell project that links this repo. */
@@ -429,6 +434,7 @@ export interface RivendellTask {
   id: string;
   name: string;
   htmlUrl: string | null;    // the task in Teamwork
+  url: string | null;       // the task on its Rivendell board
   projectName: string;       // its Teamwork project
   column: string | null;     // its board column
   dueDate: string | null;
@@ -480,12 +486,25 @@ export interface QueueItem {
   elapsed: number | null;
   created: number;
   started: number | null;
+  // A Rivendell queue-mode batch's turn: what the row says, where it links,
+  // and the "<instance>:<request>" its worker tracks it by. Null otherwise.
+  label: string | null;
+  link: string | null;
+  ref: string | null;
 }
 // The whole per-session queue. `seq` is a revision counter (SSE dedup); the
 // server publishes a fresh snapshot on every change.
 export interface QueueSnapshot {
   session_id: string;
   seq: number;
+  paused: boolean;
+  items: QueueItem[];
+}
+// One session's queue on the QUEUE tab (GET /local/queue/all).
+export interface QueueGroup {
+  session_id: string;
+  title: string | null;
+  project: string | null;
   paused: boolean;
   items: QueueItem[];
 }
@@ -1622,6 +1641,9 @@ export const api = {
   // --- prompt queue (per session) ---
   queue: (sessionId: string) =>
     req<QueueSnapshot>(`/local/queue?session=${encodeURIComponent(sessionId)}`),
+  queueAll: (project?: string | null) =>
+    req<{ sessions: QueueGroup[] }>(
+      `/local/queue/all${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   queueEnqueue: (body: {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;

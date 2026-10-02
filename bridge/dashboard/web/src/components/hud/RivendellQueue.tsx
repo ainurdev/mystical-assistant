@@ -32,7 +32,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
     if (!active) return;
     let live = true;
     const load = () =>
-      void api.rivendellQueue().then((r) => { if (live) setItems(r.queue); }).catch(() => {});
+      void api.rivendellQueue().then((r) => { if (live) setItems(r.queue.filter((x) => x.status === "held")); }).catch(() => {});
     load();
     const t = setInterval(load, 4000);
     return () => { live = false; clearInterval(t); };
@@ -41,8 +41,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
   const decide = async (it: RivendellQueueItem, accept: boolean) => {
     if (!accept) {
       const ok = await askConfirm(
-        `Reject this ${labelOf(it)} request${it.slug ? ` — ${it.slug}` : ""}? ` +
-        `It will be marked failed on ${it.instance}.`);
+        `Reject this ${labelOf(it)} request${it.label ? ` — ${it.label}` : ""}? Rivendell asks its requester what to do next.`);
       if (!ok) return;
     }
     const id = rid(it);
@@ -88,7 +87,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
                              color: "var(--purple-h)" }}>{labelOf(it)}</span>
               <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
                 <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                               fontSize: "var(--t115)", color: "var(--txh)" }}>{it.slug || "(no repo)"}</span>
+                               fontSize: "var(--t115)", color: "var(--txh)" }}>{it.label ?? it.slug ?? "(no repo)"}</span>
                 <span style={{ display: "flex", gap: 7, fontSize: "var(--t9)", color: "var(--txl)" }}>
                   <span style={{ color: "var(--purple-g)" }}>{it.instance}</span>
                   <span>{ago(it.created_at)}</span>
