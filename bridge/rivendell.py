@@ -920,6 +920,10 @@ class Worker:
             ok, text = self._wait_queue(sid, ref, self.inst.get("impl_timeout", 10800))
         finally:
             self._untrack(request_id)
+        if ok is None:
+            print(f"rivendell[{self.name}]: implementation {request_id}: {text}, "
+                  f"its turns stay in session {sid}")
+            return
         print(f"rivendell[{self.name}]: implementation {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result("implementation-requests", request_id, ok, text)
@@ -930,7 +934,10 @@ class Worker:
         the first failed turn's error, with the turns still queued removed; or
         "cancelled on the bridge" when the operator removed them all. A paused
         queue just waits — the operator paused it — until the timeout, which
-        cancels the running turn and drops the rest."""
+        cancels the running turn and drops the rest. A stopping worker (a bridge
+        restart) gets (None, "bridge stopping") and leaves every turn as it is:
+        they persist, the request stays IN_PROGRESS, and _reattach takes the
+        batch up again after the restart."""
         from bridge import queue_manager
         q = queue_manager.get()
         deadline = time.time() + timeout
@@ -951,7 +958,7 @@ class Worker:
                     return True, text
                 return False, "run finished without producing any result text"
             if self._stop.wait(_POLL_INTERVAL):
-                break
+                return None, "bridge stopping"
         for it in mine():
             if it["status"] == "running":
                 q.cancel(sid, it["id"])
@@ -995,6 +1002,10 @@ class Worker:
             # before the restart; the restart already lost that intent.
             queue_manager.get().resume(sid)
             ok, text = self._wait_queue(sid, ref, self.inst.get("impl_timeout", 10800))
+            if ok is None:
+                print(f"rivendell[{self.name}]: implementation {request_id}: {text}, "
+                      f"its turns stay in session {sid}")
+                return
             print(f"rivendell[{self.name}]: implementation {request_id} "
                   f"{'completed' if ok else 'failed'}")
             self._post_result("implementation-requests", request_id, ok, text)

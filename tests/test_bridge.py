@@ -1207,6 +1207,46 @@ def test_restart_killed_only_for_shutdown_errors(monkeypatch):
     assert not runner._restart_killed(job)        # bridge alive → real error
 
 
+def _queued_turn(monkeypatch, project):
+    """A real queue whose one item runs as job "j1" in a fresh session, and a
+    spawn that fails at once, so _run_streaming goes straight to its finally."""
+    from bridge import queue_manager, toolsets
+    q = queue_manager.PreviewQueue(run_fn=lambda item: "j1", persist_path=None)
+    monkeypatch.setattr(queue_manager, "_instance", q)
+    sid = store.create_session(555, project)["id"]
+    q.enqueue(sid, text="step", prompt="p", images=[], model=None, effort=None,
+              permission_mode=None, width=0, sel=[], surface="rivendell",
+              chat_id=555, project=config.BASE_PATH)
+
+    class Popen:
+        def __init__(self, cmd, **kw):
+            raise FileNotFoundError
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    return q, sid
+
+
+def test_a_restart_killed_turn_stays_running_in_the_queue(monkeypatch):
+    """Its item must reach preview_queue.json still "running", which the reload
+    re-queues: a "failed" one would sink a queue-mode batch on re-attach."""
+    from bridge import state
+    q, sid = _queued_turn(monkeypatch, "p-rk-queue")
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner._run_streaming(runner.Job("j1", 555, sid), "p", [], config.BASE_PATH)
+    assert q.snapshot(sid)["items"][0]["status"] == "running"
+
+
+def test_a_failed_turn_hands_the_queue_its_error(monkeypatch):
+    from bridge import tailstate
+    q, sid = _queued_turn(monkeypatch, "p-err-queue")
+    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)   # no ping thread
+    job = runner.Job("j1", 555, sid)
+    job.error_msg = "tests red"            # what a child that died without a result leaves
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    it = q.snapshot(sid)["items"][0]
+    assert (it["status"], it["error"]) == ("failed", "tests red")
+
+
 def test_midrun_crash_auto_resumes_capped(monkeypatch):
     s = store.create_session(555, "p-crash")
     store.set_claude_session_id(s["id"], "csid-crash")

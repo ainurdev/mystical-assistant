@@ -119,6 +119,15 @@ def test_notify_error_marks_failed():
     assert it["error"] == "boom"
 
 
+def test_notify_failed_keeps_the_runners_error_over_its_result():
+    """The runner hands over job.error_msg next to job.result: the error is the
+    text a failed queue-mode step posts to Rivendell."""
+    q, _ = _q()
+    a = _enq(q, text="a")
+    q.notify_job_done("s1", "job1", "error", "interim text", None, 1, error="tests red")
+    assert next(i for i in _items(q) if i["id"] == a)["error"] == "tests red"
+
+
 def test_notify_for_unknown_job_advances_queue():
     """A chat run (not a queue item) holds the session's run slot, so an enqueue
     can't start. When that run finishes, the runner calls notify_job_done with a

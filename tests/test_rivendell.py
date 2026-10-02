@@ -1727,6 +1727,34 @@ def test_queue_mode_reconnect_does_not_reattach_a_batch_running_here(monkeypatch
     assert posted == [("implementation-requests", "b1", True, "PR")] and w._active_runs == 0
 
 
+def test_queue_mode_stopping_worker_leaves_the_turns_and_posts_nothing(monkeypatch):
+    """A bridge restart stops the worker mid-batch: the turns stay exactly as they
+    are in the persisted queue, for _reattach after the restart, and nothing is
+    posted, so the request stays IN_PROGRESS."""
+    q = _fake_queue(monkeypatch)
+    w, posted = _queue_worker(monkeypatch, _queue_claim(2))
+    t = _run_in_thread(w)
+    _wait_items(q, "sess-1", 3)
+    w.stop()
+    t.join(5)
+    assert not t.is_alive() and posted == [] and w.running_snapshot() == []
+    assert [it["status"] for it in q.snapshot("sess-1")["items"]] == ["running", "queued", "queued"]
+
+
+def test_queue_mode_stopping_worker_leaves_a_reattached_batch_too(monkeypatch):
+    q = _fake_queue(monkeypatch)
+    _tagged(q)                             # running
+    w, posted = _reattach_worker(monkeypatch, {"id": "b1", "repositoryFullName": "acme/app"})
+    w._catch_up()
+    w.stop()
+    for _ in range(500):
+        if w._active_runs == 0:
+            break
+        time.sleep(0.01)
+    assert posted == [] and w._active_runs == 0 and w.running_snapshot() == []
+    assert [it["status"] for it in q.snapshot("sess-1")["items"]] == ["running"]
+
+
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))

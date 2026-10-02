@@ -1992,13 +1992,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             state.release_run(job.store_session_id)
             # The session's run slot is now free: let the preview queue mark this
             # item done/failed and start the next queued prompt. Best-effort.
-            try:
-                from bridge import queue_manager
-                queue_manager.notify_job_done(
-                    job.store_session_id, job.id, job.status,
-                    job.result, job.cost, job.elapsed)
-            except Exception:  # noqa: BLE001 — never let the queue break a run
-                pass
+            # Not for a turn a restart killed: its item must reach the persisted
+            # queue still "running", which the reload re-queues (PreviewQueue._load).
+            if not restart_killed:
+                try:
+                    from bridge import queue_manager
+                    queue_manager.notify_job_done(
+                        job.store_session_id, job.id, job.status,
+                        job.result, job.cost, job.elapsed, error=job.error_msg)
+                except Exception:  # noqa: BLE001 — never let the queue break a run
+                    pass
         job.exited.set()
         resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
         if not resumed and not restart_killed:
