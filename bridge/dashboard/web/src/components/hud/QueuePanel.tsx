@@ -36,7 +36,7 @@ function Link({ href }: { href: string | null }) {
 
 /** QUEUE — the real queue: Rivendell's jobs held or running on this bridge, then
  *  every session of the open project that still holds queued prompts, with the
- *  queue ops that exist (pause/resume, bump, remove). Polls while mounted:
+ *  queue ops that exist (pause/resume, clear done, bump, remove). Polls while mounted:
  *  Rivendell rows change with no dashboard event, and the per-session SSE
  *  streams are one session each. */
 export function QueuePanel({ project, onOpenSession }: {
@@ -45,11 +45,14 @@ export function QueuePanel({ project, onOpenSession }: {
 }) {
   const [jobs, setJobs] = useState<RivendellQueueItem[]>([]);
   const [groups, setGroups] = useState<QueueGroup[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const load = useCallback(() => {
     void api.rivendellQueue().then((r) => setJobs(r.queue)).catch(() => {});
-    void api.queueAll(project).then((r) => setGroups(r.sessions)).catch(() => {});
+    void api.queueAll(project)
+      .then((r) => { setGroups(r.sessions); setError(null); })
+      .catch(() => { setGroups([]); setError("Queue unavailable"); });
   }, [project]);
   useEffect(() => {
     load();
@@ -82,8 +85,8 @@ export function QueuePanel({ project, onOpenSession }: {
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "0 0 10px" }}>
-        {empty && groups !== null && (
-          <div style={{ padding: "18px 12px", fontSize: "var(--t95)", color: "var(--txl)" }}>Nothing queued.</div>
+        {(error || (empty && groups !== null)) && (
+          <div style={{ padding: "18px 12px", fontSize: "var(--t95)", color: "var(--txl)" }}>{error ?? "Nothing queued."}</div>
         )}
         {jobs.length > 0 && <div style={section}>RIVENDELL</div>}
         {jobs.map((it) => {
@@ -99,6 +102,7 @@ export function QueuePanel({ project, onOpenSession }: {
                 </span>
                 <span style={{ display: "flex", gap: 7, fontSize: "var(--t9)", color: "var(--txl)" }}>
                   <span style={{ color: "var(--purple-g)" }}>{it.instance}</span>
+                  <span>{it.kind}</span>
                   {it.mode && <span>{it.mode}</span>}
                   <span>{ago(it.created_at)}</span>
                 </span>
@@ -125,7 +129,14 @@ export function QueuePanel({ project, onOpenSession }: {
                 style={{ ...toolBtn, border: "none", padding: 0, letterSpacing: 1.5, fontSize: "var(--t9)", color: "var(--txm)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}
                 title="Open this session" onClick={() => onOpenSession(g.session_id)}
               >{(g.title || g.session_id).toUpperCase()}</button>
-              <span style={{ marginLeft: "auto", flex: "none" }}>
+              <span style={{ marginLeft: "auto", flex: "none", display: "flex", gap: 6 }}>
+                {g.items.some((it) => it.status === "done" || it.status === "failed") && (
+                  <button style={toolBtn} disabled={busy.has(g.session_id)}
+                    title="Remove done and failed rows (a batch's finished turns are removed from this list only)"
+                    onClick={() => op(g.session_id, () => api.queueOp("clear-done", { session_id: g.session_id }))}>
+                    CLEAR DONE
+                  </button>
+                )}
                 <button style={toolBtn} disabled={busy.has(g.session_id)}
                   onClick={() => op(g.session_id, () => api.queueOp(g.paused ? "resume" : "pause", { session_id: g.session_id }))}>
                   {g.paused ? "RESUME" : "PAUSE"}

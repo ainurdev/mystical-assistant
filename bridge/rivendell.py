@@ -103,12 +103,24 @@ A request stays PENDING server-side until it is accepted, so nothing is lost
 across a bridge restart: the queue is rebuilt from the catch-up endpoints. Those
 also return IN_PROGRESS requests, so a run interrupted mid-flight by a restart
 comes back into the queue for a fresh accept rather than sticking IN_PROGRESS
-forever. In-process duplicates are prevented by each worker's _seen set (keys
+forever — except a queue-mode batch, which re-attaches to its persisted turns
+instead (below). In-process duplicates are prevented by each worker's _seen set (keys
 "review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>",
 since the request kinds have separate id spaces). A refused request leaves
 _seen (catch-up no longer lists it, so that costs no rescan per reconnect);
 on an older API a dismissed one is claimed+FAILED, so catch-up never
 resurrects it.
+
+Queue mode: an implementation claim that carries `steps` (a start-work batch)
+runs as queued turns, not one run. Each step becomes one turn in a single fresh
+session's queue (bridge/queue_manager.py), in order, tagged `ref`
+"<instance id>:<request id>" with the step's label and Rivendell link, so the
+QUEUE tab shows them and the operator can pause or drop them. The worker waits
+on its tagged turns and posts one result at the end: the last turn's answer, or
+the first failed turn's error. The turns persist with the queue: after a
+restart the steps still to run wait in a paused bucket, and catch-up re-attaches
+to the turns (_reattach: no new claim; it resumes the bucket and waits again)
+instead of starting the batch over.
 
 The listener reads with a socket timeout so a quiet interval can ping. A
 timed-out read leaves Python's socket file unusable, so the listener rebuilds
@@ -241,7 +253,7 @@ class Worker:
         # accepted). Guarded by _q_lock alongside _pending: together they answer
         # "is the queue idle?" — the condition for auto-accepting a lone request.
         self._active_runs = 0
-        self._q_lock = threading.Lock()      # guards _pending and _active_runs
+        self._q_lock = threading.Lock()      # guards _pending, _active_runs and _running
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
         # Request id -> the run in flight: the store session running it (the
@@ -845,7 +857,11 @@ class Worker:
                               "could not start a Claude run (session busy)")
             return
 
-        ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
+        self._track(request_id, "review", slug, job.store_session_id, label=None, link=None)
+        try:
+            ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
+        finally:
+            self._untrack(request_id)
         print(f"rivendell[{self.name}]: review {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result("review-requests", request_id, ok, text)
@@ -1024,22 +1040,21 @@ class Worker:
         prioritized todolist (markdown). No checkout (see _run_in_workdir); the
         answer posts back verbatim and rivendell-api parses it by step."""
         what = "task recommendations" if step == "recommendations" else "todolist"
-        self._run_in_workdir(what, "todolist-requests", request_id, project)
+        self._run_in_workdir(what, "todolist", request_id, project)
 
     def _run_taskdesc(self, request_id: str, task: "str | None") -> None:
         """An AI task-description generation — no checkout (see _run_in_workdir).
         rivendell-api writes the generated text back onto the Teamwork task
         itself; the bridge only returns it."""
-        self._run_in_workdir("task description", "task-description-requests",
-                             request_id, task)
+        self._run_in_workdir("task description", "taskdesc", request_id, task)
 
     def _run_changelog(self, request_id: str, project: "str | None") -> None:
         """A changelog generation from the sources the user picked — no checkout
         (see _run_in_workdir). The markdown returned IS the changelog; rivendell
         keeps it as the generator's history."""
-        self._run_in_workdir("changelog", "changelog-requests", request_id, project)
+        self._run_in_workdir("changelog", "changelog", request_id, project)
 
-    def _run_in_workdir(self, what: str, kind_path: str, request_id: str,
+    def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None") -> None:
         """Run a request that needs NO checkout: its whole context is rendered
         into the prompt server-side, read-only in spirit. A claim that names
@@ -1047,6 +1062,7 @@ class Worker:
         (_project_dir) so it files under that project; anything else runs in
         the worker's workdir. Reviews' timeout governs it. `what` names it in
         the log, `name` is the project/task it is about."""
+        kind_path = self._KIND_PATH[kind]
         resp = self._claim(kind_path, request_id)
         if resp is None:
             return
@@ -1061,7 +1077,11 @@ class Worker:
                               "could not start a Claude run (session busy)")
             return
 
-        ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
+        self._track(request_id, kind, name, job.store_session_id, label=None, link=None)
+        try:
+            ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
+        finally:
+            self._untrack(request_id)
         print(f"rivendell[{self.name}]: {what} {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result(kind_path, request_id, ok, text)
@@ -1354,8 +1374,7 @@ def queue() -> dict:
 
 def running() -> list:
     """The runs in flight across instances, oldest first, for the dashboard's
-    QUEUE tab. ponytail: implementations only — reviews and project jobs are
-    tracked nowhere yet; _track them in their runners when the tab needs them."""
+    QUEUE tab: every accepted run, of every kind, while it runs."""
     with _manager_lock:
         workers = list(_workers.values())
     return [row for w in workers for row in w.running_snapshot()]

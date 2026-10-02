@@ -229,6 +229,15 @@ def test_move_ignores_running_and_same_session():
     assert _items(q, "s2") == []
 
 
+def test_move_refuses_a_batchs_step():
+    q, _ = _q()
+    _enq(q, text="a")                  # running, so "b" is queued
+    b = _enq(q, text="b", ref="w:r1")
+    q.move("s1", b, "s2")
+    assert [it["text"] for it in _items(q)] == ["a", "b"]
+    assert _items(q, "s2") == []
+
+
 # --- remove / edit ---------------------------------------------------------
 
 def test_remove_queued_item():
@@ -365,6 +374,26 @@ def test_tagged_items_survive_a_reload(tmp_path):
     again = PreviewQueue(run_fn=lambda item: None, persist_path=path)
     it = again.snapshot("s1")["items"][0]
     assert (it["ref"], it["label"], it["link"]) == ("w:r1", "L", "https://rv")
+
+
+def test_a_reload_pauses_a_bucket_holding_a_batchs_steps(tmp_path):
+    """Only a re-attaching worker drives a batch's turns (it resumes the bucket):
+    steps nobody re-attaches wait for RESUME, not the session's next turn."""
+    path = str(tmp_path / "q.json")
+    first = FakeRunner()
+    q = PreviewQueue(run_fn=first, persist_path=path)
+    _enq(q, sid="s3", text="c", ref="w:r0")
+    q.notify_job_done("s3", "job1", "done", "ok", None, 1)    # a finished batch
+    first.busy = True                                         # the rest stay queued
+    _enq(q, sid="s1", text="a", ref="w:r1")
+    _enq(q, sid="s2", text="b")
+    fake = FakeRunner()
+    again = PreviewQueue(run_fn=fake, persist_path=path)
+    assert again.snapshot("s1")["paused"]
+    assert not again.snapshot("s2")["paused"]                 # untagged: the composer's
+    assert not again.snapshot("s3")["paused"]                 # nothing left to run
+    again.resume("s1")
+    assert _items(again, "s1")[0]["status"] == "running" and fake.n == 1
 
 
 def test_owns_session_while_a_tagged_item_is_queued_or_running():

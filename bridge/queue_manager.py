@@ -1,4 +1,5 @@
-"""Per-session sequential prompt queue for the dashboard composer.
+"""Per-session sequential prompt queue for the dashboard composer, and for the
+Rivendell worker's queue-mode batch turns.
 
 A session may hold only one in-flight Claude turn (see bridge/state.py), so the
 queue runs queued prompts ONE AT A TIME per session and auto-advances when each
@@ -245,7 +246,8 @@ class PreviewQueue:
                 return
             b = self._bucket(sid)
             it = next((x for x in b["items"] if x.id == item_id), None)
-            if it is None or it.status != "queued":
+            # A batch's turn belongs to its session's branch and history.
+            if it is None or it.status != "queued" or it.ref:
                 return
             b["items"].remove(it)
             d = self._bucket(dst)
@@ -378,7 +380,12 @@ class PreviewQueue:
                     it.started = None
                 items.append(it)
             self._q[sid] = {
-                "paused": bool(bd.get("paused", False)),
+                # A Rivendell batch's turns are driven by _reattach, which
+                # resumes the bucket; nobody re-attaching means the request is
+                # gone, so its steps wait for an explicit RESUME instead of
+                # running on the next turn in this session.
+                "paused": bool(bd.get("paused", False))
+                          or any(it.ref and it.status == "queued" for it in items),
                 "rev": int(bd.get("rev", 0)), "items": items,
             }
 

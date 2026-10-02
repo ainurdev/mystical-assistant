@@ -1258,7 +1258,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     if job2 is None:
         return False                              # slot taken (e.g. the queue advanced)
     if job.timed_out:
-        _notify(job.chat_id, f"⏱️ No output for {config.RUN_TIMEOUT // 60} min — "
+        _notify(job.chat_id, f"⏱️ No output for {(job.hang_timeout or config.RUN_TIMEOUT) // 60} min — "
                              f"killed as hung, resuming {_session_label(sid)}.")
     else:
         _notify(job.chat_id, f"🔄 The turn was interrupted by an error "
@@ -1947,7 +1947,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # No terminal result event — surface the timeout / stderr / exit code.
             err = "".join(stderr_tail).strip()
             if job.timed_out:
-                msg = f"⏱️ No output for {config.RUN_TIMEOUT // 60} min — killed as hung."
+                msg = f"⏱️ No output for {(job.hang_timeout or config.RUN_TIMEOUT) // 60} min — killed as hung."
             else:
                 msg = err[:1500] or f"claude exited {proc.returncode}"
             job.error_msg = msg

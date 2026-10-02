@@ -1484,6 +1484,28 @@ def test_run_implementation_names_its_session_only_while_it_runs(monkeypatch):
     assert w.running_snapshot() == []
 
 
+@pytest.mark.parametrize("run, kind", [("_run_review", "review"), ("_run_todolist", "todolist"),
+                                       ("_run_taskdesc", "taskdesc"), ("_run_changelog", "changelog")])
+def test_every_kind_is_listed_in_flight_only_while_it_runs(monkeypatch, run, kind):
+    """The QUEUE tab lists every accepted run, not only implementations."""
+    w = _worker()
+    seen = []
+
+    class _Job:
+        store_session_id = "sess-9"
+
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {"prompt": "do it"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/tmp")
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None: _Job())
+    monkeypatch.setattr(w, "_wait_job",
+                        lambda job, timeout: (seen.append(w.running_snapshot()), (True, "ok"))[1])
+    monkeypatch.setattr(w, "_post_result", lambda *a: None)
+    getattr(w, run)("r1", "Proj")
+    assert [(r["kind"], r["request_id"], r["session_id"], r["label"]) for r in seen[0]] == [
+        (kind, "r1", "sess-9", "Proj")]
+    assert w.running_snapshot() == []
+
+
 # --- queue mode -------------------------------------------------------------
 
 def _fake_queue(monkeypatch):
