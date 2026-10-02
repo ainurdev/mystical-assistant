@@ -221,6 +221,61 @@ def test_handle_message_implementation_requests():
                          ("review", "abc", None)]
 
 
+def test_handle_message_keeps_the_batch_on_the_row():
+    w = _worker()
+    w._handle_message(json.dumps({
+        "type": "task-implementation-request", "requestId": "b1",
+        "task": {"name": "Login fixes (2 tasks)"}, "repository": {"fullName": "acme/app"},
+        "batch": {"id": "bb", "name": "Login fixes", "mode": "queue",
+                  "url": "https://rv/task-management/sessions/s1",
+                  "tasks": [{"id": "t1", "externalId": "1", "name": "A", "url": "https://rv/t/1"}]},
+    }).encode())
+    [row] = w.queue_snapshot()
+    assert row["label"] == "Login fixes" and row["link"] == "https://rv/task-management/sessions/s1"
+    assert row["mode"] == "queue" and row["batch"]["tasks"][0]["url"] == "https://rv/t/1"
+
+
+def test_queue_snapshot_labels_a_plain_request_by_its_slug():
+    w = _worker()
+    w._enqueue("impl", "r1", "acme/app")
+    [row] = w.queue_snapshot()
+    assert row["label"] == "acme/app" and row["link"] is None and row["mode"] is None
+
+
+def test_catch_up_keeps_the_batch_too(monkeypatch):
+    w = _worker()
+    listing = {"/plugin/implementation-requests": [
+        {"id": "b1", "repositoryFullName": "acme/app",
+         "batch": {"id": "bb", "name": "Login fixes", "mode": "subagents", "url": "https://rv/s/1", "tasks": []}}]}
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: listing.get(path, []))
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+    assert w._catch_up() == 1
+    [row] = w.queue_snapshot()
+    assert row["label"] == "Login fixes" and row["mode"] == "subagents"
+
+
+def test_queued_message_names_the_batch():
+    w = _worker()
+    key = w._enqueue("impl", "b1", "acme/app",
+                     batch={"name": "Login fixes", "mode": "queue", "url": None, "tasks": []})
+    text, _ = w._queued_message(w._pending[key], "tok")
+    assert "batch queued — Login fixes" in text
+    plain = w._enqueue("impl", "r2", "acme/app")
+    text, _ = w._queued_message(w._pending[plain], "tok")
+    assert "implementation queued — acme/app" in text
+
+
+def test_running_rows_carry_the_session_and_link():
+    w = _worker()
+    w._track("r1", "impl", "acme/app", "sess-1", label="Login fixes", link="https://rv/s/1")
+    [row] = w.running_snapshot()
+    assert row["request_id"] == "r1" and row["session_id"] == "sess-1" and row["key"] == "impl:r1"
+    assert row["label"] == "Login fixes" and row["link"] == "https://rv/s/1" and row["kind"] == "impl"
+    assert row["instance_id"] == "t1" and isinstance(row["created_at"], float)
+    w._untrack("r1")
+    assert w.running_snapshot() == []
+
+
 def test_handle_message_todolist_requests():
     """project-todolist-request events queue as "todolist" with the project
     name; they carry no repo (the prompt has the whole project context)."""
@@ -1365,7 +1420,7 @@ def test_tasks_does_not_call_an_instance_parked_on_a_rejected_token(workers):
 def test_tasks_names_the_session_running_a_request_here(workers):
     w = _worker(id="a")
     w._api = _answering(_TASKS)
-    w._impl_sessions["r1"] = "sess-1"
+    w._track("r1", "impl", None, "sess-1", label=None, link=None)
     workers["a"] = w
     by_id = {t["id"]: t for t in rivendell.tasks("acme/app")["tasks"]}
     assert by_id["t1"]["session_id"] == "sess-1"
@@ -1422,11 +1477,11 @@ def test_run_implementation_names_its_session_only_while_it_runs(monkeypatch):
     monkeypatch.setattr(w, "_find_checkout", lambda slug: "/tmp")
     monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None: _Job())
     monkeypatch.setattr(w, "_wait_job",
-                        lambda job, timeout: (seen.append(dict(w._impl_sessions)), (True, "ok"))[1])
+                        lambda job, timeout: (seen.append(w.running_snapshot()), (True, "ok"))[1])
     monkeypatch.setattr(w, "_post_result", lambda *a: None)
     w._run_implementation("r1", "acme/app")
-    assert seen == [{"r1": "sess-9"}]
-    assert w._impl_sessions == {}
+    assert [(r["request_id"], r["session_id"]) for r in seen[0]] == [("r1", "sess-9")]
+    assert w.running_snapshot() == []
 
 
 if __name__ == "__main__":

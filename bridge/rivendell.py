@@ -244,10 +244,11 @@ class Worker:
         self._q_lock = threading.Lock()      # guards _pending and _active_runs
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
-        # Implementation request id -> the store session running it, while it
-        # runs: the RIVENDELL tab's OPEN SESSION. ponytail: memory only — a
-        # restart ends the run anyway (catch-up re-queues it), so nothing is lost.
-        self._impl_sessions: "dict[str, str]" = {}
+        # Request id -> the run in flight: the store session running it (the
+        # RIVENDELL tab's OPEN SESSION, the QUEUE tab's RUNNING rows) and what to
+        # call it. Memory only: a restart ends a one-turn run anyway, and a
+        # queue-mode batch is found again through its queue items (_reattach).
+        self._running: "dict[str, dict]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
         # A token that was rejected: while it is still the configured token the
@@ -447,7 +448,8 @@ class Worker:
             print(f"rivendell[{self.name}]: review catch-up failed: {e}")
         try:
             for item in self._api("/plugin/implementation-requests"):
-                self._apply_policy(self._enqueue("impl", item["id"], item.get("repositoryFullName")))
+                self._apply_policy(self._enqueue("impl", item["id"], item.get("repositoryFullName"),
+                                                 batch=_batch_of(item.get("batch"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: implementation catch-up failed: {e}")
         try:
@@ -471,7 +473,7 @@ class Worker:
             return len(self._pending) - before
 
     def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None,
-                 step: "str | None" = None) -> "str | None":
+                 step: "str | None" = None, batch: "dict | None" = None) -> "str | None":
         """Hold a request PENDING for the operator, deduped per _seen. It adds
         the row and nothing more — running (or auto-accepting, or pinging
         Telegram, or acking) is _apply_policy's job, kept separate so the
@@ -479,7 +481,9 @@ class Worker:
         duplicate that is still pending (see below). Returns the new key, or
         None if it was a duplicate.
         `step` tells a todolist's two steps apart ("recommendations" /
-        "todolist"); None when the sender did not say (an older rivendell-api)."""
+        "todolist"); None when the sender did not say (an older rivendell-api).
+        `batch` is the start-work batch this request belongs to (_batch_of),
+        None for a task on its own."""
         key = f"{kind}:{request_id}"
         with self._seen_lock:
             dup = key in self._seen
@@ -498,7 +502,7 @@ class Worker:
         with self._q_lock:
             self._pending[key] = {
                 "key": key, "kind": kind, "request_id": request_id,
-                "slug": slug, "step": step, "created_at": now,
+                "slug": slug, "step": step, "batch": batch, "created_at": now,
             }
         return key
 
@@ -602,7 +606,8 @@ class Worker:
             repo = obj.get("repository") or {}
             print(f"rivendell[{self.name}]: implementation requested in "
                   f"{repo.get('fullName', '?')}: {task.get('name', '?')}")
-            return self._enqueue("impl", obj["requestId"], repo.get("fullName"))
+            return self._enqueue("impl", obj["requestId"], repo.get("fullName"),
+                                 batch=_batch_of(obj.get("batch")))
         if (obj.get("type") == "project-todolist-request"
                 and obj.get("requestId")):
             project = obj.get("project") or {}
@@ -866,11 +871,13 @@ class Worker:
                               "could not start a Claude run (session busy)")
             return
 
-        self._impl_sessions[request_id] = job.store_session_id
+        batch = resp.get("batch") or {}
+        self._track(request_id, "impl", slug, job.store_session_id,
+                    label=batch.get("name"), link=batch.get("url"))
         try:
             ok, text = self._wait_job(job, self.inst.get("impl_timeout", 10800))
         finally:
-            self._impl_sessions.pop(request_id, None)
+            self._untrack(request_id)
         print(f"rivendell[{self.name}]: implementation {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result("implementation-requests", request_id, ok, text)
@@ -953,8 +960,8 @@ class Worker:
         buttons carry a short token (callback_data is capped at 64 bytes, and a
         request id can be a full UUID) that resolve_token maps back to this
         worker + key."""
-        what = self._label(item)
-        target = item.get("slug") or "?"
+        what = "batch" if item.get("batch") else self._label(item)
+        target = (item.get("batch") or {}).get("name") or item.get("slug") or "?"
         text = (f"🧩 Rivendell {what} queued — {target}\n"
                 f"Instance: {self.name}\n"
                 "Something is already running. Approve to run it too, or dismiss.")
@@ -992,10 +999,37 @@ class Worker:
     # -- accept/reject gate --
     def queue_snapshot(self) -> list:
         """The PENDING requests awaiting a decision, oldest first — the rows the
-        dashboard's PLUGINS queue renders."""
+        dashboard's PLUGINS queue renders. Each gains `label` (the batch's name,
+        else the request's slug), `link` (the batch's Rivendell page, else None)
+        and `mode` (the batch's `queue`/`subagents`, else None) from its batch,
+        if any."""
         with self._q_lock:
             items = sorted(self._pending.values(), key=lambda r: r["created_at"])
-        return [dict(r) for r in items]
+        out = []
+        for r in items:
+            batch = r.get("batch") or {}
+            out.append({**r, "label": batch.get("name") or r.get("slug"),
+                        "link": batch.get("url"), "mode": batch.get("mode")})
+        return out
+
+    def _track(self, request_id: str, kind: str, slug: "str | None", session_id: str,
+               label: "str | None", link: "str | None") -> None:
+        with self._q_lock:
+            self._running[request_id] = {
+                "instance_id": self.id, "key": f"{kind}:{request_id}", "kind": kind,
+                "request_id": request_id, "slug": slug, "label": label or slug,
+                "link": link, "session_id": session_id, "created_at": time.time(),
+            }
+
+    def _untrack(self, request_id: str) -> None:
+        with self._q_lock:
+            self._running.pop(request_id, None)
+
+    def running_snapshot(self) -> list:
+        """The runs in flight, oldest first — the dashboard's RUNNING rows."""
+        with self._q_lock:
+            rows = sorted(self._running.values(), key=lambda r: r["created_at"])
+        return [dict(r) for r in rows]
 
     def accept(self, key: str) -> bool:
         """Claim and run one pending request, concurrently with any others (its
@@ -1182,6 +1216,15 @@ def queue() -> dict:
         return {wid: w.queue_snapshot() for wid, w in _workers.items()}
 
 
+def running() -> list:
+    """The runs in flight across instances, oldest first, for the dashboard's
+    QUEUE tab. ponytail: implementations only — reviews and project jobs are
+    tracked nowhere yet; _track them in their runners when the tab needs them."""
+    with _manager_lock:
+        workers = list(_workers.values())
+    return [row for w in workers for row in w.running_snapshot()]
+
+
 # --- Telegram callback tokens -------------------------------------------------
 # A queued-request ping's Approve/Dismiss buttons can't carry (instance_id, key)
 # directly: callback_data is capped at 64 bytes and a request id can be a full
@@ -1190,6 +1233,16 @@ def queue() -> dict:
 # ping finds nothing and is reported "already handled").
 _tg_tokens: "dict[str, tuple[str, str]]" = {}
 _tg_tokens_lock = threading.Lock()
+
+
+def _batch_of(obj) -> "dict | None":
+    """The batch an implementation event or catch-up row carries (rivendell-api
+    sends it for a start-work batch; an older one sends nothing): its name,
+    mode, Rivendell page and tasks. None for a task on its own."""
+    if not isinstance(obj, dict) or not obj.get("name"):
+        return None
+    return {"id": obj.get("id"), "name": obj["name"], "mode": obj.get("mode"),
+            "url": obj.get("url"), "tasks": list(obj.get("tasks") or [])}
 
 
 def _todolist_step(kind: "str | None") -> "str | None":
@@ -1300,7 +1353,7 @@ def tasks(slug: str) -> dict:
         for t in got.get("tasks") or []:
             req = t.get("implementation") or {}
             out["tasks"].append({**t, "instance_id": w.id,
-                                 "session_id": w._impl_sessions.get(req.get("id"))})
+                                 "session_id": (w._running.get(req.get("id")) or {}).get("session_id")})
     return out
 
 
