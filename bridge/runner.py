@@ -578,6 +578,11 @@ class Job:
         self.pending: list[dict] = []    # unresolved can_use_tool requests
         self.interrupted = False         # user pressed Stop
         self.timed_out = False           # watchdog killed the run
+        # How long this run may stay silent before the watchdog kills it as
+        # hung; None means config.RUN_TIMEOUT. A Rivendell run sets its own
+        # kind's timeout: a subagents batch's parent turn is silent for as
+        # long as its agents work.
+        self.hang_timeout: float | None = None
         self.error_msg: str | None = None  # stderr/exit error when no result event came
         self.tail_needs: str | None = None  # set when the closing ended needing the user
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
@@ -1766,17 +1771,19 @@ def _prune_uploads():
 
 
 def _watchdog(job: Job, proc) -> None:
-    """Kill a run that has gone silent: no event from the child for RUN_TIMEOUT
-    while nothing waits on the user. A busy turn runs for as long as it takes —
-    this is a hang detector, not a work cap (the cost brake is the auto-resume
-    cap, see _maybe_auto_resume)."""
+    """Kill a run that has gone silent: no event from the child for the job's
+    hang timeout (config.RUN_TIMEOUT unless the run set its own) while nothing
+    waits on the user. A busy turn runs for as long as it takes — this is a
+    hang detector, not a work cap (the cost brake is the auto-resume cap, see
+    _maybe_auto_resume)."""
     quiet_since = time.time()
+    limit = job.hang_timeout or config.RUN_TIMEOUT
     while proc.poll() is None:
         time.sleep(1.0)
         if job.pending or job.interrupted:
             quiet_since = time.time()   # waiting on the user, or stopping: not a hang
             continue
-        if time.time() - max(job.last_at, quiet_since) >= config.RUN_TIMEOUT:
+        if time.time() - max(job.last_at, quiet_since) >= limit:
             job.timed_out = True
             proc.kill()
             return
@@ -2090,7 +2097,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         account_slot: int | None = None,
                         runtime: str | None = None,
                         mcp_on: str | None = None,
-                        extra_args: list[str] | None = None) -> Job | None:
+                        extra_args: list[str] | None = None,
+                        hang_timeout: float | None = None) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -2100,6 +2108,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     account_slot picks which Claude login runs the turn (None = the ambient one);
     runtime is set instead when a fallback-ladder free agent takes over. Both are
     recorded on the turn so the transcript shows what produced it.
+
+    hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
 
     Claims only THIS session's run slot, so a run in another project/session keeps
     going; returns None only if this very session already has an in-flight turn."""
@@ -2120,6 +2130,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"
         job.runtime = runtime
+        job.hang_timeout = hang_timeout
         _register(job)
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,

@@ -782,6 +782,7 @@ class _StubJob:
         self.status, self.result = status, result
         self.error_msg, self.texts = error_msg, list(texts)
         self.interrupted = False
+        self.store_session_id = None  # a real Job always has one; stubs are session-less
         if exited is not None:      # a real Job always has one; stubs opt in
             self.exited = exited
 
@@ -840,6 +841,55 @@ def test_wait_job_reads_an_exited_job_by_its_status():
     gone.set()
     ok, text = _worker()._wait_job(_StubJob("error", error_msg="boom", exited=gone), 60)
     assert not ok and text == "boom"
+
+
+def test_wait_job_reports_a_watchdog_kill_as_failure():
+    """A hung run the watchdog killed may still read "done" (an interim result
+    landed before the silence): never post that text as the batch's result."""
+    gone = threading.Event()
+    gone.set()
+    job = _StubJob("done", result="interim", exited=gone)
+    job.timed_out = True
+    ok, text = _worker()._wait_job(job, 60)
+    assert not ok and "silence" in text
+
+
+def test_runs_carry_their_kinds_timeout_as_the_hang_timeout(monkeypatch):
+    """A Rivendell run is silent for as long as its work takes (a subagents
+    batch's parent waits on its agents), so the watchdog's ceiling is the
+    kind's own timeout, not the 30-minute default."""
+    w = _worker(impl_timeout=7200, review_timeout=900)
+    started = []
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/repo")
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "p", "repositoryFullName": "acme/app"})
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir, hang_timeout=None:
+                        started.append(hang_timeout) or _StubJob("done", result="ok"))
+    monkeypatch.setattr(w, "_post_result", lambda *a: None)
+    w._run_implementation("r1", "acme/app")
+    w._run_review("r2", "acme/app")
+    assert started == [7200, 900]
+
+
+def test_watchdog_honours_the_jobs_own_hang_timeout():
+    from bridge import runner
+
+    class Proc:
+        def __init__(self):
+            self.killed = False
+
+        def poll(self):
+            return 0 if self.killed else None
+
+        def kill(self):
+            self.killed = True
+
+    job = runner.Job("j", 555)
+    job.hang_timeout = 1.5                 # this run's own ceiling, well under RUN_TIMEOUT
+    proc = Proc()
+    runner._watchdog(job, proc)            # returns once it has killed (about 2 s)
+    assert proc.killed and job.timed_out
 
 
 def test_interrupt_acts_while_the_child_is_alive_even_after_an_interim_result():
@@ -1370,7 +1420,7 @@ def test_run_implementation_names_its_session_only_while_it_runs(monkeypatch):
 
     monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {"prompt": "do it"})
     monkeypatch.setattr(w, "_find_checkout", lambda slug: "/tmp")
-    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir: _Job())
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None: _Job())
     monkeypatch.setattr(w, "_wait_job",
                         lambda job, timeout: (seen.append(dict(w._impl_sessions)), (True, "ok"))[1])
     monkeypatch.setattr(w, "_post_result", lambda *a: None)

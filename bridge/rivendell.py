@@ -787,6 +787,11 @@ class Worker:
         if not over():
             job.interrupt()
             return False, f"run timed out after {timeout}s"
+        if getattr(job, "timed_out", False):
+            # The watchdog killed it as hung. An interim result may have made
+            # it read "done"; that text is not the run's answer.
+            limit = getattr(job, "hang_timeout", None) or config.RUN_TIMEOUT
+            return False, f"run killed after {limit}s of silence"
         if job.status == "done":
             text = job.result or "".join(job.texts)
             if text.strip():
@@ -794,9 +799,11 @@ class Worker:
             return False, "run finished without producing any result text"
         return False, job.error_msg or job.result or "run errored"
 
-    def _start_run(self, prompt: str, workdir: str):
+    def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None):
         """One autonomous Claude run in `workdir` through the normal runner.
-        Returns the job, or None if a run could not be started."""
+        `hang_timeout` is the silence the watchdog allows it (the kind's own
+        timeout for a review or an implementation). Returns the job, or None if
+        a run could not be started."""
         from bridge import runner, store      # local import: heavy modules
         from bridge.browser import rel
 
@@ -809,7 +816,7 @@ class Worker:
         return runner.start_streaming_job(
             config.DASH_CHAT_ID, prompt, [], project=workdir,
             model=self.model, permission_mode="bypassPermissions",
-            session_id=session["id"], origin=self.origin)
+            session_id=session["id"], origin=self.origin, hang_timeout=hang_timeout)
 
     def _run_review(self, request_id: str, slug: "str | None") -> None:
         resp = self._claim("review-requests", request_id)
@@ -821,7 +828,7 @@ class Worker:
         # so an unknown slug falls back to the configured workdir.
         workdir = self._find_checkout(slug) or self._workdir()
         print(f"rivendell[{self.name}]: review {request_id} running in {workdir}")
-        job = self._start_run(prompt, workdir)
+        job = self._start_run(prompt, workdir, hang_timeout=self.inst.get("review_timeout", 3600))
         if job is None:  # can't happen for a fresh session; never hang the queue
             self._post_result("review-requests", request_id, False,
                               "could not start a Claude run (session busy)")
@@ -853,7 +860,7 @@ class Worker:
 
         print(f"rivendell[{self.name}]: implementation {request_id} "
               f"running in {workdir}")
-        job = self._start_run(prompt, workdir)
+        job = self._start_run(prompt, workdir, hang_timeout=self.inst.get("impl_timeout", 10800))
         if job is None:  # can't happen for a fresh session; never hang the queue
             self._post_result("implementation-requests", request_id, False,
                               "could not start a Claude run (session busy)")
