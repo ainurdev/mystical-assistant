@@ -1253,11 +1253,14 @@ export function App() {
   // A queued task or a GitHub issue carries the project it belongs to. Feeding it
   // into whatever session happens to be open would run it against the wrong repo,
   // so a project that isn't the open session's gets a session of its own and the
-  // prompt starts there. No project (self-update errors, suggestions) = inject
-  // into the current composer, as before.
-  function feed(texts: string[], project?: string) {
+  // prompt starts there. `fresh` takes a new one even in the open session's
+  // project, at its main checkout: a failed self-update is fixed in the bridge's
+  // own checkout, not in a worktree of it or a conversation already under way.
+  // No project (suggestions, a bridge outside BASE_PATH) = inject into the
+  // current composer, as before.
+  function feed(texts: string[], project?: string, fresh?: boolean) {
     const text = texts.join("\n");
-    if (project && project !== sessionProject) {
+    if (project && (fresh || project !== sessionProject)) {
       void startIn(project, text);
       return;
     }

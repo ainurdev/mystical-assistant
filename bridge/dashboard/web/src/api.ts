@@ -1129,6 +1129,9 @@ export interface Doc {
 export interface UpdateInfo {
   repo: boolean;
   path: string; // the bridge's own checkout — named in the "fix with Claude" prompt
+  // That checkout as a project rel: where the fix's session runs. "" outside
+  // BASE_PATH; absent on a bridge older than this bundle (both: inject instead).
+  project?: string;
   branch: string;
   behind: number;
   ahead: number;

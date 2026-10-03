@@ -12,7 +12,7 @@ import { watchRestart } from "../../lib/restart";
 // the Strip stays a dumb header.
 const POLL_MS = 300_000; // 5 min — new commits are not a live-tail concern
 
-export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) {
+export function UpdateButton({ onFeed }: { onFeed: (texts: string[], project?: string, fresh?: boolean) => void }) {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<"" | "updating" | "restarting" | "shipping" | "checking">("");
@@ -84,7 +84,9 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
   }
 
   // Escape hatch when git refuses (diverged history, rejected push…): hand the
-  // failure to Claude in the composer rather than making the user go find a terminal.
+  // failure to Claude rather than making the user go find a terminal — in a new
+  // session in the bridge's own checkout, not whichever session is open (it may
+  // be another repo, or a worktree of this one).
   function fixWithClaude() {
     const where = info?.path || "the mystical-assistant repo";
     const pending = info?.behind ?? 0;
@@ -97,7 +99,7 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[]) => void }) 
           `(${where}) refused. Work out what blocks it and fix it, then pull the ${pending} ` +
           `pending commit${pending === 1 ? "" : "s"}. Don't discard my source changes — ` +
           `generated bundles under dist/ are safe to reset.\n\ngit said:\n${err}`,
-    ]);
+    ], info?.project, true);
     setOpen(false);
     setErr("");
   }

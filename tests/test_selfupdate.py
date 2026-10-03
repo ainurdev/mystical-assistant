@@ -101,6 +101,19 @@ def test_publish_pushes_an_already_committed_branch():
     assert selfupdate.check()["ahead"] == 0
 
 
+def test_check_names_the_checkout_the_way_sessions_name_projects():
+    """FIX WITH CLAUDE starts a session in the bridge's own checkout, so check()
+    names it as a project rel — or "" outside BASE_PATH, where none can run."""
+    from bridge import config
+    _origin, clone = _clone_with_upstream()
+    selfupdate.REPO = clone                             # under /tmp, not BASE_PATH
+    assert selfupdate.check()["project"] == ""
+    inside = os.path.join(config.BASE_PATH, "platform")
+    subprocess.run(["git", "clone", "-q", clone, inside], check=True)
+    selfupdate.REPO = inside
+    assert selfupdate.check()["project"] == "/platform"
+
+
 def test_restart_endpoint_arms_a_restart():
     """POST /local/restart re-execs the bridge and nothing else — no pull, no
     build. Stubbed: the real one SIGINTs this process."""

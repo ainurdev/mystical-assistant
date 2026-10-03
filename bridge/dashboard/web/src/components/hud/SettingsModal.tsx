@@ -106,7 +106,7 @@ export interface SettingsModalProps {
   onSetUnit: (unit: string) => Promise<string | null>;
   station: number;
   onStation: (i: number) => void;
-  onFeed: (texts: string[]) => void; // a failed self-update hands git's error to Claude
+  onFeed: (texts: string[], project?: string, fresh?: boolean) => void; // a failed self-update hands git's error to Claude
   onReplayBoot: () => void;
   onClose: () => void;
   // Profiles snapshot the run knobs *and* the open session's tool switches, so
@@ -1705,7 +1705,7 @@ function WeatherCard({
 }
 
 /** What the bridge's own checkout is running, and the pull-and-restart button. */
-function UpdatePanel({ onFeed }: { onFeed: (texts: string[]) => void }) {
+function UpdatePanel({ onFeed }: { onFeed: (texts: string[], project?: string, fresh?: boolean) => void }) {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   useEffect(() => {
     let live = true;

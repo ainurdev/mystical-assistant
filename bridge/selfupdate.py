@@ -20,7 +20,7 @@ import subprocess
 import sys
 import threading
 
-from bridge import git, runner
+from bridge import browser, git, runner
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,7 +38,11 @@ def check() -> dict:
                 "ahead": 0, "dirty": 0, "commits": [], "files": []}
     git.fetch(REPO)
     st = git.status(REPO)
+    # FIX WITH CLAUDE starts its session here, so name the checkout the way
+    # sessions name projects; "" outside BASE_PATH, where no session can run.
+    real = os.path.realpath(REPO)
     return {"repo": True, "path": REPO, "branch": st["branch"],
+            "project": browser.rel(real) if browser.within_base(real) else "",
             "behind": st["behind"], "ahead": st["ahead"], "dirty": st["dirty"],
             "commits": git.incoming(REPO), "files": st["files"][:50]}
 

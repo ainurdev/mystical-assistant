@@ -40,7 +40,7 @@ export interface StripProps {
   onSetUnit: (unit: string) => Promise<string | null>;
   openSettings?: number; // nonce — bump to open the clock & weather popover (from the menu)
   openReport?: number; // nonce — bump to open the week report (from the menu)
-  onFeed: (texts: string[]) => void; // composer inject — a failed update hands git's error to Claude
+  onFeed: (texts: string[], project?: string, fresh?: boolean) => void; // a failed update hands git's error to Claude
 }
 
 // Segmented-control button style for the popover's 24H/12H and °C/°F pickers.
