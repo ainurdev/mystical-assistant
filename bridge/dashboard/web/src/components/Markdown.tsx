@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, memo, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { Check, Copy } from "lucide-react";
 import { selectionMd } from "../lib/selmd";
 import { tokenize, type Tok } from "../lib/hl";
@@ -190,10 +191,13 @@ function FileRefSpan({
 }
 
 export const Markdown = memo(function Markdown({
-  children, className = "", onOpenFile, toolStyle = "stamp",
+  children, className = "", onOpenFile, toolStyle = "stamp", breaks = false,
 }: {
   children: string;
   className?: string;
+  /** Every newline is a line break, as it was when typed — for your own
+   *  prompts, written in a chat box, not for the model's paragraphed prose. */
+  breaks?: boolean;
   /** Given, inline code that parses as a repo path becomes a link. */
   onOpenFile?: OpenFile;
   /** The session's output style, for a ```widget:``` block the model typed —
@@ -213,7 +217,7 @@ export const Markdown = memo(function Markdown({
       }}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={breaks ? [remarkGfm, remarkBreaks] : [remarkGfm]}
         components={{
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.

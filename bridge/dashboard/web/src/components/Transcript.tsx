@@ -5,7 +5,7 @@ import { api, type AnswerSelection, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
-import type { OpenFile } from "./Markdown";
+import { Markdown, type OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
 import { openSettings } from "../lib/opensettings";
@@ -134,9 +134,8 @@ export function PromptBubble({ text, at }: { text: string; at?: number }) {
       <div
         className="pbub border border-r-[3px] px-3 py-1.5"
       >
-        <span className="block whitespace-pre-wrap break-words leading-relaxed text-foreground-bright">
-          {text}
-        </span>
+        {/* Rendered as the same markdown the composer let you write it in. */}
+        <Markdown breaks className="break-words leading-relaxed text-foreground-bright">{text}</Markdown>
         {at != null && <span className="pstamp">{hhmm(at, h12)}</span>}
       </div>
     </div>

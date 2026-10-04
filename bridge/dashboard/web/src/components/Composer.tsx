@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { modelRows, type AgentOption } from "../models";
@@ -10,6 +10,7 @@ import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention
 import { isExact, rankCommands, slashAt } from "../lib/slash";
 import { Tip } from "./ui/Tip";
 import { useChatChrome } from "../lib/chatchrome";
+import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -421,7 +422,7 @@ export function Composer({
     [agents],
   );
   const fileRef = useRef<HTMLInputElement>(null);
-  const taRef = useRef<HTMLTextAreaElement>(null);
+  const taRef = useRef<MarkdownInputHandle>(null);
 
   useEffect(() => {
     if (injectNonce) {
@@ -504,7 +505,7 @@ export function Composer({
 
   /** Arrow/Tab/Enter belong to the mention list while it's open; Escape closes
    *  it without touching the draft. Returns true when the key was consumed. */
-  function mentionKey(e: React.KeyboardEvent): boolean {
+  function mentionKey(e: KeyboardEvent): boolean {
     if (!mentionOpen) return false;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -556,7 +557,7 @@ export function Composer({
   /** Arrow/Tab belong to the command list while it's open. Enter takes the
    *  highlighted command unless it's already what you typed — then it sends,
    *  as `/compact` + Enter should. Escape closes it until the `/` is gone. */
-  function slashKey(e: React.KeyboardEvent): boolean {
+  function slashKey(e: KeyboardEvent): boolean {
     if (!slashOpen) return false;
     if (e.key === "Escape") { e.preventDefault(); setSlashDismissed(true); return true; }
     if (!shits.length) return false;          // only the restart note is showing
@@ -610,14 +611,6 @@ export function Composer({
     if (e.key === "ArrowDown" || (e.key === "r" && e.ctrlKey)) return step(1);
     if (e.key === "ArrowUp") return step(-1);
   }
-
-  // Auto-grow the input with its content (1 line → up to ~9 lines, then scroll).
-  useLayoutEffect(() => {
-    const el = taRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
-  }, [text]);
 
   function addFiles(files: FileList | File[] | null) {
     if (!files) return;
@@ -1070,11 +1063,13 @@ export function Composer({
             ))}
           </div>
         )}
-        <textarea
+        {/* Grows with what you type up to min(500px, 50vh), then scrolls —
+            the cap lives in MarkdownInput's theme. */}
+        <MarkdownInput
           ref={taRef}
           value={text}
-          onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart); }}
-          onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
+          onChange={(t, c) => { setText(t); setCaret(c); }}
+          onCaret={setCaret}
           onKeyDown={(e) => {
             if (mentionKey(e) || slashKey(e)) return;
             // Ctrl+R is the browser's reload; in the command line it's the shell's
@@ -1084,8 +1079,6 @@ export function Composer({
           }}
           onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
           placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
-          rows={1}
-          style={{ flex: 1, minWidth: 0, display: "block", maxHeight: 180, overflowY: "auto", resize: "none", background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.5 }}
         />
         {compact ? (
           // COMPACT: the run popover's trigger sits over the send cluster, on
