@@ -198,6 +198,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
   { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions" },
+  { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style control plate stamp wire signal log ledger press halo instrument terminal note plain sources screens preview" },
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
   { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
@@ -4179,6 +4180,24 @@ export function SettingsModal(props: SettingsModalProps) {
                           options={[{ label: "DEFAULT", value: "default" }, { label: "COMPACT", value: "compact" }]}
                           value={settings.layout}
                           onPick={(layout) => onPatch({ layout })}
+                        />
+                      </div>
+                    </Row>
+                  </div>
+                </Section>
+
+                <Section
+                  title="COMPOSER"
+                  top
+                  info="ENTER sends on Enter, and Shift+Enter starts a new line. CTRL+ENTER swaps them: Enter starts a new line and Ctrl+Enter (Cmd+Enter on a Mac) sends — for prompts you write across several lines."
+                >
+                  <div style={CARD}>
+                    <Row first label="SEND KEY" desc="which key sends the message">
+                      <div style={{ width: 220 }}>
+                        <Segmented
+                          options={[{ label: "ENTER", value: "enter" }, { label: "CTRL+ENTER", value: "ctrl-enter" }]}
+                          value={settings.sendKey}
+                          onPick={(sendKey) => onPatch({ sendKey })}
                         />
                       </div>
                     </Row>

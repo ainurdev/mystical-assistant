@@ -652,7 +652,7 @@ export function Terminal({
       ) : (
         <>
           {body}
-          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null }}>
+          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, sendKey: hud?.sendKey ?? "enter" }}>
             {composer}
           </ChatChromeContext.Provider>
         </>

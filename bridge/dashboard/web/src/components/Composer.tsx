@@ -394,7 +394,7 @@ export function Composer({
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony" | "verbs" | "run">("");
-  const { compact, lead } = useChatChrome();
+  const { compact, lead, sendKey } = useChatChrome();
   // A free agent brings its own model, has no effort knob, and takes different
   // permission modes, so three of these dropdowns would be lying about what
   // runs — swap them for what actually will.
@@ -1075,7 +1075,10 @@ export function Composer({
             // Ctrl+R is the browser's reload; in the command line it's the shell's
             // history search, which is what the hands in this box expect.
             if (e.key === "r" && e.ctrlKey) { e.preventDefault(); setRsearch(""); return; }
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+            // CTRL+ENTER mode leaves a bare Enter to the editor, which makes it
+            // the markdown-aware newline Shift+Enter is in the default mode.
+            const send = sendKey === "ctrl-enter" ? e.ctrlKey || e.metaKey : !e.shiftKey;
+            if (e.key === "Enter" && send) { e.preventDefault(); submit(); }
           }}
           onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
           placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}

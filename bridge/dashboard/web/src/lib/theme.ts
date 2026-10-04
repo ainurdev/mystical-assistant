@@ -413,9 +413,14 @@ export interface HudSettings {
   // right, replies capped short of the far edge, the header shrunk to a pill of
   // readouts, and model/permission/effort folded into one popover over SEND.
   layout: ChatLayout;
+  // Which key sends from the composer. "enter": Enter sends, Shift+Enter is a
+  // newline. "ctrl-enter": Enter is a newline, Ctrl/Cmd+Enter sends.
+  sendKey: SendKey;
 }
 
 export type ChatLayout = "default" | "compact";
+export type SendKey = "enter" | "ctrl-enter";
+
 export const CHAT_LAYOUTS: ChatLayout[] = ["default", "compact"];
 
 /** `?layout=compact` (or `default`) on the dashboard URL sets the layout and
@@ -437,7 +442,7 @@ const DEFAULTS: HudSettings = {
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "stamp", chatBg: "none",
-  layout: "default",
+  layout: "default", sendKey: "enter",
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -550,6 +555,7 @@ export function loadSettings(): HudSettings {
         pushSounds: soundChoices(p.pushSounds),
         toolStyle: toToolStyle(p.toolStyle),
         chatBg: toChatBg(p.chatBg),
+        sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
       };
     }

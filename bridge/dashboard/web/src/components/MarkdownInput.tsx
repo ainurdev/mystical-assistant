@@ -64,8 +64,10 @@ const mdTheme = EditorView.theme({
   ".cm-placeholder": { color: "var(--txd)" },
 });
 
-// Shift+Enter is the newline (Enter sends); inside a list or a quote it carries
-// the bullet or `>` onto the next line, as a markdown editor should.
+// Shift+Enter is the newline (Enter sends, unless SEND KEY is CTRL+ENTER — then
+// a bare Enter falls through to markdown()'s own keymap, which does the same);
+// inside a list or a quote it carries the bullet or `>` onto the next line, as
+// a markdown editor should.
 const newlineKeys = keymap.of([{
   key: "Shift-Enter",
   run: (v) => insertNewlineContinueMarkup(v) || insertNewlineAndIndent(v),
