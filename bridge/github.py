@@ -121,7 +121,9 @@ def create_issue(cwd: str, title: str, body: str) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
-_PR_URL_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/pull/(\d+)")
+# Owner and repo as GitHub spells them: pr_ref runs this over free model text,
+# and a "URL" with a space or <> in it fails Rivendell's IsUrl on a result.
+_PR_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/(\d+)")
 
 
 def pr_ref(text: str) -> "dict | None":

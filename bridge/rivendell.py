@@ -186,6 +186,7 @@ _PING_INTERVAL = 30.0     # client ping cadence (also the socket read timeout)
 _MAX_MISSED_PONGS = 2     # this many silent intervals -> assume dead, reconnect
 _HTTP_TIMEOUT = 30        # prompt fetch / result post
 _RESULT_RETRIES = (2, 10, 30)   # a finished run is expensive; retry the POST
+_ERROR_MAX = 5000         # Rivendell's MaxLength on a result's error: longer is a 400
 _POLL_INTERVAL = 2.0      # job status poll cadence
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
 _CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab polls
@@ -529,13 +530,17 @@ class Worker:
             return None
 
     def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str) -> None:
-        """Report the outcome, retrying — the run was expensive. A Rivendell
-        whose hello said "result-details" also gets `details` (_result_details);
-        the deployed one 400s any field it doesn't know, so it gets exactly
-        today's body."""
+        """Report the outcome. The run was expensive, so a network or server
+        failure is retried with backoff; a 4xx is Rivendell refusing this very
+        body, which waiting can't change, so it isn't. A Rivendell whose hello
+        said "result-details" also gets `details` (_result_details); if it
+        refuses them (400), the plain result goes again at once without them —
+        the result is what counts, and the deployed API 400s any field it
+        doesn't know. `error` is cut to Rivendell's _ERROR_MAX. Only a result
+        that landed gets the "job done" ping."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
-            ("result" if ok else "error"): text,
+            ("result" if ok else "error"): text if ok else text[:_ERROR_MAX],
             "model": self.model,
         }
         if "result-details" in self.features:
@@ -544,16 +549,24 @@ class Worker:
                     payload["details"] = details
             except Exception as e:  # noqa: BLE001 — the plain result still goes
                 print(f"rivendell[{self.name}]: result details failed for {request_id}: {e}")
-        for i, delay in enumerate((0,) + _RESULT_RETRIES):
-            if delay:
-                time.sleep(delay)
+        delays = iter(_RESULT_RETRIES)
+        while True:
             try:
                 self._api(f"/plugin/{kind_path}/{request_id}/result", payload)
                 break
             except Exception as e:  # noqa: BLE001 — retried; loud on final failure
-                if i == len(_RESULT_RETRIES):
+                code = e.code if isinstance(e, urllib.error.HTTPError) else None
+                if code == 400 and payload.pop("details", None) is not None:
+                    print(f"rivendell[{self.name}]: details refused for {request_id} "
+                          f"({e}); resending the result without them")
+                    continue
+                refused = code is not None and 400 <= code < 500 and code not in (408, 429)
+                delay = None if refused else next(delays, None)
+                if delay is None:
                     print(f"rivendell[{self.name}]: result POST failed for "
                           f"{request_id}: {e} (transcript still in dashboard)")
+                    return
+                time.sleep(delay)
         self._ping_done(request_id, ok, text)
 
     def _progress_loop(self) -> None:

@@ -14,6 +14,7 @@ import json
 import socket
 import threading
 import time
+import urllib.error
 import uuid
 
 import pytest
@@ -888,3 +889,108 @@ def test_a_test_job_that_never_comes_back_fails():
     w = _worker()
     w._api = lambda path, payload=None: {"id": "p3", "ok": False}
     assert w.test_job()["ok"] is False
+
+
+# --- Review: a result Rivendell refuses is not lost ------------------------------
+
+def _http_error(code):
+    return urllib.error.HTTPError("http://api.example:3001/x", code, "err", None, None)
+
+
+class _Clock:
+    """rivendell's `time`, with sleep recorded instead of slept (only there:
+    patching the time module itself would stall every other thread's waits)."""
+
+    def __init__(self):
+        self.slept = []
+
+    def sleep(self, s):
+        self.slept.append(s)
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+
+def _ran_here(result="PR https://github.com/acme/app/pull/9"):
+    """A request id whose run happened here: a session filed under it, one turn."""
+    sid, rid = _session(), uuid.uuid4().hex
+    store.set_ref(sid, f"ch:{rid}")
+    _turn(sid, result=result)
+    return rid
+
+
+def _done_pings(quiet):
+    return [m for m in quiet if m["text"].startswith(("✓ Rivendell job", "✕ Rivendell job"))]
+
+
+def test_a_pr_link_is_only_a_clean_github_url():
+    """A link Rivendell's IsUrl would refuse (a space, <>) is no PR at all — it
+    would otherwise 400 the whole result once it rides `details`."""
+    from bridge import github
+    assert github.pr_ref("see https://github.com/acme corp/app/pull/3") is None
+    assert github.pr_ref("https://github.com/<owner>/app/pull/3") is None
+    assert github.pr_ref("PR: <https://github.com/acme/my.app_2/pull/12>.") == {
+        "number": 12, "url": "https://github.com/acme/my.app_2/pull/12"}
+
+
+def test_refused_details_are_dropped_and_the_result_resent_at_once(quiet, workers, monkeypatch):
+    rid = _ran_here()
+    clock = _Clock()
+    monkeypatch.setattr(rivendell, "time", clock)
+    sent = []
+
+    def api(path, payload=None):
+        sent.append(dict(payload))
+        if "details" in payload:
+            raise _http_error(400)
+        return {}
+    w = _worker()
+    w.features = frozenset({"result-details"})
+    w._api = api
+    w._post_result("implementation-requests", rid, True, "summary")
+    assert ["details" in p for p in sent] == [True, False]
+    assert clock.slept == [], "the plain result goes at once, no backoff"
+    assert len(_done_pings(quiet)) == 1
+
+
+def test_a_refused_result_is_not_retried_and_pings_nothing(quiet, workers, monkeypatch):
+    """An identical body gets an identical 4xx: backing off only delays the
+    failure. And a result that never landed is no "job done"."""
+    rid = _ran_here()
+    clock = _Clock()
+    monkeypatch.setattr(rivendell, "time", clock)
+    calls = []
+
+    def api(path, payload=None):
+        calls.append(path)
+        raise _http_error(409)
+    w = _worker()
+    w._api = api
+    w._post_result("implementation-requests", rid, True, "summary")
+    assert len(calls) == 1 and clock.slept == []
+    assert _done_pings(quiet) == []
+
+
+def test_a_result_that_never_lands_pings_nothing(quiet, workers, monkeypatch):
+    rid = _ran_here()
+    clock = _Clock()
+    monkeypatch.setattr(rivendell, "time", clock)
+    calls = []
+
+    def api(path, payload=None):
+        calls.append(path)
+        raise urllib.error.URLError("connection refused")
+    w = _worker()
+    w._api = api
+    w._post_result("implementation-requests", rid, True, "summary")
+    assert len(calls) == 1 + len(rivendell._RESULT_RETRIES)
+    assert clock.slept == list(rivendell._RESULT_RETRIES), "network failures still back off"
+    assert _done_pings(quiet) == []
+
+
+def test_an_error_longer_than_rivendell_takes_is_cut(workers):
+    w = _worker()
+    sent = []
+    w._api = lambda path, payload=None: sent.append(payload) or {}
+    w._post_result("implementation-requests", uuid.uuid4().hex, False, "x" * 6000)
+    assert len(sent[0]["error"]) == 5000
