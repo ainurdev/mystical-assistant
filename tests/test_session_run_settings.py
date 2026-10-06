@@ -1,0 +1,508 @@
+"""Session run settings: a session row carries the model and permission mode last
+picked for it, and every run path reads them from there.
+
+Logic only (store + runner). The two servers' routes are in
+test_session_run_settings_endpoint.py.
+Spec: docs/superpowers/specs/session-run-settings-design.md
+"""
+
+import json
+import os
+import sqlite3
+import subprocess
+import tempfile
+
+from bridge import config, runner, state, store
+
+store.init()
+
+CHAT = 555
+
+
+# --- storage -------------------------------------------------------------------
+
+def _old_db(path):
+    """A DB from before sessions.model: no such column, and turns carry models."""
+    c = sqlite3.connect(path)
+    c.executescript("""
+        CREATE TABLE sessions (id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL,
+          project TEXT NOT NULL, claude_session_id TEXT, title TEXT,
+          created REAL NOT NULL, updated REAL NOT NULL,
+          archived INTEGER NOT NULL DEFAULT 0, permission_mode TEXT);
+        CREATE TABLE turns (id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+          seq INTEGER NOT NULL, prompt TEXT NOT NULL,
+          attachments TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL,
+          cost REAL, elapsed INTEGER, started REAL NOT NULL, model TEXT);
+        INSERT INTO sessions(id, chat_id, project, created, updated, permission_mode)
+          VALUES ('picked', 555, '/p', 0, 0, 'bypassPermissions'),
+                 ('bot', 555, '/p', 0, 0, NULL),
+                 ('blank', 555, '/p', 0, 0, NULL);
+        INSERT INTO turns(id, session_id, seq, prompt, status, started, model) VALUES
+          ('t0', 'picked', 0, 'a', 'done', 0, 'opus'),
+          ('t1', 'picked', 1, 'b', 'done', 0, 'claude-fable-5-1'),
+          ('t2', 'picked', 2, 'c', 'error', 0, NULL),
+          ('t3', 'bot', 0, 'd', 'done', 0, NULL);
+    """)
+    c.commit()
+    c.close()
+
+
+def test_an_old_db_gains_the_column_backfilled_from_its_latest_turn(monkeypatch):
+    path = os.path.join(tempfile.mkdtemp(), "old.db")
+    _old_db(path)
+    monkeypatch.setattr(config, "BRIDGE_DB", path)
+    store.init()
+    assert store.get_session("picked")["model"] == "claude-fable-5-1"   # newest non-null
+    assert store.get_session("bot")["model"] is None                    # nobody picked one
+    assert store.get_session("blank")["model"] is None                  # never ran
+    assert store.get_session("picked")["permission_mode"] == "bypassPermissions"
+    # A second boot neither fails nor re-runs the backfill over a newer pick.
+    store.set_run_settings("picked", model="claude-opus-5-5")
+    store.init()
+    assert store.get_session("picked")["model"] == "claude-opus-5-5"
+
+
+def test_set_run_settings_writes_only_what_it_is_given():
+    s = store.create_session(CHAT, "/srs-set", permission_mode="bypassPermissions")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    row = store.get_session(s["id"])
+    assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "bypassPermissions")
+    store.set_run_settings(s["id"], permission_mode="default")
+    row = store.get_session(s["id"])
+    assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "default")
+    store.set_run_settings(s["id"])                     # nothing given: nothing changes
+    row = store.get_session(s["id"])
+    assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "default")
+
+
+def test_a_duplicate_keeps_the_sources_picks():
+    s = store.create_session(CHAT, "/srs-dup", permission_mode="default")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    copy = store.duplicate(s["id"])
+    assert (copy["model"], copy["permission_mode"]) == ("claude-fable-5-1", "default")
+
+
+# --- a run resolves to the session's picks --------------------------------------
+
+def _start(monkeypatch, **kw):
+    """start_streaming_job up to the spawn: what _run_streaming would have been
+    handed, plus the job. Releases the run slot the stubbed turn never will."""
+    from bridge import titler
+    seen = {}
+    monkeypatch.setattr(runner, "_jobs", {})
+    monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_run_streaming",
+                        lambda job, prompt, images, cwd, model, effort, perm, ponytail:
+                        seen.update(model=model, perm=perm))
+    job = runner.start_streaming_job(CHAT, "go", [], project=config.BASE_PATH, **kw)
+    state.release_run(job.store_session_id)
+    return job, seen
+
+
+def test_a_run_with_no_picks_of_its_own_runs_the_sessions(monkeypatch):
+    s = store.create_session(CHAT, "/srs-run", cwd=config.BASE_PATH,
+                             permission_mode="default")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    job, seen = _start(monkeypatch, session_id=s["id"])
+    assert seen == {"model": "claude-fable-5-1", "perm": "default"}
+    assert job.model == "claude-fable-5-1"
+    # The turn records what it ran on, not the blank it was asked with.
+    assert store.transcript(s["id"])["turns"][-1]["model"] == "claude-fable-5-1"
+
+
+def test_a_caller_that_brings_picks_runs_them_and_writes_nothing(monkeypatch):
+    """Rivendell, trackers, goals: their values win for the run, and the session
+    keeps the picks a person made for it."""
+    s = store.create_session(CHAT, "/srs-internal", cwd=config.BASE_PATH,
+                             permission_mode="bypassPermissions")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    job, seen = _start(monkeypatch, session_id=s["id"], model="sonnet",
+                       permission_mode="manual")
+    assert seen == {"model": "sonnet", "perm": "manual"}
+    row = store.get_session(s["id"])
+    assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "bypassPermissions")
+
+
+def test_a_session_nobody_picked_a_model_for_passes_none(monkeypatch):
+    s = store.create_session(CHAT, "/srs-none", cwd=config.BASE_PATH)
+    job, seen = _start(monkeypatch, session_id=s["id"])
+    assert seen["model"] is None and job.model is None   # no --model: the CLI's default
+
+
+# --- resumes follow the session ---------------------------------------------------
+
+def test_the_turns_end_hands_on_the_model_it_was_switched_to(monkeypatch):
+    """Crash resumes and limit parks take their model from the turn's end, so a
+    switch made mid-turn has to be the model they see. (A goal nudge is queued
+    with none: it reads the session's when it starts.)"""
+    from bridge import goals, tailstate, toolsets
+    s = store.create_session(CHAT, "/srs-end", cwd=config.BASE_PATH)
+    seen = {}
+    monkeypatch.setattr(runner, "_maybe_auto_resume",
+                        lambda job, cwd, model, effort: seen.update(resume=model) or False)
+    monkeypatch.setattr(goals, "continue_after_turn",
+                        lambda job, effort=None: seen.update(goal=True) or False)
+    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+
+    class Popen:                              # the spawn fails at once: straight to finally
+        def __init__(self, cmd, **kw):
+            raise FileNotFoundError
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    job = runner.Job("j-srs-end", CHAT, s["id"])
+    job.model = "claude-fable-5-1"            # where a live switch left it
+    runner._run_streaming(job, "p", [], config.BASE_PATH, "opus", None, None, None)
+    assert seen == {"resume": "claude-fable-5-1", "goal": True}
+
+
+def test_a_plugin_run_seeds_its_own_session_with_its_model():
+    """Recovery resumes on the session's model (model=None), so a Rivendell
+    session, which no person picks for, has to start out carrying its run's."""
+    from bridge import rivendell
+    w = rivendell.Worker({"id": "srs", "name": "srs", "model": "sonnet"})
+    s = store.get_session(w._new_session(config.BASE_PATH))
+    assert (s["model"], s["permission_mode"]) == ("sonnet", "bypassPermissions")
+
+
+# --- switching a running turn ------------------------------------------------------
+
+class _Stdin:
+    """The child's stdin: records each JSON line; refuses writes once closed, as a
+    real pipe does after claude -p's `result`."""
+    closed = False
+
+    def __init__(self):
+        self.lines = []
+
+    def write(self, s):
+        if self.closed:
+            raise ValueError("I/O operation on closed file")
+        self.lines.append(json.loads(s))
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class _Proc:
+    def __init__(self):
+        self.stdin = _Stdin()
+
+    def poll(self):
+        return None
+
+
+def _live_job(sid, *pending, job_id=None):
+    job = runner.Job(job_id or f"j-{sid}", CHAT, sid)
+    job.proc = _Proc()
+    for p in pending:
+        job.add_pending(dict(p))
+    return job
+
+
+PERM = {"request_id": "p1", "kind": "permission", "tool_name": "Bash",
+        "summary": "touch a", "input": {"command": "touch a"}}
+QUESTION = {"request_id": "q1", "kind": "question", "tool_name": "AskUserQuestion",
+            "questions": []}
+
+
+def _answer(job, ok=True):
+    """The CLI's answer to every control request the job has written so far:
+    success, or a refusal (a managed disableBypassPermissionsMode, an unknown
+    model)."""
+    for line in list(job.proc.stdin.lines):
+        if line.get("type") != "control_request":
+            continue
+        rid = line["request_id"]
+        runner._handle_event(job, {"type": "control_response", "response": (
+            {"subtype": "success", "request_id": rid, "response": {}} if ok else
+            {"subtype": "error", "request_id": rid, "error": "refused by policy"})})
+
+
+def test_interactive_runs_offer_bypass_so_a_switch_can_reach_it():
+    """claude 2.1.280 refuses set_permission_mode -> bypassPermissions on a child
+    launched without bypass on offer (checked live 2026-10-06)."""
+    assert "--allow-dangerously-skip-permissions" in runner._base_cmd(
+        "p", CHAT, stream=True, interactive=True, permission_mode="default")
+    # The bot's one-shot has no control channel to switch over.
+    assert "--allow-dangerously-skip-permissions" not in runner._base_cmd(
+        "p", CHAT, stream=False)
+
+
+def test_root_offers_bypass_only_inside_a_sandbox(monkeypatch):
+    """claude exits at startup when the bypass flag runs as root outside a
+    deliberate sandbox ("cannot be used with root/sudo privileges"), which would
+    fail every turn on a root install; IS_SANDBOX=1 is its own opt-out."""
+    def cmd():
+        return runner._base_cmd("p", CHAT, stream=True, interactive=True,
+                                permission_mode="default")
+    monkeypatch.setattr(runner.os, "getuid", lambda: 0)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+    assert "--allow-dangerously-skip-permissions" not in cmd()
+    monkeypatch.setenv("IS_SANDBOX", "1")
+    assert "--allow-dangerously-skip-permissions" in cmd()
+    monkeypatch.setattr(runner.os, "getuid", lambda: 1000)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+    assert "--allow-dangerously-skip-permissions" in cmd()
+
+
+def test_a_switch_writes_one_control_request_per_setting():
+    job = _live_job("s-switch")
+    assert job.set_run_settings(model="claude-fable-5-1", permission_mode="acceptEdits")
+    assert [l["request"] for l in job.proc.stdin.lines] == [
+        {"subtype": "set_model", "model": "claude-fable-5-1"},
+        {"subtype": "set_permission_mode", "mode": "acceptEdits"}]
+    assert all(l["type"] == "control_request" and l["request_id"]
+               for l in job.proc.stdin.lines)
+    assert job.model is None                    # not until the CLI says it switched
+    _answer(job)
+    assert job.model == "claude-fable-5-1"
+
+
+def test_a_switch_to_bypass_approves_waiting_permissions_not_questions():
+    job = _live_job("s-bypass", PERM, QUESTION)
+    job.set_run_settings(permission_mode="bypassPermissions")
+    [switch] = job.proc.stdin.lines
+    assert switch["request"] == {"subtype": "set_permission_mode", "mode": "bypassPermissions"}
+    # Written is not switched: nothing is approved until the CLI accepts it.
+    assert [p["request_id"] for p in job.pending] == ["p1", "q1"]
+    _answer(job)
+    switch, allow = job.proc.stdin.lines
+    assert allow == {"type": "control_response", "response": {
+        "subtype": "success", "request_id": "p1",
+        "response": {"behavior": "allow", "updatedInput": {"command": "touch a"}}}}
+    assert [p["request_id"] for p in job.pending] == ["q1"]   # a decision, not a permission
+    assert {"type": "permission_resolved", "request_id": "p1",
+            "behavior": "allow"} in job.events
+
+
+def test_a_refused_switch_approves_nothing_and_moves_no_model():
+    """A managed disableBypassPermissionsMode refuses the switch, an unknown model
+    is refused too: the turn runs on as it was, cards still wait on you."""
+    job = _live_job("s-refused", PERM)
+    job.set_run_settings(model="claude-nope-1", permission_mode="bypassPermissions")
+    _answer(job, ok=False)
+    assert job.model is None
+    assert [p["request_id"] for p in job.pending] == ["p1"]
+    assert [l["type"] for l in job.proc.stdin.lines] == ["control_request"] * 2   # no allow
+    assert [e["src"] for e in job.events if e.get("type") == "log"] == ["control"] * 2
+
+
+def _ask(job, rid, tool, **why):
+    """A can_use_tool request as claude 2.1.280 sends it, through the bridge's
+    own handler: `why` is the request's reason fields."""
+    runner._handle_control_request(job, {"type": "control_request", "request_id": rid,
+        "request": {"subtype": "can_use_tool", "tool_name": tool,
+                    "input": {"command": "x"}, "tool_use_id": "t-" + rid, **why}})
+
+
+def test_a_switch_to_bypass_leaves_what_bypass_itself_still_asks(monkeypatch):
+    """claude's own bypassPermissions still asks for a tool that needs you
+    whatever the mode, a matched ask rule, a safety check, a sandbox override
+    and an org-capped MCP tool: the sweep must not answer those for you. What
+    bypass would just run (a plain ask, the auto-mode classifier's) is approved."""
+    monkeypatch.setattr(runner, "notify_awaiting", lambda *a, **k: None)
+    job = _live_job("s-immune")
+    _ask(job, "plain", "Bash")
+    _ask(job, "auto", "Bash", decision_reason_type="classifier")
+    _ask(job, "exitplan", "ExitPlanMode", requires_user_interaction=True,
+         decision_reason_type="other")
+    _ask(job, "askrule", "Bash", matched_ask_rule={"source": "flagSettings",
+                                                   "tool_name": "Bash"})
+    _ask(job, "rule", "mcp__teamwork__update_task", decision_reason_type="rule")
+    _ask(job, "safety", "Edit", decision_reason_type="safetyCheck",
+         classifier_approvable=False)
+    _ask(job, "compound", "Bash", decision_reason_type="subcommandResults")
+    _ask(job, "sandbox", "Read", decision_reason_type="sandboxOverride")
+    _ask(job, "orgmcp", "mcp__jira__transition", decision_reason_type="other")
+    _ask(job, "hook", "Bash", decision_reason_type="hook")         # a hook asked you
+    _ask(job, "newer", "Bash", decision_reason_type="aReasonANewerCliAdds")
+    _ask(job, "outside", "Read", decision_reason_type="workingDir")
+    job.set_run_settings(permission_mode="bypassPermissions")
+    _answer(job)
+    allowed = [l["response"]["request_id"] for l in job.proc.stdin.lines
+               if l["type"] == "control_response"]
+    assert allowed == ["plain", "auto", "outside"]
+    assert [p["request_id"] for p in job.pending] == [
+        "exitplan", "askrule", "rule", "safety", "compound", "sandbox", "orgmcp",
+        "hook", "newer"]
+
+
+def test_a_tracker_turn_keeps_its_cards_under_bypass():
+    """A tracker update runs with a --settings ask rule (extra_args) so every
+    call on its server is confirmed by you: no switch answers those."""
+    job = _live_job("s-tracker", PERM)
+    job.extra_args = ["--settings", '{"permissions": {"ask": ["mcp__jira"]}}']
+    job.set_run_settings(permission_mode="bypassPermissions")
+    _answer(job)
+    assert [p["request_id"] for p in job.pending] == ["p1"]
+
+
+def test_other_modes_leave_waiting_cards_alone():
+    job = _live_job("s-ask", PERM)
+    job.set_run_settings(permission_mode="acceptEdits")
+    assert [p["request_id"] for p in job.pending] == ["p1"]
+
+
+def test_a_pick_made_while_the_child_spawns_reaches_it_before_the_prompt(monkeypatch):
+    """job.proc is None while the argv is built (MCP health check, graph pack,
+    task digest): a pick made then is held and written the moment the child
+    exists, ahead of the prompt — not dropped."""
+    from bridge import goals, tailstate, toolsets
+    s = store.create_session(CHAT, "/srs-spawn", cwd=config.BASE_PATH)
+    job = runner.Job("j-srs-spawn", CHAT, s["id"])
+    picked = {}
+    base_cmd = runner._base_cmd
+
+    def building(*a, **k):                       # the pick lands mid-build
+        picked["ok"] = job.set_run_settings(model="claude-fable-5-1",
+                                            permission_mode="acceptEdits")
+        return base_cmd(*a, **k)
+
+    class Popen:                                 # a child that says nothing and exits
+        returncode = 0
+        stderr = None
+
+        def __init__(self, cmd, **kw):
+            self.stdin, self.stdout = _Stdin(), iter(())
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(runner, "_base_cmd", building)
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(store, "default_disabled_tools", lambda: [])   # no `claude mcp list`
+    monkeypatch.setattr(runner, "_maybe_auto_resume", lambda *a, **k: False)
+    monkeypatch.setattr(goals, "continue_after_turn", lambda *a, **k: False)
+    monkeypatch.setattr(tailstate, "kick", lambda *a, **k: None)
+    runner._run_streaming(job, "go", [], config.BASE_PATH, None, None, None, None)
+    assert picked["ok"] is True
+    assert [l["request"]["subtype"] if l["type"] == "control_request" else l["type"]
+            for l in job.proc.stdin.lines] == ["set_model", "set_permission_mode", "user"]
+
+
+def test_a_free_agent_turn_holds_no_pick():
+    """An opencode run has no claude child and no control channel at all."""
+    job = runner.Job("j-free", CHAT, "s-free")
+    job.runtime = "opencode:groq"
+    assert job.set_run_settings(model="claude-fable-5-1") is False
+
+
+def test_a_turn_with_no_live_channel_says_so_and_approves_nothing():
+    """A turn that ended without a child (claude missing from PATH), or a stdin
+    claude -p closed at `result` -- since 666d29a1 such a child can stay up for
+    as long as its background agents run. The saved row is then all the next
+    turn needs. (A child still being spawned holds the pick instead.)"""
+    gone = runner.Job("j-nochild", CHAT, "s-nochild")
+    gone.exited.set()
+    assert gone.set_run_settings(model="opus") is False
+    done = _live_job("s-closed", PERM)
+    done.proc.stdin.closed = True
+    assert done.set_run_settings(model="opus", permission_mode="bypassPermissions") is False
+    assert [p["request_id"] for p in done.pending] == ["p1"]    # nothing approved blind
+    assert done.model is None
+
+
+def test_apply_run_settings_reaches_the_sessions_newest_job(monkeypatch):
+    monkeypatch.setattr(runner, "_jobs", {})
+    old = _live_job("s-apply", job_id="j-old")
+    new = _live_job("s-apply", job_id="j-new")
+    old.started, new.started = 1.0, 2.0
+    runner._register(old)
+    runner._register(new)
+    assert runner.apply_run_settings("s-apply", model="claude-fable-5-1") is True
+    assert new.proc.stdin.lines and not old.proc.stdin.lines
+    assert runner.apply_run_settings("s-nobody", model="opus") is False
+
+
+def test_a_refused_control_request_leaves_an_error_row():
+    job = runner.Job("j-refused", CHAT)
+    runner._handle_event(job, {"type": "control_response", "response": {
+        "subtype": "error", "request_id": "r1",
+        "error": "Cannot set permission mode to bypassPermissions because it is "
+                 "disabled by settings or configuration"}})
+    ev = job.events[-1]
+    assert (ev["type"], ev["src"], ev["error"]) == ("log", "control", True)
+    assert "disabled by settings" in ev["text"]
+    runner._handle_event(job, {"type": "control_response", "response": {
+        "subtype": "success", "request_id": "r2", "response": {"mode": "plan"}}})
+    assert job.events[-1] is ev                               # an accepted one is silent
+
+
+# --- the bot chat ------------------------------------------------------------------
+
+def _bot_argv(monkeypatch, sid, extra="--permission-mode acceptEdits"):
+    """The claude argv handle_task builds for `sid`, Telegram and side calls
+    stubbed; `extra` is EXTRA_CLAUDE_ARGS."""
+    from bridge import learn, titler
+    seen = {}
+
+    def run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
+            {"result": "ok", "session_id": "c-bot", "total_cost_usd": 0}), stderr="")
+    monkeypatch.setattr(runner.subprocess, "run", run)
+    for name in ("send", "typing", "_graph_pack_for", "_tasks_digest_for",
+                 "_dream_pack_for", "_graph_refresh_after_turn"):
+        monkeypatch.setattr(runner, name, lambda *a, **k: "")
+    monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(learn, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(config, "EXTRA_CLAUDE_ARGS", extra)
+    runner.handle_task(CHAT, "hi", store.get_session(sid))
+    return seen["cmd"]
+
+
+def test_the_bot_chat_runs_the_sessions_model_and_mode(monkeypatch):
+    s = store.create_session(CHAT, "/srs-bot", origin="dashboard",
+                             permission_mode="bypassPermissions")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    cmd = _bot_argv(monkeypatch, s["id"])
+    assert cmd[cmd.index("--model") + 1] == "claude-fable-5-1"
+    assert cmd[cmd.index("--permission-mode") + 1] == "bypassPermissions"
+    assert "acceptEdits" not in cmd
+    # Its turn row says what it ran on, as a streaming turn's does.
+    assert store.transcript(s["id"])["turns"][-1]["model"] == "claude-fable-5-1"
+
+
+def test_a_sessions_mode_replaces_only_the_permission_flag(monkeypatch):
+    """The rest of EXTRA_CLAUDE_ARGS (--add-dir, --allowedTools...) is still the
+    bot chat's; only the flags that set a permission mode give way."""
+    s = store.create_session(CHAT, "/srs-bot-args", origin="dashboard",
+                             permission_mode="plan")
+    cmd = _bot_argv(monkeypatch, s["id"], extra=(
+        "--dangerously-skip-permissions --add-dir /srv/data "
+        "--permission-mode=acceptEdits --allowedTools Read --permission-mode auto"))
+    assert "--dangerously-skip-permissions" not in cmd
+    assert [a for a in cmd if a.startswith("--permission-mode")] == ["--permission-mode"]
+    assert cmd[cmd.index("--permission-mode") + 1] == "plan"
+    i, j = cmd.index("--add-dir"), cmd.index("--allowedTools")
+    assert cmd[i + 1] == "/srv/data" and cmd[j + 1] == "Read"
+
+
+def test_a_session_the_bot_started_keeps_extra_claude_args(monkeypatch):
+    s = store.create_session(CHAT, "/srs-bot-own", origin="bot")
+    cmd = _bot_argv(monkeypatch, s["id"])
+    assert "--model" not in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+
+
+def test_a_goal_nudge_runs_on_the_sessions_picks_when_it_starts(monkeypatch):
+    """A goal nudge waits in the queue like any other prompt: no model or mode
+    frozen at enqueue, so a pick made while it waits still applies."""
+    from bridge import goals, queue_manager
+    from bridge.queue_manager import PreviewQueue
+    q = PreviewQueue(run_fn=lambda item: None, persist_path=None)   # busy: it stays queued
+    monkeypatch.setattr(queue_manager, "_instance", q)
+    s = store.create_session(CHAT, "/srs-goal", permission_mode="default")
+    store.set_goal(s["id"], {"objective": "ship it", "state": goals.ACTIVE, "iter": 0})
+    job = runner.Job("j-srs-goal", CHAT, s["id"])
+    job.status, job.model = "done", "claude-fable-5-1"
+    assert goals.continue_after_turn(job, effort="high") is True
+    [it] = q.snapshot(s["id"])["items"]
+    assert (it["model"], it["permission_mode"], it["effort"]) == (None, None, "high")

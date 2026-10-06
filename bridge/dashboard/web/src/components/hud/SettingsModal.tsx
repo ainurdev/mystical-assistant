@@ -4303,10 +4303,9 @@ export function SettingsModal(props: SettingsModalProps) {
                   title="RUN DEFAULTS"
                   info={
                     <>
-                      The composer&apos;s dropdowns are these same knobs — set them here and they
-                      stick across reloads. MODE ·{" "}
-                      <span style={{ color: "var(--txd)" }}>Session</span> keeps whatever mode the
-                      session was started with. AGENT ·{" "}
+                      The composer&apos;s dropdowns are these same knobs. MODEL and MODE belong to
+                      the open session — a pick is saved to it and follows it to every surface;
+                      EFFORT, PONYTAIL and AGENT stay with this browser. AGENT ·{" "}
                       <span style={{ color: "var(--txd)" }}>Default login</span> is whichever account
                       the ACCOUNTS tab marks default.
                     </>

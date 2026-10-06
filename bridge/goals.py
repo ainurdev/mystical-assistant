@@ -64,10 +64,12 @@ def should_continue(goal: dict | None) -> bool:
     return int(goal.get("iter") or 0) < MAX_ITER
 
 
-def continue_after_turn(job, model=None, effort=None) -> bool:
+def continue_after_turn(job, effort=None) -> bool:
     """Called once per finished turn. Enqueues the next goal nudge and returns
-    True if it did. model/effort come from the run that just ended, so the loop
-    keeps the posture the user picked. Best-effort: a goal must never break a run."""
+    True if it did. Effort comes from the run that just ended (it is the
+    device's, not the session's); model and mode are left to the session, read
+    when the nudge starts, like any queued prompt — a pick made while it waits
+    applies. Best-effort: a goal must never break a run."""
     try:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted:
@@ -82,8 +84,8 @@ def continue_after_turn(job, model=None, effort=None) -> bool:
         sess = store.get_session(sid) or {}
         text = _NUDGE.format(objective=goal["objective"])
         queue_manager.enqueue(
-            sid, text=text, prompt=text, images=[], model=model,
-            effort=effort, permission_mode=sess.get("permission_mode"),
+            sid, text=text, prompt=text, images=[], model=None,
+            effort=effort, permission_mode=None,
             width=None, sel=[], surface="goal", chat_id=job.chat_id,
             project=sess.get("project") or "")
         return True

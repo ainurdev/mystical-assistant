@@ -331,6 +331,24 @@ def _external_mcp(disabled_tools: "list[str] | None",
     return extra, strict
 
 
+def _with_mode(args: list[str], mode: "str | None") -> list[str]:
+    """`args` (EXTRA_CLAUDE_ARGS) with `mode` in place of the permission flags
+    they carry: --permission-mode in either spelling, and the
+    --dangerously-skip-permissions that is Bypass by another name. No mode:
+    unchanged."""
+    if not mode:
+        return args
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif a == "--permission-mode":
+            skip = True                  # and its value
+        elif not (a.startswith("--permission-mode=") or a == "--dangerously-skip-permissions"):
+            out.append(a)
+    return out + ["--permission-mode", mode]
+
+
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
@@ -344,7 +362,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     protocol: the prompt is delivered on stdin (not as an arg), permissions are
     routed back to us via `--permission-prompt-tool stdio`, and we run in an
     asking permission mode so tool use surfaces Allow/Deny cards. The bot's
-    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS.
+    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS — with its
+    session's mode, when it carries one, in place of their permission flag
+    (handle_task, _with_mode).
 
     model/effort (interactive only) map to `--model`/`--effort`; the server
     validates them before they reach here.
@@ -364,6 +384,18 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--input-format", "stream-json",
                 "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
                 "--permission-prompt-tool", "stdio"]
+        if os.getuid() != 0 or os.environ.get("IS_SANDBOX") == "1":
+            # Bypass on offer, not on: this flag only permits a switch to
+            # bypassPermissions. The mode above is what runs until the user
+            # picks another mid-turn (Job.set_run_settings), and claude
+            # 2.1.280 refuses that switch on a child launched without this
+            # ("not launched with --dangerously-skip-permissions"). Only the
+            # bridge writes this child's stdin, so only the settings routes
+            # can use it. Not as root outside a sandbox: claude exits at
+            # startup there (its own process.getuid() check, IS_SANDBOX=1
+            # the opt-out), so the flag would fail every turn — a root
+            # install just can't switch a running turn to Bypass.
+            cmd.append("--allow-dangerously-skip-permissions")
         if claude_session_id:
             # Goal + verify tools, on interactive runs only, alongside whichever
             # external servers this session left switched on — re-declared here
@@ -414,14 +446,17 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # free, since --tools "" already denies their tools, and it takes ~0.9s
         # off each one-shot (5.33s -> 4.45s, mean of 3). Several run per turn.
         cmd += ["--tools", "", "--strict-mcp-config"]
-    elif not interactive and permission_mode:
+    elif not interactive and permission_mode and skip_pack:
         # An internal one-shot that must *read* the repo (the next-up scout).
         # Its own permission mode instead of EXTRA_CLAUDE_ARGS: 'plan' leaves the
         # read tools available and takes editing and shell off the table. Still an
         # internal one-shot, so it skips MCP for the same second it saves above.
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
-    elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
-        cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
+    elif not interactive:
+        # The bot chat: EXTRA_CLAUDE_ARGS, with its session's mode, when it has
+        # one (handle_task), in place of the permission flag those carry; the
+        # rest (--add-dir, --allowedTools...) is still the user's.
+        cmd += _with_mode(shlex.split(config.EXTRA_CLAUDE_ARGS), permission_mode)
     if disabled_tools is None and "--strict-mcp-config" not in cmd:
         # No per-session choice on this run (a Telegram one-shot, a sessionless
         # job): same answer a never-configured session gets above — no external
@@ -497,20 +532,29 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
 
 
 def handle_task(chat_id: int, prompt: str, session: dict):
-    """Runs in a thread; the caller already claimed `session`'s run slot."""
+    """Runs in a thread; the caller already claimed `session`'s run slot.
+
+    Runs on the session's own model and mode, the last ones picked for it on any
+    surface. A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a session created
+    as bypassPermissions (the dashboard and Mini App default) runs unattended
+    here too: the same allow-listed user can already do that from the Mini App.
+    An asking mode can't show a card in a chat, so the tools it would ask about
+    are denied, as under acceptEdits. A session the bot started has no mode and
+    keeps EXTRA_CLAUDE_ARGS."""
     try:
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
         job_id = uuid.uuid4().hex
-        store.start_turn(session["id"], job_id, prompt, [],
+        store.start_turn(session["id"], job_id, prompt, [], model=session.get("model"),
                          sha=git.head_sha(state.project_dir(chat_id)))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
-            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork)
+            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
+            model=session.get("model"), permission_mode=session.get("permission_mode"))
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,
@@ -608,6 +652,11 @@ class Job:
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
+        self.model: str | None = None     # what the child runs on; a live switch moves it
+        # Our set_model / set_permission_mode requests the CLI hasn't answered
+        # yet: request_id -> (subtype, value). See control_answered.
+        self._controls: dict[str, tuple[str, str]] = {}
+        self._held: dict[str, str] = {}   # a pick made before the child existed
         self.texts: list[str] = []       # assistant text this turn
         self.ctx_tokens: int | None = None  # window fill on the last request (see _ctx_of)
         # What the turn spent: the same four counters, summed instead of last-wins.
@@ -649,18 +698,21 @@ class Job:
         with self._lock:
             self.pending = []
 
-    def _write_stdin(self, obj: dict):
-        """Write one JSON line to the live process's stdin (control channel)."""
+    def _write_stdin(self, obj: dict) -> bool:
+        """Write one JSON line to the live process's stdin (control channel).
+        False when nothing took it: no child yet, or its stdin is gone (closed
+        at the turn's `result`, or the child exited)."""
         proc = self.proc
         if proc is None or proc.stdin is None:
-            return
+            return False
         line = json.dumps(obj) + "\n"
         with self._stdin_lock:
             try:
                 proc.stdin.write(line)
                 proc.stdin.flush()
             except (BrokenPipeError, ValueError, OSError):
-                pass
+                return False
+        return True
 
     def close_stdin(self):
         proc = self.proc
@@ -737,6 +789,87 @@ class Job:
         self._write_stdin({"type": "control_response", "response": {
             "subtype": "success", "request_id": request_id, "response": resp}})
         return True
+
+    def set_run_settings(self, model: "str | None" = None,
+                         permission_mode: "str | None" = None) -> bool:
+        """Switch the live child's model and/or permission mode mid-turn, over
+        the stream-json control channel interrupt() uses: claude 2.1.280's
+        `set_model` / `set_permission_mode` control requests (bypass needs the
+        offer _base_cmd makes at spawn). Returns whether anything reached the
+        child; False means the caller's saved row is all the next turn gets.
+
+        Written is not switched. The CLI answers each request on stdout, and only
+        its success (control_answered) moves Job.model or, for a switch to
+        bypassPermissions, approves the permission cards already waiting —
+        "stop asking" has to cover the one on screen. A refusal (a managed
+        disableBypassPermissionsMode, an unknown model) becomes an error row
+        (_handle_event), changes nothing live, and the saved pick still stands.
+        Questions (AskUserQuestion) stay open either way: they ask for a
+        decision, not a permission.
+
+        A pick that lands while the child is still being spawned (job.proc is
+        None while the MCP health check, the graph pack and the task digest
+        build its argv) is held, and _run_streaming writes it the moment the
+        child exists, ahead of the prompt (release_held). A free agent has no
+        claude child to hold it for.
+
+        ponytail: a can_use_tool the CLI emits after its success answer (a check
+        that began before the switch) still shows its card; it's answerable."""
+        with self._lock:
+            if self.proc is None:
+                if self.exited.is_set() or (self.runtime or "").startswith("opencode:"):
+                    return False
+                if model:
+                    self._held["model"] = model
+                if permission_mode:
+                    self._held["permission_mode"] = permission_mode
+                return bool(model or permission_mode)
+        sent = False
+        for subtype, key, value in (("set_model", "model", model),
+                                    ("set_permission_mode", "mode", permission_mode)):
+            if not value:
+                continue
+            rid = uuid.uuid4().hex
+            with self._lock:          # before the write: the answer can beat us back
+                self._controls[rid] = (subtype, value)
+            if self._write_stdin({"type": "control_request", "request_id": rid,
+                                  "request": {"subtype": subtype, key: value}}):
+                sent = True
+            else:
+                with self._lock:
+                    self._controls.pop(rid, None)
+        return sent
+
+    def release_held(self) -> None:
+        """Write the picks set_run_settings held while the child was spawning.
+        _run_streaming calls it right after job.proc is set, before the prompt;
+        the lock orders it after any hold that saw no child yet."""
+        with self._lock:
+            held, self._held = self._held, {}
+        if held:
+            self.set_run_settings(**held)
+
+    def control_answered(self, request_id: "str | None", ok: bool) -> None:
+        """The CLI's answer to one of set_run_settings' requests. Its success is
+        the moment the switch is real: the model moves, and a switch to
+        bypassPermissions approves the permission cards already waiting —
+        except what Bypass itself would still ask about (_bypass_still_asks),
+        and nothing at all on a tracker update, whose --settings ask rule
+        (extra_args) is there so you confirm every call on its server.
+        Answers to anything else (interrupt) are not ours to act on."""
+        with self._lock:
+            sent = self._controls.pop(request_id, None)
+        if not ok or sent is None:
+            return
+        subtype, value = sent
+        if subtype == "set_model":
+            self.model = value
+        elif value == "bypassPermissions" and not self.extra_args:
+            with self._lock:
+                waiting = [p["request_id"] for p in self.pending
+                           if p.get("kind") == "permission" and not _bypass_still_asks(p)]
+            for rid in waiting:
+                self.respond(rid, behavior="allow")
 
     def snapshot(self, cursor: int) -> dict:
         with self._lock:
@@ -852,6 +985,16 @@ def boot_phase(session_id: str) -> "str | None":
         job = next((j for j in _jobs.values()
                     if j.store_session_id == session_id and j.status == "running"), None)
     return job.boot if job else None
+
+
+def apply_run_settings(session_id: str, model: "str | None" = None,
+                       permission_mode: "str | None" = None) -> bool:
+    """Switch a session's in-flight turn to a pick its row already holds (the
+    settings routes save first). False when nothing live took it. The newest
+    job is the only one that can still be live; whether it is, is
+    Job.set_run_settings' call (a closed stdin says no)."""
+    job = _latest_jobs().get(session_id)
+    return job.set_run_settings(model=model, permission_mode=permission_mode) if job else False
 
 
 def awaiting_input() -> list[dict]:
@@ -1441,6 +1584,36 @@ def _mcp_detail(inp) -> str:
     return "\n".join(parts)[:4000]
 
 
+# A can_use_tool request's reason fields (claude 2.1.280's schema).
+_ASK_WHY = ("requires_user_interaction", "decision_reason_type", "matched_ask_rule",
+            "classifier_approvable")
+# Reason types claude's own bypassPermissions just runs (2.1.280's permission
+# check): no reason (a plain ask), the default/plan mode asking, the auto-mode
+# classifier, a path outside the working dirs, and the generic "other". Every
+# other type — an ask rule, a safety check (.git/, settings files...), a sandbox
+# override, a compound command hiding either, a hook that asked, and anything a
+# newer CLI adds — leaves its card for you.
+_BYPASS_RUNS = {None, "mode", "classifier", "workingDir", "other"}
+
+
+def _bypass_still_asks(card: dict) -> bool:
+    """Would claude's own bypassPermissions still ask about this permission
+    card? Then a switch to Bypass leaves it for you. Read from 2.1.280's
+    permission check: a tool that needs you in any mode (ExitPlanMode:
+    requires_user_interaction), a matched ask rule, a safety check (its
+    classifier_approvable says one is in the reason), a reason type outside
+    _BYPASS_RUNS, and an MCP tool an org policy caps at "ask" (type "other").
+    A plain ask and the auto-mode classifier's are what Bypass just runs —
+    those it approves."""
+    why = card.get("decision_reason_type")
+    return bool(card.get("tool_name") == "ExitPlanMode"
+                or card.get("requires_user_interaction")
+                or card.get("matched_ask_rule") is not None
+                or card.get("classifier_approvable") is not None
+                or why not in _BYPASS_RUNS
+                or (why == "other" and str(card.get("tool_name", "")).startswith("mcp__")))
+
+
 def _handle_control_request(job: Job, obj: dict):
     """A `can_use_tool` request: queue it as pending and surface a transcript
     event (a permission card, or a question card for AskUserQuestion)."""
@@ -1456,8 +1629,11 @@ def _handle_control_request(job: Job, obj: dict):
         job.add({"type": "question", "request_id": rid, "questions": questions})
     else:
         summary = _summarize_tool(tool, req.get("input", {}))
+        # Why the CLI asked, in its own fields: a switch to Bypass approves
+        # only what Bypass itself wouldn't ask about (_bypass_still_asks).
         job.add_pending({"request_id": rid, "kind": "permission", "tool_name": tool,
-                         "summary": summary, "input": req.get("input", {})})
+                         "summary": summary, "input": req.get("input", {}),
+                         **{k: req.get(k) for k in _ASK_WHY}})
         ev = {"type": "permission", "request_id": rid, "tool_name": tool, "summary": summary}
         if tool.startswith("mcp__"):
             # The whole call, not 120 chars of it: an MCP write (a tracker
@@ -1654,6 +1830,16 @@ def _handle_event(job: Job, d: dict):
                 job.add(ev)
     elif t == "system" and d.get("subtype") == "hook_response":
         _hook_log(job, d)
+    elif t == "control_response":
+        # The CLI's answer to one of ours (interrupt, set_model,
+        # set_permission_mode). Only a refusal earns a row: the pick it carried
+        # is saved either way, and the next turn spawns with it. A success is
+        # when a switch takes effect (Job.control_answered).
+        r = d.get("response") or {}
+        if r.get("subtype") == "error":
+            job.add({"type": "log", "src": "control", "error": True,
+                     "text": str(r.get("error") or "control request refused")[:_LOG_MAX]})
+        job.control_answered(r.get("request_id"), r.get("subtype") == "success")
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")
@@ -1932,6 +2118,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.status = "error"
             return
         job.proc = proc
+        # A model/mode pick made while the argv was being built: ahead of the
+        # prompt, so the turn starts on it.
+        job.release_held()
         # Claude is up but still building its context — connecting MCP servers and
         # loading the transcript — which is most of the wait on a resumed session.
         job.boot = "starting Claude"
@@ -2067,13 +2256,17 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 except Exception:  # noqa: BLE001 — never let the queue break a run
                     pass
         job.exited.set()
-        resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
+        # job.model, not `model`: a live switch (Job.set_run_settings) moves it,
+        # and the resume and a limit park must run what the turn ended on, not
+        # what it started on.
+        resumed = not restart_killed and _maybe_auto_resume(job, cwd, job.model, effort)
         if not resumed and not restart_killed:
             # An active goal queues its own next turn. After auto-resume, so a
             # limit-parked turn is picked up by the ladder rather than raced by
-            # a nudge that would run against the same exhausted account.
+            # a nudge that would run against the same exhausted account. The
+            # nudge reads the session's model and mode when it starts.
             from bridge import goals  # local import: runner<->* cycle
-            resumed = goals.continue_after_turn(job, model, effort) or resumed
+            resumed = goals.continue_after_turn(job, effort) or resumed
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
@@ -2169,8 +2362,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
-    with its own permission posture; --resume continuity comes from that session's
-    claude_session_id. `origin` marks where a newly-created session started.
+    with its own model and permission posture (an explicit model/permission_mode
+    wins for this run and is not written back); --resume continuity comes from
+    that session's claude_session_id. `origin` marks where a newly-created
+    session started.
 
     account_slot picks which Claude login runs the turn (None = the ambient one);
     runtime is set instead when a fallback-ladder free agent takes over. Both are
@@ -2193,7 +2388,12 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     try:
         session, cwd, perm = _finalize_run_context(
             session, project_dir, permission_mode=permission_mode, origin=origin)
+        # The session's own model unless the caller brought one: the /run routes
+        # save theirs to the row; internal callers (Rivendell, trackers, goals)
+        # run theirs without writing it. Neither = no --model, the CLI default.
+        model = model or session.get("model")
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
+        job.model = model
         job.resume_id, job.new_session, job.fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         job.account_slot = account_slot

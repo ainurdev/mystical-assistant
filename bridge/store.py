@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   lifecycle         TEXT,
   fork_from         TEXT,
   ctx_tokens        INTEGER,
-  autocompact       TEXT
+  autocompact       TEXT,
+  model             TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -181,6 +182,14 @@ def init() -> None:
         # working in its own checkout, which is the normal case.
         if "work_cwd" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN work_cwd TEXT")
+        # The model last picked for this session, on any surface
+        # (set_run_settings). NULL = never picked: a run passes no --model. Rows
+        # from before the column take their latest turn that recorded one.
+        if "model" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
+            c.execute("UPDATE sessions SET model=(SELECT t.model FROM turns t "
+                      "WHERE t.session_id=sessions.id AND t.model IS NOT NULL "
+                      "ORDER BY t.seq DESC LIMIT 1)")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -362,6 +371,20 @@ def set_claude_session_id(session_id: str, claude_sid: str | None) -> None:
 def set_permission_mode(session_id: str, mode: str | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET permission_mode=? WHERE id=?", (mode, session_id))
+
+
+def set_run_settings(session_id: str, model: "str | None" = None,
+                     permission_mode: "str | None" = None) -> None:
+    """Save a model and/or permission-mode pick to the session — the row every
+    surface's next run reads (runner.start_streaming_job, handle_task). None
+    leaves that half alone; there is no clearing a pick. Only people's picks
+    land here (the /run and settings routes): internal callers run their own
+    values without writing them. Validated by the servers'
+    normalize_model_effort / normalize_permission_mode, not here."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET model=COALESCE(?, model), "
+                  "permission_mode=COALESCE(?, permission_mode) WHERE id=?",
+                  (model, permission_mode, session_id))
 
 
 def set_fallback_policy(session_id: str, policy: str | None) -> None:
@@ -841,9 +864,9 @@ def duplicate(session_id: str) -> dict | None:
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         c.execute("UPDATE sessions SET title=?, title_source=?, fork_from=?, "
-                  "fallback_policy=?, updated=? WHERE id=?",
+                  "fallback_policy=?, model=?, updated=? WHERE id=?",
                   (title, "manual", src.get("claude_session_id"),
-                   src.get("fallback_policy"), now, copy["id"]))
+                   src.get("fallback_policy"), src.get("model"), now, copy["id"]))
         # New turn ids so the two sessions' turns never collide; events follow
         # their turn through the same map.
         idmap = {}
@@ -906,9 +929,13 @@ def history(chat_id: int, include_archived: bool = False,
     Time and tokens rather than dollars: 9f612a4 removed the dollar readouts
     because the CLI prices these runs off API list rates while they go through a
     subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
-    a session that predates the columns is unknown, not free."""
+    a session that predates the columns is unknown, not free.
+
+    Each row also carries the session's run picks, as a brief does (model, and
+    the mode a run would get): a session opened from here — archived, or past the
+    session list's age — is seeded from this row, and its composer loads them."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, "
+         "s.lifecycle, s.model, s.permission_mode, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
@@ -932,6 +959,7 @@ def history(chat_id: int, include_archived: bool = False,
         for r in c.execute(q, params).fetchall():
             d = dict(r)
             d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
+            d["permission_mode"] = d["permission_mode"] or config.MINIAPP_PERMISSION_MODE
             rows.append(d)
     return rows
 

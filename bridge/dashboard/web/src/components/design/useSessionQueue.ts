@@ -13,9 +13,7 @@ export interface EnqueueInput {
   sel?: { tag: string; label: string }[];
   width?: number;
   project?: string;
-  model?: string;
-  effort?: string;
-  permission_mode?: string;
+  effort?: string; // no model or mode: a queued prompt runs on the session's
   agent?: string;
 }
 

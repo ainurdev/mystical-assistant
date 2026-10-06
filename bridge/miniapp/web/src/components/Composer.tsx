@@ -24,14 +24,13 @@ const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "max", label: "Max" },
 ];
 
-// Per-message operating mode ("" keeps the session's). These are Claude Code's
-// own permission modes — the CLI's ids, in its own least-authority-first order —
-// so a phone can't pick a posture `claude --permission-mode` would reject. (It
-// also takes "manual", but that is only its alias for "default".) The Mini App
-// has no free-agent picker, so this list is Claude's alone; the dashboard's
-// composer carries opencode's shorter one.
+// The session's operating mode. These are Claude Code's own permission modes —
+// the CLI's ids, in its own least-authority-first order — so a phone can't pick
+// a posture `claude --permission-mode` would reject. (It also takes "manual",
+// but that is only its alias for "default".) The Mini App has no free-agent
+// picker, so this list is Claude's alone; the dashboard's composer carries
+// opencode's shorter one.
 const PERMS: { id: string; label: string }[] = [
-  { id: "", label: "Session default" },
   { id: "plan", label: "Plan only" },
   { id: "default", label: "Ask each time" },
   { id: "dontAsk", label: "Never ask" },
@@ -174,9 +173,8 @@ export function Composer() {
         // A screenshot queues with its prompt — otherwise it sat in the tray
         // while the prompt that needed it ran without it.
         images: draftAttachments.map((a) => a.dataUrl ?? "").filter(Boolean),
-        model,
+        // No model or mode: it runs on the session's when it starts.
         effort: effort || undefined,
-        permission_mode: perm || undefined,
       });
       setDraft("");
       draftAttachments.forEach((a) => removeAttachment(a.id));
@@ -337,7 +335,7 @@ export function Composer() {
             />
             <DropdownMenuSeparator />
             <OptionRow
-              label="OPERATING MODE · THIS RUN"
+              label="OPERATING MODE"
               value={perm}
               options={PERMS}
               onPick={setPerm}

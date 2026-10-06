@@ -14,13 +14,14 @@ import {
   type GitStatus,
   type Lifecycle,
   type ModelId,
+  type RunPick,
   type SessionBrief,
   type SessionStatus,
   type UsageInfo,
   type AccountInfo,
   type FreeAgentInfo,
 } from "./api";
-import { modelOptions, latestPerFamily, type AgentOption } from "./models";
+import { modelOptions, latestPerFamily, runPicks, snapModel, type AgentOption } from "./models";
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
@@ -278,15 +279,16 @@ export function App() {
   // Which tab the next open lands on, when something asked for one by name
   // (lib/opensettings) — cleared on close, so the menus keep their default.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
-  // The composer's four run knobs live in settings so they survive a reload —
-  // the SESSION tab and the composer's dropdowns write the same state.
-  const model = settings.model as ModelId;
+  // Effort and ponytail are this browser's: settings, so they survive a reload.
+  // Model and mode belong to the open session — its row is the source of truth
+  // (bridge store.set_run_settings), loaded by the effect beside the model
+  // picker below. settings.model/perm only remember the last pick made here,
+  // which is what a session that never ran from a composer starts on (runPicks).
+  const [model, setModelState] = useState<ModelId>(() => settings.model as ModelId);
+  const [permMode, setPermState] = useState<string>(() => settings.perm);
   const effort = settings.effort as EffortLevel | "";
-  const permMode = settings.perm;
   const ponytail = settings.ponytail;
-  const setModel = (m: ModelId) => patchSettings({ model: m });
   const setEffort = (e: EffortLevel | "") => patchSettings({ effort: e });
-  const setPermMode = (m: string) => patchSettings({ perm: m });
   const setPonytail = (p: string) => patchSettings({ ponytail: p });
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
   // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
@@ -328,6 +330,33 @@ export function App() {
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
+  // A pick: shown now, remembered as this browser's default, and saved to the
+  // open session as the pair the picker shows — a fresh session would otherwise
+  // keep the bridge's mode under a picker showing yours. `half` is what you
+  // actually picked, and the only half a running turn is switched to
+  // (runner.apply_run_settings): a model pick must not carry a mode the picker
+  // merely shows into a live turn, and turn Bypass on there. A bridge too old
+  // for the route 404s; the pick still rides the next /local/run, as before.
+  const pickRun = (m: ModelId, p: string, half: RunPick) => {
+    setModelState(m);
+    setPermState(p);
+    patchSettings({ model: m, perm: p });
+    const sid = sessionIdRef.current;
+    if (sid) void api.setRunSettings(sid, { model: m, permission_mode: p || undefined, pick: half }).catch(() => {});
+  };
+  const setModel = (m: ModelId) => pickRun(m, permMode, "model");
+  const setPermMode = (p: string) => pickRun(model, p, "permission_mode");
+  // The SESSION tab's MODEL/MODE (and a PROFILE's APPLY) are the composer's
+  // knobs, so they show and pick for the open session too; the rest is ours.
+  const settingsView = useMemo(() => ({ ...settings, model, perm: permMode }), [settings, model, permMode]);
+  const patchFromSettings = (p: Partial<HudSettings>) => {
+    const { model: m, perm: pm, ...rest } = p;
+    // One pick per half that changes: a PROFILE's APPLY can change both.
+    const nm = m || model, np = pm || permMode;
+    if (nm !== model) pickRun(nm, np, "model");
+    if (np !== permMode) pickRun(nm, np, "permission_mode");
+    if (Object.keys(rest).length) patchSettings(rest);
+  };
   // openBlank drops the open session on purpose while POST /session is in
   // flight. The restore below reads that as "nothing open" and races the mint —
   // when the session list wins you get a flash of the chat you just left before
@@ -1082,9 +1111,10 @@ export function App() {
       ?? state?.project?.rel ?? undefined;
     const sessionName = () =>
       sessions.find((s) => s.id === sid)?.title || "another session";
+    // No model or mode: a queued prompt runs on the session's when it starts,
+    // so a pick made while it waits still applies.
     const enqueue = () => queue.enqueue({
-      text, prompt: text, images, project,
-      model, effort: effort || undefined, permission_mode: permMode || undefined,
+      text, prompt: text, images, project, effort: effort || undefined,
       agent: settings.agent || undefined,
     }, sid);
     // Sending by hand is the un-pause: otherwise the prompt joins a held queue and
@@ -1115,6 +1145,11 @@ export function App() {
         return;
       }
       setHeldMap((m) => omit(m, sid));
+      // The run saved these picks to the session (/local/run); mirror that here,
+      // or a session minted for this prompt reads as never-run until the next
+      // poll and the picker flips to this browser's defaults meanwhile.
+      setSessions((prev) => prev.map((s) => (s.id === sid
+        ? { ...s, model, permission_mode: permMode || s.permission_mode } : s)));
       liveTurns.current.add(res.job_id);
       markWorking(res.session_id || sid);
       // Only paint the turn if that session is still the one on screen; if you
@@ -1601,12 +1636,23 @@ export function App() {
     () => (settings.allModels ? modelOpts : latestPerFamily(modelOpts, model)),
     [modelOpts, settings.allModels, model],
   );
-  // Once the live list loads, snap the selection to an available model (prefer
-  // Opus) if the current one isn't offered — the old default was a fixed alias.
+  // A pick the server's list doesn't offer (aliases while the Models API cache
+  // is cold, full ids once it warms) moves to its family's model — on screen
+  // only: neither the session nor settings is rewritten. Nothing snaps before
+  // /local/state lands; modelOpts' pre-load FALLBACK is not a list to snap to.
   useEffect(() => {
-    if (!modelOpts.length || modelOpts.some((m) => m.id === model)) return;
-    setModel((modelOpts.find((m) => m.id.includes("opus")) ?? modelOpts[0]).id);
-  }, [modelOpts, model]);
+    const to = snapModel(model, state?.models);
+    if (to) setModelState(to);
+  }, [state?.models, model]);
+  // The open session's picks load when it opens and follow the 5s session poll
+  // when another device changes them. Keyed on the values, so a poll that left
+  // before a pick made here can't put the old one back.
+  useEffect(() => {
+    if (!selected) return;
+    const r = runPicks(selected, { model: settings.model, perm: settings.perm });
+    setModelState(r.model);
+    setPermState(r.perm);
+  }, [sessionId, selected?.model, selected?.permission_mode]);
 
   // AGENT picker — which platform runs the turn. Claude logins first (the
   // ambient one leads), then every ready free-agent rung. Option ids are the
@@ -2201,7 +2247,7 @@ export function App() {
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
-                settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
+                settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}
                 models={modelOpts} agents={agentOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
                 sessionTools={selected?.disabled_tools ?? []}

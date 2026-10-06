@@ -99,7 +99,9 @@ def test_recover_resumes_eligible():
     assert len(run.calls) == 1
     call = run.calls[0]
     assert call["chat_id"] == CHAT and call["session_id"] == sid
-    assert call["project"] == "/tmp/rez" and call["model"] == "sonnet"
+    # model=None: the run reads the session's own (a switch made mid-turn
+    # included), not the "sonnet" this turn started on.
+    assert call["project"] == "/tmp/rez" and call["model"] is None
     assert call["prompt"] == recovery.NUDGE and call["images"] == []
     assert len(notify.calls) == 1 and notify.calls[0]["chat_id"] == CHAT
 

@@ -45,8 +45,10 @@ def recover(*, run=None, notify=None) -> int:
         resumed_sessions.add(sid)
         try:
             slot, runtime = ladder.same_agent(t["runtime"])
+            # model=None: the session's own, read when the run starts, so a pick
+            # made while the turn ran (a live switch) survives the restart.
             job = run(t["chat_id"], NUDGE, [], project=t["cwd"],
-                      session_id=sid, model=t["model"],
+                      session_id=sid, model=None,
                       account_slot=slot, runtime=runtime)
         except Exception as e:  # noqa: BLE001
             print(f"[recovery] resume failed for {sid}: {e}", file=sys.stderr)

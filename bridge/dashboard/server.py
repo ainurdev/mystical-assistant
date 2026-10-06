@@ -41,6 +41,7 @@ from bridge import (agents, attribution, browser, config, devserver, fmt, git,
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
+                                   save_run_settings,
                                    transcript_for)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -1017,6 +1018,14 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": "autocompact must be 'auto' or 100000-1000000"}, 400)
             store.set_autocompact(sid, value)
             return self._json({"ok": True, "autocompact": value})
+        if path == "/local/session/settings":
+            # A model/mode pick for a session: saved, and applied to its running
+            # turn. Same body and answer as the Mini App's (save_run_settings).
+            sid = (body.get("session_id") or "").strip()
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json(*save_run_settings(s, body))
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")
@@ -1589,6 +1598,11 @@ class Handler(BaseHTTPRequestHandler):
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
+        # The picks this prompt was sent with are the session's now, on every
+        # surface. After the start, so the row is the one the run resolved for
+        # this chat (a fresh session is created by this very call).
+        store.set_run_settings(job.store_session_id, model=model,
+                               permission_mode=permission_mode)
         self._json({"job_id": job.id, "session_id": job.store_session_id})
 
     def _respond(self, job_id, body):
@@ -1626,10 +1640,9 @@ class Handler(BaseHTTPRequestHandler):
             images = body.get("images") or []
             if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
                 return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
-            ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
-            if not ok:
-                return self._json({"error": "invalid model"}, 400)
-            permission_mode = normalize_permission_mode(body.get("permission_mode"))
+            # No model or mode: a queued prompt runs on the session's when it
+            # starts, so a pick made while it waits still applies.
+            _ok, _model, effort = normalize_model_effort(None, body.get("effort"))
             agent = (body.get("agent") or "").strip()
             try:
                 from bridge import ladder
@@ -1648,8 +1661,8 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 width = 0
             item_id = queue_manager.enqueue(
-                sid, text=(text or prompt), prompt=prompt, images=paths, model=model,
-                effort=effort, permission_mode=permission_mode, width=width, sel=sel,
+                sid, text=(text or prompt), prompt=prompt, images=paths, model=None,
+                effort=effort, permission_mode=None, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
                 project=_abs_project(body.get("project")), run_job_id=run_job_id,
                 agent=agent or None)
