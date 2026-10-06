@@ -652,6 +652,11 @@ class Handler(BaseHTTPRequestHandler):
             base = (qs.get("base", ["main"])[0] or "main").strip()
             head = (qs.get("head", [""])[0] or git.current_branch(abs_p)).strip()
             three_dot = (qs.get("dots", ["3"])[0] or "3").strip() != "2"
+            # Only real branches, as /local/git/diff: any page can fire this GET,
+            # and `base=--output=<path>` once made git diff overwrite that file.
+            refs = set(git.branches(abs_p)) | {git.default_branch(abs_p)}
+            if base not in refs or head not in refs:
+                return self._json({"error": "invalid ref"}, 400)
             return self._json(git.compare(abs_p, base, head, three_dot))
         if path == "/local/agents":
             sid = qs.get("session", [""])[0]

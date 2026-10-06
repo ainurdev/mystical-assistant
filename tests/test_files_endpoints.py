@@ -238,3 +238,51 @@ def test_git_op_rejects_unknown_op_and_escape():
     # file outside the workspace.
     h._post_api("/local/git/op", {"project": name, "op": "discard", "paths": ["../../etc/hosts"]})
     assert box["obj"]["ok"] is False
+
+
+def _victim():
+    """A file outside the repo, and an --output= value that reaches it through
+    compare's two-dot join: "<dir>/sub/" + ".." + "/victim.txt"."""
+    parent = tempfile.mkdtemp()
+    os.makedirs(os.path.join(parent, "sub"))
+    victim = os.path.join(parent, "victim.txt")
+    with open(victim, "w") as f:
+        f.write("precious\n")
+    return victim, f"--output={parent}/sub/", "/victim.txt"
+
+
+def test_compare_endpoint_refuses_refs_that_are_options():
+    """GET /local/git/compare took base/head from the query string unchecked, so
+    `base=--output=…` made `git diff` overwrite any file the bridge can write
+    (any page can fire a GET at localhost). Only real refs get through."""
+    name, d = _mkproject("proj_compare_inject")
+    victim, base, head = _victim()
+    h, box = _handler()
+    h._get_api("/local/git/compare", {"project": [name], "base": [base], "head": [head], "dots": ["2"]})
+    assert box["code"] == 400, box
+    with open(victim) as f:
+        assert f.read() == "precious\n"
+
+
+def test_compare_endpoint_still_compares_branches():
+    name, d = _mkproject("proj_compare_ok")
+    main = subprocess.run(["git", "-C", d, "rev-parse", "--abbrev-ref", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    _git(d, "checkout", "-q", "-b", "feature")
+    with open(os.path.join(d, "a.txt"), "w") as f:
+        f.write("hello\nmore\n")
+    _git(d, "commit", "-qam", "more")
+    h, box = _handler()
+    h._get_api("/local/git/compare", {"project": [name], "base": [main], "head": ["feature"], "dots": ["2"]})
+    assert box["code"] == 200 and box["obj"]["add"] == 1, box
+
+
+def test_git_compare_never_reads_a_ref_as_an_option():
+    """The helper itself, for any future caller: --end-of-options sits before
+    the range."""
+    from bridge import git
+    _, d = _mkproject("proj_compare_eoo")
+    victim, base, head = _victim()
+    git.compare(d, base, head, three_dot=False)
+    with open(victim) as f:
+        assert f.read() == "precious\n"

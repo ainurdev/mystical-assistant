@@ -841,7 +841,9 @@ def _diff_files(cwd: str, *cmd: str) -> tuple[list[dict], int, int]:
     entries into separate NUL fields, so every `name` is a real, diffable path —
     not the `old => new` numstat form or a "caf\\303\\251" quoted name."""
     marks: dict[str, str] = {}
-    rc, out, _ = _run(cwd, *cmd, "--name-status", "-z")
+    # Flags go right after the subcommand, so a caller's `--end-of-options`
+    # (before a range) can't turn them into revisions.
+    rc, out, _ = _run(cwd, cmd[0], "--name-status", "-z", *cmd[1:])
     if rc == 0:
         toks = _ztokens(out)
         i = 0
@@ -857,7 +859,7 @@ def _diff_files(cwd: str, *cmd: str) -> tuple[list[dict], int, int]:
                 i += 1
     files = []
     total_add = total_del = 0
-    rc, out, _ = _run(cwd, *cmd, "--numstat", "-z")
+    rc, out, _ = _run(cwd, cmd[0], "--numstat", "-z", *cmd[1:])
     if rc == 0:
         toks = _ztokens(out)
         i = 0
@@ -925,13 +927,16 @@ def compare(cwd: str, base: str, head: str, three_dot: bool = True) -> dict:
         return {"ok": False, "commits": 0, "ahead": 0, "behind": 0,
                 "files": [], "add": 0, "del": 0}
     rng = f"{base}...{head}" if three_dot else f"{base}..{head}"
+    # --end-of-options: a ref is never read as a flag (`--output=…` would write
+    # a file). The route checks refs too; this holds for any other caller.
     # left-right count needs the symmetric (three-dot) form regardless of `rng`.
-    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", f"{base}...{head}")
+    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", "--end-of-options",
+                      f"{base}...{head}")
     behind = ahead = 0
     if rc == 0 and out.strip():
         parts = out.split()
         if len(parts) == 2:
             behind, ahead = int(parts[0] or 0), int(parts[1] or 0)
-    files, total_add, total_del = _diff_files(cwd, "diff", rng)
+    files, total_add, total_del = _diff_files(cwd, "diff", "--end-of-options", rng)
     return {"ok": True, "commits": ahead, "ahead": ahead, "behind": behind,
             "files": files, "add": total_add, "del": total_del}
