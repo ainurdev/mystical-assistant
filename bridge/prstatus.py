@@ -51,7 +51,7 @@ ERR_TTL = 300      # s: gh broken or rate-limited, so wait five minutes
 LOG_LINES = 60
 FIELDS = ("number,title,state,url,baseRefName,headRefName,headRefOid,additions,"
           "deletions,createdAt,mergedAt,statusCheckRollup,reviewDecision,"
-          "reviewRequests,latestReviews")
+          "reviewRequests,latestReviews,reviews")
 
 _PASS = {"SUCCESS", "NEUTRAL"}
 _SKIP = {"SKIPPED", "STALE"}
@@ -129,11 +129,30 @@ def _login(r) -> str:
     return ((r or {}).get("author") or {}).get("login") or ""
 
 
+_WRITE = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+
+def _standing(raw: dict) -> "list[dict]":
+    """Each reviewer's standing review: their newest one that isn't a comment.
+    latestReviews alone loses a request for changes once its author comments
+    again (mattermost/matterwick#104). Only reviewers with write access count,
+    as for reviewDecision; a bot or an outsider asking for changes doesn't.
+    latestReviews is merged in for a PR whose `reviews` list gh cut short."""
+    newest: dict = {}
+    for r in (raw.get("reviews") or []) + (raw.get("latestReviews") or []):
+        if r.get("state") in ("COMMENTED", "PENDING") or r.get("authorAssociation") not in _WRITE:
+            continue
+        who = _login(r)
+        if who not in newest or (r.get("submittedAt") or "") > (newest[who].get("submittedAt") or ""):
+            newest[who] = r
+    return list(newest.values())
+
+
 def normalize(raw: dict) -> dict:
     """gh's JSON → the chip's. `review` is the changes-requested review,
     whose inline comments fetch() adds."""
     checks = _checks(raw.get("statusCheckRollup") or [])
-    latest = raw.get("latestReviews") or []
+    latest = _standing(raw)
     decision = raw.get("reviewDecision") or ""
     asked = [r for r in latest if r.get("state") == "CHANGES_REQUESTED"]
     last = max(asked, key=lambda r: r.get("submittedAt") or "", default=None)

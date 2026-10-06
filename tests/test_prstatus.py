@@ -29,7 +29,7 @@ def _raw(**over):
            "headRefOid": "abc123", "additions": 412, "deletions": 88,
            "createdAt": "2026-10-06T12:00:00Z", "mergedAt": None,
            "statusCheckRollup": [], "reviewDecision": "", "reviewRequests": [],
-           "latestReviews": []}
+           "latestReviews": [], "reviews": []}
     raw.update(over)
     return raw
 
@@ -58,6 +58,41 @@ def test_a_commit_status_in_error_is_failing_and_pending_is_running():
                          "targetUrl": "", "startedAt": "2026-10-06T12:00:00Z"}
     pr = prstatus.normalize(_raw(statusCheckRollup=[status("ERROR"), status("PENDING")]))
     assert [(c["name"], c["state"]) for c in pr["checks"]] == [("ci/ERROR", "fail"), ("ci/PENDING", "run")]
+
+
+def _review(login, state, at, assoc="MEMBER", body=""):
+    return {"author": {"login": login}, "authorAssociation": assoc, "state": state,
+            "submittedAt": at, "body": body}
+
+
+def test_a_comment_after_a_request_for_changes_leaves_the_request_standing():
+    """mattermost/matterwick#104's shape: a reviewer asked for changes, then
+    commented, so latestReviews shows only the comment. Their standing review
+    is still the request. A bot with no write access doesn't count, as it
+    doesn't for reviewDecision."""
+    asked = _review("mahdi", "CHANGES_REQUESTED", "2026-10-06T12:30:00Z", body="two things")
+    later = _review("mahdi", "COMMENTED", "2026-10-06T12:40:00Z")
+    bot = _review("coderabbitai", "CHANGES_REQUESTED", "2026-10-06T12:50:00Z", assoc="NONE")
+    pr = prstatus.normalize(_raw(reviewDecision="CHANGES_REQUESTED",
+                                 latestReviews=[later, bot], reviews=[asked, later, bot]))
+    assert pr["review"]["by"] == "mahdi" and pr["review"]["body"] == "two things"
+    assert pr["reviews"] == [{"by": "mahdi", "state": "CHANGES_REQUESTED", "at": "2026-10-06T12:30:00Z"}]
+    assert prstatus.alerts(pr) == {"changes:mahdi:2026-10-06T12:30:00Z"}   # so it pings
+
+
+def test_the_request_is_found_when_latest_reviews_is_empty():
+    pr = prstatus.normalize(_raw(reviewDecision="CHANGES_REQUESTED", latestReviews=[],
+                                 reviews=[_review("mahdi", "CHANGES_REQUESTED", "2026-10-06T12:30:00Z")]))
+    assert pr["review"]["by"] == "mahdi"
+
+
+def test_an_approval_after_a_request_for_changes_replaces_it():
+    pr = prstatus.normalize(_raw(reviewDecision="APPROVED", reviews=[
+        _review("mahdi", "CHANGES_REQUESTED", "2026-10-06T12:30:00Z"),
+        _review("mahdi", "APPROVED", "2026-10-06T13:00:00Z"),
+        _review("mahdi", "COMMENTED", "2026-10-06T13:10:00Z")]))
+    assert pr["review"] is None
+    assert [r["state"] for r in pr["reviews"]] == ["APPROVED"]
 
 
 def test_a_rerun_keeps_only_the_newest_attempt():
@@ -229,9 +264,8 @@ def test_a_log_that_isnt_there_yet_is_asked_for_again(monkeypatch):
 
 
 def test_changes_requested_brings_that_reviews_inline_comments(monkeypatch):
-    raw = _raw(reviewDecision="CHANGES_REQUESTED", latestReviews=[
-        {"author": {"login": "mahdi"}, "state": "CHANGES_REQUESTED",
-         "submittedAt": "2026-10-06T12:30:00Z", "body": "two things"}])
+    asked = _review("mahdi", "CHANGES_REQUESTED", "2026-10-06T12:30:00Z", body="two things")
+    raw = _raw(reviewDecision="CHANGES_REQUESTED", latestReviews=[asked], reviews=[asked])
     _fake_gh(monkeypatch, [
         (("pr", "view"), (0, json.dumps(raw), "")),
         (("api", "repos/acme/rivendell/pulls/131/reviews?per_page=100"), (0, json.dumps([
