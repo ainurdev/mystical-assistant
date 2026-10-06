@@ -175,10 +175,11 @@ def _unit_text() -> str:
     left in the cgroup once it has exited. The default (control-group) SIGTERMs
     every Claude child in the same instant as the bridge, so a child could die
     before the bridge knew it was stopping and its turn read as a crash; the
-    bridge's _shutdown stops its children itself, after raising the flag. It also
-    ends the 90s waits on a leftover that ignores SIGTERM (twice in the 30 days
-    to 2026-10-06, a `docker` CLI). TimeoutStopSec stays at the 90s default: a
-    stop takes about a second, and stop_children gives its children 10s in all."""
+    bridge's _shutdown stops its streaming runs' children itself, after raising
+    the flag, and the rest get the SIGKILL. It also ends the 90s waits on a
+    leftover that ignores SIGTERM (twice in the 30 days to 2026-10-06, a
+    `docker` CLI). TimeoutStopSec stays at the 90s default: a stop takes about a
+    second, and stop_children gives its children 10s in all."""
     parts = [os.path.dirname(p) for p in
              (shutil.which("claude"), shutil.which("node")) if p]
     parts += ["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin",

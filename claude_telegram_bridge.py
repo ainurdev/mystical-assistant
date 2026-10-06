@@ -125,11 +125,14 @@ def _shutdown():
     if config.DASH_ENABLE:
         from bridge.dashboard import server as dash
         dash.stop()
-    # Then the Claude children, by us: with KillMode=mixed the stop signal reaches
-    # this process alone, so every child dies after the flag is up and its runner
-    # thread leaves the turn for boot recovery. It also covers selfupdate's
+    # Then the streaming runs' Claude children, by us: with KillMode=mixed the stop
+    # signal reaches this process alone, so each dies after the flag is up and its
+    # runner thread leaves the turn for boot recovery. It also covers selfupdate's
     # in-place re-exec, which nothing else stops them for — recovery would resume
-    # sessions their old claude was still writing.
+    # sessions their old claude was still writing. Only runs in runner._jobs: a
+    # free agent's opencode and run_blocking's one-shots (bot turns, titles,
+    # commit messages) aren't there. systemd SIGKILLs those once we exit, and an
+    # in-place re-exec leaves them running.
     runner.stop_children()
     native_activity.stop()
     devserver.stop_all()      # every registered dev server, not just the primary

@@ -1062,10 +1062,12 @@ def running_session_ids(chat_id: int) -> list[str]:
 
 
 def claim_orphaned_turns() -> list[dict]:
-    """Turns left 'running' at startup were orphaned by a restart (the bridge
-    group-SIGKILLs its Claude child on stop). Atomically flip them to 'error' and
-    return them joined to their session, so the recovery step can resume each on
-    its own Claude session. Idempotent: a second call returns []."""
+    """Turns left 'running' at startup were orphaned by a restart: a run whose
+    Claude child died while the bridge was going down skips finish_turn
+    (runner._restart_killed), and a bridge killed outright never got to it.
+    Atomically flip them to 'error' and return them joined to their session, so
+    the recovery step can resume each on its own Claude session. Idempotent: a
+    second call returns []."""
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         rows = c.execute(
