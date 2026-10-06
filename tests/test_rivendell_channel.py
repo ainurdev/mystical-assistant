@@ -56,7 +56,9 @@ def workers():
 
 @pytest.fixture
 def jobs():
-    """Jobs a test registers with the runner, dropped again afterwards."""
+    """Jobs a test registers with the runner, dropped again afterwards. A held
+    job with a session journals to the store, so its tables must exist."""
+    store.init()
     made = []
     yield made
     with runner._jobs_lock:
@@ -812,3 +814,30 @@ def test_progress_waits_for_the_feature_then_throttles(monkeypatch):
     j.add_pending({"request_id": "q9", "kind": "question", "questions": COLOUR})
     w._progress_tick(last, 12.0)
     assert posted[-1][2] == "awaiting_input", "waiting on a person goes out at once"
+
+
+# --- Task 15: answers from Rivendell ----------------------------------------------
+
+def test_an_answer_from_rivendell_resumes_the_held_run(jobs):
+    w = _worker()
+    sid = "sess-" + uuid.uuid4().hex
+    j = _held_job(sid=sid)
+    runner._register(j)
+    jobs.append(j)
+    w._running["ra1"] = {"request_id": "ra1", "kind": "impl", "session_id": sid}
+    assert w._handle_message(json.dumps({
+        "type": "job-answer", "kind": "implementation", "requestId": "ra1", "questionId": "q1",
+        "answer": {"labels": ["Leave them out"]}}).encode()) is None
+    assert j.pending == [] and "Leave them out" in _answer_sent(j)
+
+
+def test_an_answer_to_a_question_no_longer_asked_is_dropped(jobs):
+    w = _worker()
+    sid = "sess-" + uuid.uuid4().hex
+    j = _held_job(sid=sid)
+    runner._register(j)
+    jobs.append(j)
+    w._running["ra2"] = {"request_id": "ra2", "kind": "impl", "session_id": sid}
+    w._handle_message(json.dumps({"type": "job-answer", "requestId": "ra2",
+                                  "questionId": "q-old", "answer": {"labels": ["x"]}}).encode())
+    assert [p["request_id"] for p in j.pending] == ["q1"], "never misapplied to another question"

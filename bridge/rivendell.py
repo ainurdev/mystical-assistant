@@ -567,6 +567,32 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — a missed beat is fixed by the next
             print(f"rivendell[{self.name}]: progress post failed for {request_id}: {e}")
 
+    def _rivendell_answer(self, obj: dict) -> None:
+        """A NEEDS YOU answer given in Rivendell. Only the bridge's owner may
+        give one, and Rivendell checks that (claimedById). It answers the question
+        its run is held on, matched by the question's id, so an answer to a
+        question already answered here, or to an earlier one, is dropped, never
+        misapplied. Same path as the session's QuestionCard (Job.respond), so the
+        same run continues."""
+        from bridge import runner                    # local import: heavy module
+        with self._q_lock:
+            row = self._running.get(obj.get("requestId") or "")
+        job = runner.live_job(row["session_id"]) if row else None
+        qid = obj.get("questionId") or ""
+        entry = (next((p for p in list(job.pending) if p.get("request_id") == qid), None)
+                 if job else None)
+        if entry is None:
+            print(f"rivendell[{self.name}]: answer for {obj.get('requestId')} dropped: "
+                  "its question no longer waits")
+            return
+        a = obj.get("answer") or {}
+        q = (entry.get("questions") or [{}])[0]
+        ans = {"header": q.get("header") or q.get("question") or "",
+               "labels": [str(x) for x in a.get("labels") or []]}
+        if str(a.get("notes") or "").strip():
+            ans["notes"] = str(a["notes"]).strip()
+        job.respond(qid, answers=[ans])
+
     def _ping_done(self, request_id: str, ok: bool, text: str) -> None:
         """The job's one Telegram message once its result is posted: done or
         failed, its PR and time, with OPEN PR and OPEN SESSION. Only for a job
@@ -814,6 +840,9 @@ class Worker:
         if obj.get("type") == "hello":
             self.features = frozenset(str(f) for f in obj.get("features") or () if f)
             print(f"rivendell[{self.name}]: speaks {sorted(self.features) or 'nothing new'}")
+            return None
+        if obj.get("type") == "job-answer" and obj.get("requestId"):
+            self._rivendell_answer(obj)
             return None
         if obj.get("type") == "pr-review-request" and obj.get("requestId"):
             pr = obj.get("pullRequest") or {}
