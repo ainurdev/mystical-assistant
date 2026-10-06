@@ -160,12 +160,16 @@ def normalize_ponytail(level) -> "str | None":
 
 
 def _run_env(ponytail: "str | None",
-             account_slot: "int | None" = None) -> "dict | None":
-    """Env for the claude subprocess: None (inherit) unless a run picked a
-    ponytail intensity or a non-default Claude account. The account arrives as
-    CLAUDE_CONFIG_DIR, which is the whole multi-account mechanism -- every turn
-    is still the official binary, just pointed at one login's profile."""
+             account_slot: "int | None" = None) -> dict:
+    """Env for the claude subprocess: the inherited env plus a run's ponytail
+    intensity and Claude account. The account arrives as CLAUDE_CONFIG_DIR,
+    which is the whole multi-account mechanism -- every turn is still the
+    official binary, just pointed at one login's profile."""
     over = accounts.env_for(account_slot)
+    # Once a turn's result is out, -p waits for its background agents only 10
+    # min, then kills them mid-work and exits -- the report they were running
+    # for never arrives. Hangs are _watchdog's job (silence, not work).
+    over["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
     # Switched off in the AI tab, the level is not just skipped but overridden:
     # an absent PONYTAIL_DEFAULT_MODE means the plugin's own default (full), so
     # "off" is the only way to actually not get ponytail.
@@ -178,8 +182,6 @@ def _run_env(ponytail: "str | None",
         # The inspector is a pass-through proxy in front of api.anthropic.com;
         # off (the default) this is None and the child talks to the API directly.
         over["ANTHROPIC_BASE_URL"] = base
-    if not over:
-        return None
     return {**os.environ, **over}
 
 
