@@ -111,8 +111,17 @@ function MenuRows<T extends string>({ options, value, onPick }: {
   );
 }
 
+/** How a mode reads when the list on show lacks it: its own Claude label (a
+ *  free agent's two-row list lacks most of the modes a session can carry), the
+ *  raw id if even Claude has none, and "Session" for no mode at all (the
+ *  session's own, before its picks load or on an older bridge). Never another
+ *  mode's row: falling back to the list's first read a "default" session as Plan. */
+function modeRow(id: string): { id: string; label: string; title?: string } {
+  return PERMS.find((o) => o.id === id) ?? { id, label: id || "Session" };
+}
+
 function Drop<T extends string>({
-  label, code, value, options, open, onToggle, onPick, minWidth = 78, align = "left",
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left",
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -126,6 +135,8 @@ function Drop<T extends string>({
   // of rows sharing it; icon → a glyph ahead of the label (a provider's logo);
   // tail → right-aligned decoration (the usage meters)
   options: { id: T; label: string; short?: string; group?: string; icon?: ReactNode; tail?: ReactNode; title?: string }[];
+  // What the chip shows when `value` isn't in `options` (default: the first row).
+  fallback?: { id: string; label: string; short?: string };
   open: boolean;
   onToggle: () => void;
   onPick: (id: T) => void;
@@ -134,7 +145,7 @@ function Drop<T extends string>({
   // whose menu would otherwise run off the column.
   align?: "left" | "right";
 }) {
-  const cur = options.find((o) => o.id === value) ?? options[0];
+  const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
   // min-width rides a custom property so the tight end of the layout ladder can
   // drop it to 0 (inline styles win over any stylesheet rule otherwise).
@@ -247,7 +258,7 @@ function RunPopover<M extends string>({
   useEffect(() => { if (!open) setSub(""); }, [open]);
   const cur = modelOpts.find((o) => o.id === model) ?? modelOpts[0];
   const modelName = freeLabel ?? (cur ? cur.short ?? cur.label : String(model));
-  const permRow = permOpts.find((o) => o.id === perm) ?? permOpts[0];
+  const permRow = permOpts.find((o) => o.id === perm) ?? modeRow(perm);
   const effIdx = Math.max(0, EFFORTS.findIndex((e) => e.id === effort));
   const effRow = EFFORTS[effIdx];
   const dim: CSSProperties = { fontStyle: "italic", color: "var(--txl)", fontSize: "var(--t95)" };
@@ -946,7 +957,7 @@ export function Composer({
                   onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
               </>
             )}
-            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} open={openDrop === "mode"} minWidth={104}
+            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} fallback={modeRow(perm)} open={openDrop === "mode"} minWidth={104}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
             {ponyDrop(false)}
