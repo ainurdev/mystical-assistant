@@ -11,11 +11,15 @@ Both go away by saying "none of them" as --strict-mcp-config instead of as a
 deny list: there is nothing to enumerate, so nothing to ask `claude mcp list`.
 """
 
+import io
 import json
+import os
+import shutil
+import stat
 
 import pytest
 
-from bridge import runner, toolsets
+from bridge import config, runner, toolsets
 
 SID = "11111111-2222-3333-4444-555555555555"
 
@@ -29,8 +33,9 @@ def _cmd(**kw):
 
 
 def _mcp_servers(cmd):
-    """The inline --mcp-config's server names."""
-    return sorted(json.loads(cmd[cmd.index("--mcp-config") + 1])["mcpServers"])
+    """The --mcp-config file's server names."""
+    with open(cmd[cmd.index("--mcp-config") + 1], encoding="utf-8") as f:
+        return sorted(json.load(f)["mcpServers"])
 
 
 @pytest.fixture
@@ -85,3 +90,79 @@ def test_configured_session_still_denies_builtins(monkeypatch):
     monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: {})
     cmd = _cmd(disabled_tools=["Bash", "Write"])
     assert cmd[cmd.index("--disallowedTools") + 1] == "Bash,Write"
+
+
+# --- secrets stay off the command line -----------------------------------------
+
+def test_a_run_keeps_mcp_secrets_off_argv(monkeypatch):
+    """Every token a run's MCP servers carry (the dashboard's own, a server's
+    Authorization header, a stdio server's API key) goes in a 0600 file in a
+    0700 dir, never in argv, which any process on the machine can read from
+    /proc/<pid>/cmdline. The file lives exactly as long as the child: claude may
+    re-read it mid-run, and nothing should outlive the run."""
+    from bridge import store, tailstate
+    store.init()
+    sid = store.create_session(555, "p-mcp-secrets")["id"]
+    store.set_disabled_tools(sid, [])                      # everything switched on
+    monkeypatch.setattr(toolsets, "servers", lambda: [
+        {"name": "github", "rule": "mcp__github"},
+        {"name": "railway", "rule": "mcp__railway"}])
+    monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: {
+        "github": {"type": "http", "url": "https://api.githubcopilot.com/mcp/",
+                   "headers": {"Authorization": "Bearer ghp_TESTSECRET"}},
+        "railway": {"type": "stdio", "command": "railway", "args": ["mcp"],
+                    "env": {"RAILWAY_API_TOKEN": "rw_TESTSECRET"}}})
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    seen = {}
+
+    def mid_run(path):
+        seen["mid_run"] = os.path.exists(path)     # still there while it runs
+        yield from ()
+
+    class Child:
+        def __init__(self, cmd, **kw):
+            path = seen["path"] = cmd[cmd.index("--mcp-config") + 1]
+            seen["argv"] = "\0".join(cmd)
+            seen["modes"] = (stat.S_IMODE(os.stat(path).st_mode),
+                             stat.S_IMODE(os.stat(os.path.dirname(path)).st_mode))
+            with open(path, encoding="utf-8") as f:
+                seen["servers"] = json.load(f)["mcpServers"]
+            self.stdin, self.stderr = io.StringIO(), io.StringIO("")
+            self.stdout = mid_run(path)
+            self.returncode = 1
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(runner.subprocess, "Popen", Child)
+    job = runner.Job("job-mcp-secrets", 555, sid)
+    job.resume_id, job.new_session = SID, True
+    runner._run_streaming(job, "hi", [], config.BASE_PATH)
+
+    for secret in ("ghp_TESTSECRET", "rw_TESTSECRET", config.DASH_TOKEN):
+        assert secret not in seen["argv"]
+    assert seen["modes"] == (0o600, 0o700)
+    assert seen["servers"]["github"]["headers"]["Authorization"] == "Bearer ghp_TESTSECRET"
+    assert seen["servers"]["railway"]["env"]["RAILWAY_API_TOKEN"] == "rw_TESTSECRET"
+    assert seen["servers"]["goals"]["env"]["MYSTICAL_DASH_TOKEN"] == config.DASH_TOKEN
+    assert seen["mid_run"]
+    assert not os.path.exists(os.path.dirname(seen["path"]))   # gone with the child
+
+
+def test_concurrent_runs_never_share_a_config_file():
+    """Two sessions running at once each get their own file, so one run ending
+    (and removing its dir) never pulls the config out from under the other."""
+    a, b = runner._mcp_config("sess-a"), runner._mcp_config("sess-b")
+    assert os.path.dirname(a) != os.path.dirname(b)
+    shutil.rmtree(os.path.dirname(a))
+    with open(b, encoding="utf-8") as f:
+        env = json.load(f)["mcpServers"]["goals"]["env"]
+    assert env["MYSTICAL_CLAUDE_SESSION_ID"] == "sess-b"
+    shutil.rmtree(os.path.dirname(b))

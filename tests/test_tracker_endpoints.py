@@ -179,6 +179,9 @@ def test_update_turn_argv_has_manual_mode_the_ask_rule_and_the_server(repo, monk
     class Popen:
         def __init__(self, cmd, **kw):
             seen["cmd"] = cmd
+            # Read now: the run removes the file once its child is gone.
+            with open(cmd[cmd.index("--mcp-config") + 1], encoding="utf-8") as f:
+                seen["mcp"] = json.load(f)
             raise FileNotFoundError
     monkeypatch.setattr(runner.subprocess, "Popen", Popen)
     monkeypatch.setattr(toolsets, "ready", lambda: True)
@@ -191,7 +194,7 @@ def test_update_turn_argv_has_manual_mode_the_ask_rule_and_the_server(repo, monk
     cmd = seen["cmd"]
     assert cmd[cmd.index("--permission-mode") + 1] == "manual"
     assert json.loads(cmd[cmd.index("--settings") + 1]) == {"permissions": {"ask": ["mcp__teamwork"]}}
-    assert "teamwork" in json.loads(cmd[cmd.index("--mcp-config") + 1])["mcpServers"]
+    assert "teamwork" in seen["mcp"]["mcpServers"]
     assert "--strict-mcp-config" in cmd
     assert job.status == "error"                       # the fake spawn, not the argv
 

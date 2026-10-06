@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -228,10 +229,17 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
-    """Inline --mcp-config JSON for the bridge's own tool servers, plus any
+    """Path to the --mcp-config file for the bridge's own tool servers, plus any
     external servers this session left switched on. PYTHONPATH pins the repo root
     so `-m bridge.*` imports regardless of the run's cwd. Ours go in last: a
-    user server named `goals` must not shadow the goal tools."""
+    user server named `goals` must not shadow the goal tools.
+
+    A file, not the inline JSON it used to be: it carries the dashboard token and
+    whatever the external servers authenticate with (a GitHub PAT or a Rivendell
+    bearer in a header, a Railway key in an env block), and argv is
+    world-readable (`ps`, /proc/<pid>/cmdline) where a 0600 file in a 0700 dir
+    is the user's alone. One fresh dir per call, so concurrent runs never share
+    a file; _run_streaming removes it once the child that read it is gone."""
     env = {"PYTHONPATH": _REPO_ROOT,
            "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id,
            # The Run tool starts dev servers in the *bridge* process (its registry
@@ -239,13 +247,18 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
            # localhost API — same token any browser tab uses.
            "MYSTICAL_DASH": f"http://127.0.0.1:{config.DASH_PORT}",
            "MYSTICAL_DASH_TOKEN": config.DASH_TOKEN}
-    return json.dumps({"mcpServers": {
-        **(extra or {}),
-        "goals": {"command": sys.executable,
-                  "args": ["-m", "bridge.goal_mcp"], "env": env},
-        "verify": {"command": sys.executable,
-                   "args": ["-m", "bridge.verify_mcp"], "env": env},
-    }})
+    path = os.path.join(tempfile.mkdtemp(prefix="mystical-mcp-"), "mcp.json")
+    # O_EXCL: created here at 0600, never written through something already there.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump({"mcpServers": {
+            **(extra or {}),
+            "goals": {"command": sys.executable,
+                      "args": ["-m", "bridge.goal_mcp"], "env": env},
+            "verify": {"command": sys.executable,
+                       "args": ["-m", "bridge.verify_mcp"], "env": env},
+        }}, f)
+    return path
 
 
 def _configured_mcp_servers(cwd: "str | None") -> dict:
@@ -1871,6 +1884,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
                    permission_mode: str | None = None, ponytail: str | None = None):
     proc = None
+    mcp_dir = None
     job.cwd = cwd
     try:
         if (job.runtime or "").startswith("opencode:"):
@@ -1894,6 +1908,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         new_session=job.new_session, disabled_tools=denied,
                         autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None, project=job.project)
+        if "--mcp-config" in cmd:
+            # Its file holds tokens (see _mcp_config); it goes with the child.
+            mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
         cmd += job.extra_args
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
@@ -1999,6 +2016,12 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 proc.wait(timeout=5)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 pass
+        if mcp_dir:
+            # ponytail: a run cut off by the bridge's own death (killed outright,
+            # or its interpreter exiting before this thread gets here) leaves its
+            # dir in /tmp: 0700, readable only by this user, wiped at boot. Sweep
+            # mystical-mcp-* at startup if that ever matters.
+            shutil.rmtree(mcp_dir, ignore_errors=True)
         if job.elapsed is None:
             job.elapsed = int(time.time() - job.started)
         restart_killed = _restart_killed(job)   # freeze: the flag can flip mid-finally
