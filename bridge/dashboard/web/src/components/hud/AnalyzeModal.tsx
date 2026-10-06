@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   logStream,
@@ -20,8 +20,12 @@ import { useAiFeatures } from "../../lib/ai";
 import { parseDiff, type DiffRow } from "../../lib/diff";
 import { branchForIssue, branchForTask, keyFromBranch } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
+import {
+  countByPath, loadNotes, noteRange, notesKey, saveNotes, type Note, type NoteDraft,
+} from "../../lib/reviewnotes";
 import { ago, projectName, projectTint, setProjectTint } from "../../lib/surfaces";
 import { CommitGraph } from "../CommitGraph";
+import { NoteEditor, NoteThread } from "./DiffNotes";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { LearnTab } from "./LearnTab";
 import { MapTab } from "./MapTab";
@@ -437,6 +441,38 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   const rows = useMemo(() => parseDiff(diff), [diff]);
   const selFile = files.find((f) => f.path === selName);
 
+  // Review notes (lib/reviewnotes.ts): drafts on this branch's diff, kept in
+  // localStorage until SEND or CLEAR.
+  const nkey = notesKey(project, branch);
+  const [notes, setNotesState] = useState<Note[]>(() => loadNotes(nkey));
+  const [editor, setEditor] = useState<NoteDraft | null>(null);
+  const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
+  const setNotes = (next: Note[]) => { setNotesState(next); saveNotes(nkey, next); };
+  useEffect(() => { setNotesState(loadNotes(nkey)); }, [nkey]);
+  useEffect(() => { setEditor(null); }, [nkey, selName]);
+  const fileNotes = notes.filter((x) => x.path === selName);
+  const noteCount = useMemo(() => countByPath(notes), [notes]);
+
+  // A drag down the line numbers ends where the mouse is let go. That is
+  // caught on the window, so letting go outside the diff still opens the editor.
+  useEffect(() => {
+    if (!drag) return;
+    const up = () => {
+      const r = noteRange(rows, drag.a, drag.b);
+      setDrag(null);
+      if (r && selName) setEditor({ path: selName, ...r, text: "" });
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, [drag, rows, selName]);
+
+  function saveNote(text: string) {
+    if (!editor || !text.trim()) return;
+    const kept = notes.filter((x) => x.id !== editor.id);
+    setNotes([...kept, { ...editor, id: editor.id ?? crypto.randomUUID(), text: text.trim(), at: Date.now() }]);
+    setEditor(null);
+  }
+
   async function genMsg() {
     if (genBusy || !checked.size) return;
     setGenBusy(true);
@@ -543,6 +579,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
                       style={{ accentColor: "var(--acc)", cursor: "pointer", flex: "none", width: 13, height: 13, margin: 0 }} />
                     <span style={{ fontSize: "var(--t11)", fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
                     <span style={{ fontSize: "var(--t11)", color: on ? "var(--txb)" : isChecked ? "var(--txm)" : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
+                    {noteCount[f.path] > 0 && <span title={`${noteCount[f.path]} review note${noteCount[f.path] === 1 ? "" : "s"}`} style={{ fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple)", flex: "none" }}>◆{noteCount[f.path]}</span>}
                     <span style={{ fontSize: "var(--t10)", flex: "none", display: "flex", gap: 5 }}><span style={{ color: "var(--ok)" }}>+{f.add}</span><span style={{ color: "var(--err)" }}>−{f.del}</span></span>
                   </div>
                 );
@@ -586,14 +623,45 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
             <div className="mscroll" style={{ flex: 1, overflow: "auto", minHeight: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", lineHeight: 1.7 }}>
               {rows.map((d, i) => {
                 const v = DIFF_VIEW[d.kind];
+                const ln = d.ln ? Number(d.ln) : 0;   // 0: a deleted line or a hunk header takes no note
+                const noted = ln > 0 && fileNotes.some((x) => ln >= x.start && ln <= x.end);
+                const dragged = !!drag && ln > 0 && i >= Math.min(drag.a, drag.b) && i <= Math.max(drag.a, drag.b);
+                const grab = ln > 0 ? (e: { button: number; preventDefault: () => void }) => {
+                  if (e.button !== 0) return;
+                  e.preventDefault();               // no text selection while dragging a range
+                  setDrag({ a: i, b: i });
+                } : undefined;
                 return (
-                  <div key={i} style={{ display: "flex", background: v.bg }}>
-                    <span style={{ width: 36, flex: "none", textAlign: "right", paddingRight: 9, color: "var(--txg)", userSelect: "none", borderRight: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)" }}>{d.ln}</span>
-                    <span style={{ width: 14, flex: "none", textAlign: "center", color: v.sign }}>{d.mark}</span>
-                    <span style={{ color: v.color, whiteSpace: "pre", flex: 1 }}>{d.text || " "}</span>
-                  </div>
+                  <Fragment key={i}>
+                    <div className="dnote-row" onMouseEnter={drag && ln > 0 ? () => setDrag({ ...drag, b: i }) : undefined}
+                      style={{ display: "flex", background: v.bg, boxShadow: dragged ? "inset 0 0 0 1px color-mix(in srgb, var(--acc) 45%, transparent)" : undefined }}>
+                      {/* The note gutter: ◆ on a noted line, + on the hovered one (index.css .dnote-plus). */}
+                      <span onMouseDown={grab} style={{ width: 18, flex: "none", display: "flex", alignItems: "center", justifyContent: "center", userSelect: "none", cursor: grab ? "pointer" : undefined }}>
+                        {noted ? <span style={{ color: "var(--purple)", fontSize: "var(--t9)" }}>◆</span>
+                          : grab ? <span className="dnote-plus" title="note this line, or drag down the numbers for a range"
+                              style={{ width: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--acc)", color: "var(--acc-on)", fontWeight: 700, lineHeight: 1 }}>+</span>
+                          : null}
+                      </span>
+                      <span onMouseDown={grab} style={{ width: 36, flex: "none", textAlign: "right", paddingRight: 9, color: noted ? "var(--purple-h)" : "var(--txg)", userSelect: "none", borderRight: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", cursor: grab ? "pointer" : undefined }}>{d.ln}</span>
+                      <span style={{ width: 14, flex: "none", textAlign: "center", color: v.sign }}>{d.mark}</span>
+                      <span style={{ color: v.color, whiteSpace: "pre", flex: 1 }}>{d.text || " "}</span>
+                    </div>
+                    {ln > 0 && fileNotes.filter((x) => x.end === ln && x.id !== editor?.id).map((x) => (
+                      <NoteThread key={x.id} note={x} onEdit={() => setEditor({ ...x })}
+                        onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+                    ))}
+                    {ln > 0 && editor && editor.path === selName && editor.end === ln && (
+                      <NoteEditor start={editor.start} end={editor.end} initial={editor.text} isNew={!editor.id}
+                        onCancel={() => setEditor(null)} onSave={saveNote} />
+                    )}
+                  </Fragment>
                 );
               })}
+              {/* A note whose line has left the diff (the code changed since) still
+                  goes on SEND, so it stays here where it can be seen and deleted. */}
+              {fileNotes.filter((x) => !rows.some((r) => r.ln === String(x.end))).map((x) => (
+                <NoteThread key={x.id} note={x} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+              ))}
             </div>
           </div>
         </div>

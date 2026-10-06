@@ -418,6 +418,11 @@ body {
 .trow:hover {
   background: color-mix(in srgb, var(--acc) 6%, transparent);
 }
+/* GIT tab review notes: the gutter's + shows on the hovered diff line only.
+   CSS, not React state, for the reason .trow gives: a diff can be thousands of
+   rows. */
+.dnote-row .dnote-plus { opacity: 0; }
+.dnote-row:hover .dnote-plus { opacity: 1; }
 /* The commit box is the one place in the HUD you type prose into, so its
    textarea keeps a focus cue — every other input here suppresses the outline. */
 .cbox textarea:focus {
