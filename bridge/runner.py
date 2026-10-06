@@ -247,17 +247,22 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
            # localhost API — same token any browser tab uses.
            "MYSTICAL_DASH": f"http://127.0.0.1:{config.DASH_PORT}",
            "MYSTICAL_DASH_TOKEN": config.DASH_TOKEN}
-    path = os.path.join(tempfile.mkdtemp(prefix="mystical-mcp-"), "mcp.json")
-    # O_EXCL: created here at 0600, never written through something already there.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"mcpServers": {
-            **(extra or {}),
-            "goals": {"command": sys.executable,
-                      "args": ["-m", "bridge.goal_mcp"], "env": env},
-            "verify": {"command": sys.executable,
-                       "args": ["-m", "bridge.verify_mcp"], "env": env},
-        }}, f)
+    d = tempfile.mkdtemp(prefix="mystical-mcp-")
+    path = os.path.join(d, "mcp.json")
+    try:
+        # O_EXCL: created here at 0600, never written through something already there.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"mcpServers": {
+                **(extra or {}),
+                "goals": {"command": sys.executable,
+                          "args": ["-m", "bridge.goal_mcp"], "env": env},
+                "verify": {"command": sys.executable,
+                           "args": ["-m", "bridge.verify_mcp"], "env": env},
+            }}, f)
+    except BaseException:
+        shutil.rmtree(d, ignore_errors=True)   # half-written can already hold a token
+        raise
     return path
 
 
@@ -2021,7 +2026,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 proc.wait(timeout=5)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 pass
-        if mcp_dir:
+        # Read back off argv, so held to the one shape _mcp_config makes: nothing
+        # else on a command line is ever rmtree'd.
+        if mcp_dir and os.path.basename(mcp_dir).startswith("mystical-mcp-"):
             # ponytail: a run cut off by the bridge's own death (killed outright,
             # or its interpreter exiting before this thread gets here) leaves its
             # dir in /tmp: 0700, readable only by this user, wiped at boot. Sweep

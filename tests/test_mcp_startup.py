@@ -166,3 +166,41 @@ def test_concurrent_runs_never_share_a_config_file():
         env = json.load(f)["mcpServers"]["goals"]["env"]
     assert env["MYSTICAL_CLAUDE_SESSION_ID"] == "sess-b"
     shutil.rmtree(os.path.dirname(b))
+
+
+def test_a_config_that_fails_mid_write_leaves_nothing_behind(monkeypatch, tmp_path):
+    """What went in before the failure can already be a token (here a server's
+    Authorization header): the half-written file goes with its dir, and the
+    error still reaches the run."""
+    monkeypatch.setattr(runner.tempfile, "tempdir", str(tmp_path))
+    with pytest.raises(TypeError):
+        runner._mcp_config("sess-x", {
+            "github": {"type": "http", "headers": {"Authorization": "Bearer ghp_X"}},
+            "broken": {"command": object()}})                 # not JSON
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_run_only_ever_removes_a_dir_mcp_config_made(monkeypatch, tmp_path):
+    """The cleanup reads its target back off argv, so it is held to the one shape
+    _mcp_config makes: no other directory is ever rmtree'd."""
+    from bridge import store, tailstate
+    keep = tmp_path / "keep"
+    keep.mkdir()
+    (keep / "mcp.json").write_text("{}")
+    monkeypatch.setattr(runner, "_mcp_config", lambda sid, extra=None: str(keep / "mcp.json"))
+    monkeypatch.setattr(toolsets, "servers", lambda: [])
+    monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: {})
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+
+    class Popen:
+        def __init__(self, cmd, **kw):
+            raise FileNotFoundError
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    store.init()
+    sid = store.create_session(555, "p-mcp-keep")["id"]
+    store.set_disabled_tools(sid, [])
+    job = runner.Job("job-mcp-keep", 555, sid)
+    job.resume_id, job.new_session = SID, True
+    runner._run_streaming(job, "hi", [], config.BASE_PATH)
+    assert (keep / "mcp.json").exists()
