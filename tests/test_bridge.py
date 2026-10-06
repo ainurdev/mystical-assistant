@@ -1358,6 +1358,33 @@ def test_an_oom_kill_is_recorded_at_once(monkeypatch):
     assert _row(sid)["status"] == "error"
 
 
+def test_the_stop_grace_rides_out_a_wall_clock_step(monkeypatch):
+    """The grace is a duration, so it runs on the monotonic clock: a wall clock
+    stepped forward mid-wait (WSL resyncing after the host slept) must not cut
+    it short and turn the restart back into a crash."""
+    from bridge import state
+
+    class Stepping:
+        """The time module, its wall clock an hour further on at every read."""
+        steps = 0
+
+        def __getattr__(self, name):
+            return getattr(time, name)
+
+        def time(self):
+            self.steps += 1
+            return time.time() + 3600 * self.steps
+
+    monkeypatch.setattr(runner, "time", Stepping())
+    monkeypatch.setattr(state, "shutting_down", False)
+    flag = threading.Timer(0.3, setattr, (state, "shutting_down", True))
+    flag.start()
+    try:
+        assert runner._stopping(143)
+    finally:
+        flag.join()   # never let the flag rise after monkeypatch has put it back
+
+
 def test_shutdown_stops_the_children_after_raising_the_flag(monkeypatch):
     """KillMode=mixed sends the stop signal to the bridge alone, and selfupdate's
     in-place re-exec sends none: either way the bridge takes its children down

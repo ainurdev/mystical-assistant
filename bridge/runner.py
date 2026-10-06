@@ -1195,8 +1195,8 @@ def _stopping(rc: "int | None") -> bool:
     stop signal waits up to STOP_GRACE for the flag; any other exit doesn't."""
     # ponytail: polls a bool every 50 ms for at most STOP_GRACE. An Event would
     # wake at once; this only runs for a child that died of a stop signal.
-    end = time.time() + (STOP_GRACE if rc in _STOP_EXITS else 0)
-    while not state.shutting_down and time.time() < end:
+    end = time.monotonic() + (STOP_GRACE if rc in _STOP_EXITS else 0)
+    while not state.shutting_down and time.monotonic() < end:
         time.sleep(0.05)
     return state.shutting_down
 
