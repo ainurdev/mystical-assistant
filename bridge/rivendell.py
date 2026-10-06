@@ -188,6 +188,7 @@ _HTTP_TIMEOUT = 30        # prompt fetch / result post
 _RESULT_RETRIES = (2, 10, 30)   # a finished run is expensive; retry the POST
 _ERROR_MAX = 5000         # Rivendell's MaxLength on a result's error: longer is a 400
 _POLL_INTERVAL = 2.0      # job status poll cadence
+_HELD_MAX = 24 * 3600.0   # a run may wait on a person this long in all; then it fails
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
 _CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab polls
 _LINK_GRACE = 300.0       # an outage this long is a break worth one Telegram message
@@ -1121,10 +1122,13 @@ class Worker:
         person is deciding, and their time is not the run's — the rule the hang
         watchdog already applies (runner._watchdog), here for the kind's wall
         clock, which would otherwise fail a run while you were answering it.
-        ponytail: no cap — an unanswered question holds the job (and its
-        IN_PROGRESS request) until someone answers or stops it; cap the paused
-        time if abandoned asks ever pile up."""
+        ponytail: the pause is capped at _HELD_MAX (24 h) summed over the run's
+        questions. Past it the run is interrupted and fails ("nobody answered
+        in 24h"), so an abandoned ask can't hold this instance's queue
+        (_active_runs) forever. One cap for every kind; per kind if 24 h is
+        ever wrong for one."""
         deadline = time.time() + timeout
+        held = 0.0                    # time spent waiting on a person, all questions
         exited = getattr(job, "exited", None)
 
         def over() -> bool:
@@ -1135,7 +1139,12 @@ class Worker:
             if self._stop.wait(_POLL_INTERVAL):
                 break
             if getattr(job, "pending", None):
-                deadline += time.time() - t0
+                waited = time.time() - t0
+                held += waited
+                deadline += waited
+                if held > _HELD_MAX:
+                    job.interrupt()
+                    return False, f"nobody answered in {_HELD_MAX / 3600:g}h"
         if not over():
             job.interrupt()
             return False, f"run timed out after {timeout}s"
@@ -1287,10 +1296,12 @@ class Worker:
         restart) gets (None, "bridge stopping") and leaves every turn as it is:
         they persist, the request stays IN_PROGRESS, and _reattach takes the
         batch up again after the restart. Time a turn spends held on a question
-        doesn't count (see _wait_job)."""
+        doesn't count, up to _HELD_MAX over the batch (see _wait_job)."""
         from bridge import queue_manager
         q = queue_manager.get()
         deadline = time.time() + timeout
+        held = 0.0
+        why = f"run timed out after {timeout}s"
         mine = lambda: [it for it in q.snapshot(sid)["items"] if it.get("ref") == ref]  # noqa: E731
         while time.time() < deadline:
             items = mine()
@@ -1310,14 +1321,19 @@ class Worker:
             t0 = time.time()
             if self._stop.wait(_POLL_INTERVAL):
                 return None, "bridge stopping"
-            if _held(sid):
-                deadline += time.time() - t0     # a turn waits on a person (see _wait_job)
+            if _held(sid):                       # a turn waits on a person (see _wait_job)
+                waited = time.time() - t0
+                held += waited
+                deadline += waited
+                if held > _HELD_MAX:
+                    why = f"nobody answered in {_HELD_MAX / 3600:g}h"
+                    break
         for it in mine():
             if it["status"] == "running":
                 q.cancel(sid, it["id"])
             elif it["status"] == "queued":
                 q.remove(sid, it["id"])
-        return False, f"run timed out after {timeout}s"
+        return False, why
 
     def _reattach(self, item: dict) -> bool:
         """A queue-mode batch this bridge was running when it last stopped: its

@@ -1044,3 +1044,50 @@ def test_the_progress_question_fits_rivendells_bounds():
     q = rivendell.progress_body(_held_job(big))["question"]
     assert len(q["text"]) == 2000 and len(q["header"]) == 2000
     assert len(q["options"]) == 10 and all(len(o) == 500 for o in q["options"])
+
+
+# --- Review: a question nobody answers can't hold the queue forever --------------
+
+def test_a_question_nobody_answers_fails_the_run(monkeypatch):
+    """The pause is capped, summed across the run's questions: past _HELD_MAX
+    the run is interrupted and fails, so the instance's queue (_active_runs)
+    moves on instead of waiting on an abandoned ask."""
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.02)
+    monkeypatch.setattr(rivendell, "_HELD_MAX", 0.3)
+    job = _Waiting()
+    out = []
+    t = threading.Thread(target=lambda: out.append(_worker()._wait_job(job, 100)), daemon=True)
+    t.start()
+    job.pending = [{"request_id": "q1", "kind": "question"}]
+    time.sleep(0.2)                                   # a first question, answered in time
+    job.pending = []
+    time.sleep(0.2)
+    assert out == [] and not job.interrupted
+    job.pending = [{"request_id": "q2", "kind": "question"}]     # the second tips it over
+    t.join(3)
+    assert out and out[0][0] is False and out[0][1].startswith("nobody answered in")
+    assert job.interrupted
+
+
+def test_nobody_answering_reads_in_hours():
+    assert f"nobody answered in {rivendell._HELD_MAX / 3600:g}h" == "nobody answered in 24h"
+
+
+def test_a_batch_whose_question_nobody_answers_fails(monkeypatch):
+    from bridge import queue_manager
+    from bridge.queue_manager import PreviewQueue
+    q = PreviewQueue(run_fn=lambda item: "job-q", persist_path=None)
+    monkeypatch.setattr(queue_manager, "_instance", q)
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.02)
+    monkeypatch.setattr(rivendell, "_HELD_MAX", 0.2)
+    monkeypatch.setattr(rivendell, "_held", lambda sid: True)
+    q.enqueue("sess-held2", text="step", prompt="do it", images=[], model="opus", effort=None,
+              permission_mode="bypassPermissions", width=0, sel=[], surface="rivendell",
+              chat_id=config.DASH_CHAT_ID, project="/repo", label="step · 1/1", link=None,
+              ref="ch:b-held2")
+    out = []
+    t = threading.Thread(target=lambda: out.append(
+        _worker()._wait_queue("sess-held2", "ch:b-held2", 100)), daemon=True)
+    t.start()
+    t.join(3)
+    assert out and out[0][0] is False and out[0][1].startswith("nobody answered in")
