@@ -172,11 +172,14 @@ def _live(monkeypatch, sid, *pending):
 
 
 @pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
-def test_a_pick_is_saved_and_switches_the_running_turn(monkeypatch, surface):
+def test_a_mode_pick_is_saved_and_switches_only_the_mode(monkeypatch, surface):
+    """The pickers POST the pair they show and name the half you picked: the
+    pair is saved, and only that half reaches the running turn."""
     s = store.create_session(CHAT, f"/srs-pick-{surface}", permission_mode="default")
     job = _live(monkeypatch, s["id"], PERM, QUESTION)
     box = _settings(surface, {"session_id": s["id"], "model": "claude-fable-5-1",
-                              "permission_mode": "bypassPermissions"})
+                              "permission_mode": "bypassPermissions",
+                              "pick": "permission_mode"})
     assert box["code"] == 200
     assert box["obj"] == {"ok": True, "model": "claude-fable-5-1",
                           "permission_mode": "bypassPermissions"}
@@ -184,7 +187,6 @@ def test_a_pick_is_saved_and_switches_the_running_turn(monkeypatch, surface):
     assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "bypassPermissions")
     lines = job.proc.stdin.lines
     assert [l["request"] for l in lines if l["type"] == "control_request"] == [
-        {"subtype": "set_model", "model": "claude-fable-5-1"},
         {"subtype": "set_permission_mode", "mode": "bypassPermissions"}]
     _answer(job)
     # The waiting permission card is approved; the question still waits on you.
@@ -204,7 +206,8 @@ def test_with_nothing_running_the_save_is_enough(monkeypatch, surface):
 
 @pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
 @pytest.mark.parametrize("bad", [{"model": "gpt-5"}, {"permission_mode": "yolo"},
-                                 {"model": 5}, {"permission_mode": ["bypassPermissions"]}])
+                                 {"model": 5}, {"permission_mode": ["bypassPermissions"]},
+                                 {"pick": "both"}, {"pick": 1}])
 def test_an_invalid_pick_is_a_400_and_changes_nothing(monkeypatch, surface, bad):
     s = store.create_session(CHAT, f"/srs-bad-{surface}", permission_mode="default")
     store.set_run_settings(s["id"], model="claude-opus-5-5")
@@ -232,18 +235,28 @@ def test_someone_elses_session_is_a_404(monkeypatch, surface):
 
 
 @pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
-def test_a_pick_that_keeps_the_mode_approves_nothing(monkeypatch, surface):
-    """The pickers POST the pair they show, so a model-only pick re-sends the
-    session's own mode. That is no switch: a turn running in another mode (a
-    tracker update runs `manual` with a confirmation card, inside a session
-    stored as bypassPermissions) keeps its card waiting on you."""
-    s = store.create_session(CHAT, f"/srs-keep-{surface}", permission_mode="bypassPermissions")
-    store.set_run_settings(s["id"], model="claude-opus-5-5")
+def test_a_model_pick_switches_only_the_model(monkeypatch, surface):
+    """A session the bot started has no mode; the picker shows this device's
+    (Bypass) beside it and POSTs that pair with a model pick. The running turn
+    gets the model and nothing else: its waiting card stays yours."""
+    s = store.create_session(CHAT, f"/srs-keep-{surface}", origin="bot")
+    job = _live(monkeypatch, s["id"], PERM)
+    box = _settings(surface, {"session_id": s["id"], "model": "claude-fable-5-1",
+                              "permission_mode": "bypassPermissions", "pick": "model"})
+    assert box["code"] == 200
+    assert [l["request"] for l in job.proc.stdin.lines] == [
+        {"subtype": "set_model", "model": "claude-fable-5-1"}]
+    _answer(job)
+    assert [p["request_id"] for p in job.pending] == ["p1"]       # still yours to answer
+    assert job.model == "claude-fable-5-1"
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+def test_a_save_that_names_no_half_switches_nothing(monkeypatch, surface):
+    s = store.create_session(CHAT, f"/srs-nohalf-{surface}", permission_mode="default")
     job = _live(monkeypatch, s["id"], PERM)
     box = _settings(surface, {"session_id": s["id"], "model": "claude-fable-5-1",
                               "permission_mode": "bypassPermissions"})
     assert box["code"] == 200
-    assert store.get_session(s["id"])["model"] == "claude-fable-5-1"
-    assert [l["request"] for l in job.proc.stdin.lines] == [
-        {"subtype": "set_model", "model": "claude-fable-5-1"}]
-    assert [p["request_id"] for p in job.pending] == ["p1"]       # still yours to answer
+    assert store.get_session(s["id"])["permission_mode"] == "bypassPermissions"
+    assert job.proc.stdin.lines == []

@@ -15,6 +15,7 @@ import type {
   ModelId,
   PendingRequest,
   RunEvent,
+  RunPick,
   SessionBrief,
   StoreTurn,
   Transcript,
@@ -332,19 +333,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // A pick: shown now, remembered as this phone's default, and saved to the
   // open session as the pair the picker shows (a fresh session would otherwise
-  // keep the bridge's mode under a picker showing yours). Saving also switches a
-  // running turn (runner.apply_run_settings). A bridge too old for the route
-  // 404s; the pick still rides the next /api/run, as it always did.
-  function pickRun(m: ModelId, p: string) {
+  // keep the bridge's mode under a picker showing yours). `half` is what you
+  // actually picked, and the only half a running turn is switched to
+  // (runner.apply_run_settings): a model pick must not carry a mode the picker
+  // merely shows into a live turn, and turn Bypass on there. A bridge too old
+  // for the route 404s; the pick still rides the next /api/run, as before.
+  function pickRun(m: ModelId, p: string, half: RunPick) {
     setModelState(m);
     setPermState(p);
     setDefModel(m);
     setDefPerm(p);
     if (sessionId)
-      void api.setRunSettings(sessionId, { model: m, permission_mode: p || undefined }).catch(() => {});
+      void api.setRunSettings(sessionId, { model: m, permission_mode: p || undefined, pick: half })
+        .catch(() => {});
   }
-  const setModel = (m: ModelId) => pickRun(m, perm);
-  const setPerm = (p: string) => pickRun(model, p);
+  const setModel = (m: ModelId) => pickRun(m, perm, "model");
+  const setPerm = (p: string) => pickRun(model, p, "permission_mode");
 
   const lastTurn = turns.length ? turns[turns.length - 1] : null;
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;

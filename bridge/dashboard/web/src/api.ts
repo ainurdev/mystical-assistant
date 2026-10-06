@@ -50,6 +50,10 @@ export interface SessionBrief {
   permission_mode?: string; // the mode its next run gets: stored, else the bridge default
 }
 
+/** Which half of the picker a settings POST was for: the only half a running
+ *  turn is switched to (the pair is saved either way). */
+export type RunPick = "model" | "permission_mode";
+
 /** What POST /local/session/settings saved (and switched a running turn to). */
 export interface RunSettings {
   ok: boolean;
@@ -1233,10 +1237,10 @@ export const api = {
       body: { policy },
     }),
   // A model/mode pick for a session: saved, and applied to its running turn.
-  setRunSettings: (id: string, pick: { model?: string; permission_mode?: string }) =>
+  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; pick: RunPick }) =>
     req<RunSettings>("/local/session/settings", {
       method: "POST",
-      body: { session_id: id, ...pick },
+      body: { session_id: id, ...body },
     }),
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.

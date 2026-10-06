@@ -14,6 +14,7 @@ import {
   type GitStatus,
   type Lifecycle,
   type ModelId,
+  type RunPick,
   type SessionBrief,
   type SessionStatus,
   type UsageInfo,
@@ -331,24 +332,29 @@ export function App() {
   sessionIdRef.current = sessionId;
   // A pick: shown now, remembered as this browser's default, and saved to the
   // open session as the pair the picker shows — a fresh session would otherwise
-  // keep the bridge's mode under a picker showing yours. Saving also switches a
-  // running turn (runner.apply_run_settings). A bridge too old for the route
-  // 404s; the pick still rides the next /local/run, as it always did.
-  const pickRun = (m: ModelId, p: string) => {
+  // keep the bridge's mode under a picker showing yours. `half` is what you
+  // actually picked, and the only half a running turn is switched to
+  // (runner.apply_run_settings): a model pick must not carry a mode the picker
+  // merely shows into a live turn, and turn Bypass on there. A bridge too old
+  // for the route 404s; the pick still rides the next /local/run, as before.
+  const pickRun = (m: ModelId, p: string, half: RunPick) => {
     setModelState(m);
     setPermState(p);
     patchSettings({ model: m, perm: p });
     const sid = sessionIdRef.current;
-    if (sid) void api.setRunSettings(sid, { model: m, permission_mode: p || undefined }).catch(() => {});
+    if (sid) void api.setRunSettings(sid, { model: m, permission_mode: p || undefined, pick: half }).catch(() => {});
   };
-  const setModel = (m: ModelId) => pickRun(m, permMode);
-  const setPermMode = (p: string) => pickRun(model, p);
+  const setModel = (m: ModelId) => pickRun(m, permMode, "model");
+  const setPermMode = (p: string) => pickRun(model, p, "permission_mode");
   // The SESSION tab's MODEL/MODE (and a PROFILE's APPLY) are the composer's
   // knobs, so they show and pick for the open session too; the rest is ours.
   const settingsView = useMemo(() => ({ ...settings, model, perm: permMode }), [settings, model, permMode]);
   const patchFromSettings = (p: Partial<HudSettings>) => {
     const { model: m, perm: pm, ...rest } = p;
-    if (m || pm) pickRun(m || model, pm || permMode);
+    // One pick per half that changes: a PROFILE's APPLY can change both.
+    const nm = m || model, np = pm || permMode;
+    if (nm !== model) pickRun(nm, np, "model");
+    if (np !== permMode) pickRun(nm, np, "permission_mode");
     if (Object.keys(rest).length) patchSettings(rest);
   };
   // openBlank drops the open session on purpose while POST /session is in
