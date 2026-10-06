@@ -117,3 +117,106 @@ def test_miniapp_enqueue_drops_model_and_mode(held_queue):
     assert box["code"] == 200
     [it] = held_queue.snapshot(s["id"])["items"]
     assert (it["model"], it["permission_mode"], it["effort"]) == (None, None, "high")
+
+
+# --- POST …/session/settings ----------------------------------------------------
+
+def _settings(surface, body, chat=CHAT):
+    """The route as each server dispatches it (the Mini App's past its initData gate)."""
+    if surface == "dashboard":
+        h, box = _handler(dash)
+        h._post_api("/local/session/settings", body)
+        return box
+    h, box = _handler(mini)
+    h._auth = lambda: chat
+    h._read_json = lambda: body
+    h.path = "/api/session/settings"
+    h.do_POST()
+    return box
+
+
+class _Stdin:
+    def __init__(self):
+        self.lines = []
+
+    def write(self, s):
+        self.lines.append(json.loads(s))
+
+    def flush(self):
+        pass
+
+
+PERM = {"request_id": "p1", "kind": "permission", "tool_name": "Bash",
+        "summary": "touch a", "input": {"command": "touch a"}}
+QUESTION = {"request_id": "q1", "kind": "question", "tool_name": "AskUserQuestion",
+            "questions": []}
+
+
+def _live(monkeypatch, sid, *pending):
+    """A fake in-flight turn for `sid`, registered where apply_run_settings looks."""
+    monkeypatch.setattr(runner, "_jobs", {})
+    job = runner.Job("j-" + sid, CHAT, sid)
+    job.proc = SimpleNamespace(stdin=_Stdin(), poll=lambda: None)
+    for p in pending:
+        job.add_pending(dict(p))
+    runner._register(job)
+    return job
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+def test_a_pick_is_saved_and_switches_the_running_turn(monkeypatch, surface):
+    s = store.create_session(CHAT, f"/srs-pick-{surface}", permission_mode="default")
+    job = _live(monkeypatch, s["id"], PERM, QUESTION)
+    box = _settings(surface, {"session_id": s["id"], "model": "claude-fable-5-1",
+                              "permission_mode": "bypassPermissions"})
+    assert box["code"] == 200
+    assert box["obj"] == {"ok": True, "model": "claude-fable-5-1",
+                          "permission_mode": "bypassPermissions"}
+    row = store.get_session(s["id"])
+    assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "bypassPermissions")
+    lines = job.proc.stdin.lines
+    assert [l["request"] for l in lines if l["type"] == "control_request"] == [
+        {"subtype": "set_model", "model": "claude-fable-5-1"},
+        {"subtype": "set_permission_mode", "mode": "bypassPermissions"}]
+    # The waiting permission card is approved; the question still waits on you.
+    assert [l["response"]["request_id"] for l in lines if l["type"] == "control_response"] == ["p1"]
+    assert [p["request_id"] for p in job.pending] == ["q1"]
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+def test_with_nothing_running_the_save_is_enough(monkeypatch, surface):
+    monkeypatch.setattr(runner, "_jobs", {})
+    s = store.create_session(CHAT, f"/srs-idle-{surface}")
+    box = _settings(surface, {"session_id": s["id"], "permission_mode": "plan"})
+    assert box["code"] == 200
+    assert box["obj"] == {"ok": True, "model": None, "permission_mode": "plan"}
+    assert store.get_session(s["id"])["permission_mode"] == "plan"
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+@pytest.mark.parametrize("bad", [{"model": "gpt-5"}, {"permission_mode": "yolo"},
+                                 {"model": 5}, {"permission_mode": ["bypassPermissions"]}])
+def test_an_invalid_pick_is_a_400_and_changes_nothing(monkeypatch, surface, bad):
+    s = store.create_session(CHAT, f"/srs-bad-{surface}", permission_mode="default")
+    store.set_run_settings(s["id"], model="claude-opus-5-5")
+    job = _live(monkeypatch, s["id"], PERM)
+    # A valid half beside the bad one must not slip through on its own.
+    box = _settings(surface, {"session_id": s["id"], "model": "claude-fable-5-1",
+                              "permission_mode": "plan", **bad})
+    assert box["code"] == 400
+    row = store.get_session(s["id"])
+    assert (row["model"], row["permission_mode"]) == ("claude-opus-5-5", "default")
+    assert job.proc.stdin.lines == [] and [p["request_id"] for p in job.pending] == ["p1"]
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+def test_someone_elses_session_is_a_404(monkeypatch, surface):
+    mine = store.create_session(CHAT, f"/srs-mine-{surface}")
+    assert _settings(surface, {"session_id": mine["id"], "model": "claude-opus-5-5"})["code"] == 200
+    other = store.create_session(999, f"/srs-other-{surface}", permission_mode="default")
+    job = _live(monkeypatch, other["id"], PERM)
+    box = _settings(surface, {"session_id": other["id"], "permission_mode": "bypassPermissions"})
+    assert box["code"] == 404
+    assert store.get_session(other["id"])["permission_mode"] == "default"
+    assert job.proc.stdin.lines == []
+    assert _settings(surface, {"permission_mode": "plan"})["code"] == 404   # no id at all

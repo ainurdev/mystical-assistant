@@ -95,6 +95,30 @@ def normalize_permission_mode(mode) -> str | None:
     return m
 
 
+def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
+    """POST /api/session/settings and /local/session/settings: one function, so
+    both servers take and answer exactly the same.
+
+    Saves a model and/or permission-mode pick to the session, then switches the
+    session's running turn to it (runner.apply_run_settings); with nothing
+    running, the saved row is what the next turn reads. Either may be omitted.
+    Anything invalid is a 400 with nothing saved and nothing switched: every
+    surface now runs what this row says, so a bad value would follow the session
+    everywhere. Returns (json, status)."""
+    m, p = body.get("model"), body.get("permission_mode")
+    if not all(v is None or isinstance(v, str) for v in (m, p)):
+        return {"error": "model and permission_mode must be strings"}, 400
+    ok, model, _ = normalize_model_effort(m, None)
+    mode = normalize_permission_mode(p)
+    if not ok or ((p or "").strip() and mode is None):
+        return {"error": "invalid model or permission_mode"}, 400
+    store.set_run_settings(session["id"], model=model, permission_mode=mode)
+    runner.apply_run_settings(session["id"], model=model, permission_mode=mode)
+    s = store.get_session(session["id"]) or session
+    return {"ok": True, "model": s.get("model"),
+            "permission_mode": s.get("permission_mode") or config.MINIAPP_PERMISSION_MODE}, 200
+
+
 AUTOCOMPACT_MIN, AUTOCOMPACT_MAX = 100_000, 1_000_000
 
 
@@ -425,6 +449,8 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/sessions/") and path.endswith("/autocompact"):
                 return self._api_session_autocompact(
                     chat_id, path[len("/api/sessions/"):-len("/autocompact")], body)
+            if path == "/api/session/settings":
+                return self._api_session_settings(chat_id, body)
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
                     chat_id, path[len("/api/run/"):-len("/respond")], body)
@@ -669,6 +695,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "autocompact must be 'auto' or 100000-1000000"}, 400)
         store.set_autocompact(sid, value)
         self._json({"ok": True, "autocompact": value})
+
+    def _api_session_settings(self, chat_id: int, body: dict):
+        """A model/mode pick for a session: saved, and applied to its running
+        turn (save_run_settings)."""
+        s = self._owned_session(chat_id, (body.get("session_id") or "").strip())
+        if not s:
+            return self._json({"error": "not found"}, 404)
+        self._json(*save_run_settings(s, body))
 
     def _api_run_respond(self, chat_id: int, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""

@@ -41,6 +41,7 @@ from bridge import (agents, attribution, browser, config, devserver, fmt, git,
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
+                                   save_run_settings,
                                    transcript_for)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -1017,6 +1018,14 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": "autocompact must be 'auto' or 100000-1000000"}, 400)
             store.set_autocompact(sid, value)
             return self._json({"ok": True, "autocompact": value})
+        if path == "/local/session/settings":
+            # A model/mode pick for a session: saved, and applied to its running
+            # turn. Same body and answer as the Mini App's (save_run_settings).
+            sid = (body.get("session_id") or "").strip()
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json(*save_run_settings(s, body))
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")
