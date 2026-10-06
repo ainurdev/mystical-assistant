@@ -311,6 +311,48 @@ export interface IssuesInfo {
   issues: Issue[];
 }
 
+/** One CI check on a PR (bridge/prstatus.py). Skipped checks are left out. */
+export interface PrCheck {
+  name: string;
+  workflow: string;
+  state: "pass" | "fail" | "run";
+  url: string;        // the check's page on GitHub
+  started: string;    // ISO; "" when unknown, and always for a commit status
+  completed: string;  // ISO; "" while it runs
+  log?: string;       // a failing Actions job: its failed step's last ~60 lines
+}
+export interface PrComment { path: string; line: number | null; body: string }
+export type PrState = "running" | "failing" | "review" | "changes" | "ready" | "merged" | "closed";
+export interface PrInfo {
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  base: string;
+  head: string;
+  sha: string;
+  additions: number;
+  deletions: number;
+  created: string;
+  merged_at: string;
+  checks: PrCheck[];
+  passed: number;
+  failed: number;
+  running: number;
+  total: number;
+  decision: string;     // gh reviewDecision: APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
+  requested: string[];  // reviewers asked who haven't answered
+  reviews: { by: string; state: string; at: string }[];
+  /** The review asking for changes, with its inline comments; null otherwise. */
+  review: { by: string; at: string; body: string; comments: PrComment[] } | null;
+  status: PrState;      // the chip's state (sheet C)
+}
+export interface PrStatus {
+  pr: PrInfo | null;    // null = no chip: no PR, no GitHub remote, gh missing or signed out
+  pinged: string[];     // alerts the bridge has pinged (failing:<sha>, changes:<by>:<at>)
+  checked: number;      // epoch s of the gh read behind this answer
+}
+
 export interface ProjectSettings {
   scripts: Record<string, string>;
   run_cmd: string | null;
@@ -1047,6 +1089,15 @@ async function req<T>(
   return (await res.json()) as T;
 }
 
+/** Fired on window after a successful push from any dashboard button (the GIT
+ *  tab, the footer chain, FILES, OPEN PR). The PR chip re-reads on it rather
+ *  than waiting for its next minute. */
+export const PUSHED_EVENT = "hud:pushed";
+const pushed = (project: string, branch?: string) => <T extends { ok: boolean }>(r: T): T => {
+  if (r.ok) window.dispatchEvent(new CustomEvent(PUSHED_EVENT, { detail: { project, branch: branch ?? "" } }));
+  return r;
+};
+
 export interface RunBody {
   prompt: string;
   images: string[];
@@ -1443,7 +1494,7 @@ export const api = {
     req<{ ok: boolean; output: string }>("/local/git/push", {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
-    }),
+    }).then(pushed(project, branch)),
   gitPull: (project: string, branch?: string) =>
     req<{ ok: boolean; output: string }>("/local/git/pull", {
       method: "POST",
@@ -1523,6 +1574,12 @@ export const api = {
       method: "POST",
       body: { project, title, body },
     }),
+  // The chat header's PR chip. `force` (focus, a push) still has a 10s floor
+  // in the bridge. `session` is only used for the Telegram ping's button.
+  prStatus: (project: string, branch: string, session?: string, force = false) =>
+    req<PrStatus>(
+      `/local/github/pr/status?project=${encodeURIComponent(project)}&branch=${encodeURIComponent(branch)}${
+        session ? `&session=${encodeURIComponent(session)}` : ""}${force ? "&force=1" : ""}`),
   // --- task trackers ---
   trackers: () => req<{ connections: TrackerConnection[] }>("/local/trackers"),
   addTracker: (body: { kind: "teamwork" | "jira"; name: string; site: string; email?: string; token: string }) =>
@@ -1635,7 +1692,7 @@ export const api = {
     req<{ ok: boolean; url: string; number: number | null; output: string }>(
       "/local/github/pr",
       { method: "POST", body: { project, head, base, title, body } },
-    ),
+    ).then(pushed(project, head)),
   createProject: (name: string, prompt: string) =>
     req<{ project: Project; session: SessionBrief; job_id: string | null }>(
       "/local/projects/create",
