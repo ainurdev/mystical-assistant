@@ -431,7 +431,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   // mismatch and show nothing rather than another branch's changes.
   const wrongTree = !!(st?.is_repo && branch && st.branch !== branch);
   const files = wrongTree ? [] : st?.files ?? [];
-  const selName = sel ?? files[0]?.path ?? null;
+  // A focused file that left the list (committed since) gives way to the first
+  // one: its notes are listed with the others that have no changes now.
+  const selName = (sel && files.some((f) => f.path === sel) ? sel : files[0]?.path) ?? null;
   const allChecked = files.length > 0 && checked.size === files.length;
   const toggleCheck = (p: string) =>
     setChecked((prev) => { const n = new Set(prev); if (n.has(p)) n.delete(p); else n.add(p); return n; });
