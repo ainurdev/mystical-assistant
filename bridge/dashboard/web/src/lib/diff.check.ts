@@ -29,6 +29,7 @@ const rows = parseDiff([
 
 ok(rows.length === 7, "headers, the newline marker and the trailing newline are not rows");
 ok(rows[0].kind === "hunk" && rows[0].ln === "", "the hunk header is a row with no number");
+ok(rows[0].mark === "" && rows[0].text === "@@ -31,4 +31,5 @@ export class S {", "a hunk header prints its @@ once: in its text, not again as a mark");
 ok(rows[1].ln === "31" && rows[1].text === "  constructor() {}", "context starts at the hunk's new-file line");
 ok(rows[2].kind === "del" && rows[2].ln === "", "a deleted line has no working-tree number");
 ok(rows[3].ln === "32" && rows[4].ln === "33" && rows[5].ln === "34", "added lines count on from the context, not past the deletion");

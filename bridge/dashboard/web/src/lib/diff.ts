@@ -19,7 +19,7 @@ export function parseDiff(text: string): DiffRow[] {
       const m = /\+(\d+)/.exec(line);
       newLn = m ? parseInt(m[1], 10) : 0;
       inHunk = true;
-      rows.push({ ln: "", mark: "@@", text: line, kind: "hunk" });
+      rows.push({ ln: "", mark: "", text: line, kind: "hunk" });   // its text carries the @@
     } else if (line.startsWith("diff ")) {
       inHunk = false;            // the next file's headers
     } else if (!inHunk || line.startsWith("\\")) {
