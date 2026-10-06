@@ -590,6 +590,7 @@ class Job:
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
+        self.model: str | None = None     # what the child runs on; a live switch moves it
         self.texts: list[str] = []       # assistant text this turn
         self.ctx_tokens: int | None = None  # window fill on the last request (see _ctx_of)
         # What the turn spent: the same four counters, summed instead of last-wins.
@@ -2107,8 +2108,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
-    with its own permission posture; --resume continuity comes from that session's
-    claude_session_id. `origin` marks where a newly-created session started.
+    with its own model and permission posture (an explicit model/permission_mode
+    wins for this run and is not written back); --resume continuity comes from
+    that session's claude_session_id. `origin` marks where a newly-created
+    session started.
 
     account_slot picks which Claude login runs the turn (None = the ambient one);
     runtime is set instead when a fallback-ladder free agent takes over. Both are
@@ -2126,7 +2129,12 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     try:
         session, cwd, perm = _finalize_run_context(
             session, project_dir, permission_mode=permission_mode, origin=origin)
+        # The session's own model unless the caller brought one: the /run routes
+        # save theirs to the row; internal callers (Rivendell, trackers, goals)
+        # run theirs without writing it. Neither = no --model, the CLI default.
+        model = model or session.get("model")
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
+        job.model = model
         job.resume_id, job.new_session, job.fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         job.account_slot = account_slot

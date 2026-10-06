@@ -80,3 +80,50 @@ def test_a_duplicate_keeps_the_sources_picks():
     store.set_run_settings(s["id"], model="claude-fable-5-1")
     copy = store.duplicate(s["id"])
     assert (copy["model"], copy["permission_mode"]) == ("claude-fable-5-1", "default")
+
+
+# --- a run resolves to the session's picks --------------------------------------
+
+def _start(monkeypatch, **kw):
+    """start_streaming_job up to the spawn: what _run_streaming would have been
+    handed, plus the job. Releases the run slot the stubbed turn never will."""
+    from bridge import titler
+    seen = {}
+    monkeypatch.setattr(runner, "_jobs", {})
+    monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_run_streaming",
+                        lambda job, prompt, images, cwd, model, effort, perm, ponytail:
+                        seen.update(model=model, perm=perm))
+    job = runner.start_streaming_job(CHAT, "go", [], project=config.BASE_PATH, **kw)
+    state.release_run(job.store_session_id)
+    return job, seen
+
+
+def test_a_run_with_no_picks_of_its_own_runs_the_sessions(monkeypatch):
+    s = store.create_session(CHAT, "/srs-run", cwd=config.BASE_PATH,
+                             permission_mode="default")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    job, seen = _start(monkeypatch, session_id=s["id"])
+    assert seen == {"model": "claude-fable-5-1", "perm": "default"}
+    assert job.model == "claude-fable-5-1"
+    # The turn records what it ran on, not the blank it was asked with.
+    assert store.transcript(s["id"])["turns"][-1]["model"] == "claude-fable-5-1"
+
+
+def test_a_caller_that_brings_picks_runs_them_and_writes_nothing(monkeypatch):
+    """Rivendell, trackers, goals: their values win for the run, and the session
+    keeps the picks a person made for it."""
+    s = store.create_session(CHAT, "/srs-internal", cwd=config.BASE_PATH,
+                             permission_mode="bypassPermissions")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    job, seen = _start(monkeypatch, session_id=s["id"], model="sonnet",
+                       permission_mode="manual")
+    assert seen == {"model": "sonnet", "perm": "manual"}
+    row = store.get_session(s["id"])
+    assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "bypassPermissions")
+
+
+def test_a_session_nobody_picked_a_model_for_passes_none(monkeypatch):
+    s = store.create_session(CHAT, "/srs-none", cwd=config.BASE_PATH)
+    job, seen = _start(monkeypatch, session_id=s["id"])
+    assert seen["model"] is None and job.model is None   # no --model: the CLI's default
