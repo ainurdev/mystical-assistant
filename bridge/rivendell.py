@@ -143,6 +143,10 @@ without interrupting an in-flight review).
 The dashboard's RIVENDELL tab goes through here as well (tasks / implement, at
 the bottom). It lists a repo's open tasks, and IMPLEMENT only asks Rivendell to
 create the request. The run itself comes back over the socket like any other.
+Every run is filed under its request (store sessions.ref, written by _track),
+so a card still opens the session of a run that has ended, after a restart
+too. The channel around it — link state, run views, NEEDS YOU — is
+docs/superpowers/specs/rivendell-channel.md.
 """
 
 import base64
@@ -1176,6 +1180,16 @@ class Worker:
                 "request_id": request_id, "slug": slug, "label": label or slug,
                 "link": link, "session_id": session_id, "created_at": time.time(),
             }
+        # Filed for good, not only while it runs: a DONE card opens (and reads its
+        # result line from) the session that did the work, after the run and after
+        # a restart. Best-effort — a card without its session beats a run that
+        # fails over bookkeeping.
+        try:
+            from bridge import store                 # local import: heavy module
+            store.set_ref(session_id, f"{self.id}:{request_id}")
+        except Exception as e:  # noqa: BLE001
+            print(f"rivendell[{self.name}]: could not file {request_id} "
+                  f"under {session_id}: {e}")
 
     def _untrack(self, request_id: str) -> None:
         with self._q_lock:
@@ -1487,8 +1501,9 @@ def _ask(w: Worker, path: str, payload: "dict | None" = None):
 def tasks(slug: str) -> dict:
     """Open tasks of the Rivendell projects that link the repo `slug`, from
     every running instance, merged. Each project and task is tagged with its
-    instance (IMPLEMENT goes back to the same one); a task whose request runs
-    here also carries the session running it. A failing instance is one entry in
+    instance (IMPLEMENT goes back to the same one); a task whose request ran
+    here carries the session that ran it (filed by _track, so it outlives the
+    run and a restart). A failing instance is one entry in
     `errors`, never an exception — the rest still list. A worker parked on a
     rejected token isn't asked: the tab polls, and re-sending a dead token every
     few seconds is exactly the hammering _listen avoids."""
@@ -1505,10 +1520,19 @@ def tasks(slug: str) -> dict:
                                   "error": e.code, "detail": str(e)})
             continue
         out["projects"] += [{**p, "instance_id": w.id} for p in got.get("projects") or []]
-        for t in got.get("tasks") or []:
-            req = t.get("implementation") or {}
+        rows = got.get("tasks") or []
+        try:   # the session each request ran in here, finished or not (Worker._track)
+            from bridge import store                 # local import: heavy module
+            refs = store.sessions_for_refs([f"{w.id}:{t['implementation']['id']}" for t in rows
+                                            if (t.get("implementation") or {}).get("id")])
+        except Exception as e:  # noqa: BLE001 — the list must still come back
+            print(f"rivendell[{w.name}]: session lookup failed: {e}")
+            refs = {}
+        for t in rows:
+            rid = (t.get("implementation") or {}).get("id")
             out["tasks"].append({**t, "instance_id": w.id,
-                                 "session_id": (w._running.get(req.get("id")) or {}).get("session_id")})
+                                 "session_id": (w._running.get(rid) or {}).get("session_id")
+                                 or refs.get(f"{w.id}:{rid}")})
     return out
 
 

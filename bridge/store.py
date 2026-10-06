@@ -181,6 +181,14 @@ def init() -> None:
         # working in its own checkout, which is the normal case.
         if "work_cwd" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN work_cwd TEXT")
+        # A plugin run's handle on the job that started it — "<instance id>:<request
+        # id>" for a Rivendell request (bridge/rivendell.py Worker._track), the key a
+        # queue-mode batch already tags its turns with. NULL = not a plugin run. It
+        # is how a RIVENDELL card finds the session of a run that has ended, after a
+        # restart too.
+        if "ref" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN ref TEXT")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_ref ON sessions(ref)")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -401,6 +409,27 @@ def set_work_cwd(session_id: str, path: "str | None") -> None:
     stores."""
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET work_cwd=? WHERE id=?", (path, session_id))
+
+
+def set_ref(session_id: str, ref: str) -> None:
+    """File a plugin run's session under the job that started it (see init)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET ref=? WHERE id=?", (ref, session_id))
+
+
+def sessions_for_refs(refs: list[str]) -> dict[str, str]:
+    """ref -> the newest session filed under it. A request run again (a catch-up
+    after a restart re-claims it) gets a second session; the newest is the one
+    whose work the request now shows.
+    ponytail: one IN (…) bind per ref — a tab lists one repo's open tasks, far
+    under SQLite's variable limit; chunk it if a caller ever passes thousands."""
+    if not refs:
+        return {}
+    with closing(_connect()) as c:
+        rows = c.execute(
+            f"SELECT ref, id FROM sessions WHERE ref IN ({','.join('?' * len(refs))}) "
+            "ORDER BY created, rowid", list(refs)).fetchall()
+    return {r["ref"]: r["id"] for r in rows}
 
 
 def parse_goal(raw: "str | None") -> dict | None:
