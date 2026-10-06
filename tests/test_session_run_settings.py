@@ -286,6 +286,52 @@ def test_a_refused_switch_approves_nothing_and_moves_no_model():
     assert [e["src"] for e in job.events if e.get("type") == "log"] == ["control"] * 2
 
 
+def _ask(job, rid, tool, **why):
+    """A can_use_tool request as claude 2.1.280 sends it, through the bridge's
+    own handler: `why` is the request's reason fields."""
+    runner._handle_control_request(job, {"type": "control_request", "request_id": rid,
+        "request": {"subtype": "can_use_tool", "tool_name": tool,
+                    "input": {"command": "x"}, "tool_use_id": "t-" + rid, **why}})
+
+
+def test_a_switch_to_bypass_leaves_what_bypass_itself_still_asks(monkeypatch):
+    """claude's own bypassPermissions still asks for a tool that needs you
+    whatever the mode, a matched ask rule, a safety check, a sandbox override
+    and an org-capped MCP tool: the sweep must not answer those for you. What
+    bypass would just run (a plain ask, the auto-mode classifier's) is approved."""
+    monkeypatch.setattr(runner, "notify_awaiting", lambda *a, **k: None)
+    job = _live_job("s-immune")
+    _ask(job, "plain", "Bash")
+    _ask(job, "auto", "Bash", decision_reason_type="classifier")
+    _ask(job, "exitplan", "ExitPlanMode", requires_user_interaction=True,
+         decision_reason_type="other")
+    _ask(job, "askrule", "Bash", matched_ask_rule={"source": "flagSettings",
+                                                   "tool_name": "Bash"})
+    _ask(job, "rule", "mcp__teamwork__update_task", decision_reason_type="rule")
+    _ask(job, "safety", "Edit", decision_reason_type="safetyCheck",
+         classifier_approvable=False)
+    _ask(job, "compound", "Bash", decision_reason_type="subcommandResults")
+    _ask(job, "sandbox", "Read", decision_reason_type="sandboxOverride")
+    _ask(job, "orgmcp", "mcp__jira__transition", decision_reason_type="other")
+    job.set_run_settings(permission_mode="bypassPermissions")
+    _answer(job)
+    allowed = [l["response"]["request_id"] for l in job.proc.stdin.lines
+               if l["type"] == "control_response"]
+    assert allowed == ["plain", "auto"]
+    assert [p["request_id"] for p in job.pending] == [
+        "exitplan", "askrule", "rule", "safety", "compound", "sandbox", "orgmcp"]
+
+
+def test_a_tracker_turn_keeps_its_cards_under_bypass():
+    """A tracker update runs with a --settings ask rule (extra_args) so every
+    call on its server is confirmed by you: no switch answers those."""
+    job = _live_job("s-tracker", PERM)
+    job.extra_args = ["--settings", '{"permissions": {"ask": ["mcp__jira"]}}']
+    job.set_run_settings(permission_mode="bypassPermissions")
+    _answer(job)
+    assert [p["request_id"] for p in job.pending] == ["p1"]
+
+
 def test_other_modes_leave_waiting_cards_alone():
     job = _live_job("s-ask", PERM)
     job.set_run_settings(permission_mode="acceptEdits")

@@ -789,7 +789,10 @@ class Job:
     def control_answered(self, request_id: "str | None", ok: bool) -> None:
         """The CLI's answer to one of set_run_settings' requests. Its success is
         the moment the switch is real: the model moves, and a switch to
-        bypassPermissions approves the permission cards already waiting.
+        bypassPermissions approves the permission cards already waiting —
+        except what Bypass itself would still ask about (_bypass_still_asks),
+        and nothing at all on a tracker update, whose --settings ask rule
+        (extra_args) is there so you confirm every call on its server.
         Answers to anything else (interrupt) are not ours to act on."""
         with self._lock:
             sent = self._controls.pop(request_id, None)
@@ -798,10 +801,10 @@ class Job:
         subtype, value = sent
         if subtype == "set_model":
             self.model = value
-        elif value == "bypassPermissions":
+        elif value == "bypassPermissions" and not self.extra_args:
             with self._lock:
                 waiting = [p["request_id"] for p in self.pending
-                           if p.get("kind") == "permission"]
+                           if p.get("kind") == "permission" and not _bypass_still_asks(p)]
             for rid in waiting:
                 self.respond(rid, behavior="allow")
 
@@ -1489,6 +1492,32 @@ def _mcp_detail(inp) -> str:
     return "\n".join(parts)[:4000]
 
 
+# A can_use_tool request's reason fields (claude 2.1.280's schema).
+_ASK_WHY = ("requires_user_interaction", "decision_reason_type", "matched_ask_rule",
+            "classifier_approvable")
+# Reason types claude's own bypassPermissions still asks about: an ask rule, a
+# safety check (.git/, settings files...), a sandbox override — and a compound
+# command, whose nested reasons (either of the first two) the request can't show.
+_BYPASS_ASKS = {"rule", "safetyCheck", "subcommandResults", "sandboxOverride"}
+
+
+def _bypass_still_asks(card: dict) -> bool:
+    """Would claude's own bypassPermissions still ask about this permission
+    card? Then a switch to Bypass leaves it for you. Read from 2.1.280's
+    permission check: a tool that needs you in any mode (ExitPlanMode:
+    requires_user_interaction), a matched ask rule, a safety check (its
+    classifier_approvable says one is in the reason), the types above, and an
+    MCP tool an org policy caps at "ask" (type "other"). A plain ask and the
+    auto-mode classifier's are what Bypass just runs — those it approves."""
+    why = card.get("decision_reason_type")
+    return bool(card.get("tool_name") == "ExitPlanMode"
+                or card.get("requires_user_interaction")
+                or card.get("matched_ask_rule") is not None
+                or card.get("classifier_approvable") is not None
+                or why in _BYPASS_ASKS
+                or (why == "other" and str(card.get("tool_name", "")).startswith("mcp__")))
+
+
 def _handle_control_request(job: Job, obj: dict):
     """A `can_use_tool` request: queue it as pending and surface a transcript
     event (a permission card, or a question card for AskUserQuestion)."""
@@ -1504,8 +1533,11 @@ def _handle_control_request(job: Job, obj: dict):
         job.add({"type": "question", "request_id": rid, "questions": questions})
     else:
         summary = _summarize_tool(tool, req.get("input", {}))
+        # Why the CLI asked, in its own fields: a switch to Bypass approves
+        # only what Bypass itself wouldn't ask about (_bypass_still_asks).
         job.add_pending({"request_id": rid, "kind": "permission", "tool_name": tool,
-                         "summary": summary, "input": req.get("input", {})})
+                         "summary": summary, "input": req.get("input", {}),
+                         **{k: req.get(k) for k in _ASK_WHY}})
         ev = {"type": "permission", "request_id": rid, "tool_name": tool, "summary": summary}
         if tool.startswith("mcp__"):
             # The whole call, not 120 chars of it: an MCP write (a tracker
