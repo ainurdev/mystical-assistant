@@ -228,9 +228,13 @@ def next_pings(pinged: "set[str]", pr: dict) -> "tuple[set[str], list[str]]":
 
 
 def ping_text(pr: dict, key: str) -> str:
-    where = f"{pr['title']} · ⎇ {pr['head']}\n{pr['url']}"
+    """Plain text for Telegram: the title capped at 120 characters and at most
+    five check names, so a ping stays a glance."""
+    title = pr["title"] if len(pr["title"]) <= 120 else pr["title"][:119] + "…"
+    where = f"{title} · ⎇ {pr['head']}\n{pr['url']}"
     if key.startswith("failing:"):
-        names = ", ".join(c["name"] for c in pr["checks"] if c["state"] == "fail")
+        red = [c["name"] for c in pr["checks"] if c["state"] == "fail" and not c.get("cancelled")]
+        names = ", ".join(red[:5]) + (f" +{len(red) - 5} more" if len(red) > 5 else "")
         return f"✕ PR #{pr['number']} checks failing — {names}\n{where}"
     by = pr["review"]["by"] if pr["review"] else ""
     return f"◆ PR #{pr['number']} changes requested{f' by {by}' if by else ''}\n{where}"
@@ -320,7 +324,11 @@ def _telegram(project: str, session: str, pr: dict, keys: "list[str]") -> None:
     try:
         kb = telegram.panel_kb(config.DASH_CHAT_ID, session or None, project)
         for k in keys:
-            telegram.send(config.DASH_CHAT_ID, ping_text(pr, k), kb)
+            # Plain text, not send()'s markdown → HTML: a PR title is anyone's
+            # words, and a [label](url) in one must not turn into a link.
+            telegram.tg("sendMessage", chat_id=config.DASH_CHAT_ID, text=ping_text(pr, k),
+                        disable_web_page_preview="true",
+                        reply_markup=json.dumps(kb) if kb else None)
     except Exception as e:  # noqa: BLE001: a ping must never break a read
         print(f"prstatus: Telegram ping failed: {e}")
 

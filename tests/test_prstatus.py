@@ -191,6 +191,29 @@ def test_ping_text_names_the_red_checks():
         "https://github.com/acme/rivendell/pull/131"]
 
 
+def test_ping_text_caps_the_title_and_the_list_of_checks():
+    pr = prstatus.normalize(_raw(title="[click me](https://evil.example) " + "x" * 300,
+                                 statusCheckRollup=[_run(f"job{i}", conclusion="FAILURE") for i in range(7)]))
+    first, where, _url = prstatus.ping_text(pr, "failing:abc123").splitlines()
+    assert first == "✕ PR #131 checks failing — job0, job1, job2, job3, job4 +2 more"
+    assert len(where.split(" · ⎇ ")[0]) <= 120
+
+
+def test_pings_go_to_telegram_as_plain_text(monkeypatch):
+    """A PR title is anyone's words: send()'s markdown → HTML would turn a
+    [label](url) in it into a link, so pings skip it."""
+    seen = []
+    monkeypatch.setattr(prstatus.config, "NOTIFY_ENABLE", True)
+    monkeypatch.setattr(prstatus.config, "DASH_CHAT_ID", 555)
+    monkeypatch.setattr(prstatus.telegram, "tg", lambda method, **params: seen.append((method, params)))
+    monkeypatch.setattr(prstatus.telegram, "send", lambda *a, **k: seen.append(("send", a)))
+    pr = prstatus.normalize(_raw(title="[click](https://evil.example)",
+                                 statusCheckRollup=[_run("backend", conclusion="FAILURE")]))
+    prstatus._telegram("/r", "sid", pr, ["failing:abc123"])
+    assert [m for m, _ in seen] == ["sendMessage"]
+    assert "parse_mode" not in seen[0][1] and seen[0][1]["text"].startswith("✕ PR #131")
+
+
 # --- reading gh: fetch, snapshot, Telegram ------------------------------------
 
 def _fake_gh(monkeypatch, routes):
@@ -223,8 +246,8 @@ def sent(monkeypatch):
     monkeypatch.setattr(prstatus.config, "NOTIFY_ENABLE", True)
     monkeypatch.setattr(prstatus.config, "DASH_CHAT_ID", 555)
     box = []
-    monkeypatch.setattr(prstatus.telegram, "send",
-                        lambda chat, text, kb=None: box.append(text))
+    monkeypatch.setattr(prstatus.telegram, "tg",
+                        lambda method, **params: box.append(params["text"]))
     return box
 
 
@@ -407,7 +430,7 @@ def test_telegram_failing_never_breaks_the_read(monkeypatch):
 
     def down(*a, **k):
         raise OSError("telegram unreachable")
-    monkeypatch.setattr(prstatus.telegram, "send", down)
+    monkeypatch.setattr(prstatus.telegram, "tg", down)
     snap = prstatus.snapshot("/r", "feat/tg-down")
     assert snap["pr"]["status"] == "failing" and snap["pinged"] == ["failing:abc123"]
 
