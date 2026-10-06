@@ -1420,12 +1420,12 @@ def test_shutdown_stops_the_children_after_raising_the_flag(monkeypatch):
     itself, after shutting_down is up, so each runner thread reads the death as
     the restart."""
     import claude_telegram_bridge as entry
-    from bridge import devserver, landing, native_activity, pubsub, state
+    from bridge import devserver, landing, native_activity, pubsub, rivendell, state
     seen = []
     monkeypatch.setattr(state, "shutting_down", False)
     monkeypatch.setattr(runner, "stop_children", lambda: seen.append(state.shutting_down))
-    for mod, name in ((native_activity, "stop"), (devserver, "stop_all"),
-                      (landing, "stop"), (pubsub, "shutdown")):
+    for mod, name in ((rivendell, "stop"), (native_activity, "stop"),
+                      (devserver, "stop_all"), (landing, "stop"), (pubsub, "shutdown")):
         monkeypatch.setattr(mod, name, lambda: None)
     for flag in ("RIVENDELL_ENABLE", "MINIAPP_ENABLE", "DASH_ENABLE"):
         monkeypatch.setattr(config, flag, False)
@@ -1456,6 +1456,27 @@ def test_shutdown_stops_whatever_starts_runs_before_the_children(monkeypatch):
     entry._shutdown()
     assert calls.index("children") > max(calls.index(s)
                                          for s in ("rivendell", "miniapp", "dash"))
+
+
+def test_shutdown_stops_rivendell_without_the_env_flag(monkeypatch):
+    """Instances enabled in the PLUGINS tab run without RIVENDELL_ENABLE: start()
+    reconciles from the instance store at every boot. A worker the stop skipped
+    would keep claiming requests through the shutdown that it can't run."""
+    import claude_telegram_bridge as entry
+    from bridge import devserver, landing, native_activity, rivendell, state
+    calls = []
+    monkeypatch.setattr(state, "shutting_down", False)
+    for mod, name, label in ((rivendell, "stop", "rivendell"),
+                             (runner, "stop_children", "children"),
+                             (native_activity, "stop", "native"),
+                             (devserver, "stop_all", "devserver"),
+                             (landing, "stop", "landing"), (pubsub, "shutdown", "pubsub")):
+        monkeypatch.setattr(mod, name, lambda label=label: calls.append(label))
+    for flag in ("RIVENDELL_ENABLE", "MINIAPP_ENABLE", "DASH_ENABLE"):
+        monkeypatch.setattr(config, flag, False)
+    monkeypatch.setattr(state, "miniapp_tunnel_proc", None)
+    entry._shutdown()
+    assert "rivendell" in calls and calls.index("rivendell") < calls.index("children")
 
 
 def test_no_run_starts_once_the_bridge_is_stopping(monkeypatch):

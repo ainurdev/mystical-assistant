@@ -117,8 +117,8 @@ def _shutdown():
     # Whatever can start a run goes first (start_streaming_job refuses from here
     # on too), so no claude spawns after stop_children's snapshot, and the
     # RESTART overlay stops getting answers from this dying process.
-    if config.RIVENDELL_ENABLE:
-        rivendell.stop()
+    # Unconditional, like start(): PLUGINS-tab instances run without RIVENDELL_ENABLE.
+    rivendell.stop()
     if config.MINIAPP_ENABLE:
         from bridge.miniapp import server as miniapp
         miniapp.stop()
