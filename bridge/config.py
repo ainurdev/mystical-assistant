@@ -306,8 +306,10 @@ DASH_PORT = int(os.environ.get("DASH_PORT", "8790"))
 # convenience; drops the CSRF defense — see the SECURITY note above).
 _dash_token = os.environ.get("DASH_TOKEN")
 DASH_TOKEN = secrets.token_urlsafe(24) if _dash_token is None else _dash_token
-DASH_CHAT_ID = int(os.environ.get("DASH_CHAT_ID", "0")) or (
-    min(ALLOWED_CHAT_IDS) if ALLOWED_CHAT_IDS else 0)
+# Unset → the lowest allow-listed PRIVATE chat. A group (negative id) is never
+# the owner: every member could then answer for you (NEEDS YOU, dispatch._owner).
+DASH_CHAT_ID = int(os.environ.get("DASH_CHAT_ID", "0")) or min(
+    (c for c in ALLOWED_CHAT_IDS if c > 0), default=0)
 
 # --- Landing page (localhost-only) -------------------------------------------
 # site/dist on its own port, so the marketing page can be looked at locally.

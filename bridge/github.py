@@ -121,7 +121,47 @@ def create_issue(cwd: str, title: str, body: str) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
-_PR_URL_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/pull/(\d+)")
+# Owner and repo as GitHub spells them: pr_ref runs this over free model text,
+# and a "URL" with a space or <> in it fails Rivendell's IsUrl on a result.
+_PR_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/(\d+)")
+
+
+def pr_ref(text: str) -> "dict | None":
+    """The first pull request URL in `text`, as {number, url}: how a run's
+    closing summary names the PR it opened (Rivendell's prompts ask for the
+    link). None when it names none."""
+    m = _PR_URL_RE.search(text or "")
+    return {"number": int(m.group(1)), "url": m.group(0)} if m else None
+
+
+_CHECKS_FAIL = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+_CHECKS_OK = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+
+
+def checks_state(rollup) -> "str | None":
+    """GitHub's statusCheckRollup as one word: fail if any check failed, pending
+    while any is still running, pass when every one passed; None when there are
+    none. A CheckRun answers in `conclusion` (empty while it runs), a commit
+    status in `state`."""
+    states = [str(c.get("conclusion") or c.get("state") or "").upper()
+              for c in rollup or () if isinstance(c, dict)]
+    if not states:
+        return None
+    if any(s in _CHECKS_FAIL for s in states):
+        return "fail"
+    return "pass" if all(s in _CHECKS_OK for s in states) else "pending"
+
+
+def pr_checks(url: str) -> "str | None":
+    """checks_state for the PR at `url`, via the user's authed `gh`. None when gh
+    can't say (not installed, no access, not a PR)."""
+    rc, out, _ = _run("gh", "pr", "view", url, "--json", "statusCheckRollup")
+    if rc != 0:
+        return None
+    try:
+        return checks_state(json.loads(out or "{}").get("statusCheckRollup"))
+    except ValueError:
+        return None
 
 
 def create_pr(cwd: str, head: str, base: str, title: str,

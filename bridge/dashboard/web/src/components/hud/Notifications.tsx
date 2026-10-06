@@ -27,14 +27,19 @@ let onNotice: ((kind: NoticeKind) => void) | null = null;
 export function setNoticeSound(fn: ((kind: NoticeKind) => void) | null) { onNotice = fn; }
 
 /** Push a notification: shows a toast popup and lands in the bell dropdown.
- *  `onClick` makes it a link — clicking the toast or the row runs it. */
-export function notify(kind: NoticeKind, text: string, onClick?: () => void) {
-  notices = [{ id: nextId++, kind, text: text || "unknown error", time: Date.now(), read: false, onClick }, ...notices].slice(0, 50);
+ *  `onClick` makes it a link — clicking the toast or the row runs it. Returns
+ *  its id, so a caller whose news goes stale can dismiss it. */
+export function notify(kind: NoticeKind, text: string, onClick?: () => void): number {
+  const id = nextId++;
+  notices = [{ id, kind, text: text || "unknown error", time: Date.now(), read: false, onClick }, ...notices].slice(0, 50);
   emit();
   onNotice?.(kind);
+  return id;
 }
 
-function dismiss(id: number) { notices = notices.filter((n) => n.id !== id); emit(); }
+/** Drop one notice: its row's ×, or a caller whose news went stale (a
+ *  Rivendell link that came back — App.tsx). */
+export function dismiss(id: number) { notices = notices.filter((n) => n.id !== id); emit(); }
 function clearAll() { notices = []; emit(); }
 function markAllRead() {
   if (!notices.some((n) => !n.read)) return;

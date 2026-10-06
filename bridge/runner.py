@@ -676,6 +676,10 @@ class Job:
         # The latest TodoWrite list, so a clip can be shown against the plan it
         # is evidence for. Last write wins: that is what the plan *is*.
         self.todos: list = []
+        # The plan as the task tools keep it — what claude 2.1.280 -p offers
+        # instead of TodoWrite: task id -> its latest status (TaskCreate's result
+        # names the id, TaskUpdate moves it). The RIVENDELL card's todo bar.
+        self.task_status: dict[str, str] = {}
         # tool_use id -> {notes, resolves} from a Record/Attach call, held until
         # its result comes back with the file.
         self.clip_meta: dict[str, dict] = {}
@@ -997,6 +1001,15 @@ def apply_run_settings(session_id: str, model: "str | None" = None,
     return job.set_run_settings(model=model, permission_mode=permission_mode) if job else False
 
 
+def live_job(session_id: str) -> "Job | None":
+    """The session's in-flight job, or None — what the RIVENDELL tab and the
+    Rivendell worker read a run's live state off. Same lookup as steer() and
+    boot_phase(): a session has at most one running job."""
+    with _jobs_lock:
+        return next((j for j in _jobs.values()
+                     if j.store_session_id == session_id and j.status == "running"), None)
+
+
 def awaiting_input() -> list[dict]:
     """Store-session ids whose live job is blocked on user input, with the kind
     ('question' | 'permission') — drives the 'waiting on you' indicator in the
@@ -1255,6 +1268,17 @@ def _session_kb(chat_id: int | None, session_id: str | None,
     return panel_kb(chat_id, session_id, sess.get("project") if sess else None, label)
 
 
+def _plugin_session(session_id: str | None) -> bool:
+    """A Rivendell run's session. Its worker pings once per JOB
+    (rivendell.Worker._ping_done), so the per-turn pings stay quiet for it —
+    a queue-mode batch would otherwise ping once per step, and an autonomous
+    run's closing question is for its requester, in Rivendell.
+    ponytail: by origin, so a turn you later send by hand in such a session
+    pings nothing either; tell them apart if that ever matters."""
+    sess = store.get_session(session_id) if session_id else None
+    return bool(sess) and config.is_plugin_origin(sess.get("origin"))
+
+
 def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> None:
     """Ping when a streaming run blocks on you (a question or an approval)."""
     what = "a question" if kind == "question" else "your approval"
@@ -1264,6 +1288,8 @@ def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> N
 
 def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool) -> None:
     """Ping when a streaming run finishes (or errors), so you can step away."""
+    if _plugin_session(session_id):
+        return
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}",
             _session_kb(chat_id, session_id, "🛠 Open session"))
@@ -1273,6 +1299,8 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
     """Ping when a turn *ended* on something only you can answer. Carries the ask
     itself: it's read off a lock screen, and acting on it shouldn't cost opening
     the transcript to find out what was asked (bridge/tailstate.py)."""
+    if _plugin_session(session_id):
+        return
     _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}",
             _session_kb(chat_id, session_id, "❓ Answer in Panel"))
 
@@ -1625,8 +1653,12 @@ def _handle_control_request(job: Job, obj: dict):
     if tool == "AskUserQuestion":
         questions = (req.get("input") or {}).get("questions", [])
         job.add_pending({"request_id": rid, "kind": "question",
-                         "tool_name": tool, "questions": questions})
+                         "tool_name": tool, "questions": questions,
+                         "at": time.time()})    # since when: the card's "ASKS · 3m ago"
         job.add({"type": "question", "request_id": rid, "questions": questions})
+        from bridge import rivendell  # local import: rivendell reaches runner lazily too
+        if rivendell.ping_question(job, rid, questions):
+            return    # a Rivendell run's own ping carries the options as buttons
     else:
         summary = _summarize_tool(tool, req.get("input", {}))
         # Why the CLI asked, in its own fields: a switch to Bypass approves
@@ -1799,6 +1831,10 @@ def _handle_event(job: Job, d: dict):
                     _note_work_cwd(job, inp.get("command") or "")
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
+                elif name == "TaskUpdate" and inp.get("taskId"):
+                    tid = str(inp["taskId"])
+                    job.task_status[tid] = str(inp.get("status")
+                                               or job.task_status.get(tid, "pending"))
                 elif name.endswith(("__Record", "__Attach")):
                     job.clip_meta[b.get("id")] = _clip_meta(job, inp)
                 job.open_tools[b.get("id")] = (name, time.time())
@@ -1812,6 +1848,10 @@ def _handle_event(job: Job, d: dict):
             if isinstance(b, dict) and b.get("type") == "tool_result":
                 rid = b.get("tool_use_id")
                 name, t0 = job.open_tools.pop(rid, (None, 0.0))
+                made = d.get("tool_use_result") if name == "TaskCreate" else None
+                if (isinstance(made, dict) and isinstance(made.get("task"), dict)
+                        and made["task"].get("id")):
+                    job.task_status.setdefault(str(made["task"]["id"]), "pending")
                 ms = int((time.time() - t0) * 1000) if t0 else 0
                 ev = transcript_jsonl.tool_done(
                     rid, name, ms, b, d.get("tool_use_result"))

@@ -190,6 +190,14 @@ def init() -> None:
             c.execute("UPDATE sessions SET model=(SELECT t.model FROM turns t "
                       "WHERE t.session_id=sessions.id AND t.model IS NOT NULL "
                       "ORDER BY t.seq DESC LIMIT 1)")
+        # A plugin run's handle on the job that started it — "<instance id>:<request
+        # id>" for a Rivendell request (bridge/rivendell.py Worker._track), the key a
+        # queue-mode batch already tags its turns with. NULL = not a plugin run. It
+        # is how a RIVENDELL card finds the session of a run that has ended, after a
+        # restart too.
+        if "ref" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN ref TEXT")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_ref ON sessions(ref)")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -424,6 +432,27 @@ def set_work_cwd(session_id: str, path: "str | None") -> None:
     stores."""
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET work_cwd=? WHERE id=?", (path, session_id))
+
+
+def set_ref(session_id: str, ref: str) -> None:
+    """File a plugin run's session under the job that started it (see init)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET ref=? WHERE id=?", (ref, session_id))
+
+
+def sessions_for_refs(refs: list[str]) -> dict[str, str]:
+    """ref -> the newest session filed under it. A request run again (a catch-up
+    after a restart re-claims it) gets a second session; the newest is the one
+    whose work the request now shows.
+    ponytail: one IN (…) bind per ref — a tab lists one repo's open tasks, far
+    under SQLite's variable limit; chunk it if a caller ever passes thousands."""
+    if not refs:
+        return {}
+    with closing(_connect()) as c:
+        rows = c.execute(
+            f"SELECT ref, id FROM sessions WHERE ref IN ({','.join('?' * len(refs))}) "
+            "ORDER BY created, rowid", list(refs)).fetchall()
+    return {r["ref"]: r["id"] for r in rows}
 
 
 def parse_goal(raw: "str | None") -> dict | None:
@@ -1054,6 +1083,25 @@ def turn_metrics(session_id: str) -> list[dict]:
             "SELECT seq, status, elapsed, started, tok_in, tok_out, tok_cache_w, "
             "tok_cache_r FROM turns WHERE session_id=? ORDER BY seq",
             (session_id,)).fetchall()]
+
+
+def last_turn(session_id: str) -> "dict | None":
+    """A session's newest turn and how it ended: `result`, the text of its last
+    result event ("" when none came), and `outcome` (bridge/outcomes.py) when it
+    failed. For a readout that wants one run's ending without paying for its
+    whole transcript — a RIVENDELL card reads it on every poll."""
+    with closing(_connect()) as c:
+        t = _row(c.execute("SELECT * FROM turns WHERE session_id=? ORDER BY seq DESC LIMIT 1",
+                           (session_id,)).fetchone())
+        if t is None:
+            return None
+        r = c.execute("SELECT payload FROM events WHERE session_id=? AND turn_id=? "
+                      "AND type='result' ORDER BY seq DESC LIMIT 1",
+                      (session_id, t["id"])).fetchone()
+        sig = _outcome_signals(c, session_id, {t["id"]}) if t["status"] == "error" else {}
+    t["result"] = str(json.loads(r["payload"]).get("result") or "") if r else ""
+    t["outcome"] = outcomes.outcome(t, sig[t["id"]]) if sig else None
+    return t
 
 
 def timed_events(session_id: str) -> list[dict]:

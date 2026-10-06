@@ -223,3 +223,10 @@ export function fmtDuration(sec: number): string {
   if (m > 0) return `${m}m`;
   return `${Math.floor(sec)}s`;
 }
+
+/** "950" / "12.3k" / "1.20M" — a token count at a glance (SPEND, RIVENDELL). */
+export function kilo(n: number): string {
+  if (n < 1000) return `${n}`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}

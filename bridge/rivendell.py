@@ -134,6 +134,20 @@ reconfigure nudges the paused listener (self._wake) when the config, and thus
 possibly the token, is edited. Every other error keeps the reconnect-forever
 backoff.
 
+The contract beyond jobs is negotiated: on each connection Rivendell may send
+{"type": "hello", "features": [...]} first, and the bridge sends something new —
+progress, result details, test jobs — only for a feature named there (features
+reset per connection). The deployed Rivendell sends no hello and 400s unknown
+result fields (forbidNonWhitelisted), so it keeps getting exactly today's
+traffic. Frames from Rivendell this bridge doesn't know are ignored, as ever.
+
+A broken link is a *break*: it opens at the first failure, ends only when the
+link proves itself (a frame arrives, or a quiet interval passes with no close —
+_recovered), and is flagged once: one Telegram message, plus alert_at on the
+status for the dashboard's rail dot and bell. Flagged at once on the move to
+auth_error, after _LINK_GRACE of anything else; an instance switched off never
+pings.
+
 The manager (reconfigure/start/stop) diffs the desired set of enabled instances
 against the running workers on every save: it starts new ones, stops removed or
 disabled ones, and for a changed one swaps the config live (the worker reads its
@@ -143,6 +157,13 @@ without interrupting an in-flight review).
 The dashboard's RIVENDELL tab goes through here as well (tasks / implement, at
 the bottom). It lists a repo's open tasks, and IMPLEMENT only asks Rivendell to
 create the request. The run itself comes back over the socket like any other.
+Every run is filed under its request (store sessions.ref, written by _track),
+so a card still opens the session of a run that has ended, after a restart
+too. A card's run view (live_view / _result_view) is read off the live job
+and the store; nothing asks Rivendell. A Rivendell run's question pings
+Telegram with its options as buttons (ping_question); a tap or a text reply
+answers the live run. The channel around it — link state, run views, NEEDS
+YOU — is docs/superpowers/specs/rivendell-channel.md.
 """
 
 import base64
@@ -165,8 +186,18 @@ _PING_INTERVAL = 30.0     # client ping cadence (also the socket read timeout)
 _MAX_MISSED_PONGS = 2     # this many silent intervals -> assume dead, reconnect
 _HTTP_TIMEOUT = 30        # prompt fetch / result post
 _RESULT_RETRIES = (2, 10, 30)   # a finished run is expensive; retry the POST
+_ERROR_MAX = 5000         # Rivendell's MaxLength on a result's error: longer is a 400
 _POLL_INTERVAL = 2.0      # job status poll cadence
+_HELD_MAX = 24 * 3600.0   # a run may wait on a person this long in all; then it fails
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
+_CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab polls
+_LINK_GRACE = 300.0       # an outage this long is a break worth one Telegram message
+_TEST_TIMEOUT = 5.0       # seconds TEST LINK waits for its pong
+_PROGRESS_EVERY = 10.0    # at most one progress post per run this often (spec: ~10 s)
+_ACTIVITY = {"tool": "action", "thinking": "thought", "text": "response", "error": "error"}
+_checks_cache: "dict[str, tuple[float, str | None]]" = {}
+_checks_busy: "set[str]" = set()          # PR urls whose checks are being refreshed
+_checks_lock = threading.Lock()
 
 # WebSocket close codes the gateway uses to reject a bad/insufficient token (see
 # rivendell-api's AgentGateway: it accepts the upgrade, then closes).
@@ -235,6 +266,14 @@ def _project_dir(repos) -> "str | None":
     return common if common != config.BASE_PATH else None
 
 
+def _held(sid: str) -> bool:
+    """Is session `sid`'s live turn held on a question or an approval? A batch's
+    clock pauses while it is (Worker._wait_queue; see Worker._wait_job)."""
+    from bridge import runner                    # local import: heavy module
+    job = runner.live_job(sid)
+    return bool(job and job.pending)
+
+
 # --- One connection into one rivendell-api instance ---------------------------
 
 class Worker:
@@ -263,6 +302,7 @@ class Worker:
         self._running: "dict[str, dict]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
+        self._progress_thread: threading.Thread | None = None
         # A token that was rejected: while it is still the configured token the
         # listener idles instead of reconnecting. Cleared when the token changes.
         self._blocked_token: str | None = None
@@ -280,15 +320,60 @@ class Worker:
         self.status_at = time.time()
         self.connected_since: float | None = None
         self.last_event_at: float | None = None
+        # The current break (see _set_status): when it began, and when it was
+        # flagged — once per break, cleared when the link proves itself
+        # (_recovered). attempt/retry_at drive the tab's "RETRY n · 20s" chip.
+        self.down_since: float | None = None
+        self.alert_at: float | None = None
+        self.attempt = 0
+        self.retry_at: float | None = None
+        # The last good /plugin/tasks answer per repo slug: an instance that
+        # fails still shows its cards, dimmed as "last known" (tasks()). One
+        # entry per repo the tab has shown.
+        self._last_tasks: "dict[str, dict]" = {}
+        # TEST LINK: nonce -> the event its pong sets; the last outcome (Settings
+        # ▸ PLUGINS shows it). The send lock keeps TEST LINK's ping (an HTTP
+        # thread) from interleaving with the listener's own frames.
+        self._pongs: "dict[bytes, threading.Event]" = {}
+        self._send_lock = threading.Lock()
+        self.last_test: "dict | None" = None
+        # What this connection's Rivendell said it understands, in its hello
+        # (docs/superpowers/specs/rivendell-channel.md, Contract). Empty until it
+        # does; the deployed API sends no hello, so it stays empty and gets
+        # exactly today's traffic.
+        self.features: frozenset = frozenset()
 
     def _set_status(self, state: str, detail: str = "") -> None:
+        if self._stop.is_set() and state != "off":
+            return    # a listener still mid-dial when switched off: it stays off
         self.status = state
         self.status_detail = detail
         self.status_at = time.time()
         if state == "connected":
             self.connected_since = self.status_at
+            self.attempt, self.retry_at = 0, None
         elif state != "connected":
             self.connected_since = None
+        # The break behind the rail dot, the bell and the one Telegram message
+        # (docs/superpowers/specs/rivendell-channel.md §B). It opens at the first
+        # failure and closes only when the link proves itself (_recovered):
+        # "connected" is just the 101, and the gateway closes a bad token after
+        # it. Switching off closes it silently: an instance you turned off never
+        # pings.
+        if state == "off":
+            self.down_since = self.alert_at = None
+        elif state in ("error", "auth_error") and self.down_since is None:
+            self.down_since = self.status_at
+        # Only a failure alerts, never a re-dial: the message quotes the status
+        # detail, and "connecting"'s is the ws URL, which can carry a token.
+        if (self.alert_at is None and self.down_since is not None
+                and state in ("error", "auth_error")
+                and (state == "auth_error" or self.status_at - self.down_since >= _LINK_GRACE)):
+            # ponytail: the grace is checked when a dial fails, which happens at
+            # least every backoff + dial timeout (≤ 70 s) while the link is down,
+            # so the alert lands up to that late. A timer, if minutes must be exact.
+            self.alert_at = self.status_at
+            self._alert_broken()
 
     def status_snapshot(self) -> dict:
         return {
@@ -297,7 +382,94 @@ class Worker:
             "since": self.status_at,
             "connected_since": self.connected_since,
             "last_event_at": self.last_event_at,
+            "down_since": self.down_since,      # when the current break began
+            "alert_at": self.alert_at,          # when it was flagged: dot, bell, Telegram
+            "attempt": self.attempt,            # failed dials in a row
+            "retry_at": self.retry_at,          # when the next dial starts
+            "last_test": self.last_test,
+            "features": sorted(self.features),
         }
+
+    def _recovered(self) -> None:
+        """The link has proven itself: a frame arrived on it, or a whole quiet
+        interval passed without the gateway closing it. Only now is a break
+        over. The gateway closes a bad token AFTER the upgrade, so the 101 alone
+        (status "connected") can't clear the alert, or every re-dial of a dead
+        token would end one break and open the next."""
+        self.down_since = self.alert_at = None
+
+    def test_link(self, timeout: float = _TEST_TIMEOUT) -> dict:
+        """TEST LINK: one WebSocket ping/pong round trip on the live socket. The
+        gateway's `ws` (8.x, autoPong) answers every ping with a pong carrying
+        the same payload, so a nonce proves the link end to end with no
+        Rivendell change. Parked on a rejected token it re-dials once with that
+        same token instead: Rivendell closes 4401 for ANY failure of its token
+        check, a database hiccup included, and a parked worker never retries on
+        its own. Anything else is reported as it stands — the listener is
+        already retrying. Kept as `last_test`."""
+        sock = self._sock
+        if self.status == "auth_error":
+            self._blocked_token = None
+            self._wake.set()
+            res = {"ok": None, "rtt_ms": None, "detail": "re-dialing with the saved token"}
+        elif self.status != "connected" or sock is None:
+            res = {"ok": False, "rtt_ms": None, "detail": self.status_detail or self.status}
+        else:
+            nonce, got = os.urandom(8), threading.Event()
+            self._pongs[nonce] = got
+            t0 = time.monotonic()
+            try:
+                self._send(sock, nonce, wsutil.OP_PING)
+                ok = got.wait(timeout)
+                res = {"ok": ok, "rtt_ms": round((time.monotonic() - t0) * 1000) if ok else None,
+                       "detail": "" if ok else f"no pong in {timeout:g}s"}
+            except OSError as e:
+                res = {"ok": False, "rtt_ms": None, "detail": str(e)}
+            finally:
+                self._pongs.pop(nonce, None)
+        self.last_test = {**res, "at": time.time()}
+        return self.last_test
+
+    def _post_pong(self, request_id: str) -> None:
+        try:
+            self._api(f"/plugin/ping-requests/{request_id}/result", {})
+        except Exception as e:  # noqa: BLE001 — Rivendell then reads the test as failed
+            print(f"rivendell[{self.name}]: ping answer failed for {request_id}: {e}")
+
+    def test_job(self) -> dict:
+        """SEND TEST JOB: Rivendell files a `ping`, sends it down the socket, and
+        this bridge answers it without Claude (_post_pong). That is HTTP in, the
+        socket out, HTTP back: the whole path a real job takes. Rivendell holds
+        the first POST open until the answer lands. Offered once its hello names
+        "ping", and kept as `last_test` like TEST LINK."""
+        t0 = time.monotonic()
+        try:
+            ok = bool(self._api("/plugin/ping-requests", {}).get("ok"))
+            res = {"ok": ok, "rtt_ms": round((time.monotonic() - t0) * 1000) if ok else None,
+                   "detail": "" if ok else "the job never came back over the socket"}
+        except Exception as e:  # noqa: BLE001 — one line for the row
+            res = {"ok": False, "rtt_ms": None, "detail": str(_explain(e))}
+        self.last_test = {**res, "via": "job", "at": time.time()}
+        return self.last_test
+
+    def _alert_broken(self) -> None:
+        """The break's one Telegram message (the dashboard's rail dot and bell
+        read alert_at off the status). Off-thread: _set_status runs on the
+        listener. No settings button: the dashboard is localhost-only and the
+        Mini App has no Rivendell settings, so the text says where to go."""
+        at = time.strftime("%H:%M", time.localtime(self.down_since or time.time()))
+        if self.status == "auth_error":
+            text = (f"✕ Rivendell link broken — {self.name}\n"
+                    f"Rivendell refused this bridge's token at {at} ({self.status_detail}). "
+                    "Jobs are paused until you replace it: mint a new LLM token in "
+                    "Rivendell ▸ Profile ▸ API tokens, then paste it in the dashboard "
+                    "under Settings ▸ PLUGINS.")
+        else:
+            text = (f"✕ Rivendell link broken — {self.name}\n"
+                    f"Can't reach Rivendell since {at} ({self.status_detail}). "
+                    "The bridge keeps retrying; jobs wait until it's back.")
+        threading.Thread(target=self._deliver_telegram, args=(text, None),
+                         name=f"rivendell-tg-{self.id}", daemon=True).start()
 
     # -- config accessors (read live off self.inst) --
     @property
@@ -366,22 +538,156 @@ class Worker:
             return None
 
     def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str) -> None:
-        """Report the outcome, retrying — the run was expensive."""
+        """Report the outcome. The run was expensive, so a network or server
+        failure is retried with backoff; a 4xx is Rivendell refusing this very
+        body, which waiting can't change, so it isn't. A Rivendell whose hello
+        said "result-details" also gets `details` (_result_details); if it
+        refuses them (400), the plain result goes again at once without them —
+        the result is what counts, and the deployed API 400s any field it
+        doesn't know. `error` is cut to Rivendell's _ERROR_MAX. Only a result
+        that landed gets the "job done" ping."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
-            ("result" if ok else "error"): text,
+            ("result" if ok else "error"): text if ok else text[:_ERROR_MAX],
             "model": self.model,
         }
-        for i, delay in enumerate((0,) + _RESULT_RETRIES):
-            if delay:
-                time.sleep(delay)
+        if "result-details" in self.features:
+            try:
+                if (details := self._result_details(request_id)):
+                    payload["details"] = details
+            except Exception as e:  # noqa: BLE001 — the plain result still goes
+                print(f"rivendell[{self.name}]: result details failed for {request_id}: {e}")
+        delays = iter(_RESULT_RETRIES)
+        while True:
             try:
                 self._api(f"/plugin/{kind_path}/{request_id}/result", payload)
-                return
+                break
             except Exception as e:  # noqa: BLE001 — retried; loud on final failure
-                if i == len(_RESULT_RETRIES):
+                code = e.code if isinstance(e, urllib.error.HTTPError) else None
+                if code == 400 and payload.pop("details", None) is not None:
+                    print(f"rivendell[{self.name}]: details refused for {request_id} "
+                          f"({e}); resending the result without them")
+                    continue
+                refused = code is not None and 400 <= code < 500 and code not in (408, 429)
+                delay = None if refused else next(delays, None)
+                if delay is None:
                     print(f"rivendell[{self.name}]: result POST failed for "
                           f"{request_id}: {e} (transcript still in dashboard)")
+                    return
+                time.sleep(delay)
+        self._ping_done(request_id, ok, text)
+
+    def _progress_loop(self) -> None:
+        """Rivendell's live feed for every run in flight here (_progress_tick on
+        each poll beat). Its own thread, so no run path changes shape."""
+        last: dict = {}
+        while not self._stop.wait(_POLL_INTERVAL):
+            try:
+                self._progress_tick(last, time.monotonic())
+            except Exception as e:  # noqa: BLE001 — the feed outlives any beat
+                print(f"rivendell[{self.name}]: progress beat failed: {e}")
+
+    def _progress_tick(self, last: dict, now: float) -> None:
+        """One beat: each run in flight posts its progress_body when it changed —
+        at most every _PROGRESS_EVERY s, but at once when it starts or stops
+        waiting on a person. Silent unless this Rivendell's hello said
+        "progress". `last` is request id -> (body, when posted), recorded only
+        once a beat is settled (_post_progress): a run held on a question
+        doesn't change its body, so a beat lost to the network must go again.
+        Runs that ended are forgotten."""
+        if "progress" not in self.features:
+            return
+        from bridge import runner                    # local import: heavy module
+        with self._q_lock:
+            rows = list(self._running.values())
+        for r in rows:
+            job = runner.live_job(r["session_id"])
+            if job is None:
+                continue
+            body = progress_body(job)
+            prev = last.get(r["request_id"])
+            if prev and (prev[0] == body or (prev[0]["state"] == body["state"]
+                                              and now - prev[1] < _PROGRESS_EVERY)):
+                continue
+            if self._post_progress(self._KIND_PATH.get(r["kind"], "review-requests"),
+                                   r["request_id"], body):
+                last[r["request_id"]] = (body, now)
+        for gone in set(last) - {r["request_id"] for r in rows}:
+            last.pop(gone)
+
+    def _post_progress(self, kind_path: str, request_id: str, body: dict) -> bool:
+        """POST one beat. True once it is settled: Rivendell has it, or refused
+        this very body (a 4xx — resending it can't help). False when it should
+        go again on the next beat (the network, a 5xx)."""
+        try:
+            self._api(f"/plugin/{kind_path}/{request_id}/progress", body)
+            return True
+        except Exception as e:  # noqa: BLE001 — the next beat resends it
+            print(f"rivendell[{self.name}]: progress post failed for {request_id}: {e}")
+            return (isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500
+                    and e.code not in (408, 429))
+
+    def _rivendell_answer(self, obj: dict) -> None:
+        """A NEEDS YOU answer given in Rivendell. Only the bridge's owner may
+        give one, and Rivendell checks that (claimedById). It answers the question
+        its run is held on, matched by the question's id, so an answer to a
+        question already answered here, or to an earlier one, is dropped, never
+        misapplied. Same path as the session's QuestionCard (Job.respond), so the
+        same run continues."""
+        from bridge import runner                    # local import: heavy module
+        with self._q_lock:
+            row = self._running.get(obj.get("requestId") or "")
+        job = runner.live_job(row["session_id"]) if row else None
+        qid = obj.get("questionId") or ""
+        entry = (next((p for p in list(job.pending) if p.get("request_id") == qid), None)
+                 if job else None)
+        if entry is None:
+            print(f"rivendell[{self.name}]: answer for {obj.get('requestId')} dropped: "
+                  "its question no longer waits")
+            return
+        a = obj.get("answer") or {}
+        q = (entry.get("questions") or [{}])[0]
+        ans = {"header": q.get("header") or q.get("question") or "",
+               "labels": [str(x) for x in a.get("labels") or []]}
+        if str(a.get("notes") or "").strip():
+            ans["notes"] = str(a["notes"]).strip()
+        job.respond(qid, answers=[ans])
+
+    def _result_details(self, request_id: str) -> "dict | None":
+        """The structured half of a result (spec: Contract → Result), read off
+        the session that ran it: the outcome the transcript shows, the PR with
+        its checks, wall and active time (active = wall minus waiting on a
+        person), tokens, and where to open it on this bridge. Wire names are
+        camelCase, as Rivendell's DTOs are. None when no run happened here."""
+        from bridge import attribution, store        # local import: heavy modules
+        ref = f"{self.id}:{request_id}"
+        sid = store.sessions_for_refs([ref]).get(ref)
+        if sid is None:
+            return None
+        res = _result_view(sid) or {}
+        b = attribution.breakdown(sid)
+        return {"outcome": res.get("outcome"), "pr": res.get("pr"), "sessionId": sid,
+                "dashboardUrl": f"http://localhost:{config.DASH_PORT}/?s={sid}",
+                "wallSeconds": round(b["wall"]),
+                "activeSeconds": round(max(0.0, b["wall"] - b["waiting_s"])),
+                "tokens": res.get("tokens")}
+
+    def _ping_done(self, request_id: str, ok: bool, text: str) -> None:
+        """The job's one Telegram message once its result is posted: done or
+        failed, its PR and time, with OPEN PR and OPEN SESSION. Only for a job
+        that ran here (a session is filed under it); checks are left out — they
+        have only just started. Best-effort: a lost ping never fails a result."""
+        try:
+            from bridge import store                 # local import: heavy module
+            ref = f"{self.id}:{request_id}"
+            sid = store.sessions_for_refs([ref]).get(ref)
+            if sid is None:
+                return
+            sess = store.get_session(sid) or {"id": sid}
+            msg, kb = _done_message(sess, ok, text, _result_view(sid, checks=False) or {})
+            self._deliver_telegram(msg, kb)
+        except Exception as e:  # noqa: BLE001
+            print(f"rivendell[{self.name}]: done ping failed for {request_id}: {e}")
 
     # -- WebSocket client --
     def _ws_url(self) -> str:
@@ -444,7 +750,8 @@ class Worker:
         return sock, rfile
 
     def _send(self, sock: socket.socket, payload: bytes, opcode: int) -> None:
-        sock.sendall(wsutil.encode_frame(payload, opcode, masked=True))
+        with self._send_lock:    # TEST LINK sends from an HTTP thread
+            sock.sendall(wsutil.encode_frame(payload, opcode, masked=True))
 
     def _catch_up(self) -> int:
         """Queue PENDING requests missed while disconnected, returning how many
@@ -609,6 +916,18 @@ class Worker:
             obj = json.loads(raw.decode())
         except (UnicodeDecodeError, json.JSONDecodeError):
             return None
+        if obj.get("type") == "hello":
+            self.features = frozenset(str(f) for f in obj.get("features") or () if f)
+            print(f"rivendell[{self.name}]: speaks {sorted(self.features) or 'nothing new'}")
+            return None
+        if obj.get("type") == "job-answer" and obj.get("requestId"):
+            self._rivendell_answer(obj)
+            return None
+        if obj.get("type") == "ping-request" and obj.get("requestId"):
+            # SEND TEST JOB's echo: answered here, no Claude, off the listener.
+            threading.Thread(target=self._post_pong, args=(obj["requestId"],),
+                             name=f"rivendell-pong-{self.id}", daemon=True).start()
+            return None
         if obj.get("type") == "pr-review-request" and obj.get("requestId"):
             pr = obj.get("pullRequest") or {}
             print(f"rivendell[{self.name}]: review requested for "
@@ -680,6 +999,8 @@ class Worker:
                 continue
             except Exception as e:  # noqa: BLE001 — reconnect-forever by design
                 if not self._stop.is_set():
+                    self.attempt += 1
+                    self.retry_at = time.time() + backoff
                     self._set_status("error", str(e))
                     print(f"rivendell[{self.name}]: connect failed ({e}); "
                           f"retrying in {backoff:.0f}s")
@@ -689,6 +1010,7 @@ class Worker:
 
             self._sock = sock
             backoff = _BACKOFF_MIN
+            self.features = frozenset()     # this connection hasn't said hello yet
             self._set_status("connected", url)
             caught = self._catch_up()
             print(f"rivendell[{self.name}]: connected to {url}"
@@ -720,12 +1042,17 @@ class Worker:
                         missed += 1
                         if missed > _MAX_MISSED_PONGS:
                             raise ConnectionError("peer stopped answering pings")
+                        # A whole quiet interval with no close: the gateway took
+                        # the token, so the link has proven itself.
+                        self._recovered()
                         self._send(sock, b"", wsutil.OP_PING)
                         continue
                     if frame is None:
                         raise ConnectionError("connection closed by peer")
                     missed = 0
                     opcode, payload = frame
+                    if opcode != wsutil.OP_CLOSE:
+                        self._recovered()       # anything but a close proves the link
                     if opcode == wsutil.OP_PING:
                         self._send(sock, payload, wsutil.OP_PONG)
                     elif opcode == wsutil.OP_TEXT:
@@ -745,7 +1072,11 @@ class Worker:
                     elif opcode == wsutil.OP_CONT:
                         # Fragmentation is unsupported (see wsutil) — resync.
                         raise ConnectionError("unexpected continuation frame")
-                    # OP_PONG / anything else: arrival already reset `missed`.
+                    elif opcode == wsutil.OP_PONG:
+                        waiter = self._pongs.get(payload)    # TEST LINK's nonce
+                        if waiter is not None:
+                            waiter.set()
+                    # Anything else: arrival already reset `missed`.
             except _AuthError as e:
                 self._block_on_token(str(e))
             except Exception as e:  # noqa: BLE001 — reconnect-forever by design
@@ -793,16 +1124,34 @@ class Worker:
         because claude -p keeps the process alive while a background subagent
         finishes and then wakes the model again (runner.py, the assistant branch).
         The runner's finally sets `job.exited` once the slot is free; a job
-        without that flag (a stub) is waited on by status, as before."""
+        without that flag (a stub) is waited on by status, as before.
+        Time the run spends held on a question (or an approval) doesn't count: a
+        person is deciding, and their time is not the run's — the rule the hang
+        watchdog already applies (runner._watchdog), here for the kind's wall
+        clock, which would otherwise fail a run while you were answering it.
+        ponytail: the pause is capped at _HELD_MAX (24 h) summed over the run's
+        questions. Past it the run is interrupted and fails ("nobody answered
+        in 24h"), so an abandoned ask can't hold this instance's queue
+        (_active_runs) forever. One cap for every kind; per kind if 24 h is
+        ever wrong for one."""
         deadline = time.time() + timeout
+        held = 0.0                    # time spent waiting on a person, all questions
         exited = getattr(job, "exited", None)
 
         def over() -> bool:
             return exited.is_set() if exited is not None else job.status != "running"
 
         while not over() and time.time() < deadline:
+            t0 = time.time()
             if self._stop.wait(_POLL_INTERVAL):
                 break
+            if getattr(job, "pending", None):
+                waited = time.time() - t0
+                held += waited
+                deadline += waited
+                if held > _HELD_MAX:
+                    job.interrupt()
+                    return False, f"nobody answered in {_HELD_MAX / 3600:g}h"
         if not over():
             job.interrupt()
             return False, f"run timed out after {timeout}s"
@@ -956,10 +1305,13 @@ class Worker:
         cancels the running turn and drops the rest. A stopping worker (a bridge
         restart) gets (None, "bridge stopping") and leaves every turn as it is:
         they persist, the request stays IN_PROGRESS, and _reattach takes the
-        batch up again after the restart."""
+        batch up again after the restart. Time a turn spends held on a question
+        doesn't count, up to _HELD_MAX over the batch (see _wait_job)."""
         from bridge import queue_manager
         q = queue_manager.get()
         deadline = time.time() + timeout
+        held = 0.0
+        why = f"run timed out after {timeout}s"
         mine = lambda: [it for it in q.snapshot(sid)["items"] if it.get("ref") == ref]  # noqa: E731
         while time.time() < deadline:
             items = mine()
@@ -976,14 +1328,22 @@ class Worker:
                 if text.strip():
                     return True, text
                 return False, "run finished without producing any result text"
+            t0 = time.time()
             if self._stop.wait(_POLL_INTERVAL):
                 return None, "bridge stopping"
+            if _held(sid):                       # a turn waits on a person (see _wait_job)
+                waited = time.time() - t0
+                held += waited
+                deadline += waited
+                if held > _HELD_MAX:
+                    why = f"nobody answered in {_HELD_MAX / 3600:g}h"
+                    break
         for it in mine():
             if it["status"] == "running":
                 q.cancel(sid, it["id"])
             elif it["status"] == "queued":
                 q.remove(sid, it["id"])
-        return False, f"run timed out after {timeout}s"
+        return False, why
 
     def _reattach(self, item: dict) -> bool:
         """A queue-mode batch this bridge was running when it last stopped: its
@@ -1144,7 +1504,8 @@ class Worker:
                          name=f"rivendell-tg-{self.id}", daemon=True).start()
 
     def _deliver_telegram(self, text: str, kb: dict) -> None:
-        """Send one queued-request ping to the operator's chat. Silent when
+        """Send one ping (a held request, a broken link, a finished job) to the
+        bridge owner's chat. Silent when
         Telegram is not configured ("if available"): the request still shows in
         the dashboard's PLUGINS queue regardless."""
         if not config.NOTIFY_ENABLE or not config.TOKEN or not config.DASH_CHAT_ID:
@@ -1179,6 +1540,16 @@ class Worker:
                 "request_id": request_id, "slug": slug, "label": label or slug,
                 "link": link, "session_id": session_id, "created_at": time.time(),
             }
+        # Filed for good, not only while it runs: a DONE card opens (and reads its
+        # result line from) the session that did the work, after the run and after
+        # a restart. Best-effort — a card without its session beats a run that
+        # fails over bookkeeping.
+        try:
+            from bridge import store                 # local import: heavy module
+            store.set_ref(session_id, f"{self.id}:{request_id}")
+        except Exception as e:  # noqa: BLE001
+            print(f"rivendell[{self.name}]: could not file {request_id} "
+                  f"under {session_id}: {e}")
 
     def _untrack(self, request_id: str) -> None:
         with self._q_lock:
@@ -1297,6 +1668,10 @@ class Worker:
             self._listen_thread = threading.Thread(
                 target=self._listen, name=f"rivendell-ws-{self.id}", daemon=True)
             self._listen_thread.start()
+        if self._progress_thread is None or not self._progress_thread.is_alive():
+            self._progress_thread = threading.Thread(
+                target=self._progress_loop, name=f"rivendell-progress-{self.id}", daemon=True)
+            self._progress_thread.start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -1381,6 +1756,20 @@ def running() -> list:
     with _manager_lock:
         workers = list(_workers.values())
     return [row for w in workers for row in w.running_snapshot()]
+
+
+def test_link(instance_id: str, job: bool = False) -> "dict | None":
+    """TEST LINK (Worker.test_link), or with `job` SEND TEST JOB (Worker.test_job)
+    — only on a live link whose Rivendell said "ping"; anything else gets TEST
+    LINK, so a route Rivendell may not have is never called. None when the
+    instance has no running worker (switched off or removed)."""
+    with _manager_lock:
+        w = _workers.get(instance_id)
+    if w is None:
+        return None
+    if job and "ping" in w.features and w.status == "connected":
+        return w.test_job()
+    return w.test_link()
 
 
 # --- Telegram callback tokens -------------------------------------------------
@@ -1487,31 +1876,188 @@ def _ask(w: Worker, path: str, payload: "dict | None" = None):
         raise _explain(e) from None
 
 
+def live_view(job) -> dict:
+    """A live run, read off its job (pure: no I/O). `live` is what it is doing
+    now — the jobs monitor's own label (Job.activity) —, its todo progress and
+    how many steps (tool calls) it has taken; `ask` is the question it is held
+    on, or None. Todo progress counts the task tools (claude 2.1.280's -p mode
+    has no TodoWrite) and falls back to a TodoWrite list. `ask.simple` marks one
+    single-choice question, the only kind whose options can be buttons; a
+    richer one is answered in the session's own card."""
+    act = job.activity()
+    plan = [s for s in list(job.task_status.values()) if s != "deleted"] or [
+        t.get("status") for t in job.todos if isinstance(t, dict)]
+    ask = None
+    for p in list(job.pending):
+        qs = p.get("questions") or []
+        if p.get("kind") == "question" and qs:
+            q = qs[0]
+            ask = {"job_id": job.id, "request_id": p["request_id"], "at": p.get("at"),
+                   "question": q.get("question") or "",
+                   "header": q.get("header") or q.get("question") or "",
+                   "options": [o["label"] for o in q.get("options") or []
+                               if isinstance(o, dict) and o.get("label")],
+                   "simple": len(qs) == 1 and not q.get("multiSelect")}
+            break
+    return {"live": {"line": act["label"], "steps": act["tools"],
+                     "todos": ({"done": plan.count("completed"), "total": len(plan)}
+                               if plan else None)},
+            "ask": ask}
+
+
+def _activity(job) -> dict:
+    """The run's latest move as the contract names it — action | thought |
+    question | response | error — with a short text: what Rivendell's task page
+    shows as "now"."""
+    if any(p.get("kind") == "question" for p in list(job.pending)):
+        return {"kind": "question", "text": "waiting for an answer"}
+    for ev in reversed(list(job.events)):
+        kind = _ACTIVITY.get(ev.get("type"))
+        if kind == "action":
+            text = f"{ev.get('name')}: {ev['summary']}" if ev.get("summary") else ev.get("name") or ""
+        elif kind == "thought":
+            text = "thinking"
+        elif kind:
+            text = ev.get("text") or ev.get("message") or ""
+        else:
+            continue
+        return {"kind": kind, "text": str(text)[:200]}
+    return {"kind": "action", "text": "starting"}
+
+
+def progress_body(job) -> dict:
+    """One run's progress event (spec: Contract → Progress): its state, latest
+    activity, todo progress and step count — plus, while it waits on a person,
+    the question, with the id an answer must quote (Worker._rivendell_answer)
+    and whether its options can be one-tap buttons."""
+    v = live_view(job)
+    body = {"state": "awaiting_input" if v["ask"] else "running", "activity": _activity(job),
+            "todos": v["live"]["todos"], "step": v["live"]["steps"]}
+    if v["ask"]:
+        a = v["ask"]
+        # Clipped to Rivendell's bounds on a progress question: anything longer
+        # is a 400 for the whole beat.
+        body["question"] = {"id": a["request_id"], "text": a["question"][:2000],
+                            "header": a["header"][:2000],
+                            "options": [o[:500] for o in a["options"][:10]],
+                            "buttons": a["simple"]}
+    return body
+
+
+def _checks(url: str) -> "str | None":
+    """A PR's checks word (github.pr_checks) from the cache, never from `gh` on
+    the caller's thread: a tab poll or a result post must not wait on the
+    network. A missing or stale entry (_CHECKS_TTL) is refreshed on a thread
+    of its own, so the first read of a PR says None and a later poll has it.
+    ponytail: a plain dict keyed by PR url, never pruned — a few entries per
+    DONE card ever shown; an LRU if a bridge lives through months of PRs."""
+    with _checks_lock:
+        hit = _checks_cache.get(url)
+        stale = hit is None or time.monotonic() - hit[0] >= _CHECKS_TTL
+        if stale and url not in _checks_busy:
+            _checks_busy.add(url)
+            threading.Thread(target=_refresh_checks, args=(url,),
+                             name="rivendell-checks", daemon=True).start()
+    return hit[1] if hit else None
+
+
+def _refresh_checks(url: str) -> None:
+    from bridge import github                    # local import: subprocess-heavy
+    try:
+        state = github.pr_checks(url)
+    except Exception as e:  # noqa: BLE001 — unknown until the next refresh
+        print(f"rivendell: checks for {url} failed: {e}")
+        state = None
+    with _checks_lock:
+        _checks_cache[url] = (time.monotonic(), state)
+        _checks_busy.discard(url)
+
+
+def _result_view(sid: str, checks: bool = True) -> "dict | None":
+    """What a finished run came to, read off its session: wall time and token
+    spend over its turns (tokens in counts cache reads and writes, as SPEND
+    does), the PR its closing summary names (Rivendell's prompts ask for the
+    link) with its checks (unless `checks` is False: they have only just
+    started when a job ends), and — when its last turn failed — the outcome the
+    transcript shows (bridge/outcomes.py). None for a session with no turns."""
+    from bridge import github, store             # local import: heavy modules
+    last = store.last_turn(sid)
+    if last is None:
+        return None
+    rows = store.turn_metrics(sid)
+    tin = sum((r.get("tok_in") or 0) + (r.get("tok_cache_w") or 0) + (r.get("tok_cache_r") or 0)
+              for r in rows)
+    tout = sum(r.get("tok_out") or 0 for r in rows)
+    pr = github.pr_ref(last["result"])
+    if pr and checks:
+        pr["checks"] = _checks(pr["url"])
+    return {"wall_s": sum(r.get("elapsed") or 0 for r in rows),
+            "tokens": {"in": tin, "out": tout} if tin or tout else None,
+            "pr": pr, "outcome": last["outcome"]}
+
+
+def _run_view(sid: str) -> dict:
+    """What this bridge knows about the run in session `sid`, for its card:
+    while it runs, `live` and `ask` (live_view); once over, `result`. Read off
+    the live job and the store — nothing here asks Rivendell. Best-effort: a
+    card without its extra line beats a tab that fails to list."""
+    from bridge import runner                    # local import: heavy module
+    try:
+        job = runner.live_job(sid)
+        return live_view(job) if job is not None else {"result": _result_view(sid)}
+    except Exception as e:  # noqa: BLE001
+        print(f"rivendell: run view for {sid} failed: {e}")
+        return {}
+
+
 def tasks(slug: str) -> dict:
     """Open tasks of the Rivendell projects that link the repo `slug`, from
-    every running instance, merged. Each project and task is tagged with its
-    instance (IMPLEMENT goes back to the same one); a task whose request runs
-    here also carries the session running it. A failing instance is one entry in
-    `errors`, never an exception — the rest still list. A worker parked on a
-    rejected token isn't asked: the tab polls, and re-sending a dead token every
-    few seconds is exactly the hammering _listen avoids."""
+    every running instance, merged, plus `links` — each instance's connection
+    state, for the tab's chip and banner. Each project and task is tagged with
+    its instance (IMPLEMENT goes back to the same one). A task whose request
+    ran here carries the session that ran it (filed by _track, so it outlives
+    the run and a restart) and `run`, what this bridge knows about that run
+    (_run_view). A failing instance is one entry in `errors`, never an
+    exception — the rest still list — and its last good answer comes back
+    marked `stale`, which the tab dims to "last known". A worker parked on a
+    rejected token isn't asked: the tab polls, and re-sending a dead token
+    every few seconds is exactly the hammering _listen avoids. Nor is one whose
+    link is down (error, retrying): its API most likely is too, and a dead host
+    would hold every poll for the HTTP timeout."""
     with _manager_lock:
         running = list(_workers.values())
-    out: dict = {"instances": len(running), "projects": [], "tasks": [], "errors": []}
+    out: dict = {"instances": len(running), "projects": [], "tasks": [], "errors": [],
+                 "links": [{"instance_id": w.id, "instance": w.name, **w.status_snapshot()}
+                           for w in running]}
     for w in running:
+        stale = False
         try:
             if w.status == "auth_error":
                 raise TasksError("token_rejected", w.status_detail or "token rejected")
-            got = _ask(w, "/plugin/tasks?repository=" + quote(slug, safe="/"))
+            if w.status == "error":
+                raise TasksError("unreachable", f"unreachable: {w.status_detail or 'link down'}")
+            got = w._last_tasks[slug] = _ask(
+                w, "/plugin/tasks?repository=" + quote(slug, safe="/"))
         except TasksError as e:
             out["errors"].append({"instance_id": w.id, "instance": w.name,
                                   "error": e.code, "detail": str(e)})
-            continue
+            got, stale = w._last_tasks.get(slug), True
+            if got is None:
+                continue
         out["projects"] += [{**p, "instance_id": w.id} for p in got.get("projects") or []]
-        for t in got.get("tasks") or []:
-            req = t.get("implementation") or {}
-            out["tasks"].append({**t, "instance_id": w.id,
-                                 "session_id": (w._running.get(req.get("id")) or {}).get("session_id")})
+        rows = got.get("tasks") or []
+        try:   # the session each request ran in here, finished or not (Worker._track)
+            from bridge import store                 # local import: heavy module
+            refs = store.sessions_for_refs([f"{w.id}:{t['implementation']['id']}" for t in rows
+                                            if (t.get("implementation") or {}).get("id")])
+        except Exception as e:  # noqa: BLE001 — the list must still come back
+            print(f"rivendell[{w.name}]: session lookup failed: {e}")
+            refs = {}
+        for t in rows:
+            rid = (t.get("implementation") or {}).get("id")
+            sid = (w._running.get(rid) or {}).get("session_id") or refs.get(f"{w.id}:{rid}")
+            out["tasks"].append({**t, "instance_id": w.id, "session_id": sid, "stale": stale,
+                                 "run": _run_view(sid) if sid else None})
     return out
 
 
@@ -1528,6 +2074,132 @@ def implement(instance_id: str, task_id: str) -> dict:
 # Boot entry point (claude_telegram_bridge.py) and the settings save hook both
 # call this; reconfigure is the whole mechanism, so start is just its name at
 # boot.
+# --- NEEDS YOU over Telegram ----------------------------------------------------
+# A Rivendell run held on an AskUserQuestion pings the bridge's owner with the
+# question's options as buttons; a tap, or a text reply to the ping, answers the
+# live run (Job.respond — exactly what the session's QuestionCard sends) and the
+# ping is edited to record it (bridge/dispatch.py). A short token stands for
+# (session, control request) in callback_data, capped at 64 bytes; the ping's
+# message id maps a reply back to the same token. Memory only: a restart ends
+# the held run anyway, and its buttons then just say "already answered".
+_asks: "dict[str, dict]" = {}            # token -> {sid, rid, header, options}
+_ask_msgs: "dict[int, str]" = {}         # ping message id -> token
+_asks_lock = threading.Lock()
+
+
+def ping_question(job, request_id: str, questions: list) -> bool:
+    """runner._handle_control_request's hook. A Rivendell run's question — every
+    Rivendell job on this bridge, whoever requested it; the bridge's owner is
+    the one who answers — pings with its options as buttons instead of the
+    generic "Claude needs a question". False, sending nothing, for any other
+    session, which keeps the generic ping. Never raises into the run."""
+    try:
+        from bridge import store                 # local import: heavy module
+        sess = store.get_session(job.store_session_id) if job.store_session_id else None
+        if not sess or not config.is_plugin_origin(sess.get("origin")):
+            return False
+        threading.Thread(target=_send_question, args=(job, request_id, questions, sess),
+                         name="rivendell-ask", daemon=True).start()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"rivendell: NEEDS YOU ping skipped: {e}")
+        return False
+
+
+def _send_question(job, request_id: str, questions: list, sess: dict) -> None:
+    """The NEEDS YOU ping, off the run's stdout thread (Telegram is slow)."""
+    if not config.NOTIFY_ENABLE or not config.TOKEN or not config.DASH_CHAT_ID:
+        return
+    from bridge import telegram                  # local import: telegram pulls state
+    q = questions[0] if questions else {}
+    simple = len(questions) == 1 and not q.get("multiSelect")
+    opts = [o["label"] for o in q.get("options") or []
+            if isinstance(o, dict) and o.get("label")] if simple else []
+    token = uuid.uuid4().hex[:10]
+    with _asks_lock:
+        _asks[token] = {"sid": sess["id"], "rid": request_id, "options": opts,
+                        "header": q.get("header") or q.get("question") or ""}
+    text, kb = _question_message(sess, time.time() - job.started, q, token, opts)
+    try:
+        sent = telegram.send(config.DASH_CHAT_ID, text, kb)
+    except Exception as e:  # noqa: BLE001 — the question still waits in the session
+        print(f"rivendell: NEEDS YOU ping failed: {e}")
+        return
+    if sent and sent.get("message_id"):
+        with _asks_lock:
+            _ask_msgs[sent["message_id"]] = token
+
+
+def _question_message(sess: dict, age_s: float, q: dict, token: str, opts: list) -> tuple:
+    """The NEEDS YOU ping: what is asking and for how long, the question, and
+    its options as buttons (two a row) above OPEN SESSION — the Mini App at that
+    session, where any question can be answered. Pure but for panel_kb."""
+    from bridge.telegram import panel_kb         # local import: telegram pulls state
+    text = (f"◆ Rivendell job needs you\n{sess.get('title') or 'Rivendell job'}\n"
+            f"{(sess.get('origin') or 'rivendell').replace(':', ' · ')} · "
+            f"running {int(age_s // 60)}m · paused for you\n\n{q.get('question') or ''}")
+    rows = [[{"text": o[:60], "callback_data": f"rq:{token}:{i}"}
+             for i, o in enumerate(opts) if k <= i < k + 2] for k in range(0, len(opts), 2)]
+    rows += (panel_kb(config.DASH_CHAT_ID, sess["id"], sess.get("project"),
+                      "Open session ↗") or {}).get("inline_keyboard", [])
+    return text, ({"inline_keyboard": rows} if rows else None)
+
+
+def _done_message(sess: dict, ok: bool, text: str, res: dict) -> tuple:
+    """A finished job's ping: done or failed, its title, and one line — where it
+    came from, its PR, why it failed, how long it took — over OPEN PR and OPEN
+    SESSION. Pure but for panel_kb."""
+    from bridge.telegram import panel_kb         # local import: telegram pulls state
+    pr = res.get("pr")
+    why = None if ok else ((res.get("outcome") or {}).get("label")
+                           or (text.strip().splitlines() or ["failed"])[0][:80])
+    mins = round((res.get("wall_s") or 0) / 60)
+    line = " · ".join(b for b in ((sess.get("origin") or "rivendell").replace(":", " · "),
+                                  f"PR #{pr['number']}" if pr else "", why or "",
+                                  f"{mins}m" if mins else "") if b)
+    head = "✓ Rivendell job done" if ok else "✕ Rivendell job failed"
+    row = [{"text": "Open PR ↗", "url": pr["url"]}] if pr else []
+    row += [b for r in (panel_kb(config.DASH_CHAT_ID, sess.get("id"), sess.get("project"),
+                                 "Open session ↗") or {}).get("inline_keyboard", []) for b in r]
+    return (f"{head}\n{sess.get('title') or 'Rivendell job'}\n{line}",
+            {"inline_keyboard": [row]} if row else None)
+
+
+def _answer(token: str, labels: list, notes: str = "") -> "str | None":
+    """Answer the held question behind `token` on its live run. What was
+    answered, or None when it no longer waits — answered elsewhere, or the run
+    ended — so a stale tap can never answer the run's next question."""
+    with _asks_lock:
+        a = _asks.pop(token, None)
+    if a is None:
+        return None
+    from bridge import runner                    # local import: heavy module
+    job = runner.live_job(a["sid"])
+    ans = {"header": a["header"], "labels": labels, **({"notes": notes} if notes else {})}
+    if job is None or not job.respond(a["rid"], answers=[ans]):
+        return None
+    return ", ".join(labels) or notes
+
+
+def answer_option(token: str, i: int) -> "str | None":
+    """A tap on the ping's i-th option button (bridge/dispatch.py)."""
+    with _asks_lock:
+        opts = (_asks.get(token) or {}).get("options") or []
+    return _answer(token, [opts[i]]) if 0 <= i < len(opts) else None
+
+
+def answer_reply(message_id: int, text: str) -> "str | bool | None":
+    """A text reply to a NEEDS YOU ping: a free answer to its question, for when
+    no option fits or there were none. None when `message_id` isn't one of
+    those pings (the reply is an ordinary prompt); False when its question no
+    longer waits."""
+    with _asks_lock:
+        token = _ask_msgs.get(message_id)
+    if token is None:
+        return None
+    return _answer(token, [], notes=text) or False
+
+
 start = reconfigure
 
 
