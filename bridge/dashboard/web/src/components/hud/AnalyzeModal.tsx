@@ -706,7 +706,10 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
                         onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
                     ))}
                     {ln > 0 && editor && editor.path === selName && editor.end === ln && (
-                      <NoteEditor start={editor.start} end={editor.end} initial={editor.text} isNew={!editor.id}
+                      // Keyed: two notes ending on one line share this spot, and the
+                      // editor's typed text must not carry from one to the other.
+                      <NoteEditor key={editor.id ?? `new:${editor.start}`}
+                        start={editor.start} end={editor.end} initial={editor.text} isNew={!editor.id}
                         onCancel={() => setEditor(null)} onSave={saveNote} />
                     )}
                   </Fragment>
