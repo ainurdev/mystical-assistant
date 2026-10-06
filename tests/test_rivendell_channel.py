@@ -154,3 +154,67 @@ def test_a_finished_run_keeps_its_session_on_the_card(workers):
     w._api = _answering(_tasks("r-done"))
     workers["ch"] = w
     assert rivendell.tasks("acme/app")["tasks"][0]["session_id"] == sid
+
+
+# --- Task 2: a question pauses the job's clock ---------------------------------
+
+class _Waiting:
+    """A live job that never ends on its own; `pending` is what it is held on."""
+
+    def __init__(self):
+        self.status, self.pending, self.interrupted = "running", [], False
+        self.exited = threading.Event()
+        self.store_session_id = None
+
+    def interrupt(self):
+        self.interrupted = True
+
+
+def test_a_question_pauses_the_jobs_wall_clock(monkeypatch):
+    """Review focus 3. A run held on AskUserQuestion is waiting on a person: its
+    kind's timeout must not fail it while they think (the hang watchdog already
+    reads a pending question that way — runner._watchdog)."""
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.02)
+    job = _Waiting()
+    job.pending = [{"request_id": "q1", "kind": "question"}]
+    out = []
+    t = threading.Thread(target=lambda: out.append(_worker()._wait_job(job, 0.2)), daemon=True)
+    t.start()
+    time.sleep(0.6)                       # three timeouts' worth, all of it waiting on you
+    assert out == [] and not job.interrupted
+    job.pending = []                      # answered: the clock runs again
+    t.join(3)
+    assert out == [(False, "run timed out after 0.2s")] and job.interrupted
+
+
+def test_a_question_pauses_a_batchs_wall_clock(monkeypatch):
+    from bridge import queue_manager
+    from bridge.queue_manager import PreviewQueue
+    q = PreviewQueue(run_fn=lambda item: "job-q", persist_path=None)
+    monkeypatch.setattr(queue_manager, "_instance", q)
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.02)
+    held = {"on": True}
+    monkeypatch.setattr(rivendell, "_held", lambda sid: held["on"])
+    q.enqueue("sess-held", text="step", prompt="do it", images=[], model="opus", effort=None,
+              permission_mode="bypassPermissions", width=0, sel=[], surface="rivendell",
+              chat_id=config.DASH_CHAT_ID, project="/repo", label="step · 1/1", link=None,
+              ref="ch:b-held")
+    out = []
+    t = threading.Thread(target=lambda: out.append(
+        _worker()._wait_queue("sess-held", "ch:b-held", 0.2)), daemon=True)
+    t.start()
+    time.sleep(0.6)
+    assert out == [], "a turn waiting on a person must not run the batch's clock out"
+    held["on"] = False
+    t.join(3)
+    assert out == [(False, "run timed out after 0.2s")]
+
+
+def test_live_job_is_the_sessions_running_job(jobs):
+    job = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID, "sess-live")
+    runner._register(job)
+    jobs.append(job)
+    assert runner.live_job("sess-live") is job
+    assert runner.live_job("sess-other") is None
+    job.status = "done"
+    assert runner.live_job("sess-live") is None

@@ -239,6 +239,14 @@ def _project_dir(repos) -> "str | None":
     return common if common != config.BASE_PATH else None
 
 
+def _held(sid: str) -> bool:
+    """Is session `sid`'s live turn held on a question or an approval? A batch's
+    clock pauses while it is (Worker._wait_queue; see Worker._wait_job)."""
+    from bridge import runner                    # local import: heavy module
+    job = runner.live_job(sid)
+    return bool(job and job.pending)
+
+
 # --- One connection into one rivendell-api instance ---------------------------
 
 class Worker:
@@ -797,7 +805,14 @@ class Worker:
         because claude -p keeps the process alive while a background subagent
         finishes and then wakes the model again (runner.py, the assistant branch).
         The runner's finally sets `job.exited` once the slot is free; a job
-        without that flag (a stub) is waited on by status, as before."""
+        without that flag (a stub) is waited on by status, as before.
+        Time the run spends held on a question (or an approval) doesn't count: a
+        person is deciding, and their time is not the run's — the rule the hang
+        watchdog already applies (runner._watchdog), here for the kind's wall
+        clock, which would otherwise fail a run while you were answering it.
+        ponytail: no cap — an unanswered question holds the job (and its
+        IN_PROGRESS request) until someone answers or stops it; cap the paused
+        time if abandoned asks ever pile up."""
         deadline = time.time() + timeout
         exited = getattr(job, "exited", None)
 
@@ -805,8 +820,11 @@ class Worker:
             return exited.is_set() if exited is not None else job.status != "running"
 
         while not over() and time.time() < deadline:
+            t0 = time.time()
             if self._stop.wait(_POLL_INTERVAL):
                 break
+            if getattr(job, "pending", None):
+                deadline += time.time() - t0
         if not over():
             job.interrupt()
             return False, f"run timed out after {timeout}s"
@@ -957,7 +975,8 @@ class Worker:
         cancels the running turn and drops the rest. A stopping worker (a bridge
         restart) gets (None, "bridge stopping") and leaves every turn as it is:
         they persist, the request stays IN_PROGRESS, and _reattach takes the
-        batch up again after the restart."""
+        batch up again after the restart. Time a turn spends held on a question
+        doesn't count (see _wait_job)."""
         from bridge import queue_manager
         q = queue_manager.get()
         deadline = time.time() + timeout
@@ -977,8 +996,11 @@ class Worker:
                 if text.strip():
                     return True, text
                 return False, "run finished without producing any result text"
+            t0 = time.time()
             if self._stop.wait(_POLL_INTERVAL):
                 return None, "bridge stopping"
+            if _held(sid):
+                deadline += time.time() - t0     # a turn waits on a person (see _wait_job)
         for it in mine():
             if it["status"] == "running":
                 q.cancel(sid, it["id"])

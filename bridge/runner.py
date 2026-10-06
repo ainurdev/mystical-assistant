@@ -831,6 +831,15 @@ def boot_phase(session_id: str) -> "str | None":
     return job.boot if job else None
 
 
+def live_job(session_id: str) -> "Job | None":
+    """The session's in-flight job, or None — what the RIVENDELL tab and the
+    Rivendell worker read a run's live state off. Same lookup as steer() and
+    boot_phase(): a session has at most one running job."""
+    with _jobs_lock:
+        return next((j for j in _jobs.values()
+                     if j.store_session_id == session_id and j.status == "running"), None)
+
+
 def awaiting_input() -> list[dict]:
     """Store-session ids whose live job is blocked on user input, with the kind
     ('question' | 'permission') — drives the 'waiting on you' indicator in the
