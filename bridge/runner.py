@@ -1421,6 +1421,9 @@ def _handle_control_request(job: Job, obj: dict):
                          "tool_name": tool, "questions": questions,
                          "at": time.time()})    # since when: the card's "ASKS · 3m ago"
         job.add({"type": "question", "request_id": rid, "questions": questions})
+        from bridge import rivendell  # local import: rivendell reaches runner lazily too
+        if rivendell.ping_question(job, rid, questions):
+            return    # a Rivendell run's own ping carries the options as buttons
     else:
         summary = _summarize_tool(tool, req.get("input", {}))
         job.add_pending({"request_id": rid, "kind": "permission", "tool_name": tool,

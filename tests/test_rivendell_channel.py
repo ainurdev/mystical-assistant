@@ -562,3 +562,126 @@ def test_test_link_while_retrying_reports_the_error():
     w._set_status("error", "connection refused")
     res = w.test_link()
     assert (res["ok"], res["detail"]) == (False, "connection refused")
+
+
+# --- Task 7: NEEDS YOU over Telegram --------------------------------------------
+
+def _needs_you(quiet):
+    _wait_until(lambda: any(m["text"].startswith("◆ Rivendell job needs you") for m in quiet))
+    return next(m for m in quiet if m["text"].startswith("◆ Rivendell job needs you"))
+
+
+def _held_here(jobs, origin="rivendell:test"):
+    """A run of `origin` held on COLOUR, registered so runner.live_job finds it."""
+    j = _held_job(sid=_session(origin=origin))
+    runner._register(j)
+    jobs.append(j)
+    return j
+
+
+def _answer_sent(j):
+    return json.loads(j.proc.stdin.lines[-1])["response"]["response"]["message"]
+
+
+def _token(ping):
+    return ping["kb"]["inline_keyboard"][0][0]["callback_data"].split(":")[1]
+
+
+def test_the_ping_reads_like_the_mockup():
+    text, kb = rivendell._question_message(
+        {"id": "s1", "title": "Inbox: group meeting action items by client",
+         "origin": "rivendell:production"},
+        9 * 60 + 5, COLOUR[0], "abc", ["Under “No client”", "Leave them out", "Ask me later"])
+    assert text.splitlines()[:3] == [
+        "◆ Rivendell job needs you", "Inbox: group meeting action items by client",
+        "rivendell · production · running 9m · paused for you"]
+    assert text.endswith(COLOUR[0]["question"])
+    assert [[b["callback_data"] for b in row] for row in kb["inline_keyboard"]] == [
+        ["rq:abc:0", "rq:abc:1"], ["rq:abc:2"]]
+
+
+def test_a_rivendell_runs_question_pings_with_its_options(quiet, jobs):
+    _held_here(jobs)
+    ping = _needs_you(quiet)
+    assert ping["chat"] == config.DASH_CHAT_ID
+    buttons = [b for row in ping["kb"]["inline_keyboard"] for b in row]
+    assert [b["text"] for b in buttons] == ["Under “No client”", "Leave them out"]
+    assert all(len(b["callback_data"].encode()) <= 64 for b in buttons)
+
+
+def test_any_other_sessions_question_keeps_the_generic_ping(quiet, jobs):
+    _held_here(jobs, origin="dashboard")
+    time.sleep(0.1)
+    assert not any(m["text"].startswith("◆ Rivendell") for m in quiet)
+
+
+def test_a_tap_answers_the_live_run(quiet, jobs):
+    j = _held_here(jobs)
+    assert rivendell.answer_option(_token(_needs_you(quiet)), 1) == "Leave them out"
+    assert j.pending == [] and "Leave them out" in _answer_sent(j)
+
+
+def test_a_question_answered_elsewhere_makes_the_tap_stale(quiet, jobs):
+    """Review focus 1: one question, two surfaces. The second answer must say so,
+    and never land on whatever the run asks next."""
+    j = _held_here(jobs)
+    token = _token(_needs_you(quiet))
+    assert j.respond("q1", answers=[{"header": "No meeting", "labels": ["Leave them out"]}])
+    assert rivendell.answer_option(token, 0) is None
+
+
+def test_a_text_reply_is_a_free_answer(quiet, jobs):
+    j = _held_here(jobs)
+    mid = _needs_you(quiet)["mid"]
+    _wait_until(lambda: mid in rivendell._ask_msgs)
+    assert rivendell.answer_reply(mid, "only the ones from last week") == "only the ones from last week"
+    assert "only the ones from last week" in _answer_sent(j)
+    assert rivendell.answer_reply(mid, "again") is False         # its question no longer waits
+    assert rivendell.answer_reply(-1, "hello") is None           # not a ping: an ordinary prompt
+
+
+def test_the_option_button_answers_and_edits_the_ping(monkeypatch):
+    from bridge import dispatch
+    edits, acks = [], []
+    monkeypatch.setattr(dispatch, "edit", lambda chat, mid, text, kb=None: edits.append(text))
+    monkeypatch.setattr(dispatch, "answer_cb", lambda cid, text="": acks.append(text))
+    monkeypatch.setattr(rivendell, "answer_option",
+                        lambda token, i: "Leave them out" if (token, i) == ("tok", 1) else None)
+    cb = {"id": "cb1", "message": {"chat": {"id": config.DASH_CHAT_ID}, "message_id": 7,
+                                   "text": "◆ Rivendell job needs you"}}
+    dispatch._question_callback(cb, config.DASH_CHAT_ID, 7, "rq:tok:1")
+    assert edits[-1] == ("◆ Rivendell job needs you\n\n"
+                         "✓ You answered: Leave them out. The run continues.")
+    dispatch._question_callback(cb, config.DASH_CHAT_ID, 7, "rq:gone:0")
+    assert acks[-1] == "Already answered." and edits[-1] == "◆ Rivendell job needs you"
+
+
+def test_a_reply_to_a_ping_never_becomes_a_prompt(monkeypatch):
+    from bridge import dispatch
+    started, edits = [], []
+    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
+    monkeypatch.setattr(dispatch, "edit", lambda chat, mid, text, kb=None: edits.append((mid, text)))
+    monkeypatch.setattr(rivendell, "answer_reply",
+                        lambda mid, text: "only last week" if mid == 41 else None)
+    dispatch.on_message({"chat": {"id": 555}, "text": "only last week",    # conftest's allowed chat
+                         "reply_to_message": {"message_id": 41,
+                                              "text": "◆ Rivendell job needs you"}})
+    assert started == []
+    assert edits == [(41, "◆ Rivendell job needs you\n\n"
+                          "✓ You answered: only last week. The run continues.")]
+
+
+def test_a_reply_to_any_other_message_is_still_a_prompt(monkeypatch):
+    """Review focus 4: replying to an ordinary bot message keeps meaning "do this"."""
+    from bridge import dispatch, state
+    started = []
+    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
+    monkeypatch.setattr(rivendell, "answer_reply", lambda mid, text: None)
+    store.init()
+    dispatch.on_message({"chat": {"id": 555}, "text": "fix the header",
+                         "reply_to_message": {"message_id": 42, "text": "✅ Claude finished"}})
+    _wait_until(lambda: started)
+    state.release_run(started[0][2]["id"])
+    assert started[0][1] == "fix the header"

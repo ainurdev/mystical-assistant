@@ -153,8 +153,10 @@ create the request. The run itself comes back over the socket like any other.
 Every run is filed under its request (store sessions.ref, written by _track),
 so a card still opens the session of a run that has ended, after a restart
 too. A card's run view (live_view / _result_view) is read off the live job
-and the store; nothing asks Rivendell. The channel around it — link state,
-run views, NEEDS YOU — is docs/superpowers/specs/rivendell-channel.md.
+and the store; nothing asks Rivendell. A Rivendell run's question pings
+Telegram with its options as buttons (ping_question); a tap or a text reply
+answers the live run. The channel around it — link state, run views, NEEDS
+YOU — is docs/superpowers/specs/rivendell-channel.md.
 """
 
 import base64
@@ -1792,6 +1794,112 @@ def implement(instance_id: str, task_id: str) -> dict:
 # Boot entry point (claude_telegram_bridge.py) and the settings save hook both
 # call this; reconfigure is the whole mechanism, so start is just its name at
 # boot.
+# --- NEEDS YOU over Telegram ----------------------------------------------------
+# A Rivendell run held on an AskUserQuestion pings the bridge's owner with the
+# question's options as buttons; a tap, or a text reply to the ping, answers the
+# live run (Job.respond — exactly what the session's QuestionCard sends) and the
+# ping is edited to record it (bridge/dispatch.py). A short token stands for
+# (session, control request) in callback_data, capped at 64 bytes; the ping's
+# message id maps a reply back to the same token. Memory only: a restart ends
+# the held run anyway, and its buttons then just say "already answered".
+_asks: "dict[str, dict]" = {}            # token -> {sid, rid, header, options}
+_ask_msgs: "dict[int, str]" = {}         # ping message id -> token
+_asks_lock = threading.Lock()
+
+
+def ping_question(job, request_id: str, questions: list) -> bool:
+    """runner._handle_control_request's hook. A Rivendell run's question — every
+    Rivendell job on this bridge, whoever requested it; the bridge's owner is
+    the one who answers — pings with its options as buttons instead of the
+    generic "Claude needs a question". False, sending nothing, for any other
+    session, which keeps the generic ping. Never raises into the run."""
+    try:
+        from bridge import store                 # local import: heavy module
+        sess = store.get_session(job.store_session_id) if job.store_session_id else None
+        if not sess or not config.is_plugin_origin(sess.get("origin")):
+            return False
+        threading.Thread(target=_send_question, args=(job, request_id, questions, sess),
+                         name="rivendell-ask", daemon=True).start()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"rivendell: NEEDS YOU ping skipped: {e}")
+        return False
+
+
+def _send_question(job, request_id: str, questions: list, sess: dict) -> None:
+    """The NEEDS YOU ping, off the run's stdout thread (Telegram is slow)."""
+    if not config.NOTIFY_ENABLE or not config.TOKEN or not config.DASH_CHAT_ID:
+        return
+    from bridge import telegram                  # local import: telegram pulls state
+    q = questions[0] if questions else {}
+    simple = len(questions) == 1 and not q.get("multiSelect")
+    opts = [o["label"] for o in q.get("options") or []
+            if isinstance(o, dict) and o.get("label")] if simple else []
+    token = uuid.uuid4().hex[:10]
+    with _asks_lock:
+        _asks[token] = {"sid": sess["id"], "rid": request_id, "options": opts,
+                        "header": q.get("header") or q.get("question") or ""}
+    text, kb = _question_message(sess, time.time() - job.started, q, token, opts)
+    try:
+        sent = telegram.send(config.DASH_CHAT_ID, text, kb)
+    except Exception as e:  # noqa: BLE001 — the question still waits in the session
+        print(f"rivendell: NEEDS YOU ping failed: {e}")
+        return
+    if sent and sent.get("message_id"):
+        with _asks_lock:
+            _ask_msgs[sent["message_id"]] = token
+
+
+def _question_message(sess: dict, age_s: float, q: dict, token: str, opts: list) -> tuple:
+    """The NEEDS YOU ping: what is asking and for how long, the question, and
+    its options as buttons (two a row) above OPEN SESSION — the Mini App at that
+    session, where any question can be answered. Pure but for panel_kb."""
+    from bridge.telegram import panel_kb         # local import: telegram pulls state
+    text = (f"◆ Rivendell job needs you\n{sess.get('title') or 'Rivendell job'}\n"
+            f"{(sess.get('origin') or 'rivendell').replace(':', ' · ')} · "
+            f"running {int(age_s // 60)}m · paused for you\n\n{q.get('question') or ''}")
+    rows = [[{"text": o[:60], "callback_data": f"rq:{token}:{i}"}
+             for i, o in enumerate(opts) if k <= i < k + 2] for k in range(0, len(opts), 2)]
+    rows += (panel_kb(config.DASH_CHAT_ID, sess["id"], sess.get("project"),
+                      "Open session ↗") or {}).get("inline_keyboard", [])
+    return text, ({"inline_keyboard": rows} if rows else None)
+
+
+def _answer(token: str, labels: list, notes: str = "") -> "str | None":
+    """Answer the held question behind `token` on its live run. What was
+    answered, or None when it no longer waits — answered elsewhere, or the run
+    ended — so a stale tap can never answer the run's next question."""
+    with _asks_lock:
+        a = _asks.pop(token, None)
+    if a is None:
+        return None
+    from bridge import runner                    # local import: heavy module
+    job = runner.live_job(a["sid"])
+    ans = {"header": a["header"], "labels": labels, **({"notes": notes} if notes else {})}
+    if job is None or not job.respond(a["rid"], answers=[ans]):
+        return None
+    return ", ".join(labels) or notes
+
+
+def answer_option(token: str, i: int) -> "str | None":
+    """A tap on the ping's i-th option button (bridge/dispatch.py)."""
+    with _asks_lock:
+        opts = (_asks.get(token) or {}).get("options") or []
+    return _answer(token, [opts[i]]) if 0 <= i < len(opts) else None
+
+
+def answer_reply(message_id: int, text: str) -> "str | bool | None":
+    """A text reply to a NEEDS YOU ping: a free answer to its question, for when
+    no option fits or there were none. None when `message_id` isn't one of
+    those pings (the reply is an ordinary prompt); False when its question no
+    longer waits."""
+    with _asks_lock:
+        token = _ask_msgs.get(message_id)
+    if token is None:
+        return None
+    return _answer(token, [], notes=text) or False
+
+
 start = reconfigure
 
 
