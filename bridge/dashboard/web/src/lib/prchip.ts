@@ -30,7 +30,10 @@ export function chipLabel(pr: PrInfo): { text: string; spin: boolean } {
   switch (pr.status) {
     case "running": return { text: `${pr.passed + pr.failed}/${pr.total}`, spin: true };
     case "failing": return { text: `✕ ${pr.failed} FAILING`, spin: false };
-    case "review": return { text: pr.total ? `✓ ${pr.passed}/${pr.total} · REVIEW` : "REVIEW", spin: false };
+    case "review": {
+      const word = pr.draft ? "DRAFT" : "REVIEW";
+      return { text: pr.total ? `✓ ${pr.passed}/${pr.total} · ${word}` : word, spin: false };
+    }
     case "changes": {
       const n = reviewItems(pr).length;
       return { text: n ? `◆ ${n} COMMENT${n === 1 ? "" : "S"}` : "◆ CHANGES", spin: false };
@@ -46,6 +49,7 @@ export function stateLine(pr: PrInfo): string {
   if (pr.state === "MERGED") return `MERGED INTO ${pr.base.toUpperCase()}`;
   if (pr.state === "CLOSED") return "CLOSED";
   if (pr.status === "changes") return "CHANGES REQUESTED";
+  if (pr.draft) return "DRAFT";
   if (pr.status === "ready") return "READY";
   return "OPEN";
 }

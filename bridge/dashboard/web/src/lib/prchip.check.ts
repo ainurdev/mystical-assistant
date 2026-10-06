@@ -13,7 +13,7 @@ const base: PrInfo = {
   number: 131, title: "Inbox: group action items by client", url: "https://github.com/acme/r/pull/131",
   state: "OPEN", base: "main", head: "feat/inbox-grouping", sha: "abc", additions: 412, deletions: 88,
   created: "2026-10-06T12:00:00Z", merged_at: "", checks: [], passed: 0, failed: 0, running: 0, total: 0,
-  decision: "", requested: [], reviews: [], review: null, status: "ready",
+  decision: "", requested: [], reviews: [], review: null, status: "ready", draft: false,
 };
 const pr = (o: Partial<PrInfo>): PrInfo => ({ ...base, ...o });
 
@@ -22,6 +22,7 @@ ok(chipLabel(pr({ status: "running", passed: 2, total: 5 })).text === "2/5" && c
 ok(chipLabel(pr({ status: "failing", failed: 1 })).text === "✕ 1 FAILING", "FAILING counts the red checks");
 ok(chipLabel(pr({ status: "review", passed: 5, total: 5 })).text === "✓ 5/5 · REVIEW", "GREEN/REVIEW");
 ok(chipLabel(pr({ status: "review" })).text === "REVIEW", "no CI: REVIEW without a 0/0");
+ok(chipLabel(pr({ status: "review", draft: true, passed: 5, total: 5 })).text === "✓ 5/5 · DRAFT" && stateLine(pr({ status: "review", draft: true })) === "DRAFT", "a draft says DRAFT, never READY");
 const changes = pr({
   status: "changes",
   review: { by: "mahdi", at: "2026-10-06T12:30:00Z", body: "", comments: [

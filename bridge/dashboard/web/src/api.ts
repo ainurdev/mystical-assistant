@@ -346,6 +346,7 @@ export interface PrInfo {
   /** The review asking for changes, with its inline comments; null otherwise. */
   review: { by: string; at: string; body: string; comments: PrComment[] } | null;
   status: PrState;      // the chip's state (sheet C)
+  draft: boolean;       // a draft PR: never READY, says DRAFT
 }
 export interface PrStatus {
   pr: PrInfo | null;    // null = no chip: no PR, no GitHub remote, gh missing or signed out

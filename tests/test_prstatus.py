@@ -116,6 +116,8 @@ def test_a_rerun_keeps_only_the_newest_attempt():
     ({"statusCheckRollup": [_run("a")], "reviewDecision": "REVIEW_REQUIRED"}, "review"),
     ({"statusCheckRollup": [_run("a")],
       "reviewRequests": [{"__typename": "User", "login": "mahdi"}]}, "review"),
+    ({"statusCheckRollup": [_run("a")], "isDraft": True}, "review"),        # a draft is never READY
+    ({"statusCheckRollup": [_run("a")], "isDraft": True, "reviewDecision": "APPROVED"}, "review"),
 ])
 def test_chip_state_is_sheet_c(over, want):
     assert prstatus.normalize(_raw(**over))["status"] == want

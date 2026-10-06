@@ -52,7 +52,7 @@ DONE_TTL = 600     # s: a merged or closed PR barely changes (a reopen waits thi
 LOG_LINES = 60
 FIELDS = ("number,title,state,url,baseRefName,headRefName,headRefOid,additions,"
           "deletions,createdAt,mergedAt,statusCheckRollup,reviewDecision,"
-          "reviewRequests,latestReviews,reviews")
+          "reviewRequests,latestReviews,reviews,isDraft")
 
 _PASS = {"SUCCESS", "NEUTRAL"}
 _SKIP = {"SKIPPED", "STALE"}
@@ -124,9 +124,10 @@ def chip_state(pr: dict) -> str:
         return "changes"
     if pr["running"]:
         return "running"
-    if pr["decision"] == "APPROVED" or (not pr["decision"] and not pr["requested"]):
+    if not pr["draft"] and (pr["decision"] == "APPROVED"
+                            or (not pr["decision"] and not pr["requested"])):
         return "ready"      # approved, or nothing in the repo asks for a review
-    return "review"
+    return "review"         # a draft lands here too: it is never READY
 
 
 def _login(r) -> str:
@@ -164,7 +165,7 @@ def normalize(raw: dict) -> dict:
         "number": raw["number"], "title": raw.get("title") or "",
         "url": raw.get("url") or "", "state": raw.get("state") or "OPEN",
         "base": raw.get("baseRefName") or "", "head": raw.get("headRefName") or "",
-        "sha": raw.get("headRefOid") or "",
+        "sha": raw.get("headRefOid") or "", "draft": bool(raw.get("isDraft")),
         "additions": raw.get("additions") or 0, "deletions": raw.get("deletions") or 0,
         "created": _ts(raw.get("createdAt")), "merged_at": _ts(raw.get("mergedAt")),
         "checks": checks,
