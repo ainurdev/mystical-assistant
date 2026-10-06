@@ -583,8 +583,10 @@ class Worker:
         """One beat: each run in flight posts its progress_body when it changed —
         at most every _PROGRESS_EVERY s, but at once when it starts or stops
         waiting on a person. Silent unless this Rivendell's hello said
-        "progress". `last` is request id -> (body, when posted); runs that ended
-        are forgotten."""
+        "progress". `last` is request id -> (body, when posted), recorded only
+        once a beat is settled (_post_progress): a run held on a question
+        doesn't change its body, so a beat lost to the network must go again.
+        Runs that ended are forgotten."""
         if "progress" not in self.features:
             return
         from bridge import runner                    # local import: heavy module
@@ -599,17 +601,23 @@ class Worker:
             if prev and (prev[0] == body or (prev[0]["state"] == body["state"]
                                               and now - prev[1] < _PROGRESS_EVERY)):
                 continue
-            last[r["request_id"]] = (body, now)
-            self._post_progress(self._KIND_PATH.get(r["kind"], "review-requests"),
-                                r["request_id"], body)
+            if self._post_progress(self._KIND_PATH.get(r["kind"], "review-requests"),
+                                   r["request_id"], body):
+                last[r["request_id"]] = (body, now)
         for gone in set(last) - {r["request_id"] for r in rows}:
             last.pop(gone)
 
-    def _post_progress(self, kind_path: str, request_id: str, body: dict) -> None:
+    def _post_progress(self, kind_path: str, request_id: str, body: dict) -> bool:
+        """POST one beat. True once it is settled: Rivendell has it, or refused
+        this very body (a 4xx — resending it can't help). False when it should
+        go again on the next beat (the network, a 5xx)."""
         try:
             self._api(f"/plugin/{kind_path}/{request_id}/progress", body)
-        except Exception as e:  # noqa: BLE001 — a missed beat is fixed by the next
+            return True
+        except Exception as e:  # noqa: BLE001 — the next beat resends it
             print(f"rivendell[{self.name}]: progress post failed for {request_id}: {e}")
+            return (isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500
+                    and e.code not in (408, 429))
 
     def _rivendell_answer(self, obj: dict) -> None:
         """A NEEDS YOU answer given in Rivendell. Only the bridge's owner may
@@ -1897,8 +1905,12 @@ def progress_body(job) -> dict:
             "todos": v["live"]["todos"], "step": v["live"]["steps"]}
     if v["ask"]:
         a = v["ask"]
-        body["question"] = {"id": a["request_id"], "text": a["question"], "header": a["header"],
-                            "options": a["options"], "buttons": a["simple"]}
+        # Clipped to Rivendell's bounds on a progress question: anything longer
+        # is a 400 for the whole beat.
+        body["question"] = {"id": a["request_id"], "text": a["question"][:2000],
+                            "header": a["header"][:2000],
+                            "options": [o[:500] for o in a["options"][:10]],
+                            "buttons": a["simple"]}
     return body
 
 

@@ -797,7 +797,7 @@ def test_progress_waits_for_the_feature_then_throttles(monkeypatch):
     w = _worker()
     posted = []
     monkeypatch.setattr(w, "_post_progress",
-                        lambda kp, rid, body: posted.append((kp, rid, body["state"])))
+                        lambda kp, rid, body: posted.append((kp, rid, body["state"])) or True)
     j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID)    # session-less: journals nothing
     monkeypatch.setattr(runner, "live_job", lambda sid: j if sid == "sess-p" else None)
     w._running["rp1"] = {"request_id": "rp1", "kind": "impl", "session_id": "sess-p"}
@@ -994,3 +994,53 @@ def test_an_error_longer_than_rivendell_takes_is_cut(workers):
     w._api = lambda path, payload=None: sent.append(payload) or {}
     w._post_result("implementation-requests", uuid.uuid4().hex, False, "x" * 6000)
     assert len(sent[0]["error"]) == 5000
+
+
+# --- Review: a NEEDS YOU question reaches Rivendell even if a beat fails --------
+
+def test_post_progress_says_whether_the_beat_is_settled():
+    """Settled = Rivendell has it, or refused this very body (a 4xx: resending
+    it can't help). A network or server failure must go again."""
+    w = _worker()
+    w._api = lambda path, payload=None: {}
+    assert w._post_progress("implementation-requests", "r", {}) is True
+    for err, settled in ((urllib.error.URLError("down"), False), (_http_error(503), False),
+                         (_http_error(400), True)):
+        def api(path, payload=None, err=err):
+            raise err
+        w._api = api
+        assert w._post_progress("implementation-requests", "r", {}) is settled, err
+
+
+def test_a_failed_progress_beat_is_resent(monkeypatch):
+    """A run held on a question doesn't change its body, so a beat lost to the
+    network was never sent again — the question never reached Rivendell."""
+    w = _worker()
+    w.features = frozenset({"progress"})
+    j = _held_job()                                 # session-less: journals nothing
+    monkeypatch.setattr(runner, "live_job", lambda sid: j if sid == "sess-r" else None)
+    w._running["rr1"] = {"request_id": "rr1", "kind": "impl", "session_id": "sess-r"}
+    replies = iter([urllib.error.URLError("down"), {}])
+    posted = []
+
+    def api(path, payload=None):
+        posted.append(payload["state"])
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+    w._api = api
+    last = {}
+    w._progress_tick(last, 0.0)
+    w._progress_tick(last, 1.0)
+    assert posted == ["awaiting_input", "awaiting_input"]
+    w._progress_tick(last, 2.0)
+    assert len(posted) == 2, "landed: the same body isn't sent again"
+
+
+def test_the_progress_question_fits_rivendells_bounds():
+    big = [{"question": "q" * 3000, "header": "h" * 3000, "multiSelect": False,
+            "options": [{"label": f"{i}" + "o" * 600} for i in range(12)]}]
+    q = rivendell.progress_body(_held_job(big))["question"]
+    assert len(q["text"]) == 2000 and len(q["header"]) == 2000
+    assert len(q["options"]) == 10 and all(len(o) == 500 for o in q["options"])
