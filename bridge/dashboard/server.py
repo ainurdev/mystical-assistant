@@ -32,7 +32,7 @@ import re
 
 from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
-                    models, native, preview_detect, project_config,
+                    models, native, preview_detect, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
                     share,
@@ -507,6 +507,16 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(github.issues(abs_p))
+        if path == "/local/github/pr/status":
+            # The chat header's PR chip (bridge/prstatus.py). The bridge caches it
+            # for each (repo, branch), so every open tab polling it costs one gh call.
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(prstatus.snapshot(
+                abs_p, (qs.get("branch", [""])[0] or "").strip(),
+                force=qs.get("force", ["0"])[0] == "1",
+                session=(qs.get("session", [""])[0] or "").strip()))
         if path == "/local/trackers":
             return self._json({"connections": trackers.connections()})
         if path == "/local/rivendell":
