@@ -32,7 +32,7 @@ import re
 
 from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
-                    models, native, preview_detect, project_config,
+                    models, native, preview_detect, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
                     share,
@@ -237,6 +237,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._share(path[len("/share/"):])
             if not self._host_ok():
                 return self._json({"error": "bad host"}, 403)
+            # Backstop for every /local/ read: GETs carry no token, so an <img>
+            # on any page could fire one at localhost. A browser marks those
+            # with Sec-Fetch-Site; this dashboard's own fetches, streams and
+            # sockets are same-origin, a typed URL is "none", and non-browser
+            # callers (curl, agents via MYSTICAL_DASH, the probe) send none.
+            if path.startswith("/local/") and self.headers.get(
+                    "Sec-Fetch-Site") not in (None, "same-origin", "none"):
+                return self._json({"error": "cross-site request"}, 403)
             if path == "/local/ws/terminal":
                 return self._terminal_ws(qs)
             if path.startswith("/local/stream/"):
@@ -508,6 +516,16 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(github.issues(abs_p))
+        if path == "/local/github/pr/status":
+            # The chat header's PR chip (bridge/prstatus.py). The bridge caches it
+            # for each (repo, branch), so every open tab polling it costs one gh call.
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(prstatus.snapshot(
+                abs_p, (qs.get("branch", [""])[0] or "").strip(),
+                force=qs.get("force", ["0"])[0] == "1",
+                session=(qs.get("session", [""])[0] or "").strip()))
         if path == "/local/trackers":
             return self._json({"connections": trackers.connections()})
         if path == "/local/rivendell":
@@ -643,6 +661,11 @@ class Handler(BaseHTTPRequestHandler):
             base = (qs.get("base", ["main"])[0] or "main").strip()
             head = (qs.get("head", [""])[0] or git.current_branch(abs_p)).strip()
             three_dot = (qs.get("dots", ["3"])[0] or "3").strip() != "2"
+            # Only real branches, as /local/git/diff: any page can fire this GET,
+            # and `base=--output=<path>` once made git diff overwrite that file.
+            refs = set(git.branches(abs_p)) | {git.default_branch(abs_p)}
+            if base not in refs or head not in refs:
+                return self._json({"error": "invalid ref"}, 400)
             return self._json(git.compare(abs_p, base, head, three_dot))
         if path == "/local/agents":
             sid = qs.get("session", [""])[0]

@@ -135,6 +135,11 @@ def explain(cwd: str, query: str) -> str:
     bin_ = graphify_bin()
     if not has_graph(cwd):
         return "No graph yet — build one first (MAP tab / /map build)."
+    # The dashboard's GET hands any page's `q` to us. graphify's explain reads
+    # argv[2] verbatim as the node (no `--` support: it would become the node),
+    # so a query that looks like a flag is refused rather than passed.
+    if query.startswith("-"):
+        return "A node name can't start with '-'."
     try:
         proc = subprocess.run([bin_, "explain", query], cwd=cwd,
                               capture_output=True, text=True,

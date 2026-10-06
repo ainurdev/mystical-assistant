@@ -46,12 +46,14 @@ export function useSessionQueue(sessionId: string | null) {
   // `session` targets a session other than the open one — a prompt always
   // belongs to the session it was written in, even if you switched away while
   // it was in flight. `apply` drops snapshots for other sessions, so a foreign
-  // enqueue can't clobber the open session's view.
-  const enqueue = useCallback((input: EnqueueInput, session?: string) => {
+  // enqueue can't clobber the open session's view. Resolves false when the
+  // prompt didn't get into the queue, so the caller can keep it.
+  const enqueue = useCallback((input: EnqueueInput, session?: string): Promise<boolean> => {
     const target = session ?? sessionId;
-    if (!target) return;
-    run(api.queueEnqueue({ session_id: target, surface: "dashboard", ...input }));
-  }, [sessionId, run]);
+    if (!target) return Promise.resolve(false);
+    return api.queueEnqueue({ session_id: target, surface: "dashboard", ...input })
+      .then((s) => { apply(s); return true; }, () => false);
+  }, [sessionId, apply]);
 
   const sid = sessionId ?? "";
   return {
@@ -73,8 +75,14 @@ export function useSessionQueue(sessionId: string | null) {
     retry: (id: string) => run(api.queueOp("retry", { session_id: sid, item_id: id })),
     togglePause: () => run(api.queueOp(snap.paused ? "resume" : "pause", { session_id: sid })),
     /** Unpause only if paused — sending a prompt by hand means you want the loop
-     * back, and a blind toggle would pause a queue that was already running. */
-    resumeIfPaused: () => { if (snap.paused) run(api.queueOp("resume", { session_id: sid })); },
+     * back, and a blind toggle would pause a queue that was already running.
+     * `session` is where the prompt goes. Another session's pause isn't known
+     * here, so its queue is resumed outright (resume, unlike a toggle, leaves a
+     * running queue as it is). */
+    resumeIfPaused: (session?: string) => {
+      const target = session ?? sid;
+      if (target && (target !== sid || snap.paused)) run(api.queueOp("resume", { session_id: target }));
+    },
     clearDone: () => run(api.queueOp("clear-done", { session_id: sid })),
     /** Send text (and any attached screenshots) into the RUNNING turn — not the
      * queue. Resolves false if the server says nothing is running, so the caller
