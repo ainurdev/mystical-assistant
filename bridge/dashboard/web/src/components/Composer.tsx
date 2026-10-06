@@ -20,14 +20,13 @@ export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "xhigh", label: "XHigh" },
   { id: "max", label: "Max" },
 ];
-// Per-message operating mode ("" keeps the session's). These are Claude Code's
-// own permission modes — the ids and titles the CLI itself uses, in its own
-// least-authority-first order — so the picker can't offer a posture `claude
-// --permission-mode` would reject, or name one something Claude doesn't. The
-// CLI also takes "manual", but that is just its alias for "default". Each row's
-// tooltip is Claude's own one-line description of the mode.
+// The session's operating mode. These are Claude Code's own permission modes —
+// the ids and titles the CLI itself uses, in its own least-authority-first
+// order — so the picker can't offer a posture `claude --permission-mode` would
+// reject, or name one something Claude doesn't. The CLI also takes "manual", but
+// that is just its alias for "default". Each row's tooltip is Claude's own
+// one-line description of the mode.
 export const PERMS: { id: string; label: string; title?: string }[] = [
-  { id: "", label: "Session", title: "Keep the mode this session was started with." },
   { id: "plan", label: "Plan", title: "Planning mode, no actual tool execution." },
   { id: "default", label: "Manual", title: "Standard behavior, prompts for dangerous operations." },
   { id: "dontAsk", label: "Don't Ask", title: "Don't prompt for permissions, deny if not pre-approved." },
@@ -41,7 +40,6 @@ export const PERMS: { id: string; label: string; title?: string }[] = [
 // would name four postures opencode cannot take. Keep in step with
 // freeagent.FREE_MODES.
 export const FREE_PERMS: { id: string; label: string; title?: string }[] = [
-  { id: "", label: "Session", title: "Keep the mode this session was started with." },
   { id: "plan", label: "Plan", title: "opencode's plan agent: reads and plans, edits denied." },
   { id: "bypassPermissions", label: "Full Auto", title: "`opencode run --auto` — approves every tool call it makes." },
 ];
@@ -225,8 +223,8 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
  *  effort, which the default layout spreads over three chips. The model is what
  *  you come here for, so it is the headline; the mode rides beside it smaller;
  *  effort is almost always AUTO, so it is a stepped slider below rather than a
- *  menu. The trigger names only what differs from the default: the model
- *  always, the mode and effort only once they are set. Lists open inline, so
+ *  menu. The trigger names the model and the session's mode always, effort only
+ *  once it is set. Lists open inline, so
  *  the popover never stacks a second floating menu over the transcript. */
 function RunPopover<M extends string>({
   open, onToggle, model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, freeLabel,

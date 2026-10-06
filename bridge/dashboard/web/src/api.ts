@@ -44,6 +44,17 @@ export interface SessionBrief {
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
+  // The session's run picks (bridge store.set_run_settings), loaded into the
+  // composer. Absent from a bridge older than this field.
+  model?: string | null; // last model picked for it on any surface; null = none yet
+  permission_mode?: string; // the mode its next run gets: stored, else the bridge default
+}
+
+/** What POST /local/session/settings saved (and switched a running turn to). */
+export interface RunSettings {
+  ok: boolean;
+  model: string | null;
+  permission_mode: string;
 }
 
 /** Why a failed turn failed (bridge/outcomes.py) — derived server-side on every
@@ -99,8 +110,9 @@ export type RunEvent =
   | { type: "thinking"; ms?: number; text?: string }
   // The working output either side of the conversation: a hook that injected
   // context, blocked a tool or crashed, and whatever the claude child wrote to
-  // stderr (normally nothing — a dying MCP server, or --debug).
-  | { type: "log"; src: "hook" | "stderr"; label?: string; text: string; error?: boolean }
+  // stderr (normally nothing — a dying MCP server, or --debug), or a control
+  // request it refused (src "control": a mid-turn model/mode switch).
+  | { type: "log"; src: "hook" | "stderr" | "control"; label?: string; text: string; error?: boolean }
   // `agent` is Task/Agent/Skill-only (bridge/transcript_jsonl.agent_meta) and
   // absent on turns recorded before it landed.
   | { type: "tool"; name: string; summary: string; id?: string;
@@ -1054,7 +1066,7 @@ export interface RunBody {
   session_id: string;
   model?: string;
   effort?: string;
-  permission_mode?: string; // per-message operating mode; omit to use the session's
+  permission_mode?: string; // the picker's mode — the run saves it to the session; omit to keep the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
   agent?: string; // who runs it: 'claude:<slot>' | 'opencode:<provider>'; omit for the ambient login
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
@@ -1219,6 +1231,12 @@ export const api = {
     req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(id)}/policy`, {
       method: "POST",
       body: { policy },
+    }),
+  // A model/mode pick for a session: saved, and applied to its running turn.
+  setRunSettings: (id: string, pick: { model?: string; permission_mode?: string }) =>
+    req<RunSettings>("/local/session/settings", {
+      method: "POST",
+      body: { session_id: id, ...pick },
     }),
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.
@@ -1650,7 +1668,7 @@ export const api = {
   queueEnqueue: (body: {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
-    model?: string; effort?: string; permission_mode?: string; surface?: string;
+    effort?: string; surface?: string; // no model/mode: it runs on the session's
     agent?: string; // same picker as /local/run — a queued prompt keeps your agent
   }) => req<QueueSnapshot & { item_id: string }>(
     "/local/queue/enqueue", { method: "POST", body }),
