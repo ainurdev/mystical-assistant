@@ -177,6 +177,14 @@ def test_unit_pins_a_path_without_pyenv_shims(monkeypatch):
     assert "Restart=on-failure" in text
 
 
+def test_unit_lets_the_bridge_stop_its_own_children():
+    """KillMode=mixed: a stop SIGTERMs the bridge alone, which stops its Claude
+    children after raising shutting_down; leftovers get SIGKILL once it exits.
+    The default SIGTERMed them all at once, and a child that died first read as
+    a crash."""
+    assert "KillMode=mixed" in startup._unit_text().splitlines()
+
+
 def test_profile_picks_the_one_that_has_used_the_dashboard(tmp_path, monkeypatch):
     """Four Chrome profiles, one of them ours: the launcher must name it, or the
     window is a coin flip."""

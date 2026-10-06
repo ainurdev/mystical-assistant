@@ -1355,6 +1355,26 @@ def test_an_oom_kill_is_recorded_at_once(monkeypatch):
     assert _row(sid)["status"] == "error"
 
 
+def test_shutdown_stops_the_children_after_raising_the_flag(monkeypatch):
+    """KillMode=mixed sends the stop signal to the bridge alone, and selfupdate's
+    in-place re-exec sends none: either way the bridge takes its children down
+    itself, after shutting_down is up, so each runner thread reads the death as
+    the restart."""
+    import claude_telegram_bridge as entry
+    from bridge import devserver, landing, native_activity, pubsub, state
+    seen = []
+    monkeypatch.setattr(state, "shutting_down", False)
+    monkeypatch.setattr(runner, "stop_children", lambda: seen.append(state.shutting_down))
+    for mod, name in ((native_activity, "stop"), (devserver, "stop_all"),
+                      (landing, "stop"), (pubsub, "shutdown")):
+        monkeypatch.setattr(mod, name, lambda: None)
+    for flag in ("RIVENDELL_ENABLE", "MINIAPP_ENABLE", "DASH_ENABLE"):
+        monkeypatch.setattr(config, flag, False)
+    monkeypatch.setattr(state, "miniapp_tunnel_proc", None)
+    entry._shutdown()
+    assert seen == [True]
+
+
 def test_midrun_crash_auto_resumes_capped(monkeypatch):
     s = store.create_session(555, "p-crash")
     store.set_claude_session_id(s["id"], "csid-crash")

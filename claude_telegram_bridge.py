@@ -42,7 +42,7 @@ import sys
 
 from bridge import (config, devserver, dream, envsettings, landing, limits,
                     native_activity, onboard, pubsub, recovery, report,
-                    rivendell, selfupdate, state, store, toolsets, tunnel)
+                    rivendell, runner, selfupdate, state, store, toolsets, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -109,6 +109,12 @@ def _on_stop_signal(signum, frame):
 
 def _shutdown():
     state.shutting_down = True
+    # Then the Claude children, by us: with KillMode=mixed the stop signal reaches
+    # this process alone, so every child dies after the flag is up and its runner
+    # thread leaves the turn for boot recovery. It also covers selfupdate's
+    # in-place re-exec, which nothing else stops them for — recovery would resume
+    # sessions their old claude was still writing.
+    runner.stop_children()
     if config.RIVENDELL_ENABLE:
         rivendell.stop()
     native_activity.stop()
