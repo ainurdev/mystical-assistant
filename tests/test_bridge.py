@@ -1422,6 +1422,38 @@ def test_a_second_stop_signal_cannot_abort_the_shutdown(monkeypatch):
         raise AssertionError("a second stop signal aborted the shutdown") from None
 
 
+def test_stop_children_gives_them_one_deadline_not_one_each(monkeypatch):
+    """Three children that ignore SIGTERM cost STOP_WAIT in all, not three
+    times it: stop_children is one step of a shutdown systemd times out."""
+    monkeypatch.setattr(runner, "STOP_WAIT", 0.3)
+    waited = []
+
+    class Stuck:
+        killed = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            waited.append(timeout)
+            time.sleep(timeout)
+            raise runner.subprocess.TimeoutExpired("claude", timeout)
+
+        def kill(self):
+            self.killed = True
+
+    jobs = [runner.Job(f"j-stuck-{i}", 555) for i in range(3)]
+    for j in jobs:
+        j.proc = Stuck()
+        monkeypatch.setitem(runner._jobs, j.id, j)
+    runner.stop_children()
+    assert sum(waited) <= runner.STOP_WAIT + 0.05
+    assert all(j.proc.killed for j in jobs)
+
+
 def test_midrun_crash_auto_resumes_capped(monkeypatch):
     s = store.create_session(555, "p-crash")
     store.set_claude_session_id(s["id"], "csid-crash")

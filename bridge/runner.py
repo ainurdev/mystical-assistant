@@ -782,17 +782,22 @@ def get_job(job_id: str) -> Job | None:
         return _jobs.get(job_id)
 
 
+STOP_WAIT = 10.0   # how long stop_children gives its children, all of them together
+
+
 def stop_children() -> None:
-    """SIGTERM every live child and wait for it (SIGKILL after 10s). Not
+    """SIGTERM every live child, then SIGKILL whatever is still alive STOP_WAIT
+    later: one deadline for all of them, so stuck children don't add up. Not
     Job.stop(): that marks the turn user-stopped, and turns a restart stops
     must stay resumable."""
     with _jobs_lock:
         procs = [j.proc for j in _jobs.values() if j.proc and j.proc.poll() is None]
     for p in procs:
         p.terminate()
+    end = time.monotonic() + STOP_WAIT
     for p in procs:
         try:
-            p.wait(timeout=10)
+            p.wait(timeout=max(0.0, end - time.monotonic()))
         except subprocess.TimeoutExpired:
             p.kill()
 
