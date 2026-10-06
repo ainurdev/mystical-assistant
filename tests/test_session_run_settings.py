@@ -204,6 +204,19 @@ QUESTION = {"request_id": "q1", "kind": "question", "tool_name": "AskUserQuestio
             "questions": []}
 
 
+def _answer(job, ok=True):
+    """The CLI's answer to every control request the job has written so far:
+    success, or a refusal (a managed disableBypassPermissionsMode, an unknown
+    model)."""
+    for line in list(job.proc.stdin.lines):
+        if line.get("type") != "control_request":
+            continue
+        rid = line["request_id"]
+        runner._handle_event(job, {"type": "control_response", "response": (
+            {"subtype": "success", "request_id": rid, "response": {}} if ok else
+            {"subtype": "error", "request_id": rid, "error": "refused by policy"})})
+
+
 def test_interactive_runs_offer_bypass_so_a_switch_can_reach_it():
     """claude 2.1.280 refuses set_permission_mode -> bypassPermissions on a child
     launched without bypass on offer (checked live 2026-10-06)."""
@@ -239,21 +252,38 @@ def test_a_switch_writes_one_control_request_per_setting():
         {"subtype": "set_permission_mode", "mode": "acceptEdits"}]
     assert all(l["type"] == "control_request" and l["request_id"]
                for l in job.proc.stdin.lines)
+    assert job.model is None                    # not until the CLI says it switched
+    _answer(job)
     assert job.model == "claude-fable-5-1"
 
 
 def test_a_switch_to_bypass_approves_waiting_permissions_not_questions():
     job = _live_job("s-bypass", PERM, QUESTION)
     job.set_run_settings(permission_mode="bypassPermissions")
-    switch, allow = job.proc.stdin.lines
-    # The mode lands before the approval, so the tool after this one doesn't ask.
+    [switch] = job.proc.stdin.lines
     assert switch["request"] == {"subtype": "set_permission_mode", "mode": "bypassPermissions"}
+    # Written is not switched: nothing is approved until the CLI accepts it.
+    assert [p["request_id"] for p in job.pending] == ["p1", "q1"]
+    _answer(job)
+    switch, allow = job.proc.stdin.lines
     assert allow == {"type": "control_response", "response": {
         "subtype": "success", "request_id": "p1",
         "response": {"behavior": "allow", "updatedInput": {"command": "touch a"}}}}
     assert [p["request_id"] for p in job.pending] == ["q1"]   # a decision, not a permission
     assert {"type": "permission_resolved", "request_id": "p1",
             "behavior": "allow"} in job.events
+
+
+def test_a_refused_switch_approves_nothing_and_moves_no_model():
+    """A managed disableBypassPermissionsMode refuses the switch, an unknown model
+    is refused too: the turn runs on as it was, cards still wait on you."""
+    job = _live_job("s-refused", PERM)
+    job.set_run_settings(model="claude-nope-1", permission_mode="bypassPermissions")
+    _answer(job, ok=False)
+    assert job.model is None
+    assert [p["request_id"] for p in job.pending] == ["p1"]
+    assert [l["type"] for l in job.proc.stdin.lines] == ["control_request"] * 2   # no allow
+    assert [e["src"] for e in job.events if e.get("type") == "log"] == ["control"] * 2
 
 
 def test_other_modes_leave_waiting_cards_alone():

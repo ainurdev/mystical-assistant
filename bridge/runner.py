@@ -613,6 +613,9 @@ class Job:
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
         self.model: str | None = None     # what the child runs on; a live switch moves it
+        # Our set_model / set_permission_mode requests the CLI hasn't answered
+        # yet: request_id -> (subtype, value). See control_answered.
+        self._controls: dict[str, tuple[str, str]] = {}
         self.texts: list[str] = []       # assistant text this turn
         self.ctx_tokens: int | None = None  # window fill on the last request (see _ctx_of)
         # What the turn spent: the same four counters, summed instead of last-wins.
@@ -754,33 +757,53 @@ class Job:
         offer _base_cmd makes at spawn). Returns whether anything reached the
         child; False means the caller's saved row is all the next turn gets.
 
-        A switch to bypassPermissions also approves every permission card
-        already waiting — "stop asking" has to cover the one on screen.
-        Questions (AskUserQuestion) stay open: they ask for a decision, not a
-        permission. The CLI answers each request on stdout; a refusal becomes an
-        error row (_handle_event) and the saved pick still stands.
+        Written is not switched. The CLI answers each request on stdout, and only
+        its success (control_answered) moves Job.model or, for a switch to
+        bypassPermissions, approves the permission cards already waiting —
+        "stop asking" has to cover the one on screen. A refusal (a managed
+        disableBypassPermissionsMode, an unknown model) becomes an error row
+        (_handle_event), changes nothing live, and the saved pick still stands.
+        Questions (AskUserQuestion) stay open either way: they ask for a
+        decision, not a permission.
 
         ponytail: a pick that lands before the child spawns (the MCP health
         check at boot) misses this turn, and a can_use_tool already in the
         stdout pipe when bypass is sent still shows its card. Both are saved
         or answerable; re-read the row at spawn if either ever matters."""
-        def control(request: dict) -> bool:
-            return self._write_stdin({"type": "control_request",
-                                      "request_id": uuid.uuid4().hex,
-                                      "request": request})
         sent = False
-        if model and control({"subtype": "set_model", "model": model}):
-            self.model, sent = model, True
-        if permission_mode and control({"subtype": "set_permission_mode",
-                                        "mode": permission_mode}):
-            sent = True
-            if permission_mode == "bypassPermissions":
+        for subtype, key, value in (("set_model", "model", model),
+                                    ("set_permission_mode", "mode", permission_mode)):
+            if not value:
+                continue
+            rid = uuid.uuid4().hex
+            with self._lock:          # before the write: the answer can beat us back
+                self._controls[rid] = (subtype, value)
+            if self._write_stdin({"type": "control_request", "request_id": rid,
+                                  "request": {"subtype": subtype, key: value}}):
+                sent = True
+            else:
                 with self._lock:
-                    waiting = [p["request_id"] for p in self.pending
-                               if p.get("kind") == "permission"]
-                for rid in waiting:
-                    self.respond(rid, behavior="allow")
+                    self._controls.pop(rid, None)
         return sent
+
+    def control_answered(self, request_id: "str | None", ok: bool) -> None:
+        """The CLI's answer to one of set_run_settings' requests. Its success is
+        the moment the switch is real: the model moves, and a switch to
+        bypassPermissions approves the permission cards already waiting.
+        Answers to anything else (interrupt) are not ours to act on."""
+        with self._lock:
+            sent = self._controls.pop(request_id, None)
+        if not ok or sent is None:
+            return
+        subtype, value = sent
+        if subtype == "set_model":
+            self.model = value
+        elif value == "bypassPermissions":
+            with self._lock:
+                waiting = [p["request_id"] for p in self.pending
+                           if p.get("kind") == "permission"]
+            for rid in waiting:
+                self.respond(rid, behavior="allow")
 
     def snapshot(self, cursor: int) -> dict:
         with self._lock:
@@ -1682,11 +1705,13 @@ def _handle_event(job: Job, d: dict):
     elif t == "control_response":
         # The CLI's answer to one of ours (interrupt, set_model,
         # set_permission_mode). Only a refusal earns a row: the pick it carried
-        # is saved either way, and the next turn spawns with it.
+        # is saved either way, and the next turn spawns with it. A success is
+        # when a switch takes effect (Job.control_answered).
         r = d.get("response") or {}
         if r.get("subtype") == "error":
             job.add({"type": "log", "src": "control", "error": True,
                      "text": str(r.get("error") or "control request refused")[:_LOG_MAX]})
+        job.control_answered(r.get("request_id"), r.get("subtype") == "success")
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")

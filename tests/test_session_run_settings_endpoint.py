@@ -152,6 +152,14 @@ QUESTION = {"request_id": "q1", "kind": "question", "tool_name": "AskUserQuestio
             "questions": []}
 
 
+def _answer(job):
+    """The CLI accepting every control request written so far (it answers each
+    on stdout; only then is a switch real)."""
+    for line in [l for l in job.proc.stdin.lines if l["type"] == "control_request"]:
+        runner._handle_event(job, {"type": "control_response", "response": {
+            "subtype": "success", "request_id": line["request_id"], "response": {}}})
+
+
 def _live(monkeypatch, sid, *pending):
     """A fake in-flight turn for `sid`, registered where apply_run_settings looks."""
     monkeypatch.setattr(runner, "_jobs", {})
@@ -178,6 +186,7 @@ def test_a_pick_is_saved_and_switches_the_running_turn(monkeypatch, surface):
     assert [l["request"] for l in lines if l["type"] == "control_request"] == [
         {"subtype": "set_model", "model": "claude-fable-5-1"},
         {"subtype": "set_permission_mode", "mode": "bypassPermissions"}]
+    _answer(job)
     # The waiting permission card is approved; the question still waits on you.
     assert [l["response"]["request_id"] for l in lines if l["type"] == "control_response"] == ["p1"]
     assert [p["request_id"] for p in job.pending] == ["q1"]
