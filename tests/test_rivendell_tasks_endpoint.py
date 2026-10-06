@@ -109,3 +109,17 @@ def test_implement_on_an_unreachable_rivendell_is_a_bad_gateway(monkeypatch):
         raise rivendell.TasksError("unreachable", "unreachable: connection refused")
     monkeypatch.setattr(rivendell, "implement", down)
     assert dpost("/local/rivendell/implement", {"instance_id": "a", "task_id": "t1"})["code"] == 502
+
+
+def test_test_link_relays_to_the_instance(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rivendell, "test_link", lambda iid, job=False: calls.append(iid)
+                        or {"ok": True, "rtt_ms": 12, "detail": "", "at": 1.0})
+    r = dpost("/local/rivendell/test", {"instance_id": "a"})
+    assert calls == ["a"] and r["code"] == 200 and r["obj"]["rtt_ms"] == 12
+
+
+def test_test_link_on_a_connection_that_is_off_is_a_conflict(monkeypatch):
+    monkeypatch.setattr(rivendell, "test_link", lambda iid, job=False: None)
+    r = dpost("/local/rivendell/test", {"instance_id": "a"})
+    assert r["code"] == 409 and r["obj"] == {"error": "that Rivendell connection is off"}

@@ -492,3 +492,73 @@ def test_a_failing_instance_lists_its_last_good_answer_as_stale(workers):
     out = rivendell.tasks("acme/app")
     assert [(t["id"], t["stale"]) for t in out["tasks"]] == [("t1", True), ("t2", True)]
     assert out["errors"][0]["error"] == "token_rejected" and out["projects"]
+
+
+# --- Task 6: TEST LINK ----------------------------------------------------------
+
+def _gateway(server, answer_pings=True):
+    """What Rivendell's `ws` does with a client's ping (autoPong, ws 8): echo its
+    payload back in a pong. Runs until the socket closes."""
+    def run():
+        srv = server.makefile("rb")
+        while True:
+            try:
+                f = wsutil.decode_frame(srv)
+            except OSError:
+                return
+            if f is None:
+                return
+            if f[0] == wsutil.OP_PING and answer_pings:
+                server.sendall(wsutil.encode_frame(f[1], wsutil.OP_PONG))
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _linked(monkeypatch, answer_pings=True):
+    server, client = socket.socketpair()
+    w = _worker()
+    monkeypatch.setattr(w, "_connect", lambda: (client, client.makefile("rb")))
+    monkeypatch.setattr(w, "_catch_up", lambda: 0)
+    _gateway(server, answer_pings)
+    t = threading.Thread(target=w._listen, daemon=True)
+    t.start()
+    _wait_until(lambda: w.status == "connected")
+    return w, t, server
+
+
+def test_test_link_is_a_ping_pong_round_trip(monkeypatch):
+    w, t, server = _linked(monkeypatch)
+    try:
+        res = w.test_link()
+        assert res["ok"] is True and res["rtt_ms"] is not None and res["detail"] == ""
+        assert w.status_snapshot()["last_test"] == res
+    finally:
+        w.stop()
+        t.join(2)
+        server.close()
+
+
+def test_test_link_without_a_pong_says_so(monkeypatch):
+    w, t, server = _linked(monkeypatch, answer_pings=False)
+    try:
+        res = w.test_link(timeout=0.2)
+        assert res["ok"] is False and res["detail"] == "no pong in 0.2s"
+    finally:
+        w.stop()
+        t.join(2)
+        server.close()
+
+
+def test_test_link_on_a_parked_token_redials_it_once():
+    """A 4401 is any failure of Rivendell's token check, a database hiccup
+    included — and a parked worker never retries on its own."""
+    w = _worker(token="bad")
+    w._block_on_token("token rejected by gateway (4401)")
+    res = w.test_link()
+    assert res["ok"] is None and w._blocked_token is None and w._wake.is_set()
+
+
+def test_test_link_while_retrying_reports_the_error():
+    w = _worker()
+    w._set_status("error", "connection refused")
+    res = w.test_link()
+    assert (res["ok"], res["detail"]) == (False, "connection refused")

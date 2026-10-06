@@ -181,6 +181,7 @@ _POLL_INTERVAL = 2.0      # job status poll cadence
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
 _CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab polls
 _LINK_GRACE = 300.0       # an outage this long is a break worth one Telegram message
+_TEST_TIMEOUT = 5.0       # seconds TEST LINK waits for its pong
 _checks_cache: "dict[str, tuple[float, str | None]]" = {}
 
 # WebSocket close codes the gateway uses to reject a bad/insufficient token (see
@@ -314,6 +315,12 @@ class Worker:
         # fails still shows its cards, dimmed as "last known" (tasks()). One
         # entry per repo the tab has shown.
         self._last_tasks: "dict[str, dict]" = {}
+        # TEST LINK: nonce -> the event its pong sets; the last outcome (Settings
+        # ▸ PLUGINS shows it). The send lock keeps TEST LINK's ping (an HTTP
+        # thread) from interleaving with the listener's own frames.
+        self._pongs: "dict[bytes, threading.Event]" = {}
+        self._send_lock = threading.Lock()
+        self.last_test: "dict | None" = None
 
     def _set_status(self, state: str, detail: str = "") -> None:
         self.status = state
@@ -353,6 +360,7 @@ class Worker:
             "alert_at": self.alert_at,          # when it was flagged: dot, bell, Telegram
             "attempt": self.attempt,            # failed dials in a row
             "retry_at": self.retry_at,          # when the next dial starts
+            "last_test": self.last_test,
         }
 
     def _recovered(self) -> None:
@@ -362,6 +370,38 @@ class Worker:
         (status "connected") can't clear the alert, or every re-dial of a dead
         token would end one break and open the next."""
         self.down_since = self.alert_at = None
+
+    def test_link(self, timeout: float = _TEST_TIMEOUT) -> dict:
+        """TEST LINK: one WebSocket ping/pong round trip on the live socket. The
+        gateway's `ws` (8.x, autoPong) answers every ping with a pong carrying
+        the same payload, so a nonce proves the link end to end with no
+        Rivendell change. Parked on a rejected token it re-dials once with that
+        same token instead: Rivendell closes 4401 for ANY failure of its token
+        check, a database hiccup included, and a parked worker never retries on
+        its own. Anything else is reported as it stands — the listener is
+        already retrying. Kept as `last_test`."""
+        sock = self._sock
+        if self.status == "auth_error":
+            self._blocked_token = None
+            self._wake.set()
+            res = {"ok": None, "rtt_ms": None, "detail": "re-dialing with the saved token"}
+        elif self.status != "connected" or sock is None:
+            res = {"ok": False, "rtt_ms": None, "detail": self.status_detail or self.status}
+        else:
+            nonce, got = os.urandom(8), threading.Event()
+            self._pongs[nonce] = got
+            t0 = time.monotonic()
+            try:
+                self._send(sock, nonce, wsutil.OP_PING)
+                ok = got.wait(timeout)
+                res = {"ok": ok, "rtt_ms": round((time.monotonic() - t0) * 1000) if ok else None,
+                       "detail": "" if ok else f"no pong in {timeout:g}s"}
+            except OSError as e:
+                res = {"ok": False, "rtt_ms": None, "detail": str(e)}
+            finally:
+                self._pongs.pop(nonce, None)
+        self.last_test = {**res, "at": time.time()}
+        return self.last_test
 
     def _alert_broken(self) -> None:
         """The break's one Telegram message (the dashboard's rail dot and bell
@@ -527,7 +567,8 @@ class Worker:
         return sock, rfile
 
     def _send(self, sock: socket.socket, payload: bytes, opcode: int) -> None:
-        sock.sendall(wsutil.encode_frame(payload, opcode, masked=True))
+        with self._send_lock:    # TEST LINK sends from an HTTP thread
+            sock.sendall(wsutil.encode_frame(payload, opcode, masked=True))
 
     def _catch_up(self) -> int:
         """Queue PENDING requests missed while disconnected, returning how many
@@ -835,7 +876,11 @@ class Worker:
                     elif opcode == wsutil.OP_CONT:
                         # Fragmentation is unsupported (see wsutil) — resync.
                         raise ConnectionError("unexpected continuation frame")
-                    # OP_PONG / anything else: arrival already reset `missed`.
+                    elif opcode == wsutil.OP_PONG:
+                        waiter = self._pongs.get(payload)    # TEST LINK's nonce
+                        if waiter is not None:
+                            waiter.set()
+                    # Anything else: arrival already reset `missed`.
             except _AuthError as e:
                 self._block_on_token(str(e))
             except Exception as e:  # noqa: BLE001 — reconnect-forever by design
@@ -1493,6 +1538,14 @@ def running() -> list:
     with _manager_lock:
         workers = list(_workers.values())
     return [row for w in workers for row in w.running_snapshot()]
+
+
+def test_link(instance_id: str, job: bool = False) -> "dict | None":
+    """TEST LINK on one instance (Worker.test_link). None when it has no running
+    worker (switched off or removed)."""
+    with _manager_lock:
+        w = _workers.get(instance_id)
+    return w.test_link() if w else None
 
 
 # --- Telegram callback tokens -------------------------------------------------
