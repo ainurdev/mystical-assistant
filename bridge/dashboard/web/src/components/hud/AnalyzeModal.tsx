@@ -516,7 +516,11 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
       const text = notesMessage(branch, current.map((x) => reanchor(x, files[paths.indexOf(x.path)])));
       const cwd = worktrees.find((w) => w.branch === branch)?.path ?? "";
       // Dropped only once the message ran or was queued: a failed send keeps them.
-      if (await onSendTo(text, target ? { session: target.id } : { cwd })) setNotes([]);
+      // Only the notes that went: another tab may have added one meanwhile.
+      if (await onSendTo(text, target ? { session: target.id } : { cwd })) {
+        const sent = new Set(current.map((x) => x.id));
+        setNotes(loadNotes(nkey).filter((x) => !sent.has(x.id)));
+      }
     } finally { setSending(false); }
   }
 
