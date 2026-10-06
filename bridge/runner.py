@@ -1102,6 +1102,17 @@ def _session_kb(chat_id: int | None, session_id: str | None,
     return panel_kb(chat_id, session_id, sess.get("project") if sess else None, label)
 
 
+def _plugin_session(session_id: str | None) -> bool:
+    """A Rivendell run's session. Its worker pings once per JOB
+    (rivendell.Worker._ping_done), so the per-turn pings stay quiet for it —
+    a queue-mode batch would otherwise ping once per step, and an autonomous
+    run's closing question is for its requester, in Rivendell.
+    ponytail: by origin, so a turn you later send by hand in such a session
+    pings nothing either; tell them apart if that ever matters."""
+    sess = store.get_session(session_id) if session_id else None
+    return bool(sess) and config.is_plugin_origin(sess.get("origin"))
+
+
 def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> None:
     """Ping when a streaming run blocks on you (a question or an approval)."""
     what = "a question" if kind == "question" else "your approval"
@@ -1111,6 +1122,8 @@ def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> N
 
 def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool) -> None:
     """Ping when a streaming run finishes (or errors), so you can step away."""
+    if _plugin_session(session_id):
+        return
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}",
             _session_kb(chat_id, session_id, "🛠 Open session"))
@@ -1120,6 +1133,8 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
     """Ping when a turn *ended* on something only you can answer. Carries the ask
     itself: it's read off a lock screen, and acting on it shouldn't cost opening
     the transcript to find out what was asked (bridge/tailstate.py)."""
+    if _plugin_session(session_id):
+        return
     _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}",
             _session_kb(chat_id, session_id, "❓ Answer in Panel"))
 

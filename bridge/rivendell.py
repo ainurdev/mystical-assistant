@@ -502,11 +502,29 @@ class Worker:
                 time.sleep(delay)
             try:
                 self._api(f"/plugin/{kind_path}/{request_id}/result", payload)
-                return
+                break
             except Exception as e:  # noqa: BLE001 — retried; loud on final failure
                 if i == len(_RESULT_RETRIES):
                     print(f"rivendell[{self.name}]: result POST failed for "
                           f"{request_id}: {e} (transcript still in dashboard)")
+        self._ping_done(request_id, ok, text)
+
+    def _ping_done(self, request_id: str, ok: bool, text: str) -> None:
+        """The job's one Telegram message once its result is posted: done or
+        failed, its PR and time, with OPEN PR and OPEN SESSION. Only for a job
+        that ran here (a session is filed under it); checks are left out — they
+        have only just started. Best-effort: a lost ping never fails a result."""
+        try:
+            from bridge import store                 # local import: heavy module
+            ref = f"{self.id}:{request_id}"
+            sid = store.sessions_for_refs([ref]).get(ref)
+            if sid is None:
+                return
+            sess = store.get_session(sid) or {"id": sid}
+            msg, kb = _done_message(sess, ok, text, _result_view(sid, checks=False) or {})
+            self._deliver_telegram(msg, kb)
+        except Exception as e:  # noqa: BLE001
+            print(f"rivendell[{self.name}]: done ping failed for {request_id}: {e}")
 
     # -- WebSocket client --
     def _ws_url(self) -> str:
@@ -1863,6 +1881,26 @@ def _question_message(sess: dict, age_s: float, q: dict, token: str, opts: list)
     rows += (panel_kb(config.DASH_CHAT_ID, sess["id"], sess.get("project"),
                       "Open session ↗") or {}).get("inline_keyboard", [])
     return text, ({"inline_keyboard": rows} if rows else None)
+
+
+def _done_message(sess: dict, ok: bool, text: str, res: dict) -> tuple:
+    """A finished job's ping: done or failed, its title, and one line — where it
+    came from, its PR, why it failed, how long it took — over OPEN PR and OPEN
+    SESSION. Pure but for panel_kb."""
+    from bridge.telegram import panel_kb         # local import: telegram pulls state
+    pr = res.get("pr")
+    why = None if ok else ((res.get("outcome") or {}).get("label")
+                           or (text.strip().splitlines() or ["failed"])[0][:80])
+    mins = round((res.get("wall_s") or 0) / 60)
+    line = " · ".join(b for b in ((sess.get("origin") or "rivendell").replace(":", " · "),
+                                  f"PR #{pr['number']}" if pr else "", why or "",
+                                  f"{mins}m" if mins else "") if b)
+    head = "✓ Rivendell job done" if ok else "✕ Rivendell job failed"
+    row = [{"text": "Open PR ↗", "url": pr["url"]}] if pr else []
+    row += [b for r in (panel_kb(config.DASH_CHAT_ID, sess.get("id"), sess.get("project"),
+                                 "Open session ↗") or {}).get("inline_keyboard", []) for b in r]
+    return (f"{head}\n{sess.get('title') or 'Rivendell job'}\n{line}",
+            {"inline_keyboard": [row]} if row else None)
 
 
 def _answer(token: str, labels: list, notes: str = "") -> "str | None":

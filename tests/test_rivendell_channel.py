@@ -685,3 +685,49 @@ def test_a_reply_to_any_other_message_is_still_a_prompt(monkeypatch):
     _wait_until(lambda: started)
     state.release_run(started[0][2]["id"])
     assert started[0][1] == "fix the header"
+
+
+# --- Task 8: one "job done" ping per job ----------------------------------------
+
+def test_a_finished_job_pings_once_with_its_pr_and_time(quiet, workers):
+    sid = _session()
+    rid = uuid.uuid4().hex
+    store.set_ref(sid, f"ch:{rid}")
+    _turn(sid, elapsed=38 * 60, result="Opened https://github.com/acme/app/pull/128")
+    w = _worker()
+    w._api = lambda path, payload=None: {}
+    w._post_result("implementation-requests", rid, True, "summary")
+    (ping,) = [m for m in quiet if m["text"].startswith("✓ Rivendell job done")]
+    assert ping["text"].splitlines()[1:] == ["Inbox: group meeting action items by client",
+                                             "rivendell · test · PR #128 · 38m"]
+    assert ping["kb"]["inline_keyboard"][0][0] == {
+        "text": "Open PR ↗", "url": "https://github.com/acme/app/pull/128"}
+
+
+def test_a_failed_job_names_why(quiet, workers):
+    sid = _session()
+    rid = uuid.uuid4().hex
+    store.set_ref(sid, f"ch:{rid}")
+    _turn(sid, status="error", elapsed=21 * 60, error="⏱️ No output for 30 min — killed as hung.")
+    w = _worker()
+    w._api = lambda path, payload=None: {}
+    w._post_result("implementation-requests", rid, False, "run killed after 1800s of silence")
+    (ping,) = [m for m in quiet if m["text"].startswith("✕ Rivendell job failed")]
+    assert ping["text"].splitlines()[2] == "rivendell · test · KILLED AS HUNG · 21m"
+
+
+def test_a_job_that_never_ran_here_pings_nothing(quiet):
+    w = _worker()
+    w._api = lambda path, payload=None: {}
+    w._post_result("implementation-requests", uuid.uuid4().hex, False, "no local checkout")
+    assert not [m for m in quiet if "Rivendell job" in m["text"]]
+
+
+def test_a_rivendell_session_skips_the_generic_turn_pings(monkeypatch):
+    notes = []
+    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None: notes.append(text))
+    runner.notify_turn_done(config.DASH_CHAT_ID, _session(), False)
+    runner.notify_needs_you(config.DASH_CHAT_ID, _session(), "pick one")
+    assert notes == []
+    runner.notify_turn_done(config.DASH_CHAT_ID, _session(origin="dashboard"), False)
+    assert len(notes) == 1
