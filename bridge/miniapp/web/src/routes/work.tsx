@@ -100,7 +100,7 @@ function WorkPage() {
 
 function QueueTab({ queues, loading }: { queues: QueueSnapshot[]; loading: boolean }) {
   const qc = useQueryClient();
-  const { sessionId, sessions, model, effort, perm } = useChat();
+  const { sessionId, sessions, effort } = useChat();
   const [text, setText] = useState("");
   const target = sessions.find((s) => s.id === sessionId);
 
@@ -115,9 +115,7 @@ function QueueTab({ queues, loading }: { queues: QueueSnapshot[]; loading: boole
         op: "enqueue",
         session_id: sessionId,
         prompt,
-        model,
-        effort: effort || undefined,
-        permission_mode: perm || undefined,
+        effort: effort || undefined,     // model + mode: the session's, when it runs
       });
     } catch {
       setText(prompt); // put it back rather than lose it
@@ -349,7 +347,7 @@ function issuePrompt(i: Issue): string {
 function IssuesTab() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { setDraft, sessionId, model, effort, perm } = useChat();
+  const { setDraft, sessionId, effort } = useChat();
   const { data, isLoading } = useQuery({
     queryKey: ["issues"],
     queryFn: () => api.getIssues(),
@@ -369,9 +367,7 @@ function IssuesTab() {
         op: "enqueue",
         session_id: sessionId,
         prompt: issuePrompt(i),
-        model,
-        effort: effort || undefined,
-        permission_mode: perm || undefined,
+        effort: effort || undefined,     // model + mode: the session's, when it runs
       });
       void qc.invalidateQueries({ queryKey: ["queues"] });
     } catch {
@@ -456,7 +452,7 @@ const input =
 function TasksTab() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { setDraft, sessionId, model, effort, perm } = useChat();
+  const { setDraft, sessionId, effort } = useChat();
   const [mine, setMine] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null); // key of the open UPDATE sheet
   const { data, isLoading, error } = useQuery({
@@ -481,9 +477,7 @@ function TasksTab() {
         op: "enqueue",
         session_id: sessionId,
         prompt: taskPrompt(data.kind, t),
-        model,
-        effort: effort || undefined,
-        permission_mode: perm || undefined,
+        effort: effort || undefined,     // model + mode: the session's, when it runs
       });
       void qc.invalidateQueries({ queryKey: ["queues"] });
     } catch {

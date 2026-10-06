@@ -22,7 +22,7 @@ import type {
 } from "./api";
 import { usePersistentState } from "./persistentState";
 import { lastOpen, rememberOpen } from "./lastopen";
-import { modelOptions } from "./models";
+import { modelOptions, runPicks, snapModel } from "./models";
 import { withName } from "../components/ImageLightbox";
 
 export interface Attachment {
@@ -259,11 +259,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // The session resolver below hasn't settled yet, so "no turns" means "not
   // fetched", not "empty chat". Flips on failure too — never spin forever.
   const [resolving, setResolving] = useState(true);
-  const [model, setModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
+  // Model + mode belong to the open session: its row is the source of truth
+  // (bridge store.set_run_settings), loaded below when it opens and followed
+  // when another device picks for it. The persisted pair only remembers the last
+  // pick on this phone — what a session that never ran from a composer starts
+  // on (lib/models.runPicks). Effort stays this phone's.
+  const [defModel, setDefModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
+  const [model, setModelState] = useState<ModelId>(defModel);
   const [effort, setEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
-  // Per-message permission override ("" = use the session's mode). Lets you flip a
-  // single run to ask/plan/full-auto from the phone, like Shift+Tab in the CLI.
-  const [perm, setPerm] = usePersistentState<string>("miniapp:perm:v1", "");
+  const [defPerm, setDefPerm] = usePersistentState<string>("miniapp:perm:v1", "");
+  const [perm, setPermState] = useState<string>(defPerm);
   const fileIdRef = useRef(0);
   const seqRef = useRef(0);
   // Turns of the last few sessions, so switching back to one is a paint rather
@@ -295,12 +300,51 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const project = stateQuery.data?.project?.rel ?? null;
   // Model picker options — the live list served from /api/state (Models API).
   const models = modelOptions(stateQuery.data?.models);
-  // Once the live list loads, snap the persisted selection to an available
-  // model (prefer Opus) if the stored one isn't offered.
+  // A pick the server's list doesn't offer (aliases while the Models API cache
+  // is cold, full ids once it warms) moves to its family's model — on screen
+  // only: neither the session nor this phone's default is rewritten. Nothing
+  // snaps before /api/state lands; modelOptions' FALLBACK is no list to snap to.
   useEffect(() => {
-    if (!models.length || models.some((m) => m.id === model)) return;
-    setModel((models.find((m) => m.id.includes("opus")) ?? models[0]).id);
-  }, [models, model, setModel]);
+    const to = snapModel(model, stateQuery.data?.models);
+    if (to) setModelState(to);
+  }, [stateQuery.data?.models, model]);
+
+  // This project's briefs on the same 5s beat as /api/state, for the open
+  // session's picks: one made on another device lands here before this phone
+  // sends over it. `sessions` (the resolver's copy) covers a session minted
+  // since the last poll.
+  const briefsQ = useQuery({
+    queryKey: ["sessions", project],
+    queryFn: () => api.listSessions(project as string),
+    enabled: project !== null,
+    refetchInterval: 5000,
+  });
+  const brief = briefsQ.data?.sessions.find((s) => s.id === sessionId)
+    ?? sessions.find((s) => s.id === sessionId);
+  // Keyed on the values, so a poll that left before a pick made here can't put
+  // the old one back.
+  useEffect(() => {
+    if (!brief) return;
+    const r = runPicks(brief, { model: defModel, perm: defPerm });
+    setModelState(r.model);
+    setPermState(r.perm);
+  }, [sessionId, brief?.model, brief?.permission_mode]);
+
+  // A pick: shown now, remembered as this phone's default, and saved to the
+  // open session as the pair the picker shows (a fresh session would otherwise
+  // keep the bridge's mode under a picker showing yours). Saving also switches a
+  // running turn (runner.apply_run_settings). A bridge too old for the route
+  // 404s; the pick still rides the next /api/run, as it always did.
+  function pickRun(m: ModelId, p: string) {
+    setModelState(m);
+    setPermState(p);
+    setDefModel(m);
+    setDefPerm(p);
+    if (sessionId)
+      void api.setRunSettings(sessionId, { model: m, permission_mode: p || undefined }).catch(() => {});
+  }
+  const setModel = (m: ModelId) => pickRun(m, perm);
+  const setPerm = (p: string) => pickRun(model, p);
 
   const lastTurn = turns.length ? turns[turns.length - 1] : null;
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;
@@ -536,6 +580,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
       setHeld(null);
       onSent?.();
+      // The run saved these picks to the session (/api/run); mirror that here,
+      // or a session minted for this prompt reads as never-run until the next
+      // poll and the picker flips to this phone's defaults meanwhile.
+      setSessions((prev) => prev.map((s) => (s.id === sid
+        ? { ...s, model, permission_mode: perm || s.permission_mode } : s)));
       setTurns((prev) => [
         ...prev,
         {

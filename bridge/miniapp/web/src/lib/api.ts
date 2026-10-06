@@ -66,6 +66,17 @@ export interface SessionBrief {
   work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there
   worktree?: string; // the linked worktree it runs in ("" = the project checkout)
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
+  // The session's run picks (bridge store.set_run_settings), loaded into the
+  // composer. Absent from a bridge older than this field.
+  model?: string | null; // last model picked for it on any surface; null = none yet
+  permission_mode?: string; // the mode its next run gets: stored, else the bridge default
+}
+
+/** What POST /api/session/settings saved (and switched a running turn to). */
+export interface RunSettings {
+  ok: boolean;
+  model: string | null;
+  permission_mode: string;
 }
 
 // Mirrors bridge/dashboard/web/src/api.ts (the two clients are separate apps
@@ -145,8 +156,9 @@ export type RunEvent =
   | { type: "thinking"; ms?: number; text?: string }
   // The working output either side of the conversation: a hook that injected
   // context, blocked a tool or crashed, and whatever the claude child wrote to
-  // stderr (normally nothing — a dying MCP server, or --debug).
-  | { type: "log"; src: "hook" | "stderr"; label?: string; text: string; error?: boolean }
+  // stderr (normally nothing — a dying MCP server, or --debug), or a control
+  // request it refused (src "control": a mid-turn model/mode switch).
+  | { type: "log"; src: "hook" | "stderr" | "control"; label?: string; text: string; error?: boolean }
   // `agent` is Task/Agent/Skill-only (bridge/transcript_jsonl.agent_meta) and
   // absent on turns recorded before it landed.
   | { type: "tool"; name: string; summary: string; id?: string;
@@ -678,6 +690,12 @@ export const api = {
       method: "POST",
       body: { autocompact },
     }),
+  // A model/mode pick for a session: saved, and applied to its running turn.
+  setRunSettings: (id: string, pick: { model?: string; permission_mode?: string }) =>
+    request<RunSettings>("/api/session/settings", {
+      method: "POST",
+      body: { session_id: id, ...pick },
+    }),
 
   runStatus: (jobId: string, cursor: number) =>
     request<RunStatus>(
@@ -706,9 +724,7 @@ export const api = {
     prompt?: string;
     images?: string[];      // data URLs, saved server-side like a normal run's
     item_id?: string;
-    model?: string;
-    effort?: string;
-    permission_mode?: string;
+    effort?: string; // no model or mode: a queued prompt runs on the session's
   }) => request<QueueSnapshot>("/api/queue", { method: "POST", body }),
 
   getNextUp: () => request<NextUpBoard>("/api/nextup"),
