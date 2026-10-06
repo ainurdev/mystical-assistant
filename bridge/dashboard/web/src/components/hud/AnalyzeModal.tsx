@@ -466,6 +466,14 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   const onBranch = useMemo(() => sessions.filter((s) => s.branch === branch).sort((a, b) => b.updated - a.updated), [sessions, branch]);
   const target = sendTo === "new" ? null
     : onBranch.find((s) => s.id === sendTo) ?? onBranch.find((s) => s.id === activeSession) ?? onBranch[0] ?? null;
+  // Notes on a file with no uncommitted change now (committed since, so the
+  // tree may even be clean) still go on SEND: they're listed with their path,
+  // and the send bar stays, so they can always be sent or dropped.
+  const stray = notes.filter((x) => !files.some((f) => f.path === x.path));
+  const sendBar = notes.length > 0 && (
+    <SendBar count={notes.length} targets={onBranch} target={target} tint={projectTint(project).color}
+      busy={sending} onPick={setSendTo} onClear={() => void clearNotes()} onSend={() => void sendNotes()} />
+  );
 
   // A drag down the line numbers ends where the mouse is let go. That is
   // caught on the window, so letting go outside the diff still opens the editor.
@@ -593,6 +601,16 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
             : "Working tree clean."}
         </div>
       )}
+      {view === "tree" && st && files.length === 0 && stray.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", minHeight: 0, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)" }}>
+          <div className="mscroll" style={{ overflowY: "auto", minHeight: 0, padding: "6px 0" }}>
+            {stray.map((x) => (
+              <NoteThread key={x.id} note={x} path={x.path} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+            ))}
+          </div>
+          {sendBar}
+        </div>
+      )}
       {/* Fills the modal body (not min-height): the file list and diff then
           scroll inside their columns, keeping the commit box pinned at the
           bottom instead of pushing it below the modal's own scroll. */}
@@ -699,11 +717,11 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
               {fileNotes.filter((x) => !rows.some((r) => r.ln === String(x.end))).map((x) => (
                 <NoteThread key={x.id} note={x} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
               ))}
+              {stray.map((x) => (
+                <NoteThread key={x.id} note={x} path={x.path} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+              ))}
             </div>
-            {notes.length > 0 && (
-              <SendBar count={notes.length} targets={onBranch} target={target} tint={projectTint(project).color}
-                busy={sending} onPick={setSendTo} onClear={() => void clearNotes()} onSend={() => void sendNotes()} />
-            )}
+            {sendBar}
           </div>
         </div>
       )}

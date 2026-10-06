@@ -55,8 +55,11 @@ export function NoteEditor({ start, end, initial, isNew, onSave, onCancel }: {
   );
 }
 
-export function NoteThread({ note, onEdit, onDelete }: {
+export function NoteThread({ note, path, onEdit, onDelete }: {
   note: Note;
+  /** Set for a note shown away from its file's diff (that file has no
+   *  uncommitted change now): the header names the file, and no indent. */
+  path?: string;
   /** Absent for a note whose line has left the diff: there's no row to edit it under. */
   onEdit?: () => void;
   onDelete: () => void;
@@ -69,9 +72,9 @@ export function NoteThread({ note, onEdit, onDelete }: {
     color: hov === k ? (k === "del" ? "var(--err)" : "var(--txb)") : "var(--txl)",
   });
   return (
-    <div style={{ margin: `3px 12px 5px ${INDENT}px`, border: "1px solid color-mix(in srgb, var(--purple) 38%, transparent)", borderLeft: "2px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 7%, transparent)", padding: "7px 9px", fontSize: "var(--t105)", lineHeight: 1.5 }}>
+    <div style={{ margin: `3px 12px 5px ${path ? 12 : INDENT}px`, border: "1px solid color-mix(in srgb, var(--purple) 38%, transparent)", borderLeft: "2px solid var(--purple)", background: "color-mix(in srgb, var(--purple) 7%, transparent)", padding: "7px 9px", fontSize: "var(--t105)", lineHeight: 1.5 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "var(--t85)", letterSpacing: 1.2, color: "var(--purple-h)", marginBottom: 3 }}>
-        <span>◆ {lineLabel(note.start, note.end)} · YOU · {ago(note.at / 1000) || "now"}</span>
+        <span>◆ {path ? `${path} · ` : ""}{lineLabel(note.start, note.end)} · YOU · {ago(note.at / 1000) || "now"}</span>
         <span style={{ flex: 1 }} />
         {onEdit && <>
           <button onClick={onEdit} {...hp("edit")} style={link("edit")}>EDIT</button>
