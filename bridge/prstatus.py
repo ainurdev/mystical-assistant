@@ -317,7 +317,11 @@ def _read(repo_dir: str, branch: str, session: str, old: "dict | None") -> dict:
     # PRs land on the default branch. They don't come from it. And gh pr view
     # reads "59" (or "#59") as PR number 59, not as a branch.
     # ponytail: an all-digit branch gets no chip. `gh pr list --head` if one matters.
-    if not slug or branch.lstrip("#").isdigit() or branch == git.default_branch(repo_dir):
+    # Only the repo's own branches reach gh at all: `branch` comes from a GET any
+    # page can fire (Host-gated, not token-gated), and gh would read "--web" as a
+    # flag and another repo's PR url as the PR (the same rule as /local/git/diff).
+    if (not slug or branch.lstrip("#").isdigit() or branch == git.default_branch(repo_dir)
+            or branch not in git.branches(repo_dir)):
         return {"at": now, "ttl": TTL, "pr": None, "pinged": []}
     pr, ttl = fetch(slug, branch)
     if pr is None and ttl == ERR_TTL and old:

@@ -180,6 +180,8 @@ def sent(monkeypatch):
     prstatus._logs.clear()
     monkeypatch.setattr(prstatus.github, "remote_slug", lambda d: "acme/rivendell")
     monkeypatch.setattr(prstatus.git, "default_branch", lambda d: "main")
+    monkeypatch.setattr(prstatus.git, "branches", lambda d: [
+        "main", "feat/x", "feat/share", "feat/blip", "feat/ping", "feat/tg-down", "59", "#59"])
     monkeypatch.setattr(prstatus, "_spawn", lambda fn, *a: fn(*a))
     monkeypatch.setattr(prstatus.config, "NOTIFY_ENABLE", True)
     monkeypatch.setattr(prstatus.config, "DASH_CHAT_ID", 555)
@@ -336,3 +338,14 @@ def test_telegram_failing_never_breaks_the_read(monkeypatch):
     monkeypatch.setattr(prstatus.telegram, "send", down)
     snap = prstatus.snapshot("/r", "feat/tg-down")
     assert snap["pr"]["status"] == "failing" and snap["pinged"] == ["failing:abc123"]
+
+
+def test_only_a_local_branch_reaches_gh(monkeypatch):
+    """The route takes `branch` from a GET that any page can fire at the
+    bridge (Host-gated, not token-gated), so only one of the repo's own
+    branches is handed to gh: not a flag (`--web` opens a browser), not
+    another repo's PR url, not a branch that isn't here."""
+    calls = _fake_gh(monkeypatch, [])
+    for branch in ("--web", "https://github.com/evil/repo/pull/1", "feat/not-here"):
+        assert prstatus.snapshot("/r", branch)["pr"] is None
+    assert calls == []
