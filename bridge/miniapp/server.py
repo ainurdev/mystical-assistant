@@ -149,6 +149,11 @@ def _session_brief(s: dict) -> dict:
             "ctx_tokens": s.get("ctx_tokens"),
             "ctx_window": _ctx_ceiling(s.get("autocompact")),
             "autocompact": s.get("autocompact"),
+            # The session's run picks (store.set_run_settings), which both
+            # composers load. The mode as an interactive run would get it: the
+            # stored one, else the bridge's default — never a blank to guess at.
+            "model": s.get("model"),
+            "permission_mode": s.get("permission_mode") or config.MINIAPP_PERMISSION_MODE,
             "disabled_tools": store.parse_disabled_tools(s.get("disabled_tools")),
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
@@ -534,6 +539,11 @@ class Handler(BaseHTTPRequestHandler):
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
+        # The picks this prompt was sent with are the session's now, on every
+        # surface. After the start, so the row is the one the run resolved for
+        # this chat (a fresh session is created by this very call).
+        store.set_run_settings(job.store_session_id, model=model,
+                               permission_mode=permission_mode)
         self._json({"job_id": job.id, "session_id": job.store_session_id})
 
     def _owned_job(self, chat_id: int, job_id: str):
@@ -764,9 +774,9 @@ class Handler(BaseHTTPRequestHandler):
             prompt = (body.get("prompt") or body.get("text") or "").strip()
             if not prompt:
                 return self._json({"error": "empty prompt"}, 400)
-            ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
-            if not ok:
-                return self._json({"error": "invalid model"}, 400)
+            # No model or mode: a queued prompt runs on the session's when it
+            # starts, so a pick made while it waits still applies.
+            _ok, _model, effort = normalize_model_effort(None, body.get("effort"))
             images = body.get("images") or []
             if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
                 return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
@@ -779,8 +789,8 @@ class Handler(BaseHTTPRequestHandler):
                 runner._cleanup_uploads(run_job_id)
                 return self._json({"error": str(e)}, 413)
             queue_manager.enqueue(
-                sid, text=prompt, prompt=prompt, images=paths, model=model, effort=effort,
-                permission_mode=normalize_permission_mode(body.get("permission_mode")),
+                sid, text=prompt, prompt=prompt, images=paths, model=None, effort=effort,
+                permission_mode=None,
                 width=0, sel=[], surface="miniapp", chat_id=chat_id,
                 project=project if browser.within_base(project) else None,
                 run_job_id=run_job_id)
