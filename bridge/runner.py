@@ -2006,13 +2006,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 except Exception:  # noqa: BLE001 — never let the queue break a run
                     pass
         job.exited.set()
-        resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
+        # job.model, not `model`: a live switch (Job.set_run_settings) moves it,
+        # and the resume, a limit park and a goal nudge must run what the turn
+        # ended on, not what it started on.
+        resumed = not restart_killed and _maybe_auto_resume(job, cwd, job.model, effort)
         if not resumed and not restart_killed:
             # An active goal queues its own next turn. After auto-resume, so a
             # limit-parked turn is picked up by the ladder rather than raced by
             # a nudge that would run against the same exhausted account.
             from bridge import goals  # local import: runner<->* cycle
-            resumed = goals.continue_after_turn(job, model, effort) or resumed
+            resumed = goals.continue_after_turn(job, job.model, effort) or resumed
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:

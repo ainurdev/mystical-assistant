@@ -827,6 +827,9 @@ class Worker:
         session = store.create_session(
             config.DASH_CHAT_ID, rel(workdir), session_id=uuid.uuid4().hex,
             origin=self.origin, cwd=workdir, permission_mode="bypassPermissions")
+        # Its model on the row beside its mode: a resume (boot recovery, a limit
+        # park) runs the session's model, and nobody picks one for a plugin run.
+        store.set_run_settings(session["id"], model=self.model)
         return session["id"]
 
     def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None):

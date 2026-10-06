@@ -127,3 +127,37 @@ def test_a_session_nobody_picked_a_model_for_passes_none(monkeypatch):
     s = store.create_session(CHAT, "/srs-none", cwd=config.BASE_PATH)
     job, seen = _start(monkeypatch, session_id=s["id"])
     assert seen["model"] is None and job.model is None   # no --model: the CLI's default
+
+
+# --- resumes follow the session ---------------------------------------------------
+
+def test_the_turns_end_hands_on_the_model_it_was_switched_to(monkeypatch):
+    """Crash resumes, limit parks and goal nudges all take their model from the
+    turn's end, so a switch made mid-turn has to be the model they see."""
+    from bridge import goals, tailstate, toolsets
+    s = store.create_session(CHAT, "/srs-end", cwd=config.BASE_PATH)
+    seen = {}
+    monkeypatch.setattr(runner, "_maybe_auto_resume",
+                        lambda job, cwd, model, effort: seen.update(resume=model) or False)
+    monkeypatch.setattr(goals, "continue_after_turn",
+                        lambda job, model=None, effort=None: seen.update(goal=model) or False)
+    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+
+    class Popen:                              # the spawn fails at once: straight to finally
+        def __init__(self, cmd, **kw):
+            raise FileNotFoundError
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    job = runner.Job("j-srs-end", CHAT, s["id"])
+    job.model = "claude-fable-5-1"            # where a live switch left it
+    runner._run_streaming(job, "p", [], config.BASE_PATH, "opus", None, None, None)
+    assert seen == {"resume": "claude-fable-5-1", "goal": "claude-fable-5-1"}
+
+
+def test_a_plugin_run_seeds_its_own_session_with_its_model():
+    """Recovery resumes on the session's model (model=None), so a Rivendell
+    session, which no person picks for, has to start out carrying its run's."""
+    from bridge import rivendell
+    w = rivendell.Worker({"id": "srs", "name": "srs", "model": "sonnet"})
+    s = store.get_session(w._new_session(config.BASE_PATH))
+    assert (s["model"], s["permission_mode"]) == ("sonnet", "bypassPermissions")
