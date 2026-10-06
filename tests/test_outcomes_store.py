@@ -99,7 +99,7 @@ def test_week_failures_groups_by_code_in_the_report():
     _failed(sid, "w2", events=[{"type": "text", "text": "x"},
                                {"type": "result", "result": "answer"}], started=NOW)
     _failed(sid, "w3", events=[{"type": "error", "message": "claude exited -9"}],
-            started=NOW)
+            elapsed=None, cost=None, started=NOW)   # left for recovery: the orphan flip's row
     rep = report.weekly(chat, now=NOW)
     codes = {f["code"]: f["n"] for f in rep["failures"]}
     assert codes == {"delivered": 2, "restarted": 1}

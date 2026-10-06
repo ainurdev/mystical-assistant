@@ -49,7 +49,8 @@ whatever the child said while dying is the restart's doing, not a crash. 22 of
 the 54 failures in the 30 days to 2026-10-06 ended "claude exited 143" (the
 stop's SIGTERM) and read CRASHED. The same exit on a turn the runner did finish
 stays CRASHED: since runner._stopping, the runner finishes one itself only when
-the bridge stayed up.
+the bridge stayed up. So does -9, which used to read RESTARTED whatever the row
+said: finished by the runner, it is the OOM killer or a `kill -9`.
 """
 
 from bridge import limits
@@ -148,8 +149,6 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
             # hung" (runner.py:1901) and a blocking one-shot says "Timed out
             # after N min" (runner.py:449).
             code = "timeout"
-        elif "exited -9" in msg:
-            code = "restarted"
         elif limits.is_auth_error(msg) or "not found on PATH" in msg:
             code = "auth"
         elif limits.is_limit_error(msg):

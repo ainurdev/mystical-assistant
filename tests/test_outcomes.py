@@ -82,8 +82,16 @@ def test_long_healthy_turn_is_not_a_timeout():
 
 
 def test_restart_kill():
-    o = outcomes.outcome(_turn(), _sig(errors=["claude exited -9"], has_text=True))
+    o = outcomes.outcome(_turn(elapsed=None, cost=None),
+                         _sig(errors=["claude exited -9"], has_text=True))
     assert o["code"] == "restarted"
+
+
+def test_an_oom_kill_with_the_bridge_up_is_a_crash():
+    """The runner journals a -9 and finishes the turn itself when the bridge
+    stays up (the OOM killer, a `kill -9`): elapsed is set, nothing restarted."""
+    o = outcomes.outcome(_turn(), _sig(errors=["claude exited -9"], has_text=True))
+    assert o["code"] == "crashed"
 
 
 def test_a_restart_kill_left_for_recovery_reads_restarted():
