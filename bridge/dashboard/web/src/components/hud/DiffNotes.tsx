@@ -88,7 +88,7 @@ export function NoteThread({ note, path, onEdit, onDelete }: {
 }
 
 /** The diff panel's foot once a note exists: count · target session ▾ · CLEAR · SEND. */
-export function SendBar({ count, targets, target, tint, busy, onPick, onClear, onSend }: {
+export function SendBar({ count, targets, target, tint, busy, sendable, onPick, onClear, onSend }: {
   count: number;
   /** The sessions on this branch, newest first. */
   targets: SessionBrief[];
@@ -96,6 +96,8 @@ export function SendBar({ count, targets, target, tint, busy, onPick, onClear, o
   target: SessionBrief | null;
   tint: string;
   busy: boolean;
+  /** False while the branch isn't checked out: SEND couldn't read its files. CLEAR still works. */
+  sendable: boolean;
   onPick: (id: string) => void;   // a session id, or "new"
   onClear: () => void;
   onSend: () => void;
@@ -123,8 +125,9 @@ export function SendBar({ count, targets, target, tint, busy, onPick, onClear, o
         <span style={{ color: "var(--txl)", flex: "none" }}>▾</span>
       </button>
       <button onClick={onClear} {...hp("clear")} style={btn(hov === "clear", "ghost")}>CLEAR</button>
-      <button onClick={onSend} disabled={busy} {...hp("send")}
-        style={{ ...btn(hov === "send", "var(--purple)"), opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}>
+      <button onClick={onSend} disabled={busy || !sendable} {...hp("send")}
+        title={sendable ? undefined : "this branch isn't checked out, so its lines can't be read"}
+        style={{ ...btn(hov === "send", "var(--purple)"), opacity: busy ? 0.6 : sendable ? 1 : 0.45, cursor: busy ? "wait" : sendable ? "pointer" : "not-allowed" }}>
         {busy ? "SENDING…" : "SEND TO AGENT ▸"}
       </button>
       {open && (

@@ -474,7 +474,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   const stray = notes.filter((x) => !files.some((f) => f.path === x.path));
   const sendBar = notes.length > 0 && (
     <SendBar count={notes.length} targets={onBranch} target={target} tint={projectTint(project).color}
-      busy={sending} onPick={setSendTo} onClear={() => void clearNotes()} onSend={() => void sendNotes()} />
+      busy={sending} sendable={!wrongTree} onPick={setSendTo} onClear={() => void clearNotes()} onSend={() => void sendNotes()} />
   );
 
   // A drag down the line numbers ends where the mouse is let go. That is
