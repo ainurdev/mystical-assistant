@@ -6,6 +6,9 @@ export interface PanelTab {
   label: string;
   icon: ReactNode;
   badge?: string | null;
+  // A red dot instead of a count: something this tab is about is broken (the
+  // castle's, while a Rivendell link is down — App.tsx). Shows on every tab.
+  alert?: boolean;
   // Panel owns its scroller — the wrapper must not add a second one.
   ownScroll?: boolean;
   // Panel's WHOLE body is one session's data — "project" for the repo-wide
@@ -116,6 +119,10 @@ export function RightPanel({
                   className="absolute right-[3px] top-[1px] h-[15px] min-w-[15px] rounded-full px-[3px] text-center text-[length:var(--t7)] leading-[15px]"
                   style={{ background: "var(--acc)", color: "var(--acc-on)" }}
                 >{t.badge}</span>
+              ) : null}
+              {t.alert ? (
+                <span className="absolute right-[5px] top-[4px] h-[8px] w-[8px] rounded-full"
+                  style={{ background: "var(--err)", boxShadow: "0 0 6px var(--err)" }} />
               ) : null}
             </button>
           );

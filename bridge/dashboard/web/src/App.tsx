@@ -19,6 +19,7 @@ import {
   type UsageInfo,
   type AccountInfo,
   type FreeAgentInfo,
+  type RivendellInstance,
 } from "./api";
 import { modelOptions, latestPerFamily, type AgentOption } from "./models";
 import { activeOf, mergeDelta, type Turn } from "./chat";
@@ -73,7 +74,9 @@ import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { shellCols } from "./lib/shell";
-import { notify, setNoticeSound } from "./components/hud/Notifications";
+import { dismiss, notify, setNoticeSound } from "./components/hud/Notifications";
+import { openSettings } from "./lib/opensettings";
+import { linkAlertText } from "./lib/rivendelltasks";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
@@ -1515,13 +1518,38 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [ai.learn]);
   const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
-  // The RIVENDELL tab exists only with a Rivendell connection to ask. Re-read
-  // whenever SETTINGS closes — that is where one is added or removed.
-  const [rivendellOn, setRivendellOn] = useState(false);
+  // The RIVENDELL tab exists only with a Rivendell connection to ask. Polled,
+  // not only re-read when SETTINGS closes (where one is added or removed): a
+  // link breaks with no dashboard event to say so, and the castle's dot and the
+  // bell follow each connection's break (bridge/rivendell.py, alert_at — set
+  // once per break, cleared when the link proves itself).
+  const [rivendell, setRivendell] = useState<RivendellInstance[]>([]);
   useEffect(() => {
     if (settingsOpen) return;
-    api.rivendell().then((r) => setRivendellOn(r.instances.length > 0)).catch(() => { /* ignore */ });
+    const tick = () => api.rivendell().then((r) => setRivendell(r.instances)).catch(() => { /* ignore */ });
+    void tick();
+    const id = setInterval(tick, 10000);
+    return () => clearInterval(id);
   }, [settingsOpen]);
+  const rivendellOn = rivendell.length > 0;
+  const rivendellDown = rivendell.some((i) => i.enable && !!i.status?.alert_at);
+  // One bell entry per break, gone when the link is back. Telegram's one
+  // message per break is the bridge's to send (Worker._alert_broken).
+  const linkNotices = useRef<Record<string, { at: number; id: number }>>({});
+  useEffect(() => {
+    const shown = linkNotices.current;
+    for (const i of rivendell) {
+      const at = i.status?.alert_at ?? null;
+      const cur = shown[i.id];
+      if (at && cur?.at !== at) {
+        if (cur) dismiss(cur.id);
+        shown[i.id] = { at, id: notify("error", linkAlertText(i), () => openSettings("plugins", i.id)) };
+      } else if (!at && cur) {
+        dismiss(cur.id);
+        delete shown[i.id];
+      }
+    }
+  }, [rivendell]);
   // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
   // and what its rail badge counts. sessionGit is per-worktree, so two branches
   // of the same repo get their own number; gitBadges is only keyed by project,
@@ -1579,7 +1607,8 @@ export function App() {
       render: () => <QueuePanel project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />,
     },
     ...(rivendellOn ? [{
-      id: "rivendell", label: "Rivendell tasks", icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const,
+      id: "rivendell", label: rivendellDown ? "Rivendell tasks — link broken" : "Rivendell tasks",
+      icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       render: () => (
         <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />
       ),

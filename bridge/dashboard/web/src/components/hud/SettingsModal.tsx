@@ -86,6 +86,7 @@ import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
 import { restartBridge } from "../../lib/restart";
 import { takeSettingsFocus } from "../../lib/opensettings";
+import { testText } from "../../lib/rivendelltasks";
 
 export interface SettingsModalProps {
   host: string;
@@ -2558,6 +2559,20 @@ function RivendellPanel() {
   const [err, setErr] = useState("");
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+  // TEST LINK: a ping/pong round trip on the live socket, or a re-dial of a
+  // parked token (bridge/rivendell.py Worker.test_link). The row keeps the last.
+  const [testing, setTesting] = useState("");
+  async function test(id: string) {
+    setTesting(id); setErr("");
+    try {
+      const r = await api.rivendellTest(id);
+      setRows((p) => (p ?? []).map((x) => (x.id === id ? { ...x, status: { ...x.status, last_test: r } } : x)));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "could not test");
+    } finally {
+      setTesting("");
+    }
+  }
 
   useEffect(() => {
     void api.rivendell().then((r) => setRows(r.instances)).catch(() => { setRows([]); setGone(true); });
@@ -2666,6 +2681,19 @@ function RivendellPanel() {
                     <div style={{ marginTop: 4, ...dim }}>
                       workdir <span style={mono}>{c.workdir || "BASE_PATH"}</span>
                       {" · review "}{c.review_timeout}s · impl {c.impl_timeout}s
+                    </div>
+                    <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ ...dim, letterSpacing: 1.5 }}>TEST</span>
+                      <span style={{ color: c.status?.last_test?.ok ? "var(--ok)" : c.status?.last_test?.ok === false ? "var(--err)" : "var(--txl)" }}>
+                        {testText(c.status?.last_test)}
+                        {c.status?.last_test
+                          ? <span style={dim}> · {new Date(c.status.last_test.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                          : null}
+                      </span>
+                      <button disabled={st === "off" || testing === c.id} onClick={() => void test(c.id)} {...hp(`ts:${c.id}`)}
+                        style={{ appearance: "none", cursor: st === "off" ? "default" : "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "4px 10px", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `ts:${c.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", opacity: st === "off" ? 0.4 : 1 }}>
+                        {testing === c.id ? "TESTING…" : "TEST LINK"}
+                      </button>
                     </div>
                   </>
                 }
