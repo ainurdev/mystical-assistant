@@ -362,11 +362,14 @@ class Worker:
             self.down_since = self.alert_at = None
         elif state in ("error", "auth_error") and self.down_since is None:
             self.down_since = self.status_at
-        if (self.alert_at is None and self.down_since is not None and state != "connected"
+        # Only a failure alerts, never a re-dial: the message quotes the status
+        # detail, and "connecting"'s is the ws URL, which can carry a token.
+        if (self.alert_at is None and self.down_since is not None
+                and state in ("error", "auth_error")
                 and (state == "auth_error" or self.status_at - self.down_since >= _LINK_GRACE)):
-            # ponytail: the grace is checked on status changes, which come at least
-            # every backoff + dial timeout (≤ 70 s) while the link is down, so the
-            # alert lands up to that late. A timer, if minutes must be exact.
+            # ponytail: the grace is checked when a dial fails, which happens at
+            # least every backoff + dial timeout (≤ 70 s) while the link is down,
+            # so the alert lands up to that late. A timer, if minutes must be exact.
             self.alert_at = self.status_at
             self._alert_broken()
 

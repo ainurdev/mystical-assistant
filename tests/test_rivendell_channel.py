@@ -1116,3 +1116,16 @@ def test_a_worker_whose_link_is_down_is_not_asked(workers):
     assert len(calls) == 1, "not asked while its link is down"
     assert [t["stale"] for t in out["tasks"]] == [True]
     assert out["errors"][0]["error"] == "unreachable"
+
+
+def test_the_outage_alert_never_quotes_a_dial_url(quiet):
+    """Past the grace, a re-dial ("connecting", whose detail is the ws URL — it
+    can carry ?token=) is not what alerts: only a failure state is."""
+    w = _worker()
+    w._set_status("error", "connection refused")
+    w.down_since -= rivendell._LINK_GRACE
+    w._set_status("connecting", "wss://rv/agent?token=secret")
+    assert w.alert_at is None
+    w._set_status("error", "connection refused")
+    _wait_until(lambda: len(_alerts(quiet)) == 1)
+    assert "secret" not in _alerts(quiet)[0] and "connection refused" in _alerts(quiet)[0]
