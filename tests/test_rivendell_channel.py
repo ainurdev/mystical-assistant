@@ -376,3 +376,119 @@ def test_checks_ride_the_pr_and_are_cached_between_polls(monkeypatch):
     rivendell._result_view(sid)
     assert len(calls) == 2
     assert "checks" not in rivendell._result_view(sid, checks=False)["pr"]
+
+
+# --- Task 5: the link's break, flagged once ------------------------------------
+
+def _alerts(quiet):
+    return [m["text"] for m in quiet if m["text"].startswith("✕ Rivendell link broken")]
+
+
+def test_a_rejected_token_alerts_once_per_break(quiet):
+    """Review focus 2. The gateway closes a bad token AFTER the 101, so a re-dial
+    of a still-bad token passes through "connected": that must not end the
+    break, or every TEST LINK would send another message."""
+    w = _worker()
+    w._set_status("connecting", "ws://x/agent")
+    w._set_status("auth_error", "token rejected by gateway (4401 Invalid or revoked token)")
+    _wait_until(lambda: len(_alerts(quiet)) == 1)
+    assert "4401" in _alerts(quiet)[0] and w.alert_at is not None
+    for state in ("connecting", "connected", "auth_error"):          # the re-dial
+        w._set_status(state, "token rejected by gateway (4401)")
+    time.sleep(0.1)
+    assert len(_alerts(quiet)) == 1
+
+
+def test_an_outage_alerts_only_after_the_grace(quiet):
+    w = _worker()
+    w._set_status("error", "connection refused")
+    w._set_status("connecting", "ws://x/agent")
+    assert w.alert_at is None and w.down_since is not None
+    w.down_since -= rivendell._LINK_GRACE                  # the outage is five minutes old now
+    w._set_status("error", "connection refused")
+    _wait_until(lambda: len(_alerts(quiet)) == 1)
+    assert "Can't reach" in _alerts(quiet)[0]
+
+
+def test_coming_back_inside_the_grace_sends_nothing(quiet):
+    w = _worker()
+    w._set_status("error", "connection refused")
+    w._set_status("connected", "ws://x/agent")
+    w._recovered()
+    assert w.down_since is None and w.alert_at is None
+    time.sleep(0.05)
+    assert _alerts(quiet) == []
+
+
+def test_only_a_proven_link_ends_the_break():
+    w = _worker()
+    w._set_status("auth_error", "token rejected (4401)")
+    w._set_status("connected", "ws://x/agent")
+    assert w.alert_at is not None, "the 101 alone is not recovery"
+    w._recovered()
+    assert w.alert_at is None and w.down_since is None
+
+
+def test_switching_off_ends_the_break_silently(quiet):
+    w = _worker()
+    w._set_status("auth_error", "token rejected (4401)")
+    _wait_until(lambda: len(_alerts(quiet)) == 1)
+    w.stop()
+    assert w.alert_at is None and w.status_snapshot()["state"] == "off"
+
+
+def test_a_frame_on_the_link_proves_it(monkeypatch):
+    server, client = socket.socketpair()
+    w = _worker()
+    w.down_since = w.alert_at = time.time() - 600            # a break, already flagged
+    monkeypatch.setattr(w, "_connect", lambda: (client, client.makefile("rb")))
+    monkeypatch.setattr(w, "_catch_up", lambda: 0)
+    t = threading.Thread(target=w._listen, daemon=True)
+    t.start()
+    try:
+        _wait_until(lambda: w.status == "connected")
+        assert w.alert_at is not None
+        server.sendall(wsutil.encode_frame(b'{"type":"noise"}', wsutil.OP_TEXT))
+        _wait_until(lambda: w.alert_at is None)
+    finally:
+        w.stop()
+        t.join(2)
+        server.close()
+
+
+def test_a_failed_dial_counts_and_schedules_the_retry(monkeypatch):
+    w = _worker()
+
+    def refuse():
+        raise ConnectionRefusedError("connection refused")
+    monkeypatch.setattr(w, "_connect", refuse)
+    t = threading.Thread(target=w._listen, daemon=True)
+    t.start()
+    try:
+        _wait_until(lambda: w.status == "error")
+        snap = w.status_snapshot()
+        assert snap["attempt"] == 1 and snap["retry_at"] >= snap["since"]
+        assert snap["down_since"] is not None and snap["alert_at"] is None
+    finally:
+        w.stop()
+        t.join(2)
+
+
+def test_tasks_carry_each_connections_state(workers):
+    w = _worker(name="production")
+    w._api = _answering(_tasks())
+    w._set_status("connected", "wss://rv/agent")
+    workers["ch"] = w
+    (link,) = rivendell.tasks("acme/app")["links"]
+    assert (link["instance_id"], link["instance"], link["state"]) == ("ch", "production", "connected")
+
+
+def test_a_failing_instance_lists_its_last_good_answer_as_stale(workers):
+    w = _worker()
+    w._api = _answering(_tasks("r-stale-1", "r-stale-2"))
+    workers["ch"] = w
+    assert [t["stale"] for t in rivendell.tasks("acme/app")["tasks"]] == [False, False]
+    w._set_status("auth_error", "token rejected (4401)")
+    out = rivendell.tasks("acme/app")
+    assert [(t["id"], t["stale"]) for t in out["tasks"]] == [("t1", True), ("t2", True)]
+    assert out["errors"][0]["error"] == "token_rejected" and out["projects"]

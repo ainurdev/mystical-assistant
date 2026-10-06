@@ -134,6 +134,13 @@ reconfigure nudges the paused listener (self._wake) when the config, and thus
 possibly the token, is edited. Every other error keeps the reconnect-forever
 backoff.
 
+A broken link is a *break*: it opens at the first failure, ends only when the
+link proves itself (a frame arrives, or a quiet interval passes with no close —
+_recovered), and is flagged once: one Telegram message, plus alert_at on the
+status for the dashboard's rail dot and bell. Flagged at once on the move to
+auth_error, after _LINK_GRACE of anything else; an instance switched off never
+pings.
+
 The manager (reconfigure/start/stop) diffs the desired set of enabled instances
 against the running workers on every save: it starts new ones, stops removed or
 disabled ones, and for a changed one swaps the config live (the worker reads its
@@ -173,6 +180,7 @@ _RESULT_RETRIES = (2, 10, 30)   # a finished run is expensive; retry the POST
 _POLL_INTERVAL = 2.0      # job status poll cadence
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
 _CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab polls
+_LINK_GRACE = 300.0       # an outage this long is a break worth one Telegram message
 _checks_cache: "dict[str, tuple[float, str | None]]" = {}
 
 # WebSocket close codes the gateway uses to reject a bad/insufficient token (see
@@ -295,6 +303,17 @@ class Worker:
         self.status_at = time.time()
         self.connected_since: float | None = None
         self.last_event_at: float | None = None
+        # The current break (see _set_status): when it began, and when it was
+        # flagged — once per break, cleared when the link proves itself
+        # (_recovered). attempt/retry_at drive the tab's "RETRY n · 20s" chip.
+        self.down_since: float | None = None
+        self.alert_at: float | None = None
+        self.attempt = 0
+        self.retry_at: float | None = None
+        # The last good /plugin/tasks answer per repo slug: an instance that
+        # fails still shows its cards, dimmed as "last known" (tasks()). One
+        # entry per repo the tab has shown.
+        self._last_tasks: "dict[str, dict]" = {}
 
     def _set_status(self, state: str, detail: str = "") -> None:
         self.status = state
@@ -302,8 +321,26 @@ class Worker:
         self.status_at = time.time()
         if state == "connected":
             self.connected_since = self.status_at
+            self.attempt, self.retry_at = 0, None
         elif state != "connected":
             self.connected_since = None
+        # The break behind the rail dot, the bell and the one Telegram message
+        # (docs/superpowers/specs/rivendell-channel.md §B). It opens at the first
+        # failure and closes only when the link proves itself (_recovered):
+        # "connected" is just the 101, and the gateway closes a bad token after
+        # it. Switching off closes it silently: an instance you turned off never
+        # pings.
+        if state == "off":
+            self.down_since = self.alert_at = None
+        elif state in ("error", "auth_error") and self.down_since is None:
+            self.down_since = self.status_at
+        if (self.alert_at is None and self.down_since is not None and state != "connected"
+                and (state == "auth_error" or self.status_at - self.down_since >= _LINK_GRACE)):
+            # ponytail: the grace is checked on status changes, which come at least
+            # every backoff + dial timeout (≤ 70 s) while the link is down, so the
+            # alert lands up to that late. A timer, if minutes must be exact.
+            self.alert_at = self.status_at
+            self._alert_broken()
 
     def status_snapshot(self) -> dict:
         return {
@@ -312,7 +349,38 @@ class Worker:
             "since": self.status_at,
             "connected_since": self.connected_since,
             "last_event_at": self.last_event_at,
+            "down_since": self.down_since,      # when the current break began
+            "alert_at": self.alert_at,          # when it was flagged: dot, bell, Telegram
+            "attempt": self.attempt,            # failed dials in a row
+            "retry_at": self.retry_at,          # when the next dial starts
         }
+
+    def _recovered(self) -> None:
+        """The link has proven itself: a frame arrived on it, or a whole quiet
+        interval passed without the gateway closing it. Only now is a break
+        over. The gateway closes a bad token AFTER the upgrade, so the 101 alone
+        (status "connected") can't clear the alert, or every re-dial of a dead
+        token would end one break and open the next."""
+        self.down_since = self.alert_at = None
+
+    def _alert_broken(self) -> None:
+        """The break's one Telegram message (the dashboard's rail dot and bell
+        read alert_at off the status). Off-thread: _set_status runs on the
+        listener. No settings button: the dashboard is localhost-only and the
+        Mini App has no Rivendell settings, so the text says where to go."""
+        at = time.strftime("%H:%M", time.localtime(self.down_since or time.time()))
+        if self.status == "auth_error":
+            text = (f"✕ Rivendell link broken — {self.name}\n"
+                    f"Rivendell refused this bridge's token at {at} ({self.status_detail}). "
+                    "Jobs are paused until you replace it: mint a new LLM token in "
+                    "Rivendell ▸ Profile ▸ API tokens, then paste it in the dashboard "
+                    "under Settings ▸ PLUGINS.")
+        else:
+            text = (f"✕ Rivendell link broken — {self.name}\n"
+                    f"Can't reach Rivendell since {at} ({self.status_detail}). "
+                    "The bridge keeps retrying; jobs wait until it's back.")
+        threading.Thread(target=self._deliver_telegram, args=(text, None),
+                         name=f"rivendell-tg-{self.id}", daemon=True).start()
 
     # -- config accessors (read live off self.inst) --
     @property
@@ -695,6 +763,8 @@ class Worker:
                 continue
             except Exception as e:  # noqa: BLE001 — reconnect-forever by design
                 if not self._stop.is_set():
+                    self.attempt += 1
+                    self.retry_at = time.time() + backoff
                     self._set_status("error", str(e))
                     print(f"rivendell[{self.name}]: connect failed ({e}); "
                           f"retrying in {backoff:.0f}s")
@@ -735,12 +805,17 @@ class Worker:
                         missed += 1
                         if missed > _MAX_MISSED_PONGS:
                             raise ConnectionError("peer stopped answering pings")
+                        # A whole quiet interval with no close: the gateway took
+                        # the token, so the link has proven itself.
+                        self._recovered()
                         self._send(sock, b"", wsutil.OP_PING)
                         continue
                     if frame is None:
                         raise ConnectionError("connection closed by peer")
                     missed = 0
                     opcode, payload = frame
+                    if opcode != wsutil.OP_CLOSE:
+                        self._recovered()       # anything but a close proves the link
                     if opcode == wsutil.OP_PING:
                         self._send(sock, payload, wsutil.OP_PONG)
                     elif opcode == wsutil.OP_TEXT:
@@ -1170,7 +1245,8 @@ class Worker:
                          name=f"rivendell-tg-{self.id}", daemon=True).start()
 
     def _deliver_telegram(self, text: str, kb: dict) -> None:
-        """Send one queued-request ping to the operator's chat. Silent when
+        """Send one ping (a held request, a broken link, a finished job) to the
+        bridge owner's chat. Silent when
         Telegram is not configured ("if available"): the request still shows in
         the dashboard's PLUGINS queue regardless."""
         if not config.NOTIFY_ENABLE or not config.TOKEN or not config.DASH_CHAT_ID:
@@ -1605,26 +1681,34 @@ def _run_view(sid: str) -> dict:
 
 def tasks(slug: str) -> dict:
     """Open tasks of the Rivendell projects that link the repo `slug`, from
-    every running instance, merged. Each project and task is tagged with its
-    instance (IMPLEMENT goes back to the same one); a task whose request ran
-    here carries the session that ran it (filed by _track, so it outlives the
-    run and a restart), and `run`, what this bridge knows about that run
-    (_run_view). A failing instance is one entry in
-    `errors`, never an exception — the rest still list. A worker parked on a
-    rejected token isn't asked: the tab polls, and re-sending a dead token every
-    few seconds is exactly the hammering _listen avoids."""
+    every running instance, merged, plus `links` — each instance's connection
+    state, for the tab's chip and banner. Each project and task is tagged with
+    its instance (IMPLEMENT goes back to the same one). A task whose request
+    ran here carries the session that ran it (filed by _track, so it outlives
+    the run and a restart) and `run`, what this bridge knows about that run
+    (_run_view). A failing instance is one entry in `errors`, never an
+    exception — the rest still list — and its last good answer comes back
+    marked `stale`, which the tab dims to "last known". A worker parked on a
+    rejected token isn't asked: the tab polls, and re-sending a dead token
+    every few seconds is exactly the hammering _listen avoids."""
     with _manager_lock:
         running = list(_workers.values())
-    out: dict = {"instances": len(running), "projects": [], "tasks": [], "errors": []}
+    out: dict = {"instances": len(running), "projects": [], "tasks": [], "errors": [],
+                 "links": [{"instance_id": w.id, "instance": w.name, **w.status_snapshot()}
+                           for w in running]}
     for w in running:
+        stale = False
         try:
             if w.status == "auth_error":
                 raise TasksError("token_rejected", w.status_detail or "token rejected")
-            got = _ask(w, "/plugin/tasks?repository=" + quote(slug, safe="/"))
+            got = w._last_tasks[slug] = _ask(
+                w, "/plugin/tasks?repository=" + quote(slug, safe="/"))
         except TasksError as e:
             out["errors"].append({"instance_id": w.id, "instance": w.name,
                                   "error": e.code, "detail": str(e)})
-            continue
+            got, stale = w._last_tasks.get(slug), True
+            if got is None:
+                continue
         out["projects"] += [{**p, "instance_id": w.id} for p in got.get("projects") or []]
         rows = got.get("tasks") or []
         try:   # the session each request ran in here, finished or not (Worker._track)
@@ -1637,7 +1721,7 @@ def tasks(slug: str) -> dict:
         for t in rows:
             rid = (t.get("implementation") or {}).get("id")
             sid = (w._running.get(rid) or {}).get("session_id") or refs.get(f"{w.id}:{rid}")
-            out["tasks"].append({**t, "instance_id": w.id, "session_id": sid,
+            out["tasks"].append({**t, "instance_id": w.id, "session_id": sid, "stale": stale,
                                  "run": _run_view(sid) if sid else None})
     return out
 
