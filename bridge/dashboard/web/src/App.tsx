@@ -1086,17 +1086,22 @@ export function App() {
       ?? state?.project?.rel ?? undefined;
     const sessionName = () =>
       sessions.find((s) => s.id === sid)?.title || "another session";
-    const enqueue = () => queue.enqueue({
-      text, prompt: text, images, project,
-      model, effort: effort || undefined, permission_mode: permMode || undefined,
-      agent: settings.agent || undefined,
-    }, sid);
+    // Resolves whether the prompt got into the queue; a miss says so here.
+    const enqueue = async () => {
+      const ok = await queue.enqueue({
+        text, prompt: text, images, project,
+        model, effort: effort || undefined, permission_mode: permMode || undefined,
+        agent: settings.agent || undefined,
+      }, sid);
+      if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
+      return ok;
+    };
     // Sending by hand is the un-pause: otherwise the prompt joins a held queue and
-    // sits there looking sent.
-    queue.resumeIfPaused();
+    // sits there looking sent. The prompt's own session, not the open one.
+    queue.resumeIfPaused(sid);
     // A turn is already in flight for this session — queue the prompt to run
     // after it (and any earlier queued prompts) instead of blocking on STOP.
-    if (running && !opts?.sessionId) { enqueue(); return true; }
+    if (running && !opts?.sessionId) return await enqueue();
     setCheckingFor(sid, text);
     try {
       const res = await api.run({
@@ -1149,7 +1154,7 @@ export function App() {
     } catch (e) {
       // Lost the race: the run slot filled between our check and the request.
       // Queue it rather than surfacing a "busy" error.
-      if ((e as Error).message === "busy") { enqueue(); return true; }
+      if ((e as Error).message === "busy") return await enqueue();
       notify("error", (e as Error).message);
       return false;
     } finally {
