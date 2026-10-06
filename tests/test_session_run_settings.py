@@ -181,6 +181,9 @@ class _Stdin:
     def flush(self):
         pass
 
+    def close(self):
+        self.closed = True
+
 
 class _Proc:
     def __init__(self):
@@ -338,11 +341,62 @@ def test_other_modes_leave_waiting_cards_alone():
     assert [p["request_id"] for p in job.pending] == ["p1"]
 
 
+def test_a_pick_made_while_the_child_spawns_reaches_it_before_the_prompt(monkeypatch):
+    """job.proc is None while the argv is built (MCP health check, graph pack,
+    task digest): a pick made then is held and written the moment the child
+    exists, ahead of the prompt — not dropped."""
+    from bridge import goals, tailstate, toolsets
+    s = store.create_session(CHAT, "/srs-spawn", cwd=config.BASE_PATH)
+    job = runner.Job("j-srs-spawn", CHAT, s["id"])
+    picked = {}
+    base_cmd = runner._base_cmd
+
+    def building(*a, **k):                       # the pick lands mid-build
+        picked["ok"] = job.set_run_settings(model="claude-fable-5-1",
+                                            permission_mode="acceptEdits")
+        return base_cmd(*a, **k)
+
+    class Popen:                                 # a child that says nothing and exits
+        returncode = 0
+        stderr = None
+
+        def __init__(self, cmd, **kw):
+            self.stdin, self.stdout = _Stdin(), iter(())
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(runner, "_base_cmd", building)
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(store, "default_disabled_tools", lambda: [])   # no `claude mcp list`
+    monkeypatch.setattr(runner, "_maybe_auto_resume", lambda *a, **k: False)
+    monkeypatch.setattr(goals, "continue_after_turn", lambda *a, **k: False)
+    monkeypatch.setattr(tailstate, "kick", lambda *a, **k: None)
+    runner._run_streaming(job, "go", [], config.BASE_PATH, None, None, None, None)
+    assert picked["ok"] is True
+    assert [l["request"]["subtype"] if l["type"] == "control_request" else l["type"]
+            for l in job.proc.stdin.lines] == ["set_model", "set_permission_mode", "user"]
+
+
+def test_a_free_agent_turn_holds_no_pick():
+    """An opencode run has no claude child and no control channel at all."""
+    job = runner.Job("j-free", CHAT, "s-free")
+    job.runtime = "opencode:groq"
+    assert job.set_run_settings(model="claude-fable-5-1") is False
+
+
 def test_a_turn_with_no_live_channel_says_so_and_approves_nothing():
-    """No child yet (boot, or a free agent), or a stdin claude -p closed at
-    `result` -- since 666d29a1 such a child can stay up for as long as its
-    background agents run. The saved row is then all the next turn needs."""
-    assert runner.Job("j-nochild", CHAT, "s-nochild").set_run_settings(model="opus") is False
+    """A turn that ended without a child (claude missing from PATH), or a stdin
+    claude -p closed at `result` -- since 666d29a1 such a child can stay up for
+    as long as its background agents run. The saved row is then all the next
+    turn needs. (A child still being spawned holds the pick instead.)"""
+    gone = runner.Job("j-nochild", CHAT, "s-nochild")
+    gone.exited.set()
+    assert gone.set_run_settings(model="opus") is False
     done = _live_job("s-closed", PERM)
     done.proc.stdin.closed = True
     assert done.set_run_settings(model="opus", permission_mode="bypassPermissions") is False

@@ -616,6 +616,7 @@ class Job:
         # Our set_model / set_permission_mode requests the CLI hasn't answered
         # yet: request_id -> (subtype, value). See control_answered.
         self._controls: dict[str, tuple[str, str]] = {}
+        self._held: dict[str, str] = {}   # a pick made before the child existed
         self.texts: list[str] = []       # assistant text this turn
         self.ctx_tokens: int | None = None  # window fill on the last request (see _ctx_of)
         # What the turn spent: the same four counters, summed instead of last-wins.
@@ -766,10 +767,23 @@ class Job:
         Questions (AskUserQuestion) stay open either way: they ask for a
         decision, not a permission.
 
-        ponytail: a pick that lands before the child spawns (the MCP health
-        check at boot) misses this turn, and a can_use_tool already in the
-        stdout pipe when bypass is sent still shows its card. Both are saved
-        or answerable; re-read the row at spawn if either ever matters."""
+        A pick that lands while the child is still being spawned (job.proc is
+        None while the MCP health check, the graph pack and the task digest
+        build its argv) is held, and _run_streaming writes it the moment the
+        child exists, ahead of the prompt (release_held). A free agent has no
+        claude child to hold it for.
+
+        ponytail: a can_use_tool the CLI emits after its success answer (a check
+        that began before the switch) still shows its card; it's answerable."""
+        with self._lock:
+            if self.proc is None:
+                if self.exited.is_set() or (self.runtime or "").startswith("opencode:"):
+                    return False
+                if model:
+                    self._held["model"] = model
+                if permission_mode:
+                    self._held["permission_mode"] = permission_mode
+                return bool(model or permission_mode)
         sent = False
         for subtype, key, value in (("set_model", "model", model),
                                     ("set_permission_mode", "mode", permission_mode)):
@@ -785,6 +799,15 @@ class Job:
                 with self._lock:
                     self._controls.pop(rid, None)
         return sent
+
+    def release_held(self) -> None:
+        """Write the picks set_run_settings held while the child was spawning.
+        _run_streaming calls it right after job.proc is set, before the prompt;
+        the lock orders it after any hold that saw no child yet."""
+        with self._lock:
+            held, self._held = self._held, {}
+        if held:
+            self.set_run_settings(**held)
 
     def control_answered(self, request_id: "str | None", ok: bool) -> None:
         """The CLI's answer to one of set_run_settings' requests. Its success is
@@ -2018,6 +2041,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.status = "error"
             return
         job.proc = proc
+        # A model/mode pick made while the argv was being built: ahead of the
+        # prompt, so the turn starts on it.
+        job.release_held()
         # Claude is up but still building its context — connecting MCP servers and
         # loading the transcript — which is most of the wait on a resumed session.
         job.boot = "starting Claude"
