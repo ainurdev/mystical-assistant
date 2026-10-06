@@ -220,3 +220,21 @@ def test_someone_elses_session_is_a_404(monkeypatch, surface):
     assert store.get_session(other["id"])["permission_mode"] == "default"
     assert job.proc.stdin.lines == []
     assert _settings(surface, {"permission_mode": "plan"})["code"] == 404   # no id at all
+
+
+@pytest.mark.parametrize("surface", ["dashboard", "miniapp"])
+def test_a_pick_that_keeps_the_mode_approves_nothing(monkeypatch, surface):
+    """The pickers POST the pair they show, so a model-only pick re-sends the
+    session's own mode. That is no switch: a turn running in another mode (a
+    tracker update runs `manual` with a confirmation card, inside a session
+    stored as bypassPermissions) keeps its card waiting on you."""
+    s = store.create_session(CHAT, f"/srs-keep-{surface}", permission_mode="bypassPermissions")
+    store.set_run_settings(s["id"], model="claude-opus-5-5")
+    job = _live(monkeypatch, s["id"], PERM)
+    box = _settings(surface, {"session_id": s["id"], "model": "claude-fable-5-1",
+                              "permission_mode": "bypassPermissions"})
+    assert box["code"] == 200
+    assert store.get_session(s["id"])["model"] == "claude-fable-5-1"
+    assert [l["request"] for l in job.proc.stdin.lines] == [
+        {"subtype": "set_model", "model": "claude-fable-5-1"}]
+    assert [p["request_id"] for p in job.pending] == ["p1"]       # still yours to answer

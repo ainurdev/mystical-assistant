@@ -100,11 +100,17 @@ def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
     both servers take and answer exactly the same.
 
     Saves a model and/or permission-mode pick to the session, then switches the
-    session's running turn to it (runner.apply_run_settings); with nothing
-    running, the saved row is what the next turn reads. Either may be omitted.
-    Anything invalid is a 400 with nothing saved and nothing switched: every
-    surface now runs what this row says, so a bad value would follow the session
-    everywhere. Returns (json, status)."""
+    session's running turn to what the pick changed (runner.apply_run_settings);
+    with nothing running, the saved row is what the next turn reads. Either may
+    be omitted. Anything invalid is a 400 with nothing saved and nothing
+    switched: every surface now runs what this row says, so a bad value would
+    follow the session everywhere. Returns (json, status).
+
+    Only a change reaches the live turn. The pickers POST the pair they show, so
+    a model-only pick re-sends the session's mode; switching to that again is
+    no switch, and a turn running in another mode (a tracker update runs
+    `manual`, its confirmation card waiting, inside a bypassPermissions session)
+    must not have the card approved by a pick that never touched the mode."""
     m, p = body.get("model"), body.get("permission_mode")
     if not all(v is None or isinstance(v, str) for v in (m, p)):
         return {"error": "model and permission_mode must be strings"}, 400
@@ -113,7 +119,10 @@ def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
     if not ok or ((p or "").strip() and mode is None):
         return {"error": "invalid model or permission_mode"}, 400
     store.set_run_settings(session["id"], model=model, permission_mode=mode)
-    runner.apply_run_settings(session["id"], model=model, permission_mode=mode)
+    runner.apply_run_settings(
+        session["id"],
+        model=model if model != session.get("model") else None,
+        permission_mode=mode if mode != session.get("permission_mode") else None)
     s = store.get_session(session["id"]) or session
     return {"ok": True, "model": s.get("model"),
             "permission_mode": s.get("permission_mode") or config.MINIAPP_PERMISSION_MODE}, 200
