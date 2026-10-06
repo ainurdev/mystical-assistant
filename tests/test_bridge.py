@@ -5,6 +5,7 @@ Claude stream-json event parsing. Run directly: `python tests/test_bridge.py`
 
 import hashlib
 import hmac
+import io
 import json
 import os
 import sys
@@ -1245,6 +1246,113 @@ def test_a_failed_turn_hands_the_queue_its_error(monkeypatch):
     runner._run_streaming(job, "p", [], config.BASE_PATH)
     it = q.snapshot(sid)["items"][0]
     assert (it["status"], it["error"]) == ("failed", "tests red")
+
+
+# --- restart-safe runs: a stop signal is the restart, not a crash -------------
+
+def _child(rc, stderr=""):
+    """A claude that prints nothing on stdout and exits `rc`."""
+    class Child:
+        def __init__(self, cmd, **kw):
+            self.stdin, self.stdout = io.StringIO(), io.StringIO("")
+            self.stderr = io.StringIO(stderr)
+            self.returncode = rc
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            pass
+    return Child
+
+
+def _dying_turn(monkeypatch, project, rc, stderr=""):
+    """A started turn whose child exits `rc` the moment it spawns. Every tool
+    switched on, so the run never asks toolsets (or `claude mcp list`) for a
+    default deny list."""
+    from bridge import tailstate, toolsets
+    sid = store.create_session(555, project)["id"]
+    store.set_disabled_tools(sid, [])
+    job = runner.Job(f"j-{project}", 555, sid)
+    store.start_turn(sid, job.id, "p", [])
+    monkeypatch.setattr(runner.subprocess, "Popen", _child(rc, stderr))
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    return sid, job
+
+
+def _row(sid):
+    return store.transcript(sid)["turns"][0]
+
+
+def _errors(job):
+    return [e for e in job.events if e["type"] == "error"]
+
+
+def test_a_child_the_stop_killed_is_left_for_recovery_without_an_error(monkeypatch):
+    """Flag already up: the turn stays 'running' for boot recovery and journals no
+    error. The error event is what made restart casualties read CRASHED."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-flag", 143)
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+def test_a_child_that_dies_before_the_flag_rises_is_still_the_restart(monkeypatch):
+    """The stop signal can reach the bridge and its child together, and the child
+    can die a beat before the main thread raises shutting_down."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-race", 143)
+    monkeypatch.setattr(state, "shutting_down", False)
+    flag = threading.Timer(0.3, setattr, (state, "shutting_down", True))
+    flag.start()
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    flag.join()   # never let the flag rise after monkeypatch has put it back
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+def test_a_stop_killed_child_that_spoke_on_stderr_is_still_the_restart(monkeypatch):
+    """The call is the exit code's, not the message's: whatever a dying child
+    prints must not turn the restart back into a crash."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-noise", 143,
+                           stderr="MCP server goals: connection closed\n")
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+def test_a_sigterm_with_the_bridge_staying_up_is_an_honest_crash(monkeypatch):
+    """Nobody is stopping: after the grace it is recorded and finished like any
+    crash, with an elapsed, which is what keeps outcomes saying CRASHED."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-real", 143)
+    monkeypatch.setattr(state, "shutting_down", False)
+    monkeypatch.setattr(runner, "STOP_GRACE", 0.2)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert job.error_msg == "claude exited 143"
+    row = _row(sid)
+    assert row["status"] == "error" and row["elapsed"] is not None
+
+
+def test_an_oom_kill_is_recorded_at_once(monkeypatch):
+    """SIGKILL from the kernel is a crash with the bridge up: no wait for a flag
+    that is not coming."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-oom", -9)
+    monkeypatch.setattr(state, "shutting_down", False)
+    t0 = time.time()
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert time.time() - t0 < runner.STOP_GRACE
+    assert job.error_msg == "claude exited -9"
+    assert _row(sid)["status"] == "error"
 
 
 def test_midrun_crash_auto_resumes_capped(monkeypatch):

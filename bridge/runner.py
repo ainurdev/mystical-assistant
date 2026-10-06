@@ -1115,9 +1115,12 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
 # Auto-resume: only the user may stop a turn
 # ---------------------------------------------------------------------------
 # Five non-user ways a turn dies, five answers:
-#   - The bridge is restarting (group SIGINT/SIGKILL takes the Claude child down):
-#     leave the turn 'running' so startup recovery (bridge/recovery.py) claims and
-#     resumes it on the next boot.
+#   - The bridge is restarting (its own stop_children, or a stop signal that
+#     reached the child too, takes the Claude child down): leave the turn
+#     'running', with no error event, so startup recovery (bridge/recovery.py)
+#     claims and resumes it on the next boot and it reads INTERRUPTED. A child
+#     can die a beat before the main thread raises shutting_down; _stopping
+#     waits that beat out.
 #   - The account hit a usage limit: an immediate resume can only fail again, so
 #     the session is parked in bridge/limits.py, which resumes it when the limit
 #     resets.
@@ -1162,6 +1165,27 @@ def _restart_killed(job: "Job") -> bool:
     child, not a real failure — the turn must stay 'running' for boot recovery."""
     return (state.shutting_down and job.status == "error"
             and not job.interrupted and not job.timed_out)
+
+
+# How a child dies of a stop signal: SIGTERM (systemd stopping the unit, or
+# stop_children) or SIGINT (Ctrl-C, `mystical stop` signalling the process
+# group) — raw as -N, or as the CLI's own 128+N exit once it handled the signal.
+_STOP_EXITS = (-15, 143, -2, 130)
+# How long a child that died of one waits for the bridge to say it is stopping.
+STOP_GRACE = 3.0
+
+
+def _stopping(rc: "int | None") -> bool:
+    """Is the bridge going down with this child? The stop signal can reach both
+    at once, and Python runs the bridge's handler on the main thread only, so a
+    runner thread can see its child die before shutting_down is up. A death by a
+    stop signal waits up to STOP_GRACE for the flag; any other exit doesn't."""
+    # ponytail: polls a bool every 50 ms for at most STOP_GRACE. An Event would
+    # wake at once; this only runs for a child that died of a stop signal.
+    end = time.time() + (STOP_GRACE if rc in _STOP_EXITS else 0)
+    while not state.shutting_down and time.time() < end:
+        time.sleep(0.05)
+    return state.shutting_down
 
 
 def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
@@ -1947,13 +1971,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.add({"type": "stopped"})
         elif job.status == "running":
             # No terminal result event — surface the timeout / stderr / exit code.
-            err = "".join(stderr_tail).strip()
-            if job.timed_out:
-                msg = f"⏱️ No output for {(job.hang_timeout or config.RUN_TIMEOUT) // 60} min — killed as hung."
-            else:
-                msg = err[:1500] or f"claude exited {proc.returncode}"
-            job.error_msg = msg
-            job.add({"type": "error", "message": msg})
+            # Unless the bridge's own stop took the child down: then say nothing,
+            # so the turn boot recovery resumes reads INTERRUPTED, not CRASHED.
+            if job.timed_out or not _stopping(proc.returncode):
+                err = "".join(stderr_tail).strip()
+                if job.timed_out:
+                    msg = f"⏱️ No output for {(job.hang_timeout or config.RUN_TIMEOUT) // 60} min — killed as hung."
+                else:
+                    msg = err[:1500] or f"claude exited {proc.returncode}"
+                job.error_msg = msg
+                job.add({"type": "error", "message": msg})
             job.status = "error"
     except Exception as e:  # noqa: BLE001
         job.add({"type": "error", "message": str(e)})
