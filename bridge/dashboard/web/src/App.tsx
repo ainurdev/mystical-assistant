@@ -609,6 +609,12 @@ export function App() {
         // ?s=<id> — a link that names a session (Rivendell's dashboardUrl)
         // wins over the one you had open.
         const asked = new URLSearchParams(location.search).get("s");
+        if (asked) {
+          // Used once: a reload or a bookmark of this tab mustn't keep reopening it.
+          const u = new URL(location.href);
+          u.searchParams.delete("s");
+          history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+        }
         const was = ss.find((s) => s.id === asked) ?? ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
         if (was) openSession(was.id);
