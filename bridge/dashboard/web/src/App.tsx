@@ -606,7 +606,10 @@ export function App() {
         // takes — every panel reads the *session's* repo, and a run carries it
         // in the request — so a page load leaves the bridge's own selection
         // (which Telegram shares) alone.
-        const was = ss.find((s) => s.id === lastOpen())
+        // ?s=<id> — a link that names a session (Rivendell's dashboardUrl)
+        // wins over the one you had open.
+        const asked = new URLSearchParams(location.search).get("s");
+        const was = ss.find((s) => s.id === asked) ?? ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
         if (was) openSession(was.id);
         // Nothing to reopen (or the list never landed) — say so, or the intro

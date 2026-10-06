@@ -507,12 +507,21 @@ class Worker:
             return None
 
     def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str) -> None:
-        """Report the outcome, retrying — the run was expensive."""
+        """Report the outcome, retrying — the run was expensive. A Rivendell
+        whose hello said "result-details" also gets `details` (_result_details);
+        the deployed one 400s any field it doesn't know, so it gets exactly
+        today's body."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
             ("result" if ok else "error"): text,
             "model": self.model,
         }
+        if "result-details" in self.features:
+            try:
+                if (details := self._result_details(request_id)):
+                    payload["details"] = details
+            except Exception as e:  # noqa: BLE001 — the plain result still goes
+                print(f"rivendell[{self.name}]: result details failed for {request_id}: {e}")
         for i, delay in enumerate((0,) + _RESULT_RETRIES):
             if delay:
                 time.sleep(delay)
@@ -592,6 +601,25 @@ class Worker:
         if str(a.get("notes") or "").strip():
             ans["notes"] = str(a["notes"]).strip()
         job.respond(qid, answers=[ans])
+
+    def _result_details(self, request_id: str) -> "dict | None":
+        """The structured half of a result (spec: Contract → Result), read off
+        the session that ran it: the outcome the transcript shows, the PR with
+        its checks, wall and active time (active = wall minus waiting on a
+        person), tokens, and where to open it on this bridge. Wire names are
+        camelCase, as Rivendell's DTOs are. None when no run happened here."""
+        from bridge import attribution, store        # local import: heavy modules
+        ref = f"{self.id}:{request_id}"
+        sid = store.sessions_for_refs([ref]).get(ref)
+        if sid is None:
+            return None
+        res = _result_view(sid) or {}
+        b = attribution.breakdown(sid)
+        return {"outcome": res.get("outcome"), "pr": res.get("pr"), "sessionId": sid,
+                "dashboardUrl": f"http://localhost:{config.DASH_PORT}/?s={sid}",
+                "wallSeconds": round(b["wall"]),
+                "activeSeconds": round(max(0.0, b["wall"] - b["waiting_s"])),
+                "tokens": res.get("tokens")}
 
     def _ping_done(self, request_id: str, ok: bool, text: str) -> None:
         """The job's one Telegram message once its result is posted: done or

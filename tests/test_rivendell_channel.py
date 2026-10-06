@@ -841,3 +841,25 @@ def test_an_answer_to_a_question_no_longer_asked_is_dropped(jobs):
     w._handle_message(json.dumps({"type": "job-answer", "requestId": "ra2",
                                   "questionId": "q-old", "answer": {"labels": ["x"]}}).encode())
     assert [p["request_id"] for p in j.pending] == ["q1"], "never misapplied to another question"
+
+
+# --- Task 16: structured result fields ---------------------------------------------
+
+def test_result_details_ride_only_a_rivendell_that_asked(workers):
+    """Review focus 5: the deployed Rivendell 400s any field it doesn't know."""
+    sid = _session()
+    rid = uuid.uuid4().hex
+    store.set_ref(sid, f"ch:{rid}")
+    _turn(sid, elapsed=600, result="PR https://github.com/acme/app/pull/9",
+          tokens={"in": 10, "out": 5, "cache_w": 0, "cache_r": 85})
+    w = _worker()
+    sent = []
+    w._api = lambda path, payload=None: sent.append(payload) or {}
+    w._post_result("implementation-requests", rid, True, "summary")
+    assert set(sent[-1]) == {"status", "result", "model"}
+    w.features = frozenset({"result-details"})
+    w._post_result("implementation-requests", rid, True, "summary")
+    d = sent[-1]["details"]
+    assert d["sessionId"] == sid and (d["pr"]["number"], d["pr"]["checks"]) == (9, None)
+    assert (d["wallSeconds"], d["activeSeconds"], d["tokens"]) == (600, 600, {"in": 95, "out": 5})
+    assert d["dashboardUrl"].endswith(f"/?s={sid}") and d["outcome"] is None
