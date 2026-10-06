@@ -326,7 +326,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     protocol: the prompt is delivered on stdin (not as an arg), permissions are
     routed back to us via `--permission-prompt-tool stdio`, and we run in an
     asking permission mode so tool use surfaces Allow/Deny cards. The bot's
-    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS.
+    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS, unless its
+    session carries a mode (handle_task).
 
     model/effort (interactive only) map to `--model`/`--effort`; the server
     validates them before they reach here.
@@ -405,10 +406,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # off each one-shot (5.33s -> 4.45s, mean of 3). Several run per turn.
         cmd += ["--tools", "", "--strict-mcp-config"]
     elif not interactive and permission_mode:
-        # An internal one-shot that must *read* the repo (the next-up scout).
-        # Its own permission mode instead of EXTRA_CLAUDE_ARGS: 'plan' leaves the
-        # read tools available and takes editing and shell off the table. Still an
-        # internal one-shot, so it skips MCP for the same second it saves above.
+        # A one-shot with a mode of its own instead of EXTRA_CLAUDE_ARGS: the
+        # next-up scout's 'plan' (read tools stay, editing and shell go), or the
+        # bot chat running its session's mode (handle_task). No MCP, for the same
+        # second it saves above; the bot path never had any (see below).
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
     elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
         cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
@@ -487,20 +488,29 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
 
 
 def handle_task(chat_id: int, prompt: str, session: dict):
-    """Runs in a thread; the caller already claimed `session`'s run slot."""
+    """Runs in a thread; the caller already claimed `session`'s run slot.
+
+    Runs on the session's own model and mode, the last ones picked for it on any
+    surface. A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a session created
+    as bypassPermissions (the dashboard and Mini App default) runs unattended
+    here too: the same allow-listed user can already do that from the Mini App.
+    An asking mode can't show a card in a chat, so the tools it would ask about
+    are denied, as under acceptEdits. A session the bot started has no mode and
+    keeps EXTRA_CLAUDE_ARGS."""
     try:
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
         job_id = uuid.uuid4().hex
-        store.start_turn(session["id"], job_id, prompt, [],
+        store.start_turn(session["id"], job_id, prompt, [], model=session.get("model"),
                          sha=git.head_sha(state.project_dir(chat_id)))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
-            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork)
+            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
+            model=session.get("model"), permission_mode=session.get("permission_mode"))
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,

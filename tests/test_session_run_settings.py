@@ -281,3 +281,44 @@ def test_a_refused_control_request_leaves_an_error_row():
     runner._handle_event(job, {"type": "control_response", "response": {
         "subtype": "success", "request_id": "r2", "response": {"mode": "plan"}}})
     assert job.events[-1] is ev                               # an accepted one is silent
+
+
+# --- the bot chat ------------------------------------------------------------------
+
+def _bot_argv(monkeypatch, sid):
+    """The claude argv handle_task builds for `sid`, Telegram and side calls stubbed."""
+    from bridge import learn, titler
+    seen = {}
+
+    def run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
+            {"result": "ok", "session_id": "c-bot", "total_cost_usd": 0}), stderr="")
+    monkeypatch.setattr(runner.subprocess, "run", run)
+    for name in ("send", "typing", "_graph_pack_for", "_tasks_digest_for",
+                 "_dream_pack_for", "_graph_refresh_after_turn"):
+        monkeypatch.setattr(runner, name, lambda *a, **k: "")
+    monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(learn, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(config, "EXTRA_CLAUDE_ARGS", "--permission-mode acceptEdits")
+    runner.handle_task(CHAT, "hi", store.get_session(sid))
+    return seen["cmd"]
+
+
+def test_the_bot_chat_runs_the_sessions_model_and_mode(monkeypatch):
+    s = store.create_session(CHAT, "/srs-bot", origin="dashboard",
+                             permission_mode="bypassPermissions")
+    store.set_run_settings(s["id"], model="claude-fable-5-1")
+    cmd = _bot_argv(monkeypatch, s["id"])
+    assert cmd[cmd.index("--model") + 1] == "claude-fable-5-1"
+    assert cmd[cmd.index("--permission-mode") + 1] == "bypassPermissions"
+    assert "acceptEdits" not in cmd
+    # Its turn row says what it ran on, as a streaming turn's does.
+    assert store.transcript(s["id"])["turns"][-1]["model"] == "claude-fable-5-1"
+
+
+def test_a_session_the_bot_started_keeps_extra_claude_args(monkeypatch):
+    s = store.create_session(CHAT, "/srs-bot-own", origin="bot")
+    cmd = _bot_argv(monkeypatch, s["id"])
+    assert "--model" not in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
