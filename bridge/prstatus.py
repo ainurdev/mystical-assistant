@@ -48,6 +48,7 @@ from bridge import browser, config, git, github, store, telegram
 TTL = 45           # s: under the dashboard's 60s poll, so each poll reads fresh
 FORCE_FLOOR = 10   # s: focus, visibilitychange and a push can all ask at once
 ERR_TTL = 300      # s: gh broken or rate-limited, so wait five minutes
+DONE_TTL = 600     # s: a merged or closed PR barely changes (a reopen waits this long)
 LOG_LINES = 60
 FIELDS = ("number,title,state,url,baseRefName,headRefName,headRefOid,additions,"
           "deletions,createdAt,mergedAt,statusCheckRollup,reviewDecision,"
@@ -89,9 +90,12 @@ def _check(c: dict) -> "dict | None":
         return None
     else:
         state = "pass" if concl in _PASS else "fail"
-    return {"name": c.get("name") or "check", "workflow": c.get("workflowName") or "",
-            "state": state, "url": c.get("detailsUrl") or "",
-            "started": _ts(c.get("startedAt")), "completed": _ts(c.get("completedAt"))}
+    row = {"name": c.get("name") or "check", "workflow": c.get("workflowName") or "",
+           "state": state, "url": c.get("detailsUrl") or "",
+           "started": _ts(c.get("startedAt")), "completed": _ts(c.get("completedAt"))}
+    if concl == "CANCELLED":
+        row["cancelled"] = True   # red on the chip, but someone stopped it: no ping
+    return row
 
 
 def _checks(rollup: list) -> "list[dict]":
@@ -202,7 +206,7 @@ def alerts(pr: dict) -> "set[str]":
     if pr["state"] != "OPEN":
         return set()
     out = set()
-    if pr["failed"]:
+    if any(c["state"] == "fail" and not c.get("cancelled") for c in pr["checks"]):
         out.add(f"failing:{pr['sha']}")
     if pr["review"]:
         out.add(f"changes:{pr['review']['by']}:{pr['review']['at']}")
@@ -241,16 +245,17 @@ def _failure_log(slug: str, url: str) -> str:
     if not m:
         return ""          # not GitHub Actions: only the link, no log we can fetch
     job = m.group(1)
-    if job not in _logs:
+    tail = _logs.get(job)
+    if tail is None:
         rc, out, _ = _gh("run", "view", "--job", job, "-R", slug, "--log-failed",
                          timeout=40)
-        tail = failure_tail(out) if rc == 0 else ""
-        if not tail:
-            return ""      # the run is still going, or the log has expired: ask next read
+        if rc != 0:
+            return ""      # the run is still going, or gh couldn't say: ask next read
+        tail = failure_tail(out)   # an empty answer is still the answer: kept
         if len(_logs) > 200:
             _logs.clear()  # ponytail: a crude bound, far above one session's failures
         _logs[job] = tail
-    return _logs[job]
+    return tail
 
 
 def _review_comments(slug: str, number: int, review: dict) -> "list[dict]":
@@ -294,6 +299,8 @@ def fetch(slug: str, branch: str) -> "tuple[dict | None, int]":
         pr = normalize(json.loads(out))
     except (ValueError, KeyError, TypeError):
         return None, ERR_TTL
+    if pr["state"] != "OPEN":
+        return pr, DONE_TTL   # its popover shows no checks or review: no logs, no comments
     for c in pr["checks"]:
         if c["state"] == "fail":
             c["log"] = _failure_log(slug, c["url"])

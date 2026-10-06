@@ -154,6 +154,7 @@ def test_failure_tail_without_an_error_marker_keeps_the_end():
 def _pr(**over):
     pr = {"state": "OPEN", "sha": "s1", "failed": 0, "running": 0, "review": None}
     pr.update(over)
+    pr.setdefault("checks", [{"state": "fail"}] * pr["failed"])
     return pr
 
 
@@ -262,6 +263,34 @@ def test_a_log_that_isnt_there_yet_is_asked_for_again(monkeypatch):
     assert prstatus.fetch("acme/rivendell", "feat/x")[0]["checks"][0]["log"] == ""
     prstatus.fetch("acme/rivendell", "feat/x")
     assert sum(1 for c in calls if c[0] == "run") == 2
+
+
+def test_a_log_gh_returns_empty_is_not_asked_for_again(monkeypatch):
+    calls = _fake_gh(monkeypatch, [
+        (("pr", "view"), (0, json.dumps(_raw(statusCheckRollup=[
+            _run("backend", conclusion="FAILURE", job=7)])), "")),
+        (("run", "view"), (0, "", "")),
+    ])
+    assert prstatus.fetch("acme/rivendell", "feat/x")[0]["checks"][0]["log"] == ""
+    prstatus.fetch("acme/rivendell", "feat/x")
+    assert sum(1 for c in calls if c[0] == "run") == 1
+
+
+def test_a_cancelled_check_is_red_but_does_not_ping():
+    pr = prstatus.normalize(_raw(statusCheckRollup=[_run("backend", conclusion="CANCELLED")]))
+    assert pr["status"] == "failing"
+    assert prstatus.alerts(pr) == set()
+    both = prstatus.normalize(_raw(statusCheckRollup=[
+        _run("backend", conclusion="CANCELLED"), _run("lint", conclusion="FAILURE")]))
+    assert prstatus.alerts(both) == {"failing:abc123"}
+
+
+def test_a_merged_pr_is_trusted_longer_and_fetches_no_logs(monkeypatch):
+    calls = _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(state="MERGED", statusCheckRollup=[
+        _run("backend", conclusion="FAILURE", job=7)])), ""))])
+    pr, ttl = prstatus.fetch("acme/rivendell", "feat/x")
+    assert pr["status"] == "merged" and ttl == prstatus.DONE_TTL > prstatus.TTL
+    assert [c[0] for c in calls] == ["pr"]
 
 
 def test_changes_requested_brings_that_reviews_inline_comments(monkeypatch):
