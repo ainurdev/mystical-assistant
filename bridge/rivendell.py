@@ -172,6 +172,8 @@ _HTTP_TIMEOUT = 30        # prompt fetch / result post
 _RESULT_RETRIES = (2, 10, 30)   # a finished run is expensive; retry the POST
 _POLL_INTERVAL = 2.0      # job status poll cadence
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
+_CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab polls
+_checks_cache: "dict[str, tuple[float, str | None]]" = {}
 
 # WebSocket close codes the gateway uses to reject a bad/insufficient token (see
 # rivendell-api's AgentGateway: it accepts the upgrade, then closes).
@@ -1550,12 +1552,27 @@ def live_view(job) -> dict:
             "ask": ask}
 
 
-def _result_view(sid: str) -> "dict | None":
+def _checks(url: str) -> "str | None":
+    """github.pr_checks, cached for _CHECKS_TTL: the tab polls every 10 s, and
+    each read is a `gh` call over the network.
+    ponytail: a plain dict keyed by PR url, never pruned — a few entries per
+    DONE card ever shown; an LRU if a bridge lives through months of PRs."""
+    from bridge import github                    # local import: subprocess-heavy
+    hit = _checks_cache.get(url)
+    if hit and time.monotonic() - hit[0] < _CHECKS_TTL:
+        return hit[1]
+    state = github.pr_checks(url)
+    _checks_cache[url] = (time.monotonic(), state)
+    return state
+
+
+def _result_view(sid: str, checks: bool = True) -> "dict | None":
     """What a finished run came to, read off its session: wall time and token
     spend over its turns (tokens in counts cache reads and writes, as SPEND
     does), the PR its closing summary names (Rivendell's prompts ask for the
-    link), and — when its last turn failed — the outcome the transcript shows
-    (bridge/outcomes.py). None for a session with no turns."""
+    link) with its checks (unless `checks` is False: they have only just
+    started when a job ends), and — when its last turn failed — the outcome the
+    transcript shows (bridge/outcomes.py). None for a session with no turns."""
     from bridge import github, store             # local import: heavy modules
     last = store.last_turn(sid)
     if last is None:
@@ -1564,9 +1581,12 @@ def _result_view(sid: str) -> "dict | None":
     tin = sum((r.get("tok_in") or 0) + (r.get("tok_cache_w") or 0) + (r.get("tok_cache_r") or 0)
               for r in rows)
     tout = sum(r.get("tok_out") or 0 for r in rows)
+    pr = github.pr_ref(last["result"])
+    if pr and checks:
+        pr["checks"] = _checks(pr["url"])
     return {"wall_s": sum(r.get("elapsed") or 0 for r in rows),
             "tokens": {"in": tin, "out": tout} if tin or tout else None,
-            "pr": github.pr_ref(last["result"]), "outcome": last["outcome"]}
+            "pr": pr, "outcome": last["outcome"]}
 
 
 def _run_view(sid: str) -> dict:

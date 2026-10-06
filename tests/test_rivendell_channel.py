@@ -39,6 +39,9 @@ def quiet(monkeypatch):
     monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)
     monkeypatch.setattr(config, "NOTIFY_ENABLE", True)
     monkeypatch.setattr(state, "miniapp_url", None)        # no OPEN SESSION button to count
+    from bridge import github
+    monkeypatch.setattr(github, "pr_checks", lambda url: None)   # never `gh` over the network
+    rivendell._checks_cache.clear()
     return sent
 
 
@@ -356,3 +359,20 @@ def test_tasks_carry_each_runs_view(workers, jobs):
     by_rid = {t["implementation"]["id"]: t for t in rivendell.tasks("acme/app")["tasks"]}
     assert by_rid["r-view-done"]["run"]["result"]["pr"]["number"] == 7
     assert by_rid["r-view-live"]["run"]["ask"]["request_id"] == "q1"
+
+
+# --- Task 4: DONE cards show the PR's checks -----------------------------------
+
+def test_checks_ride_the_pr_and_are_cached_between_polls(monkeypatch):
+    from bridge import github
+    calls = []
+    monkeypatch.setattr(github, "pr_checks", lambda url: calls.append(url) or "pass")
+    sid = _session()
+    _turn(sid, result="https://github.com/acme/app/pull/31")
+    assert rivendell._result_view(sid)["pr"]["checks"] == "pass"
+    assert rivendell._result_view(sid)["pr"]["checks"] == "pass"
+    assert calls == ["https://github.com/acme/app/pull/31"], "one `gh` call per TTL"
+    monkeypatch.setattr(rivendell, "_CHECKS_TTL", 0)
+    rivendell._result_view(sid)
+    assert len(calls) == 2
+    assert "checks" not in rivendell._result_view(sid, checks=False)["pr"]
