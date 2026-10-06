@@ -392,3 +392,13 @@ def test_only_a_local_branch_reaches_gh(monkeypatch):
     for branch in ("--help", "https://github.com/evil/repo/pull/1", "feat/not-here"):
         assert prstatus.snapshot("/r", branch)["pr"] is None
     assert calls == []
+
+
+def test_a_branch_with_no_chip_is_not_cached(monkeypatch):
+    """Any caller can make up branch names; refusing one must not leave a lock
+    and a cache entry behind for each."""
+    prstatus._locks.clear()
+    _fake_gh(monkeypatch, [])
+    for branch in ("feat/made-up-1", "feat/made-up-2", "main", "59", ""):
+        prstatus.snapshot("/r", branch)
+    assert prstatus._cache == {} and prstatus._locks == {}

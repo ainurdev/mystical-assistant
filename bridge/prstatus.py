@@ -332,18 +332,23 @@ def _pings(repo_dir: str, slug: str, branch: str, pr: dict, session: str) -> "li
     return sorted(new)
 
 
-def _read(repo_dir: str, branch: str, session: str, old: "dict | None") -> dict:
-    now = time.time()
+def _slug_for(repo_dir: str, branch: str) -> "str | None":
+    """The repo's GitHub slug when `branch` can have a PR to show, else None.
+    PRs land on the default branch; they don't come from it. gh pr view reads
+    "59" (or "#59", "+59") as PR number 59, not as a branch.
+    ponytail: an all-digit branch gets no chip. `gh pr list --head` if one matters.
+    Only the repo's own branches reach gh at all: `branch` comes from the
+    query string, and gh would read another repo's PR url as the PR (the same
+    rule as /local/git/diff)."""
     slug = github.remote_slug(repo_dir) if branch else None
-    # PRs land on the default branch. They don't come from it. And gh pr view
-    # reads "59" (or "#59", "+59") as PR number 59, not as a branch.
-    # ponytail: an all-digit branch gets no chip. `gh pr list --head` if one matters.
-    # Only the repo's own branches reach gh at all: `branch` comes from a GET any
-    # page can fire (Host-gated, not token-gated), and gh would read "--web" as a
-    # flag and another repo's PR url as the PR (the same rule as /local/git/diff).
     if (not slug or re.fullmatch(r"#?\+?\d+", branch) or branch == git.default_branch(repo_dir)
             or branch not in git.branches(repo_dir)):
-        return {"at": now, "ttl": TTL, "pr": None, "pinged": []}
+        return None
+    return slug
+
+
+def _read(repo_dir: str, slug: str, branch: str, session: str, old: "dict | None") -> dict:
+    now = time.time()
     pr, ttl = fetch(slug, branch)
     if pr is None and ttl == ERR_TTL and old:
         pr = old["pr"]      # a blip keeps the last good chip instead of blinking it out
@@ -356,6 +361,10 @@ def snapshot(repo_dir: str, branch: str, *, force: bool = False,
     """The PR for `branch` of the repo at `repo_dir`, in the shape the chip
     wants: {"pr": dict | None, "pinged": [alert keys], "checked": epoch s}.
     `session` is only used for the Telegram button."""
+    slug = _slug_for(repo_dir, branch)
+    if slug is None:
+        # Not cached: a made-up branch name must not leave a lock and an entry.
+        return {"pr": None, "pinged": [], "checked": time.time()}
     key = (repo_dir, branch)
     with _locks.setdefault(key, threading.Lock()):
         hit = _cache.get(key)
@@ -363,5 +372,5 @@ def snapshot(repo_dir: str, branch: str, *, force: bool = False,
         if force and trust <= TTL:
             trust = min(trust, FORCE_FLOOR)   # a rate-limit backoff outlasts force
         if hit is None or time.time() - hit["at"] >= trust:
-            hit = _cache[key] = _read(repo_dir, branch, session, hit)
+            hit = _cache[key] = _read(repo_dir, slug, branch, session, hit)
     return {"pr": hit["pr"], "pinged": hit["pinged"], "checked": hit["at"]}
