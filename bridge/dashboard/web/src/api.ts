@@ -381,6 +381,14 @@ export interface RivendellStatus {
   since?: number;               // epoch seconds of the last state change
   connected_since?: number | null;  // epoch seconds the current link came up
   last_event_at?: number | null;    // epoch seconds of the last request seen
+  // The current break (bridge/rivendell.py Worker._set_status): when it began,
+  // and when it was flagged — once per break, cleared when the link proves
+  // itself. alert_at drives the castle's dot and the bell.
+  down_since?: number | null;
+  alert_at?: number | null;
+  attempt?: number;                  // failed dials in a row
+  retry_at?: number | null;          // epoch seconds of the next dial
+  last_test?: RivendellTest | null;  // TEST LINK's last outcome
 }
 export interface RivendellInstance {
   id: string;
@@ -449,7 +457,40 @@ export interface RivendellTask {
     completedAt: string | null;
   };
   instance_id: string;       // the connection it came from — IMPLEMENT goes back there
-  session_id: string | null; // the session running its request on this bridge
+  session_id: string | null; // the session that ran (or runs) its request on this bridge
+  stale?: boolean;           // its instance failed: the last good answer, shown dimmed
+  run?: RivendellRun | null; // what this bridge knows about its run, when it ran here
+}
+/** TEST LINK's outcome (POST /local/rivendell/test). ok null = re-dialing a
+ *  parked token; the chip shows how that went. */
+export interface RivendellTest {
+  ok: boolean | null;
+  rtt_ms: number | null;
+  detail: string;
+  at: number;                // epoch seconds
+}
+/** One connection's state on the RIVENDELL tab: its instance and its status. */
+export type RivendellLink = RivendellStatus & { instance_id: string; instance: string };
+/** A question a Rivendell run is held on (bridge/rivendell.py live_view). */
+export interface RivendellAsk {
+  job_id: string;            // answer with api.respond(job_id, …)
+  request_id: string;
+  at: number | null;         // when it started waiting
+  question: string;
+  header: string;            // the AnswerSelection header
+  options: string[];
+  simple: boolean;           // one single-choice question: its options can be buttons
+}
+/** What this bridge knows about the run behind a card (bridge/rivendell.py _run_view). */
+export interface RivendellRun {
+  live?: { line: string; steps: number; todos: { done: number; total: number } | null };
+  ask?: RivendellAsk | null;
+  result?: {
+    wall_s: number;
+    tokens: { in: number; out: number } | null;
+    pr: { number: number; url: string; checks?: "pass" | "fail" | "pending" | null } | null;
+    outcome: { code: string; label: string; detail: string } | null;
+  } | null;
 }
 export interface RivendellTasks {
   slug: string | null;       // the checkout's origin; null = no GitHub origin, nothing asked
@@ -462,6 +503,7 @@ export interface RivendellTasks {
     error: "token_rejected" | "not_deployed" | "refused" | "unreachable";
     detail: string;
   }[];
+  links?: RivendellLink[];  // each connection's state, for the chip and banner
 }
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
@@ -1556,6 +1598,10 @@ export const api = {
     req<{ ok: boolean; request: { id: string; status: string } }>("/local/rivendell/implement", {
       method: "POST", body: { instance_id, task_id },
     }),
+  // TEST LINK: a ping/pong round trip on the live socket, or a re-dial of a
+  // parked token (bridge/rivendell.py Worker.test_link). 409 when it's off.
+  rivendellTest: (instance_id: string) =>
+    req<RivendellTest>("/local/rivendell/test", { method: "POST", body: { instance_id } }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>
