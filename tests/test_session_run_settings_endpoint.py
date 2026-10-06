@@ -260,3 +260,20 @@ def test_a_save_that_names_no_half_switches_nothing(monkeypatch, surface):
     assert box["code"] == 200
     assert store.get_session(s["id"])["permission_mode"] == "bypassPermissions"
     assert job.proc.stdin.lines == []
+
+
+# --- History opens carry the picks ------------------------------------------------
+
+def test_history_rows_carry_the_sessions_picks():
+    """A session opened from History (archived, or idle past the list's age) is
+    seeded from its history row: the row has to say what the session runs on, or
+    the composer shows this device's picks and the next send saves them over it."""
+    picked = store.create_session(CHAT, "/srs-hist", permission_mode="default")
+    store.set_run_settings(picked["id"], model="claude-fable-5-1")
+    store.archive(picked["id"])
+    bot = store.create_session(CHAT, "/srs-hist-bot")
+    rows = {r["id"]: r for r in store.history(CHAT, include_archived=True)}
+    assert (rows[picked["id"]]["model"], rows[picked["id"]]["permission_mode"]) == (
+        "claude-fable-5-1", "default")
+    assert rows[bot["id"]]["model"] is None
+    assert rows[bot["id"]]["permission_mode"] == config.MINIAPP_PERMISSION_MODE

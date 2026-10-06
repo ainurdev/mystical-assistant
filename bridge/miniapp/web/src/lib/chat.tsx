@@ -320,17 +320,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     enabled: project !== null,
     refetchInterval: 5000,
   });
-  const brief = briefsQ.data?.sessions.find((s) => s.id === sessionId)
-    ?? sessions.find((s) => s.id === sessionId);
-  // Keyed on the values, so a poll that left before a pick made here can't put
-  // the old one back.
-  useEffect(() => {
-    if (!brief) return;
-    const r = runPicks(brief, { model: defModel, perm: defPerm });
-    setModelState(r.model);
-    setPermState(r.perm);
-  }, [sessionId, brief?.model, brief?.permission_mode]);
-
   // A pick: shown now, remembered as this phone's default, and saved to the
   // open session as the pair the picker shows (a fresh session would otherwise
   // keep the bridge's mode under a picker showing yours). `half` is what you
@@ -527,6 +516,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     },
     refetchInterval: isRunning || sessionWorking ? 1500 : false,
   });
+  // The open session's picks: its brief, else — archived, or opened from History
+  // in a repo whose list this phone hasn't polled — the row its transcript
+  // carries, so a send can't save this phone's defaults over the session's own.
+  // Keyed on the values, so a poll that left before a pick made here can't put
+  // the old one back.
+  const brief = briefsQ.data?.sessions.find((s) => s.id === sessionId)
+    ?? sessions.find((s) => s.id === sessionId)
+    ?? (transcriptQ.data?.session?.id === sessionId ? transcriptQ.data?.session : undefined);
+  useEffect(() => {
+    if (!brief) return;
+    const r = runPicks(brief, { model: defModel, perm: defPerm });
+    setModelState(r.model);
+    setPermState(r.perm);
+  }, [sessionId, brief?.model, brief?.permission_mode]);
+
   // The very first fetch for this session — a poll refetch keeps the transcript
   // on screen, so only the load with nothing to show yet counts as loading. Each
   // term can end: no project (the resolver never runs) falls through to the

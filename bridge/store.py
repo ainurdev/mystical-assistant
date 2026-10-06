@@ -929,9 +929,13 @@ def history(chat_id: int, include_archived: bool = False,
     Time and tokens rather than dollars: 9f612a4 removed the dollar readouts
     because the CLI prices these runs off API list rates while they go through a
     subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
-    a session that predates the columns is unknown, not free."""
+    a session that predates the columns is unknown, not free.
+
+    Each row also carries the session's run picks, as a brief does (model, and
+    the mode a run would get): a session opened from here — archived, or past the
+    session list's age — is seeded from this row, and its composer loads them."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, "
+         "s.lifecycle, s.model, s.permission_mode, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
@@ -955,6 +959,7 @@ def history(chat_id: int, include_archived: bool = False,
         for r in c.execute(q, params).fetchall():
             d = dict(r)
             d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
+            d["permission_mode"] = d["permission_mode"] or config.MINIAPP_PERMISSION_MODE
             rows.append(d)
     return rows
 

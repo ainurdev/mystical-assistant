@@ -694,6 +694,10 @@ export interface EnrichedSession {
   total_tokens: number | null; // null = no turn reported usage (unknown, not free)
   last_activity: number;
   models: string[];
+  // The session's run picks, as on a brief: a session opened from History is
+  // seeded from this row (openFromHistory), and its composer loads them.
+  model?: string | null;
+  permission_mode?: string;
 }
 /** One tool's share of a session's wall clock. `union_s` counts overlapping calls
  *  once; `naive_s` just adds durations. Equal values mean the tool never ran
