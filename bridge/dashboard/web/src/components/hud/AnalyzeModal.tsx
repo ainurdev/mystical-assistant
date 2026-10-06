@@ -21,11 +21,13 @@ import { parseDiff, type DiffRow } from "../../lib/diff";
 import { branchForIssue, branchForTask, keyFromBranch } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
 import {
-  countByPath, loadNotes, noteRange, notesKey, saveNotes, type Note, type NoteDraft,
+  countByPath, loadNotes, noteRange, notesKey, notesMessage, reanchor, saveNotes,
+  type Note, type NoteDraft, type SendTo,
 } from "../../lib/reviewnotes";
 import { ago, projectName, projectTint, setProjectTint } from "../../lib/surfaces";
 import { CommitGraph } from "../CommitGraph";
-import { NoteEditor, NoteThread } from "./DiffNotes";
+import { askConfirm } from "../ui/Ask";
+import { NoteEditor, NoteThread, SendBar } from "./DiffNotes";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { LearnTab } from "./LearnTab";
 import { MapTab } from "./MapTab";
@@ -65,6 +67,8 @@ interface Props {
       were looking at — that is what makes SHIP IT one press instead of four. */
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string,
                       firstPrompt?: string) => void;
+  /** GIT tab review notes → a session on the branch, or a new one in its tree. */
+  onSendTo: SendTo;
 }
 
 const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
@@ -329,7 +333,9 @@ export function AnalyzeModal(props: Props) {
         <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: tab === "editor" || tab === "terminal" ? 0 : 18 }}>
           {tab === "changes" && (
             <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
-              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile} />
+              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile}
+              sessions={props.sessions} activeSession={props.activeSession} worktrees={worktrees}
+              onSendTo={props.onSendTo} />
           )}
           {tab === "worktrees" && (
             <WorktreesTab project={project} sessions={props.sessions} worktrees={worktrees}
@@ -378,9 +384,11 @@ const DIFF_VIEW: Record<DiffRow["kind"], { bg: string; sign: string; color: stri
   hunk: { bg: "color-mix(in srgb, var(--acc) 6%, transparent)", sign: "var(--acc)", color: "var(--acc)" },
 };
 
-function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile }: {
+function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile,
+                      sessions, activeSession, worktrees, onSendTo }: {
   project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void;
   onRefreshGit: () => void; initialFile?: string;
+  sessions: SessionBrief[]; activeSession?: string | null; worktrees: Worktree[]; onSendTo: SendTo;
 }) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
@@ -447,11 +455,17 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   const [notes, setNotesState] = useState<Note[]>(() => loadNotes(nkey));
   const [editor, setEditor] = useState<NoteDraft | null>(null);
   const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
+  const [sendTo, setSendTo] = useState("");   // "" = the branch's own session, "new" = a new one
+  const [sending, setSending] = useState(false);
   const setNotes = (next: Note[]) => { setNotesState(next); saveNotes(nkey, next); };
-  useEffect(() => { setNotesState(loadNotes(nkey)); }, [nkey]);
+  useEffect(() => { setNotesState(loadNotes(nkey)); setSendTo(""); }, [nkey]);
   useEffect(() => { setEditor(null); }, [nkey, selName]);
   const fileNotes = notes.filter((x) => x.path === selName);
   const noteCount = useMemo(() => countByPath(notes), [notes]);
+  // The open session if it's on this branch, else the branch's newest; none = a new one.
+  const onBranch = useMemo(() => sessions.filter((s) => s.branch === branch).sort((a, b) => b.updated - a.updated), [sessions, branch]);
+  const target = sendTo === "new" ? null
+    : onBranch.find((s) => s.id === sendTo) ?? onBranch.find((s) => s.id === activeSession) ?? onBranch[0] ?? null;
 
   // A drag down the line numbers ends where the mouse is let go. That is
   // caught on the window, so letting go outside the diff still opens the editor.
@@ -471,6 +485,29 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
     const kept = notes.filter((x) => x.id !== editor.id);
     setNotes([...kept, { ...editor, id: editor.id ?? crypto.randomUUID(), text: text.trim(), at: Date.now() }]);
     setEditor(null);
+  }
+
+  async function clearNotes() {
+    if (await askConfirm(`Drop ${notes.length} review note${notes.length === 1 ? "" : "s"} on ${branch}?`)) setNotes([]);
+  }
+
+  async function sendNotes() {
+    // Storage, not this tab's state: another tab may have sent or cleared them.
+    const current = loadNotes(nkey);
+    if (sending || !current.length) { setNotesState(current); return; }
+    setSending(true);
+    try {
+      // Line numbers are the working tree's at the moment of SEND: each noted
+      // file is read again and each note found again by its line's text.
+      const paths = [...new Set(current.map((x) => x.path))];
+      const files = await Promise.all(paths.map((p) => api.fileRead(project, p, branch || undefined)
+        .then((f) => (f.ok && !f.binary && !f.too_large ? (f.content ?? "").split("\n") : null))
+        .catch(() => null)));
+      const text = notesMessage(branch, current.map((x) => reanchor(x, files[paths.indexOf(x.path)])));
+      const cwd = worktrees.find((w) => w.branch === branch)?.path ?? "";
+      // Dropped only once the message ran or was queued: a failed send keeps them.
+      if (await onSendTo(text, target ? { session: target.id } : { cwd })) setNotes([]);
+    } finally { setSending(false); }
   }
 
   async function genMsg() {
@@ -663,6 +700,10 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
                 <NoteThread key={x.id} note={x} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
               ))}
             </div>
+            {notes.length > 0 && (
+              <SendBar count={notes.length} targets={onBranch} target={target} tint={projectTint(project).color}
+                busy={sending} onPick={setSendTo} onClear={() => void clearNotes()} onSend={() => void sendNotes()} />
+            )}
           </div>
         </div>
       )}

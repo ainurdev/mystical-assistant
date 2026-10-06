@@ -1,5 +1,7 @@
 import { useState } from "react";
+import type { SessionBrief } from "../../api";
 import { lineLabel, type Note } from "../../lib/reviewnotes";
+import { hairline } from "../../lib/shell";
 import { ago } from "../../lib/surfaces";
 
 /* Review notes on the GIT tab's diff (review loop A, sheet A): the inline
@@ -78,6 +80,65 @@ export function NoteThread({ note, onEdit, onDelete }: {
         <button onClick={onDelete} title="delete this note" {...hp("del")} style={link("del")}>✕</button>
       </div>
       <div style={{ color: "var(--txh)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{note.text}</div>
+    </div>
+  );
+}
+
+/** The diff panel's foot once a note exists: count · target session ▾ · CLEAR · SEND. */
+export function SendBar({ count, targets, target, tint, busy, onPick, onClear, onSend }: {
+  count: number;
+  /** The sessions on this branch, newest first. */
+  targets: SessionBrief[];
+  /** Where SEND goes. null means "new session here". */
+  target: SessionBrief | null;
+  tint: string;
+  busy: boolean;
+  onPick: (id: string) => void;   // a session id, or "new"
+  onClear: () => void;
+  onSend: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hov, setHov] = useState("");
+  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
+  const pick = (id: string) => { onPick(id); setOpen(false); };
+  const row = (k: string) => ({
+    width: "100%", appearance: "none" as const, cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
+    border: 0, background: hov === k ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent",
+    color: "var(--txh)", fontFamily: "inherit", fontSize: "var(--t10)", padding: "7px 9px", textAlign: "left" as const,
+  });
+  return (
+    <div style={{ position: "relative", flex: "none", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderTop: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--purple) 7%, transparent)" }}>
+      <span style={{ fontSize: "var(--t95)", letterSpacing: 1.2, color: "var(--purple-h)", flex: "none" }}>◆ {count} NOTE{count === 1 ? "" : "S"}</span>
+      <span style={hairline(11)} />
+      <button onClick={() => setOpen((o) => !o)} title="which session gets the notes" {...hp("to")}
+        style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", padding: 0, display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1, fontFamily: "inherit", fontSize: "var(--t10)", color: hov === "to" || open ? "var(--txb)" : "var(--txm)" }}>
+        →
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint, flex: "none" }} />
+        <span style={{ color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {target ? target.title || "untitled session" : "new session here"}
+        </span>
+        <span style={{ color: "var(--txl)", flex: "none" }}>▾</span>
+      </button>
+      <button onClick={onClear} {...hp("clear")} style={btn(hov === "clear", "ghost")}>CLEAR</button>
+      <button onClick={onSend} disabled={busy} {...hp("send")}
+        style={{ ...btn(hov === "send", "var(--purple)"), opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}>
+        {busy ? "SENDING…" : "SEND TO AGENT ▸"}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 10, zIndex: 30, minWidth: 260, maxWidth: "80%", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
+          <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", padding: "5px 9px 7px" }}>SEND TO</div>
+          {targets.map((s) => (
+            <button key={s.id} onClick={() => pick(s.id)} {...hp(`t:${s.id}`)} style={row(`t:${s.id}`)}>
+              <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "untitled session"}</span>
+              {s.id === target?.id && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
+            </button>
+          ))}
+          <button onClick={() => pick("new")} {...hp("t:new")} style={row("t:new")}>
+            <span style={{ flex: 1, color: "var(--purple-h)" }}>+ new session here</span>
+            {!target && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

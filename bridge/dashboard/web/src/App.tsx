@@ -1055,12 +1055,15 @@ export function App() {
   // check blocks for ~10s, and you're free to open another session meanwhile —
   // so `sid` (not the open session) decides where the run, the queue fallback,
   // the held card and the optimistic turn all land.
+  // Resolves true once the prompt ran or was queued, false if it didn't go
+  // (held as different work, or the request failed). Review notes are dropped
+  // only on true.
   async function send(
     text: string, images: string[],
     opts?: { force?: boolean; sessionId?: string; project?: string },
-  ) {
+  ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
-    if (!sid) return;
+    if (!sid) return false;
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
     // this only records what the session is for.
@@ -1070,10 +1073,11 @@ export function App() {
         const { goal } = await api.setGoal(sid, goalCmd[1].trim());
         setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, goal } : s)));
         notify("info", goal ? `Goal set — ${goal.objective}` : "Goal cleared.");
+        return true;
       } catch (e) {
         notify("error", (e as Error).message);
+        return false;
       }
-      return;
     }
     // The prompt's own session decides the project too — `opts.project` covers a
     // session just created, which this render's `sessions` doesn't know about.
@@ -1092,7 +1096,7 @@ export function App() {
     queue.resumeIfPaused();
     // A turn is already in flight for this session — queue the prompt to run
     // after it (and any earlier queued prompts) instead of blocking on STOP.
-    if (running && !opts?.sessionId) { enqueue(); return; }
+    if (running && !opts?.sessionId) { enqueue(); return true; }
     setCheckingFor(sid, text);
     try {
       const res = await api.run({
@@ -1112,7 +1116,7 @@ export function App() {
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
-        return;
+        return false;
       }
       setHeldMap((m) => omit(m, sid));
       liveTurns.current.add(res.job_id);
@@ -1122,7 +1126,7 @@ export function App() {
       // picks it up when you go back.
       if (sessionIdRef.current !== sid) {
         notify("info", `Started in “${sessionName()}” — the session you sent it from.`);
-        return;
+        return true;
       }
       // Your own prompt pulls you down to it — but only from nearby. More than a
       // screen up the transcript you're reading something; a jump to the bottom
@@ -1141,11 +1145,13 @@ export function App() {
           // So the prompt's clock is stamped the moment you send it, not a poll later.
           started: Date.now() / 1000 },
       ]);
+      return true;
     } catch (e) {
       // Lost the race: the run slot filled between our check and the request.
       // Queue it rather than surfacing a "busy" error.
-      if ((e as Error).message === "busy") enqueue();
-      else notify("error", (e as Error).message);
+      if ((e as Error).message === "busy") { enqueue(); return true; }
+      notify("error", (e as Error).message);
+      return false;
     } finally {
       setCheckingFor(sid, null);
     }
@@ -1286,18 +1292,19 @@ export function App() {
   async function startIn(
     project: string, prompt: string,
     opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string },
-  ) {
+  ): Promise<boolean> {
     openBlank();
     try {
       const { session } = await api.createSession(project, opts?.cwd, opts?.title);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       toChat();
-      await send(prompt, opts?.images ?? [],
-                 { sessionId: session.id, project, force: opts?.force });
+      return await send(prompt, opts?.images ?? [],
+                        { sessionId: session.id, project, force: opts?.force });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);
+      return false;
     }
   }
 
@@ -2187,6 +2194,17 @@ export function App() {
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); toChat(); }}
                 onWorktreeSession={(rel, branch, create, parent, firstPrompt) => { void worktreeSession(rel, branch, create, parent, firstPrompt); setAnalyzeProject(null); }}
+                // GIT tab review notes. The chat goes to where they went, so you
+                // see the agent pick them up. A session mid-turn queues them.
+                onSendTo={(text, to) => {
+                  const project = analyzeProject;
+                  setAnalyzeProject(null);
+                  if ("cwd" in to) return startIn(project, text, { cwd: to.cwd || undefined, force: true });
+                  const s = sessions.find((x) => x.id === to.session);
+                  if (s) selectSession(s);
+                  toChat();
+                  return send(text, [], { sessionId: to.session, project, force: true });
+                }}
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
