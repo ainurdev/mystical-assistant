@@ -43,7 +43,9 @@ def quiet(monkeypatch):
     from bridge import github
     monkeypatch.setattr(github, "pr_checks", lambda url: None)   # never `gh` over the network
     rivendell._checks_cache.clear()
-    return sent
+    yield sent
+    # A checks refresh runs on its own thread: none may outlive the stub above.
+    _wait_until(lambda: not rivendell._checks_busy)
 
 
 @pytest.fixture
@@ -367,17 +369,23 @@ def test_tasks_carry_each_runs_view(workers, jobs):
 # --- Task 4: DONE cards show the PR's checks -----------------------------------
 
 def test_checks_ride_the_pr_and_are_cached_between_polls(monkeypatch):
+    """Served from the cache, never fetched on the tab's request thread: a
+    missing or stale entry is refreshed behind, and a later poll has it."""
     from bridge import github
+    url = "https://github.com/acme/app/pull/31"
     calls = []
-    monkeypatch.setattr(github, "pr_checks", lambda url: calls.append(url) or "pass")
+    monkeypatch.setattr(github, "pr_checks",
+                        lambda u: calls.append(threading.current_thread()) or "pass")
     sid = _session()
-    _turn(sid, result="https://github.com/acme/app/pull/31")
+    _turn(sid, result=url)
+    assert rivendell._result_view(sid)["pr"]["checks"] is None, "not known yet; nobody waits on gh"
+    _wait_until(lambda: url in rivendell._checks_cache)
     assert rivendell._result_view(sid)["pr"]["checks"] == "pass"
-    assert rivendell._result_view(sid)["pr"]["checks"] == "pass"
-    assert calls == ["https://github.com/acme/app/pull/31"], "one `gh` call per TTL"
+    assert len(calls) == 1, "one `gh` call per TTL"
+    assert calls[0] is not threading.current_thread(), "gh ran off the request thread"
     monkeypatch.setattr(rivendell, "_CHECKS_TTL", 0)
-    rivendell._result_view(sid)
-    assert len(calls) == 2
+    assert rivendell._result_view(sid)["pr"]["checks"] == "pass", "stale: still served"
+    _wait_until(lambda: len(calls) == 2)
     assert "checks" not in rivendell._result_view(sid, checks=False)["pr"]
 
 
@@ -1091,3 +1099,20 @@ def test_a_batch_whose_question_nobody_answers_fails(monkeypatch):
     t.start()
     t.join(3)
     assert out and out[0][0] is False and out[0][1].startswith("nobody answered in")
+
+
+# --- Review: what a tab poll costs -----------------------------------------------
+
+def test_a_worker_whose_link_is_down_is_not_asked(workers):
+    """The listener is retrying, so its API is most likely down too, and a dead
+    host would hold every poll for the HTTP timeout: last known cards instead."""
+    w = _worker()
+    calls = []
+    w._api = lambda path, payload=None: calls.append(path) or _tasks("r-down")
+    workers["ch"] = w
+    rivendell.tasks("acme/app")                       # a good answer, remembered
+    w._set_status("error", "connection refused")
+    out = rivendell.tasks("acme/app")
+    assert len(calls) == 1, "not asked while its link is down"
+    assert [t["stale"] for t in out["tasks"]] == [True]
+    assert out["errors"][0]["error"] == "unreachable"

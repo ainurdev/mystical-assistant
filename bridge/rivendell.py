@@ -196,6 +196,8 @@ _TEST_TIMEOUT = 5.0       # seconds TEST LINK waits for its pong
 _PROGRESS_EVERY = 10.0    # at most one progress post per run this often (spec: ~10 s)
 _ACTIVITY = {"tool": "action", "thinking": "thought", "text": "response", "error": "error"}
 _checks_cache: "dict[str, tuple[float, str | None]]" = {}
+_checks_busy: "set[str]" = set()          # PR urls whose checks are being refreshed
+_checks_lock = threading.Lock()
 
 # WebSocket close codes the gateway uses to reject a bad/insufficient token (see
 # rivendell-api's AgentGateway: it accepts the upgrade, then closes).
@@ -1931,17 +1933,32 @@ def progress_body(job) -> dict:
 
 
 def _checks(url: str) -> "str | None":
-    """github.pr_checks, cached for _CHECKS_TTL: the tab polls every 10 s, and
-    each read is a `gh` call over the network.
+    """A PR's checks word (github.pr_checks) from the cache, never from `gh` on
+    the caller's thread: a tab poll or a result post must not wait on the
+    network. A missing or stale entry (_CHECKS_TTL) is refreshed on a thread
+    of its own, so the first read of a PR says None and a later poll has it.
     ponytail: a plain dict keyed by PR url, never pruned — a few entries per
     DONE card ever shown; an LRU if a bridge lives through months of PRs."""
+    with _checks_lock:
+        hit = _checks_cache.get(url)
+        stale = hit is None or time.monotonic() - hit[0] >= _CHECKS_TTL
+        if stale and url not in _checks_busy:
+            _checks_busy.add(url)
+            threading.Thread(target=_refresh_checks, args=(url,),
+                             name="rivendell-checks", daemon=True).start()
+    return hit[1] if hit else None
+
+
+def _refresh_checks(url: str) -> None:
     from bridge import github                    # local import: subprocess-heavy
-    hit = _checks_cache.get(url)
-    if hit and time.monotonic() - hit[0] < _CHECKS_TTL:
-        return hit[1]
-    state = github.pr_checks(url)
-    _checks_cache[url] = (time.monotonic(), state)
-    return state
+    try:
+        state = github.pr_checks(url)
+    except Exception as e:  # noqa: BLE001 — unknown until the next refresh
+        print(f"rivendell: checks for {url} failed: {e}")
+        state = None
+    with _checks_lock:
+        _checks_cache[url] = (time.monotonic(), state)
+        _checks_busy.discard(url)
 
 
 def _result_view(sid: str, checks: bool = True) -> "dict | None":
@@ -1992,7 +2009,9 @@ def tasks(slug: str) -> dict:
     exception — the rest still list — and its last good answer comes back
     marked `stale`, which the tab dims to "last known". A worker parked on a
     rejected token isn't asked: the tab polls, and re-sending a dead token
-    every few seconds is exactly the hammering _listen avoids."""
+    every few seconds is exactly the hammering _listen avoids. Nor is one whose
+    link is down (error, retrying): its API most likely is too, and a dead host
+    would hold every poll for the HTTP timeout."""
     with _manager_lock:
         running = list(_workers.values())
     out: dict = {"instances": len(running), "projects": [], "tasks": [], "errors": [],
@@ -2003,6 +2022,8 @@ def tasks(slug: str) -> dict:
         try:
             if w.status == "auth_error":
                 raise TasksError("token_rejected", w.status_detail or "token rejected")
+            if w.status == "error":
+                raise TasksError("unreachable", f"unreachable: {w.status_detail or 'link down'}")
             got = w._last_tasks[slug] = _ask(
                 w, "/plugin/tasks?repository=" + quote(slug, safe="/"))
         except TasksError as e:

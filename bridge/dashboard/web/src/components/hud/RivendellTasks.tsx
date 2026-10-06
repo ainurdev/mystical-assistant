@@ -55,9 +55,9 @@ export function RivendellTasks({ project, onOpenSession }: {
   const [testing, setTesting] = useState("");
   const [tested, setTested] = useState<Record<string, string>>({});
 
-  const load = useCallback(() => {
-    if (!project) return;
-    api.rivendellTasks(project)
+  const load = useCallback((): Promise<void> => {
+    if (!project) return Promise.resolve();
+    return api.rivendellTasks(project)
       .then((r) => {
         setData(r); setFail(null); setNow(new Date());
         // Once the list has shown a request, the list is the truth about it.
@@ -67,10 +67,14 @@ export function RivendellTasks({ project, onOpenSession }: {
       .catch((e: Error) => setFail(e.message));
   }, [project]);
 
+  // A chain, not an interval: the next poll is set when this one has answered,
+  // so a slow answer (a Rivendell that is slow to list) never stacks polls.
   useEffect(() => {
-    load();
-    const t = setInterval(load, POLL_MS);
-    return () => clearInterval(t);
+    let alive = true;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const tick = () => void load().finally(() => { if (alive) t = setTimeout(tick, POLL_MS); });
+    tick();
+    return () => { alive = false; clearTimeout(t); };
   }, [load]);
 
   const unbusy = (id: string) => setBusy((b) => { const n = new Set(b); n.delete(id); return n; });
