@@ -14,6 +14,7 @@ export interface Note {
   start: number;    // working-tree line numbers, inclusive
   end: number;
   code: string;     // line `start`'s text when the note was left: how SEND finds it again
+  prev?: string;    // the line above it then, when the diff showed it: a "}" alone is everywhere
   text: string;
   at: number;       // ms epoch
   lost?: boolean;   // set at SEND only: that line isn't in the file any more
@@ -55,29 +56,32 @@ export function countByPath(notes: Note[]): Record<string, number> {
 
 /** The lines a drag from row `a` to row `b` covers. Only rows in the working
  *  tree count: a deleted line or a hunk header has no number to cite. */
-export function noteRange(rows: DiffRow[], a: number, b: number): { start: number; end: number; code: string } | null {
+export function noteRange(rows: DiffRow[], a: number, b: number): { start: number; end: number; code: string; prev?: string } | null {
   const picked = rows.slice(Math.min(a, b), Math.max(a, b) + 1).filter((r) => r.ln !== "");
   if (!picked.length) return null;
-  return { start: Number(picked[0].ln), end: Number(picked[picked.length - 1].ln), code: picked[0].text };
+  const start = Number(picked[0].ln);
+  const prev = rows.find((r) => r.ln === String(start - 1))?.text;
+  return { start, end: Number(picked[picked.length - 1].ln), code: picked[0].text, ...(prev !== undefined ? { prev } : {}) };
 }
 
 /** "L45", or "L36–37" for a range (sheet A's thread header). */
 export const lineLabel = (start: number, end: number) => (start === end ? `L${start}` : `L${start}–${end}`);
 
 /** The note's lines in the file as it is now. The agent may have moved them
- *  since the note was left: the nearest line with the same text wins, and the
- *  range keeps its length. If the line is gone, the note is marked `lost`.
+ *  since the note was left: the nearest line with the same text, and the same
+ *  line above it when the note kept one, wins, and the range keeps its length.
+ *  Otherwise the note is marked `lost`, rather than pinned to some other "}".
  *  `lines` is null when the file can't be read (deleted, binary).
  *  A trailing "\r" is ignored on both sides: the bridge's git diff comes
  *  through a text-mode subprocess that drops it, and files/read keeps it. */
 export function reanchor(n: Note, lines: string[] | null): Note {
   if (!lines) return { ...n, lost: true };
-  const code = n.code.replace(/\r$/, "");
-  const same = (l: string | undefined) => l !== undefined && l.replace(/\r$/, "") === code;
-  if (same(lines[n.start - 1])) return n;
+  const bare = (l: string | undefined) => l?.replace(/\r$/, "");
+  const at = (i: number) => bare(lines[i]) === bare(n.code) && (n.prev === undefined || bare(lines[i - 1]) === bare(n.prev));
+  if (at(n.start - 1)) return n;
   let best = -1;
-  lines.forEach((l, i) => {
-    if (same(l) && (best < 0 || Math.abs(i + 1 - n.start) < Math.abs(best + 1 - n.start))) best = i;
+  lines.forEach((_, i) => {
+    if (at(i) && (best < 0 || Math.abs(i + 1 - n.start) < Math.abs(best + 1 - n.start))) best = i;
   });
   if (best < 0) return { ...n, lost: true };
   const d = best + 1 - n.start;

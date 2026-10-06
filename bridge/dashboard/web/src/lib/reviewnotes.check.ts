@@ -25,6 +25,7 @@ ok(r?.start === 32 && r?.end === 33 && r?.code === "  group() {", "a drag over a
 ok(noteRange(rows, 4, 3)?.start === 32, "dragging up gives the same range as dragging down");
 ok(noteRange(rows, 2, 2) === null && noteRange(rows, 0, 0) === null, "a deleted line or a hunk header alone takes no note");
 ok(lineLabel(45, 45) === "L45" && lineLabel(36, 37) === "L36–37", "thread headers read L45 and L36–37");
+ok(r?.prev === "  constructor() {}" && noteRange(rows, 1, 1)?.prev === undefined, "a note keeps the line above it, when the diff shows it");
 
 // --- SEND re-finds each line in the tree as it is now ------------------------
 const n = (o: Partial<Note>): Note => ({ id: "x", path: "s.ts", start: 32, end: 33, code: "  group() {", text: "t", at: 0, ...o });
@@ -48,6 +49,13 @@ ok(crow?.code === "b\r" && !reanchor(n({ start: 1, end: 1, code: crow!.code }), 
 ok(!reanchor(n({ start: 1, end: 1, code: "b" }), "b\r\nc\r\n".split("\n")).lost
   && reanchor(n({ start: 1, end: 1, code: "b" }), "x\r\nb\r\n".split("\n")).start === 2,
   "a CRLF line is found again when only the file read keeps its \\r");
+
+// A "}" is everywhere: the line above it has to come along, or it isn't the same line.
+const brace = n({ start: 3, end: 3, code: "}", prev: "  return a;" });
+ok(reanchor(brace, ["function b() {", "  return b;", "}", "function a() {", "  return a;", "}"]).start === 6,
+  "a moved } is found by its neighbour, not by the first } at its old number");
+ok(reanchor(brace, ["x", "y", "}", "z", "}"]).lost === true, "a } whose neighbour is gone is lost, not moved to another }");
+ok(reanchor(n({ start: 2, end: 2, code: "b", prev: "a\r" }), ["a", "b"]).start === 2, "the neighbour ignores a trailing \\r too");
 
 // --- the message (sheet A) ---------------------------------------------------
 const msg = notesMessage("feat/inbox-grouping", [
