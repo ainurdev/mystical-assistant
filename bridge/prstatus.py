@@ -283,7 +283,9 @@ def _review_comments(slug: str, number: int, review: dict) -> "list[dict]":
 
 def fetch(slug: str, branch: str) -> "tuple[dict | None, int]":
     """Returns (pr, how long to trust the answer). A None pr means no chip."""
-    rc, out, err = _gh("pr", "view", branch, "-R", slug, "--json", FIELDS)
+    # `--` first: a local branch can be named "--web", and gh reads it as a
+    # branch after `--` (checked with gh 2.92).
+    rc, out, err = _gh("pr", "view", "-R", slug, "--json", FIELDS, "--", branch)
     if rc != 0:
         # "no pull requests found" is an answer. Anything else (signed out,
         # rate-limited, offline, gh missing) means gh doesn't know, so back off.
@@ -334,12 +336,12 @@ def _read(repo_dir: str, branch: str, session: str, old: "dict | None") -> dict:
     now = time.time()
     slug = github.remote_slug(repo_dir) if branch else None
     # PRs land on the default branch. They don't come from it. And gh pr view
-    # reads "59" (or "#59") as PR number 59, not as a branch.
+    # reads "59" (or "#59", "+59") as PR number 59, not as a branch.
     # ponytail: an all-digit branch gets no chip. `gh pr list --head` if one matters.
     # Only the repo's own branches reach gh at all: `branch` comes from a GET any
     # page can fire (Host-gated, not token-gated), and gh would read "--web" as a
     # flag and another repo's PR url as the PR (the same rule as /local/git/diff).
-    if (not slug or branch.lstrip("#").isdigit() or branch == git.default_branch(repo_dir)
+    if (not slug or re.fullmatch(r"#?\+?\d+", branch) or branch == git.default_branch(repo_dir)
             or branch not in git.branches(repo_dir)):
         return {"at": now, "ttl": TTL, "pr": None, "pinged": []}
     pr, ttl = fetch(slug, branch)

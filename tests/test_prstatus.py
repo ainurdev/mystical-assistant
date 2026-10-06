@@ -216,7 +216,8 @@ def sent(monkeypatch):
     monkeypatch.setattr(prstatus.github, "remote_slug", lambda d: "acme/rivendell")
     monkeypatch.setattr(prstatus.git, "default_branch", lambda d: "main")
     monkeypatch.setattr(prstatus.git, "branches", lambda d: [
-        "main", "feat/x", "feat/share", "feat/blip", "feat/ping", "feat/tg-down", "59", "#59"])
+        "main", "feat/x", "feat/share", "feat/blip", "feat/ping", "feat/tg-down", "59", "#59",
+        "+59", "--web"])
     monkeypatch.setattr(prstatus, "_spawn", lambda fn, *a: fn(*a))
     monkeypatch.setattr(prstatus.config, "NOTIFY_ENABLE", True)
     monkeypatch.setattr(prstatus.config, "DASH_CHAT_ID", 555)
@@ -357,7 +358,15 @@ def test_an_all_digit_branch_gets_no_chip_rather_than_pr_number_59(monkeypatch):
     calls = _fake_gh(monkeypatch, [])
     assert prstatus.snapshot("/r", "59")["pr"] is None
     assert prstatus.snapshot("/r", "#59")["pr"] is None
+    assert prstatus.snapshot("/r", "+59")["pr"] is None       # gh reads "+59" as 59 too
     assert calls == []
+
+
+def test_the_branch_goes_to_gh_after_a_double_dash(monkeypatch):
+    """A local branch can be called "--web"; after `--` gh reads it as a branch."""
+    calls = _fake_gh(monkeypatch, [(("pr", "view"), (1, "", 'no pull requests found for branch "--web"'))])
+    assert prstatus.snapshot("/r", "--web")["pr"] is None
+    assert calls == [("pr", "view", "-R", "acme/rivendell", "--json", prstatus.FIELDS, "--", "--web")]
 
 
 def test_telegram_failing_never_breaks_the_read(monkeypatch):
@@ -380,6 +389,6 @@ def test_only_a_local_branch_reaches_gh(monkeypatch):
     branches is handed to gh: not a flag (`--web` opens a browser), not
     another repo's PR url, not a branch that isn't here."""
     calls = _fake_gh(monkeypatch, [])
-    for branch in ("--web", "https://github.com/evil/repo/pull/1", "feat/not-here"):
+    for branch in ("--help", "https://github.com/evil/repo/pull/1", "feat/not-here"):
         assert prstatus.snapshot("/r", branch)["pr"] is None
     assert calls == []
