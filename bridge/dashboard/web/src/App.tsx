@@ -1973,6 +1973,18 @@ export function App() {
     if (sessionId) setSessionToolsFor(sessionId, rules);
   };
 
+  // MERGED ▸ ARCHIVE SESSION (PrChip). Unlike setLifecycle this keeps the
+  // chat on the session: the popover's REMOVE WORKTREE is the other half of
+  // the cleanup, and loadSessions keeps the open session listed until you
+  // leave it.
+  async function archiveOpen(id: string) {
+    try {
+      await api.archiveSession(id);
+      await loadSessions();
+      notify("info", "Archived. HISTORY keeps it.");
+    } catch (e) { notify("error", (e as Error).message); }
+  }
+
   async function setLifecycle(id: string, state: Lifecycle | null) {
     try {
       await api.setLifecycle(id, state);
@@ -2093,6 +2105,11 @@ export function App() {
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}
+                // PR chip: SEND FAILURE / SEND n COMMENTS go to this session, queued
+                // behind a running turn. force skips the relevance hold: the PR
+                // is this session's own work.
+                onSendText={(text) => void send(text, [], { force: true })}
+                onArchive={() => { if (sessionId) void archiveOpen(sessionId); }}
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={settings.rightOpen ? undefined : strip}
