@@ -609,6 +609,10 @@ class Job:
         # The latest TodoWrite list, so a clip can be shown against the plan it
         # is evidence for. Last write wins: that is what the plan *is*.
         self.todos: list = []
+        # The plan as the task tools keep it — what claude 2.1.280 -p offers
+        # instead of TodoWrite: task id -> its latest status (TaskCreate's result
+        # names the id, TaskUpdate moves it). The RIVENDELL card's todo bar.
+        self.task_status: dict[str, str] = {}
         # tool_use id -> {notes, resolves} from a Record/Attach call, held until
         # its result comes back with the file.
         self.clip_meta: dict[str, dict] = {}
@@ -1414,7 +1418,8 @@ def _handle_control_request(job: Job, obj: dict):
     if tool == "AskUserQuestion":
         questions = (req.get("input") or {}).get("questions", [])
         job.add_pending({"request_id": rid, "kind": "question",
-                         "tool_name": tool, "questions": questions})
+                         "tool_name": tool, "questions": questions,
+                         "at": time.time()})    # since when: the card's "ASKS · 3m ago"
         job.add({"type": "question", "request_id": rid, "questions": questions})
     else:
         summary = _summarize_tool(tool, req.get("input", {}))
@@ -1585,6 +1590,10 @@ def _handle_event(job: Job, d: dict):
                     _note_work_cwd(job, inp.get("command") or "")
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
+                elif name == "TaskUpdate" and inp.get("taskId"):
+                    tid = str(inp["taskId"])
+                    job.task_status[tid] = str(inp.get("status")
+                                               or job.task_status.get(tid, "pending"))
                 elif name.endswith(("__Record", "__Attach")):
                     job.clip_meta[b.get("id")] = _clip_meta(job, inp)
                 job.open_tools[b.get("id")] = (name, time.time())
@@ -1598,6 +1607,10 @@ def _handle_event(job: Job, d: dict):
             if isinstance(b, dict) and b.get("type") == "tool_result":
                 rid = b.get("tool_use_id")
                 name, t0 = job.open_tools.pop(rid, (None, 0.0))
+                made = d.get("tool_use_result") if name == "TaskCreate" else None
+                if (isinstance(made, dict) and isinstance(made.get("task"), dict)
+                        and made["task"].get("id")):
+                    job.task_status.setdefault(str(made["task"]["id"]), "pending")
                 ms = int((time.time() - t0) * 1000) if t0 else 0
                 ev = transcript_jsonl.tool_done(
                     rid, name, ms, b, d.get("tool_use_result"))

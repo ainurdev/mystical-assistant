@@ -1057,6 +1057,25 @@ def turn_metrics(session_id: str) -> list[dict]:
             (session_id,)).fetchall()]
 
 
+def last_turn(session_id: str) -> "dict | None":
+    """A session's newest turn and how it ended: `result`, the text of its last
+    result event ("" when none came), and `outcome` (bridge/outcomes.py) when it
+    failed. For a readout that wants one run's ending without paying for its
+    whole transcript — a RIVENDELL card reads it on every poll."""
+    with closing(_connect()) as c:
+        t = _row(c.execute("SELECT * FROM turns WHERE session_id=? ORDER BY seq DESC LIMIT 1",
+                           (session_id,)).fetchone())
+        if t is None:
+            return None
+        r = c.execute("SELECT payload FROM events WHERE session_id=? AND turn_id=? "
+                      "AND type='result' ORDER BY seq DESC LIMIT 1",
+                      (session_id, t["id"])).fetchone()
+        sig = _outcome_signals(c, session_id, {t["id"]}) if t["status"] == "error" else {}
+    t["result"] = str(json.loads(r["payload"]).get("result") or "") if r else ""
+    t["outcome"] = outcomes.outcome(t, sig[t["id"]]) if sig else None
+    return t
+
+
 def timed_events(session_id: str) -> list[dict]:
     """Every event that carries a duration, with the ts it ended at: `tool` (to
     name a call), `tool_done` (ms) and `thinking` (ms). The rows a wall-clock

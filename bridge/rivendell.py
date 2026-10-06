@@ -145,8 +145,9 @@ the bottom). It lists a repo's open tasks, and IMPLEMENT only asks Rivendell to
 create the request. The run itself comes back over the socket like any other.
 Every run is filed under its request (store sessions.ref, written by _track),
 so a card still opens the session of a run that has ended, after a restart
-too. The channel around it — link state, run views, NEEDS YOU — is
-docs/superpowers/specs/rivendell-channel.md.
+too. A card's run view (live_view / _result_view) is read off the live job
+and the store; nothing asks Rivendell. The channel around it — link state,
+run views, NEEDS YOU — is docs/superpowers/specs/rivendell-channel.md.
 """
 
 import base64
@@ -1520,12 +1521,75 @@ def _ask(w: Worker, path: str, payload: "dict | None" = None):
         raise _explain(e) from None
 
 
+def live_view(job) -> dict:
+    """A live run, read off its job (pure: no I/O). `live` is what it is doing
+    now — the jobs monitor's own label (Job.activity) —, its todo progress and
+    how many steps (tool calls) it has taken; `ask` is the question it is held
+    on, or None. Todo progress counts the task tools (claude 2.1.280's -p mode
+    has no TodoWrite) and falls back to a TodoWrite list. `ask.simple` marks one
+    single-choice question, the only kind whose options can be buttons; a
+    richer one is answered in the session's own card."""
+    act = job.activity()
+    plan = [s for s in list(job.task_status.values()) if s != "deleted"] or [
+        t.get("status") for t in job.todos if isinstance(t, dict)]
+    ask = None
+    for p in list(job.pending):
+        qs = p.get("questions") or []
+        if p.get("kind") == "question" and qs:
+            q = qs[0]
+            ask = {"job_id": job.id, "request_id": p["request_id"], "at": p.get("at"),
+                   "question": q.get("question") or "",
+                   "header": q.get("header") or q.get("question") or "",
+                   "options": [o["label"] for o in q.get("options") or []
+                               if isinstance(o, dict) and o.get("label")],
+                   "simple": len(qs) == 1 and not q.get("multiSelect")}
+            break
+    return {"live": {"line": act["label"], "steps": act["tools"],
+                     "todos": ({"done": plan.count("completed"), "total": len(plan)}
+                               if plan else None)},
+            "ask": ask}
+
+
+def _result_view(sid: str) -> "dict | None":
+    """What a finished run came to, read off its session: wall time and token
+    spend over its turns (tokens in counts cache reads and writes, as SPEND
+    does), the PR its closing summary names (Rivendell's prompts ask for the
+    link), and — when its last turn failed — the outcome the transcript shows
+    (bridge/outcomes.py). None for a session with no turns."""
+    from bridge import github, store             # local import: heavy modules
+    last = store.last_turn(sid)
+    if last is None:
+        return None
+    rows = store.turn_metrics(sid)
+    tin = sum((r.get("tok_in") or 0) + (r.get("tok_cache_w") or 0) + (r.get("tok_cache_r") or 0)
+              for r in rows)
+    tout = sum(r.get("tok_out") or 0 for r in rows)
+    return {"wall_s": sum(r.get("elapsed") or 0 for r in rows),
+            "tokens": {"in": tin, "out": tout} if tin or tout else None,
+            "pr": github.pr_ref(last["result"]), "outcome": last["outcome"]}
+
+
+def _run_view(sid: str) -> dict:
+    """What this bridge knows about the run in session `sid`, for its card:
+    while it runs, `live` and `ask` (live_view); once over, `result`. Read off
+    the live job and the store — nothing here asks Rivendell. Best-effort: a
+    card without its extra line beats a tab that fails to list."""
+    from bridge import runner                    # local import: heavy module
+    try:
+        job = runner.live_job(sid)
+        return live_view(job) if job is not None else {"result": _result_view(sid)}
+    except Exception as e:  # noqa: BLE001
+        print(f"rivendell: run view for {sid} failed: {e}")
+        return {}
+
+
 def tasks(slug: str) -> dict:
     """Open tasks of the Rivendell projects that link the repo `slug`, from
     every running instance, merged. Each project and task is tagged with its
     instance (IMPLEMENT goes back to the same one); a task whose request ran
     here carries the session that ran it (filed by _track, so it outlives the
-    run and a restart). A failing instance is one entry in
+    run and a restart), and `run`, what this bridge knows about that run
+    (_run_view). A failing instance is one entry in
     `errors`, never an exception — the rest still list. A worker parked on a
     rejected token isn't asked: the tab polls, and re-sending a dead token every
     few seconds is exactly the hammering _listen avoids."""
@@ -1552,9 +1616,9 @@ def tasks(slug: str) -> dict:
             refs = {}
         for t in rows:
             rid = (t.get("implementation") or {}).get("id")
-            out["tasks"].append({**t, "instance_id": w.id,
-                                 "session_id": (w._running.get(rid) or {}).get("session_id")
-                                 or refs.get(f"{w.id}:{rid}")})
+            sid = (w._running.get(rid) or {}).get("session_id") or refs.get(f"{w.id}:{rid}")
+            out["tasks"].append({**t, "instance_id": w.id, "session_id": sid,
+                                 "run": _run_view(sid) if sid else None})
     return out
 
 

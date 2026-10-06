@@ -218,3 +218,141 @@ def test_live_job_is_the_sessions_running_job(jobs):
     assert runner.live_job("sess-other") is None
     job.status = "done"
     assert runner.live_job("sess-live") is None
+
+
+# --- Task 3: what a card knows about its run -----------------------------------
+
+class _Stdin:
+    def __init__(self):
+        self.lines = []
+
+    def write(self, s):
+        self.lines.append(s)
+
+    def flush(self):
+        pass
+
+
+class _Proc:
+    """Enough of a Popen for Job.respond: a stdin to answer on, and alive."""
+
+    def __init__(self):
+        self.stdin = _Stdin()
+
+    def poll(self):
+        return None
+
+
+def _use(tid, name, inp):
+    return {"type": "assistant",
+            "message": {"content": [{"type": "tool_use", "id": tid, "name": name, "input": inp}]}}
+
+
+def _tool_result(tid, tool_use_result):
+    return {"type": "user", "tool_use_result": tool_use_result,
+            "message": {"content": [{"type": "tool_result", "tool_use_id": tid,
+                                     "content": [{"type": "text", "text": "ok"}]}]}}
+
+
+COLOUR = [{"question": "Items with no meeting: group them under “No client”, or leave them out?",
+           "header": "No meeting", "multiSelect": False,
+           "options": [{"label": "Under “No client”", "description": ""},
+                       {"label": "Leave them out", "description": ""}]}]
+
+
+def _held_job(questions=COLOUR, sid=None):
+    """A job held on an AskUserQuestion, as runner._handle_control_request leaves it."""
+    j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID, sid)
+    j.proc = _Proc()
+    runner._handle_control_request(j, {"request_id": "q1", "request": {
+        "subtype": "can_use_tool", "tool_name": "AskUserQuestion",
+        "input": {"questions": questions}}})
+    return j
+
+
+def test_the_task_tools_are_the_runs_todo_list():
+    """claude 2.1.280 offers no TodoWrite in -p mode; a run plans with
+    TaskCreate/TaskUpdate (shapes captured from the CLI on 2026-10-06)."""
+    j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID)
+    runner._handle_event(j, _use("u1", "TaskCreate", {"subject": "alpha", "description": "a"}))
+    runner._handle_event(j, _tool_result("u1", {"task": {"id": "1", "subject": "alpha"}}))
+    runner._handle_event(j, _use("u2", "TaskCreate", {"subject": "beta", "description": "b"}))
+    runner._handle_event(j, _tool_result("u2", {"task": {"id": "2", "subject": "beta"}}))
+    runner._handle_event(j, _use("u3", "TaskUpdate", {"taskId": "1", "status": "in_progress"}))
+    runner._handle_event(j, _use("u4", "TaskUpdate", {"taskId": "1", "status": "completed"}))
+    assert j.task_status == {"1": "completed", "2": "pending"}
+    assert rivendell.live_view(j)["live"]["todos"] == {"done": 1, "total": 2}
+
+
+def test_a_deleted_task_leaves_the_count():
+    j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID)
+    j.task_status = {"1": "completed", "2": "deleted", "3": "in_progress"}
+    assert rivendell.live_view(j)["live"]["todos"] == {"done": 1, "total": 2}
+
+
+def test_a_todowrite_list_still_counts():
+    j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID)
+    j.todos = [{"content": "a", "status": "completed"}, {"content": "b", "status": "pending"}]
+    assert rivendell.live_view(j)["live"]["todos"] == {"done": 1, "total": 2}
+
+
+def test_live_view_names_the_latest_action_and_counts_steps():
+    j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID)
+    runner._handle_event(j, _use("u1", "Read", {"file_path": "a.ts"}))
+    runner._handle_event(j, _use("u2", "Edit", {"file_path": "frontend/src/routes/tasks/$id.tsx"}))
+    v = rivendell.live_view(j)
+    assert v["live"] == {"line": "Edit: frontend/src/routes/tasks/$id.tsx", "steps": 2, "todos": None}
+    assert v["ask"] is None
+
+
+def test_live_view_carries_the_question_a_run_is_held_on():
+    j = _held_job()
+    ask = rivendell.live_view(j)["ask"]
+    assert (ask["job_id"], ask["request_id"], ask["header"], ask["simple"]) == (
+        j.id, "q1", "No meeting", True)
+    assert ask["options"] == ["Under “No client”", "Leave them out"]
+    assert ask["question"] == COLOUR[0]["question"] and ask["at"] > 0
+
+
+def test_a_richer_question_is_not_buttons():
+    two = COLOUR + [{"question": "And the rest?", "header": "Rest", "options": [{"label": "x"}]}]
+    assert rivendell.live_view(_held_job(two))["ask"]["simple"] is False
+    assert rivendell.live_view(_held_job([{**COLOUR[0], "multiSelect": True}]))["ask"]["simple"] is False
+
+
+def test_result_view_reads_the_pr_time_and_tokens_off_the_session():
+    sid = _session()
+    _turn(sid, elapsed=2280,
+          result="Branch feat/x. PR: https://github.com/acme/app/pull/128 — opened.",
+          tokens={"in": 1000, "out": 200, "cache_w": 500, "cache_r": 1_000_000})
+    v = rivendell._result_view(sid)
+    assert (v["pr"]["number"], v["pr"]["url"]) == (128, "https://github.com/acme/app/pull/128")
+    assert v["wall_s"] == 2280 and v["tokens"] == {"in": 1_001_500, "out": 200}
+    assert v["outcome"] is None
+
+
+def test_result_view_names_a_failed_runs_outcome():
+    sid = _session()
+    _turn(sid, status="error", elapsed=1260, error="⏱️ No output for 30 min — killed as hung.")
+    assert rivendell._result_view(sid)["outcome"]["label"] == "KILLED AS HUNG"
+
+
+def test_a_session_with_no_turns_has_no_result():
+    assert rivendell._result_view(_session()) is None
+
+
+def test_tasks_carry_each_runs_view(workers, jobs):
+    done = _session()
+    store.set_ref(done, "ch:r-view-done")
+    _turn(done, result="https://github.com/acme/app/pull/7")
+    live = _session()
+    store.set_ref(live, "ch:r-view-live")
+    j = _held_job(sid=live)
+    runner._register(j)
+    jobs.append(j)
+    w = _worker()
+    w._api = _answering(_tasks("r-view-done", "r-view-live"))
+    workers["ch"] = w
+    by_rid = {t["implementation"]["id"]: t for t in rivendell.tasks("acme/app")["tasks"]}
+    assert by_rid["r-view-done"]["run"]["result"]["pr"]["number"] == 7
+    assert by_rid["r-view-live"]["run"]["ask"]["request_id"] == "q1"

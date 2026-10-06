@@ -124,6 +124,14 @@ def create_issue(cwd: str, title: str, body: str) -> tuple[bool, str]:
 _PR_URL_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/pull/(\d+)")
 
 
+def pr_ref(text: str) -> "dict | None":
+    """The first pull request URL in `text`, as {number, url}: how a run's
+    closing summary names the PR it opened (Rivendell's prompts ask for the
+    link). None when it names none."""
+    m = _PR_URL_RE.search(text or "")
+    return {"number": int(m.group(1)), "url": m.group(0)} if m else None
+
+
 def create_pr(cwd: str, head: str, base: str, title: str,
               body: str = "") -> tuple[bool, dict]:
     """Push `head` and open a PR into `base`. Returns (ok, {url, number, output})."""
