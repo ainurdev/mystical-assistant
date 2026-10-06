@@ -1142,3 +1142,20 @@ def test_a_stopped_worker_keeps_its_off_state(quiet):
     time.sleep(0.05)
     assert (w.status, w.down_since, w.alert_at) == ("off", None, None)
     assert _alerts(quiet) == []
+
+
+def test_send_test_job_is_only_for_a_live_rivendell_that_speaks_ping(workers):
+    """A {job: true} for a Rivendell that never said "ping" (today's), or whose
+    link is down, gets TEST LINK: never a route it may not have."""
+    w = _worker()
+    calls = []
+    w._api = lambda path, payload=None: calls.append(path) or {"id": "p", "ok": True}
+    w._set_status("error", "connection refused")
+    workers["ch"] = w
+    res = rivendell.test_link("ch", job=True)
+    assert calls == [] and "via" not in res and res["detail"] == "connection refused"
+    w.features = frozenset({"ping"})
+    assert "via" not in rivendell.test_link("ch", job=True) and calls == [], "speaks ping, link down"
+    w._set_status("connected", "wss://rv/agent")
+    assert rivendell.test_link("ch", job=True)["via"] == "job"
+    assert calls == ["/plugin/ping-requests"]

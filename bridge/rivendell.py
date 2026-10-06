@@ -1756,13 +1756,17 @@ def running() -> list:
 
 
 def test_link(instance_id: str, job: bool = False) -> "dict | None":
-    """TEST LINK (Worker.test_link), or with `job` SEND TEST JOB (Worker.test_job).
-    None when the instance has no running worker (switched off or removed)."""
+    """TEST LINK (Worker.test_link), or with `job` SEND TEST JOB (Worker.test_job)
+    — only on a live link whose Rivendell said "ping"; anything else gets TEST
+    LINK, so a route Rivendell may not have is never called. None when the
+    instance has no running worker (switched off or removed)."""
     with _manager_lock:
         w = _workers.get(instance_id)
     if w is None:
         return None
-    return w.test_job() if job else w.test_link()
+    if job and "ping" in w.features and w.status == "connected":
+        return w.test_job()
+    return w.test_link()
 
 
 # --- Telegram callback tokens -------------------------------------------------
