@@ -102,21 +102,24 @@ SETTINGS = (
     {"key": "NEW_SESSION_PERMISSION_MODE", "type": "enum", "live": True,
      "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
      "group": "RUNS", "label": "NEW SESSION MODE", "hint": "permission mode a dashboard/Mini App session is created with",
-     "about": "Persisted on the session, so continuing it from any surface keeps the "
-              "posture. 'bypassPermissions' is full autonomy: anything that can inject "
-              "a prompt then runs commands as you. 'default' surfaces Allow/Deny "
-              "cards; 'plan' plans without editing; 'dontAsk' never prompts and denies "
-              "anything not pre-approved. A per-message pick still overrides one run."},
+     "about": "Persisted on the session, so continuing it from any surface — the bot "
+              "chat included — keeps the posture, until a pick in a composer changes "
+              "the session's mode. 'bypassPermissions' is full autonomy: anything "
+              "that can inject a prompt then runs commands as you. 'default' surfaces "
+              "Allow/Deny cards; 'plan' plans without editing; 'dontAsk' never "
+              "prompts and denies anything not pre-approved."},
     {"key": "MINIAPP_PERMISSION_MODE", "type": "enum", "live": True,
      "choices": ("plan", "default", "dontAsk", "acceptEdits", "auto", "bypassPermissions"),
-     "group": "RUNS", "label": "FALLBACK MODE", "hint": "used when a run requests no mode of its own",
-     "about": "The chat clients normally send a mode per message; this is what a run "
-              "that sends none gets. 'auto' lets Claude's own classifier decide."},
+     "group": "RUNS", "label": "FALLBACK MODE", "hint": "used when neither a run nor its session has a mode",
+     "about": "A run takes the mode it was sent with, else its session's; this is what "
+              "it gets when neither has one (a session the bot started, before any "
+              "pick). 'auto' lets Claude's own classifier decide."},
     {"key": "EXTRA_CLAUDE_ARGS", "type": "str", "live": True,
      "group": "RUNS", "label": "BOT CLI ARGS", "hint": "flags for the plain-text Telegram path",
      "placeholder": "--permission-mode acceptEdits",
-     "about": "Only the bot's `claude -p` path uses these; dashboard and Mini App "
-              "sessions take NEW SESSION MODE instead. "
+     "about": "Only the bot's `claude -p` path uses these. When the session it continues "
+              "has a mode (one started or picked in the dashboard or Mini App), that "
+              "mode replaces the permission flag here; the other flags still apply. "
               "'--dangerously-skip-permissions' is full autonomy — set it only with "
               "ALLOWED CHAT IDS locked down."},
     {"key": "CLAUDE_BIN", "type": "str", "live": True,

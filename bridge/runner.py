@@ -313,6 +313,24 @@ def _external_mcp(disabled_tools: "list[str] | None",
     return extra, strict
 
 
+def _with_mode(args: list[str], mode: "str | None") -> list[str]:
+    """`args` (EXTRA_CLAUDE_ARGS) with `mode` in place of the permission flags
+    they carry: --permission-mode in either spelling, and the
+    --dangerously-skip-permissions that is Bypass by another name. No mode:
+    unchanged."""
+    if not mode:
+        return args
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif a == "--permission-mode":
+            skip = True                  # and its value
+        elif not (a.startswith("--permission-mode=") or a == "--dangerously-skip-permissions"):
+            out.append(a)
+    return out + ["--permission-mode", mode]
+
+
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
@@ -326,8 +344,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     protocol: the prompt is delivered on stdin (not as an arg), permissions are
     routed back to us via `--permission-prompt-tool stdio`, and we run in an
     asking permission mode so tool use surfaces Allow/Deny cards. The bot's
-    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS, unless its
-    session carries a mode (handle_task).
+    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS — with its
+    session's mode, when it carries one, in place of their permission flag
+    (handle_task, _with_mode).
 
     model/effort (interactive only) map to `--model`/`--effort`; the server
     validates them before they reach here.
@@ -409,14 +428,17 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # free, since --tools "" already denies their tools, and it takes ~0.9s
         # off each one-shot (5.33s -> 4.45s, mean of 3). Several run per turn.
         cmd += ["--tools", "", "--strict-mcp-config"]
-    elif not interactive and permission_mode:
-        # A one-shot with a mode of its own instead of EXTRA_CLAUDE_ARGS: the
-        # next-up scout's 'plan' (read tools stay, editing and shell go), or the
-        # bot chat running its session's mode (handle_task). No MCP, for the same
-        # second it saves above; the bot path never had any (see below).
+    elif not interactive and permission_mode and skip_pack:
+        # An internal one-shot that must *read* the repo (the next-up scout).
+        # Its own permission mode instead of EXTRA_CLAUDE_ARGS: 'plan' leaves the
+        # read tools available and takes editing and shell off the table. Still an
+        # internal one-shot, so it skips MCP for the same second it saves above.
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
-    elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
-        cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
+    elif not interactive:
+        # The bot chat: EXTRA_CLAUDE_ARGS, with its session's mode, when it has
+        # one (handle_task), in place of the permission flag those carry; the
+        # rest (--add-dir, --allowedTools...) is still the user's.
+        cmd += _with_mode(shlex.split(config.EXTRA_CLAUDE_ARGS), permission_mode)
     if disabled_tools is None and "--strict-mcp-config" not in cmd:
         # No per-session choice on this run (a Telegram one-shot, a sessionless
         # job): same answer a never-configured session gets above — no external

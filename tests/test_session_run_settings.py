@@ -433,8 +433,9 @@ def test_a_refused_control_request_leaves_an_error_row():
 
 # --- the bot chat ------------------------------------------------------------------
 
-def _bot_argv(monkeypatch, sid):
-    """The claude argv handle_task builds for `sid`, Telegram and side calls stubbed."""
+def _bot_argv(monkeypatch, sid, extra="--permission-mode acceptEdits"):
+    """The claude argv handle_task builds for `sid`, Telegram and side calls
+    stubbed; `extra` is EXTRA_CLAUDE_ARGS."""
     from bridge import learn, titler
     seen = {}
 
@@ -448,7 +449,7 @@ def _bot_argv(monkeypatch, sid):
         monkeypatch.setattr(runner, name, lambda *a, **k: "")
     monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
     monkeypatch.setattr(learn, "kick", lambda *a, **k: None)
-    monkeypatch.setattr(config, "EXTRA_CLAUDE_ARGS", "--permission-mode acceptEdits")
+    monkeypatch.setattr(config, "EXTRA_CLAUDE_ARGS", extra)
     runner.handle_task(CHAT, "hi", store.get_session(sid))
     return seen["cmd"]
 
@@ -463,6 +464,21 @@ def test_the_bot_chat_runs_the_sessions_model_and_mode(monkeypatch):
     assert "acceptEdits" not in cmd
     # Its turn row says what it ran on, as a streaming turn's does.
     assert store.transcript(s["id"])["turns"][-1]["model"] == "claude-fable-5-1"
+
+
+def test_a_sessions_mode_replaces_only_the_permission_flag(monkeypatch):
+    """The rest of EXTRA_CLAUDE_ARGS (--add-dir, --allowedTools...) is still the
+    bot chat's; only the flags that set a permission mode give way."""
+    s = store.create_session(CHAT, "/srs-bot-args", origin="dashboard",
+                             permission_mode="plan")
+    cmd = _bot_argv(monkeypatch, s["id"], extra=(
+        "--dangerously-skip-permissions --add-dir /srv/data "
+        "--permission-mode=acceptEdits --allowedTools Read --permission-mode auto"))
+    assert "--dangerously-skip-permissions" not in cmd
+    assert [a for a in cmd if a.startswith("--permission-mode")] == ["--permission-mode"]
+    assert cmd[cmd.index("--permission-mode") + 1] == "plan"
+    i, j = cmd.index("--add-dir"), cmd.index("--allowedTools")
+    assert cmd[i + 1] == "/srv/data" and cmd[j + 1] == "Read"
 
 
 def test_a_session_the_bot_started_keeps_extra_claude_args(monkeypatch):
