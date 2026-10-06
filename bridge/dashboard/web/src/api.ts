@@ -389,6 +389,7 @@ export interface RivendellStatus {
   attempt?: number;                  // failed dials in a row
   retry_at?: number | null;          // epoch seconds of the next dial
   last_test?: RivendellTest | null;  // TEST LINK's last outcome
+  features?: string[];   // what its hello said it understands (progress, result-details, ping)
 }
 export interface RivendellInstance {
   id: string;

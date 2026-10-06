@@ -731,3 +731,39 @@ def test_a_rivendell_session_skips_the_generic_turn_pings(monkeypatch):
     assert notes == []
     runner.notify_turn_done(config.DASH_CHAT_ID, _session(origin="dashboard"), False)
     assert len(notes) == 1
+
+
+# --- Task 13: capability negotiation ---------------------------------------------
+
+def test_hello_names_what_this_rivendell_understands():
+    w = _worker()
+    assert w._handle_message(json.dumps(
+        {"type": "hello", "features": ["progress", "ping"]}).encode()) is None
+    assert w.features == frozenset({"progress", "ping"})
+    assert w.status_snapshot()["features"] == ["ping", "progress"]
+
+
+def test_a_rivendell_that_says_nothing_gets_nothing_new():
+    """The deployed Rivendell sends no hello: features stay empty, and every
+    Part 2 sender checks them (progress, result details, test jobs)."""
+    assert _worker().features == frozenset()
+
+
+def test_each_connection_starts_without_features(monkeypatch):
+    server, client = socket.socketpair()
+    w = _worker()
+    w.features = frozenset({"progress"})              # what the last connection said
+    monkeypatch.setattr(w, "_connect", lambda: (client, client.makefile("rb")))
+    monkeypatch.setattr(w, "_catch_up", lambda: 0)
+    t = threading.Thread(target=w._listen, daemon=True)
+    t.start()
+    try:
+        _wait_until(lambda: w.status == "connected")
+        assert w.features == frozenset()
+        server.sendall(wsutil.encode_frame(
+            json.dumps({"type": "hello", "features": ["ping"]}).encode(), wsutil.OP_TEXT))
+        _wait_until(lambda: w.features == frozenset({"ping"}))
+    finally:
+        w.stop()
+        t.join(2)
+        server.close()

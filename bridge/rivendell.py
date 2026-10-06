@@ -134,6 +134,13 @@ reconfigure nudges the paused listener (self._wake) when the config, and thus
 possibly the token, is edited. Every other error keeps the reconnect-forever
 backoff.
 
+The contract beyond jobs is negotiated: on each connection Rivendell may send
+{"type": "hello", "features": [...]} first, and the bridge sends something new —
+progress, result details, test jobs — only for a feature named there (features
+reset per connection). The deployed Rivendell sends no hello and 400s unknown
+result fields (forbidNonWhitelisted), so it keeps getting exactly today's
+traffic. Frames from Rivendell this bridge doesn't know are ignored, as ever.
+
 A broken link is a *break*: it opens at the first failure, ends only when the
 link proves itself (a frame arrives, or a quiet interval passes with no close —
 _recovered), and is flagged once: one Telegram message, plus alert_at on the
@@ -323,6 +330,11 @@ class Worker:
         self._pongs: "dict[bytes, threading.Event]" = {}
         self._send_lock = threading.Lock()
         self.last_test: "dict | None" = None
+        # What this connection's Rivendell said it understands, in its hello
+        # (docs/superpowers/specs/rivendell-channel.md, Contract). Empty until it
+        # does; the deployed API sends no hello, so it stays empty and gets
+        # exactly today's traffic.
+        self.features: frozenset = frozenset()
 
     def _set_status(self, state: str, detail: str = "") -> None:
         self.status = state
@@ -363,6 +375,7 @@ class Worker:
             "attempt": self.attempt,            # failed dials in a row
             "retry_at": self.retry_at,          # when the next dial starts
             "last_test": self.last_test,
+            "features": sorted(self.features),
         }
 
     def _recovered(self) -> None:
@@ -753,6 +766,10 @@ class Worker:
             obj = json.loads(raw.decode())
         except (UnicodeDecodeError, json.JSONDecodeError):
             return None
+        if obj.get("type") == "hello":
+            self.features = frozenset(str(f) for f in obj.get("features") or () if f)
+            print(f"rivendell[{self.name}]: speaks {sorted(self.features) or 'nothing new'}")
+            return None
         if obj.get("type") == "pr-review-request" and obj.get("requestId"):
             pr = obj.get("pullRequest") or {}
             print(f"rivendell[{self.name}]: review requested for "
@@ -835,6 +852,7 @@ class Worker:
 
             self._sock = sock
             backoff = _BACKOFF_MIN
+            self.features = frozenset()     # this connection hasn't said hello yet
             self._set_status("connected", url)
             caught = self._catch_up()
             print(f"rivendell[{self.name}]: connected to {url}"
