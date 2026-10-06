@@ -132,15 +132,16 @@ def test_a_session_nobody_picked_a_model_for_passes_none(monkeypatch):
 # --- resumes follow the session ---------------------------------------------------
 
 def test_the_turns_end_hands_on_the_model_it_was_switched_to(monkeypatch):
-    """Crash resumes, limit parks and goal nudges all take their model from the
-    turn's end, so a switch made mid-turn has to be the model they see."""
+    """Crash resumes and limit parks take their model from the turn's end, so a
+    switch made mid-turn has to be the model they see. (A goal nudge is queued
+    with none: it reads the session's when it starts.)"""
     from bridge import goals, tailstate, toolsets
     s = store.create_session(CHAT, "/srs-end", cwd=config.BASE_PATH)
     seen = {}
     monkeypatch.setattr(runner, "_maybe_auto_resume",
                         lambda job, cwd, model, effort: seen.update(resume=model) or False)
     monkeypatch.setattr(goals, "continue_after_turn",
-                        lambda job, model=None, effort=None: seen.update(goal=model) or False)
+                        lambda job, effort=None: seen.update(goal=True) or False)
     monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
     monkeypatch.setattr(toolsets, "ready", lambda: True)
 
@@ -151,7 +152,7 @@ def test_the_turns_end_hands_on_the_model_it_was_switched_to(monkeypatch):
     job = runner.Job("j-srs-end", CHAT, s["id"])
     job.model = "claude-fable-5-1"            # where a live switch left it
     runner._run_streaming(job, "p", [], config.BASE_PATH, "opus", None, None, None)
-    assert seen == {"resume": "claude-fable-5-1", "goal": "claude-fable-5-1"}
+    assert seen == {"resume": "claude-fable-5-1", "goal": True}
 
 
 def test_a_plugin_run_seeds_its_own_session_with_its_model():
@@ -469,3 +470,19 @@ def test_a_session_the_bot_started_keeps_extra_claude_args(monkeypatch):
     cmd = _bot_argv(monkeypatch, s["id"])
     assert "--model" not in cmd
     assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+
+
+def test_a_goal_nudge_runs_on_the_sessions_picks_when_it_starts(monkeypatch):
+    """A goal nudge waits in the queue like any other prompt: no model or mode
+    frozen at enqueue, so a pick made while it waits still applies."""
+    from bridge import goals, queue_manager
+    from bridge.queue_manager import PreviewQueue
+    q = PreviewQueue(run_fn=lambda item: None, persist_path=None)   # busy: it stays queued
+    monkeypatch.setattr(queue_manager, "_instance", q)
+    s = store.create_session(CHAT, "/srs-goal", permission_mode="default")
+    store.set_goal(s["id"], {"objective": "ship it", "state": goals.ACTIVE, "iter": 0})
+    job = runner.Job("j-srs-goal", CHAT, s["id"])
+    job.status, job.model = "done", "claude-fable-5-1"
+    assert goals.continue_after_turn(job, effort="high") is True
+    [it] = q.snapshot(s["id"])["items"]
+    assert (it["model"], it["permission_mode"], it["effort"]) == (None, None, "high")
