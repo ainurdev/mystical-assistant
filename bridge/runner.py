@@ -345,6 +345,14 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     if interactive:
         cmd += ["--input-format", "stream-json",
                 "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
+                # Bypass on offer, not on: this flag only permits a switch to
+                # bypassPermissions. The mode above is what runs until the user
+                # picks another mid-turn (Job.set_run_settings), and claude
+                # 2.1.280 refuses that switch on a child launched without this
+                # ("not launched with --dangerously-skip-permissions"). Only the
+                # bridge writes this child's stdin, so only the settings routes
+                # can use it.
+                "--allow-dangerously-skip-permissions",
                 "--permission-prompt-tool", "stdio"]
         if claude_session_id:
             # Goal + verify tools, on interactive runs only, alongside whichever
@@ -632,18 +640,21 @@ class Job:
         with self._lock:
             self.pending = []
 
-    def _write_stdin(self, obj: dict):
-        """Write one JSON line to the live process's stdin (control channel)."""
+    def _write_stdin(self, obj: dict) -> bool:
+        """Write one JSON line to the live process's stdin (control channel).
+        False when nothing took it: no child yet, or its stdin is gone (closed
+        at the turn's `result`, or the child exited)."""
         proc = self.proc
         if proc is None or proc.stdin is None:
-            return
+            return False
         line = json.dumps(obj) + "\n"
         with self._stdin_lock:
             try:
                 proc.stdin.write(line)
                 proc.stdin.flush()
             except (BrokenPipeError, ValueError, OSError):
-                pass
+                return False
+        return True
 
     def close_stdin(self):
         proc = self.proc
@@ -720,6 +731,42 @@ class Job:
         self._write_stdin({"type": "control_response", "response": {
             "subtype": "success", "request_id": request_id, "response": resp}})
         return True
+
+    def set_run_settings(self, model: "str | None" = None,
+                         permission_mode: "str | None" = None) -> bool:
+        """Switch the live child's model and/or permission mode mid-turn, over
+        the stream-json control channel interrupt() uses: claude 2.1.280's
+        `set_model` / `set_permission_mode` control requests (bypass needs the
+        offer _base_cmd makes at spawn). Returns whether anything reached the
+        child; False means the caller's saved row is all the next turn gets.
+
+        A switch to bypassPermissions also approves every permission card
+        already waiting — "stop asking" has to cover the one on screen.
+        Questions (AskUserQuestion) stay open: they ask for a decision, not a
+        permission. The CLI answers each request on stdout; a refusal becomes an
+        error row (_handle_event) and the saved pick still stands.
+
+        ponytail: a pick that lands before the child spawns (the MCP health
+        check at boot) misses this turn, and a can_use_tool already in the
+        stdout pipe when bypass is sent still shows its card. Both are saved
+        or answerable; re-read the row at spawn if either ever matters."""
+        def control(request: dict) -> bool:
+            return self._write_stdin({"type": "control_request",
+                                      "request_id": uuid.uuid4().hex,
+                                      "request": request})
+        sent = False
+        if model and control({"subtype": "set_model", "model": model}):
+            self.model, sent = model, True
+        if permission_mode and control({"subtype": "set_permission_mode",
+                                        "mode": permission_mode}):
+            sent = True
+            if permission_mode == "bypassPermissions":
+                with self._lock:
+                    waiting = [p["request_id"] for p in self.pending
+                               if p.get("kind") == "permission"]
+                for rid in waiting:
+                    self.respond(rid, behavior="allow")
+        return sent
 
     def snapshot(self, cursor: int) -> dict:
         with self._lock:
@@ -830,6 +877,16 @@ def boot_phase(session_id: str) -> "str | None":
         job = next((j for j in _jobs.values()
                     if j.store_session_id == session_id and j.status == "running"), None)
     return job.boot if job else None
+
+
+def apply_run_settings(session_id: str, model: "str | None" = None,
+                       permission_mode: "str | None" = None) -> bool:
+    """Switch a session's in-flight turn to a pick its row already holds (the
+    settings routes save first). False when nothing live took it. The newest
+    job is the only one that can still be live; whether it is, is
+    Job.set_run_settings' call (a closed stdin says no)."""
+    job = _latest_jobs().get(session_id)
+    return job.set_run_settings(model=model, permission_mode=permission_mode) if job else False
 
 
 def awaiting_input() -> list[dict]:
@@ -1608,6 +1665,14 @@ def _handle_event(job: Job, d: dict):
                 job.add(ev)
     elif t == "system" and d.get("subtype") == "hook_response":
         _hook_log(job, d)
+    elif t == "control_response":
+        # The CLI's answer to one of ours (interrupt, set_model,
+        # set_permission_mode). Only a refusal earns a row: the pick it carried
+        # is saved either way, and the next turn spawns with it.
+        r = d.get("response") or {}
+        if r.get("subtype") == "error":
+            job.add({"type": "log", "src": "control", "error": True,
+                     "text": str(r.get("error") or "control request refused")[:_LOG_MAX]})
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")

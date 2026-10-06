@@ -161,3 +161,123 @@ def test_a_plugin_run_seeds_its_own_session_with_its_model():
     w = rivendell.Worker({"id": "srs", "name": "srs", "model": "sonnet"})
     s = store.get_session(w._new_session(config.BASE_PATH))
     assert (s["model"], s["permission_mode"]) == ("sonnet", "bypassPermissions")
+
+
+# --- switching a running turn ------------------------------------------------------
+
+class _Stdin:
+    """The child's stdin: records each JSON line; refuses writes once closed, as a
+    real pipe does after claude -p's `result`."""
+    closed = False
+
+    def __init__(self):
+        self.lines = []
+
+    def write(self, s):
+        if self.closed:
+            raise ValueError("I/O operation on closed file")
+        self.lines.append(json.loads(s))
+
+    def flush(self):
+        pass
+
+
+class _Proc:
+    def __init__(self):
+        self.stdin = _Stdin()
+
+    def poll(self):
+        return None
+
+
+def _live_job(sid, *pending, job_id=None):
+    job = runner.Job(job_id or f"j-{sid}", CHAT, sid)
+    job.proc = _Proc()
+    for p in pending:
+        job.add_pending(dict(p))
+    return job
+
+
+PERM = {"request_id": "p1", "kind": "permission", "tool_name": "Bash",
+        "summary": "touch a", "input": {"command": "touch a"}}
+QUESTION = {"request_id": "q1", "kind": "question", "tool_name": "AskUserQuestion",
+            "questions": []}
+
+
+def test_interactive_runs_offer_bypass_so_a_switch_can_reach_it():
+    """claude 2.1.280 refuses set_permission_mode -> bypassPermissions on a child
+    launched without bypass on offer (checked live 2026-10-06)."""
+    assert "--allow-dangerously-skip-permissions" in runner._base_cmd(
+        "p", CHAT, stream=True, interactive=True, permission_mode="default")
+    # The bot's one-shot has no control channel to switch over.
+    assert "--allow-dangerously-skip-permissions" not in runner._base_cmd(
+        "p", CHAT, stream=False)
+
+
+def test_a_switch_writes_one_control_request_per_setting():
+    job = _live_job("s-switch")
+    assert job.set_run_settings(model="claude-fable-5-1", permission_mode="acceptEdits")
+    assert [l["request"] for l in job.proc.stdin.lines] == [
+        {"subtype": "set_model", "model": "claude-fable-5-1"},
+        {"subtype": "set_permission_mode", "mode": "acceptEdits"}]
+    assert all(l["type"] == "control_request" and l["request_id"]
+               for l in job.proc.stdin.lines)
+    assert job.model == "claude-fable-5-1"
+
+
+def test_a_switch_to_bypass_approves_waiting_permissions_not_questions():
+    job = _live_job("s-bypass", PERM, QUESTION)
+    job.set_run_settings(permission_mode="bypassPermissions")
+    switch, allow = job.proc.stdin.lines
+    # The mode lands before the approval, so the tool after this one doesn't ask.
+    assert switch["request"] == {"subtype": "set_permission_mode", "mode": "bypassPermissions"}
+    assert allow == {"type": "control_response", "response": {
+        "subtype": "success", "request_id": "p1",
+        "response": {"behavior": "allow", "updatedInput": {"command": "touch a"}}}}
+    assert [p["request_id"] for p in job.pending] == ["q1"]   # a decision, not a permission
+    assert {"type": "permission_resolved", "request_id": "p1",
+            "behavior": "allow"} in job.events
+
+
+def test_other_modes_leave_waiting_cards_alone():
+    job = _live_job("s-ask", PERM)
+    job.set_run_settings(permission_mode="acceptEdits")
+    assert [p["request_id"] for p in job.pending] == ["p1"]
+
+
+def test_a_turn_with_no_live_channel_says_so_and_approves_nothing():
+    """No child yet (boot, or a free agent), or a stdin claude -p closed at
+    `result` -- since 666d29a1 such a child can stay up for as long as its
+    background agents run. The saved row is then all the next turn needs."""
+    assert runner.Job("j-nochild", CHAT, "s-nochild").set_run_settings(model="opus") is False
+    done = _live_job("s-closed", PERM)
+    done.proc.stdin.closed = True
+    assert done.set_run_settings(model="opus", permission_mode="bypassPermissions") is False
+    assert [p["request_id"] for p in done.pending] == ["p1"]    # nothing approved blind
+    assert done.model is None
+
+
+def test_apply_run_settings_reaches_the_sessions_newest_job(monkeypatch):
+    monkeypatch.setattr(runner, "_jobs", {})
+    old = _live_job("s-apply", job_id="j-old")
+    new = _live_job("s-apply", job_id="j-new")
+    old.started, new.started = 1.0, 2.0
+    runner._register(old)
+    runner._register(new)
+    assert runner.apply_run_settings("s-apply", model="claude-fable-5-1") is True
+    assert new.proc.stdin.lines and not old.proc.stdin.lines
+    assert runner.apply_run_settings("s-nobody", model="opus") is False
+
+
+def test_a_refused_control_request_leaves_an_error_row():
+    job = runner.Job("j-refused", CHAT)
+    runner._handle_event(job, {"type": "control_response", "response": {
+        "subtype": "error", "request_id": "r1",
+        "error": "Cannot set permission mode to bypassPermissions because it is "
+                 "disabled by settings or configuration"}})
+    ev = job.events[-1]
+    assert (ev["type"], ev["src"], ev["error"]) == ("log", "control", True)
+    assert "disabled by settings" in ev["text"]
+    runner._handle_event(job, {"type": "control_response", "response": {
+        "subtype": "success", "request_id": "r2", "response": {"mode": "plan"}}})
+    assert job.events[-1] is ev                               # an accepted one is silent
