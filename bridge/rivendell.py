@@ -344,6 +344,8 @@ class Worker:
         self.features: frozenset = frozenset()
 
     def _set_status(self, state: str, detail: str = "") -> None:
+        if self._stop.is_set() and state != "off":
+            return    # a listener still mid-dial when switched off: it stays off
         self.status = state
         self.status_detail = detail
         self.status_at = time.time()

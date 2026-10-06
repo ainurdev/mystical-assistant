@@ -1129,3 +1129,16 @@ def test_the_outage_alert_never_quotes_a_dial_url(quiet):
     w._set_status("error", "connection refused")
     _wait_until(lambda: len(_alerts(quiet)) == 1)
     assert "secret" not in _alerts(quiet)[0] and "connection refused" in _alerts(quiet)[0]
+
+
+def test_a_stopped_worker_keeps_its_off_state(quiet):
+    """The listener can still be mid-dial when the instance is switched off: a
+    late status from it must not reopen a break, or ping, for an instance
+    that is off."""
+    w = _worker()
+    w.stop()
+    w._set_status("connecting", "wss://rv/agent")
+    w._set_status("auth_error", "token rejected (4401)")
+    time.sleep(0.05)
+    assert (w.status, w.down_since, w.alert_at) == ("off", None, None)
+    assert _alerts(quiet) == []
