@@ -2172,7 +2172,12 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
 
     Claims only THIS session's run slot, so a run in another project/session keeps
-    going; returns None only if this very session already has an in-flight turn."""
+    going; returns None only if this very session already has an in-flight turn,
+    or once the bridge is going down."""
+    if state.shutting_down:
+        # _shutdown stops the children it can see: a claude spawned now would
+        # miss that, and outlive an in-place re-exec beside its resumed session.
+        return None
     project_dir = project or state.project_dir(chat_id)
     session = _resolve_session(chat_id, project_dir, session_id=session_id,
                                permission_mode=permission_mode, origin=origin)

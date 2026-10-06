@@ -27,7 +27,7 @@ import sys
 import threading
 import time
 
-from bridge import accounts, config, usage
+from bridge import accounts, config, state, usage
 
 RESET_BUFFER = 90.0     # fire a bit after the advertised reset
 RETRY_UNKNOWN = 1800.0  # reset time unknown (stale/absent usage data): probe again
@@ -274,6 +274,10 @@ def _fire(run=None, notify=None) -> None:
     still inside it stays parked and keeps the timer. run/notify are injectable
     for tests."""
     global _timer, _fire_at
+    if state.shutting_down:
+        # The run would be refused and read as "the user moved on", dropping the
+        # park. Left pending (and on disk), boot() re-arms it after the restart.
+        return
     now = time.time()
     with _lock:
         _timer = None

@@ -114,22 +114,25 @@ def _on_stop_signal(signum, frame):
 
 def _shutdown():
     state.shutting_down = True
-    # Then the Claude children, by us: with KillMode=mixed the stop signal reaches
-    # this process alone, so every child dies after the flag is up and its runner
-    # thread leaves the turn for boot recovery. It also covers selfupdate's
-    # in-place re-exec, which nothing else stops them for — recovery would resume
-    # sessions their old claude was still writing.
-    runner.stop_children()
+    # Whatever can start a run goes first (start_streaming_job refuses from here
+    # on too), so no claude spawns after stop_children's snapshot, and the
+    # RESTART overlay stops getting answers from this dying process.
     if config.RIVENDELL_ENABLE:
         rivendell.stop()
-    native_activity.stop()
-    devserver.stop_all()      # every registered dev server, not just the primary
     if config.MINIAPP_ENABLE:
         from bridge.miniapp import server as miniapp
         miniapp.stop()
     if config.DASH_ENABLE:
         from bridge.dashboard import server as dash
         dash.stop()
+    # Then the Claude children, by us: with KillMode=mixed the stop signal reaches
+    # this process alone, so every child dies after the flag is up and its runner
+    # thread leaves the turn for boot recovery. It also covers selfupdate's
+    # in-place re-exec, which nothing else stops them for — recovery would resume
+    # sessions their old claude was still writing.
+    runner.stop_children()
+    native_activity.stop()
+    devserver.stop_all()      # every registered dev server, not just the primary
     landing.stop()
     pubsub.shutdown()
     if state.miniapp_tunnel_proc and state.miniapp_tunnel_proc.poll() is None:

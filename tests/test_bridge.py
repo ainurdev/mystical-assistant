@@ -1405,6 +1405,44 @@ def test_shutdown_stops_the_children_after_raising_the_flag(monkeypatch):
     assert seen == [True]
 
 
+def test_shutdown_stops_whatever_starts_runs_before_the_children(monkeypatch):
+    """Rivendell and both servers go first: a run started after stop_children
+    took its snapshot would outlive it, and the RESTART overlay would reload
+    into a dashboard still answering from the dying process."""
+    import claude_telegram_bridge as entry
+    from bridge import devserver, landing, native_activity, rivendell, state
+    from bridge.dashboard import server as dash
+    from bridge.miniapp import server as miniapp
+    calls = []
+    monkeypatch.setattr(state, "shutting_down", False)
+    for mod, name, label in ((rivendell, "stop", "rivendell"), (miniapp, "stop", "miniapp"),
+                             (dash, "stop", "dash"), (runner, "stop_children", "children"),
+                             (native_activity, "stop", "native"),
+                             (devserver, "stop_all", "devserver"),
+                             (landing, "stop", "landing"), (pubsub, "shutdown", "pubsub")):
+        monkeypatch.setattr(mod, name, lambda label=label: calls.append(label))
+    for flag in ("RIVENDELL_ENABLE", "MINIAPP_ENABLE", "DASH_ENABLE"):
+        monkeypatch.setattr(config, flag, True)
+    monkeypatch.setattr(state, "miniapp_tunnel_proc", None)
+    entry._shutdown()
+    assert calls.index("children") > max(calls.index(s)
+                                         for s in ("rivendell", "miniapp", "dash"))
+
+
+def test_no_run_starts_once_the_bridge_is_stopping(monkeypatch):
+    """Nothing may spawn a claude once _shutdown has begun: stop_children has
+    taken its snapshot, and an in-place re-exec would leave that child running
+    beside the session boot recovery resumes."""
+    from bridge import state
+
+    def no_session(*a, **k):
+        raise AssertionError("a stopping bridge must not even resolve a session")
+
+    monkeypatch.setattr(state, "shutting_down", True)
+    monkeypatch.setattr(runner, "_resolve_session", no_session)
+    assert runner.start_streaming_job(555, "p", [], project=config.BASE_PATH) is None
+
+
 def test_a_second_stop_signal_cannot_abort_the_shutdown(monkeypatch):
     """Two RESTART clicks each schedule a SIGINT. The first unwinds into
     _shutdown; a second that raised there too would skip the rest of it and the
