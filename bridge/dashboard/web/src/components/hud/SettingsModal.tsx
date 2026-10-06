@@ -85,6 +85,7 @@ import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
 import { restartBridge } from "../../lib/restart";
+import { takeSettingsFocus } from "../../lib/opensettings";
 
 export interface SettingsModalProps {
   host: string;
@@ -2552,7 +2553,7 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
 function RivendellPanel() {
   const [rows, setRows] = useState<RivendellInstance[] | null>(null);
   const [gone, setGone] = useState(false);     // an old bridge: the route 404s
-  const [editing, setEditing] = useState<string | null>(null);   // instance id, "new", or null
+  const [editing, setEditing] = useState<string | null>(() => takeSettingsFocus());   // instance id, "new", or null
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [hov, setHov] = useState("");
