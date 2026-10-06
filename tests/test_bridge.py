@@ -8,11 +8,14 @@ import hmac
 import io
 import json
 import os
+import signal
 import sys
 import tempfile
 import threading
 import time
 import urllib.parse
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -1373,6 +1376,23 @@ def test_shutdown_stops_the_children_after_raising_the_flag(monkeypatch):
     monkeypatch.setattr(state, "miniapp_tunnel_proc", None)
     entry._shutdown()
     assert seen == [True]
+
+
+def test_a_second_stop_signal_cannot_abort_the_shutdown(monkeypatch):
+    """Two RESTART clicks each schedule a SIGINT. The first unwinds into
+    _shutdown; a second that raised there too would skip the rest of it and the
+    re-exec, and systemd counts a death by SIGINT as clean, so
+    Restart=on-failure would leave the bridge down."""
+    import claude_telegram_bridge as entry
+    from bridge import state
+    monkeypatch.setattr(state, "shutting_down", False)
+    with pytest.raises(KeyboardInterrupt):
+        entry._on_stop_signal(signal.SIGINT, None)
+    assert state.shutting_down
+    try:
+        entry._on_stop_signal(signal.SIGINT, None)      # mid-_shutdown: ignored
+    except KeyboardInterrupt:
+        raise AssertionError("a second stop signal aborted the shutdown") from None
 
 
 def test_midrun_crash_auto_resumes_capped(monkeypatch):

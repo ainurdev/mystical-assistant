@@ -103,6 +103,11 @@ def _on_stop_signal(signum, frame):
     # Flag first, then unwind: runner threads watching their Claude child die must
     # already see shutting_down, or they'd record the killed turn as an error and
     # startup recovery would find nothing to resume.
+    if state.shutting_down:
+        # Already unwinding: a second signal (two RESTART clicks) raising inside
+        # _shutdown would skip the rest of it and the re-exec, and systemd counts
+        # a SIGINT death as clean, so Restart=on-failure would leave us down.
+        return
     state.shutting_down = True
     raise KeyboardInterrupt
 

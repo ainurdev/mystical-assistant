@@ -90,6 +90,8 @@ def publish(message: str) -> tuple[bool, str]:
 
 def restart(delay: float = 0.5) -> None:
     global restart_requested
+    if restart_requested:
+        return   # one is already on its way; a second SIGINT would land mid-shutdown
     restart_requested = True
     threading.Timer(delay, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
 
