@@ -191,6 +191,8 @@ _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
 _CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab polls
 _LINK_GRACE = 300.0       # an outage this long is a break worth one Telegram message
 _TEST_TIMEOUT = 5.0       # seconds TEST LINK waits for its pong
+_PROGRESS_EVERY = 10.0    # at most one progress post per run this often (spec: ~10 s)
+_ACTIVITY = {"tool": "action", "thinking": "thought", "text": "response", "error": "error"}
 _checks_cache: "dict[str, tuple[float, str | None]]" = {}
 
 # WebSocket close codes the gateway uses to reject a bad/insufficient token (see
@@ -296,6 +298,7 @@ class Worker:
         self._running: "dict[str, dict]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
+        self._progress_thread: threading.Thread | None = None
         # A token that was rejected: while it is still the configured token the
         # listener idles instead of reconnecting. Cleared when the token changes.
         self._blocked_token: str | None = None
@@ -521,6 +524,48 @@ class Worker:
                     print(f"rivendell[{self.name}]: result POST failed for "
                           f"{request_id}: {e} (transcript still in dashboard)")
         self._ping_done(request_id, ok, text)
+
+    def _progress_loop(self) -> None:
+        """Rivendell's live feed for every run in flight here (_progress_tick on
+        each poll beat). Its own thread, so no run path changes shape."""
+        last: dict = {}
+        while not self._stop.wait(_POLL_INTERVAL):
+            try:
+                self._progress_tick(last, time.monotonic())
+            except Exception as e:  # noqa: BLE001 — the feed outlives any beat
+                print(f"rivendell[{self.name}]: progress beat failed: {e}")
+
+    def _progress_tick(self, last: dict, now: float) -> None:
+        """One beat: each run in flight posts its progress_body when it changed —
+        at most every _PROGRESS_EVERY s, but at once when it starts or stops
+        waiting on a person. Silent unless this Rivendell's hello said
+        "progress". `last` is request id -> (body, when posted); runs that ended
+        are forgotten."""
+        if "progress" not in self.features:
+            return
+        from bridge import runner                    # local import: heavy module
+        with self._q_lock:
+            rows = list(self._running.values())
+        for r in rows:
+            job = runner.live_job(r["session_id"])
+            if job is None:
+                continue
+            body = progress_body(job)
+            prev = last.get(r["request_id"])
+            if prev and (prev[0] == body or (prev[0]["state"] == body["state"]
+                                              and now - prev[1] < _PROGRESS_EVERY)):
+                continue
+            last[r["request_id"]] = (body, now)
+            self._post_progress(self._KIND_PATH.get(r["kind"], "review-requests"),
+                                r["request_id"], body)
+        for gone in set(last) - {r["request_id"] for r in rows}:
+            last.pop(gone)
+
+    def _post_progress(self, kind_path: str, request_id: str, body: dict) -> None:
+        try:
+            self._api(f"/plugin/{kind_path}/{request_id}/progress", body)
+        except Exception as e:  # noqa: BLE001 — a missed beat is fixed by the next
+            print(f"rivendell[{self.name}]: progress post failed for {request_id}: {e}")
 
     def _ping_done(self, request_id: str, ok: bool, text: str) -> None:
         """The job's one Telegram message once its result is posted: done or
@@ -1492,6 +1537,10 @@ class Worker:
             self._listen_thread = threading.Thread(
                 target=self._listen, name=f"rivendell-ws-{self.id}", daemon=True)
             self._listen_thread.start()
+        if self._progress_thread is None or not self._progress_thread.is_alive():
+            self._progress_thread = threading.Thread(
+                target=self._progress_loop, name=f"rivendell-progress-{self.id}", daemon=True)
+            self._progress_thread.start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -1717,6 +1766,41 @@ def live_view(job) -> dict:
                      "todos": ({"done": plan.count("completed"), "total": len(plan)}
                                if plan else None)},
             "ask": ask}
+
+
+def _activity(job) -> dict:
+    """The run's latest move as the contract names it — action | thought |
+    question | response | error — with a short text: what Rivendell's task page
+    shows as "now"."""
+    if any(p.get("kind") == "question" for p in list(job.pending)):
+        return {"kind": "question", "text": "waiting for an answer"}
+    for ev in reversed(list(job.events)):
+        kind = _ACTIVITY.get(ev.get("type"))
+        if kind == "action":
+            text = f"{ev.get('name')}: {ev['summary']}" if ev.get("summary") else ev.get("name") or ""
+        elif kind == "thought":
+            text = "thinking"
+        elif kind:
+            text = ev.get("text") or ev.get("message") or ""
+        else:
+            continue
+        return {"kind": kind, "text": str(text)[:200]}
+    return {"kind": "action", "text": "starting"}
+
+
+def progress_body(job) -> dict:
+    """One run's progress event (spec: Contract → Progress): its state, latest
+    activity, todo progress and step count — plus, while it waits on a person,
+    the question, with the id an answer must quote (Worker._rivendell_answer)
+    and whether its options can be one-tap buttons."""
+    v = live_view(job)
+    body = {"state": "awaiting_input" if v["ask"] else "running", "activity": _activity(job),
+            "todos": v["live"]["todos"], "step": v["live"]["steps"]}
+    if v["ask"]:
+        a = v["ask"]
+        body["question"] = {"id": a["request_id"], "text": a["question"], "header": a["header"],
+                            "options": a["options"], "buttons": a["simple"]}
+    return body
 
 
 def _checks(url: str) -> "str | None":

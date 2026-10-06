@@ -767,3 +767,48 @@ def test_each_connection_starts_without_features(monkeypatch):
         w.stop()
         t.join(2)
         server.close()
+
+
+# --- Task 14: progress feed -------------------------------------------------------
+
+def test_progress_body_is_the_contracts_shape():
+    j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID)
+    runner._handle_event(j, _use("u1", "Edit", {"file_path": "a.tsx"}))
+    j.task_status = {"1": "completed", "2": "pending"}
+    assert rivendell.progress_body(j) == {
+        "state": "running", "activity": {"kind": "action", "text": "Edit: a.tsx"},
+        "todos": {"done": 1, "total": 2}, "step": 1}
+
+
+def test_a_held_question_is_awaiting_input_with_its_options():
+    body = rivendell.progress_body(_held_job())
+    assert body["state"] == "awaiting_input" and body["activity"]["kind"] == "question"
+    assert body["question"] == {"id": "q1", "text": COLOUR[0]["question"], "header": "No meeting",
+                                "options": ["Under “No client”", "Leave them out"], "buttons": True}
+
+
+def test_progress_waits_for_the_feature_then_throttles(monkeypatch):
+    """Review focus 5: the deployed Rivendell never said "progress" and hears
+    nothing; one that did hears a change at most every 10 s — at once when the
+    run starts or stops waiting on a person."""
+    w = _worker()
+    posted = []
+    monkeypatch.setattr(w, "_post_progress",
+                        lambda kp, rid, body: posted.append((kp, rid, body["state"])))
+    j = runner.Job(uuid.uuid4().hex, config.DASH_CHAT_ID)    # session-less: journals nothing
+    monkeypatch.setattr(runner, "live_job", lambda sid: j if sid == "sess-p" else None)
+    w._running["rp1"] = {"request_id": "rp1", "kind": "impl", "session_id": "sess-p"}
+    last = {}
+    w._progress_tick(last, 0.0)
+    assert posted == []
+    w.features = frozenset({"progress"})
+    w._progress_tick(last, 0.0)
+    assert posted == [("implementation-requests", "rp1", "running")]
+    runner._handle_event(j, _use("u1", "Read", {"file_path": "b.ts"}))
+    w._progress_tick(last, 5.0)
+    assert len(posted) == 1, "changed, but inside the 10 s throttle"
+    w._progress_tick(last, 11.0)
+    assert len(posted) == 2
+    j.add_pending({"request_id": "q9", "kind": "question", "questions": COLOUR})
+    w._progress_tick(last, 12.0)
+    assert posted[-1][2] == "awaiting_input", "waiting on a person goes out at once"
