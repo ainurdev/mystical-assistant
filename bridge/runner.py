@@ -1540,10 +1540,13 @@ def _mcp_detail(inp) -> str:
 # A can_use_tool request's reason fields (claude 2.1.280's schema).
 _ASK_WHY = ("requires_user_interaction", "decision_reason_type", "matched_ask_rule",
             "classifier_approvable")
-# Reason types claude's own bypassPermissions still asks about: an ask rule, a
-# safety check (.git/, settings files...), a sandbox override — and a compound
-# command, whose nested reasons (either of the first two) the request can't show.
-_BYPASS_ASKS = {"rule", "safetyCheck", "subcommandResults", "sandboxOverride"}
+# Reason types claude's own bypassPermissions just runs (2.1.280's permission
+# check): no reason (a plain ask), the default/plan mode asking, the auto-mode
+# classifier, a path outside the working dirs, and the generic "other". Every
+# other type — an ask rule, a safety check (.git/, settings files...), a sandbox
+# override, a compound command hiding either, a hook that asked, and anything a
+# newer CLI adds — leaves its card for you.
+_BYPASS_RUNS = {None, "mode", "classifier", "workingDir", "other"}
 
 
 def _bypass_still_asks(card: dict) -> bool:
@@ -1551,15 +1554,16 @@ def _bypass_still_asks(card: dict) -> bool:
     card? Then a switch to Bypass leaves it for you. Read from 2.1.280's
     permission check: a tool that needs you in any mode (ExitPlanMode:
     requires_user_interaction), a matched ask rule, a safety check (its
-    classifier_approvable says one is in the reason), the types above, and an
-    MCP tool an org policy caps at "ask" (type "other"). A plain ask and the
-    auto-mode classifier's are what Bypass just runs — those it approves."""
+    classifier_approvable says one is in the reason), a reason type outside
+    _BYPASS_RUNS, and an MCP tool an org policy caps at "ask" (type "other").
+    A plain ask and the auto-mode classifier's are what Bypass just runs —
+    those it approves."""
     why = card.get("decision_reason_type")
     return bool(card.get("tool_name") == "ExitPlanMode"
                 or card.get("requires_user_interaction")
                 or card.get("matched_ask_rule") is not None
                 or card.get("classifier_approvable") is not None
-                or why in _BYPASS_ASKS
+                or why not in _BYPASS_RUNS
                 or (why == "other" and str(card.get("tool_name", "")).startswith("mcp__")))
 
 

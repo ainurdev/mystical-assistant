@@ -317,13 +317,17 @@ def test_a_switch_to_bypass_leaves_what_bypass_itself_still_asks(monkeypatch):
     _ask(job, "compound", "Bash", decision_reason_type="subcommandResults")
     _ask(job, "sandbox", "Read", decision_reason_type="sandboxOverride")
     _ask(job, "orgmcp", "mcp__jira__transition", decision_reason_type="other")
+    _ask(job, "hook", "Bash", decision_reason_type="hook")         # a hook asked you
+    _ask(job, "newer", "Bash", decision_reason_type="aReasonANewerCliAdds")
+    _ask(job, "outside", "Read", decision_reason_type="workingDir")
     job.set_run_settings(permission_mode="bypassPermissions")
     _answer(job)
     allowed = [l["response"]["request_id"] for l in job.proc.stdin.lines
                if l["type"] == "control_response"]
-    assert allowed == ["plain", "auto"]
+    assert allowed == ["plain", "auto", "outside"]
     assert [p["request_id"] for p in job.pending] == [
-        "exitplan", "askrule", "rule", "safety", "compound", "sandbox", "orgmcp"]
+        "exitplan", "askrule", "rule", "safety", "compound", "sandbox", "orgmcp",
+        "hook", "newer"]
 
 
 def test_a_tracker_turn_keeps_its_cards_under_bypass():
