@@ -236,6 +236,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._share(path[len("/share/"):])
             if not self._host_ok():
                 return self._json({"error": "bad host"}, 403)
+            # Backstop for every /local/ read: GETs carry no token, so an <img>
+            # on any page could fire one at localhost. A browser marks those
+            # with Sec-Fetch-Site; this dashboard's own fetches, streams and
+            # sockets are same-origin, a typed URL is "none", and non-browser
+            # callers (curl, agents via MYSTICAL_DASH, the probe) send none.
+            if path.startswith("/local/") and self.headers.get(
+                    "Sec-Fetch-Site") not in (None, "same-origin", "none"):
+                return self._json({"error": "cross-site request"}, 403)
             if path == "/local/ws/terminal":
                 return self._terminal_ws(qs)
             if path.startswith("/local/stream/"):
