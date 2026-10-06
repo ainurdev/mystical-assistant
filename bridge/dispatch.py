@@ -157,14 +157,27 @@ def _rivendell_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     edit(chat_id, msg_id, (cb["message"].get("text") or "").strip() + f"\n\n{note}")
 
 
+def _owner(chat_id: int, user_id) -> bool:
+    """May this tap or reply answer a Rivendell NEEDS YOU question? Only the
+    bridge's owner answers: in the owner's chat (DASH_CHAT_ID, where the pings
+    go — message ids are per chat), and from an allow-listed user, since in a
+    group any member could tap."""
+    return chat_id == config.DASH_CHAT_ID and user_id in config.ALLOWED_CHAT_IDS
+
+
 def _question_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     """An option button on a Rivendell NEEDS YOU ping (rivendell.ping_question):
     answer the question its run is held on, and turn the ping into the record of
     the answer. A stale tap (answered elsewhere, or the run ended) just loses
-    the buttons."""
+    the buttons; one that isn't the owner's, or isn't data we made, answers
+    nothing and only stops the button spinning."""
     from bridge import rivendell
-    _, token, idx = data.split(":", 2)
-    said = rivendell.answer_option(token, int(idx) if idx.isdigit() else -1)
+    parts = data.split(":")
+    if (len(parts) != 3 or not parts[2].isdecimal()
+            or not _owner(chat_id, (cb.get("from") or {}).get("id"))):
+        answer_cb(cb["id"])
+        return
+    said = rivendell.answer_option(parts[1], int(parts[2]))
     text = (cb["message"].get("text") or "").strip()
     if said is None:
         answer_cb(cb["id"], "Already answered.")
@@ -191,10 +204,10 @@ def on_message(msg: dict):
         send(chat_id, "Send a text prompt, or /help.")
         return
     # A text reply to a Rivendell NEEDS YOU ping answers its question (free text,
-    # for when none of the options fit). It is not a prompt. Only in the owner's
-    # chat, where the pings go: message ids are per chat.
+    # for when none of the options fit). It is not a prompt. Only the owner's
+    # (_owner): anyone else's reply stays what any message here is.
     replied = msg.get("reply_to_message") or {}
-    if (chat_id == config.DASH_CHAT_ID and replied.get("message_id")
+    if (_owner(chat_id, (msg.get("from") or {}).get("id")) and replied.get("message_id")
             and not text.startswith("/")):
         from bridge import rivendell
         said = rivendell.answer_reply(replied["message_id"], text)

@@ -658,8 +658,9 @@ def test_the_option_button_answers_and_edits_the_ping(monkeypatch):
     monkeypatch.setattr(dispatch, "answer_cb", lambda cid, text="": acks.append(text))
     monkeypatch.setattr(rivendell, "answer_option",
                         lambda token, i: "Leave them out" if (token, i) == ("tok", 1) else None)
-    cb = {"id": "cb1", "message": {"chat": {"id": config.DASH_CHAT_ID}, "message_id": 7,
-                                   "text": "◆ Rivendell job needs you"}}
+    cb = {"id": "cb1", "from": {"id": config.DASH_CHAT_ID},
+          "message": {"chat": {"id": config.DASH_CHAT_ID}, "message_id": 7,
+                      "text": "◆ Rivendell job needs you"}}
     dispatch._question_callback(cb, config.DASH_CHAT_ID, 7, "rq:tok:1")
     assert edits[-1] == ("◆ Rivendell job needs you\n\n"
                          "✓ You answered: Leave them out. The run continues.")
@@ -675,7 +676,8 @@ def test_a_reply_to_a_ping_never_becomes_a_prompt(monkeypatch):
     monkeypatch.setattr(dispatch, "edit", lambda chat, mid, text, kb=None: edits.append((mid, text)))
     monkeypatch.setattr(rivendell, "answer_reply",
                         lambda mid, text: "only last week" if mid == 41 else None)
-    dispatch.on_message({"chat": {"id": 555}, "text": "only last week",    # conftest's allowed chat
+    dispatch.on_message({"chat": {"id": 555}, "from": {"id": 555},     # conftest's allowed chat
+                         "text": "only last week",
                          "reply_to_message": {"message_id": 41,
                                               "text": "◆ Rivendell job needs you"}})
     assert started == []
@@ -1159,3 +1161,67 @@ def test_send_test_job_is_only_for_a_live_rivendell_that_speaks_ping(workers):
     w._set_status("connected", "wss://rv/agent")
     assert rivendell.test_link("ch", job=True)["via"] == "job"
     assert calls == ["/plugin/ping-requests"]
+
+
+# --- Review: only the owner answers, on every Telegram path ----------------------
+
+def _tap(data, chat=None, user=None):
+    return {"id": "cb9", "data": data,
+            "from": {"id": config.DASH_CHAT_ID if user is None else user},
+            "message": {"chat": {"id": config.DASH_CHAT_ID if chat is None else chat},
+                        "message_id": 7, "text": "◆ Rivendell job needs you"}}
+
+
+def test_only_the_owner_can_tap_an_answer(monkeypatch):
+    """A tap from another chat, or by someone else in the owner's chat (a
+    group), or with data that isn't ours answers nothing — and still stops the
+    button spinning."""
+    from bridge import dispatch
+    acks, asked = [], []
+    monkeypatch.setattr(dispatch, "answer_cb", lambda cid, text="": acks.append(cid))
+    monkeypatch.setattr(dispatch, "edit", lambda *a, **k: None)
+    monkeypatch.setattr(rivendell, "answer_option", lambda token, i: asked.append((token, i)) or "x")
+    bad = [_tap("rq:tok:0", chat=-100777), _tap("rq:tok:0", user=424242),
+           _tap("rq:tok"), _tap("rq:tok:x"), _tap("rq:tok:0:1"), _tap("rq:tok:²")]
+    for cb in bad:
+        dispatch._question_callback(cb, cb["message"]["chat"]["id"], 7, cb["data"])
+    assert asked == [] and len(acks) == len(bad)
+    dispatch._question_callback(_tap("rq:tok:1"), config.DASH_CHAT_ID, 7, "rq:tok:1")
+    assert asked == [("tok", 1)]
+
+
+def test_only_the_owner_can_answer_by_reply(monkeypatch):
+    """Someone else's reply in the owner's chat (a group) is no answer: it stays
+    what any message there is, a prompt."""
+    from bridge import dispatch
+    started, answered = [], []
+    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
+    monkeypatch.setattr(dispatch, "edit", lambda *a, **k: None)
+    monkeypatch.setattr(rivendell, "answer_reply", lambda mid, text: answered.append(mid) or "ok")
+    store.init()
+    dispatch.on_message({"chat": {"id": config.DASH_CHAT_ID}, "from": {"id": 424242},
+                         "text": "leave them out",
+                         "reply_to_message": {"message_id": 41, "text": "◆ Rivendell job needs you"}})
+    assert answered == []
+    _wait_until(lambda: started)
+    state.release_run(started[0][2]["id"])
+
+
+def test_a_group_chat_is_never_the_owner(tmp_path):
+    """DASH_CHAT_ID falls back to the lowest allow-listed PRIVATE chat: a group
+    (negative id) as the owner would let any member answer for you. Read in a
+    fresh interpreter, as config freezes at import."""
+    import os
+    import subprocess
+    import sys
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def owner(allowed):
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path),
+               "ALLOWED_CHAT_IDS": allowed}
+        return subprocess.run(
+            [sys.executable, "-c", "from bridge import config; print(config.DASH_CHAT_ID)"],
+            env=env, cwd=root, capture_output=True, text=True, timeout=60).stdout.strip()
+    assert owner("-1001234,777,555") == "555"
+    assert owner("-1001234") == "0"
