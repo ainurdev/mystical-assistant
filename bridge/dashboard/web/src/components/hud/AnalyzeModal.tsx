@@ -17,6 +17,7 @@ import {
   type Worktree,
 } from "../../api";
 import { useAiFeatures } from "../../lib/ai";
+import { parseDiff, type DiffRow } from "../../lib/diff";
 import { branchForIssue, branchForTask, keyFromBranch } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
 import { ago, projectName, projectTint, setProjectTint } from "../../lib/surfaces";
@@ -366,41 +367,12 @@ export function AnalyzeModal(props: Props) {
 
 /* ---------------- GIT (changes): working-tree master-detail + commit/push (design 656–728) ---------------- */
 
-interface DiffLine {
-  ln: string;
-  mark: string;
-  kind: "add" | "del" | "ctx" | "hunk";
-  text: string;
-}
-
-const DIFF_VIEW: Record<DiffLine["kind"], { bg: string; sign: string; color: string }> = {
+const DIFF_VIEW: Record<DiffRow["kind"], { bg: string; sign: string; color: string }> = {
   add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", sign: "var(--ok)", color: "var(--ok)" },
   del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", sign: "var(--err)", color: "var(--err)" },
   ctx: { bg: "transparent", sign: "var(--txg)", color: "var(--txd)" },
   hunk: { bg: "color-mix(in srgb, var(--acc) 6%, transparent)", sign: "var(--acc)", color: "var(--acc)" },
 };
-
-/* Unified diff → numbered design rows (sequential numbers from each hunk's
-   new-file start, matching the mock's numbering). */
-function parseDiffRows(diff: string): DiffLine[] {
-  const out: DiffLine[] = [];
-  let n = 0;
-  let inHunk = false;
-  for (const ln of diff.split("\n")) {
-    if (ln.startsWith("@@")) {
-      const m = /\+(\d+)/.exec(ln);
-      if (m) n = parseInt(m[1], 10);
-      inHunk = true;
-      out.push({ ln: "", mark: "@@", kind: "hunk", text: ` ${ln}` });
-      continue;
-    }
-    if (!inHunk) continue;
-    if (ln.startsWith("+")) out.push({ ln: String(n++), mark: "+", kind: "add", text: ln.slice(1) });
-    else if (ln.startsWith("-")) out.push({ ln: String(n++), mark: "-", kind: "del", text: ln.slice(1) });
-    else out.push({ ln: String(n++), mark: "", kind: "ctx", text: ln.startsWith(" ") ? ln.slice(1) : ln });
-  }
-  return out;
-}
 
 function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile }: {
   project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void;
@@ -462,7 +434,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
     return () => { live = false; };
   }, [selName, project, branch]);
 
-  const rows = useMemo(() => parseDiffRows(diff), [diff]);
+  const rows = useMemo(() => parseDiff(diff), [diff]);
   const selFile = files.find((f) => f.path === selName);
 
   async function genMsg() {
