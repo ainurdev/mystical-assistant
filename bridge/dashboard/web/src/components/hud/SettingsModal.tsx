@@ -2562,10 +2562,10 @@ function RivendellPanel() {
   // TEST LINK: a ping/pong round trip on the live socket, or a re-dial of a
   // parked token (bridge/rivendell.py Worker.test_link). The row keeps the last.
   const [testing, setTesting] = useState("");
-  async function test(id: string) {
+  async function test(id: string, job: boolean) {
     setTesting(id); setErr("");
     try {
-      const r = await api.rivendellTest(id);
+      const r = await api.rivendellTest(id, job);
       setRows((p) => (p ?? []).map((x) => (x.id === id ? { ...x, status: { ...x.status, last_test: r } } : x)));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not test");
@@ -2649,6 +2649,7 @@ function RivendellPanel() {
           {rows.map((c, i) => {
             const sv = riStatusView(c.status);
             const st = c.status?.state ?? "off";
+            const jobs = !!c.status?.features?.includes("ping");
             return (
             <Fragment key={c.id}>
               <Row first={!i}
@@ -2690,9 +2691,9 @@ function RivendellPanel() {
                           ? <span style={dim}> · {new Date(c.status.last_test.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                           : null}
                       </span>
-                      <button disabled={st === "off" || testing === c.id} onClick={() => void test(c.id)} {...hp(`ts:${c.id}`)}
+                      <button disabled={st === "off" || testing === c.id} onClick={() => void test(c.id, jobs)} {...hp(`ts:${c.id}`)}
                         style={{ appearance: "none", cursor: st === "off" ? "default" : "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "4px 10px", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `ts:${c.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", opacity: st === "off" ? 0.4 : 1 }}>
-                        {testing === c.id ? "TESTING…" : "TEST LINK"}
+                        {testing === c.id ? "TESTING…" : jobs ? "SEND TEST JOB" : "TEST LINK"}
                       </button>
                     </div>
                   </>

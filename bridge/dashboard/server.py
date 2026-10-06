@@ -1327,7 +1327,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/rivendell/test":
             # TEST LINK (Settings ▸ PLUGINS, and the RIVENDELL tab's TOKEN
             # REJECTED banner): a round trip on the live socket, or a re-dial.
-            res = rivendell.test_link((body.get("instance_id") or "").strip())
+            res = rivendell.test_link((body.get("instance_id") or "").strip(),
+                                      job=bool(body.get("job")))
             if res is None:
                 return self._json({"error": "that Rivendell connection is off"}, 409)
             return self._json(res)

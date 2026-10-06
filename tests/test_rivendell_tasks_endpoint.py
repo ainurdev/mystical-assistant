@@ -123,3 +123,11 @@ def test_test_link_on_a_connection_that_is_off_is_a_conflict(monkeypatch):
     monkeypatch.setattr(rivendell, "test_link", lambda iid, job=False: None)
     r = dpost("/local/rivendell/test", {"instance_id": "a"})
     assert r["code"] == 409 and r["obj"] == {"error": "that Rivendell connection is off"}
+
+
+def test_send_test_job_asks_for_the_job_round_trip(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rivendell, "test_link", lambda iid, job=False: calls.append((iid, job))
+                        or {"ok": True, "rtt_ms": 900, "detail": "", "at": 1.0, "via": "job"})
+    dpost("/local/rivendell/test", {"instance_id": "a", "job": True})
+    assert calls == [("a", True)]

@@ -863,3 +863,28 @@ def test_result_details_ride_only_a_rivendell_that_asked(workers):
     assert d["sessionId"] == sid and (d["pr"]["number"], d["pr"]["checks"]) == (9, None)
     assert (d["wallSeconds"], d["activeSeconds"], d["tokens"]) == (600, 600, {"in": 95, "out": 5})
     assert d["dashboardUrl"].endswith(f"/?s={sid}") and d["outcome"] is None
+
+
+# --- Task 17: the ping job kind ------------------------------------------------------
+
+def test_a_ping_job_is_answered_without_claude():
+    w = _worker()
+    calls = []
+    w._api = lambda path, payload=None: calls.append((path, payload)) or {}
+    assert w._handle_message(json.dumps({"type": "ping-request", "requestId": "p1"}).encode()) is None
+    _wait_until(lambda: calls)
+    assert calls == [("/plugin/ping-requests/p1/result", {})]
+
+
+def test_send_test_job_records_the_round_trip():
+    w = _worker()
+    w._api = lambda path, payload=None: {"id": "p2", "ok": True, "rttMs": 120}
+    res = w.test_job()
+    assert res["ok"] is True and res["via"] == "job" and res["rtt_ms"] >= 0
+    assert w.status_snapshot()["last_test"] == res
+
+
+def test_a_test_job_that_never_comes_back_fails():
+    w = _worker()
+    w._api = lambda path, payload=None: {"id": "p3", "ok": False}
+    assert w.test_job()["ok"] is False

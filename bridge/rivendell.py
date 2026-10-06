@@ -421,6 +421,28 @@ class Worker:
         self.last_test = {**res, "at": time.time()}
         return self.last_test
 
+    def _post_pong(self, request_id: str) -> None:
+        try:
+            self._api(f"/plugin/ping-requests/{request_id}/result", {})
+        except Exception as e:  # noqa: BLE001 — Rivendell then reads the test as failed
+            print(f"rivendell[{self.name}]: ping answer failed for {request_id}: {e}")
+
+    def test_job(self) -> dict:
+        """SEND TEST JOB: Rivendell files a `ping`, sends it down the socket, and
+        this bridge answers it without Claude (_post_pong). That is HTTP in, the
+        socket out, HTTP back: the whole path a real job takes. Rivendell holds
+        the first POST open until the answer lands. Offered once its hello names
+        "ping", and kept as `last_test` like TEST LINK."""
+        t0 = time.monotonic()
+        try:
+            ok = bool(self._api("/plugin/ping-requests", {}).get("ok"))
+            res = {"ok": ok, "rtt_ms": round((time.monotonic() - t0) * 1000) if ok else None,
+                   "detail": "" if ok else "the job never came back over the socket"}
+        except Exception as e:  # noqa: BLE001 — one line for the row
+            res = {"ok": False, "rtt_ms": None, "detail": str(_explain(e))}
+        self.last_test = {**res, "via": "job", "at": time.time()}
+        return self.last_test
+
     def _alert_broken(self) -> None:
         """The break's one Telegram message (the dashboard's rail dot and bell
         read alert_at off the status). Off-thread: _set_status runs on the
@@ -871,6 +893,11 @@ class Worker:
             return None
         if obj.get("type") == "job-answer" and obj.get("requestId"):
             self._rivendell_answer(obj)
+            return None
+        if obj.get("type") == "ping-request" and obj.get("requestId"):
+            # SEND TEST JOB's echo: answered here, no Claude, off the listener.
+            threading.Thread(target=self._post_pong, args=(obj["requestId"],),
+                             name=f"rivendell-pong-{self.id}", daemon=True).start()
             return None
         if obj.get("type") == "pr-review-request" and obj.get("requestId"):
             pr = obj.get("pullRequest") or {}
@@ -1685,11 +1712,13 @@ def running() -> list:
 
 
 def test_link(instance_id: str, job: bool = False) -> "dict | None":
-    """TEST LINK on one instance (Worker.test_link). None when it has no running
-    worker (switched off or removed)."""
+    """TEST LINK (Worker.test_link), or with `job` SEND TEST JOB (Worker.test_job).
+    None when the instance has no running worker (switched off or removed)."""
     with _manager_lock:
         w = _workers.get(instance_id)
-    return w.test_link() if w else None
+    if w is None:
+        return None
+    return w.test_job() if job else w.test_link()
 
 
 # --- Telegram callback tokens -------------------------------------------------

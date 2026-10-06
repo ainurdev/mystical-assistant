@@ -469,6 +469,7 @@ export interface RivendellTest {
   rtt_ms: number | null;
   detail: string;
   at: number;                // epoch seconds
+  via?: "job";               // SEND TEST JOB (a ping job round trip), not TEST LINK
 }
 /** One connection's state on the RIVENDELL tab: its instance and its status. */
 export type RivendellLink = RivendellStatus & { instance_id: string; instance: string };
@@ -1601,8 +1602,8 @@ export const api = {
     }),
   // TEST LINK: a ping/pong round trip on the live socket, or a re-dial of a
   // parked token (bridge/rivendell.py Worker.test_link). 409 when it's off.
-  rivendellTest: (instance_id: string) =>
-    req<RivendellTest>("/local/rivendell/test", { method: "POST", body: { instance_id } }),
+  rivendellTest: (instance_id: string, job = false) =>
+    req<RivendellTest>("/local/rivendell/test", { method: "POST", body: { instance_id, job } }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>
