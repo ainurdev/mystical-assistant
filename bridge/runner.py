@@ -346,15 +346,19 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     if interactive:
         cmd += ["--input-format", "stream-json",
                 "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
-                # Bypass on offer, not on: this flag only permits a switch to
-                # bypassPermissions. The mode above is what runs until the user
-                # picks another mid-turn (Job.set_run_settings), and claude
-                # 2.1.280 refuses that switch on a child launched without this
-                # ("not launched with --dangerously-skip-permissions"). Only the
-                # bridge writes this child's stdin, so only the settings routes
-                # can use it.
-                "--allow-dangerously-skip-permissions",
                 "--permission-prompt-tool", "stdio"]
+        if os.getuid() != 0 or os.environ.get("IS_SANDBOX") == "1":
+            # Bypass on offer, not on: this flag only permits a switch to
+            # bypassPermissions. The mode above is what runs until the user
+            # picks another mid-turn (Job.set_run_settings), and claude
+            # 2.1.280 refuses that switch on a child launched without this
+            # ("not launched with --dangerously-skip-permissions"). Only the
+            # bridge writes this child's stdin, so only the settings routes
+            # can use it. Not as root outside a sandbox: claude exits at
+            # startup there (its own process.getuid() check, IS_SANDBOX=1
+            # the opt-out), so the flag would fail every turn — a root
+            # install just can't switch a running turn to Bypass.
+            cmd.append("--allow-dangerously-skip-permissions")
         if claude_session_id:
             # Goal + verify tools, on interactive runs only, alongside whichever
             # external servers this session left switched on — re-declared here

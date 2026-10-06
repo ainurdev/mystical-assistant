@@ -214,6 +214,23 @@ def test_interactive_runs_offer_bypass_so_a_switch_can_reach_it():
         "p", CHAT, stream=False)
 
 
+def test_root_offers_bypass_only_inside_a_sandbox(monkeypatch):
+    """claude exits at startup when the bypass flag runs as root outside a
+    deliberate sandbox ("cannot be used with root/sudo privileges"), which would
+    fail every turn on a root install; IS_SANDBOX=1 is its own opt-out."""
+    def cmd():
+        return runner._base_cmd("p", CHAT, stream=True, interactive=True,
+                                permission_mode="default")
+    monkeypatch.setattr(runner.os, "getuid", lambda: 0)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+    assert "--allow-dangerously-skip-permissions" not in cmd()
+    monkeypatch.setenv("IS_SANDBOX", "1")
+    assert "--allow-dangerously-skip-permissions" in cmd()
+    monkeypatch.setattr(runner.os, "getuid", lambda: 1000)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+    assert "--allow-dangerously-skip-permissions" in cmd()
+
+
 def test_a_switch_writes_one_control_request_per_setting():
     job = _live_job("s-switch")
     assert job.set_run_settings(model="claude-fable-5-1", permission_mode="acceptEdits")
