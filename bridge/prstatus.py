@@ -211,3 +211,132 @@ def ping_text(pr: dict, key: str) -> str:
         return f"✕ PR #{pr['number']} checks failing — {names}\n{where}"
     by = pr["review"]["by"] if pr["review"] else ""
     return f"◆ PR #{pr['number']} changes requested{f' by {by}' if by else ''}\n{where}"
+
+
+def _gh(*args: str, timeout: int = 20) -> "tuple[int, str, str]":
+    return github._run("gh", *args, timeout=timeout)
+
+
+def _failure_log(slug: str, url: str) -> str:
+    m = _JOB_RE.search(url or "")
+    if not m:
+        return ""          # not GitHub Actions: only the link, no log we can fetch
+    job = m.group(1)
+    if job not in _logs:
+        rc, out, _ = _gh("run", "view", "--job", job, "-R", slug, "--log-failed",
+                         timeout=40)
+        tail = failure_tail(out) if rc == 0 else ""
+        if not tail:
+            return ""      # the run is still going, or the log has expired: ask next read
+        if len(_logs) > 200:
+            _logs.clear()  # ponytail: a crude bound, far above one session's failures
+        _logs[job] = tail
+    return _logs[job]
+
+
+def _review_comments(slug: str, number: int, review: dict) -> "list[dict]":
+    """The changes-requested review's inline comments. gh pr view has no
+    comment text, and the per-review REST list has no line numbers (checked
+    2026-10-06). So the code finds the review's id first, then filters the
+    PR's comment list by that id.
+    ponytail: only the first page (100) of each, and three gh calls per read
+    while changes are requested. Cache by review id if that ever shows up in
+    the rate limit."""
+    try:
+        rc, out, _ = _gh("api", f"repos/{slug}/pulls/{number}/reviews?per_page=100")
+        if rc != 0:
+            return []
+        rid = next((r["id"] for r in json.loads(out)
+                    if r.get("submitted_at") == review["at"]
+                    and (r.get("user") or {}).get("login") == review["by"]), None)
+        if rid is None:
+            return []
+        rc, out, _ = _gh("api", f"repos/{slug}/pulls/{number}/comments?per_page=100")
+        if rc != 0:
+            return []
+        return [{"path": c.get("path") or "",
+                 "line": c.get("line") or c.get("original_line"),
+                 "body": (c.get("body") or "").strip()}
+                for c in json.loads(out) if c.get("pull_request_review_id") == rid]
+    except (ValueError, TypeError, KeyError):
+        return []
+
+
+def fetch(slug: str, branch: str) -> "tuple[dict | None, int]":
+    """Returns (pr, how long to trust the answer). A None pr means no chip."""
+    rc, out, err = _gh("pr", "view", branch, "-R", slug, "--json", FIELDS)
+    if rc != 0:
+        # "no pull requests found" is an answer. Anything else (signed out,
+        # rate-limited, offline, gh missing) means gh doesn't know, so back off.
+        return None, (TTL if "no pull requests found" in err else ERR_TTL)
+    try:
+        pr = normalize(json.loads(out))
+    except (ValueError, KeyError, TypeError):
+        return None, ERR_TTL
+    for c in pr["checks"]:
+        if c["state"] == "fail":
+            c["log"] = _failure_log(slug, c["url"])
+    if pr["review"]:
+        pr["review"]["comments"] = _review_comments(slug, pr["number"], pr["review"])
+    return pr, TTL
+
+
+def _spawn(fn, *args) -> None:
+    threading.Thread(target=fn, args=args, daemon=True).start()
+
+
+def _telegram(project: str, session: str, pr: dict, keys: "list[str]") -> None:
+    """Best effort, like runner._notify: a failed ping is only a missed ping."""
+    if not (config.NOTIFY_ENABLE and config.TOKEN and config.DASH_CHAT_ID):
+        return
+    try:
+        kb = telegram.panel_kb(config.DASH_CHAT_ID, session or None, project)
+        for k in keys:
+            telegram.send(config.DASH_CHAT_ID, ping_text(pr, k), kb)
+    except Exception as e:  # noqa: BLE001: a ping must never break a read
+        print(f"prstatus: Telegram ping failed: {e}")
+
+
+def _pings(repo_dir: str, slug: str, branch: str, pr: dict, session: str) -> "list[str]":
+    key = f"pr_pinged:{slug}:{branch}"
+    try:
+        old = set(json.loads(store.get_setting(key) or "[]"))
+    except ValueError:
+        old = set()
+    new, fresh = next_pings(old, pr)
+    if new != old:
+        store.set_setting(key, json.dumps(sorted(new)) if new else None)
+    if fresh:
+        _spawn(_telegram, browser.rel(repo_dir), session, pr, fresh)
+    return sorted(new)
+
+
+def _read(repo_dir: str, branch: str, session: str, old: "dict | None") -> dict:
+    now = time.time()
+    slug = github.remote_slug(repo_dir) if branch else None
+    # PRs land on the default branch. They don't come from it. And gh pr view
+    # reads "59" (or "#59") as PR number 59, not as a branch.
+    # ponytail: an all-digit branch gets no chip. `gh pr list --head` if one matters.
+    if not slug or branch.lstrip("#").isdigit() or branch == git.default_branch(repo_dir):
+        return {"at": now, "ttl": TTL, "pr": None, "pinged": []}
+    pr, ttl = fetch(slug, branch)
+    if pr is None and ttl == ERR_TTL and old:
+        pr = old["pr"]      # a blip keeps the last good chip instead of blinking it out
+    pinged = _pings(repo_dir, slug, branch, pr, session) if pr else []
+    return {"at": now, "ttl": ttl, "pr": pr, "pinged": pinged}
+
+
+def snapshot(repo_dir: str, branch: str, *, force: bool = False,
+             session: str = "") -> dict:
+    """The PR for `branch` of the repo at `repo_dir`, in the shape the chip
+    wants: {"pr": dict | None, "pinged": [alert keys], "checked": epoch s}.
+    `session` is only used for the Telegram button."""
+    key = (repo_dir, branch)
+    with _locks.setdefault(key, threading.Lock()):
+        hit = _cache.get(key)
+        trust = hit["ttl"] if hit else 0
+        if force and trust <= TTL:
+            trust = min(trust, FORCE_FLOOR)   # a rate-limit backoff outlasts force
+        if hit is None or time.time() - hit["at"] >= trust:
+            hit = _cache[key] = _read(repo_dir, branch, session, hit)
+    return {"pr": hit["pr"], "pinged": hit["pinged"], "checked": hit["at"]}

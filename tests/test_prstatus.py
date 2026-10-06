@@ -153,3 +153,186 @@ def test_ping_text_names_the_red_checks():
         "✕ PR #131 checks failing — backend",
         "Inbox: group action items by client · ⎇ feat/inbox-grouping",
         "https://github.com/acme/rivendell/pull/131"]
+
+
+# --- reading gh: fetch, snapshot, Telegram ------------------------------------
+
+def _fake_gh(monkeypatch, routes):
+    """routes: [(args prefix, (rc, stdout, stderr))], matched in order."""
+    calls = []
+
+    def fake(*args, timeout=20):
+        calls.append(args)
+        for prefix, answer in routes:
+            if args[:len(prefix)] == prefix:
+                return answer
+        raise AssertionError(f"unexpected gh call {args}")
+    monkeypatch.setattr(prstatus, "_gh", fake)
+    return calls
+
+
+@pytest.fixture(autouse=True)
+def sent(monkeypatch):
+    """Fresh caches. gh's repo lookups are pinned. Telegram is captured and
+    synchronous."""
+    store.init()
+    prstatus._cache.clear()
+    prstatus._logs.clear()
+    monkeypatch.setattr(prstatus.github, "remote_slug", lambda d: "acme/rivendell")
+    monkeypatch.setattr(prstatus.git, "default_branch", lambda d: "main")
+    monkeypatch.setattr(prstatus, "_spawn", lambda fn, *a: fn(*a))
+    monkeypatch.setattr(prstatus.config, "NOTIFY_ENABLE", True)
+    monkeypatch.setattr(prstatus.config, "DASH_CHAT_ID", 555)
+    box = []
+    monkeypatch.setattr(prstatus.telegram, "send",
+                        lambda chat, text, kb=None: box.append(text))
+    return box
+
+
+# --- fetch --------------------------------------------------------------------
+
+@pytest.mark.parametrize("answer, ttl", [
+    ((1, "", 'no pull requests found for branch "feat/x"'), prstatus.TTL),
+    ((4, "", "To get started with GitHub CLI, please run:  gh auth login"), prstatus.ERR_TTL),
+    ((127, "", "[Errno 2] No such file or directory: 'gh'"), prstatus.ERR_TTL),
+    ((1, "", "GraphQL: API rate limit exceeded for user ID 1."), prstatus.ERR_TTL),
+    ((0, "not json", ""), prstatus.ERR_TTL),
+])
+def test_fetch_is_quiet_about_every_way_gh_cant_answer(monkeypatch, answer, ttl):
+    _fake_gh(monkeypatch, [(("pr", "view"), answer)])
+    assert prstatus.fetch("acme/rivendell", "feat/x") == (None, ttl)
+
+
+def test_a_failing_check_carries_its_log_fetched_once_per_job(monkeypatch):
+    calls = _fake_gh(monkeypatch, [
+        (("pr", "view"), (0, json.dumps(_raw(statusCheckRollup=[
+            _run("backend", conclusion="FAILURE", job=7)])), "")),
+        (("run", "view", "--job", "7"), (0, LOG, "")),
+    ])
+    pr, _ = prstatus.fetch("acme/rivendell", "feat/x")
+    assert pr["checks"][0]["log"].endswith("exit code 1.")
+    prstatus.fetch("acme/rivendell", "feat/x")
+    assert sum(1 for c in calls if c[0] == "run") == 1      # the job's log is cached
+
+
+def test_a_log_that_isnt_there_yet_is_asked_for_again(monkeypatch):
+    calls = _fake_gh(monkeypatch, [
+        (("pr", "view"), (0, json.dumps(_raw(statusCheckRollup=[
+            _run("backend", conclusion="FAILURE", job=7)])), "")),
+        (("run", "view"), (1, "", "run 9 is still in progress; logs will be available when it is complete")),
+    ])
+    assert prstatus.fetch("acme/rivendell", "feat/x")[0]["checks"][0]["log"] == ""
+    prstatus.fetch("acme/rivendell", "feat/x")
+    assert sum(1 for c in calls if c[0] == "run") == 2
+
+
+def test_changes_requested_brings_that_reviews_inline_comments(monkeypatch):
+    raw = _raw(reviewDecision="CHANGES_REQUESTED", latestReviews=[
+        {"author": {"login": "mahdi"}, "state": "CHANGES_REQUESTED",
+         "submittedAt": "2026-10-06T12:30:00Z", "body": "two things"}])
+    _fake_gh(monkeypatch, [
+        (("pr", "view"), (0, json.dumps(raw), "")),
+        (("api", "repos/acme/rivendell/pulls/131/reviews?per_page=100"), (0, json.dumps([
+            {"id": 11, "user": {"login": "mahdi"}, "state": "COMMENTED",
+             "submitted_at": "2026-10-06T11:00:00Z"},
+            {"id": 12, "user": {"login": "mahdi"}, "state": "CHANGES_REQUESTED",
+             "submitted_at": "2026-10-06T12:30:00Z"}]), "")),
+        (("api", "repos/acme/rivendell/pulls/131/comments?per_page=100"), (0, json.dumps([
+            {"pull_request_review_id": 11, "path": "old.ts", "line": 1, "body": "earlier"},
+            {"pull_request_review_id": 12, "path": "backend/src/group.service.ts",
+             "line": 45, "original_line": 44, "body": "sort by client name"},
+            {"pull_request_review_id": 12, "path": "frontend/inbox.tsx",
+             "line": None, "original_line": 88, "body": "show the name "}]), "")),
+    ])
+    pr, _ = prstatus.fetch("acme/rivendell", "feat/x")
+    assert pr["status"] == "changes"
+    assert pr["review"]["body"] == "two things"
+    assert pr["review"]["comments"] == [
+        {"path": "backend/src/group.service.ts", "line": 45, "body": "sort by client name"},
+        {"path": "frontend/inbox.tsx", "line": 88, "body": "show the name"}]   # outdated: original_line
+
+
+# --- snapshot -----------------------------------------------------------------
+
+def _clock(monkeypatch, t=1000.0):
+    now = [t]
+    monkeypatch.setattr(prstatus.time, "time", lambda: now[0])
+    return now
+
+
+def test_two_reads_inside_the_ttl_share_one_gh_call_and_force_has_a_floor(monkeypatch):
+    now = _clock(monkeypatch)
+    calls = _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw()), ""))])
+    a = prstatus.snapshot("/r", "feat/share")
+    b = prstatus.snapshot("/r", "feat/share")
+    assert len(calls) == 1 and a == b and a["pr"]["number"] == 131
+    now[0] += 5
+    prstatus.snapshot("/r", "feat/share", force=True)      # inside the floor: still cached
+    assert len(calls) == 1
+    now[0] += prstatus.FORCE_FLOOR
+    prstatus.snapshot("/r", "feat/share", force=True)
+    assert len(calls) == 2
+    now[0] += prstatus.TTL
+    prstatus.snapshot("/r", "feat/share")
+    assert len(calls) == 3
+
+
+def test_an_error_backs_off_keeps_the_last_chip_and_outlasts_force(monkeypatch):
+    now = _clock(monkeypatch)
+    _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw()), ""))])
+    prstatus.snapshot("/r", "feat/blip")
+    calls = _fake_gh(monkeypatch, [(("pr", "view"), (1, "", "HTTP 403: API rate limit exceeded"))])
+    now[0] += prstatus.TTL
+    assert prstatus.snapshot("/r", "feat/blip")["pr"]["number"] == 131   # the last good chip stays
+    now[0] += prstatus.FORCE_FLOOR
+    prstatus.snapshot("/r", "feat/blip", force=True)
+    assert len(calls) == 1                                  # backing off, force or not
+    now[0] += prstatus.ERR_TTL
+    prstatus.snapshot("/r", "feat/blip")
+    assert len(calls) == 2
+
+
+def test_no_chip_without_a_remote_or_on_the_default_branch(monkeypatch):
+    calls = _fake_gh(monkeypatch, [])
+    assert prstatus.snapshot("/r", "main")["pr"] is None
+    assert prstatus.snapshot("/r", "")["pr"] is None
+    monkeypatch.setattr(prstatus.github, "remote_slug", lambda d: None)
+    assert prstatus.snapshot("/r2", "feat/x")["pr"] is None
+    assert calls == []
+
+
+def test_red_pings_telegram_once_even_across_a_restart(monkeypatch, sent):
+    now = _clock(monkeypatch)
+    _fake_gh(monkeypatch, [
+        (("pr", "view"), (0, json.dumps(_raw(headRefOid="r1", statusCheckRollup=[
+            _run("backend", conclusion="FAILURE", job=8)])), "")),
+        (("run", "view"), (0, LOG, "")),
+    ])
+    snap = prstatus.snapshot("/r", "feat/ping", session="sid")
+    assert snap["pinged"] == ["failing:r1"]
+    assert len(sent) == 1 and sent[0].startswith("✕ PR #131 checks failing — backend")
+    prstatus._cache.clear()                               # what a bridge restart does
+    now[0] += prstatus.TTL
+    assert prstatus.snapshot("/r", "feat/ping")["pinged"] == ["failing:r1"]
+    assert len(sent) == 1
+
+
+def test_an_all_digit_branch_gets_no_chip_rather_than_pr_number_59(monkeypatch):
+    calls = _fake_gh(monkeypatch, [])
+    assert prstatus.snapshot("/r", "59")["pr"] is None
+    assert prstatus.snapshot("/r", "#59")["pr"] is None
+    assert calls == []
+
+
+def test_telegram_failing_never_breaks_the_read(monkeypatch):
+    _fake_gh(monkeypatch, [
+        (("pr", "view"), (0, json.dumps(_raw(statusCheckRollup=[
+            _run("backend", conclusion="FAILURE", job=9)])), "")),
+        (("run", "view"), (1, "", "expired")),
+    ])
+
+    def down(*a, **k):
+        raise OSError("telegram unreachable")
+    monkeypatch.setattr(prstatus.telegram, "send", down)
+    snap = prstatus.snapshot("/r", "feat/tg-down")
+    assert snap["pr"]["status"] == "failing" and snap["pinged"] == ["failing:abc123"]
