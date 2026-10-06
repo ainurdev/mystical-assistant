@@ -1332,6 +1332,35 @@ def test_a_stop_killed_child_that_spoke_on_stderr_is_still_the_restart(monkeypat
     assert _row(sid)["status"] == "running"
 
 
+@pytest.mark.parametrize("rc", [130, -2])
+def test_a_child_sigint_took_down_is_the_restart_too(monkeypatch, rc):
+    """SIGINT (Ctrl-C under `mystical run`, `mystical stop`'s group signal) is a
+    stop signal like SIGTERM: the death waits for the flag the same way."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, f"p-stop-int{rc}", rc)
+    monkeypatch.setattr(state, "shutting_down", False)
+    flag = threading.Timer(0.3, setattr, (state, "shutting_down", True))
+    flag.start()
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    flag.join()   # never let the flag rise after monkeypatch has put it back
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+def test_a_watchdog_kill_during_shutdown_stays_killed_as_hung(monkeypatch):
+    """The hang brake outranks the restart: a run the watchdog killed is still
+    recorded as hung with the bridge going down, so it keeps reading KILLED AS
+    HUNG instead of passing for a restart casualty."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-hung-stop", -9)
+    job.timed_out = True                  # what _watchdog sets before proc.kill()
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert "killed as hung" in (job.error_msg or "")
+    row = _row(sid)
+    assert row["status"] == "error" and row["elapsed"] is not None
+
+
 def test_a_sigterm_with_the_bridge_staying_up_is_an_honest_crash(monkeypatch):
     """Nobody is stopping: after the grace it is recorded and finished like any
     crash, with an elapsed, which is what keeps outcomes saying CRASHED."""
