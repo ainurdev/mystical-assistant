@@ -86,6 +86,38 @@ def test_restart_kill():
     assert o["code"] == "restarted"
 
 
+def test_a_restart_kill_left_for_recovery_reads_restarted():
+    """22 of 54 failures in 30 days ended "claude exited 143", the stop's SIGTERM.
+    With no elapsed the row is the boot-time orphan flip's: the restart's doing,
+    not a crash."""
+    o = outcomes.outcome(_turn(elapsed=None, cost=None),
+                         _sig(errors=["claude exited 143"], has_text=True))
+    assert o["code"] == "restarted"
+
+
+def test_the_same_exit_on_a_turn_the_runner_finished_is_a_crash():
+    """The runner finishes a SIGTERM death itself only when the bridge stayed up
+    through STOP_GRACE: someone killed claude, and CRASHED is the honest word."""
+    o = outcomes.outcome(_turn(), _sig(errors=["claude exited 143"], has_text=True))
+    assert o["code"] == "crashed"
+    assert "143" in o["detail"]
+
+
+def test_a_known_cause_beats_the_restart_reading():
+    o = outcomes.outcome(_turn(elapsed=None, cost=None),
+                         _sig(errors=["Claude usage limit reached"]))
+    assert o["code"] == "limit"
+
+
+def test_a_bot_turn_cut_by_a_restart_reads_restarted():
+    """The bot's blocking path journals its failure as the result string and
+    leaves the turn running for boot recovery the same way."""
+    o = outcomes.outcome(_turn(elapsed=None, cost=None),
+                         _sig(has_result=True,
+                              result_text="❌ No output.\nclaude exited 143"))
+    assert o["code"] == "restarted"
+
+
 def test_missing_binary_reads_as_auth():
     o = outcomes.outcome(_turn(), _sig(errors=["`claude` not found on PATH."]))
     assert o["code"] == "auth"

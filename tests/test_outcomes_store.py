@@ -66,6 +66,20 @@ def test_the_orphan_flip_reads_as_interrupted_through_the_store():
     assert turn["outcome"]["code"] == "interrupted"
 
 
+def test_a_journaled_exit_on_a_turn_left_for_recovery_reads_restarted():
+    """The path the 22 took: the child's exit is journaled, finish_turn is skipped
+    while the bridge stops, and boot's claim_orphaned_turns flips the row without
+    an elapsed, which is the fact outcomes reads it by."""
+    _, sid = _session()
+    store.start_turn(sid, "t-orph-143", "prompt", None)
+    store.append_event(sid, "t-orph-143",
+                       {"type": "error", "message": "claude exited 143"})
+    assert store.claim_orphaned_turns()
+    turn = next(t for t in store.transcript(sid)["turns"] if t["id"] == "t-orph-143")
+    assert turn["elapsed"] is None
+    assert turn["outcome"]["code"] == "restarted"
+
+
 def test_the_outcome_survives_an_incremental_poll():
     """The badge must not blink out when a later poll passes a cursor past the
     events the classification was read from."""
