@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import re
 
-from bridge import (agents, attribution, browser, config, devserver, fmt, git,
+from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
                     models, native, preview_detect, profiles, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
@@ -686,6 +686,11 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = 0
             return self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor,
                                                     qs.get("workflow", [""])[0] or None))
+        # Non-Claude ACP agent presets/accounts (bridge/acp_agents.py). Named
+        # off "/local/agents" on purpose: that path above is the Claude
+        # subagent viewer, an unrelated feature this must not shadow.
+        if path == "/local/acp/agents":
+            return self._json(acp_agents.api_info())
         if path == "/local/graph/state":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -1062,6 +1067,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_session_profile(chat, body)
         if path == "/local/project/profile":
             return self._post_project_profile(chat, body)
+        if path == "/local/acp/accounts":
+            return self._json(*acp_agents.api_account(body))
+        if path == "/local/acp/test":
+            return self._json(*acp_agents.api_test(body))
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")

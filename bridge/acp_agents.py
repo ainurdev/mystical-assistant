@@ -318,3 +318,36 @@ def api_info() -> dict:
         _load_options()
         opts = dict(_options)
     return {"presets": available(), "accounts": accounts(), "options": opts}
+
+
+def api_account(body: dict) -> "tuple[dict, int]":
+    """POST …/accounts: {action: create|delete, agent, label, kind, key?, id?}."""
+    action = body.get("action")
+    try:
+        if action == "create":
+            return {"ok": True, "account": add_account(
+                body.get("agent"), body.get("label"), body.get("kind"), body.get("key"))}, 200
+        if action == "delete":
+            remove_account(str(body.get("id") or ""))
+            return {"ok": True}, 200
+    except KeyError:
+        return {"error": "no such account"}, 404
+    except ValueError as e:
+        return {"error": str(e)}, 400
+    return {"error": "action must be create or delete"}, 400
+
+
+def api_test(body: dict) -> "tuple[dict, int]":
+    """POST …/test: {agent, account}. Runs the agent once in a scratch dir
+    (bridge/acp.py probe()) and remembers what it offers."""
+    from bridge import acp   # local: acp.py imports this module at its own top
+    p = preset(body.get("agent"))
+    if p is None:
+        return {"error": f"unknown agent {body.get('agent')!r}"}, 404
+    acct = body.get("account") or None
+    res = acp.probe(argv=argv(p), env=env_for(p, acct), label=p["label"],
+                    login_hint=login_hint(p, acct))
+    if res.get("ok"):
+        remember_options(p["id"], acct, res.get("options"), res.get("modes"))
+        return {"ok": True, "options": options_for(p["id"], acct)}, 200
+    return res, 200
