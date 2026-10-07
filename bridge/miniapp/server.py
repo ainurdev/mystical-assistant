@@ -669,8 +669,11 @@ class Handler(BaseHTTPRequestHandler):
                  os.path.join(config.BASE_PATH, project.lstrip("/"))) if p]
         cwd = next((p for p in cand if browser.within_base(p) and os.path.isdir(p)),
                    state.project_dir(chat_id))
+        # The project's default profile, with no seeded mode (as the dashboard's).
+        pid = profiles.project_default(project)
         s = store.create_session(chat_id, project, origin="miniapp", cwd=cwd,
-                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+                                 permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
+                                 profile_id=pid)
         self._json({"session": _session_brief(_pre_title(s, body.get("title")))})
 
     def _api_session_get(self, chat_id: int, rest: str, qs):

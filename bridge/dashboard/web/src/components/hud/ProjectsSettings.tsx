@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { ProfilesInfo } from "../../lib/profiles";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
@@ -17,6 +18,10 @@ export interface ProjectsSettingsProps {
   onRemove: (rel: string) => void;
   onRename: (rel: string, name: string) => void; // blank restores the directory name
   onImport: (path: string) => void;
+  // The bridge's profiles and each project's default — the one its new sessions
+  // are bound to. Undefined: a bridge older than profiles, so no picker.
+  profiles?: ProfilesInfo;
+  onSetProfile?: (rel: string, profileId: string) => void; // "" = no default
 }
 
 function basename(rel: string): string {
@@ -25,7 +30,7 @@ function basename(rel: string): string {
 }
 
 export function ProjectsSettings(props: ProjectsSettingsProps) {
-  const { groups, imported, hidden, remotes, onSetHidden, onRemove, onRename, onImport } = props;
+  const { groups, imported, hidden, remotes, onSetHidden, onRemove, onRename, onImport, profiles, onSetProfile } = props;
   const [importPath, setImportPath] = useState("");
   const [hov, setHov] = useState("");
   // Rename in place: the name chip becomes an input. Esc has to blur (not just
@@ -131,6 +136,14 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                       title={`origin — github.com/${remotes[r.rel]}`} {...hp(`gh:${r.rel}`)}
                       style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: hov === `gh:${r.rel}` ? "var(--acc)" : "var(--txd)", textDecoration: "none", flex: "none", whiteSpace: "nowrap" }}>
                       {remotes[r.rel]}</a>
+                  )}
+                  {profiles && (
+                    <select value={profiles.project_defaults[r.rel] ?? ""} onChange={(e) => onSetProfile?.(r.rel, e.target.value)}
+                      title="Default profile — what a new session in this project is bound to"
+                      style={{ background: "var(--panel3)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: ".5px", padding: "4px 6px", maxWidth: 150, flex: "none" }}>
+                      <option value="">No default</option>
+                      {profiles.profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
                   )}
                   <span style={{ fontSize: "var(--t9)", color: "var(--txd)", flex: "none" }}>{r.sessionCount} sess</span>
                   <button onClick={() => onSetHidden([r.rel], !isHidden)} title="hide / show in sidebar" {...hp(`hide:${r.rel}`)}

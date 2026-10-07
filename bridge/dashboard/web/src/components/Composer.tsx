@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, typ
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { modelRows, type AgentOption } from "../models";
+import { describe, type Profile } from "../lib/profiles";
 import { ago } from "../lib/surfaces";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
@@ -61,7 +62,7 @@ const COMPACT_SUGGEST = 0.75;
 const CTX_SEGMENTS = 8;
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
-type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; icon?: ReactNode; tail?: ReactNode; title?: string };
+type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string };
 
 /** The rows of a picker menu — shared by the chip dropdowns and the COMPACT
  *  layout's run popover, which lists the same models (with the same usage
@@ -100,7 +101,6 @@ function MenuRows<T extends string>({ options, value, onPick }: {
               }}
             >
               <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
-              {o.icon}
               <span style={{ flex: 1 }}>{o.label}</span>
               {o.tail}
             </button>
@@ -120,8 +120,15 @@ function modeRow(id: string): { id: string; label: string; title?: string } {
   return PERMS.find((o) => o.id === id) ?? { id, label: id || "Session" };
 }
 
+// A knob set by hand in a session bound to a profile: its value wins over the
+// profile's until you pick the profile's own again (bridge profiles.save_pick).
+const OVERRIDE_TIP = "set in this session; pick the profile's value to follow it again";
+function OverrideDot() {
+  return <span title={OVERRIDE_TIP} style={{ color: "var(--acc)", flex: "none" }}>•</span>;
+}
+
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title,
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot,
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -132,9 +139,9 @@ function Drop<T extends string>({
   code?: ReactNode;
   value: T;
   // short → what the chip shows; group → a heading printed once above each run
-  // of rows sharing it; icon → a glyph ahead of the label (a provider's logo);
-  // tail → right-aligned decoration (the usage meters)
-  options: { id: T; label: string; short?: string; group?: string; icon?: ReactNode; tail?: ReactNode; title?: string }[];
+  // of rows sharing it; tail → right-aligned decoration (the usage meters, what
+  // a profile sets)
+  options: { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string }[];
   // What the chip shows when `value` isn't in `options` (default: the first row).
   fallback?: { id: string; label: string; short?: string };
   open: boolean;
@@ -149,6 +156,8 @@ function Drop<T extends string>({
   // off the window's edge. A <Tip> around the chip was clipped by the column
   // and came up alongside this title's box.
   title?: string;
+  // The value is the session's own, over its profile's (OverrideDot).
+  dot?: boolean;
 }) {
   const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
@@ -167,6 +176,7 @@ function Drop<T extends string>({
       <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
         {code && <span className="ctrl-fld">{code}</span>}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
+        {dot && <OverrideDot />}
         <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
       </button>
       {open && (
@@ -186,29 +196,25 @@ function Drop<T extends string>({
   );
 }
 
-// A fuel gauge in the MODEL and AGENT menus: how much of a usage window is
-// still unspent (fill = left, so a full bar is a full tank), in the same
-// track/fill idiom as the footer's USED meter. An AGENT row also names each
-// window and says when it refills.
-function LeftMeter({ left, severity, tag, reset }: { left: number; severity?: string; tag?: string; reset?: string }) {
+// A fuel gauge in the MODEL menu: how much of a usage window is still unspent
+// (fill = left, so a full bar is a full tank), in the same track/fill idiom as
+// the footer's USED meter.
+function LeftMeter({ left, severity }: { left: number; severity?: string }) {
   const c = severity === "critical" || severity === "exceeded" ? "var(--err)"
     : severity && severity !== "normal" ? "var(--warn)" : "var(--acc)";
-  const dim = { fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" };
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
-      {tag && <span style={dim}>{tag}</span>}
       <span style={{ width: 44, height: 3, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
         <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${left}%`, background: c }} />
       </span>
       <span style={{ minWidth: 30, textAlign: "right", fontSize: "var(--t9)", letterSpacing: .5 }}>{left}%</span>
-      {reset && <span style={{ ...dim, minWidth: 38 }}>{reset}</span>}
     </span>
   );
 }
 
-// A Claude login's provider logo: simple-icons' Claude mark, already bundled
-// as CLAUDE.md's file icon. currentColor, so it takes each theme's accent the
-// way every other glyph does. Free agents keep their ⚡ label.
+// Claude's logo: simple-icons' Claude mark, already bundled as CLAUDE.md's
+// file icon. currentColor, so it takes each theme's accent the way every other
+// glyph does. It marks the PROFILE chip: a profile picks who runs the turn.
 function ClaudeLogo({ size = 12 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden style={{ flex: "none", color: "var(--acc)" }}
@@ -243,7 +249,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
  *  once it is set. Lists open inline, so
  *  the popover never stacks a second floating menu over the transcript. */
 function RunPopover<M extends string>({
-  open, onToggle, model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, freeLabel,
+  open, onToggle, model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, freeLabel, overrides,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -258,7 +264,9 @@ function RunPopover<M extends string>({
   /** A free agent runs its own model with no effort knob: its name stands in
    *  for the model and the slider goes. */
   freeLabel?: string;
+  overrides?: string[]; // the knobs set by hand over the session's profile (OverrideDot)
 }) {
+  const own = (k: string) => !!overrides?.includes(k);
   const [sub, setSub] = useState<"" | "model" | "perm">("");
   useEffect(() => { if (!open) setSub(""); }, [open]);
   const cur = modelOpts.find((o) => o.id === model) ?? modelOpts[0];
@@ -279,9 +287,9 @@ function RunPopover<M extends string>({
         style={{ appearance: "none", cursor: "pointer", border: 0, padding: 0, background: "transparent",
                  fontFamily: "inherit", display: "inline-flex", alignItems: "baseline", gap: 7,
                  whiteSpace: "nowrap", minWidth: 0, maxWidth: "100%" }}>
-        <span style={{ fontWeight: 600, color: open ? "var(--acc)" : "var(--txb)", fontSize: "var(--t105)", overflow: "hidden", textOverflow: "ellipsis" }}>{modelName}</span>
-        {perm !== "" && permRow && <span style={dim}>{permRow.label.toLowerCase()}</span>}
-        {!freeLabel && effort !== "" && <span style={dim}>{effRow.label.toLowerCase()}</span>}
+        <span style={{ fontWeight: 600, color: open ? "var(--acc)" : "var(--txb)", fontSize: "var(--t105)", overflow: "hidden", textOverflow: "ellipsis" }}>{modelName}{own("model") && <OverrideDot />}</span>
+        {perm !== "" && permRow && <span style={dim}>{permRow.label.toLowerCase()}{own("permission_mode") && <OverrideDot />}</span>}
+        {!freeLabel && effort !== "" && <span style={dim}>{effRow.label.toLowerCase()}{own("effort") && <OverrideDot />}</span>}
       </button>
       {open && (
         <div role="dialog" aria-label="Model, mode and effort"
@@ -346,7 +354,7 @@ function RunPopover<M extends string>({
 }
 
 export function Composer({
-  disabled, running, model, models, usage, agent, agents, onAgent, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, usage, agent: activeAgent, profile, profiles, onProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
 }: {
@@ -363,10 +371,17 @@ export function Composer({
   models: { id: ModelId; label: string }[];
   // The ambient login's usage meter — the MODEL menu shows what each model has left.
   usage?: UsageInfo | null;
-  // Which platform runs the turn — a Claude login or a free-agent provider.
-  agent: string;
-  agents: AgentOption[];
-  onAgent: (id: string) => void;
+  // Who runs the session's next turn (its profile's login) — the footer's
+  // AgentOption. Read-only here: a profile is how you change it. A free agent
+  // brings its own model, has no effort knob and takes different modes, so it
+  // swaps those chips for what actually runs.
+  agent?: AgentOption | null;
+  // The profile the session is bound to ("" = none). `profiles` undefined:
+  // a bridge too old to have them, so there's no picker.
+  profile: string;
+  profiles?: Profile[];
+  onProfile: (id: string) => void;
+  overrides?: string[]; // knobs set by hand over the profile — each gets an OverrideDot
   effort: EffortLevel | "";
   perm: string;
   onPerm: (p: string) => void;
@@ -407,12 +422,8 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "agent" | "model" | "effort" | "mode" | "pony" | "verbs" | "run">("");
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run">("");
   const { compact, lead, sendKey } = useChatChrome();
-  // A free agent brings its own model, has no effort knob, and takes different
-  // permission modes, so three of these dropdowns would be lying about what
-  // runs — swap them for what actually will.
-  const activeAgent = agents.find((a) => a.id === agent);
   // MODEL rows grouped by usage pool, each with what it has left. The meter is
   // the ambient login's, so it only decorates the rows while that login is the
   // one running the turns; another account gets the plain list.
@@ -422,19 +433,16 @@ export function Composer({
     })),
     [models, usage, activeAgent],
   );
-  // AGENT rows: a login leads with its provider's logo and ends in both its
-  // usage windows (or why it has none) — the footer's account chips used to
-  // carry that. A free agent's row is its label alone, as before.
-  const agentRows = useMemo(
-    () => agents.map((a) => a.free ? a : {
-      ...a,
-      icon: <ClaudeLogo />,
-      tail: a.wins?.length
-        ? a.wins.map((w) => <LeftMeter key={w.tag} left={w.left} severity={w.severity} tag={w.tag} reset={w.reset} />)
-        : <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: a.note === "LOGIN EXPIRED" ? "var(--warn)" : "var(--txd)" }}>{a.note}</span>,
-    }),
-    [agents],
+  // PROFILE rows: each ends in what it sets, so the menu answers "what does
+  // picking this change" without a trip to settings.
+  const profileRows = useMemo(
+    () => [{ id: "", label: "NO PROFILE" }, ...(profiles ?? []).map((p) => ({
+      id: p.id, label: p.name,
+      tail: <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>,
+    }))],
+    [profiles],
   );
+  const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<MarkdownInputHandle>(null);
 
@@ -725,12 +733,15 @@ export function Composer({
 
 
   // Pieces both layouts place: DEFAULT strings them along one control row;
-  // COMPACT moves the account and ponytail chips to the row's right end and
-  // folds model / mode / effort into the RunPopover over SEND.
-  const agentDrop = (right: boolean) => (
-    <Drop label="AGENT" code={activeAgent?.free ? <UserRound size={12} /> : <ClaudeLogo />} value={agent} options={agentRows} minWidth={104} align={right ? "right" : "left"} open={openDrop === "agent"}
-      onToggle={() => setOpenDrop((d) => (d === "agent" ? "" : "agent"))}
-      onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
+  // COMPACT moves the profile and ponytail chips to the row's right end and
+  // folds model / mode / effort into the RunPopover over SEND. A profile the
+  // list doesn't have (it failed to load) shows as its id. Re-picking the
+  // current one is no change: a bind would also drop the knobs set by hand.
+  const profileDrop = (right: boolean) => profiles && (
+    <Drop label="PROFILE" code={activeAgent?.free ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileRows}
+      fallback={{ id: profile, label: profile }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
+      onToggle={() => setOpenDrop((d) => (d === "profile" ? "" : "profile"))}
+      onPick={(id) => { if (id !== profile) onProfile(id); setOpenDrop(""); }} />
   );
   const ponyDrop = (right: boolean) => showPonytail && (
     <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
@@ -932,7 +943,7 @@ export function Composer({
             </div>
             {ctxBlock}
             <div className="ctrl-set">
-              {agentDrop(true)}
+              {profileDrop(true)}
               {ponyDrop(true)}
             </div>
           </div>
@@ -941,7 +952,7 @@ export function Composer({
       <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
         <div className="ctrl-row">
           <div className="ctrl-set">
-            {agentDrop(false)}
+            {profileDrop(false)}
             {activeAgent?.free ? (
               <Tip text="This turn runs on opencode, not your Claude subscription — the provider's own model, no effort setting, and its work is worth reviewing.">
                 <span
@@ -953,15 +964,15 @@ export function Composer({
               </Tip>
             ) : (
               <>
-                <Drop label="MODEL" code={<Brain size={12} />} value={model} options={modelOpts} open={openDrop === "model"}
+                <Drop label="MODEL" code={<Brain size={12} />} value={model} options={modelOpts} open={openDrop === "model"} dot={own("model")}
                   onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
                   onPick={(id) => { onModel(id); setOpenDrop(""); }} />
-                <Drop label="EFFORT" code={<Gauge size={12} />} value={effort} options={EFFORTS} open={openDrop === "effort"}
+                <Drop label="EFFORT" code={<Gauge size={12} />} value={effort} options={EFFORTS} open={openDrop === "effort"} dot={own("effort")}
                   onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
                   onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
               </>
             )}
-            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} fallback={modeRow(perm)} open={openDrop === "mode"} minWidth={104}
+            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} fallback={modeRow(perm)} open={openDrop === "mode"} minWidth={104} dot={own("permission_mode")}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
             {ponyDrop(false)}
@@ -1104,7 +1115,8 @@ export function Composer({
               model={model} modelOpts={modelOpts} onModel={onModel}
               perm={perm} permOpts={activeAgent?.free ? FREE_PERMS : PERMS} onPerm={onPerm}
               effort={effort} onEffort={onEffort}
-              freeLabel={activeAgent?.free ? activeAgent.label.replace("⚡ ", "") : undefined} />
+              freeLabel={activeAgent?.free ? activeAgent.label.replace("⚡ ", "") : undefined}
+              overrides={overrides} />
             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
               {actionCluster}
             </div>

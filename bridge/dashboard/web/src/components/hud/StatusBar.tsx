@@ -56,8 +56,9 @@ const zlabel = (t: string): ReactNode => (
 /** The footer, as cells in the shell grid's bottom track rather than a row of
  *  its own: usage under SESSIONS, the branch chain and ⌘K under the right
  *  panel, and nothing under the chat, which runs to the bottom edge. Who runs
- *  the turn (and every login's windows) is the composer's AGENT picker; the
- *  context fill is its CTX lamps. */
+ *  the turn is the session's profile (the composer's PROFILE picker), every
+ *  login's windows are SETTINGS ▸ ACCOUNTS, and the context fill is the
+ *  composer's CTX lamps. */
 export function StatusBar(props: StatusBarProps) {
   const { usedPct, resetLabel, agent, repo, changes, git, branch, onSynced, onPalette, rightOpen } = props;
   const [hovered, setHovered] = useState(false);

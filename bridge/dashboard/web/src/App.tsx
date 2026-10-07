@@ -23,11 +23,12 @@ import {
   type RivendellInstance,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, type AgentOption } from "./models";
+import type { ProfilesInfo } from "./lib/profiles";
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, fmtReset, projectName, setProjectNames, useProjectTints, usageWindows } from "./lib/surfaces";
+import { ago, fmtReset, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
 import {
   autoBaseFont,
   fontStack,
@@ -237,8 +238,12 @@ export function App() {
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   // Free-agent rungs that are ready to run right now (configured + opencode
-  // installed) — the non-Claude half of the AGENT picker.
+  // installed) — the non-Claude half of agentOpts.
   const [freeAgents, setFreeAgents] = useState<FreeAgentInfo[]>([]);
+  // Server-side profiles and each project's default (bridge/profiles.py). null
+  // until the first load; profilesAvailable false = a bridge older than them.
+  const [profiles, setProfiles] = useState<ProfilesInfo | null>(null);
+  const [profilesAvailable, setProfilesAvailable] = useState(true);
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
   // Prompts the relevance guardrail held back — still client-side, nothing ran.
   // Keyed by the session each one was written in: the check takes ~10s, and a
@@ -282,16 +287,15 @@ export function App() {
   // Which tab the next open lands on, when something asked for one by name
   // (lib/opensettings) — cleared on close, so the menus keep their default.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
-  // Effort and ponytail are this browser's: settings, so they survive a reload.
-  // Model and mode belong to the open session — its row is the source of truth
-  // (bridge store.set_run_settings), loaded by the effect beside the model
-  // picker below. settings.model/perm only remember the last pick made here,
-  // which is what a session that never ran from a composer starts on (runPicks).
+  // Ponytail is this browser's: a setting, so it survives a reload. Model, mode
+  // and effort belong to the open session — its brief (the session's own picks
+  // over its profile's) is the source of truth, loaded by the effect beside the
+  // model picker below. settings.model/perm/effort only remember the last pick
+  // made here, which fills what a session has no pick for (runPicks).
   const [model, setModelState] = useState<ModelId>(() => settings.model as ModelId);
   const [permMode, setPermState] = useState<string>(() => settings.perm);
-  const effort = settings.effort as EffortLevel | "";
+  const [effort, setEffortState] = useState<EffortLevel | "">(() => settings.effort as EffortLevel | "");
   const ponytail = settings.ponytail;
-  const setEffort = (e: EffortLevel | "") => patchSettings({ effort: e });
   const setPonytail = (p: string) => patchSettings({ ponytail: p });
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
   // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
@@ -334,30 +338,41 @@ export function App() {
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
   // A pick: shown now, remembered as this browser's default, and saved to the
-  // open session as the pair the picker shows — a fresh session would otherwise
-  // keep the bridge's mode under a picker showing yours. `half` is what you
-  // actually picked, and the only half a running turn is switched to
+  // open session as the three the picker shows — a fresh session would
+  // otherwise keep the bridge's mode under a picker showing yours. `half` is
+  // what you actually picked, and the only one a running turn is switched to
   // (runner.apply_run_settings): a model pick must not carry a mode the picker
   // merely shows into a live turn, and turn Bypass on there. A bridge too old
   // for the route 404s; the pick still rides the next /local/run, as before.
-  const pickRun = (m: ModelId, p: string, half: RunPick) => {
+  const pickRun = (m: ModelId, p: string, e: EffortLevel | "", half: RunPick) => {
     setModelState(m);
     setPermState(p);
-    patchSettings({ model: m, perm: p });
+    setEffortState(e);
+    patchSettings({ model: m, perm: p, effort: e });
     const sid = sessionIdRef.current;
-    if (sid) void api.setRunSettings(sid, { model: m, permission_mode: p || undefined, pick: half }).catch(() => {});
+    if (!sid) return;
+    void api.setRunSettings(sid, { model: m, permission_mode: p || undefined, effort: e, pick: half })
+      // Auto (blank) on a session bound to a profile follows the profile's
+      // effort: show what will run, not the pick.
+      .then((r) => {
+        if (half === "effort" && r.effort !== undefined && sessionIdRef.current === sid)
+          setEffortState((r.effort ?? "") as EffortLevel | "");
+      })
+      .catch(() => {});
   };
-  const setModel = (m: ModelId) => pickRun(m, permMode, "model");
-  const setPermMode = (p: string) => pickRun(model, p, "permission_mode");
-  // The SESSION tab's MODEL/MODE (and a PROFILE's APPLY) are the composer's
-  // knobs, so they show and pick for the open session too; the rest is ours.
-  const settingsView = useMemo(() => ({ ...settings, model, perm: permMode }), [settings, model, permMode]);
+  const setModel = (m: ModelId) => pickRun(m, permMode, effort, "model");
+  const setPermMode = (p: string) => pickRun(model, p, effort, "permission_mode");
+  const setEffort = (e: EffortLevel | "") => pickRun(model, permMode, e, "effort");
+  // The SESSION tab's MODEL/MODE/EFFORT are the composer's knobs, so they show
+  // and pick for the open session too; the rest is ours.
+  const settingsView = useMemo(() => ({ ...settings, model, perm: permMode, effort }), [settings, model, permMode, effort]);
   const patchFromSettings = (p: Partial<HudSettings>) => {
-    const { model: m, perm: pm, ...rest } = p;
-    // One pick per half that changes: a PROFILE's APPLY can change both.
-    const nm = m || model, np = pm || permMode;
-    if (nm !== model) pickRun(nm, np, "model");
-    if (np !== permMode) pickRun(nm, np, "permission_mode");
+    const { model: m, perm: pm, effort: ef, ...rest } = p;
+    // One pick per knob that changes.
+    const nm = m || model, np = pm || permMode, ne = (ef ?? effort) as EffortLevel | "";
+    if (nm !== model) pickRun(nm, np, ne, "model");
+    if (np !== permMode) pickRun(nm, np, ne, "permission_mode");
+    if (ne !== effort) pickRun(nm, np, ne, "effort");
     if (Object.keys(rest).length) patchSettings(rest);
   };
   // openBlank drops the open session on purpose while POST /session is in
@@ -1032,6 +1047,37 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [markBoot]);
 
+  // Profiles change only when someone edits them — here (SETTINGS) or on
+  // another dashboard — so they load on mount and after every edit, unpolled.
+  // A bridge started before they existed answers its catch-all 404.
+  const loadProfiles = useCallback(() => api.profiles()
+    .then((r) => { setProfiles(r); setProfilesAvailable(true); })
+    .catch((e) => { if ((e as Error).message === "not found") setProfilesAvailable(false); }), []);
+  useEffect(() => { void loadProfiles(); }, [loadProfiles]);
+  // The open session's PROFILE pick. The bridge binds it whatever the session
+  // has run on before (another agent excepted: a 409, whose message says so)
+  // and answers with its new brief — the pickers follow from that.
+  async function pickProfile(pid: string) {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      const { session } = await api.setSessionProfile(sid, pid);
+      setSessions((prev) => prev.map((s) => (s.id === sid ? session : s)));
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+  // SETTINGS ▸ PROJECTS: the profile a project's new sessions are bound to.
+  // The sessions it already has keep theirs.
+  async function setProjectProfile(rel: string, pid: string) {
+    try {
+      const { project_defaults } = await api.setProjectProfile(rel, pid);
+      setProfiles((p) => p && { ...p, project_defaults });
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
   // ⌘K palette + Escape closes the topmost overlay.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1133,7 +1179,6 @@ export function App() {
     const enqueue = async () => {
       const ok = await queue.enqueue({
         text, prompt: text, images, project, effort: effort || undefined,
-        agent: settings.agent || undefined,
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1150,7 +1195,6 @@ export function App() {
         prompt: text, images, project,
         session_id: sid, model, effort: effort || undefined,
         permission_mode: permMode || undefined, ponytail: ponytail || undefined,
-        agent: settings.agent || undefined,
         force: opts?.force || undefined,
       });
       // Held: this looks like different work from the session it would resume.
@@ -1170,7 +1214,7 @@ export function App() {
       // or a session minted for this prompt reads as never-run until the next
       // poll and the picker flips to this browser's defaults meanwhile.
       setSessions((prev) => prev.map((s) => (s.id === sid
-        ? { ...s, model, permission_mode: permMode || s.permission_mode } : s)));
+        ? { ...s, model, permission_mode: permMode || s.permission_mode, effort: effort || null } : s)));
       liveTurns.current.add(res.job_id);
       markWorking(res.session_id || sid);
       // Only paint the turn if that session is still the one on screen; if you
@@ -1694,51 +1738,41 @@ export function App() {
     const to = snapModel(model, state?.models);
     if (to) setModelState(to);
   }, [state?.models, model]);
+  // The open session's profile, which the pickers read through (runPicks).
+  const boundProfile = profiles?.profiles.find((p) => p.id === selected?.profile_id) ?? null;
   // The open session's picks load when it opens and follow the 5s session poll
-  // when another device changes them. Keyed on the values, so a poll that left
-  // before a pick made here can't put the old one back.
+  // when another device changes them — or its profile is edited. Keyed on the
+  // values, so a poll that left before a pick made here can't put the old one back.
   useEffect(() => {
     if (!selected) return;
-    const r = runPicks(selected, { model: settings.model, perm: settings.perm });
+    const r = runPicks(selected, { model: settings.model, perm: settings.perm, effort: settings.effort },
+                       boundProfile);
     setModelState(r.model);
     setPermState(r.perm);
-  }, [sessionId, selected?.model, selected?.permission_mode]);
+    setEffortState(r.effort as EffortLevel | "");
+  }, [sessionId, selected?.model, selected?.permission_mode, selected?.effort, selected?.profile_id,
+      selected?.overrides?.join(), boundProfile?.model, boundProfile?.mode, boundProfile?.effort]);
 
-  // AGENT picker — which platform runs the turn. Claude logins first (the
-  // ambient one leads), then every ready free-agent rung. Option ids are the
-  // strings the bridge stores as a turn's runtime, so the picker, the status
-  // bar and the transcript badge all name the same thing.
+  // Who can run a turn: Claude logins first (the ambient one leads), then every
+  // ready free-agent rung. Option ids are the strings the bridge stores as a
+  // turn's runtime, so the status bar and the transcript badge name the same thing.
   const agentOpts = useMemo<AgentOption[]>(() => [
-    ...accounts.filter((a) => !a.disabled).map((a) => {
-      // The countdowns are the answer to the question a 0% row makes you ask —
-      // and a row never goes blank: no meter still says which kind of no.
-      const wins = usageWindows(a);
-      return {
-        id: `claude:${a.slot}`,
-        short: `A${a.slot} ${(a.email ?? "?").split("@")[0]}${a.left === null ? "" : ` · ${a.left}%`}`,
-        label: [`A${a.slot} · ${a.email ?? "unknown"}`, a.plan, a.default && "DEFAULT"].filter(Boolean).join(" · "),
-        free: false, def: a.default, left: a.left,
-        wins, note: wins.length ? undefined : a.logged_in === false ? "LOGIN EXPIRED" : "USAGE UNKNOWN",
-      };
-    }),
+    ...accounts.filter((a) => !a.disabled).map((a) => ({
+      id: `claude:${a.slot}`,
+      label: [`A${a.slot} · ${a.email ?? "unknown"}`, a.plan, a.default && "DEFAULT"].filter(Boolean).join(" · "),
+      free: false, def: a.default, left: a.left,
+    })),
     ...freeAgents.map((p) => ({
       id: `opencode:${p.provider}`,
-      short: `⚡ ${p.provider.toUpperCase()}`,
       label: `⚡ ${p.provider.toUpperCase()} · ${p.model}`,
       free: true, def: false, left: null,
     })),
   ], [accounts, freeAgents]);
-  // "" is the ambient login — resolve it to that account's own id so the picker
-  // and the status bar always name someone.
-  const agentId = settings.agent || agentOpts.find((o) => o.def)?.id || agentOpts[0]?.id || "";
-  const activeAgent = agentOpts.find((o) => o.id === agentId) ?? null;
-  const setAgent = (id: string) => patchSettings({ agent: id });
-  // A pick that went away (account removed, key cleared) falls back to the
-  // default login instead of 400ing on the next send.
-  useEffect(() => {
-    if (!agentOpts.length || agentOpts.some((o) => o.id === agentId)) return;
-    setAgent("");
-  }, [agentOpts, agentId]);
+  // Who runs the open session's next turn: its profile's login, else the
+  // ambient one — so the footer meter and the MODEL menu's are theirs.
+  const account = selected?.account;
+  const activeAgent = (account && agentOpts.find((o) => o.id === `claude:${account}`))
+    || agentOpts.find((o) => o.def) || agentOpts[0] || null;
 
   // Switched an extra off while looking at the view it owns: the tab is gone, so
   // sitting there would strand you on a screen with no way back to it. (The
@@ -2058,9 +2092,6 @@ export function App() {
     setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, disabled_tools: rules } : s)));
     void api.setSessionTools(id, rules).then(() => void loadSessions()).catch(() => void loadSessions());
   }
-  const setSessionTools = (rules: string[]) => {
-    if (sessionId) setSessionToolsFor(sessionId, rules);
-  };
 
   // MERGED ▸ ARCHIVE SESSION (PrChip). Unlike setLifecycle this keeps the
   // chat on the session: the popover's REMOVE WORKTREE is the other half of
@@ -2236,7 +2267,9 @@ export function App() {
                         </div>
                       }
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={usage} effort={effort}
-                      agent={agentId} agents={agentOpts} onAgent={setAgent}
+                      agent={activeAgent} profile={selected?.profile_id ?? ""}
+                      profiles={profilesAvailable ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
+                      overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       draft={draft} onDraft={setDraft}
                       contextTokens={contextTokens} contextWindow={selected?.ctx_window}
@@ -2326,10 +2359,10 @@ export function App() {
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}
-                models={modelOpts} agents={agentOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
+                models={modelOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
                 sessionTools={selected?.disabled_tools ?? []}
-                onSessionTools={setSessionTools}
+                profiles={profiles} profilesAvailable={profilesAvailable} onProfilesChanged={() => void loadProfiles()}
                 onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
                 projects={{
                   groups: projectGroups.filter((g) => !removedProjects[g.rel]),
@@ -2340,6 +2373,8 @@ export function App() {
                   onRemove: (rel) => setRemovedProjects((p) => ({ ...p, [rel]: true })),
                   onRename: renameProject,
                   onImport: importProject,
+                  profiles: profilesAvailable ? profiles ?? undefined : undefined,
+                  onSetProfile: setProjectProfile,
                 }}
                 onReplayBoot={replayBoot}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />

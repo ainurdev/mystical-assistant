@@ -1,3 +1,5 @@
+import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
+
 // The dashboard server hands out a per-process token in the URL the user opens
 // (http://127.0.0.1:8790/?token=...). We keep it and send it on every
 // state-changing request (X-Dash-Token) and on SSE streams (?token=). Cross-origin
@@ -44,21 +46,29 @@ export interface SessionBrief {
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
-  // The session's run picks (bridge store.set_run_settings), loaded into the
-  // composer. Absent from a bridge older than this field.
-  model?: string | null; // last model picked for it on any surface; null = none yet
-  permission_mode?: string; // the mode its next run gets: stored, else the bridge default
+  // What the session's next run gets (bridge profiles.brief): a knob set by
+  // hand in it, else its profile's, else the default. Loaded into the
+  // composer. Absent from a bridge older than these fields.
+  model?: string | null; // null = neither it nor its profile picked one yet
+  permission_mode?: string; // its own, else its profile's, else the bridge default
+  effort?: string | null; // null = none set (Auto)
+  profile_id?: string | null; // the profile it is bound to (lib/profiles); null = none
+  agent?: string; // who runs it: "claude" until agent profiles land
+  account?: string; // its profile's Claude login slot; "" = the default login
+  overrides?: string[]; // knobs set by hand in it, over its profile: model | permission_mode | effort | disabled_tools
 }
 
-/** Which half of the picker a settings POST was for: the only half a running
- *  turn is switched to (the pair is saved either way). */
-export type RunPick = "model" | "permission_mode";
+/** Which picker a settings POST was for: a running turn is switched only to
+ *  that one (all three are saved either way; effort waits for the next turn). */
+export type RunPick = "model" | "permission_mode" | "effort";
 
 /** What POST /local/session/settings saved (and switched a running turn to). */
 export interface RunSettings {
   ok: boolean;
   model: string | null;
   permission_mode: string;
+  effort?: string | null;
+  overrides?: string[];
 }
 
 /** Why a failed turn failed (bridge/outcomes.py) — derived server-side on every
@@ -1172,7 +1182,6 @@ export interface RunBody {
   effort?: string;
   permission_mode?: string; // the picker's mode — the run saves it to the session; omit to keep the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
-  agent?: string; // who runs it: 'claude:<slot>' | 'opencode:<provider>'; omit for the ambient login
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
 }
 
@@ -1336,11 +1345,30 @@ export const api = {
       method: "POST",
       body: { policy },
     }),
-  // A model/mode pick for a session: saved, and applied to its running turn.
-  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; pick: RunPick }) =>
+  // A model/mode/effort pick for a session: saved, and applied to its running
+  // turn. A blank effort is Auto.
+  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; effort?: string; pick: RunPick }) =>
     req<RunSettings>("/local/session/settings", {
       method: "POST",
       body: { session_id: id, ...body },
+    }),
+  // A bridge older than profiles answers these with its catch-all 404 "not found".
+  profiles: () => req<ProfilesInfo>("/local/profiles"),
+  /** create · update · delete. A refused field comes back as the bridge's message. */
+  profileWrite: (body: ProfileWrite) =>
+    req<{ ok: boolean; profile?: Profile }>("/local/profiles", { method: "POST", body }),
+  /** Bind the session to a profile ("" unbinds). A 409 means it already ran
+   *  on another agent. */
+  setSessionProfile: (id: string, profileId: string) =>
+    req<{ ok: boolean; profile_id: string | null; session: SessionBrief }>("/local/session/profile", {
+      method: "POST",
+      body: { session_id: id, profile_id: profileId },
+    }),
+  /** The profile new sessions in a project are bound to ("" = none). */
+  setProjectProfile: (project: string, profileId: string) =>
+    req<{ ok: boolean; project_defaults: Record<string, string> }>("/local/project/profile", {
+      method: "POST",
+      body: { project, profile_id: profileId },
     }),
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.
@@ -1783,7 +1811,6 @@ export const api = {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
     effort?: string; surface?: string; // no model/mode: it runs on the session's
-    agent?: string; // same picker as /local/run — a queued prompt keeps your agent
   }) => req<QueueSnapshot & { item_id: string }>(
     "/local/queue/enqueue", { method: "POST", body }),
   queueOp: (op: QueueOp, body: Record<string, unknown>) =>

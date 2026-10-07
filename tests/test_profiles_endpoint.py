@@ -73,6 +73,34 @@ def _run(mod, monkeypatch, body):
     return box
 
 
+def _create(mod, project):
+    """A session made the way both clients make one: before its first /run, so
+    /run's profile_id never reaches it. An existing cwd, so neither route has to
+    fall back to the chat's project dir."""
+    h, box = _handler(mod)
+    body = {"project": project, "cwd": config.BASE_PATH}
+    if mod is dash:
+        h._post_api("/local/sessions", body)
+    else:
+        h._api_sessions_create(CHAT, body)
+    return store.get_session(box["obj"]["session"]["id"])
+
+
+@pytest.mark.parametrize("mod", [dash, mini])
+def test_a_new_session_takes_its_project_default_and_its_mode(mod):
+    p = _p()
+    profiles.set_project_default("/pe-new", p["id"])
+    row = _create(mod, "/pe-new")
+    assert (row["profile_id"], row["permission_mode"]) == (p["id"], None)
+
+
+@pytest.mark.parametrize("mod", [dash, mini])
+def test_a_new_session_without_a_project_default_is_unchanged(mod):
+    row = _create(mod, "/pe-new-plain")
+    assert (row["profile_id"], row["permission_mode"]) == (
+        None, config.NEW_SESSION_PERMISSION_MODE)
+
+
 @pytest.mark.parametrize("mod", [dash, mini])
 def test_run_echoing_the_profile_does_not_pin_the_session(mod, monkeypatch):
     p = _p()

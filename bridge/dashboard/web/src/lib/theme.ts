@@ -387,11 +387,11 @@ export interface HudSettings {
   // SESSION tab and the composer's dropdowns are the same state.
   model: string; // model id, or a short CLI alias
   allModels: boolean; // false = pickers show only the newest of each family
-  effort: string; // "" = auto
+  effort: string; // the last effort picked here — what a session with none starts on ("" = auto)
   perm: string; // the last mode picked here — what a never-run session starts on ("" = the bridge's)
   ponytail: string; // "" = default
-  // Who runs the turn: 'claude:<slot>' (a login) or 'opencode:<provider>' (a
-  // free agent). "" = the ambient login, same as claude:1.
+  // Retired: the AGENT picker's pick. Who runs a session is its profile's now
+  // (lib/profiles); kept so a stored value still parses, and read by nothing.
   agent: string;
   // OS-level notification when a session finishes or needs you, for the sessions
   // you're not watching. Needs the browser's permission, asked for on switch-on.
@@ -543,9 +543,7 @@ export function loadSettings(): HudSettings {
         effort: str(p.effort, ""),
         perm: str(p.perm, ""),
         ponytail: str(p.ponytail, ""),
-        // Like model: an agent that has gone away (account removed, key
-        // cleared) is snapped back to the default login by App's agentOpts effect.
-        agent: str(p.agent, ""),
+        agent: str(p.agent, ""),   // retired, read by nothing (see HudSettings)
         // Stored true only ever means "and the browser said yes at the time" —
         // push() re-checks the live permission before every notification.
         push: p.push ?? false,

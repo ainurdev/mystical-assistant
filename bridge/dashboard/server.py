@@ -848,8 +848,13 @@ class Handler(BaseHTTPRequestHandler):
             cwd = (wt_abs if wt_abs and browser.within_base(wt_abs)
                    and os.path.isdir(wt_abs) else None) \
                 or _abs_project(project) or state.project_dir(chat)
+            # Bound to the project's default profile, as a session a run creates
+            # is (runner._resolve_session) — and then with no seeded mode, so
+            # the profile's applies.
+            pid = profiles.project_default(project)
             s = store.create_session(chat, project, origin="dashboard", cwd=cwd,
-                                     permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+                                     permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
+                                     profile_id=pid)
             s = _pre_title(s, body.get("title"))
             return self._json({"session": _session_brief(s)})
         if path.startswith("/local/sessions/") and path.endswith("/archive"):

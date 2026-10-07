@@ -14,7 +14,6 @@ export interface EnqueueInput {
   width?: number;
   project?: string;
   effort?: string; // no model or mode: a queued prompt runs on the session's
-  agent?: string;
 }
 
 /** Live view of a session's server-side prompt queue, plus the ops to mutate it.

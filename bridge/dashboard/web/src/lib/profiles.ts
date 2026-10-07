@@ -1,56 +1,80 @@
-// A profile is a named snapshot of how a run is configured: the composer's run
-// knobs (which live in HudSettings) plus the tools and MCP servers a session has
-// switched off (which live on the session row). Applying one writes both.
-//
-// Kept in localStorage next to the settings it snapshots — a profile is a
-// preference, not state the bridge needs to know about.
+// A profile is a named, server-side bundle (bridge/profiles.py): which agent
+// and account run a session, and with what model, mode, effort and tool
+// switches. A session is bound to one rather than stamped from it, so an edit
+// reaches every session using it, on every surface, from its next turn —
+// except a knob set by hand in that session. It replaced a browser-only list
+// (localStorage "hud-profiles") whose APPLY copied values once; importLegacy()
+// moves those onto the bridge.
 
 export interface Profile {
   id: string;
   name: string;
-  model: string;
-  effort: string;
-  perm: string;
-  ponytail: string;
-  agent: string;
-  disabledTools: string[];
+  agent: string; // "claude" — agents other than Claude come with ACP
+  account: string; // a Claude login slot, as a string; "" = the default login
+  model: string; // "" = not set, so the composer's pick applies
+  mode: string; // permission mode; "" = not set
+  effort: string; // "" = not set
+  tools: string[] | null; // deny rules; null = the bridge's defaults
 }
 
-const KEY = "hud-profiles";
-
-const str = (v: unknown): string => (typeof v === "string" ? v : "");
-
-export function loadProfiles(): Profile[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || "[]");
-    if (!Array.isArray(raw)) return [];
-    return raw.filter((p) => p && typeof p === "object" && str(p.id) && str(p.name))
-      .map((p): Profile => ({
-        id: str(p.id),
-        name: str(p.name),
-        model: str(p.model),
-        effort: str(p.effort),
-        perm: str(p.perm),
-        ponytail: str(p.ponytail),
-        agent: str(p.agent),
-        disabledTools: Array.isArray(p.disabledTools) ? p.disabledTools.filter((t: unknown) => typeof t === "string") : [],
-      }));
-  } catch {
-    return [];
-  }
+export interface ProfilesInfo {
+  profiles: Profile[];
+  project_defaults: Record<string, string>; // project rel -> the profile its new sessions get
 }
 
-export function saveProfiles(profiles: Profile[]): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(profiles));
-  } catch { /* quota / private mode — profiles just don't persist */ }
-}
+/** POST /local/profiles: create, or update / delete by id. */
+export type ProfileWrite = Partial<Profile> & { action: "create" | "update" | "delete" };
 
-/** "OPUS · PLAN · HIGH · 3 OFF" — the one line that says what applying it does. */
+const NAME_MAX = 32; // bridge/profiles.py NAME_MAX
+
+/** "A2 · FABLE-5-1 · ACCEPT EDITS · HIGH · 3 OFF" — what a session bound to it
+ *  runs with. A knob the profile leaves unset is left out. */
 export function describe(p: Profile): string {
-  const bits = [p.model || "default", p.perm || "session", p.effort || "auto"];
-  if (p.ponytail) bits.push(`ponytail ${p.ponytail}`);
-  if (p.agent) bits.push(p.agent);
-  if (p.disabledTools.length) bits.push(`${p.disabledTools.length} off`);
-  return bits.join(" · ").toUpperCase();
+  const bits = [p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
+    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
+  return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
+}
+
+const LEGACY = "hud-profiles";
+let imported = false; // StrictMode runs a mount effect twice in dev: import once
+
+/** Move the browser-only profiles onto the bridge, once: `write` (the POST)
+ *  each, then forget them. Best-effort and silent — one the bridge refuses (a
+ *  login since removed, say) is dropped. Resolves whether any landed, so the
+ *  caller knows to reload the list. */
+export async function importLegacy(
+  existing: Profile[], write: (body: ProfileWrite) => Promise<unknown>,
+): Promise<boolean> {
+  if (imported) return false;
+  imported = true;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(localStorage.getItem(LEGACY) || "null");
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(raw)) return false;
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  const taken = new Set(existing.map((p) => p.name));
+  const settled = await Promise.allSettled(
+    raw.filter((p) => p && typeof p === "object" && str(p.name).trim()).map((p) => {
+      const name = str(p.name).trim().slice(0, NAME_MAX);
+      return write({
+        action: "create",
+        // Names are unique on the bridge: a clash keeps both, the import marked.
+        name: taken.has(name) ? `${name.slice(0, NAME_MAX - 6)} (old)` : name,
+        agent: "claude",
+        account: /^claude:(\d+)$/.exec(str(p.agent))?.[1] ?? "",
+        model: str(p.model),
+        mode: str(p.perm),
+        effort: str(p.effort),
+        tools: Array.isArray(p.disabledTools)
+          ? p.disabledTools.filter((t: unknown): t is string => typeof t === "string") : null,
+      });
+    }),
+  );
+  try {
+    localStorage.removeItem(LEGACY);
+  } catch { /* private mode: it just stays behind, unread */ }
+  return settled.some((r) => r.status === "fulfilled");
 }

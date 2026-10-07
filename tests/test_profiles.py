@@ -88,9 +88,17 @@ def test_save_pick_follows_overrides_and_resets():
 
 def test_save_pick_on_an_unprofiled_session_stores_and_ignores_blank():
     s = store.create_session(CHAT, "/pf-pick2")
+    profiles.save_pick(s, "model", "claude-fable-5-1")
+    profiles.save_pick(store.get_session(s["id"]), "model", None)
+    assert store.get_session(s["id"])["model"] == "claude-fable-5-1"
+
+
+def test_a_blank_effort_on_an_unprofiled_session_is_auto_and_clears_it():
+    s = store.create_session(CHAT, "/pf-pick3")
     profiles.save_pick(s, "effort", "high")
-    profiles.save_pick(store.get_session(s["id"]), "effort", None)
     assert store.get_session(s["id"])["effort"] == "high"
+    profiles.save_pick(store.get_session(s["id"]), "effort", None)
+    assert store.get_session(s["id"])["effort"] is None
 
 
 def test_bind_clears_overrides_and_unbind_freezes_the_effective_values():

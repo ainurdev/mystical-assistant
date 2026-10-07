@@ -58,7 +58,7 @@ import {
   type Indicator,
   type ThemeKey,
 } from "../../lib/theme";
-import { describe, loadProfiles, saveProfiles, type Profile } from "../../lib/profiles";
+import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
 import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
@@ -99,10 +99,6 @@ export interface SettingsModalProps {
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
-  // Who runs the turn. A profile already saves it and every run already sends
-  // it, so leaving it out of RUN DEFAULTS made it a knob you could only reach
-  // from the composer — and could restore from a profile without ever seeing.
-  agents: { id: string; label: string }[];
   weather: Weather;
   onSetCity: (city: string) => Promise<string | null>;
   onSetUnit: (unit: string) => Promise<string | null>;
@@ -111,10 +107,13 @@ export interface SettingsModalProps {
   onFeed: (texts: string[], project?: string, fresh?: boolean) => void; // a failed self-update hands git's error to Claude
   onReplayBoot: () => void;
   onClose: () => void;
-  // Profiles snapshot the run knobs *and* the open session's tool switches, so
-  // the panel needs to read the latter and write it back.
+  // A profile can carry the open session's tool switches, so the panel reads them.
   sessionTools: string[];
-  onSessionTools: (rules: string[]) => void;
+  // The bridge's profiles (null until loaded; unavailable = a bridge older than
+  // them), reloaded through onProfilesChanged after every edit here.
+  profiles: ProfilesInfo | null;
+  profilesAvailable: boolean;
+  onProfilesChanged: () => void;
   onOpenInspector: () => void;
   projects: ProjectsSettingsProps;
 }
@@ -163,7 +162,7 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   { key: "projects", label: "PROJECTS", hint: "name · hide · import", icon: FolderTree, group: "THE WORK",
     about: "Every repo the bridge can run in. Rename one, hide it from the sidebar, or import a new one." },
   { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK",
-    about: "What each new run starts with (model, agent, mode, effort), and profiles that save a set of them." },
+    about: "What each new run starts with (model, mode, effort), and the profiles that say who runs a session." },
   { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK",
     about: "Extras that call a model on your behalf, like titles, summaries and guards. Each spends tokens, so each has its own switch." },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK",
@@ -208,8 +207,8 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
   { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
   { tab: "notifications", sec: "PER EVENT", terms: "sound per event pack finished needs you error" },
-  { tab: "session", sec: "RUN DEFAULTS", terms: "model agent mode effort ponytail permission plan bypass opus sonnet" },
-  { tab: "session", sec: "PROFILES", terms: "preset saved knobs tools restore" },
+  { tab: "session", sec: "RUN DEFAULTS", terms: "model mode effort ponytail permission plan bypass opus sonnet" },
+  { tab: "session", sec: "PROFILES", terms: "preset saved knobs tools agent account login bind default" },
   { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
   { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
@@ -225,7 +224,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "plugins", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
-  { tab: "projects", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label" },
+  { tab: "projects", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label default profile" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
   { tab: "report", sec: "WEEK", terms: "report weekly today turns time tokens usage spend per project rhythm" },
@@ -446,7 +445,7 @@ const SEC_DESC: Record<string, string> = {
   SOUND: "A sound when that happens: the default tone, and the volume for every sound.",
   "PER EVENT": "A different sound for each kind of news: a tone, a voice line from a pack, or nothing.",
   "RUN DEFAULTS": "What each new run starts with. The composer's dropdowns are these same settings.",
-  PROFILES: "Saved sets of the settings above, applied in one click.",
+  PROFILES: "Who runs a session, and with what — bound to it on every surface.",
   "MODEL-SPENDING EXTRAS": "Features that call a model on their own. Each shows what one use costs.",
   "CLAUDE CODE": "Claude Code's global instructions and settings, read by every run.",
   OPENCODE: "opencode's global instructions and config.",
@@ -3719,52 +3718,54 @@ function MiniBtn({
   );
 }
 
-/** Named snapshots of the run knobs plus the open session's tool switches.
- *  SAVE captures whatever is set right now; APPLY writes it all back. */
+/** The bridge's profiles (lib/profiles): rows with what each sets, EDIT and ✕,
+ *  and one form for a new profile or the one being edited. The list is App's,
+ *  reloaded through onChanged after every write. */
 function ProfilesPanel({
+  info,
+  available,
+  models,
   settings,
   sessionTools,
-  onPatch,
-  onSessionTools,
+  onChanged,
 }: {
-  settings: HudSettings;
+  info: ProfilesInfo | null; // null = still loading
+  available: boolean; // false = a bridge older than profiles
+  models: { id: string; label: string }[];
+  settings: HudSettings; // the open session's picks seed a new profile
   sessionTools: string[];
-  onPatch: (patch: Partial<HudSettings>) => void;
-  onSessionTools: (rules: string[]) => void;
+  onChanged: () => void;
 }) {
-  const [profiles, setProfiles] = useState<Profile[]>(loadProfiles);
-  const [name, setName] = useState("");
-  const ai = useAiFeatures();   // the PONYTAIL bit hides with its switch
+  // The profile in the form: id "" = a new one. null = no form open.
+  const [form, setForm] = useState<Profile | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [logins, setLogins] = useState<AccountInfo[]>([]);
 
-  const write = (next: Profile[]) => {
-    setProfiles(next);
-    saveProfiles(next);
-  };
+  useEffect(() => {
+    void api.accounts().then((r) => setLogins(r.accounts.filter((a) => !a.disabled))).catch(() => {});
+    if (available && !info) onChanged();   // App's load failed (a blip): opening here retries it
+  }, []);
+  // The browser-only profiles this replaced move onto the bridge once, after
+  // the list is in (a clash with one already there gets " (old)").
+  useEffect(() => {
+    if (info) void importLegacy(info.profiles, api.profileWrite).then((any) => { if (any) onChanged(); });
+  }, [info]);
 
-  const save = () => {
-    const n = name.trim().slice(0, 32);
-    if (!n) return;
-    const p: Profile = {
-      id: `${Date.now().toString(36)}`,
-      name: n,
-      model: settings.model,
-      effort: settings.effort,
-      perm: settings.perm,
-      ponytail: settings.ponytail,
-      agent: settings.agent,
-      disabledTools: sessionTools,
-    };
-    // Same name = replace, so re-saving after a tweak doesn't grow a pile of
-    // near-identical profiles.
-    write([...profiles.filter((x) => x.name !== n), p]);
-    setName("");
-  };
-
-  const apply = (p: Profile) => {
-    onPatch({ model: p.model, effort: p.effort, perm: p.perm,
-              ponytail: p.ponytail, agent: p.agent });
-    onSessionTools(p.disabledTools);
-  };
+  const set = (patch: Partial<Profile>) => setForm((f) => f && { ...f, ...patch });
+  async function write(body: ProfileWrite, done?: () => void) {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.profileWrite(body);
+      done?.();
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const btn = (accent: string): CSSProperties => ({
     appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t85)",
@@ -3772,37 +3773,87 @@ function ProfilesPanel({
     border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
     background: "transparent", color: accent,
   });
+  // A value the lists no longer offer (a login since removed, a model gone
+  // from the Models API) stays shown as itself, not as another row.
+  const keep = (opts: { id: string; label: string }[], v: string, label = v.toUpperCase()) =>
+    opts.some((o) => o.id === v) ? opts : [...opts, { id: v, label }];
+  const NOT_SET = { id: "", label: "NOT SET" };
 
+  if (!available) {
+    return <div style={CARD}><div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>Restart the bridge to use profiles.</div></div>;
+  }
+  if (!info) return <div style={CARD}><div style={KEY_TX}>LOADING…</div></div>;
   return (
     <div style={CARD}>
-      {profiles.length === 0 && (
+      {info.profiles.length === 0 && !form && (
         <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
-          No profiles yet — set the knobs above and this session&apos;s tools, then save them under a name.
+          No profiles yet — name an account and the settings to run it with, then bind sessions to it.
         </div>
       )}
-      {profiles.map((p, i) => (
+      {info.profiles.map((p, i) => (
         <div key={p.id}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? RULE : undefined }}>
           <span style={{ fontSize: "var(--t12)", color: "var(--txb)", flex: "none" }}>{p.name}</span>
           <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {describe(ai.ponytail ? p : { ...p, ponytail: "" })}
+            {describe(p)}
           </span>
           <span style={{ flex: 1 }} />
-          <button onClick={() => apply(p)} style={btn("var(--ok)")}>APPLY</button>
-          <button onClick={() => write(profiles.filter((x) => x.id !== p.id))}
-            style={btn("var(--err)")} title="delete profile">✕</button>
+          <button onClick={() => { setErr(null); setForm(p); }} disabled={busy} style={btn("var(--acc)")}>EDIT</button>
+          <button onClick={() => void write({ action: "delete", id: p.id }, () => form?.id === p.id && setForm(null))}
+            disabled={busy} style={btn("var(--err)")} title="delete profile — its sessions keep what it gave them">✕</button>
         </div>
       ))}
-      <div style={{ ...ROW, marginTop: profiles.length ? 12 : 11 }}>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-          placeholder="name this setup"
-          style={{ flex: "1 1 auto", minWidth: 0, maxWidth: 340, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }}
-        />
-        <button onClick={save} style={btn("var(--acc)")}>SAVE CURRENT</button>
-      </div>
+      {form ? (
+        <div style={{ marginTop: info.profiles.length ? 8 : 0, paddingTop: info.profiles.length ? 12 : 0, borderTop: info.profiles.length ? RULE : undefined }}>
+          <div style={{ ...ROW, marginTop: 0 }}>
+            <span style={CAPTION}>NAME</span>
+            <input value={form.name} maxLength={32} autoFocus placeholder="name this profile"
+              onChange={(e) => set({ name: e.target.value })}
+              style={{ flex: "1 1 auto", minWidth: 0, maxWidth: 340, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }} />
+          </div>
+          <div style={LINE}>
+            <PickCell label="AGENT" value={form.agent} options={[{ id: "claude", label: "CLAUDE" }]} onPick={(agent) => set({ agent })} />
+            <PickCell label="ACCOUNT" value={form.account}
+              options={keep([{ id: "", label: "DEFAULT LOGIN" },
+                ...logins.map((a) => ({ id: String(a.slot), label: `A${a.slot} · ${a.email ?? "unknown"}` }))],
+                form.account, `A${form.account}`)}
+              onPick={(account) => set({ account })} />
+          </div>
+          <div style={LINE}>
+            <PickCell label="MODEL" value={form.model}
+              options={keep([NOT_SET, ...models.map((m) => ({ id: m.id, label: m.label.toUpperCase() }))], form.model)}
+              onPick={(model) => set({ model })} />
+            <PickCell label="MODE" value={form.mode} options={[NOT_SET, ...PERMS]} onPick={(mode) => set({ mode })} />
+            <PickCell label="EFFORT" value={form.effort} options={[NOT_SET, ...EFFORTS.filter((e) => e.id)]}
+              onPick={(effort) => set({ effort })} />
+          </div>
+          <div style={ROW}>
+            <span style={KEY_TX}>USE THIS SESSION&apos;S TOOL SWITCHES</span>
+            {form.tools && <span style={{ ...CAPTION, width: "auto" }}>{form.tools.length} OFF</span>}
+            <span style={{ flex: 1 }} />
+            <Switch on={form.tools !== null} onClick={() => set({ tools: form.tools ? null : sessionTools })} />
+          </div>
+          <div style={{ ...ROW, flexWrap: "wrap" }}>
+            <button disabled={busy || !form.name.trim()} style={btn("var(--ok)")}
+              onClick={() => {
+                const { id, ...fields } = form;
+                void write(id ? { action: "update", id, ...fields } : { action: "create", ...fields }, () => setForm(null));
+              }}>SAVE</button>
+            <button onClick={() => { setForm(null); setErr(null); }} style={btn("var(--txm)")}>CANCEL</button>
+            {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
+          </div>
+        </div>
+      ) : (
+        <div style={{ ...ROW, marginTop: info.profiles.length ? 12 : 11 }}>
+          <button style={btn("var(--acc)")} disabled={busy}
+            onClick={() => {
+              setErr(null);
+              setForm({ id: "", name: "", agent: "claude", account: "", model: settings.model,
+                        mode: settings.perm, effort: settings.effort, tools: null });
+            }}>+ NEW PROFILE</button>
+          {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -3816,7 +3867,6 @@ export function SettingsModal(props: SettingsModalProps) {
     onToggle,
     onPatch,
     models,
-    agents,
     weather,
     onSetCity,
     onSetUnit,
@@ -3826,7 +3876,9 @@ export function SettingsModal(props: SettingsModalProps) {
     onReplayBoot,
     onClose,
     sessionTools,
-    onSessionTools,
+    profiles,
+    profilesAvailable,
+    onProfilesChanged,
     onOpenInspector,
     projects,
     startTab,
@@ -4333,11 +4385,10 @@ export function SettingsModal(props: SettingsModalProps) {
                   title="RUN DEFAULTS"
                   info={
                     <>
-                      The composer&apos;s dropdowns are these same knobs. MODEL and MODE belong to
-                      the open session — a pick is saved to it and follows it to every surface;
-                      EFFORT, PONYTAIL and AGENT stay with this browser. AGENT ·{" "}
-                      <span style={{ color: "var(--txd)" }}>Default login</span> is whichever account
-                      the ACCOUNTS tab marks default.
+                      The composer&apos;s dropdowns are these same knobs. MODEL, MODE and EFFORT
+                      belong to the open session — a pick is saved to it and follows it to every
+                      surface, and fills in for a session that has none yet; PONYTAIL stays with
+                      this browser. Which account runs it is its profile&apos;s, below.
                     </>
                   }
                 >
@@ -4355,12 +4406,6 @@ export function SettingsModal(props: SettingsModalProps) {
                       onPick={(model) => onPatch({ model })}
                     />
                     <div style={LINE}>
-                      <PickCell
-                        label="AGENT"
-                        value={settings.agent}
-                        options={[{ id: "", label: "DEFAULT LOGIN" }, ...agents]}
-                        onPick={(agent) => onPatch({ agent })}
-                      />
                       <PickCell label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
                       <PickCell label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
                       {aiFeatures.ponytail && (
@@ -4373,13 +4418,15 @@ export function SettingsModal(props: SettingsModalProps) {
                 <Section
                   title="PROFILES"
                   top
-                  info="A profile carries the four knobs above, the runtime, and the tools this session has switched off. APPLY writes all of them — the knobs globally, the tools onto the open session."
+                  info="A profile names who runs a session — the agent and its account — and can set its model, mode, effort and tool switches. Sessions are bound to it, from the composer's PROFILE picker or as a project's default (PROJECTS), on every surface. An edit reaches every session using it from its next turn, except a knob set by hand in that session (marked • in the composer)."
                 >
                   <ProfilesPanel
+                    info={profiles}
+                    available={profilesAvailable}
+                    models={models}
                     settings={settings}
                     sessionTools={sessionTools}
-                    onPatch={onPatch}
-                    onSessionTools={onSessionTools}
+                    onChanged={onProfilesChanged}
                   />
                 </Section>
               </>

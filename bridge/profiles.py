@@ -202,13 +202,15 @@ def brief(session: dict) -> dict:
 
 
 def save_pick(session: dict, field: str, value: "str | None") -> None:
-    """Save a person's pick for one knob, keeping the profile live."""
+    """Save a person's pick for one knob, keeping the profile live. Unbound, a
+    blank model or mode keeps the old pick (no picker offers one), but a blank
+    effort is Auto, a pick of its own, so it clears the column."""
     if field not in KNOBS:
         raise ValueError(field)
     p = get(session.get("profile_id"))
     if p is None:
-        if value:
-            store.set_session_field(session["id"], field, value)
+        if value or field == "effort":
+            store.set_session_field(session["id"], field, value or None)
         return
     follow = not value or value == (p.get(KNOBS[field]) or None)
     store.set_session_field(session["id"], field, None if follow else value)
