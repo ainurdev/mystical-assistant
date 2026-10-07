@@ -49,10 +49,31 @@ _INIT = {"protocolVersion": 1,
          "clientInfo": {"name": "mystical-assistant", "title": "Mystical Assistant",
                         "version": "1"}}
 _KNOBS = {"model": "model", "mode": "mode", "effort": "thought_level"}   # knob -> category
-# Env vars whose values never reach a transcript, even when the agent echoes
-# them in its stderr or an error message. ponytail: exact-match scrub; a
-# re-encoded or truncated key slips through.
+# Env vars named like a credential. Their values are masked wherever agent text
+# lands (events, texts, cards, todos, error rows, the stderr tail): an agent
+# that runs `env`, or echoes a rejected key, would otherwise journal it.
+# ponytail: exact-match masking; a re-encoded or truncated key slips through.
 _SECRET = re.compile(r"KEY|TOKEN|SECRET|PASS", re.I)
+
+
+def _secrets(env) -> list:
+    """The values to mask, longest first, so one containing another goes whole."""
+    return sorted({v for k, v in env.items()
+                   if _SECRET.search(k) and isinstance(v, str) and len(v) >= 8},
+                  key=len, reverse=True)
+
+
+def _mask(obj, hide):
+    """obj with every value in hide replaced by ***, through dicts and lists."""
+    if isinstance(obj, str):
+        for v in hide:
+            obj = obj.replace(v, "***")
+        return obj
+    if isinstance(obj, list):
+        return [_mask(x, hide) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _mask(x, hide) for k, x in obj.items()}
+    return obj
 
 
 class AcpError(Exception):
@@ -71,21 +92,23 @@ class Conn:
     """One agent process speaking newline-delimited JSON-RPC 2.0 on stdio.
 
     Only the reader thread calls on_notify/on_request, and neither may call
-    request(): the reader is what delivers its answer."""
+    request(): the reader is what delivers its answer. The agent counts as
+    running until its stdout closes, not until the leader exits: npx's node
+    child still holds the stream when npx itself is gone."""
 
     def __init__(self, argv, *, env, cwd, on_notify, on_request):
         self.on_notify, self.on_request = on_notify, on_request
         self.stderr_tail = deque(maxlen=40)
-        self._hide = [v for k, v in env.items()
-                      if _SECRET.search(k) and isinstance(v, str) and len(v) >= 8]
+        self._hide = _secrets(env)
         self._wlock, self._plock = threading.Lock(), threading.Lock()
         self._pending, self._ids, self._closed = {}, count(1), False
         self.proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      start_new_session=True)
         self._err = threading.Thread(target=self._drain, daemon=True)
+        self._out = threading.Thread(target=self._read, daemon=True)
         self._err.start()
-        threading.Thread(target=self._read, daemon=True).start()
+        self._out.start()
 
     def request(self, method, params, timeout):
         rid = next(self._ids)
@@ -103,7 +126,7 @@ class Conn:
                 self._pending.pop(rid, None)
         _, res, err = slot
         if err is not None:
-            raise AcpError(err.get("code"), self._scrub(str(err.get("message"))))
+            raise AcpError(err.get("code"), _mask(str(err.get("message")), self._hide))
         if res is _UNSET:
             raise AcpClosed(method)
         return res if isinstance(res, dict) else {}
@@ -116,19 +139,22 @@ class Conn:
                      **({"error": error} if error else {"result": result})})
 
     def poll(self):
-        return self.proc.poll()
+        """None while the agent's stdout is open, then the leader's exit code.
+        The runner's watchdog loops on this."""
+        return self.proc.poll() if self._closed else None
 
     def kill(self):
-        """SIGTERM the whole process group, then SIGKILL whatever is left."""
+        """SIGTERM the process group, then SIGKILL what's left. Never once the
+        leader is reaped and its stdout closed: by then the pgid may belong to
+        someone else."""
         for sig in (signal.SIGTERM, signal.SIGKILL):
+            if self._closed and self.proc.poll() is not None:
+                return
             try:
                 os.killpg(self.proc.pid, sig)
             except (ProcessLookupError, PermissionError):
                 pass
-            try:
-                self.proc.wait(2)
-            except subprocess.TimeoutExpired:
-                pass
+            self._wait_gone(2)
 
     def close(self, grace=2.0):
         with self._wlock:
@@ -136,14 +162,21 @@ class Conn:
                 self.proc.stdin.close()
             except OSError:
                 pass
+        self._wait_gone(grace)
+        self.kill()   # nothing to do once it left; else the whole group goes
+
+    def _wait_gone(self, timeout):
+        """Up to `timeout` s for the leader to exit and its stdout to close."""
+        end = time.monotonic() + timeout
         try:
-            self.proc.wait(grace)
+            self.proc.wait(timeout)
         except subprocess.TimeoutExpired:
-            pass
-        self.kill()   # also when the leader left: its children share the group
+            return
+        self._out.join(max(0.0, end - time.monotonic()))
 
     def tail(self, n=5):
-        self._err.join(1)   # a crash's last words land as the pipe closes
+        if self._closed:
+            self._err.join(1)   # a crash's last words land as the pipes close
         return "\n".join(list(self.stderr_tail)[-n:])
 
     def _send(self, msg):
@@ -202,15 +235,10 @@ class Conn:
     def _drain(self):
         try:
             for raw in self.proc.stderr:   # drained, or a chatty agent blocks on a full pipe
-                self.stderr_tail.append(self._scrub(raw.decode("utf-8", "replace").rstrip()))
+                self.stderr_tail.append(_mask(raw.decode("utf-8", "replace").rstrip(),
+                                              self._hide))
         finally:
             self.proc.stderr.close()
-
-    def _scrub(self, text):
-        """Agent text bound for an error row, minus any secret it echoed."""
-        for v in self._hide:
-            text = text.replace(v, "***")
-        return text
 
 
 def _refuse(rid, method, params):
@@ -220,26 +248,34 @@ def _refuse(rid, method, params):
 class Turn:
     """One turn's session/update stream mapped onto the job's events, and its
     permission requests turned into pending cards. Text and thinking arrive in
-    chunks, so they are buffered until something else happens."""
+    chunks, so they are buffered until something else happens. Everything it
+    hands the job is masked (see _SECRET)."""
 
-    def __init__(self, job, label):
-        self.job, self.label = job, label
+    def __init__(self, job, label, hide=()):
+        self.job, self.label, self.hide = job, label, hide
         self.text = self.thought = ""
         self.think_t0 = None
         self.tools = {}                  # toolCallId -> (name, t0, kind)
         self.replaying = False           # a session/load replay: already in the transcript
+        self.done = False                # the turn is ending: no new card, Stop or switch
         self.sid, self.options, self.modes = None, [], None
-        self._lock = threading.RLock()   # the reader and the turn's end both flush
+        # Guards the buffers, card creation and the done/interrupted flips: the
+        # reader, the turn's end and Stop all touch them.
+        self._lock = threading.RLock()
+
+    def _add(self, ev):
+        self.job.add(_mask(ev, self.hide))
 
     def flush(self):
         with self._lock:
-            job = self.job
-            if self.thought.strip():
-                job.add({"type": "thinking", "ms": int((time.time() - self.think_t0) * 1000),
-                         "text": self.thought.strip()})
-            if self.text.strip():
-                job.texts.append(self.text.strip())
-                job.add({"type": "text", "text": self.text.strip()})
+            thought = _mask(self.thought.strip(), self.hide)
+            text = _mask(self.text.strip(), self.hide)
+            if thought:
+                self.job.add({"type": "thinking",
+                              "ms": int((time.time() - self.think_t0) * 1000), "text": thought})
+            if text:
+                self.job.texts.append(text)
+                self.job.add({"type": "text", "text": text})
             self.text = self.thought = ""
             self.think_t0 = None
 
@@ -270,15 +306,16 @@ class Turn:
             self.flush()
             tid, name = u.get("toolCallId"), u.get("title") or u.get("kind") or "tool"
             self.tools[tid] = (name, time.time(), u.get("kind"))
-            job.add({"type": "tool", "name": name, "id": tid, "summary": _summary(u)})
+            self._add({"type": "tool", "name": name, "id": tid, "summary": _summary(u)})
             if u.get("status") in ("completed", "failed"):
                 self._done(tid, u)
         elif kind == "tool_call_update":
             if u.get("status") in ("completed", "failed"):
                 self._done(u.get("toolCallId"), u)
         elif kind == "plan":
-            job.todos = [{"content": e.get("content"), "status": e.get("status"),
-                          "activeForm": e.get("content")} for e in u.get("entries") or []]
+            job.todos = _mask([{"content": e.get("content"), "status": e.get("status"),
+                                "activeForm": e.get("content")}
+                               for e in u.get("entries") or []], self.hide)
         elif kind == "usage_update":
             if isinstance(u.get("used"), int):
                 job.ctx_tokens = u["used"]
@@ -308,27 +345,27 @@ class Turn:
             ev["output"] = text[-4000:]
         elif text:
             ev["stat"] = f"{len(text.splitlines())} lines"
-        self.job.add(ev)
+        self._add(ev)
 
     def on_request(self, rid, method, params):
         if method != "session/request_permission":
             _refuse(rid, method, params)
-        if self.job.interrupted:            # after session/cancel, no new cards
-            return {"outcome": {"outcome": "cancelled"}}
-        self.flush()
-        tc = params.get("toolCall") or {}
-        name = tc.get("title") or self.tools.get(tc.get("toolCallId"), ("tool",))[0]
-        key, summary = f"acp-{rid}", _summary(tc)
-        self.job.add_pending({"request_id": key, "kind": "permission", "tool_name": name,
-                              "summary": summary, "input": tc.get("rawInput") or {},
-                              "acp_rpc_id": rid, "options": params.get("options") or [],
-                              "at": time.time()})
-        self.job.add({"type": "permission", "request_id": key, "tool_name": name,
-                      "summary": summary})
+        with self._lock:   # vs. Stop and the turn's end: a card is cancelled there or never made
+            if self.job.interrupted or self.done:
+                return {"outcome": {"outcome": "cancelled"}}
+            self.flush()
+            tc = params.get("toolCall") or {}
+            name = tc.get("title") or self.tools.get(tc.get("toolCallId"), ("tool",))[0]
+            card = _mask({"request_id": f"acp-{rid}", "kind": "permission", "tool_name": name,
+                          "summary": _summary(tc), "input": tc.get("rawInput") or {}}, self.hide)
+            self.job.add_pending({**card, "acp_rpc_id": rid,
+                                  "options": params.get("options") or [], "at": time.time()})
+            self.job.add({"type": "permission", "request_id": card["request_id"],
+                          "tool_name": card["tool_name"], "summary": card["summary"]})
         self.job.awaiting("permission")
         return DEFER
 
-    def apply(self, conn, knob, value, timeout):
+    def apply(self, conn, sid, knob, value, timeout):
         """Set one knob the way this agent offers it: a config option of the
         knob's category, else (mode only) a legacy mode. False, with a log row,
         when it offers neither or refuses."""
@@ -340,12 +377,12 @@ class Turn:
         try:
             if opt:
                 res = conn.request("session/set_config_option",
-                                   {"sessionId": self.sid, "configId": opt["id"], "value": value},
+                                   {"sessionId": sid, "configId": opt["id"], "value": value},
                                    timeout)
                 self.options = res.get("configOptions") or self.options
                 return True
             if knob == "mode" and value in modes:
-                conn.request("session/set_mode", {"sessionId": self.sid, "modeId": value}, timeout)
+                conn.request("session/set_mode", {"sessionId": sid, "modeId": value}, timeout)
                 return True
         except AcpClosed:
             return False
@@ -398,9 +435,11 @@ def _settle(job, card, allow, note=True) -> bool:
 
 
 def _cancel_cards(job, note):
-    for card in list(job.pending):
-        _settle(job, card, None, note)
-    job.clear_pending()
+    """Answer every waiting card `cancelled`, until none is left: a card made
+    meanwhile is answered too, never dropped by a clear."""
+    while job.pending:
+        for card in list(job.pending):
+            _settle(job, card, None, note)
 
 
 def _fail(job, msg):
@@ -415,35 +454,35 @@ def _stopped(job):
 
 
 def _why(e, conn, label, login_hint) -> str:
-    """The reason a turn or a TEST failed, in one line plus a stderr tail."""
-    if isinstance(e, AcpError):
-        return f"{label} needs a login. {login_hint}" if e.code == -32000 else f"{label}: {e}"
+    """Why a turn or a TEST failed: one line, then the agent's last stderr
+    lines, which name most crashes and hangs."""
+    if isinstance(e, AcpError) and e.code == -32000:
+        return f"{label} needs a login. {login_hint}"
     if conn is None:
         return f"{label} could not start: {e}"
-    if isinstance(e, AcpClosed):
-        tail = conn.tail()
-        return f"{label} exited" + (f":\n{tail}" if tail else ".")
-    return f"{label}: {e!r}"
+    head = (f"{label} exited" if isinstance(e, AcpClosed)
+            else f"{label}: {e}" if isinstance(e, AcpError) else f"{label}: {e!r}")
+    tail = conn.tail()
+    return f"{head}\n{tail}" if tail else head
 
 
 def _open(conn, turn, caps, cwd, sid, on_session):
     """Open the turn's session: new, else resume (no replay), else load with
-    its replay dropped. None when the agent can do neither of the last two."""
+    its replay dropped. Returns (sid, response); the response is None when the
+    agent can do neither of the last two."""
     params = {"cwd": cwd, "mcpServers": []}
     if not sid:
         res = conn.request("session/new", params, 120)
-        turn.sid = res["sessionId"]
         if on_session:
-            on_session(turn.sid)            # before the prompt: the id survives a crash
-        return res
-    turn.sid = sid
+            on_session(res["sessionId"])    # before the prompt: the id survives a crash
+        return res["sessionId"], res
     if (caps.get("sessionCapabilities") or {}).get("resume") is not None:
-        return conn.request("session/resume", {"sessionId": sid, **params}, 120)
+        return sid, conn.request("session/resume", {"sessionId": sid, **params}, 120)
     if not caps.get("loadSession"):
-        return None
+        return sid, None
     turn.replaying = True
     try:
-        return conn.request("session/load", {"sessionId": sid, **params}, 120)
+        return sid, conn.request("session/load", {"sessionId": sid, **params}, 120)
     finally:
         turn.replaying = False
 
@@ -466,7 +505,7 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
              on_spawn=None, on_session=None, cache=None) -> None:
     """One prompt on a fresh agent process. Never raises: the job ends done,
     stopped or error, with every card answered and the process group gone."""
-    turn = job.turn = Turn(job, label)
+    turn = job.turn = Turn(job, label, _secrets(env))
     conn = None
     try:
         conn = job.conn = Conn(argv, env=env, cwd=cwd,
@@ -474,12 +513,11 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
         if on_spawn:
             on_spawn(conn)
         init = conn.request("initialize", _INIT, 120)
-        res = _open(conn, turn, init.get("agentCapabilities") or {}, cwd, agent_session_id,
-                    on_session)
+        sid, res = _open(conn, turn, init.get("agentCapabilities") or {}, cwd,
+                         agent_session_id, on_session)
         if res is None:
             return _fail(job, f"{label} can't resume a session, so this one can't continue. "
                               "Start a new session.")
-        job.agent_session_id = turn.sid
         turn.options, turn.modes = res.get("configOptions") or [], res.get("modes")
         if cache:
             try:
@@ -488,10 +526,13 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
                 print(f"[acp] options cache: {e!r}", file=sys.stderr)
         for knob, key in (("model", "model"), ("mode", "permission_mode"), ("effort", "effort")):
             if opts.get(key):
-                turn.apply(conn, knob, opts[key], 30)
+                turn.apply(conn, sid, knob, opts[key], 30)
+        # Live switches (set_options) wait for turn.sid: by now the options are
+        # known and this turn's own picks are in, so none overwrites a newer one.
+        turn.sid = job.agent_session_id = sid
         # No timeout on the prompt: the watchdog owns hangs. Stop before it: no prompt.
         stop = None if job.interrupted else conn.request(
-            "session/prompt", {"sessionId": turn.sid, "prompt": [{"type": "text", "text": text}]},
+            "session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": text}]},
             None).get("stopReason")
         _finish(job, turn, stop)
     except Exception as e:  # noqa: BLE001 - never raises
@@ -504,6 +545,8 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
         else:
             _fail(job, _why(e, conn, label, login_hint))
     finally:
+        with turn._lock:
+            turn.done = True
         if conn:
             _cancel_cards(job, note=False)
             conn.close()
@@ -521,28 +564,38 @@ def cancel(job, grace: float) -> bool:
     """Stop: session/cancel first, then every waiting card answered `cancelled`
     (the spec's order). The group is killed if the agent hasn't ended the turn
     within `grace`; that timer starts before any write, so a wedged pipe can't
-    keep Stop from landing. False when nothing is running."""
-    conn = job.conn
-    if conn is None or conn.poll() is not None:
+    keep Stop from landing, and a second Stop reuses it. False once the agent's
+    stdout has closed or the turn is ending."""
+    conn, turn = job.conn, job.turn
+    if conn is None or conn._closed:
         return False
-    job.interrupted = True
-    job._interrupt_timer = threading.Timer(grace, conn.kill)
-    job._interrupt_timer.daemon = True
-    job._interrupt_timer.start()
-    conn.notify("session/cancel", {"sessionId": job.turn.sid})
+    with turn._lock:
+        if turn.done:
+            return False
+        job.interrupted = True
+    timer = job._interrupt_timer
+    if not (timer and timer.is_alive()):
+        job._interrupt_timer = timer = threading.Timer(grace, conn.kill)
+        timer.daemon = True
+        timer.start()
+    conn.notify("session/cancel", {"sessionId": turn.sid})
     _cancel_cards(job, note=True)
     return True
 
 
 def set_options(job, model=None, mode=None, effort=None) -> bool:
-    """A live switch over the open connection. Called from an HTTP thread,
-    never the reader. Whether anything was applied."""
+    """A live switch over the open connection, called from an HTTP thread
+    (never the reader). Returns whether the agent ACCEPTED at least one value,
+    not whether a request went out: a value it doesn't offer or refuses is a
+    log row and False. False too while the session is still opening (its
+    options aren't known; the saved pick applies next turn) and once the turn
+    is ending."""
     conn, turn = job.conn, job.turn
-    if conn is None or conn.poll() is not None or turn is None or not turn.sid:
+    if conn is None or conn._closed or turn is None or turn.done or not turn.sid:
         return False
     done = False
     for knob, value in (("model", model), ("mode", mode), ("effort", effort)):
-        if value and turn.apply(conn, knob, value, 10):
+        if value and turn.apply(conn, turn.sid, knob, value, 10):
             done = True
             if knob == "model":
                 job.model = value
@@ -568,10 +621,8 @@ def probe(*, argv, env, label, login_hint, timeout=120) -> dict:
         return {"ok": True, "options": res.get("configOptions") or [],
                 "modes": res.get("modes"), "agent": init.get("agentInfo")}
     except Exception as e:  # noqa: BLE001 - a TEST reports, never raises
-        msg = _why(e, conn, label, login_hint)
-        if isinstance(e, AcpError) and e.code != -32000 and (tail := conn.tail()):
-            msg += f"\n{tail}"
-        return {"ok": False, "error": msg, "options": [], "modes": None}
+        return {"ok": False, "error": _why(e, conn, label, login_hint),
+                "options": [], "modes": None}
     finally:
         if conn:
             conn.close()

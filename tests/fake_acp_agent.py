@@ -1,8 +1,10 @@
 """A scripted ACP v1 agent for tests/test_acp.py. A script, not a test module.
 
 The JSON in env FAKE_ACP scripts it: caps, new_error, prompt_error, options,
-modes, replay, turn (steps: update, permission, vendor, stdout, wait_cancel,
-sleep, exit), stop, ignore_cancel. Every message it receives is appended to
+modes, replay, open_delay (s before new/load/resume answer), turn (steps:
+update, permission, vendor, stdout, wait_cancel, sleep, exit, orphan: the
+leader exits while a child keeps its stdout open, pid in FAKE_ACP_LOG +
+".child"), stop, ignore_cancel. Every message it receives is appended to
 env FAKE_ACP_LOG as a JSON line, and its environment goes to
 FAKE_ACP_LOG + ".env" at startup.
 
@@ -14,8 +16,10 @@ reader's state, so a session/cancel still lands while a step waits on a reply.
 import itertools
 import json
 import os
+import subprocess
 import sys
 import threading
+import time
 
 S = json.loads(os.environ.get("FAKE_ACP") or "{}")
 LOG = os.environ.get("FAKE_ACP_LOG")
@@ -80,10 +84,18 @@ def prompt(rid, sid):
             sys.stderr.write(f"fake agent: dying with {step['exit']}\n")
             sys.stderr.flush()
             os._exit(step["exit"])
+        elif "orphan" in step:
+            child = subprocess.Popen([sys.executable, "-c",
+                                      f"import time; time.sleep({step['orphan']})"])
+            with open(LOG + ".child", "w") as f:
+                f.write(str(child.pid))
+            os._exit(0)
     send(id=rid, result={"stopReason": "cancelled" if cancelled() else S.get("stop", "end_turn")})
 
 
 def handle(rid, method, p):
+    if method in ("session/new", "session/load", "session/resume"):
+        time.sleep(S.get("open_delay", 0))
     if method == "initialize":
         res = {"protocolVersion": 1, "agentCapabilities": S.get("caps", {"loadSession": True}),
                "agentInfo": {"name": "fake", "version": "0"}}
