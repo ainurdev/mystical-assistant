@@ -7,6 +7,11 @@ Two entry points share the same auth/session/permission setup:
 Each run claims its session's slot in state's per-session run registry, so two
 turns never hit the same Claude session at once, but different sessions run
 concurrently.
+
+A session whose profile names another agent runs its turn through AcpJob and
+bridge/acp.py instead of a claude child: same events, cards, Stop and
+watchdog, its own session id in sessions.agent_session_id, and none of the
+Claude-only paths (steer, auto-resume, the bot's blocking run).
 """
 
 import base64
@@ -24,7 +29,7 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, agents, aifeatures, config, devserver, git,
+from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver, git,
                     inspector, ladder, limits, machine, native_activity,
                     profiles, pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
@@ -541,9 +546,15 @@ def handle_task(chat_id: int, prompt: str, session: dict):
     from the Mini App. An asking mode can't show a card in a chat, so the
     tools it would ask about are denied, as under acceptEdits. A session the
     bot started has no mode and keeps EXTRA_CLAUDE_ARGS. A profile bound to a
-    dead account slot refuses instead of running on another login."""
+    dead account slot refuses instead of running on another login. A session on
+    another agent is handed back: this path only runs claude, and an agent's
+    cards need a panel."""
     try:
         eff = profiles.effective(session)
+        if eff["agent"] != profiles.CLAUDE:
+            send(chat_id, "This session runs on another agent — continue it in the "
+                          "Mini App or the dashboard.")
+            return
         refusal = profiles.refusal(eff, chat_id)
         if refusal:
             send(chat_id, "⚠️ " + refusal)
@@ -922,6 +933,44 @@ class Job:
         return {"state": "thinking", "label": "thinking…", "tools": tools}
 
 
+class AcpJob(Job):
+    """A turn run by a non-Claude agent over ACP (bridge/acp.py). Same events,
+    cards and Stop as a Claude job; the control channel is JSON-RPC, so every
+    stream-json write path is closed off: _write_stdin takes nothing, and
+    job.proc stays None (acp keeps the process in job.conn), which leaves
+    close_stdin, _escalate and _kill_if_alive nothing to act on. A pick is never
+    held (set_run_settings goes straight to the agent), so release_held has
+    nothing to send.
+
+    Lock order inside acp.py is turn._lock, then job._lock: never call
+    interrupt, respond or set_run_settings while holding job._lock."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.acp_account = ""            # the agent account id; "" = the CLI's own login
+        self.agent_session_id = None     # the agent's own session id, once it's open
+        self.conn = None                 # acp.Conn
+        self.turn = None                 # acp.Turn
+
+    def _write_stdin(self, obj):         # no stream-json stdin here
+        return False
+
+    def awaiting(self, kind):
+        # acp's reader thread calls this: a Telegram send there would stall the
+        # agent's stdout, and a live switch waiting on its answer behind it.
+        threading.Thread(target=notify_awaiting, daemon=True,
+                         args=(self.chat_id, self.store_session_id, kind)).start()
+
+    def interrupt(self):
+        return acp.cancel(self, INTERRUPT_GRACE)
+
+    def respond(self, request_id, *, behavior="allow", message=None, answers=None):
+        return acp.answer(self, request_id, behavior == "allow")
+
+    def set_run_settings(self, model=None, permission_mode=None):
+        return acp.set_options(self, model=model, mode=permission_mode)
+
+
 _jobs: dict[str, Job] = {}
 _jobs_lock = threading.Lock()
 _JOBS_MAX = 20
@@ -939,9 +988,18 @@ def stop_children() -> None:
     """SIGTERM every live child, then SIGKILL whatever is still alive STOP_WAIT
     later: one deadline for all of them, so stuck children don't add up. Not
     Job.stop(): that marks the turn user-stopped, and turns a restart stops
-    must stay resumable."""
+    must stay resumable.
+
+    An agent turn has no job.proc: its group goes through Conn.kill(), never
+    through the Popen underneath (poll/wait there would reap the leader before
+    the sweep). Each kill is bounded (a few seconds), so they run side by side
+    inside the same deadline."""
     with _jobs_lock:
         procs = [j.proc for j in _jobs.values() if j.proc and j.proc.poll() is None]
+        conns = [j.conn for j in _jobs.values() if isinstance(j, AcpJob) and j.conn]
+    kills = [threading.Thread(target=c.kill, daemon=True) for c in conns]
+    for t in kills:
+        t.start()
     for p in procs:
         p.terminate()
     end = time.monotonic() + STOP_WAIT
@@ -950,6 +1008,8 @@ def stop_children() -> None:
             p.wait(timeout=max(0.0, end - time.monotonic()))
         except subprocess.TimeoutExpired:
             p.kill()
+    for t in kills:
+        t.join(max(0.0, end - time.monotonic()))
 
 
 def _with_images(prompt: str, image_paths: list[str] | None) -> str:
@@ -978,11 +1038,14 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
     Verified against claude 2.1.220: a turn with no tool call has no fold point,
     so a steer sent at the very end simply runs as a follow-up turn on the same
     process. Same job either way — nothing to clean up.
+
+    An agent turn (AcpJob) can't take one: ACP has no mid-turn message, so the
+    client queues instead.
     """
     with _jobs_lock:
         job = next((j for j in _jobs.values()
                     if j.store_session_id == session_id and j.status == "running"), None)
-    if job is None or job.proc is None:
+    if job is None or job.proc is None or isinstance(job, AcpJob):
         return False
     job._write_stdin({"type": "user", "message": {"role": "user",
                                                   "content": _with_images(text, image_paths)}})
@@ -1393,7 +1456,10 @@ def _stopping(rc: "int | None") -> bool:
 def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                        effort: str | None) -> bool:
     """Resume a session whose turn died without the user behind it. Returns True
-    when a resume run was started (the caller then skips the error notification)."""
+    when a resume run was started (the caller then skips the error notification).
+    Never an agent turn's (acp:): no parking, no resume for those (spec non-goal)."""
+    if (job.runtime or "").startswith("acp:"):
+        return False
     sid = job.store_session_id
     if not sid:
         return False
@@ -2058,11 +2124,15 @@ def _watchdog(job: Job, proc) -> None:
     hang timeout (config.RUN_TIMEOUT unless the run set its own) while nothing
     waits on the user. A busy turn runs for as long as it takes — this is a
     hang detector, not a work cap (the cost brake is the auto-resume cap, see
-    _maybe_auto_resume)."""
+    _maybe_auto_resume).
+
+    proc is the claude child, or an agent turn's acp.Conn (its poll() never
+    reaps; its kill() sweeps the group). It stands down once the turn has
+    ended (job.exited): a descendant still holding an agent's stream must not
+    get a finished turn timed out and killed."""
     quiet_since = time.time()
     limit = job.hang_timeout or config.RUN_TIMEOUT
-    while proc.poll() is None:
-        time.sleep(1.0)
+    while proc.poll() is None and not job.exited.wait(1.0):
         if job.pending or job.interrupted:
             quiet_since = time.time()   # waiting on the user, or stopping: not a hang
             continue
@@ -2124,6 +2194,35 @@ def _consume_free_agent(job: Job, prompt: str, cwd: str,
              "cost": job.cost, "elapsed": job.elapsed})
 
 
+def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
+                 model: "str | None", effort: "str | None",
+                 permission_mode: "str | None") -> None:
+    """Run this turn on its ACP agent. Preconditions (owner, install, account,
+    no Claude model) end it with the reason before anything starts: checked
+    here, in the turn, so every caller is covered (safety rule 6). Everything
+    after (journaling, finish_turn, the slot) is _run_streaming's finally."""
+    agent = job.runtime.split(":", 1)[1]
+    p = acp_agents.preset(agent)
+    problem = acp_agents.run_problem(p, job.acp_account, job.chat_id, model)
+    if problem:
+        return acp._fail(job, problem)
+    sess = store.get_session(job.store_session_id) if job.store_session_id else None
+    job.boot = f"starting {p['label']}"
+    acp.run_turn(
+        job, argv=acp_agents.argv(p), env=acp_agents.env_for(p, job.acp_account), cwd=cwd,
+        label=p["label"], login_hint=acp_agents.login_hint(p, job.acp_account),
+        text=_with_images(prompt, image_paths),
+        agent_session_id=(sess or {}).get("agent_session_id"),
+        opts={"model": model, "permission_mode": permission_mode, "effort": effort},
+        on_spawn=lambda conn: threading.Thread(target=_watchdog, args=(job, conn),
+                                               daemon=True).start(),
+        # Never claude_session_id: Claude-only readers must not follow an agent's id.
+        on_session=lambda sid: job.store_session_id and store.set_session_field(
+            job.store_session_id, "agent_session_id", sid),
+        cache=lambda opts, modes: acp_agents.remember_options(agent, job.acp_account,
+                                                              opts, modes))
+
+
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
                    permission_mode: str | None = None, ponytail: str | None = None):
@@ -2138,6 +2237,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             return
         if (job.runtime or "").startswith("opencode:"):
             _consume_free_agent(job, prompt, cwd, permission_mode)
+            return
+        if (job.runtime or "").startswith("acp:"):
+            _consume_acp(job, prompt, image_paths, cwd, model, effort, permission_mode)
             return
         full_prompt = _with_images(prompt, image_paths)
         # The gap before the first token is two waits, and an empty stream makes
@@ -2434,7 +2536,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     account_slot picks which Claude login runs the turn (None = the ambient one,
     or the bound profile's); runtime is set instead when a fallback-ladder free
     agent takes over. Both are recorded on the turn so the transcript shows what
-    produced it.
+    produced it. A profile on another agent makes it runtime 'acp:<agent>': an
+    AcpJob with that profile's account in job.acp_account, and no claude
+    session id minted for it.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
 
@@ -2465,10 +2569,15 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         refusal = profiles.refusal(eff, chat_id) if account_slot is None and runtime is None else None
         if account_slot is None and runtime is None and not refusal:
             account_slot = profiles.claude_slot(eff)
-        job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
+        if runtime is None and account_slot is None and eff["agent"] != profiles.CLAUDE:
+            runtime = f"acp:{eff['agent']}"
+        is_acp = (runtime or "").startswith("acp:")
+        job = (AcpJob if is_acp else Job)(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.model = model
         job.refusal = refusal
-        if not refusal:
+        if is_acp:
+            job.acp_account = eff["account"]   # and never a minted claude id
+        elif not refusal:
             # A brand-new session's id is minted and PERSISTED here (before the
             # child spawns). Skipped on a refusal: nothing will ever adopt it, so
             # persisting it would brick the next (post-fix) attempt into

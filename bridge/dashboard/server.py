@@ -1609,8 +1609,15 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
             return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
         project_path = _abs_project(body.get("project"))
+        session_id = (body.get("session_id") or "").strip() or None
+        profile_id = (body.get("profile_id") or "").strip() or None
+        # Checked for the agent this run lands on: the session it would resume,
+        # else the profile a fresh one gets (profiles.agent_for).
+        proj = browser.rel(project_path or state.project_dir(chat))
         err, model, permission_mode, effort = profiles.run_values(
-            body.get("model"), body.get("permission_mode"), body.get("effort"))
+            body.get("model"), body.get("permission_mode"), body.get("effort"),
+            profiles.agent_for(store.resolve_session(chat, proj, session_id),
+                               profile_id, proj))
         if err:
             return self._json({"error": err}, 400)
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
@@ -1619,8 +1626,6 @@ class Handler(BaseHTTPRequestHandler):
             account_slot, runtime = ladder.resolve_agent(body.get("agent") or "")
         except ValueError as e:
             return self._json({"error": str(e)}, 400)
-        session_id = (body.get("session_id") or "").strip() or None
-        profile_id = (body.get("profile_id") or "").strip() or None
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
         # _save_images so a held prompt writes nothing.

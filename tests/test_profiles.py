@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from bridge import accounts, config, models, profiles, project_config, store
+from bridge import accounts, acp_agents, config, models, profiles, project_config, store
 
 store.init()
 CHAT = 555
@@ -161,3 +161,63 @@ def test_refusal_names_a_dead_claude_slot(monkeypatch):
                         lambda: [{"slot": 1, "disabled": False}])
     msg = profiles.refusal(profiles.effective(s), CHAT)
     assert msg and "Work" in msg and "2" in msg
+
+
+# Part 2: profiles on a non-Claude agent (acp_agents presets).
+
+@pytest.fixture
+def fake_agent(monkeypatch, tmp_path):
+    monkeypatch.setattr(acp_agents, "PRESETS", (
+        {"id": "fake", "label": "Fake", "cmd": ["fake-acp-not-installed"], "key_env": None,
+         "home_env": None, "key_required": False, "login": "fake login", "install": "n/a",
+         "env": {}},))
+    monkeypatch.setattr(acp_agents, "ACCOUNTS_FILE", str(tmp_path / "agent-accounts.json"))
+
+
+def test_profiles_accept_agents_and_refuse_claude_models(fake_agent):
+    with pytest.raises(ValueError, match="Claude"):
+        profiles.create({"name": "F1", "agent": "fake", "model": "claude-opus-5-5"})
+    with pytest.raises(ValueError, match="account"):
+        profiles.create({"name": "F2", "agent": "fake", "account": "a_nope"})
+    acp_agents._save([{"id": "a_cx", "agent": "codex", "label": "cx", "kind": "key", "key": "k"}])
+    with pytest.raises(ValueError, match="account"):          # another agent's account
+        profiles.create({"name": "F3", "agent": "fake", "account": "a_cx"})
+    with pytest.raises(ValueError, match="64"):
+        profiles.create({"name": "F4", "agent": "fake", "effort": "x" * 65})
+    p = profiles.create({"name": "F5", "agent": "fake", "mode": "read-only"})
+    assert (p["agent"], p["mode"]) == ("fake", "read-only")
+
+
+def test_bind_across_agents_after_a_turn_is_409(fake_agent):
+    claude, fake = _mk(), profiles.create({"name": "F", "agent": "fake"})
+    s = store.create_session(CHAT, "/pf-x-agent", profile_id=claude["id"])
+    store.start_turn(s["id"], "t-pf-x-agent", "hi", [])
+    assert profiles.bind(store.get_session(s["id"]), fake["id"])[1] == 409
+    fresh = store.create_session(CHAT, "/pf-x-agent-fresh", profile_id=claude["id"])
+    assert profiles.bind(fresh, fake["id"])[1] == 200
+
+
+def test_an_agent_run_takes_its_own_ids_and_never_a_claude_model(fake_agent):
+    assert profiles.run_values("gpt-5.1", " read-only ", "", "fake") == (
+        None, "gpt-5.1", "read-only", None)
+    assert profiles.run_values("claude-opus-5-5", None, None, "fake")[0] == (
+        "Claude models run in a Claude profile")
+    assert profiles.run_values(None, "x" * 65, None, "fake")[0]
+    assert profiles.run_values("gpt-5.1", None, None)[0] == "invalid model"   # Claude's rules
+
+
+def test_agent_for_is_the_sessions_else_what_a_fresh_one_would_bind(fake_agent):
+    fake = profiles.create({"name": "F", "agent": "fake"})
+    s = store.create_session(CHAT, "/pf-af", profile_id=fake["id"])
+    assert profiles.agent_for(s) == "fake"
+    assert profiles.agent_for(None, fake["id"], "/pf-af-none") == "fake"
+    assert profiles.agent_for(None, None, "/pf-af-none") == "claude"
+    profiles.set_project_default("/pf-af-default", fake["id"])
+    assert profiles.agent_for(None, None, "/pf-af-default") == "fake"
+
+
+def test_refusal_covers_agent_profiles(fake_agent):
+    p = profiles.create({"name": "F", "agent": "fake"})
+    eff = profiles.effective(store.create_session(CHAT, "/pf-agent-refuse", profile_id=p["id"]))
+    assert "owner" in profiles.refusal(eff, config.DASH_CHAT_ID + 7)
+    assert "isn't installed" in profiles.refusal(eff, config.DASH_CHAT_ID)

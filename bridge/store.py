@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   autocompact       TEXT,
   model             TEXT,
   profile_id        TEXT,
-  effort            TEXT
+  effort            TEXT,
+  agent_session_id  TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -193,8 +194,11 @@ def init() -> None:
                       "WHERE t.session_id=sessions.id AND t.model IS NOT NULL "
                       "ORDER BY t.seq DESC LIMIT 1)")
         # The profile this session is bound to (bridge/profiles.py) and its
-        # hand-set effort. NULL = no profile / follow the profile.
-        for col in ("profile_id", "effort"):
+        # hand-set effort. NULL = no profile / follow the profile. And a
+        # non-Claude agent's own session id (bridge/acp.py), kept apart from
+        # claude_session_id so the Claude-only readers (JSONL transcripts, the
+        # subagent viewer, native scan, recovery) never follow it.
+        for col in ("profile_id", "effort", "agent_session_id"):
             if col not in scols:
                 c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
         # A plugin run's handle on the job that started it — "<instance id>:<request
@@ -406,12 +410,13 @@ def set_run_settings(session_id: str, model: "str | None" = None,
                   (model, permission_mode, session_id))
 
 
-_SESSION_FIELDS = {"model", "permission_mode", "effort", "profile_id"}
+_SESSION_FIELDS = {"model", "permission_mode", "effort", "profile_id", "agent_session_id"}
 
 
 def set_session_field(session_id: str, field: str, value: "str | None") -> None:
-    """Write one run-setting column, NULL included — set_run_settings can't
-    clear, and a profiled session's NULL means 'follow the profile'."""
+    """Write one run-setting column (or an agent turn's own session id), NULL
+    included — set_run_settings can't clear, and a profiled session's NULL
+    means 'follow the profile'."""
     if field not in _SESSION_FIELDS:
         raise ValueError(f"not a settable session field: {field}")
     with closing(_connect()) as c:

@@ -114,14 +114,15 @@ def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
     alone; sending it blank clears an override back to following the profile.
     Anything invalid is a 400 with nothing saved and nothing switched: every
     surface now runs what this row says, so a bad value would follow the
-    session everywhere. Returns (json, status)."""
+    session everywhere. Valid means valid for the session's agent: another
+    agent takes its own ids, never a Claude model. Returns (json, status)."""
     m, p, e, pick = (body.get("model"), body.get("permission_mode"),
                      body.get("effort"), body.get("pick"))
     if not all(v is None or isinstance(v, str) for v in (m, p, e)):
         return {"error": "model, permission_mode and effort must be strings"}, 400
     if pick not in (None, "model", "permission_mode", "effort"):
         return {"error": "pick must be 'model', 'permission_mode' or 'effort'"}, 400
-    err, model, mode, effort = profiles.run_values(m, p, e)
+    err, model, mode, effort = profiles.run_values(m, p, e, profiles.agent_for(session))
     if err:
         return {"error": err}, 400
     for field, value in (("model", model), ("permission_mode", mode), ("effort", effort)):
@@ -556,13 +557,18 @@ class Handler(BaseHTTPRequestHandler):
             cand = os.path.realpath(os.path.join(config.BASE_PATH, str(project).lstrip("/")))
             if browser.within_base(cand) and os.path.isdir(cand):
                 project_path = cand
+        session_id = (body.get("session_id") or "").strip() or None
+        profile_id = (body.get("profile_id") or "").strip() or None
+        # Checked for the agent this run lands on: the session it would resume,
+        # else the profile a fresh one gets (profiles.agent_for).
+        proj = browser.rel(project_path or state.project_dir(chat_id))
         err, model, permission_mode, effort = profiles.run_values(
-            body.get("model"), body.get("permission_mode"), body.get("effort"))
+            body.get("model"), body.get("permission_mode"), body.get("effort"),
+            profiles.agent_for(store.resolve_session(chat_id, proj, session_id),
+                               profile_id, proj))
         if err:
             return self._json({"error": err}, 400)
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
-        session_id = (body.get("session_id") or "").strip() or None
-        profile_id = (body.get("profile_id") or "").strip() or None
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
         # _save_images so a held prompt writes nothing.

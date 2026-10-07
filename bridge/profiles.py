@@ -30,10 +30,12 @@ import os
 import threading
 import uuid
 
-from bridge import accounts, config, project_config, store
+from bridge import accounts, acp_agents, config, project_config, store
 
 CLAUDE = "claude"
 NAME_MAX = 32
+ID_MAX = 64          # an agent's mode or effort id
+_CLAUDE_ONLY = "Claude models run in a Claude profile"
 # session column -> profile field, for the knobs a picker can hand-set
 KNOBS = {"model": "model", "permission_mode": "mode", "effort": "effort"}
 
@@ -102,7 +104,17 @@ def _check_claude(account: str, model: str, mode: str, effort: str) -> None:
 
 
 def _check_agent(agent: str, account: str, model: str, mode: str, effort: str) -> None:
-    raise ValueError(f"unknown agent {agent!r}")      # Task 8: ACP presets
+    """An agent's model and mode ids are its own (the pickers read them off its
+    advertised options), so they're taken as given, except a Claude model
+    (safety rule 4)."""
+    if acp_agents.preset(agent) is None:
+        raise ValueError(f"unknown agent {agent!r}")
+    if account and (acp_agents.account(account) or {}).get("agent") != agent:
+        raise ValueError(f"no {agent} account {account!r}")
+    if acp_agents.is_claude_model(model):
+        raise ValueError(_CLAUDE_ONLY)
+    if len(mode) > ID_MAX or len(effort) > ID_MAX:
+        raise ValueError(f"mode and effort must be at most {ID_MAX} characters")
 
 
 def _clean(fields: dict, keep_id: "str | None" = None) -> dict:
@@ -258,7 +270,12 @@ def claude_slot(eff: dict) -> "int | None":
 
 def refusal(eff: dict, chat_id) -> "str | None":
     """Why this session's bound profile can't run right now, or None. Never
-    a silent fallback to another login (the ladder.resolve_agent rule)."""
+    a silent fallback to another login (the ladder.resolve_agent rule). An
+    agent profile answers acp_agents.run_problem: owner's chat only, installed,
+    its account still there, no Claude model."""
+    if eff["agent"] != CLAUDE:
+        return acp_agents.run_problem(acp_agents.preset(eff["agent"]), eff["account"],
+                                      chat_id, eff["model"])
     slot = claude_slot(eff)
     if slot is not None and not claude_slot_usable(slot):
         name = (get(eff.get("profile_id")) or {}).get("name") or "?"
@@ -291,10 +308,29 @@ def api_write(body: dict) -> "tuple[dict, int]":
     return {"error": "action must be create, update or delete"}, 400
 
 
-def run_values(model, mode, effort) -> tuple:
-    """Validate a run's or a pick's model/mode/effort for a Claude session.
-    Returns (error or None, model, mode, effort); blanks become None.
-    Task 8 widens it to agent sessions."""
+def agent_for(session: "dict | None", profile_id=None, project=None) -> str:
+    """The agent a run or a pick is for: the session's, else the one a fresh
+    session would be bound to (that profile_id, else the project's default,
+    as runner._resolve_session binds it), else Claude."""
+    if session:
+        return effective(session)["agent"]
+    p = get(profile_id) or get(project_default(project))
+    return (p or {}).get("agent") or CLAUDE
+
+
+def run_values(model, mode, effort, agent=CLAUDE) -> tuple:
+    """Validate a run's or a pick's model/mode/effort for the agent it runs on.
+    Returns (error or None, model, mode, effort); blanks become None. Claude's
+    go through the Mini App's normalizers. Another agent's ids are its own and
+    pass as given, except a Claude model (safety rule 4); unknown ones are a
+    log row in the turn (acp.Turn.apply)."""
+    if agent != CLAUDE:
+        m, p, e = (str(v or "").strip() or None for v in (model, mode, effort))
+        if acp_agents.is_claude_model(m):
+            return _CLAUDE_ONLY, None, None, None
+        if len(p or "") > ID_MAX or len(e or "") > ID_MAX:
+            return f"mode and effort must be at most {ID_MAX} characters", None, None, None
+        return None, m, p, e
     from bridge.miniapp.server import normalize_model_effort, normalize_permission_mode
     ok, m, e = normalize_model_effort(model, effort)
     if not ok:
