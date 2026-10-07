@@ -43,10 +43,23 @@ const old = runPicks({}, { ...DEV, model: "opus", perm: "" });
 ok(old.model === "opus" && old.perm === "", "an older bridge's brief (no fields) leaves this device's picks");
 
 // Effort is the session's now (spec profiles-and-acp-agents.md, "Writes keep
-// the profile live"): its own wins, and this device's pick only fills a gap.
+// the profile live"): its own wins, and this device's pick only seeds a session
+// that never ran. Once one has, no effort on it is Auto and stays Auto — a pick
+// made since in another session must not seep in and get pinned by the next send.
 ok(runPicks({ model: "claude-fable-5-1", effort: "high" }, DEV).effort === "high", "the session's effort wins");
-ok(runPicks({ model: "claude-fable-5-1", effort: null }, DEV).effort === "medium", "no effort on it -> this device's");
-ok(old.effort === "medium", "an older bridge's brief (no effort) -> this device's");
+ok(runPicks({ model: null, effort: null }, DEV).effort === "medium", "a session that never ran starts from this device's effort");
+ok(runPicks({ model: "claude-fable-5-1", effort: null }, { ...DEV, effort: "low" }).effort === "",
+  "Auto on a session that has run stays Auto, whatever this device picked since");
+ok(runPicks({ model: "claude-fable-5-1" }, DEV).effort === "medium",
+  "an older bridge's brief (no effort field at all) keeps this device's effort");
+ok(old.effort === "medium", "an older bridge's brief (no fields) -> this device's");
+
+// Bound, but the profile list isn't in (it failed to load, or lags the poll):
+// the brief's values are already the effective ones, so they show — this
+// device's would get pinned as overrides by the next send.
+const unloaded = runPicks({ profile_id: "p_x", model: null, permission_mode: "plan", effort: null, overrides: [] }, DEV);
+ok(unloaded.perm === "plan" && unloaded.effort === "" && unloaded.model === "claude-opus-5-5",
+  "bound to a profile that isn't loaded: the brief's mode and effort, this device's model only as there is none");
 
 // Bound to a profile: a knob set by hand in the session, else the profile's,
 // else this device's. The brief's mode is never blank (the bridge fills its

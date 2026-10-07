@@ -241,9 +241,11 @@ export function App() {
   // installed) — the non-Claude half of agentOpts.
   const [freeAgents, setFreeAgents] = useState<FreeAgentInfo[]>([]);
   // Server-side profiles and each project's default (bridge/profiles.py). null
-  // until the first load; profilesAvailable false = a bridge older than them.
+  // until the first load; profilesAvailable false = a bridge older than them;
+  // profilesError = why the last load failed otherwise (null once one lands).
   const [profiles, setProfiles] = useState<ProfilesInfo | null>(null);
   const [profilesAvailable, setProfilesAvailable] = useState(true);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
   const [inject, setInject] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
   // Prompts the relevance guardrail held back — still client-side, nothing ran.
   // Keyed by the session each one was written in: the check takes ~10s, and a
@@ -1048,11 +1050,17 @@ export function App() {
   }, [markBoot]);
 
   // Profiles change only when someone edits them — here (SETTINGS) or on
-  // another dashboard — so they load on mount and after every edit, unpolled.
-  // A bridge started before they existed answers its catch-all 404.
+  // another dashboard — so they load on mount, after every edit and whenever
+  // the PROFILES panel opens, unpolled. A bridge started before they existed
+  // answers its catch-all 404; any other failure says so, here and in the panel.
   const loadProfiles = useCallback(() => api.profiles()
-    .then((r) => { setProfiles(r); setProfilesAvailable(true); })
-    .catch((e) => { if ((e as Error).message === "not found") setProfilesAvailable(false); }), []);
+    .then((r) => { setProfiles(r); setProfilesAvailable(true); setProfilesError(null); })
+    .catch((e) => {
+      const msg = (e as Error).message;
+      if (msg === "not found") { setProfilesAvailable(false); return; }
+      setProfilesError(msg);
+      notify("error", `Couldn't load profiles — ${msg}`);
+    }), []);
   useEffect(() => { void loadProfiles(); }, [loadProfiles]);
   // The open session's PROFILE pick. The bridge binds it whatever the session
   // has run on before (another agent excepted: a 409, whose message says so)
@@ -2362,7 +2370,8 @@ export function App() {
                 models={modelOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
                 sessionTools={selected?.disabled_tools ?? []}
-                profiles={profiles} profilesAvailable={profilesAvailable} onProfilesChanged={() => void loadProfiles()}
+                profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
+                onProfilesChanged={() => void loadProfiles()}
                 onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
                 projects={{
                   groups: projectGroups.filter((g) => !removedProjects[g.rel]),

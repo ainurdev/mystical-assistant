@@ -63,15 +63,19 @@ export function snapModel(pick: string, list?: ModelOption[]): string | null {
  * profile `p`: per knob, one set by hand in the session (its `overrides`), else
  * the profile's, else this device's pick for a knob the profile leaves unset
  * (read off the profile itself: the brief's mode is never blank, the bridge
- * fills its default in). Unbound: one that has run from a composer has a
- * model and carries its picks; one that hasn't (fresh, or started by the bot
- * or VS Code) starts from this device's — or a new session would quietly show
- * the bridge's new-session mode over the one you keep picking. A device mode
- * of "" (the retired "Session" option) defers to the session's own. Effort is
- * the session's either way, this device's only where it has none.
+ * fills its default in). Bound but `p` not loaded: the brief's own values —
+ * they're the effective ones, where this device's would be pinned as
+ * overrides by the next send. Unbound: one that has run from a composer has a
+ * model and carries its picks, no effort being Auto; one that hasn't (fresh,
+ * or started by the bot or VS Code) starts from this device's — or a new
+ * session would quietly show the bridge's new-session mode over the one you
+ * keep picking. A device mode of "" (the retired "Session" option) defers to
+ * the session's own. A brief with no effort field (an older bridge) keeps
+ * this device's effort.
  */
 export function runPicks(
-  s: { model?: string | null; permission_mode?: string | null; effort?: string | null; overrides?: string[] },
+  s: { model?: string | null; permission_mode?: string | null; effort?: string | null; overrides?: string[];
+       profile_id?: string | null },
   device: { model: string; perm: string; effort: string },
   p?: { model: string; mode: string; effort: string } | null,
 ): { model: string; perm: string; effort: string } {
@@ -83,10 +87,12 @@ export function runPicks(
       effort: (own("effort") && s.effort) || p.effort || device.effort,
     };
   }
-  const effort = s.effort || device.effort;
+  if (s.profile_id)
+    return { model: s.model || device.model, perm: s.permission_mode || device.perm || "", effort: s.effort || "" };
   return s.model
-    ? { model: s.model, perm: s.permission_mode || device.perm, effort }
-    : { model: device.model, perm: device.perm || s.permission_mode || "", effort };
+    ? { model: s.model, perm: s.permission_mode || device.perm,
+        effort: s.effort === undefined ? device.effort : s.effort || "" }
+    : { model: device.model, perm: device.perm || s.permission_mode || "", effort: s.effort || device.effort };
 }
 
 /** "Claude Opus 4.8" -> "opus". Everything after the family word is version. */

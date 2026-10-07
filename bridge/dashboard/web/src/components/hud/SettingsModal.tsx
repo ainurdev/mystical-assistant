@@ -113,6 +113,7 @@ export interface SettingsModalProps {
   // them), reloaded through onProfilesChanged after every edit here.
   profiles: ProfilesInfo | null;
   profilesAvailable: boolean;
+  profilesError: string | null; // why the last load failed (not a 404)
   onProfilesChanged: () => void;
   onOpenInspector: () => void;
   projects: ProjectsSettingsProps;
@@ -3724,13 +3725,15 @@ function MiniBtn({
 function ProfilesPanel({
   info,
   available,
+  error,
   models,
   settings,
   sessionTools,
   onChanged,
 }: {
-  info: ProfilesInfo | null; // null = still loading
+  info: ProfilesInfo | null; // null = still loading, or the load failed (error)
   available: boolean; // false = a bridge older than profiles
+  error: string | null; // why App's last load of them failed
   models: { id: string; label: string }[];
   settings: HudSettings; // the open session's picks seed a new profile
   sessionTools: string[];
@@ -3738,13 +3741,19 @@ function ProfilesPanel({
 }) {
   // The profile in the form: id "" = a new one. null = no form open.
   const [form, setForm] = useState<Profile | null>(null);
+  // ON = SAVE sends the open session's tool switches as the profile's; OFF = null.
+  const [useTools, setUseTools] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [logins, setLogins] = useState<AccountInfo[]>([]);
+  const [loginsErr, setLoginsErr] = useState<string | null>(null);
 
   useEffect(() => {
-    void api.accounts().then((r) => setLogins(r.accounts.filter((a) => !a.disabled))).catch(() => {});
-    if (available && !info) onChanged();   // App's load failed (a blip): opening here retries it
+    void api.accounts().then((r) => setLogins(r.accounts.filter((a) => !a.disabled)))
+      .catch((e) => setLoginsErr((e as Error).message));
+    // Opening the panel re-reads the list: a failed load, or a bridge that has
+    // been restarted since it 404'd, gets another go without a page reload.
+    onChanged();
   }, []);
   // The browser-only profiles this replaced move onto the bridge once, after
   // the list is in (a clash with one already there gets " (old)").
@@ -3753,6 +3762,8 @@ function ProfilesPanel({
   }, [info]);
 
   const set = (patch: Partial<Profile>) => setForm((f) => f && { ...f, ...patch });
+  const edit = (p: Profile) => { setErr(null); setForm(p); setUseTools(p.tools !== null); };
+  const warn = (text: string) => <div style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{text}</div>;
   async function write(body: ProfileWrite, done?: () => void) {
     setBusy(true);
     setErr(null);
@@ -3782,9 +3793,12 @@ function ProfilesPanel({
   if (!available) {
     return <div style={CARD}><div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>Restart the bridge to use profiles.</div></div>;
   }
-  if (!info) return <div style={CARD}><div style={KEY_TX}>LOADING…</div></div>;
+  if (!info) {
+    return <div style={CARD}>{error ? warn(`Couldn't load profiles — ${error}`) : <div style={KEY_TX}>LOADING…</div>}</div>;
+  }
   return (
     <div style={CARD}>
+      {error && <div style={{ marginBottom: 8 }}>{warn(`Couldn't reload profiles, so this list may be stale — ${error}`)}</div>}
       {info.profiles.length === 0 && !form && (
         <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
           No profiles yet — name an account and the settings to run it with, then bind sessions to it.
@@ -3798,7 +3812,7 @@ function ProfilesPanel({
             {describe(p)}
           </span>
           <span style={{ flex: 1 }} />
-          <button onClick={() => { setErr(null); setForm(p); }} disabled={busy} style={btn("var(--acc)")}>EDIT</button>
+          <button onClick={() => edit(p)} disabled={busy} style={btn("var(--acc)")}>EDIT</button>
           <button onClick={() => void write({ action: "delete", id: p.id }, () => form?.id === p.id && setForm(null))}
             disabled={busy} style={btn("var(--err)")} title="delete profile — its sessions keep what it gave them">✕</button>
         </div>
@@ -3819,6 +3833,7 @@ function ProfilesPanel({
                 form.account, `A${form.account}`)}
               onPick={(account) => set({ account })} />
           </div>
+          {loginsErr && <div style={{ marginTop: 6 }}>{warn(`Couldn't list the Claude logins — ${loginsErr}`)}</div>}
           <div style={LINE}>
             <PickCell label="MODEL" value={form.model}
               options={keep([NOT_SET, ...models.map((m) => ({ id: m.id, label: m.label.toUpperCase() }))], form.model)}
@@ -3829,14 +3844,14 @@ function ProfilesPanel({
           </div>
           <div style={ROW}>
             <span style={KEY_TX}>USE THIS SESSION&apos;S TOOL SWITCHES</span>
-            {form.tools && <span style={{ ...CAPTION, width: "auto" }}>{form.tools.length} OFF</span>}
+            {useTools && <span style={{ ...CAPTION, width: "auto" }}>{sessionTools.length} OFF</span>}
             <span style={{ flex: 1 }} />
-            <Switch on={form.tools !== null} onClick={() => set({ tools: form.tools ? null : sessionTools })} />
+            <Switch on={useTools} onClick={() => setUseTools(!useTools)} />
           </div>
           <div style={{ ...ROW, flexWrap: "wrap" }}>
             <button disabled={busy || !form.name.trim()} style={btn("var(--ok)")}
               onClick={() => {
-                const { id, ...fields } = form;
+                const { id, ...fields } = { ...form, tools: useTools ? sessionTools : null };
                 void write(id ? { action: "update", id, ...fields } : { action: "create", ...fields }, () => setForm(null));
               }}>SAVE</button>
             <button onClick={() => { setForm(null); setErr(null); }} style={btn("var(--txm)")}>CANCEL</button>
@@ -3846,11 +3861,8 @@ function ProfilesPanel({
       ) : (
         <div style={{ ...ROW, marginTop: info.profiles.length ? 12 : 11 }}>
           <button style={btn("var(--acc)")} disabled={busy}
-            onClick={() => {
-              setErr(null);
-              setForm({ id: "", name: "", agent: "claude", account: "", model: settings.model,
-                        mode: settings.perm, effort: settings.effort, tools: null });
-            }}>+ NEW PROFILE</button>
+            onClick={() => edit({ id: "", name: "", agent: "claude", account: "", model: settings.model,
+                                  mode: settings.perm, effort: settings.effort, tools: null })}>+ NEW PROFILE</button>
           {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
         </div>
       )}
@@ -3878,6 +3890,7 @@ export function SettingsModal(props: SettingsModalProps) {
     sessionTools,
     profiles,
     profilesAvailable,
+    profilesError,
     onProfilesChanged,
     onOpenInspector,
     projects,
@@ -4423,6 +4436,7 @@ export function SettingsModal(props: SettingsModalProps) {
                   <ProfilesPanel
                     info={profiles}
                     available={profilesAvailable}
+                    error={profilesError}
                     models={models}
                     settings={settings}
                     sessionTools={sessionTools}
