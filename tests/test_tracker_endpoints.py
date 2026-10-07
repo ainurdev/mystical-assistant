@@ -152,6 +152,25 @@ def test_update_route_refuses_what_it_cannot_do(repo, monkeypatch):
     assert box["code"] == 409 and box["obj"]["error"] == "busy"
 
 
+def test_update_route_refuses_a_session_on_another_agent(repo, monkeypatch, tmp_path):
+    """The update turn is a Claude turn (manual mode, the ask rule, its MCP
+    server): an agent session would run it with none of them."""
+    from bridge import acp_agents, profiles
+    monkeypatch.setattr(profiles, "PATH", str(tmp_path / "profiles.json"))
+    monkeypatch.setattr(acp_agents, "PRESETS", (
+        {"id": "fake", "label": "Fake", "cmd": ["fake-acp"], "key_env": None, "home_env": None,
+         "key_required": False, "login": None, "install": "n/a", "env": {}},))
+    _linked(repo)
+    p = profiles.create({"name": "F", "agent": "fake"})
+    sid = store.create_session(CHAT, browser.rel(repo), origin="dashboard", cwd=repo,
+                               profile_id=p["id"])["id"]
+    started = []
+    monkeypatch.setattr(runner, "start_streaming_job", lambda *a, **k: started.append(k))
+    box = dpost("/local/tracker/update", {"project": browser.rel(repo), "session_id": sid})
+    assert box["code"] == 400 and box["obj"]["error"] == "Tracker updates need a Claude session"
+    assert not started
+
+
 # --- mini app ----------------------------------------------------------------
 
 def test_miniapp_reads_the_active_projects_tasks(repo, monkeypatch):

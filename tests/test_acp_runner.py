@@ -46,8 +46,19 @@ def isolated(monkeypatch, tmp_path):
     # Journal by draining, never the worker thread: once started it outlives this
     # module, and test_bridge's drain-then-read journal test races it.
     monkeypatch.setattr(runner, "_ensure_journal_thread", lambda: None)
+    # These drive the real start_streaming_job: a regression into the Claude path
+    # must fail here, never spawn the real CLI.
+    monkeypatch.setattr(runner, "_base_cmd", _no_claude)
     yield
+    # Nor may a run's tail (auto-resume, pings) outlive these patches.
+    end = time.time() + 10
+    while time.time() < end and any("_run_streaming" in t.name for t in threading.enumerate()):
+        time.sleep(0.02)
     runner._drain_journal()
+
+
+def _no_claude(*a, **k):
+    raise AssertionError("built a claude argv in an agent test")
 
 
 def _session(chat=CHAT):
@@ -138,6 +149,30 @@ def test_a_claude_model_an_internal_caller_brings_never_reaches_the_agent(monkey
     assert job.status == "error" and "Claude models" in job.error_msg and job.conn is None
 
 
+def test_a_claude_account_a_caller_brings_never_runs_an_agent_session(monkeypatch):
+    sid = _session()
+    job = runner.start_streaming_job(CHAT, "hi", [], project=config.BASE_PATH, session_id=sid,
+                                     account_slot=1)
+    assert job.exited.wait(10)
+    assert isinstance(job, runner.AcpJob) and job.status == "error" and job.conn is None
+    assert "can't be run on a Claude account" in job.error_msg
+    assert store.get_session(sid)["claude_session_id"] is None
+
+
+def test_a_turn_the_restart_killed_is_left_for_recovery_without_an_error(monkeypatch):
+    """As a Claude turn's: no error row, so boot recovery's flip reads INTERRUPTED."""
+    sid = _session()
+    job = _start(monkeypatch, sid, {"turn": [{"wait_cancel": True}]})
+    assert _prompting(job)
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner.stop_children()
+    assert job.exited.wait(10)
+    runner._drain_journal()
+    assert "error" not in [e["type"] for e in job.events] and "error" not in _journaled(sid)
+    assert store.transcript(sid)["turns"][-1]["status"] == "running"
+    store.finish_turn(job.id, "error", None, None)        # no orphan for the recovery tests
+
+
 def test_stop_ends_the_turn_and_releases_the_slot(monkeypatch):
     sid = _session()
     job = _start(monkeypatch, sid, {"turn": [{"wait_cancel": True}], "stop": "cancelled"})
@@ -222,14 +257,19 @@ def test_the_bot_hands_an_agent_session_back(monkeypatch):
     state.release_run(sid)
 
 
+def _handler(mod):
+    h, box = mod.Handler.__new__(mod.Handler), {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    return h, box
+
+
 @pytest.mark.parametrize("mod", [dash, mini])
 def test_run_and_picks_are_checked_against_the_sessions_agent(mod, monkeypatch):
     monkeypatch.setattr(relevance, "gate", lambda *a, **k: None)
     sid = _session()
     started = []
     monkeypatch.setattr(runner, "start_streaming_job", lambda *a, **kw: started.append(kw))
-    h, box = mod.Handler.__new__(mod.Handler), {}
-    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h, box = _handler(mod)
     run = h._run if mod is dash else h._api_run
     run(CHAT, {"prompt": "hi", "session_id": sid, "model": "claude-opus-5-5"})
     assert box["code"] == 400 and "Claude models" in box["obj"]["error"] and not started
@@ -239,3 +279,15 @@ def test_run_and_picks_are_checked_against_the_sessions_agent(mod, monkeypatch):
     code = mini.save_run_settings(store.get_session(sid), {"model": "gpt-5.1", "pick": "model"})[1]
     assert code == 200 and store.get_session(sid)["model"] == "gpt-5.1"
     assert mini.save_run_settings(store.get_session(sid), {"model": "claude-opus-5-5"})[1] == 400
+
+
+def test_dashboard_run_refuses_a_claude_account_on_an_agent_session(monkeypatch):
+    from bridge import accounts
+    monkeypatch.setattr(relevance, "gate", lambda *a, **k: None)
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 1, "disabled": False}])
+    started = []
+    monkeypatch.setattr(runner, "start_streaming_job", lambda *a, **kw: started.append(kw))
+    h, box = _handler(dash)
+    h._run(CHAT, {"prompt": "hi", "session_id": _session(), "agent": "claude:1"})
+    assert box["code"] == 400 and not started
+    assert box["obj"]["error"] == "This session runs on Fake; it can't be run on a Claude account."

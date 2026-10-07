@@ -955,6 +955,16 @@ class AcpJob(Job):
     def _write_stdin(self, obj):         # no stream-json stdin here
         return False
 
+    def add(self, ev):
+        # A restart's kill is no failure: no error row, so the turn left for
+        # boot recovery reads INTERRUPTED, as a Claude one does (_stopping). No
+        # grace needed: an agent runs in its own session, so only stop_children
+        # reaches it, after shutting_down is up.
+        if (ev.get("type") == "error" and state.shutting_down
+                and not self.interrupted and not self.timed_out):
+            return
+        super().add(ev)
+
     def awaiting(self, kind):
         # acp's reader thread calls this: a Telegram send there would stall the
         # agent's stdout, and a live switch waiting on its answer behind it.
@@ -2538,7 +2548,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     agent takes over. Both are recorded on the turn so the transcript shows what
     produced it. A profile on another agent makes it runtime 'acp:<agent>': an
     AcpJob with that profile's account in job.acp_account, and no claude
-    session id minted for it.
+    session id minted for it. Such a session never runs on a Claude account,
+    even one the caller names: that refuses the run.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
 
@@ -2562,15 +2573,20 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         # save theirs to the row; internal callers (Rivendell, trackers, goals)
         # run theirs without writing it. Neither = no --model, the CLI default.
         # Same for effort/account: the profile only fills what the caller didn't
-        # bring, and never overrides an explicit account_slot/runtime.
+        # bring, and never overrides an explicit account_slot/runtime (an agent
+        # session refuses one instead, below).
         eff = profiles.effective(session)
         model = model or eff["model"]
         effort = effort or eff["effort"]
         refusal = profiles.refusal(eff, chat_id) if account_slot is None and runtime is None else None
         if account_slot is None and runtime is None and not refusal:
             account_slot = profiles.claude_slot(eff)
-        if runtime is None and account_slot is None and eff["agent"] != profiles.CLAUDE:
-            runtime = f"acp:{eff['agent']}"
+        if eff["agent"] != profiles.CLAUDE:
+            # Its own agent or nothing: a caller's Claude account (or another
+            # runtime) would mint a claude id beside the agent's history.
+            if account_slot is not None or runtime not in (None, f"acp:{eff['agent']}"):
+                refusal = profiles.claude_account_refusal(eff["agent"])
+            account_slot, runtime = None, f"acp:{eff['agent']}"
         is_acp = (runtime or "").startswith("acp:")
         job = (AcpJob if is_acp else Job)(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.model = model

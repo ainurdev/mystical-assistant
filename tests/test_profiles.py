@@ -221,3 +221,47 @@ def test_refusal_covers_agent_profiles(fake_agent):
     eff = profiles.effective(store.create_session(CHAT, "/pf-agent-refuse", profile_id=p["id"]))
     assert "owner" in profiles.refusal(eff, config.DASH_CHAT_ID + 7)
     assert "isn't installed" in profiles.refusal(eff, config.DASH_CHAT_ID)
+
+
+def test_a_profiles_agent_cannot_change(fake_agent):
+    """Else every bound session would switch agents at once, past bind()'s 409."""
+    p = _mk()
+    j, code = profiles.api_write({"action": "update", "id": p["id"], "agent": "fake",
+                                  "account": "", "model": ""})
+    assert code == 400 and j["error"] == "A profile's agent can't change; make a new profile"
+    assert profiles.get(p["id"]) == p
+    assert profiles.update(p["id"], {"agent": "claude", "effort": "low"})["effort"] == "low"
+
+
+def _agent_profile():
+    return profiles.create({"name": "F", "agent": "fake", "model": "gpt-5.1",
+                            "mode": "read-only", "effort": "high"})
+
+
+def _knobs(sid):
+    row = store.get_session(sid)
+    return row["profile_id"], row["model"], row["permission_mode"], row["effort"]
+
+
+def test_unbinding_an_agent_profile_drops_its_ids_instead_of_freezing_them(fake_agent):
+    s = store.create_session(CHAT, "/pf-leave", profile_id=_agent_profile()["id"])
+    store.set_session_field(s["id"], "model", "gpt-5.1-mini")           # hand-set
+    assert profiles.bind(store.get_session(s["id"]), "")[1] == 200
+    assert _knobs(s["id"]) == (None, None, None, None)
+
+
+def test_deleting_an_agent_profile_drops_its_ids_hand_set_ones_too(fake_agent):
+    p = _agent_profile()
+    s = store.create_session(CHAT, "/pf-leave-del", profile_id=p["id"])
+    store.set_session_field(s["id"], "effort", "low")                  # hand-set
+    profiles.delete(p["id"])
+    assert _knobs(s["id"]) == (None, None, None, None)
+
+
+def test_a_duplicate_keeps_its_profile_but_never_the_agents_session_id(fake_agent):
+    p = _agent_profile()
+    s = store.create_session(CHAT, "/pf-dup", profile_id=p["id"])
+    store.set_session_field(s["id"], "agent_session_id", "s-agent-1")
+    copy = store.duplicate(s["id"])
+    assert copy["profile_id"] == p["id"]
+    assert copy["agent_session_id"] is None and copy["fork_from"] is None

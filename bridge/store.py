@@ -430,10 +430,18 @@ def count_turns(session_id: str) -> int:
 
 
 def unbind_profile(pid: str, model: "str | None", mode: "str | None",
-                   effort: "str | None", tools_json: "str | None") -> None:
+                   effort: "str | None", tools_json: "str | None",
+                   clear: bool = False) -> None:
     """A deleted profile's sessions keep running what it gave them: each knob
-    they never set by hand takes the profile's value, then the binding goes."""
+    they never set by hand takes the profile's value, then the binding goes.
+    clear (a non-Claude agent's profile): they fall back to Claude, where its
+    ids mean nothing, so model, mode and effort go to NULL, hand-set ones too."""
     with closing(_connect()) as c:
+        if clear:
+            c.execute("UPDATE sessions SET model=NULL, permission_mode=NULL, effort=NULL, "
+                      "disabled_tools=COALESCE(disabled_tools, ?), profile_id=NULL "
+                      "WHERE profile_id=?", (tools_json, pid))
+            return
         c.execute("UPDATE sessions SET model=COALESCE(model, ?), "
                   "permission_mode=COALESCE(permission_mode, ?), "
                   "effort=COALESCE(effort, ?), "
@@ -927,14 +935,17 @@ def duplicate(session_id: str) -> dict | None:
     its own: its first run resumes that transcript with --fork-session, so claude
     mints a fresh id and the original is never appended to. Goal and lifecycle are
     deliberately NOT copied — a copy is a fresh line of work, not a second session
-    racing the same objective."""
+    racing the same objective. Its profile comes along; an agent's own session id
+    never does, so a copy of an agent session opens a fresh one (fork_from is
+    Claude's, and empty for it)."""
     src = get_session(session_id)
     if not src:
         return None
     title = (src.get("title") or "session")[:52] + " (copy)"
     copy = create_session(
         src["chat_id"], src["project"], origin=src.get("origin"),
-        cwd=src.get("cwd"), permission_mode=src.get("permission_mode"))
+        cwd=src.get("cwd"), permission_mode=src.get("permission_mode"),
+        profile_id=src.get("profile_id"))
     now = time.time()
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")

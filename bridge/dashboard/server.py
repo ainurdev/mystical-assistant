@@ -1614,10 +1614,10 @@ class Handler(BaseHTTPRequestHandler):
         # Checked for the agent this run lands on: the session it would resume,
         # else the profile a fresh one gets (profiles.agent_for).
         proj = browser.rel(project_path or state.project_dir(chat))
+        agent = profiles.agent_for(store.resolve_session(chat, proj, session_id),
+                                   profile_id, proj)
         err, model, permission_mode, effort = profiles.run_values(
-            body.get("model"), body.get("permission_mode"), body.get("effort"),
-            profiles.agent_for(store.resolve_session(chat, proj, session_id),
-                               profile_id, proj))
+            body.get("model"), body.get("permission_mode"), body.get("effort"), agent)
         if err:
             return self._json({"error": err}, 400)
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
@@ -1626,6 +1626,8 @@ class Handler(BaseHTTPRequestHandler):
             account_slot, runtime = ladder.resolve_agent(body.get("agent") or "")
         except ValueError as e:
             return self._json({"error": str(e)}, 400)
+        if agent != profiles.CLAUDE and (account_slot is not None or runtime):
+            return self._json({"error": profiles.claude_account_refusal(agent)}, 400)
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
         # _save_images so a held prompt writes nothing.

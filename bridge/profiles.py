@@ -154,7 +154,11 @@ def update(pid: str, fields: dict) -> dict:
         i = next((i for i, p in enumerate(rows) if p["id"] == pid), None)
         if i is None:
             raise KeyError(pid)
-        rows[i] = {"id": pid, **_clean({**rows[i], **fields}, keep_id=pid)}
+        merged = {**rows[i], **fields}
+        # Every bound session would switch agents at once, past bind()'s 409.
+        if str(merged.get("agent") or CLAUDE).strip() != (rows[i].get("agent") or CLAUDE):
+            raise ValueError("A profile's agent can't change; make a new profile")
+        rows[i] = {"id": pid, **_clean(merged, keep_id=pid)}
         _save(rows)
         return rows[i]
 
@@ -168,7 +172,8 @@ def delete(pid: str) -> None:
         _save([r for r in rows if r["id"] != pid])
     store.unbind_profile(pid, p.get("model") or None, p.get("mode") or None,
                          p.get("effort") or None,
-                         None if p.get("tools") is None else json.dumps(p["tools"]))
+                         None if p.get("tools") is None else json.dumps(p["tools"]),
+                         clear=(p.get("agent") or CLAUDE) != CLAUDE)
     project_config.drop_profile(pid)
 
 
@@ -230,9 +235,11 @@ def save_pick(session: dict, field: str, value: "str | None") -> None:
 
 def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
     """Bind (or with "" unbind) a session's profile. Binding clears the knobs
-    set by hand so the new profile shows through; unbinding freezes what the
-    old one gave, so nothing changes under a running conversation. Another
-    agent only before the first turn: an agent can't read another's history."""
+    set by hand so the new profile shows through; unbinding freezes what a
+    Claude profile gave, so nothing changes under a running conversation, but
+    drops an agent profile's (its ids mean nothing on Claude, where an unbound
+    session runs). Another agent only before the first turn: an agent can't
+    read another's history."""
     pid = (pid or "").strip() or None
     new = get(pid)
     if pid and new is None:
@@ -243,8 +250,9 @@ def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
         return {"error": "This session already ran on another agent. Start a "
                          "new session with that profile."}, 409
     store.set_session_field(session["id"], "profile_id", pid)
+    freeze = pid is None and eff["agent"] == CLAUDE
     for col in KNOBS:
-        store.set_session_field(session["id"], col, None if pid else eff[col])
+        store.set_session_field(session["id"], col, eff[col] if freeze else None)
     if pid is None and session.get("disabled_tools") is None \
             and eff["disabled_tools"] is not None:
         store.set_disabled_tools(session["id"], eff["disabled_tools"])
@@ -260,6 +268,13 @@ def set_project_default(project: str, pid: "str | None") -> None:
     if pid and not get(pid):
         raise ValueError("no such profile")
     project_config.set_profile(project, pid)
+
+
+def claude_account_refusal(agent: str) -> str:
+    """Why a session on another agent can't take a Claude account (or any
+    runtime but its own): a claude id would land beside the agent's history."""
+    label = (acp_agents.preset(agent) or {}).get("label") or agent
+    return f"This session runs on {label}; it can't be run on a Claude account."
 
 
 def claude_slot(eff: dict) -> "int | None":
