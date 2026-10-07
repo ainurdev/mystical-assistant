@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
 import { useChat } from "../lib/chat";
-import { api, type EffortLevel, type ModelId } from "../lib/api";
+import { api, type EffortLevel, type ModelId, type Profile } from "../lib/api";
 import { isExact, rankCommands, slashQuery } from "../lib/slash";
-import { Button } from "./ui";
+import { Banner, Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
 import { ImageLightbox, MediaThumb, isFileUrl } from "./ImageLightbox";
@@ -51,7 +51,7 @@ function OptionRow({
 }: {
   label: string;
   value: string;
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; title?: string }[];
   onPick: (id: string) => void;
 }) {
   return (
@@ -64,6 +64,7 @@ function OptionRow({
             type="button"
             role="radio"
             aria-checked={o.id === value}
+            title={o.title}
             onClick={() => onPick(o.id)}
             className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
               o.id === value
@@ -77,6 +78,16 @@ function OptionRow({
       </div>
     </div>
   );
+}
+
+// "FABLE-5-1 · PLAN · HIGH" — what a session bound to this profile runs with.
+// The chip's hover title: at 390px there's no room for a note line under each
+// pill. Mirrors bridge/dashboard/web/src/lib/profiles.ts describe() (hand-kept
+// copy — the two web apps don't share source).
+function describeProfile(p: Profile): string {
+  const bits = [p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
+    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
+  return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
 }
 
 const chipClass =
@@ -101,6 +112,10 @@ export function Composer() {
     setEffort,
     perm,
     setPerm,
+    profiles,
+    profileId,
+    pickProfile,
+    profilesError,
     sessionId,
   } = useChat();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -320,6 +335,21 @@ export function Composer() {
             collisionPadding={12}
             className="max-h-[70vh] w-[min(23rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5"
           >
+            {profilesError && <Banner tone="error">{profilesError}</Banner>}
+            {profiles && (
+              <>
+                <OptionRow
+                  label="PROFILE"
+                  value={profileId}
+                  options={[
+                    { id: "", label: "NO PROFILE" },
+                    ...profiles.map((p) => ({ id: p.id, label: p.name, title: describeProfile(p) })),
+                  ]}
+                  onPick={(v) => void pickProfile(v)}
+                />
+                <DropdownMenuSeparator />
+              </>
+            )}
             <OptionRow
               label="MODEL"
               value={model}
