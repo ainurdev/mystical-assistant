@@ -10,8 +10,18 @@ allow-list. We hard-assign (not setdefault) so a shell value can never leak in.
 """
 
 import os
+import shutil
 import sys
 import tempfile
+
+# Every mkdtemp() below and in the tests lands under one root that the session
+# removes when it ends (pytest_sessionfinish). The suite used to leave ~3,400
+# files in /tmp per run, and on 2026-10-06 parallel runs filled the tmpfs's
+# inodes, so anything on the machine needing a temp file (the live bridge too)
+# failed. TMPDIR covers the subprocesses the tests spawn.
+_TMP_ROOT = tempfile.mkdtemp(prefix="mystical-tests-")
+tempfile.tempdir = _TMP_ROOT
+os.environ["TMPDIR"] = _TMP_ROOT
 
 # The bridge package lives at the repo root (parent of tests/); put it on the
 # path once so every test module imports `bridge` without its own sys.path hack.
@@ -69,3 +79,6 @@ def pytest_deselected(items):
 def pytest_sessionfinish(session, exitstatus):
     if exitstatus == 5 and _deselected:      # 5 == ExitCode.NO_TESTS_COLLECTED
         session.exitstatus = 0
+    # ponytail: a killed run (SIGKILL, power) still leaves its root behind;
+    # it's one dir named mystical-tests-*, so a stale sweep is easy if it adds up.
+    shutil.rmtree(_TMP_ROOT, ignore_errors=True)
