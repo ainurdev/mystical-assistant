@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   fork_from         TEXT,
   ctx_tokens        INTEGER,
   autocompact       TEXT,
-  model             TEXT
+  model             TEXT,
+  profile_id        TEXT,
+  effort            TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -190,6 +192,11 @@ def init() -> None:
             c.execute("UPDATE sessions SET model=(SELECT t.model FROM turns t "
                       "WHERE t.session_id=sessions.id AND t.model IS NOT NULL "
                       "ORDER BY t.seq DESC LIMIT 1)")
+        # The profile this session is bound to (bridge/profiles.py) and its
+        # hand-set effort. NULL = no profile / follow the profile.
+        for col in ("profile_id", "effort"):
+            if col not in scols:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
         # A plugin run's handle on the job that started it — "<instance id>:<request
         # id>" for a Rivendell request (bridge/rivendell.py Worker._track), the key a
         # queue-mode batch already tags its turns with. NULL = not a plugin run. It
@@ -235,16 +242,17 @@ def _row(r) -> dict | None:
 
 def create_session(chat_id: int, project: str, *, session_id: str | None = None,
                    origin: str | None = None, cwd: str | None = None,
-                   permission_mode: str | None = None) -> dict:
+                   permission_mode: str | None = None,
+                   profile_id: str | None = None) -> dict:
     sid = session_id or uuid.uuid4().hex
     now = time.time()
     with closing(_connect()) as c:
         c.execute(
             "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"
-            "created,updated,archived,origin,cwd,permission_mode) "
-            "VALUES(?,?,?,?,?,?,?,0,?,?,?)",
+            "created,updated,archived,origin,cwd,permission_mode,profile_id) "
+            "VALUES(?,?,?,?,?,?,?,0,?,?,?,?)",
             (sid, chat_id, project, None, None, now, now, origin, cwd,
-             permission_mode))
+             permission_mode, profile_id))
     return get_session(sid)
 
 
@@ -358,12 +366,15 @@ def resolve_session(chat_id: int, project: str,
 
 def ensure_session(chat_id: int, project: str, session_id: str | None = None, *,
                    origin: str | None = None, cwd: str | None = None,
-                   permission_mode: str | None = None) -> dict:
+                   permission_mode: str | None = None,
+                   profile_id: str | None = None) -> dict:
     """Resolve a session: a valid given id for this chat, else the latest for the
-    project, else a fresh one. The origin/cwd/permission_mode are applied ONLY
-    when a new session is created (resuming an existing one leaves it untouched)."""
+    project, else a fresh one. The origin/cwd/permission_mode/profile_id are
+    applied ONLY when a new session is created (resuming an existing one leaves
+    it untouched)."""
     return resolve_session(chat_id, project, session_id) or create_session(
-        chat_id, project, origin=origin, cwd=cwd, permission_mode=permission_mode)
+        chat_id, project, origin=origin, cwd=cwd, permission_mode=permission_mode,
+        profile_id=profile_id)
 
 
 def set_claude_session_id(session_id: str, claude_sid: str | None) -> None:
@@ -393,6 +404,36 @@ def set_run_settings(session_id: str, model: "str | None" = None,
         c.execute("UPDATE sessions SET model=COALESCE(?, model), "
                   "permission_mode=COALESCE(?, permission_mode) WHERE id=?",
                   (model, permission_mode, session_id))
+
+
+_SESSION_FIELDS = {"model", "permission_mode", "effort", "profile_id"}
+
+
+def set_session_field(session_id: str, field: str, value: "str | None") -> None:
+    """Write one run-setting column, NULL included — set_run_settings can't
+    clear, and a profiled session's NULL means 'follow the profile'."""
+    if field not in _SESSION_FIELDS:
+        raise ValueError(f"not a settable session field: {field}")
+    with closing(_connect()) as c:
+        c.execute(f"UPDATE sessions SET {field}=? WHERE id=?", (value, session_id))
+
+
+def count_turns(session_id: str) -> int:
+    with closing(_connect()) as c:
+        return c.execute("SELECT COUNT(*) FROM turns WHERE session_id=?",
+                         (session_id,)).fetchone()[0]
+
+
+def unbind_profile(pid: str, model: "str | None", mode: "str | None",
+                   effort: "str | None", tools_json: "str | None") -> None:
+    """A deleted profile's sessions keep running what it gave them: each knob
+    they never set by hand takes the profile's value, then the binding goes."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET model=COALESCE(model, ?), "
+                  "permission_mode=COALESCE(permission_mode, ?), "
+                  "effort=COALESCE(effort, ?), "
+                  "disabled_tools=COALESCE(disabled_tools, ?), profile_id=NULL "
+                  "WHERE profile_id=?", (model, mode, effort, tools_json, pid))
 
 
 def set_fallback_policy(session_id: str, policy: str | None) -> None:
