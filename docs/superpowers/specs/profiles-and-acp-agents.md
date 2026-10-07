@@ -80,7 +80,8 @@ still the main runtime.
    - Amp. It has no client approvals.
    - Droid. It leaks context across sessions, #46.
 6. **One person per login.** Agent profiles run only for the owner's chat
-   (`config.is_owner`). The run routes reject anything else with 403.
+   (`config.DASH_CHAT_ID`). Any other chat's agent turn ends at start with that
+   reason. It's checked in the turn, so every caller is covered, not just /run.
 7. **Asking by default.** Each preset starts in its asking mode, so tool use
    shows cards:
    - Codex: its default approval preset.
@@ -99,7 +100,7 @@ atomically (tmp + `os.replace`), in the `project_config.py` pattern. One list:
 [{"id": "p_3k9x", "name": "Work Opus",
   "agent": "claude",            // "claude" | an acp_agents preset id (Part 2)
   "account": "2",               // claude: slot number as string, "" = ambient;
-                                // agents: "" = machine login, "key:<id>", "home:<id>"
+                                // agents: "" = machine login, else an agent-account id
   "model": "claude-opus-5-5",   // "" = the agent's default
   "mode": "bypassPermissions",  // claude permission mode, or an agent mode id
   "effort": "high",             // "" = default
@@ -227,9 +228,9 @@ Each preset also has a login command for "separate login" accounts:
 
 Accounts per agent:
 - **machine login** (`""`): the CLI's own ambient login and config;
-- **API key** (`key:<id>`): `{id, agent, label, key}`, with the key injected
+- **API key** (kind `key`): `{id, agent, label, kind, key}`, with the key injected
   as the preset's key var;
-- **separate login** (`home:<id>`): `{id, agent, label}`, with
+- **separate login** (kind `home`): `{id, agent, label, kind}`, with
   `~/.mystical/agent-homes/<id>/` (0700) as the preset's home var. The UI
   shows the exact command to run once in a terminal:
   `CODEX_HOME=… codex login --device-auth`.
@@ -298,12 +299,13 @@ in known dirs) and an `install` hint.
   (SIGTERM, then SIGKILL on the process group).
 - **Outcome.** The `stopReason` comes back as `end_turn`, `max_tokens`,
   `max_turn_requests`, `refusal` or `cancelled`. A JSON-RPC error on
-  `session/prompt` ends the turn as `error` with its message. A turn whose
-  last text matches a quota pattern ("usage limit", "quota", "rate limit",
-  "upgrade your plan", "credits") is marked `error` with that text: there is
-  no parking and no auto-resume (`_maybe_auto_resume` returns False for
-  `acp:` runtimes, and boot recovery already skips sessions with no
-  `claude_session_id`).
+  `session/prompt` (Gemini sends HTTP 429 this way) ends the turn as
+  `error` with its message. A quota hit that an agent reports only as
+  assistant text stays plain text. There is no text classifier: a false
+  positive would mark a real answer about rate limits as failed.
+  There is no parking and no auto-resume (`_maybe_auto_resume` returns
+  False for `acp:` runtimes, and boot recovery already skips sessions with
+  no `claude_session_id`).
 
 ### Runner integration
 
@@ -365,7 +367,7 @@ in known dirs) and an `install` hint.
   request, an unknown vendor request, a quota-text ending, resume vs load
   capabilities, auth-required).
 - `tests/test_acp.py`: mapping, the permission round trip, cancel, the load
-  replay being dropped, `-32601`, `-32000`, the env scrub (rule 3, which
+  replay being dropped, `-32601`, `-32000`, junk stdout, a crash, the env scrub (rule 3, which
   asserts no `DASH_TOKEN`/`TELEGRAM`/`ANTHROPIC` var reaches the child), and
   key masking (rule 2).
 - `tests/test_acp_runner.py`: an `acp:` turn through `start_streaming_job`
