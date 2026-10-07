@@ -80,6 +80,22 @@ function OptionRow({
   );
 }
 
+// A knob set by hand in a session bound to a profile: its value wins over the
+// profile's until you pick the profile's own again (bridge profiles.save_pick).
+// Mirrors bridge/dashboard/web/src/components/Composer.tsx's OVERRIDE_TIP.
+const OVERRIDE_TIP = "set in this session; pick the profile's value to follow it again";
+
+/** Dots the selected option's label — the composer's only tell that a knob is
+ *  this session's own, over its bound profile's. `on` is whether the caller's
+ *  knob is listed in the session's `overrides`; untouched when false, so the
+ *  shared EFFORTS/PERMS arrays below are never mutated. */
+function dotSelected<T extends { id: string; label: string; title?: string }>(
+  options: T[], value: string, on: boolean,
+): T[] {
+  if (!on) return options;
+  return options.map((o) => (o.id === value ? { ...o, label: `${o.label} •`, title: OVERRIDE_TIP } : o));
+}
+
 // "FABLE-5-1 · PLAN · HIGH" — what a session bound to this profile runs with.
 // The chip's hover title: at 390px there's no room for a note line under each
 // pill. Mirrors bridge/dashboard/web/src/lib/profiles.ts describe() (hand-kept
@@ -116,6 +132,7 @@ export function Composer() {
     profileId,
     pickProfile,
     profilesError,
+    overrides,
     sessionId,
   } = useChat();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -353,21 +370,24 @@ export function Composer() {
             <OptionRow
               label="MODEL"
               value={model}
-              options={models.map((m) => ({ id: m.id, label: m.label.replace(/^Claude /, "") }))}
+              options={dotSelected(
+                models.map((m) => ({ id: m.id, label: m.label.replace(/^Claude /, "") })),
+                model, overrides.includes("model"),
+              )}
               onPick={(v) => setModel(v as ModelId)}
             />
             <DropdownMenuSeparator />
             <OptionRow
               label="REASONING EFFORT"
               value={effort}
-              options={EFFORTS}
+              options={dotSelected(EFFORTS, effort, overrides.includes("effort"))}
               onPick={(v) => setEffort(v as EffortLevel | "")}
             />
             <DropdownMenuSeparator />
             <OptionRow
               label="OPERATING MODE"
               value={perm}
-              options={PERMS}
+              options={dotSelected(PERMS, perm, overrides.includes("permission_mode"))}
               onPick={setPerm}
             />
           </DropdownMenuContent>

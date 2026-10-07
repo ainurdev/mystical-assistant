@@ -217,6 +217,10 @@ export interface ChatContextValue {
   // A non-404 profiles load failure, or the last pick's error (incl. a 409 —
   // the session already ran on another agent). Cleared by the next success.
   profilesError: string | null;
+  // Knobs set by hand in the open session, over its bound profile (bridge
+  // profiles.brief) — model | permission_mode | effort. [] when unbound or
+  // nothing overridden; the composer dots the matching pill.
+  overrides: string[];
   sessions: SessionBrief[];
   sessionId: string | null;
   selectSession: (id: string) => void;
@@ -803,6 +807,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     profileId: brief?.profile_id ?? "",
     pickProfile,
     profilesError: pickProfileErr ?? profilesLoadErr,
+    overrides: brief?.overrides ?? [],
     sessions,
     sessionId,
     selectSession,
