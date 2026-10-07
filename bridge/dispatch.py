@@ -297,9 +297,9 @@ def on_message(msg: dict):
 # --- fallback ladder: the usage-limit approval card + /accounts, /policy ------
 
 def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
-    """Buttons on the usage-limit card: fb:a:<sid>:<slot> | fb:f:<sid>:<provider>
-    | fb:w:<sid>. Owner-scoped — a card only spends the accounts of the chat whose
-    session it belongs to."""
+    """Buttons on the usage-limit card: fb:a:<sid>:<slot> | fb:w:<sid>.
+    Owner-scoped — a card only spends the accounts of the chat whose session it
+    belongs to."""
     parts = data.split(":", 3)
     sid = parts[2] if len(parts) > 2 else ""
     session = store.get_session(sid) if sid else None
@@ -314,9 +314,6 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     if kind == "a" and len(parts) == 4 and parts[3].isdigit():
         slot = int(parts[3])
         rung = {"kind": "account", "slot": slot, "label": f"account {slot}"}
-    elif kind == "f" and len(parts) == 4 and parts[3]:
-        rung = {"kind": "free", "provider": parts[3],
-                "label": f"free agent ({parts[3]})"}
     else:
         answer_cb(cb["id"])
         return
@@ -349,7 +346,7 @@ def _policy_text() -> str:
     return ("Usage-limit fallback: what happens when a chat hits the limit.\n\n"
             f"Current default: {ladder.default_policy()}\n\n"
             "/policy ask — offer the choices, stay parked until you pick\n"
-            "/policy auto — switch to the best account (or free agent) at once\n"
+            "/policy auto — switch to the best other account at once\n"
             "/policy wait — only wait for the reset\n\n"
             "Sets the active project's latest chat; new chats use the default.")
 

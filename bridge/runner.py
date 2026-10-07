@@ -670,7 +670,7 @@ class Job:
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.refusal: str | None = None   # set before spawn: the bound profile can't run (see profiles.refusal)
-        self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
+        self.runtime: str | None = None   # 'claude:<slot>' or 'acp:<agent>'; None = the default Claude login
         self.model: str | None = None     # what the child runs on; a live switch moves it
         # Our set_model / set_permission_mode requests the CLI hasn't answered
         # yet: request_id -> (subtype, value). See control_answered.
@@ -833,14 +833,13 @@ class Job:
         A pick that lands while the child is still being spawned (job.proc is
         None while the MCP health check, the graph pack and the task digest
         build its argv) is held, and _run_streaming writes it the moment the
-        child exists, ahead of the prompt (release_held). A free agent has no
-        claude child to hold it for.
+        child exists, ahead of the prompt (release_held).
 
         ponytail: a can_use_tool the CLI emits after its success answer (a check
         that began before the switch) still shows its card; it's answerable."""
         with self._lock:
             if self.proc is None:
-                if self.exited.is_set() or (self.runtime or "").startswith("opencode:"):
+                if self.exited.is_set():
                     return False
                 if model:
                     self._held["model"] = model
@@ -1493,8 +1492,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
             return False                          # kept failing past resets — stay stopped
         when, first = d
         # Parked (the safety net). Now see whether the fallback ladder can do
-        # better than waiting: another account, or a free agent. A taken rung
-        # unparks the session and announces itself, so we stay quiet then.
+        # better than waiting: another account. A taken rung unparks the
+        # session and announces itself, so we stay quiet then.
         if ladder.escalate(sess, job.chat_id, dead_slot=job.account_slot,
                            model=model, effort=effort):
             return True
@@ -2152,58 +2151,6 @@ def _watchdog(job: Job, proc) -> None:
             return
 
 
-def _consume_free_agent(job: Job, prompt: str, cwd: str,
-                        mode: "str | None" = None) -> None:
-    """Run one turn on a fallback-ladder free agent instead of Claude.
-
-    Blocking, not streamed: opencode is a different runtime with its own event
-    schema, so its stdout is captured and reported as the turn's single
-    assistant message. Everything after this (journaling, finish_turn, the
-    notification) is _run_streaming's shared finally block."""
-    from bridge import freeagent
-    want = (job.runtime or "").split(":", 1)[-1]
-    provider = next((p for p in freeagent.available()
-                     if p["provider"] == want), None)
-    if provider is None:
-        job.error_msg = (f"free agent {want!r} is not configured any more "
-                         f"(its API key or model went away)")
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    # No --session: job.resume_id is a *Claude* session id and means nothing to
-    # opencode. Continuity travels in the briefing prompt instead.
-    cmd = freeagent.build_cmd(prompt, provider, None, cwd, mode)
-    try:
-        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                              env=freeagent.run_env(),
-                              timeout=config.RUN_TIMEOUT)
-    except FileNotFoundError:
-        job.error_msg = "`opencode` not found on PATH."
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    except subprocess.TimeoutExpired:
-        job.timed_out = True
-        job.error_msg = "free agent timed out"
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    text = (proc.stdout or "").strip()
-    if proc.returncode != 0:
-        job.error_msg = (proc.stderr or "").strip() or f"opencode exited {proc.returncode}"
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    if text:
-        job.texts.append(text)
-        job.add({"type": "text", "text": text})
-    job.result = text
-    job.status = "done"
-    job.elapsed = int(time.time() - job.started)
-    job.add({"type": "result", "result": job.result,
-             "cost": job.cost, "elapsed": job.elapsed})
-
-
 def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
                  model: "str | None", effort: "str | None",
                  permission_mode: "str | None") -> None:
@@ -2244,9 +2191,6 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.error_msg = job.refusal
             job.add({"type": "error", "message": job.refusal})
             job.status = "error"
-            return
-        if (job.runtime or "").startswith("opencode:"):
-            _consume_free_agent(job, prompt, cwd, permission_mode)
             return
         if (job.runtime or "").startswith("acp:"):
             _consume_acp(job, prompt, image_paths, cwd, model, effort, permission_mode)

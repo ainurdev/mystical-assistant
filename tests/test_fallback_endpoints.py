@@ -309,37 +309,6 @@ def test_a_failed_sign_in_answers_with_the_reason_not_a_500():
         restore()
 
 
-# --- setting a free agent up -------------------------------------------------
-
-def test_dashboard_saves_a_provider_key_and_reports_the_new_state():
-    from bridge import freeagent
-    saved = freeagent.SETTINGS
-    freeagent.SETTINGS = os.path.join(tempfile.mkdtemp(), "freeagents.json")
-    h, box = _dash_handler()
-    try:
-        h._post_api("/local/freeagents", {"name": "GEMINI_API_KEY", "value": "k"})
-        assert box["code"] == 200
-        assert freeagent.settings()["GEMINI_API_KEY"] == "k"
-        rows = box["obj"]["free_agents"]["providers"]
-        assert [p["configured"] for p in rows if p["provider"] == "gemini"] == [True]
-    finally:
-        freeagent.SETTINGS = saved
-
-
-def test_dashboard_refuses_a_name_that_is_not_a_provider_setting():
-    """The endpoint writes a file of secrets — it takes only known names."""
-    from bridge import freeagent
-    saved = freeagent.SETTINGS
-    freeagent.SETTINGS = os.path.join(tempfile.mkdtemp(), "freeagents.json")
-    h, box = _dash_handler()
-    try:
-        h._post_api("/local/freeagents", {"name": "PATH", "value": "/evil"})
-        assert box["code"] == 400
-        assert freeagent.settings() == {}
-    finally:
-        freeagent.SETTINGS = saved
-
-
 if __name__ == "__main__":
     import traceback
     fails = 0

@@ -1,9 +1,9 @@
 """Unit tests for the usage-limit fallback ladder (bridge/ladder.py).
 
 The ladder decides what happens when a turn dies on a usage limit: hand the work
-to another Claude account, hand it to a free agent, or leave it parked. Parking
-is limits.py's job and already works — the contract here is that the ladder never
-makes things worse than parking.
+to another Claude account, or leave it parked. Parking is limits.py's job and
+already works — the contract here is that the ladder never makes things worse
+than parking.
 """
 
 import os
@@ -62,9 +62,9 @@ def test_unknown_stored_policy_is_treated_as_the_default():
 def test_turn_runtime_round_trips():
     """Which runtime produced a turn has to be visible after the fact."""
     s = _session()
-    store.start_turn(s["id"], "t1", "hello", [], runtime="opencode:gemini")
+    store.start_turn(s["id"], "t1", "hello", [], runtime="acp:gemini")
     rows = store.transcript(s["id"])["turns"]
-    assert rows[-1]["runtime"] == "opencode:gemini"
+    assert rows[-1]["runtime"] == "acp:gemini"
 
 
 def test_turn_runtime_defaults_to_null_for_plain_claude():
@@ -85,25 +85,19 @@ def test_turn_records_the_commit_it_started_from():
 
 # --- rungs(): what is actually available right now ---------------------------
 
-def _stub(accounts_pick=None, headroom=None, free=()):
-    """Patch the two things rungs() consults. accounts_pick is a callable taking
+def _stub(accounts_pick=None, headroom=None):
+    """Patch what rungs() consults: accounts_pick is a callable taking
     (exclude, strategy) so tests can model 'the next best account'."""
-    saved = (ladder.accounts.pick, ladder.accounts.headroom, ladder._free_providers)
+    saved = (ladder.accounts.pick, ladder.accounts.headroom)
     ladder.accounts.pick = accounts_pick or (lambda exclude=(), strategy="best": None)
     ladder.accounts.headroom = headroom or (lambda slot: None)
-    ladder._free_providers = lambda: list(free)
 
     def restore():
-        (ladder.accounts.pick, ladder.accounts.headroom,
-         ladder._free_providers) = saved
+        (ladder.accounts.pick, ladder.accounts.headroom) = saved
     return restore
 
 
-FREE_GEMINI = {"provider": "gemini", "model": "gemini-3-flash",
-               "label": "Gemini Flash"}
-
-
-def test_no_other_account_and_no_free_agent_means_no_rungs():
+def test_no_other_account_means_no_rungs():
     restore = _stub()
     try:
         assert ladder.rungs(_session()) == []
@@ -113,10 +107,10 @@ def test_no_other_account_and_no_free_agent_means_no_rungs():
 
 def test_a_healthy_account_is_the_first_rung():
     restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 2,
-                    headroom=lambda slot: 78, free=[FREE_GEMINI])
+                    headroom=lambda slot: 78)
     try:
         got = ladder.rungs(_session())
-        assert [r["kind"] for r in got] == ["account", "free"]
+        assert [r["kind"] for r in got] == ["account"]
         assert got[0]["slot"] == 2
         assert "78" in got[0]["label"]
     finally:
@@ -138,25 +132,14 @@ def test_the_dead_account_is_excluded_from_the_rungs():
         restore()
 
 
-def test_a_free_agent_alone_is_still_a_rung():
-    restore = _stub(free=[FREE_GEMINI])
-    try:
-        got = ladder.rungs(_session())
-        assert [r["kind"] for r in got] == ["free"]
-        assert got[0]["provider"] == "gemini"
-    finally:
-        restore()
-
-
 # --- resolve_agent(): the same rungs, picked by hand -------------------------
 
-def _stub_agents(rows=(), free=()):
-    saved = (ladder.accounts.list_accounts, ladder._free_providers)
+def _stub_agents(rows=()):
+    saved = ladder.accounts.list_accounts
     ladder.accounts.list_accounts = lambda: list(rows)
-    ladder._free_providers = lambda: list(free)
 
     def restore():
-        (ladder.accounts.list_accounts, ladder._free_providers) = saved
+        ladder.accounts.list_accounts = saved
     return restore
 
 
@@ -176,20 +159,12 @@ def test_a_claude_slot_resolves_to_that_account():
         restore()
 
 
-def test_a_free_provider_resolves_to_its_runtime():
-    restore = _stub_agents(rows=[A1], free=[FREE_GEMINI])
-    try:
-        assert ladder.resolve_agent("opencode:gemini") == (None, "opencode:gemini")
-    finally:
-        restore()
-
-
 def test_picks_that_are_not_live_are_refused():
-    """A disabled/absent account or an unconfigured provider must not silently
-    fall back to whoever is ambient — the turn would run as the wrong identity."""
+    """A disabled/absent account or an unknown agent must not silently fall back
+    to whoever is ambient — the turn would run as the wrong identity."""
     restore = _stub_agents(rows=[A1, A2_OFF])
     try:
-        for spec in ("claude:2", "claude:9", "claude:x", "opencode:gemini", "wat:1"):
+        for spec in ("claude:2", "claude:9", "claude:x", "wat:1"):
             try:
                 ladder.resolve_agent(spec)
             except ValueError:
@@ -250,7 +225,7 @@ def test_auto_policy_reports_which_rung_it_landed_on():
 
 def test_ask_policy_offers_the_rungs_without_taking_one():
     restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 2,
-                    headroom=lambda slot: 55, free=[FREE_GEMINI])
+                    headroom=lambda slot: 55)
     run, notify = _Rec(), _Rec()
     try:
         assert ladder.escalate(_session("ask"), CHAT, run=run,
@@ -273,14 +248,11 @@ def test_no_rung_available_asks_nothing_and_leaves_the_park_alone():
         restore()
 
 
-def test_auto_falls_through_to_the_free_agent_when_no_account_is_left():
-    restore = _stub(free=[FREE_GEMINI])
-    run, notify = _Rec(), _Rec()
-    try:
-        taken = ladder.escalate(_session("auto"), CHAT, run=run, notify=notify)
-        assert taken["kind"] == "free" and taken["provider"] == "gemini"
-    finally:
-        restore()
+def test_take_declines_a_rung_kind_it_no_longer_knows():
+    """A stale card from before the free rung was removed must not crash --
+    it should decline like any other handover that can't be started."""
+    assert ladder.take(_session(), CHAT,
+                       {"kind": "free", "provider": "gemini", "label": "x"}) is None
 
 
 if __name__ == "__main__":

@@ -210,7 +210,7 @@ def init() -> None:
             c.execute("ALTER TABLE sessions ADD COLUMN ref TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_ref ON sessions(ref)")
         # Which runtime produced a turn (NULL = the default Claude account,
-        # else 'claude:<slot>' or 'opencode:<provider>').
+        # else 'claude:<slot>' or 'acp:<agent>').
         if "runtime" not in cols:
             c.execute("ALTER TABLE turns ADD COLUMN runtime TEXT")
         # Commit HEAD pointed at when the turn started, so a checkpoint can show

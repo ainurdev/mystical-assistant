@@ -40,12 +40,10 @@ os.environ["MCP_SERVERS"] = ""
 # is deterministic suite-wide (config.BASE_PATH is read once, at first import).
 # Tests that assert on containment should build fixtures under config.BASE_PATH.
 os.environ["BASE_PATH"] = tempfile.mkdtemp()
-# Same freeze-at-import rule for the two files that hold real credentials: a
-# test module importing bridge.accounts / bridge.freeagent before its own
-# preamble runs would otherwise write account profiles and provider API keys
-# into the developer's actual ~/.mystical.
+# Same freeze-at-import rule for the file that holds real credentials: a test
+# module importing bridge.accounts before its own preamble runs would
+# otherwise write account profiles into the developer's actual ~/.mystical.
 os.environ["ACCOUNTS_DIR"] = os.path.join(tempfile.mkdtemp(), "accounts")
-os.environ["FREEAGENTS_FILE"] = os.path.join(tempfile.mkdtemp(), "freeagents.json")
 # Backstop: a regression once reached the real `claude` binary during a test
 # run, against the developer's live login, and refreshed
 # ~/.claude/.credentials.json twice. Pin an absolute path that cannot exist:

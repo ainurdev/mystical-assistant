@@ -32,12 +32,11 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import threading
 import time
 
-from bridge import aifeatures, config, freeagent, git, github, machine, runner, store
+from bridge import aifeatures, config, git, github, machine, runner, store
 from bridge.browser import rel
 
 _lock = threading.Lock()
@@ -306,33 +305,9 @@ _RANK = (
 )
 
 
-def _dirty_set(cwd: str) -> set:
-    return {f["path"] for f in (git.status(cwd).get("files") or [])}
-
-
 def _agent(prompt: str, cwd: str, chat_id: int, timeout: int) -> str:
-    """One read-only turn. The free rung first — a bounded, structured, no-continuity
-    read is exactly what a free provider is good enough for — then haiku."""
-    rungs = freeagent.available()
-    if rungs:
-        # "plan" is opencode's own read-only posture (its plan agent denies
-        # `edit`), the same one the composer's MODE picker offers a free agent.
-        # It is a rule inside opencode, not a sandbox, so still detect a scout
-        # that wrote anyway and say so — never repair, that would be destroying
-        # work on a guess.
-        before = _dirty_set(cwd)
-        try:
-            p = subprocess.run(freeagent.build_cmd(prompt, rungs[0], None, cwd, "plan"),
-                               cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout, env=freeagent.run_env())
-            if _dirty_set(cwd) - before:
-                print(f"[nextup] free scout modified {cwd} — it was asked not to. "
-                      f"Left alone; check `git status` there.", file=sys.stderr)
-            if p.returncode == 0 and (p.stdout or "").strip():
-                return p.stdout
-        except (subprocess.TimeoutExpired, OSError) as e:
-            print(f"[nextup] free rung failed ({e}); falling back to "
-                  f"{config.NEXTUP_MODEL}", file=sys.stderr)
+    """One read-only scout turn, on the Claude one-shot (config.NEXTUP_MODEL,
+    haiku by default)."""
     out, _sid, _cost, err = runner.run_blocking(
         chat_id, prompt, cwd=cwd, timeout=timeout, model=config.NEXTUP_MODEL,
         skip_pack=True, permission_mode="plan")

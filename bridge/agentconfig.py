@@ -2,8 +2,8 @@
 terminal on the machine the bridge runs on.
 
 Claude Code reads user-wide instructions from ~/.claude/CLAUDE.md and user
-settings from ~/.claude/settings.json; opencode — the free-agent rung — keeps
-the same pair under ~/.config/opencode. Those are the tools' own files in the
+settings from ~/.claude/settings.json; opencode keeps the same pair under
+~/.config/opencode. Those are the tools' own files in the
 tools' own formats, so this module persists nothing of its own and layers
 nothing the way `envsettings` layers over .env: it reads and writes them
 verbatim, and whatever else edits them (Claude Code's /config, an editor, the
@@ -28,7 +28,7 @@ Stdlib only.
 import json
 import os
 
-from bridge import accounts, freeagent
+from bridge import accounts, acp_agents
 
 # Nothing here is a big file; the cap exists so a broken client can't post a
 # gigabyte, and so an unreadable-because-enormous file is reported rather than
@@ -50,7 +50,7 @@ FILES = (
 
 TOOLS = (
     {"id": "claude", "label": "CLAUDE CODE", "hint": "what every session on this bridge runs"},
-    {"id": "opencode", "label": "OPENCODE", "hint": "the free-agent fallback rung"},
+    {"id": "opencode", "label": "OPENCODE", "hint": "an ACP agent preset"},
 )
 
 
@@ -105,7 +105,7 @@ def state() -> dict:
     for t in TOOLS:
         # The bridge is a Claude Code launcher: there is nothing to detect for
         # claude, and a missing opencode means its files aren't worth creating.
-        installed = t["id"] == "claude" or bool(freeagent.opencode_bin())
+        installed = t["id"] == "claude" or bool(acp_agents._resolve("opencode"))
         tools.append({**t, "installed": installed,
                       "files": [_file_state(f) for f in FILES if f["tool"] == t["id"]]
                                if installed else []})

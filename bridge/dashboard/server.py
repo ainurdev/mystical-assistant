@@ -126,17 +126,6 @@ def _worktree_for_branch(abs_p: str, branch: str) -> "str | None":
     return None
 
 
-def _free_agents() -> dict:
-    """Every free-agent rung and what it still needs, for the Accounts tab. The
-    unconfigured ones are listed too: the tab is where you set them up, so it
-    has to show the rungs you don't have yet."""
-    try:
-        from bridge import freeagent
-        return freeagent.status()
-    except Exception:  # noqa: BLE001
-        return {"installed": False, "providers": []}
-
-
 def _worktree_cwd(project, branch) -> "str | None":
     """The working-tree dir to operate on for a project+branch: the branch's linked
     worktree when one exists on disk, else the project checkout. None if the project
@@ -353,8 +342,7 @@ class Handler(BaseHTTPRequestHandler):
                 "accounts": [{**a, **accounts.meter(a["slot"])}
                              for a in accounts.list_accounts()],
                 "default_policy": ladder.default_policy(),
-                "pending_login": accounts.pending_login(),
-                "free_agents": _free_agents()})
+                "pending_login": accounts.pending_login()})
         if path == "/local/profiles":
             return self._json(profiles.api_list())
         if path == "/local/aifeatures":
@@ -1021,14 +1009,6 @@ class Handler(BaseHTTPRequestHandler):
             nextup.dismiss(item_id)
             return self._json({"ok": True, **nextup.board(
                 chat, body.get("project") or None, str(body.get("kind") or "next"))})
-        if path == "/local/freeagents":
-            from bridge import freeagent
-            try:
-                freeagent.set_setting(str(body.get("name") or ""),
-                                      body.get("value"))
-            except ValueError as e:
-                return self._json({"error": str(e)}, 400)
-            return self._json({"ok": True, "free_agents": _free_agents()})
         if path.startswith("/local/sessions/") and path.endswith("/policy"):
             from bridge import ladder
             sid = path[len("/local/sessions/"):-len("/policy")]

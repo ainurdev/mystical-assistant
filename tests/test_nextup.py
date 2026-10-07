@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import aifeatures, config, freeagent, nextup, runner, store  # noqa: E402
+from bridge import aifeatures, config, nextup, runner, store  # noqa: E402
 
 store.init()
 # A fresh chat id per test: the store is the suite-wide DB, so sessions from
@@ -65,13 +65,12 @@ def _session(cwd, *, ago=0.0, status=None, chat=None):
 
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
-    """Own board file, no free rungs, no registry, board switched on. The store
-    keeps the suite's DB — repointing BRIDGE_DB here would hand it an empty one."""
+    """Own board file, no registry, board switched on. The store keeps the
+    suite's DB — repointing BRIDGE_DB here would hand it an empty one."""
     monkeypatch.setattr(sys.modules[__name__], "CHAT", next(_chat_seq))
     monkeypatch.setattr(nextup, "_path", lambda: str(tmp_path / "nextup.json"))
     monkeypatch.setattr(config, "NEXTUP_ENABLE", True)
     monkeypatch.setattr(aifeatures, "_cache", None)
-    monkeypatch.setattr(freeagent, "available", lambda: [])
     monkeypatch.setattr(nextup.machine, "list_running", lambda: [])
     yield
     monkeypatch.setattr(aifeatures, "_cache", None)
@@ -283,7 +282,7 @@ def test_every_item_carries_what_starting_it_needs(monkeypatch):
 
 # --- routing -----------------------------------------------------------------
 
-def test_claude_is_used_when_no_free_rung_is_configured(monkeypatch):
+def test_the_scout_turn_runs_on_claude(monkeypatch):
     seen: dict = {}
 
     def fake_blocking(chat_id, prompt, **kw):
@@ -294,30 +293,6 @@ def test_claude_is_used_when_no_free_rung_is_configured(monkeypatch):
     assert seen["model"] == config.NEXTUP_MODEL
     assert seen["permission_mode"] == "plan"    # read-only: no edits, no shell
     assert seen["skip_pack"] is True
-
-
-def test_the_free_rung_is_tried_first(monkeypatch):
-    d = _mkrepo()
-    monkeypatch.setattr(freeagent, "available",
-                        lambda: [{"provider": "zen", "model": "big-pickle", "label": "zen"}])
-    monkeypatch.setattr(freeagent, "build_cmd",
-                        lambda prompt, provider, session, cwd, mode:
-                        ["/bin/echo", "[]"] if mode == "plan"    # scout reads, never writes
-                        else pytest.fail(f"free scout ran in {mode!r}"))
-    monkeypatch.setattr(runner, "run_blocking",
-                        lambda *a, **k: pytest.fail("free rung was skipped"))
-    assert nextup._agent("prompt", d, CHAT, 5).strip() == "[]"
-
-
-def test_a_failing_free_rung_falls_back_to_claude(monkeypatch):
-    d = _mkrepo()
-    monkeypatch.setattr(freeagent, "available",
-                        lambda: [{"provider": "zen", "model": "big-pickle", "label": "zen"}])
-    monkeypatch.setattr(freeagent, "build_cmd",
-                        lambda prompt, provider, session, cwd, mode: ["/bin/false"])
-    monkeypatch.setattr(runner, "run_blocking",
-                        lambda *a, **k: ("[]", None, None, False))
-    assert nextup._agent("prompt", d, CHAT, 5) == "[]"
 
 
 # --- parsing -----------------------------------------------------------------

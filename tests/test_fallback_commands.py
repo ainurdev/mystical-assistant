@@ -74,21 +74,6 @@ def test_switch_button_takes_the_account_rung():
         restore()
 
 
-def test_free_agent_button_takes_the_free_rung():
-    s = _session()
-    take = _Rec(ret={"kind": "free", "provider": "gemini", "label": "Gemini"})
-    restore = _patch(answer_cb=_Rec(), edit=_Rec(), send=_Rec())
-    saved_take = dispatch.ladder.take
-    dispatch.ladder.take = take
-    try:
-        dispatch.handle_callback(_cb(f"fb:f:{s['id']}:gemini"))
-        assert len(take.calls) == 1
-        assert take.calls[0][0][2]["provider"] == "gemini"
-    finally:
-        dispatch.ladder.take = saved_take
-        restore()
-
-
 def test_wait_button_takes_no_rung_and_leaves_the_session_parked():
     s = _session()
     take = _Rec()

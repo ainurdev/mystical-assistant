@@ -387,13 +387,6 @@ def test_a_pick_made_while_the_child_spawns_reaches_it_before_the_prompt(monkeyp
             for l in job.proc.stdin.lines] == ["set_model", "set_permission_mode", "user"]
 
 
-def test_a_free_agent_turn_holds_no_pick():
-    """An opencode run has no claude child and no control channel at all."""
-    job = runner.Job("j-free", CHAT, "s-free")
-    job.runtime = "opencode:groq"
-    assert job.set_run_settings(model="claude-fable-5-1") is False
-
-
 def test_a_turn_with_no_live_channel_says_so_and_approves_nothing():
     """A turn that ended without a child (claude missing from PATH), or a stdin
     claude -p closed at `result` -- since 666d29a1 such a child can stay up for

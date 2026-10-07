@@ -97,8 +97,8 @@ MCP_SERVERS = os.environ.get("MCP_SERVERS", "")
 AUTO_RESUME = os.environ.get("AUTO_RESUME", "1").lower() not in ("0", "false", "no", "")
 
 # Fallback ladder: what a usage-limit death does beyond waiting for the reset.
-#   ask  — offer the available rungs (another Claude account, a free agent) and
-#          let the user pick; the session stays parked behind the card
+#   ask  — offer the available rungs (another Claude account) and let the
+#          user pick; the session stays parked behind the card
 #   auto — take the best rung immediately and report which one
 #   wait — park only, the behaviour before the ladder existed
 # Per-session overrides live in sessions.fallback_policy; see bridge/ladder.py.
@@ -162,13 +162,13 @@ RELEVANCE_CONTEXT_TURNS = int(os.environ.get("RELEVANCE_CONTEXT_TURNS", "3"))
 RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
 # --- Next-up board -----------------------------------------------------------
 # Ranked next steps across the repos with recent session activity. One read-only
-# scout per changed repo, free-agent rung first. See the next-up-board design.
+# scout per changed repo. See the next-up-board design.
 NEXTUP_ENABLE = os.environ.get("NEXTUP_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 NEXTUP_DAYS = int(os.environ.get("NEXTUP_DAYS", "7"))        # activity window
 NEXTUP_MAX_REPOS = int(os.environ.get("NEXTUP_MAX_REPOS", "6"))  # hard cost ceiling
 NEXTUP_SCOUT_TIMEOUT = int(os.environ.get("NEXTUP_SCOUT_TIMEOUT", "120"))
-NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # Claude fallback path
+NEXTUP_MODEL = os.environ.get("NEXTUP_MODEL", "haiku")       # what a scout turn runs on
 
 # --- Lessons -----------------------------------------------------------------
 # Write a short lesson about what each finished turn built, into that repo's
