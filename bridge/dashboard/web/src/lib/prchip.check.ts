@@ -1,7 +1,7 @@
 // Run: node bridge/dashboard/web/src/lib/prchip.check.ts
 import type { PrInfo } from "../api.ts";
 import {
-  chipLabel, commentsMessage, duration, failureMessage, freshPings, pingText, reviewItems, stateLine,
+  chipLabel, commentsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine,
 } from "./prchip.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -72,5 +72,11 @@ ok(pingText(red, "failing:abc") === "PR #131 · 1 check failing — backend", "t
 ok(pingText(changes, "changes:mahdi:t") === "PR #131 · changes requested by mahdi", "and who asked for changes");
 ok(freshPings(["failing:a"], ["failing:a", "changes:m:t"]).join() === "changes:m:t", "only alerts this browser hasn't shown ring the bell");
 ok(freshPings(["failing:a"], []).length === 0, "an alert that cleared rings nothing");
+
+// --- where the popover opens --------------------------------------------------
+const below = popPlace({ top: 32, bottom: 44 }, 700);
+ok(below.top === 52 && below.bottom === undefined && below.maxHeight === 632, "a chip in the header opens the popover under it, down to the window's edge");
+const above = popPlace({ top: 597, bottom: 609 }, 700);
+ok(above.bottom === 111 && above.top === undefined && above.maxHeight === 581, "COMPACT's chip, down in the composer, opens it over the chip instead of into the strip below");
 
 console.log("\nall prchip checks passed");

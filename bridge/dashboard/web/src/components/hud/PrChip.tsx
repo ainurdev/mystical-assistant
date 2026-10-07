@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { api, PUSHED_EVENT, type PrStatus } from "../../api";
-import { TONE, chipLabel, commentsMessage, duration, failureMessage, freshPings, pingText, reviewItems, stateLine } from "../../lib/prchip";
+import { TONE, chipLabel, commentsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine } from "../../lib/prchip";
 import { initials } from "../../lib/rivendelltasks";
 import { hairline } from "../../lib/shell";
 import { ago } from "../../lib/surfaces";
@@ -123,7 +123,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   }
 
   const rect = chipRef.current?.getBoundingClientRect();
-  const top = (rect?.bottom ?? 0) + 8;
+  const place = popPlace(rect ?? { top: 0, bottom: 0 }, window.innerHeight);
   const left = Math.max(8, Math.min((rect?.left ?? 0) - 40, window.innerWidth - 438));
   const sect: CSSProperties = { borderTop: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "8px 12px 10px" };
   const head: CSSProperties = { display: "flex", alignItems: "center", gap: 8, fontSize: "var(--t85)", letterSpacing: 1.6, color: "var(--txl)", marginBottom: 6 };
@@ -151,7 +151,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
       </button>
       {open && createPortal(
         <div ref={popRef} className="mscroll"
-          style={{ position: "fixed", top, left, width: 430, maxHeight: `calc(100vh - ${top + 16}px)`, overflowY: "auto", zIndex: 80, fontFamily: "var(--mono)", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
+          style={{ position: "fixed", ...place, left, width: 430, overflowY: "auto", zIndex: 80, fontFamily: "var(--mono)", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
           <div style={{ padding: "10px 12px 8px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--t9)", letterSpacing: 1.3 }}>
               <span style={{ color: tone.ink }}>{tone.glyph}</span>

@@ -100,3 +100,13 @@ export function pingText(pr: PrInfo, key: string): string {
 
 /** Bell pings due now: alerts the bridge holds that this browser hasn't shown yet. */
 export const freshPings = (seen: string[], pinged: string[]) => pinged.filter((k) => !seen.includes(k));
+
+/** The popover's fixed-position offsets: under the chip, 8px off it and off the
+ *  window's edge — unless there's more room over it. The COMPACT layout moves
+ *  the nameplate, chip and all, down into the composer, where under the chip is
+ *  a strip a few rows tall. */
+export function popPlace(chip: { top: number; bottom: number }, vh: number): { top?: number; bottom?: number; maxHeight: number } {
+  return chip.top > vh - chip.bottom
+    ? { bottom: vh - chip.top + 8, maxHeight: chip.top - 16 }
+    : { top: chip.bottom + 8, maxHeight: vh - chip.bottom - 24 };
+}

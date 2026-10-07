@@ -121,7 +121,7 @@ function modeRow(id: string): { id: string; label: string; title?: string } {
 }
 
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left",
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title,
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -144,6 +144,11 @@ function Drop<T extends string>({
   // Which edge the menu hangs from. "right" for a chip at the row's far end,
   // whose menu would otherwise run off the column.
   align?: "left" | "right";
+  // The chip's hover box, when the field needs explaining (default: the field
+  // and its value). A plain title, so NativeTips draws it: fixed, and nudged in
+  // off the window's edge. A <Tip> around the chip was clipped by the column
+  // and came up alongside this title's box.
+  title?: string;
 }) {
   const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
@@ -159,7 +164,7 @@ function Drop<T extends string>({
   };
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-      <button className="drop-btn" onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
+      <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
         {code && <span className="ctrl-fld">{code}</span>}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
         <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
@@ -728,11 +733,10 @@ export function Composer({
       onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
   );
   const ponyDrop = (right: boolean) => showPonytail && (
-    <Tip text={PONYTAIL_TIP} pin={false}>
-      <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
-        onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
-        onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
-    </Tip>
+    <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
+      title={PONYTAIL_TIP}
+      onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
+      onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
   );
   const verbMenu = openDrop === "verbs" && (
     <div style={{
