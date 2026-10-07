@@ -2,14 +2,13 @@
 
 Env FAKE_ACP scripts it: caps, new_error, prompt_error, options, modes, replay,
 open_delay, stop, ignore_cancel, and turn, a list of steps: update, permission,
-vendor, stdout, wait_cancel, sleep, exit, orphan (the leader exits while a child
-holds its stdout), helper (a child with stdout on /dev/null). Every message it
-receives goes to env FAKE_ACP_LOG as a JSON line, its environ to LOG + ".env".
+vendor, stdout, wait_cancel, sleep, exit, orphan (the leader exits, a child holds
+its stdout), helper (a child; stdout on /dev/null unless keep_stdout). Messages
+received go to env FAKE_ACP_LOG as JSON lines, the environ to LOG + ".env".
 
-One reader (the main thread) dispatches every line: replies to the agent's own
-requests, notifications (session/cancel sets a flag) and client requests. The
-prompt runs on its own thread and its blocking steps wait on the reader's state,
-so a session/cancel still lands while a step waits on a reply.
+One reader (the main thread) dispatches every line: replies to its own requests,
+notifications (session/cancel sets a flag), client requests. The prompt runs on
+its own thread, waiting on the reader's state, so a cancel lands mid-wait.
 """
 import itertools
 import json
@@ -93,7 +92,8 @@ def prompt(rid, sid):
             spawn(step["orphan"], "child")
             os._exit(0)
         elif "helper" in step:
-            spawn(step["helper"], "helper", stdout=subprocess.DEVNULL)
+            spawn(step["helper"], "helper",
+                  stdout=None if step.get("keep_stdout") else subprocess.DEVNULL)
     send(id=rid, result={"stopReason": "cancelled" if cancelled() else S.get("stop", "end_turn")})
 
 

@@ -148,10 +148,11 @@ class Conn:
 
     def kill(self):
         """Sweep the process group, then reap the leader: SIGTERM, up to 2 s for
-        the leader to exit and a moment for the rest, then SIGKILL for whatever
-        is left. Signals go out only while the leader is unreaped (running, or
-        a zombie holding the pgid), so a stale call (a Stop timer firing after
-        the turn) can't reach a recycled pgid.
+        the leader to exit and its stdout to close, a moment for the rest, then
+        SIGKILL for whatever is left. Signals go out only while the leader is
+        unreaped (running, or a zombie holding the pgid), so a stale call (a
+        Stop timer firing after the turn) can't reach a recycled pgid. Never
+        raises: only OS errors from the signal and wait calls are swallowed.
         ponytail: whatever the agent started in its group (a dev server, a
         watcher) ends with the turn. Keep one process per session alive if
         that bites."""
@@ -161,37 +162,54 @@ class Conn:
                     return
                 try:
                     os.killpg(self.proc.pid, sig)
-                except (ProcessLookupError, PermissionError):
+                except OSError:
                     pass
             if sig == signal.SIGTERM:
-                _until(self._exited, 2)
+                _until(self._left, 2)
                 time.sleep(0.1)
         with self._klock:
             try:
                 self.proc.wait(2)
-            except subprocess.TimeoutExpired:
+            except (subprocess.TimeoutExpired, OSError):
                 pass
 
     def close(self, grace=2.0):
-        """Stdin closed, up to `grace` s for the leader to leave, then kill()."""
+        """Stdin closed, up to `grace` s for the agent to leave (a child still
+        holding stdout, npx's node, may be saving its session), then kill()."""
         with self._wlock:
             try:
                 self.proc.stdin.close()
             except OSError:
                 pass
-        _until(self._exited, grace)
+        _until(self._left, grace)
         self.kill()
+
+    def _left(self):
+        """The leader has exited and nothing holds its stdout any more."""
+        return self._closed and self._exited()
 
     def _exited(self):
         """Has the leader exited? Asked with WNOWAIT, so it stays an unreaped
-        zombie: its pid, and with it the group's pgid, can't be recycled yet."""
+        zombie: its pid, and with it the group's pgid, can't be recycled yet.
+        Without os.waitid (macOS before Python 3.13) nothing can ask that
+        without reaping, so its stdout closing stands in for its exit. That's
+        degraded, not unsafe: a leader that closes stdout first is swept a beat
+        early, and the reap still comes only after the sweep."""
         if self.proc.returncode is not None:
             return True
+        if not hasattr(os, "waitid"):
+            return self._closed
         try:
             return os.waitid(os.P_PID, self.proc.pid,
                              os.WEXITED | os.WNOWAIT | os.WNOHANG) is not None
         except ChildProcessError:
+            # Reaped behind our back: its pid is up for grabs, so kill()'s guard
+            # must trip. 0 is Popen's own answer to ECHILD.
+            if self.proc.returncode is None:
+                self.proc.returncode = 0
             return True
+        except OSError:
+            return self._closed
 
     def tail(self, n=5):
         if self._closed:

@@ -319,3 +319,35 @@ def test_an_echoed_api_key_is_masked_in_errors_and_tool_output(tmp_path, monkeyp
     assert key[12:] not in json.dumps(job.events) and key[12:] not in job.result
     job, _ = _run(tmp_path, {"prompt_error": {"code": 401, "message": f"Invalid API key: {key}"}})
     assert job.error_msg == "Fake: Invalid API key: ***"
+
+
+# Fix round 3.
+
+def test_without_waitid_a_turn_and_a_probe_still_sweep_and_never_raise(tmp_path, monkeypatch):
+    monkeypatch.delattr(os, "waitid", raising=False)        # macOS before Python 3.13
+    job, _ = _run(tmp_path, {"turn": [{"helper": 30}]})     # a raise here fails the test
+    helper = int((tmp_path / "log.jsonl.helper").read_text())
+    assert job.status == "done" and job.conn.poll() is not None and _wait(lambda: _gone(helper))
+    made, real = [], acp.Conn
+    monkeypatch.setattr(acp, "Conn", lambda *a, **kw: made.append(real(*a, **kw)) or made[-1])
+    env = {**os.environ, "FAKE_ACP": "{}", "FAKE_ACP_LOG": str(tmp_path / "p.jsonl")}
+    out = acp.probe(argv=[sys.executable, FAKE], env=env, label="Fake", login_hint="")
+    assert out["ok"] and made[0].poll() is not None
+
+
+def test_a_child_still_holding_stdout_gets_its_grace_before_the_sweep(tmp_path):
+    t0 = time.time()
+    job, _ = _run(tmp_path, {"turn": [{"helper": 0.5, "keep_stdout": True}]})
+    assert job.status == "done" and time.time() - t0 >= 0.5   # waited for it, not swept at once
+    assert _gone(int((tmp_path / "log.jsonl.helper").read_text()))
+
+
+def test_a_leader_reaped_behind_our_back_is_never_signalled(tmp_path, monkeypatch):
+    conn = acp.Conn([sys.executable, "-c", "pass"], env=dict(os.environ), cwd=str(tmp_path),
+                    on_notify=lambda m, p: None, on_request=acp._refuse)
+    os.waitpid(conn.proc.pid, 0)                    # reaped elsewhere: its pid is up for grabs
+    assert conn._exited() and conn.poll() is not None
+    sent = []
+    monkeypatch.setattr(acp.os, "killpg", lambda pgid, sig: sent.append(sig))
+    conn.close()
+    assert sent == []
