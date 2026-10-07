@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (agents, browser, config, devserver, git, github,
-                    hooks, httpgz, models, native, project_config, relevance,
+                    hooks, httpgz, models, native, profiles, project_config, relevance,
                     runner, state, store, trackers, transcript_jsonl,
                     transcript_page, usage)
 
@@ -99,34 +99,41 @@ def save_run_settings(session: dict, body: dict) -> "tuple[dict, int]":
     """POST /api/session/settings and /local/session/settings: one function, so
     both servers take and answer exactly the same.
 
-    Saves the pickers' model and permission mode to the session — the pair
-    they show, so a session that never ran keeps what its picker showed — and
-    switches the session's running turn (runner.apply_run_settings) to the one
-    half the body names in `pick`: "model" or "permission_mode". Only an
-    explicit mode pick switches the mode, so only that can turn Bypass on and
-    approve a waiting card; a model pick sent beside a mode the picker merely
-    showed (this device's default on a never-run session, a stale one on a
-    lagging client) leaves the turn's mode alone, and a mode pick its model.
-    No `pick`: saved, nothing switched. With nothing running, the saved row is
-    what the next turn reads. Anything invalid is a 400 with nothing saved and
-    nothing switched: every surface now runs what this row says, so a bad value
-    would follow the session everywhere. Returns (json, status)."""
-    m, p, pick = body.get("model"), body.get("permission_mode"), body.get("pick")
-    if not all(v is None or isinstance(v, str) for v in (m, p)):
-        return {"error": "model and permission_mode must be strings"}, 400
-    if pick not in (None, "model", "permission_mode"):
-        return {"error": "pick must be 'model' or 'permission_mode'"}, 400
-    ok, model, _ = normalize_model_effort(m, None)
-    mode = normalize_permission_mode(p)
-    if not ok or ((p or "").strip() and mode is None):
-        return {"error": "invalid model or permission_mode"}, 400
-    store.set_run_settings(session["id"], model=model, permission_mode=mode)
+    Saves the pickers' model, permission mode and effort to the session — the
+    picks they show, so a session that never ran keeps what its picker showed —
+    and switches the session's running turn (runner.apply_run_settings) to the
+    one half the body names in `pick`: "model", "permission_mode" or "effort".
+    Only an explicit mode pick switches the mode, so only that can turn Bypass
+    on and approve a waiting card; a model pick sent beside a mode the picker
+    merely showed (this device's default on a never-run session, a stale one on
+    a lagging client) leaves the turn's mode alone, and a mode pick its model.
+    There is no live effort switch (runner.apply_run_settings doesn't take one).
+    A pick saved through profiles.save_pick, so a value that matches a bound
+    session's profile follows it (stored NULL) instead of pinning an override.
+    Only the knobs present in the body are touched: omitting a key leaves it
+    alone; sending it blank clears an override back to following the profile.
+    Anything invalid is a 400 with nothing saved and nothing switched: every
+    surface now runs what this row says, so a bad value would follow the
+    session everywhere. Returns (json, status)."""
+    m, p, e, pick = (body.get("model"), body.get("permission_mode"),
+                     body.get("effort"), body.get("pick"))
+    if not all(v is None or isinstance(v, str) for v in (m, p, e)):
+        return {"error": "model, permission_mode and effort must be strings"}, 400
+    if pick not in (None, "model", "permission_mode", "effort"):
+        return {"error": "pick must be 'model', 'permission_mode' or 'effort'"}, 400
+    err, model, mode, effort = profiles.run_values(m, p, e)
+    if err:
+        return {"error": err}, 400
+    for field, value in (("model", model), ("permission_mode", mode), ("effort", effort)):
+        if field in body:
+            profiles.save_pick(session, field, value)
+            session = store.get_session(session["id"]) or session
     runner.apply_run_settings(session["id"],
                               model=model if pick == "model" else None,
                               permission_mode=mode if pick == "permission_mode" else None)
-    s = store.get_session(session["id"]) or session
-    return {"ok": True, "model": s.get("model"),
-            "permission_mode": s.get("permission_mode") or config.MINIAPP_PERMISSION_MODE}, 200
+    b = profiles.brief(store.get_session(session["id"]) or session)
+    return {"ok": True, "model": b["model"], "permission_mode": b["permission_mode"],
+            "effort": b["effort"], "overrides": b["overrides"]}, 200
 
 
 AUTOCOMPACT_MIN, AUTOCOMPACT_MAX = 100_000, 1_000_000
@@ -183,12 +190,9 @@ def _session_brief(s: dict) -> dict:
             "ctx_tokens": s.get("ctx_tokens"),
             "ctx_window": _ctx_ceiling(s.get("autocompact")),
             "autocompact": s.get("autocompact"),
-            # The session's run picks (store.set_run_settings), which both
-            # composers load. The mode as an interactive run would get it: the
-            # stored one, else the bridge's default — never a blank to guess at.
-            "model": s.get("model"),
-            "permission_mode": s.get("permission_mode") or config.MINIAPP_PERMISSION_MODE,
-            "disabled_tools": store.parse_disabled_tools(s.get("disabled_tools")),
+            # The session's effective run settings (profile + hand-set
+            # overrides, defaults filled in) — both composers load these.
+            **profiles.brief(s),
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
@@ -383,6 +387,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_agent_activity(chat_id, qs)
                 if path == "/api/usage":
                     return self._json(usage.get_usage())
+                if path == "/api/profiles":
+                    return self._api_profiles(chat_id)
                 if path == "/api/github/issues":
                     return self._json(github.issues(state.project_dir(chat_id)))
                 if path == "/api/tracker/tasks":
@@ -461,6 +467,8 @@ class Handler(BaseHTTPRequestHandler):
                     chat_id, path[len("/api/sessions/"):-len("/autocompact")], body)
             if path == "/api/session/settings":
                 return self._api_session_settings(chat_id, body)
+            if path == "/api/session/profile":
+                return self._api_session_profile(chat_id, body)
             if path.startswith("/api/run/") and path.endswith("/respond"):
                 return self._api_run_respond(
                     chat_id, path[len("/api/run/"):-len("/respond")], body)
@@ -548,12 +556,13 @@ class Handler(BaseHTTPRequestHandler):
             cand = os.path.realpath(os.path.join(config.BASE_PATH, str(project).lstrip("/")))
             if browser.within_base(cand) and os.path.isdir(cand):
                 project_path = cand
-        ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
-        if not ok:
-            return self._json({"error": "invalid model"}, 400)
-        permission_mode = normalize_permission_mode(body.get("permission_mode"))
+        err, model, permission_mode, effort = profiles.run_values(
+            body.get("model"), body.get("permission_mode"), body.get("effort"))
+        if err:
+            return self._json({"error": err}, 400)
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
         session_id = (body.get("session_id") or "").strip() or None
+        profile_id = (body.get("profile_id") or "").strip() or None
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
         # _save_images so a held prompt writes nothing.
@@ -570,16 +579,21 @@ class Handler(BaseHTTPRequestHandler):
         job = runner.start_streaming_job(chat_id, prompt, paths, project_path,
                                          job_id=job_id, model=model, effort=effort,
                                          permission_mode=permission_mode,
-                                         session_id=session_id, origin="miniapp",
-                                         ponytail=ponytail)
+                                         session_id=session_id, profile_id=profile_id,
+                                         origin="miniapp", ponytail=ponytail)
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
         # The picks this prompt was sent with are the session's now, on every
         # surface. After the start, so the row is the one the run resolved for
-        # this chat (a fresh session is created by this very call).
-        store.set_run_settings(job.store_session_id, model=model,
-                               permission_mode=permission_mode)
+        # this chat (a fresh session is created by this very call) — through
+        # save_pick, so a pick that matches the bound profile follows it
+        # instead of pinning an override.
+        s = store.get_session(job.store_session_id) or {"id": job.store_session_id}
+        for field, value in (("model", model), ("permission_mode", permission_mode),
+                             ("effort", effort)):
+            profiles.save_pick(s, field, value)
+            s = store.get_session(job.store_session_id) or s
         self._json({"job_id": job.id, "session_id": job.store_session_id})
 
     def _owned_job(self, chat_id: int, job_id: str):
@@ -713,6 +727,19 @@ class Handler(BaseHTTPRequestHandler):
         if not s:
             return self._json({"error": "not found"}, 404)
         self._json(*save_run_settings(s, body))
+
+    def _api_profiles(self, chat_id: int):
+        self._json(profiles.api_list())
+
+    def _api_session_profile(self, chat_id: int, body: dict):
+        """Bind (or "" unbind) a session's profile (profiles.bind)."""
+        s = self._owned_session(chat_id, (body.get("session_id") or "").strip())
+        if not s:
+            return self._json({"error": "not found"}, 404)
+        out, code = profiles.bind(s, body.get("profile_id"))
+        if code == 200:
+            out["session"] = _session_brief(store.get_session(s["id"]))
+        self._json(out, code)
 
     def _api_run_respond(self, chat_id: int, job_id: str, body: dict):
         """Answer a pending permission (Allow/Deny) or AskUserQuestion for a job."""

@@ -32,7 +32,7 @@ import re
 
 from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
-                    models, native, preview_detect, project_config, prstatus,
+                    models, native, preview_detect, profiles, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
                     share,
@@ -40,7 +40,7 @@ from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     usage, weather, wsutil)
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
-                                   normalize_model_effort, normalize_permission_mode,
+                                   normalize_model_effort,
                                    save_run_settings,
                                    transcript_for)
 
@@ -355,6 +355,8 @@ class Handler(BaseHTTPRequestHandler):
                 "default_policy": ladder.default_policy(),
                 "pending_login": accounts.pending_login(),
                 "free_agents": _free_agents()})
+        if path == "/local/profiles":
+            return self._json(profiles.api_list())
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
@@ -1049,6 +1051,12 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             return self._json(*save_run_settings(s, body))
+        if path == "/local/profiles":
+            return self._post_profiles(chat, body)
+        if path == "/local/session/profile":
+            return self._post_session_profile(chat, body)
+        if path == "/local/project/profile":
+            return self._post_project_profile(chat, body)
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")
@@ -1596,10 +1604,10 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
             return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
         project_path = _abs_project(body.get("project"))
-        ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
-        if not ok:
-            return self._json({"error": "invalid model"}, 400)
-        permission_mode = normalize_permission_mode(body.get("permission_mode"))
+        err, model, permission_mode, effort = profiles.run_values(
+            body.get("model"), body.get("permission_mode"), body.get("effort"))
+        if err:
+            return self._json({"error": err}, 400)
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
         try:
             from bridge import ladder
@@ -1607,6 +1615,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self._json({"error": str(e)}, 400)
         session_id = (body.get("session_id") or "").strip() or None
+        profile_id = (body.get("profile_id") or "").strip() or None
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
         # _save_images so a held prompt writes nothing.
@@ -1623,7 +1632,8 @@ class Handler(BaseHTTPRequestHandler):
         job = runner.start_streaming_job(chat, prompt, paths, project_path, job_id=job_id,
                                          model=model, effort=effort,
                                          permission_mode=permission_mode,
-                                         session_id=session_id, origin="dashboard",
+                                         session_id=session_id, profile_id=profile_id,
+                                         origin="dashboard",
                                          ponytail=ponytail, account_slot=account_slot,
                                          runtime=runtime)
         if job is None:
@@ -1631,10 +1641,36 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "busy"}, 409)
         # The picks this prompt was sent with are the session's now, on every
         # surface. After the start, so the row is the one the run resolved for
-        # this chat (a fresh session is created by this very call).
-        store.set_run_settings(job.store_session_id, model=model,
-                               permission_mode=permission_mode)
+        # this chat (a fresh session is created by this very call) — through
+        # save_pick, so a pick that matches the bound profile follows it
+        # instead of pinning an override.
+        s = store.get_session(job.store_session_id) or {"id": job.store_session_id}
+        for field, value in (("model", model), ("permission_mode", permission_mode),
+                             ("effort", effort)):
+            profiles.save_pick(s, field, value)
+            s = store.get_session(job.store_session_id) or s
         self._json({"job_id": job.id, "session_id": job.store_session_id})
+
+    def _post_profiles(self, chat, body):
+        self._json(*profiles.api_write(body))
+
+    def _post_session_profile(self, chat, body):
+        sid = (body.get("session_id") or "").strip()
+        s = store.get_session(sid) if sid else None
+        if not s or s["chat_id"] != chat:
+            return self._json({"error": "not found"}, 404)
+        out, code = profiles.bind(s, body.get("profile_id"))
+        if code == 200:
+            out["session"] = _session_brief(store.get_session(sid))
+        self._json(out, code)
+
+    def _post_project_profile(self, chat, body):
+        try:
+            profiles.set_project_default(str(body.get("project") or ""),
+                                         (body.get("profile_id") or "").strip() or None)
+        except ValueError as e:
+            return self._json({"error": str(e)}, 400)
+        self._json({"ok": True, "project_defaults": profiles.api_list()["project_defaults"]})
 
     def _respond(self, job_id, body):
         job = runner.get_job(job_id)

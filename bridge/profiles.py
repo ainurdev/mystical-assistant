@@ -287,3 +287,17 @@ def api_write(body: dict) -> "tuple[dict, int]":
     except ValueError as e:
         return {"error": str(e)}, 400
     return {"error": "action must be create, update or delete"}, 400
+
+
+def run_values(model, mode, effort) -> tuple:
+    """Validate a run's or a pick's model/mode/effort for a Claude session.
+    Returns (error or None, model, mode, effort); blanks become None.
+    Task 8 widens it to agent sessions."""
+    from bridge.miniapp.server import normalize_model_effort, normalize_permission_mode
+    ok, m, e = normalize_model_effort(model, effort)
+    if not ok:
+        return "invalid model", None, None, None
+    p = normalize_permission_mode(mode)
+    if (mode or "").strip() and p is None:
+        return "invalid permission_mode", None, None, None
+    return None, m, p, e

@@ -26,6 +26,7 @@ HELP = (
     "/report — this week per project (time · tokens) · /report last\n"
     "/accounts — Claude logins and their usage · /accounts add\n"
     "/policy — what to do when a chat hits the usage limit\n"
+    "/profile [name|none] — show or set this chat's run profile\n"
     "/status — everything at a glance\n"
     "/help — this message")
 
@@ -267,6 +268,9 @@ def on_message(msg: dict):
         threading.Thread(target=handle_fallback_command, args=(chat_id, text),
                          daemon=True).start()
         return
+    if cmd0 == "/profile":
+        handle_profile_command(chat_id, text)
+        return
     if text == "/status":
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
@@ -437,6 +441,32 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
     except ValueError as e:
         send(chat_id, f"⚠️ {e}")
     return True
+
+
+def handle_profile_command(chat_id: int, text: str) -> None:
+    """/profile — list profiles; /profile <name> — bind this chat's session;
+    /profile none — unbind (it keeps running what the profile gave it)."""
+    arg = text[len("/profile"):].strip()
+    s = store.latest_session(chat_id, state.project_key(chat_id))
+    rows = profiles.all_profiles()
+    if not arg:
+        cur = (s or {}).get("profile_id")
+        lines = [f"{'✅' if p['id'] == cur else '•'} {p['name']} — {p['agent']}"
+                 f"{' · ' + p['model'] if p['model'] else ''}" for p in rows]
+        send(chat_id, ("\n".join(lines) or "No profiles yet — make one in the dashboard.")
+             + "\n\n/profile <name> binds this chat's session · /profile none unbinds")
+        return
+    if not s:
+        send(chat_id, "No chat here yet — send a prompt first.")
+        return
+    pid = "" if arg.lower() == "none" else next(
+        (p["id"] for p in rows if p["name"].lower() == arg.lower()), None)
+    if pid is None:
+        send(chat_id, f"No profile named {arg!r}. /profile lists them.")
+        return
+    out, code = profiles.bind(s, pid)
+    send(chat_id, f"✅ {'Profile: ' + arg if pid else 'Profile removed'}" if code == 200
+         else f"⚠️ {out['error']}")
 
 
 def handle_callback(cb: dict):
