@@ -30,6 +30,17 @@ def test_keys_are_stored_0600_and_never_returned_whole():
     assert acp_agents.account(a["id"])["key"] == "sk-abcdefghijklmnop"
 
 
+def test_save_ignores_a_stale_loose_tmp_file():
+    tmp = acp_agents.ACCOUNTS_FILE + ".tmp"
+    os.makedirs(os.path.dirname(tmp), exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("stale, world-readable leftover from a crashed write")
+    os.chmod(tmp, 0o644)
+    acp_agents.add_account("codex", "work", "key", key="sk-abcdefghijklmnop")
+    assert stat.S_IMODE(os.stat(acp_agents.ACCOUNTS_FILE).st_mode) == 0o600
+    assert not os.path.exists(tmp)
+
+
 def test_add_account_validates(monkeypatch):
     with pytest.raises(ValueError):
         acp_agents.add_account("nope", "x", "key", key="k")
@@ -61,6 +72,11 @@ def test_a_separate_login_gets_its_own_0700_home():
     assert env["CODEX_HOME"] == acp_agents.home_dir(a["id"])
     assert stat.S_IMODE(os.stat(env["CODEX_HOME"]).st_mode) == 0o700
     assert env["CODEX_HOME"] in acp_agents.login_hint(acp_agents.preset("codex"), a["id"])
+
+
+def test_homes_dir_itself_is_0700_not_just_the_leaf():
+    acp_agents.add_account("codex", "personal", "home")
+    assert stat.S_IMODE(os.stat(acp_agents.HOMES).st_mode) == 0o700
 
 
 @pytest.mark.parametrize("m, hit", [

@@ -122,10 +122,14 @@ def _load() -> list:
 def _save(rows: list) -> None:
     os.makedirs(os.path.dirname(ACCOUNTS_FILE), mode=0o700, exist_ok=True)
     tmp = ACCOUNTS_FILE + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.unlink(tmp)                 # a stale tmp may be loose-mode; never write through it
+    except FileNotFoundError:
+        pass
+    # O_EXCL: created here at 0600, never written through something already there.
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump({"accounts": rows}, f, indent=2)
-    os.chmod(tmp, 0o600)
     os.replace(tmp, ACCOUNTS_FILE)
 
 
@@ -147,6 +151,16 @@ def account(acct_id) -> "dict | None":
 
 def home_dir(acct_id: str) -> str:
     return os.path.join(HOMES, acct_id)
+
+
+def _ensure_home(acct_id: str) -> str:
+    """A separate login's 0700 dir. HOMES itself must be made 0700 too: makedirs
+    only applies `mode` to the leaf, so a first call with just the leaf path
+    leaves HOMES (an intermediate dir) at the OS default."""
+    os.makedirs(HOMES, mode=0o700, exist_ok=True)
+    d = home_dir(acct_id)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    return d
 
 
 def add_account(agent: str, label: str, kind: str, key: "str | None" = None) -> dict:
@@ -174,7 +188,7 @@ def add_account(agent: str, label: str, kind: str, key: "str | None" = None) -> 
     with _lock:
         _save(_load() + [a])
     if kind == "home":
-        os.makedirs(home_dir(a["id"]), mode=0o700, exist_ok=True)
+        _ensure_home(a["id"])
     return _mask(a)
 
 
@@ -202,8 +216,7 @@ def env_for(p: dict, acct_id) -> dict:
         if a["kind"] == "key" and p["key_env"]:
             env[p["key_env"]] = a["key"]
         elif a["kind"] == "home" and p["home_env"]:
-            os.makedirs(home_dir(a["id"]), mode=0o700, exist_ok=True)
-            env[p["home_env"]] = home_dir(a["id"])
+            env[p["home_env"]] = _ensure_home(a["id"])
     return env
 
 
@@ -287,7 +300,7 @@ def remember_options(agent: str, acct_id, config_options, modes) -> None:
     with _lock:
         _load_options()
         _options[_key(agent, acct_id)] = shaped
-        os.makedirs(os.path.dirname(OPTIONS_FILE), exist_ok=True)
+        os.makedirs(os.path.dirname(OPTIONS_FILE), mode=0o700, exist_ok=True)
         with open(OPTIONS_FILE + ".tmp", "w", encoding="utf-8") as f:
             json.dump(_options, f)
         os.replace(OPTIONS_FILE + ".tmp", OPTIONS_FILE)
