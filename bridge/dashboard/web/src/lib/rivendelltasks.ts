@@ -1,7 +1,7 @@
 // What a RIVENDELL card says: its due date, and — from the task's newest
 // implementation request — its state line and the one action it offers.
 // Pure, so rivendelltasks.check.ts can pin it; the panel only draws.
-import type { RivendellRun, RivendellStatus, RivendellTask, RivendellTest } from "../api";
+import type { RivendellRun, RivendellStatus, RivendellTask, RivendellTaskDetail, RivendellTest, RivendellTodolist } from "../api";
 import { fmtDuration, kilo } from "./surfaces.ts";
 
 export type DueTone = "late" | "soon" | "";
@@ -107,10 +107,71 @@ export function resultBits(r: RivendellRun["result"] | undefined): {
   };
 }
 
-/** NEEDS YOU first — a run held on a question jumps the list — then YOURS and TEAM. */
-export function groupTasks<T extends Pick<RivendellTask, "mine" | "run">>(tasks: T[]) {
-  const rest = tasks.filter((t) => !t.run?.ask);
-  return { needs: tasks.filter((t) => t.run?.ask), mine: rest.filter((t) => t.mine), team: rest.filter((t) => !t.mine) };
+/** A title's parts: the leading task code ("T26 — …") for its own mono line,
+ *  the team's deferred marker ("⏸️ (deferred to Phase 3)") that sends a task to
+ *  LATER, and the rest. Emoji presentation selectors go, so ↔️ reads as the ↔
+ *  of the UI font instead of a colour tile.
+ *  ponytail: the marker is a title convention, not data; a Teamwork tag would
+ *  be the real signal if the team adds one. */
+export function splitTitle(name: string): { code: string | null; title: string; later: string | null } {
+  let title = name.replace(/\uFE0F/g, "").trim();
+  let later: string | null = null;
+  const d = /\s*⏸?\s*\(deferred(?:\s+to\s+([^)]*))?\)\s*$/i.exec(title);
+  if (d) {
+    later = d[1]?.trim() || "later";
+    title = title.slice(0, d.index).trim();
+  } else if (title.includes("⏸")) {
+    later = "later";
+    title = title.replace(/\s*⏸\s*/g, " ").trim();
+  }
+  const c = /^([A-Z]{1,4}-?\d{1,5})\s*[—–:-]\s+/.exec(title);
+  return c ? { code: c[1], title: title.slice(c[0].length), later } : { code: null, title, later };
+}
+
+/** Top to bottom by what each task needs from you: NEEDS YOU (a run held on a
+ *  question), RUNNING (queued or running), DONE (its newest run finished), the
+ *  open rest as YOURS and TEAM, and LATER (deferred by the title's marker, and
+ *  idle). A failed run stays with YOURS/TEAM, where its RETRY is. */
+export function groupTasks<T extends Pick<RivendellTask, "mine" | "run" | "implementation" | "name">>(tasks: T[]) {
+  const g = { needs: [] as T[], running: [] as T[], done: [] as T[], mine: [] as T[], team: [] as T[], later: [] as T[] };
+  for (const t of tasks) {
+    const s = t.implementation?.status;
+    if (t.run?.ask) g.needs.push(t);
+    else if (s === "PENDING" || s === "IN_PROGRESS") g.running.push(t);
+    else if (s === "COMPLETED") g.done.push(t);
+    else if (splitTitle(t.name).later) g.later.push(t);
+    else (t.mine ? g.mine : g.team).push(t);
+  }
+  return g;
+}
+
+/** NEXT UP's rows: the todolist's first open items (its order is its priority),
+ *  each with what the tab can do about it — the tasks it names that are open
+ *  here (their cards), or its Sentry issue (FIX IT). */
+export function nextUp(list: RivendellTodolist | null, open: Set<string>, n = 3) {
+  return (list?.items ?? []).slice(0, n).map((i) => ({
+    ...i,
+    tasks: i.links.filter((l) => l.type === "TASK" && open.has(l.id)).map((l) => l.id),
+    sentry: i.links.find((l) => l.type === "SENTRY_ISSUE" && l.url) ?? null,
+  }));
+}
+
+/** WORK ON IT's first prompt, left in a new session's composer, never sent:
+ *  the task, where its spec lives (or its description, when nothing else
+ *  holds it), and where it is tracked. */
+export function workPrompt(t: Pick<RivendellTask, "name" | "url" | "htmlUrl">, d: RivendellTaskDetail | null): string {
+  const lines = [`Rivendell task: ${t.name.replace(/\uFE0F/g, "").trim()}`];
+  if (d?.spec) lines.push(`Spec: ${d.spec.url}`);
+  const at = [t.htmlUrl && `Teamwork: ${t.htmlUrl}`, t.url && `Rivendell: ${t.url}`].filter(Boolean).join(" · ");
+  if (at) lines.push(at);
+  const desc = d?.spec ? "" : d?.description?.trim() ?? "";
+  if (desc) lines.push("", desc.length > 1500 ? `${desc.slice(0, 1500)}…` : desc);
+  return `${lines.join("\n")}\n\n`;
+}
+
+/** FIX IT's first prompt: the Sentry issue a NEXT UP item names, and why it is up. */
+export function sentryPrompt(title: string, s: { label: string | null; url: string | null }): string {
+  return `Sentry issue ${s.label ?? ""}: ${s.url}\nOn Rivendell's todolist: ${title}\n\n`;
 }
 
 /** The bell's line for a broken link (App, once per break). */

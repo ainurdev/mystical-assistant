@@ -83,7 +83,7 @@ def test_tasks_rejects_a_project_outside_the_workspace(asked):
 def test_implement_relays_to_the_instance(monkeypatch):
     calls = []
     monkeypatch.setattr(rivendell, "implement",
-                        lambda iid, tid: calls.append((iid, tid)) or {"id": "r7", "status": "PENDING"})
+                        lambda iid, tid, note="": calls.append((iid, tid)) or {"id": "r7", "status": "PENDING"})
     r = dpost("/local/rivendell/implement", {"instance_id": "a", "task_id": "t1"})
     assert calls == [("a", "t1")]
     assert r["code"] == 200 and r["obj"] == {"ok": True, "request": {"id": "r7", "status": "PENDING"}}
@@ -91,12 +91,12 @@ def test_implement_relays_to_the_instance(monkeypatch):
 
 def test_implement_needs_both_ids(monkeypatch):
     monkeypatch.setattr(rivendell, "implement",
-                        lambda iid, tid: pytest.fail("must not be called"))
+                        lambda iid, tid, note="": pytest.fail("must not be called"))
     assert dpost("/local/rivendell/implement", {"instance_id": "a"})["code"] == 400
 
 
 def test_implement_failure_is_the_line_req_throws(monkeypatch):
-    def refuse(iid, tid):
+    def refuse(iid, tid, note=""):
         raise rivendell.TasksError("refused", "No repository is linked to this task's project.")
     monkeypatch.setattr(rivendell, "implement", refuse)
     r = dpost("/local/rivendell/implement", {"instance_id": "a", "task_id": "t1"})
@@ -105,7 +105,7 @@ def test_implement_failure_is_the_line_req_throws(monkeypatch):
 
 
 def test_implement_on_an_unreachable_rivendell_is_a_bad_gateway(monkeypatch):
-    def down(iid, tid):
+    def down(iid, tid, note=""):
         raise rivendell.TasksError("unreachable", "unreachable: connection refused")
     monkeypatch.setattr(rivendell, "implement", down)
     assert dpost("/local/rivendell/implement", {"instance_id": "a", "task_id": "t1"})["code"] == 502
@@ -131,3 +131,41 @@ def test_send_test_job_asks_for_the_job_round_trip(monkeypatch):
                         or {"ok": True, "rtt_ms": 900, "detail": "", "at": 1.0, "via": "job"})
     dpost("/local/rivendell/test", {"instance_id": "a", "job": True})
     assert calls == [("a", True)]
+
+
+def test_implement_passes_the_note(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rivendell, "implement",
+                        lambda iid, tid, note="": calls.append((iid, tid, note)) or {"id": "r7"})
+    dpost("/local/rivendell/implement", {"instance_id": "a", "task_id": "t1", "note": "use .env"})
+    assert calls == [("a", "t1", "use .env")]
+
+
+def test_task_relays_to_the_instance(monkeypatch):
+    monkeypatch.setattr(rivendell, "task_detail", lambda iid, tid: {"asked": [iid, tid]})
+    r = dget("/local/rivendell/task?instance_id=a&task_id=t1")
+    assert r == {"code": 200, "obj": {"asked": ["a", "t1"]}}
+
+
+def test_task_needs_both_ids(monkeypatch):
+    monkeypatch.setattr(rivendell, "task_detail", lambda iid, tid: pytest.fail("must not be called"))
+    assert dget("/local/rivendell/task?instance_id=a")["code"] == 400
+
+
+def test_task_failure_is_the_line_req_throws(monkeypatch):
+    def gone(iid, tid):
+        raise rivendell.TasksError("refused", "Task not found.")
+    monkeypatch.setattr(rivendell, "task_detail", gone)
+    r = dget("/local/rivendell/task?instance_id=a&task_id=t1")
+    assert r == {"code": 400, "obj": {"error": "Task not found.", "code": "refused"}}
+
+
+def test_todolist_relays_to_the_instance(monkeypatch):
+    monkeypatch.setattr(rivendell, "todolist", lambda iid, pid: {"asked": [iid, pid]})
+    r = dget("/local/rivendell/todolist?instance_id=a&project_id=p1")
+    assert r == {"code": 200, "obj": {"todolist": {"asked": ["a", "p1"]}}}
+
+
+def test_todolist_needs_both_ids(monkeypatch):
+    monkeypatch.setattr(rivendell, "todolist", lambda iid, pid: pytest.fail("must not be called"))
+    assert dget("/local/rivendell/todolist?project_id=p1")["code"] == 400

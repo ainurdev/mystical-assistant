@@ -4,7 +4,7 @@
 // wrong shape (Teamwork sends 20261002 as often as 2026-10-02) turning a late
 // task into no date at all, and a request state mapped to the wrong action —
 // OPEN SESSION with no session to open, or IMPLEMENT on a task already queued.
-import { cardState, closeCode, dueLabel, groupTasks, initials, linkAlertText, linkChip, resultBits, testText } from "./rivendelltasks.ts";
+import { cardState, closeCode, dueLabel, groupTasks, initials, linkAlertText, linkChip, nextUp, resultBits, sentryPrompt, splitTitle, testText, workPrompt } from "./rivendelltasks.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -73,11 +73,55 @@ eq(resultBits({ wall_s: 1260, tokens: null, pr: null,
   "KILLED AS HUNG — no output for 30 min", "failed: the transcript's own outcome label");
 eq(resultBits(null), null, "no session here: no line");
 
-const tk = (id: string, mine: boolean, asks = false) => ({ id, mine,
+const tk = (id: string, mine: boolean, asks = false, status: string | null = null, name = id) => ({ id, mine, name,
+  implementation: status ? { id: `r-${id}`, status, createdAt: "x", completedAt: null } : null,
   run: asks ? { ask: { job_id: "j", request_id: "q", at: null, question: "?", header: "h", options: [], simple: true } } : null }) as never;
-const g = groupTasks([tk("a", true), tk("b", false, true), tk("c", false)]);
-eq([g.needs, g.mine, g.team].map((x: { id: string }[]) => x.map((t) => t.id)), [["b"], ["a"], ["c"]],
-  "a question jumps the list; the rest stay mine / team");
+const g = groupTasks([tk("a", true), tk("b", false, true, "IN_PROGRESS"), tk("c", false), tk("d", false, false, "PENDING"),
+  tk("e", true, false, "IN_PROGRESS"), tk("f", false, false, "COMPLETED"), tk("h", true, false, "FAILED"),
+  tk("i", false, false, "CANCELLED"), tk("j", false, false, null, "T28 — Cashflow ⏸️ (deferred to Phase 3)"),
+  tk("k", false, false, "IN_PROGRESS", "T29 — Sync ⏸️ (deferred to Phase 3)")]);
+eq([g.needs, g.running, g.done, g.mine, g.team, g.later].map((x: { id: string }[]) => x.map((t) => t.id)),
+  [["b"], ["d", "e", "k"], ["f"], ["a", "h"], ["c", "i"], ["j"]],
+  "by what each needs from you: a question, then runs in flight, then finished ones; a failed run stays with " +
+  "its owner (RETRY); a deferred task waits in LATER — unless a run is already on it");
+
+eq(splitTitle("T26 — Moneybird OAuth + connection storage"),
+  { code: "T26", title: "Moneybird OAuth + connection storage", later: null }, "the code gets its own line");
+eq(splitTitle("T28 — Cashflow data model + 12-week forecast service ⏸️ (deferred to Phase 3)"),
+  { code: "T28", title: "Cashflow data model + 12-week forecast service", later: "Phase 3" },
+  "the deferred marker sends it to LATER and leaves the title");
+eq(splitTitle("Werkprogramma Financieel tab ↔️ Moneybird (invoices)"),
+  { code: null, title: "Werkprogramma Financieel tab ↔ Moneybird (invoices)", later: null },
+  "an emoji arrow reads as text, not a colour tile");
+eq(splitTitle("Werkprogramma: next/back buttons navigate between module tabs").code, null,
+  "a word before a colon is not a code");
+eq(splitTitle("PR-12 – fix the build").code, "PR-12", "a hyphenated code and an en dash");
+eq(splitTitle("Pause sync ⏸️").later, "later", "a bare ⏸ still defers");
+eq(splitTitle("Investigate (deferred) jobs").later, null, "only a trailing marker defers");
+eq(splitTitle("Bulk export (deferred)").later, "later", "a trailing (deferred) defers without the glyph");
+
+const todo = { generatedAt: null, progress: null, items: [
+  { id: "1", title: "Webhook", priority: "high", links: [{ type: "TASK", id: "t14", label: null, url: null }] },
+  { id: "2", title: "Auto review", priority: "high", links: [{ type: "TASK", id: "t19", label: null, url: null },
+    { type: "TASK", id: "gone", label: null, url: null }, { type: "TASK", id: "t28", label: null, url: null }] },
+  { id: "3", title: "Prisma error", priority: "high", links: [{ type: "SENTRY_ISSUE", id: "o:9", label: "BACKEND-9", url: "https://s/9" }] },
+  { id: "4", title: "Fourth", priority: "medium", links: [] },
+] };
+const nu = nextUp(todo, new Set(["t14", "t19", "t28"]));
+eq(nu.map((i) => [i.id, i.tasks, i.sentry?.url ?? null]), [["1", ["t14"], null], ["2", ["t19", "t28"], null], ["3", [], "https://s/9"]],
+  "the first three open items, each with the tasks it names that are open here, or its Sentry issue");
+eq(nextUp(null, new Set()), [], "no todolist, no rows");
+
+const task = { name: "T26 — Moneybird OAuth ⏸️", url: "https://rv/tasks/t26", htmlUrl: "https://tw/50998944" };
+const spec = { number: 43, url: "https://github.com/o/r/issues/43", title: null, state: null, body: null };
+eq(workPrompt(task, { description: "see #43", tasklist: null, createdBy: null, createdAt: null, estimateMinutes: null, tags: [], spec }),
+  "Rivendell task: T26 — Moneybird OAuth ⏸\nSpec: https://github.com/o/r/issues/43\nTeamwork: https://tw/50998944 · Rivendell: https://rv/tasks/t26\n\n",
+  "WORK ON IT names the task, where its spec lives and where it is tracked");
+ok(workPrompt(task, { description: "Do the thing.", tasklist: null, createdBy: null, createdAt: null, estimateMinutes: null, tags: [], spec: null })
+  .includes("\n\nDo the thing.\n"), "with no spec link, the description itself goes in");
+ok(workPrompt(task, null).startsWith("Rivendell task: "), "and it still works before the peek has loaded");
+eq(sentryPrompt("Prisma error", { label: "BACKEND-9", url: "https://s/9" }),
+  "Sentry issue BACKEND-9: https://s/9\nOn Rivendell's todolist: Prisma error\n\n", "FIX IT names the issue and why");
 
 ok(linkAlertText({ name: "production", status: st({ state: "auth_error" }) }).includes("refused this bridge's token"),
   "the bell names a rejected token");

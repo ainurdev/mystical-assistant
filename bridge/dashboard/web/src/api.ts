@@ -566,6 +566,31 @@ export interface RivendellTasks {
   }[];
   links?: RivendellLink[];  // each connection's state, for the chip and banner
 }
+/** A card's peek (bridge/rivendell.py task_detail): the task in full, read off
+ *  Rivendell's /mcp, and the GitHub issue its description defers to. */
+export interface RivendellTaskDetail {
+  description: string | null;
+  tasklist: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  estimateMinutes: number | null;
+  tags: { name: string; color: string | null }[];
+  spec: null | {             // github.issue_spec; body is the issue's opening
+    number: number; url: string; title: string | null; state: string | null; body: string | null;
+  };
+}
+/** NEXT UP (bridge/rivendell.py todolist): the project's todolist, open items
+ *  in Rivendell's order. A TASK link's id is a task id the tab lists. */
+export interface RivendellTodolist {
+  generatedAt: string | null;
+  progress: { total: number; done: number } | null;
+  items: {
+    id: string;
+    title: string;
+    priority: string | null; // high | medium | low
+    links: { type: string; id: string; label: string | null; url: string | null }[];
+  }[];
+}
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -1680,10 +1705,16 @@ export const api = {
   // The RIVENDELL tab: a repo's open tasks, and IMPLEMENT on one.
   rivendellTasks: (project: string) =>
     req<RivendellTasks>(`/local/rivendell/tasks?project=${encodeURIComponent(project)}`),
-  rivendellImplement: (instance_id: string, task_id: string) =>
+  rivendellImplement: (instance_id: string, task_id: string, note = "") =>
     req<{ ok: boolean; request: { id: string; status: string } }>("/local/rivendell/implement", {
-      method: "POST", body: { instance_id, task_id },
+      method: "POST", body: { instance_id, task_id, note },
     }),
+  rivendellTask: (instance_id: string, task_id: string) =>
+    req<RivendellTaskDetail>(`/local/rivendell/task?instance_id=${encodeURIComponent(instance_id)}` +
+      `&task_id=${encodeURIComponent(task_id)}`),
+  rivendellTodolist: (instance_id: string, project_id: string) =>
+    req<{ todolist: RivendellTodolist | null }>(`/local/rivendell/todolist?instance_id=${encodeURIComponent(instance_id)}` +
+      `&project_id=${encodeURIComponent(project_id)}`),
   // TEST LINK: a ping/pong round trip on the live socket, or a re-dial of a
   // parked token (bridge/rivendell.py Worker.test_link). 409 when it's off.
   rivendellTest: (instance_id: string, job = false) =>

@@ -973,6 +973,18 @@ input {
 .md blockquote:hover > .md-copy { opacity: 1; }
 .md-code > .md-copy { position: absolute; top: 0.3em; right: 0.45em; }
 .md-code:hover > .md-copy { opacity: 1; }
+/* The RIVENDELL tab's peek (RivendellTasks.tsx): an issue's opening read at a
+   glance, not a reply. Its quote drops the rail the peek already draws, a bold
+   lead-in stays inside its sentence, and nothing grows a copy glyph. */
+.rv-peek > :first-child { margin-top: 0; }
+.rv-peek > :last-child { margin-bottom: 0; }
+.rv-peek p { margin: 0.35em 0; }
+.rv-peek blockquote { margin: 0.35em 0; padding: 0; border: 0; background: none; color: inherit; }
+.rv-peek strong.md-lead {
+  font-family: inherit; font-size: inherit; font-weight: 600; letter-spacing: 0;
+  text-transform: none; color: var(--txh); margin-right: 0;
+}
+.rv-peek .md-copy { display: none; }
 @media (hover: none) { .md-copy { opacity: 1; } }
 .md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--ac-16); }
 /* A table is columns, so it is ruled rather than gridded: a border on every
