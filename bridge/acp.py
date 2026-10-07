@@ -92,23 +92,26 @@ class Conn:
     """One agent process speaking newline-delimited JSON-RPC 2.0 on stdio.
 
     Only the reader thread calls on_notify/on_request, and neither may call
-    request(): the reader is what delivers its answer. The agent counts as
-    running until its stdout closes, not until the leader exits: npx's node
-    child still holds the stream when npx itself is gone."""
+    request(): the reader is what delivers its answer.
+
+    The leader is reaped only by kill(), after it has swept the process group:
+    until then an exited leader is a zombie whose pid keeps the pgid reserved,
+    so the sweep can't reach a recycled one. That also keeps the agent
+    "running" while npx's node child holds the stream after npx itself left."""
 
     def __init__(self, argv, *, env, cwd, on_notify, on_request):
         self.on_notify, self.on_request = on_notify, on_request
         self.stderr_tail = deque(maxlen=40)
         self._hide = _secrets(env)
         self._wlock, self._plock = threading.Lock(), threading.Lock()
+        self._klock = threading.Lock()     # a signal and the reap never interleave
         self._pending, self._ids, self._closed = {}, count(1), False
         self.proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      start_new_session=True)
         self._err = threading.Thread(target=self._drain, daemon=True)
-        self._out = threading.Thread(target=self._read, daemon=True)
         self._err.start()
-        self._out.start()
+        threading.Thread(target=self._read, daemon=True).start()
 
     def request(self, method, params, timeout):
         rid = next(self._ids)
@@ -139,40 +142,56 @@ class Conn:
                      **({"error": error} if error else {"result": result})})
 
     def poll(self):
-        """None while the agent's stdout is open, then the leader's exit code.
-        The runner's watchdog loops on this."""
-        return self.proc.poll() if self._closed else None
+        """None until kill() has swept the group and reaped the leader, then
+        its exit code. The runner's watchdog loops on this."""
+        return self.proc.returncode
 
     def kill(self):
-        """SIGTERM the process group, then SIGKILL what's left. Never once the
-        leader is reaped and its stdout closed: by then the pgid may belong to
-        someone else."""
+        """Sweep the process group, then reap the leader: SIGTERM, up to 2 s for
+        the leader to exit and a moment for the rest, then SIGKILL for whatever
+        is left. Signals go out only while the leader is unreaped (running, or
+        a zombie holding the pgid), so a stale call (a Stop timer firing after
+        the turn) can't reach a recycled pgid.
+        ponytail: whatever the agent started in its group (a dev server, a
+        watcher) ends with the turn. Keep one process per session alive if
+        that bites."""
         for sig in (signal.SIGTERM, signal.SIGKILL):
-            if self._closed and self.proc.poll() is not None:
-                return
+            with self._klock:
+                if self.proc.returncode is not None:
+                    return
+                try:
+                    os.killpg(self.proc.pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            if sig == signal.SIGTERM:
+                _until(self._exited, 2)
+                time.sleep(0.1)
+        with self._klock:
             try:
-                os.killpg(self.proc.pid, sig)
-            except (ProcessLookupError, PermissionError):
+                self.proc.wait(2)
+            except subprocess.TimeoutExpired:
                 pass
-            self._wait_gone(2)
 
     def close(self, grace=2.0):
+        """Stdin closed, up to `grace` s for the leader to leave, then kill()."""
         with self._wlock:
             try:
                 self.proc.stdin.close()
             except OSError:
                 pass
-        self._wait_gone(grace)
-        self.kill()   # nothing to do once it left; else the whole group goes
+        _until(self._exited, grace)
+        self.kill()
 
-    def _wait_gone(self, timeout):
-        """Up to `timeout` s for the leader to exit and its stdout to close."""
-        end = time.monotonic() + timeout
+    def _exited(self):
+        """Has the leader exited? Asked with WNOWAIT, so it stays an unreaped
+        zombie: its pid, and with it the group's pgid, can't be recycled yet."""
+        if self.proc.returncode is not None:
+            return True
         try:
-            self.proc.wait(timeout)
-        except subprocess.TimeoutExpired:
-            return
-        self._out.join(max(0.0, end - time.monotonic()))
+            return os.waitid(os.P_PID, self.proc.pid,
+                             os.WEXITED | os.WNOWAIT | os.WNOHANG) is not None
+        except ChildProcessError:
+            return True
 
     def tail(self, n=5):
         if self._closed:
@@ -243,6 +262,12 @@ class Conn:
 
 def _refuse(rid, method, params):
     raise AcpError(-32601, f"not supported: {method}")
+
+
+def _until(done, timeout):
+    end = time.monotonic() + timeout
+    while not done() and time.monotonic() < end:
+        time.sleep(0.02)
 
 
 class Turn:

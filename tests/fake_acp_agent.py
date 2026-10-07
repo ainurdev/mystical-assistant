@@ -1,17 +1,15 @@
-"""A scripted ACP v1 agent for tests/test_acp.py. A script, not a test module.
+"""A scripted ACP v1 agent for tests/test_acp.py (a script, not a test module).
 
-The JSON in env FAKE_ACP scripts it: caps, new_error, prompt_error, options,
-modes, replay, open_delay (s before new/load/resume answer), turn (steps:
-update, permission, vendor, stdout, wait_cancel, sleep, exit, orphan: the
-leader exits while a child keeps its stdout open, pid in FAKE_ACP_LOG +
-".child"), stop, ignore_cancel. Every message it receives is appended to
-env FAKE_ACP_LOG as a JSON line, and its environment goes to
-FAKE_ACP_LOG + ".env" at startup.
+Env FAKE_ACP scripts it: caps, new_error, prompt_error, options, modes, replay,
+open_delay, stop, ignore_cancel, and turn, a list of steps: update, permission,
+vendor, stdout, wait_cancel, sleep, exit, orphan (the leader exits while a child
+holds its stdout), helper (a child with stdout on /dev/null). Every message it
+receives goes to env FAKE_ACP_LOG as a JSON line, its environ to LOG + ".env".
 
-One reader (the main thread) dispatches every incoming line: replies to the
-agent's own requests, notifications (session/cancel sets a flag) and client
-requests. The prompt runs on its own thread and its blocking steps wait on the
-reader's state, so a session/cancel still lands while a step waits on a reply.
+One reader (the main thread) dispatches every line: replies to the agent's own
+requests, notifications (session/cancel sets a flag) and client requests. The
+prompt runs on its own thread and its blocking steps wait on the reader's state,
+so a session/cancel still lands while a step waits on a reply.
 """
 import itertools
 import json
@@ -25,8 +23,7 @@ S = json.loads(os.environ.get("FAKE_ACP") or "{}")
 LOG = os.environ.get("FAKE_ACP_LOG")
 cond = threading.Condition()
 replies, flags = {}, {"cancel": False}
-wlock = threading.Lock()
-ids = itertools.count(1)
+wlock, ids = threading.Lock(), itertools.count(1)
 
 
 def write(raw: bytes):
@@ -60,6 +57,14 @@ def state():
     return {k: S[v] for k, v in (("configOptions", "options"), ("modes", "modes")) if v in S}
 
 
+def spawn(secs, name, **kw):
+    """A child in this group, pid in LOG.<name>; pgrep -f fake_acp_agent finds it."""
+    child = subprocess.Popen([sys.executable, "-c",
+                              f"import time; time.sleep({secs})  # fake_acp_agent {name}"], **kw)
+    with open(f"{LOG}.{name}", "w") as f:
+        f.write(str(child.pid))
+
+
 def prompt(rid, sid):
     if S.get("prompt_error"):
         return send(id=rid, error=S["prompt_error"])
@@ -85,11 +90,10 @@ def prompt(rid, sid):
             sys.stderr.flush()
             os._exit(step["exit"])
         elif "orphan" in step:
-            child = subprocess.Popen([sys.executable, "-c",
-                                      f"import time; time.sleep({step['orphan']})"])
-            with open(LOG + ".child", "w") as f:
-                f.write(str(child.pid))
+            spawn(step["orphan"], "child")
             os._exit(0)
+        elif "helper" in step:
+            spawn(step["helper"], "helper", stdout=subprocess.DEVNULL)
     send(id=rid, result={"stopReason": "cancelled" if cancelled() else S.get("stop", "end_turn")})
 
 
@@ -103,11 +107,9 @@ def handle(rid, method, p):
         if S.get("new_error"):
             return send(id=rid, error=S["new_error"])
         res = {"sessionId": f"s-{os.getpid()}", **state()}
-    elif method == "session/load":
-        for u in S.get("replay", []):
+    elif method in ("session/load", "session/resume"):
+        for u in S.get("replay", []) if method == "session/load" else []:
             update(p["sessionId"], u)
-        res = state()
-    elif method == "session/resume":
         res = state()
     elif method == "session/set_config_option":
         res = {"configOptions": S.get("options", [])}

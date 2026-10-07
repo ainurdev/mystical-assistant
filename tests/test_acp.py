@@ -228,7 +228,7 @@ def test_a_hang_names_the_stderr_tail(tmp_path):
 
 def test_stop_still_lands_when_the_leader_exits_but_a_child_holds_stdout(tmp_path):
     job, _, t = _run(tmp_path, {"turn": [{"orphan": 30}]}, background=True)
-    assert _wait(lambda: job.conn is not None and job.conn.proc.poll() is not None)
+    assert _wait(lambda: job.conn is not None and job.conn._exited())   # seen, not reaped
     child = int((tmp_path / "log.jsonl.child").read_text())
     assert job.conn.poll() is None                  # its stdout is still open: still running
     assert acp.cancel(job, grace=0.3)
@@ -246,15 +246,21 @@ def test_a_second_stop_reuses_the_first_kill_timer():
     first.cancel()
 
 
-def test_kill_never_signals_a_reaped_group(tmp_path, monkeypatch):
+def test_a_stale_kill_never_signals_a_reaped_group(tmp_path, monkeypatch):
     conn = acp.Conn([sys.executable, "-c", "pass"], env=dict(os.environ), cwd=str(tmp_path),
                     on_notify=lambda m, p: None, on_request=acp._refuse)
-    assert _wait(lambda: conn.poll() is not None)  # exited, reaped, stdout closed
+    conn.close()                                    # the turn's end: swept, then reaped
+    assert conn.poll() is not None
     sent = []
     monkeypatch.setattr(acp.os, "killpg", lambda pgid, sig: sent.append(sig))
-    conn.kill()
-    conn.close()
+    conn.kill()                                     # a Stop timer firing after that
     assert sent == []
+
+
+def test_a_helper_the_agent_left_in_its_group_ends_with_the_turn(tmp_path):
+    job, _ = _run(tmp_path, {"turn": [{"helper": 30}]})
+    helper = int((tmp_path / "log.jsonl.helper").read_text())
+    assert job.status == "done" and _wait(lambda: _gone(helper))
 
 
 def test_once_the_turn_ends_there_is_no_new_card_and_no_stop():
