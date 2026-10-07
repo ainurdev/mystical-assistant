@@ -4,8 +4,8 @@ import os
 import sys
 import threading
 
-from bridge import (accounts, config, graphmap, ladder, limits, report, state,
-                    store, usage)
+from bridge import (accounts, config, graphmap, ladder, limits, profiles, report,
+                    state, store, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -282,7 +282,8 @@ def on_message(msg: dict):
 
     # Plain text -> prompt to Claude in the active project. Claim this session's
     # run slot; a run in another project/session is unaffected.
-    session = store.ensure_session(chat_id, state.project_key(chat_id))
+    key = state.project_key(chat_id)
+    session = store.ensure_session(chat_id, key, profile_id=profiles.project_default(key))
     if not state.acquire_run(session["id"], chat_id):
         send(chat_id, "⏳ Still working on this session — please wait.")
         return

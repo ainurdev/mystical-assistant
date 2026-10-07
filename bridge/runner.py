@@ -26,7 +26,7 @@ import uuid
 
 from bridge import (accounts, agents, aifeatures, config, devserver, git,
                     inspector, ladder, limits, machine, native_activity,
-                    pubsub, relevance, state, store, transcript_jsonl)
+                    profiles, pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
 
@@ -503,7 +503,7 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  model: str | None = None, skip_pack: bool = False,
                  permission_mode: str | None = None,
                  ponytail: str | None = None, new_session: bool = False,
-                 fork: bool = False):
+                 fork: bool = False, account_slot: "int | None" = None):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
                     cwd=cwd, model=model, skip_pack=skip_pack,
                     permission_mode=permission_mode, new_session=new_session,
@@ -511,7 +511,7 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
-                              text=True, timeout=timeout, env=_run_env(ponytail))
+                              text=True, timeout=timeout, env=_run_env(ponytail, account_slot))
     except subprocess.TimeoutExpired:
         return (f"⏱️ Timed out after {timeout // 60} min.", None, None, True)
     except FileNotFoundError:
@@ -534,19 +534,25 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
 def handle_task(chat_id: int, prompt: str, session: dict):
     """Runs in a thread; the caller already claimed `session`'s run slot.
 
-    Runs on the session's own model and mode, the last ones picked for it on any
-    surface. A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a session created
-    as bypassPermissions (the dashboard and Mini App default) runs unattended
-    here too: the same allow-listed user can already do that from the Mini App.
-    An asking mode can't show a card in a chat, so the tools it would ask about
-    are denied, as under acceptEdits. A session the bot started has no mode and
-    keeps EXTRA_CLAUDE_ARGS."""
+    Runs on the session's effective model and mode (its own picks, else its
+    bound profile's). A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a
+    session created as bypassPermissions (the dashboard and Mini App default)
+    runs unattended here too: the same allow-listed user can already do that
+    from the Mini App. An asking mode can't show a card in a chat, so the
+    tools it would ask about are denied, as under acceptEdits. A session the
+    bot started has no mode and keeps EXTRA_CLAUDE_ARGS. A profile bound to a
+    dead account slot refuses instead of running on another login."""
     try:
+        eff = profiles.effective(session)
+        refusal = profiles.refusal(eff, chat_id)
+        if refusal:
+            send(chat_id, "⚠️ " + refusal)
+            return
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
         job_id = uuid.uuid4().hex
-        store.start_turn(session["id"], job_id, prompt, [], model=session.get("model"),
+        store.start_turn(session["id"], job_id, prompt, [], model=eff["model"],
                          sha=git.head_sha(state.project_dir(chat_id)))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
@@ -554,7 +560,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
             session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
             chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
-            model=session.get("model"), permission_mode=session.get("permission_mode"))
+            model=eff["model"], permission_mode=eff["permission_mode"],
+            account_slot=profiles.claude_slot(eff))
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,
@@ -651,6 +658,7 @@ class Job:
         self.tail_needs: str | None = None  # set when the closing ended needing the user
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
+        self.refusal: str | None = None   # set before spawn: the bound profile can't run (see profiles.refusal)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
         self.model: str | None = None     # what the child runs on; a live switch moves it
         # Our set_model / set_permission_mode requests the CLI hasn't answered
@@ -2123,6 +2131,11 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
     mcp_dir = None
     job.cwd = cwd
     try:
+        if job.refusal:
+            job.error_msg = job.refusal
+            job.add({"type": "error", "message": job.refusal})
+            job.status = "error"
+            return
         if (job.runtime or "").startswith("opencode:"):
             _consume_free_agent(job, prompt, cwd, permission_mode)
             return
@@ -2133,7 +2146,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         from bridge import toolsets  # local: toolsets imports runner
         job.boot = ("checking configured MCP servers"
                     if job.store_session_id and not toolsets.ready() else None)
-        denied = store.get_disabled_tools(job.store_session_id) if job.store_session_id else None
+        denied = (profiles.tools_for(store.get_session(job.store_session_id))
+                  if job.store_session_id else None)
         if job.mcp_on:
             # On for this turn only — the session's own toggles are not written.
             denied = [r for r in (store.default_disabled_tools() if denied is None else denied)
@@ -2346,12 +2360,17 @@ def _adopt_native(session: dict, origin: str | None) -> None:
 
 
 def _resolve_session(chat_id: int, project_dir: str, *, session_id: str | None,
-                     permission_mode: str | None, origin: str | None) -> dict:
-    """Just resolve/create the store session row (idempotent, lock-free) so its id
-    is known before we claim its run slot."""
+                     permission_mode: str | None, origin: str | None,
+                     profile_id: str | None = None) -> dict:
+    """Resolve/create the session row. A new one is bound to the profile the
+    caller named, else its project's default; a bound one gets no seeded mode,
+    so the profile's applies (spec: Creation and switching)."""
+    project = rel(project_dir)
+    pid = profile_id if profiles.get(profile_id) else profiles.project_default(project)
     return store.ensure_session(
-        chat_id, rel(project_dir), session_id, origin=origin, cwd=project_dir,
-        permission_mode=permission_mode or _surface_default_permission(origin))
+        chat_id, project, session_id, origin=origin, cwd=project_dir,
+        permission_mode=permission_mode or (None if pid else _surface_default_permission(origin)),
+        profile_id=pid)
 
 
 def _resolve_run_context(chat_id: int, project_dir: str, *, session_id: str | None,
@@ -2385,7 +2404,7 @@ def _finalize_run_context(session: dict, project_dir: str, *,
         cwd = project_dir
     if not session.get("cwd"):
         store.set_cwd(session["id"], cwd)
-    return session, cwd, permission_mode or session.get("permission_mode")
+    return session, cwd, permission_mode or profiles.effective(session)["permission_mode"]
 
 
 def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
@@ -2393,6 +2412,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         model: str | None = None, effort: str | None = None,
                         permission_mode: str | None = None,
                         session_id: str | None = None,
+                        profile_id: str | None = None,
                         origin: str | None = None, ponytail: str | None = None,
                         account_slot: int | None = None,
                         runtime: str | None = None,
@@ -2405,11 +2425,16 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     with its own model and permission posture (an explicit model/permission_mode
     wins for this run and is not written back); --resume continuity comes from
     that session's claude_session_id. `origin` marks where a newly-created
-    session started.
+    session started; `profile_id` binds a newly-created session to that profile
+    (else its project's default). A bound session's model/effort/permission and
+    Claude account follow the profile wherever the caller leaves them unset; a
+    profile whose account slot is gone or disabled refuses the run (job.refusal)
+    instead of silently running on another login.
 
-    account_slot picks which Claude login runs the turn (None = the ambient one);
-    runtime is set instead when a fallback-ladder free agent takes over. Both are
-    recorded on the turn so the transcript shows what produced it.
+    account_slot picks which Claude login runs the turn (None = the ambient one,
+    or the bound profile's); runtime is set instead when a fallback-ladder free
+    agent takes over. Both are recorded on the turn so the transcript shows what
+    produced it.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
 
@@ -2422,7 +2447,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         return None
     project_dir = project or state.project_dir(chat_id)
     session = _resolve_session(chat_id, project_dir, session_id=session_id,
-                               permission_mode=permission_mode, origin=origin)
+                               permission_mode=permission_mode, origin=origin,
+                               profile_id=profile_id)
     if not state.acquire_run(session["id"], chat_id):
         return None
     try:
@@ -2431,11 +2457,24 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         # The session's own model unless the caller brought one: the /run routes
         # save theirs to the row; internal callers (Rivendell, trackers, goals)
         # run theirs without writing it. Neither = no --model, the CLI default.
-        model = model or session.get("model")
+        # Same for effort/account: the profile only fills what the caller didn't
+        # bring, and never overrides an explicit account_slot/runtime.
+        eff = profiles.effective(session)
+        model = model or eff["model"]
+        effort = effort or eff["effort"]
+        refusal = profiles.refusal(eff, chat_id) if account_slot is None and runtime is None else None
+        if account_slot is None and runtime is None and not refusal:
+            account_slot = profiles.claude_slot(eff)
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.model = model
-        job.resume_id, job.new_session, job.fork = _claim_session_id(
-            session["id"], session["claude_session_id"])
+        job.refusal = refusal
+        if not refusal:
+            # A brand-new session's id is minted and PERSISTED here (before the
+            # child spawns). Skipped on a refusal: nothing will ever adopt it, so
+            # persisting it would brick the next (post-fix) attempt into
+            # --resume-ing a transcript that was never created.
+            job.resume_id, job.new_session, job.fork = _claim_session_id(
+                session["id"], session["claude_session_id"])
         job.account_slot = account_slot
         job.project = session.get("project")
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
