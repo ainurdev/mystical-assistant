@@ -44,6 +44,21 @@ export interface SessionBrief {
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
+  // The session's run picks (bridge store.set_run_settings), loaded into the
+  // composer. Absent from a bridge older than this field.
+  model?: string | null; // last model picked for it on any surface; null = none yet
+  permission_mode?: string; // the mode its next run gets: stored, else the bridge default
+}
+
+/** Which half of the picker a settings POST was for: the only half a running
+ *  turn is switched to (the pair is saved either way). */
+export type RunPick = "model" | "permission_mode";
+
+/** What POST /local/session/settings saved (and switched a running turn to). */
+export interface RunSettings {
+  ok: boolean;
+  model: string | null;
+  permission_mode: string;
 }
 
 /** Why a failed turn failed (bridge/outcomes.py) — derived server-side on every
@@ -99,8 +114,9 @@ export type RunEvent =
   | { type: "thinking"; ms?: number; text?: string }
   // The working output either side of the conversation: a hook that injected
   // context, blocked a tool or crashed, and whatever the claude child wrote to
-  // stderr (normally nothing — a dying MCP server, or --debug).
-  | { type: "log"; src: "hook" | "stderr"; label?: string; text: string; error?: boolean }
+  // stderr (normally nothing — a dying MCP server, or --debug), or a control
+  // request it refused (src "control": a mid-turn model/mode switch).
+  | { type: "log"; src: "hook" | "stderr" | "control"; label?: string; text: string; error?: boolean }
   // `agent` is Task/Agent/Skill-only (bridge/transcript_jsonl.agent_meta) and
   // absent on turns recorded before it landed.
   | { type: "tool"; name: string; summary: string; id?: string;
@@ -311,6 +327,49 @@ export interface IssuesInfo {
   issues: Issue[];
 }
 
+/** One CI check on a PR (bridge/prstatus.py). Skipped checks are left out. */
+export interface PrCheck {
+  name: string;
+  workflow: string;
+  state: "pass" | "fail" | "run";
+  url: string;        // the check's page on GitHub
+  started: string;    // ISO; "" when unknown, and always for a commit status
+  completed: string;  // ISO; "" while it runs
+  log?: string;       // a failing Actions job: its failed step's last ~60 lines
+}
+export interface PrComment { path: string; line: number | null; body: string }
+export type PrState = "running" | "failing" | "review" | "changes" | "ready" | "merged" | "closed";
+export interface PrInfo {
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  base: string;
+  head: string;
+  sha: string;
+  additions: number;
+  deletions: number;
+  created: string;
+  merged_at: string;
+  checks: PrCheck[];
+  passed: number;
+  failed: number;
+  running: number;
+  total: number;
+  decision: string;     // gh reviewDecision: APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
+  requested: string[];  // reviewers asked who haven't answered
+  reviews: { by: string; state: string; at: string }[];
+  /** The review asking for changes, with its inline comments; null otherwise. */
+  review: { by: string; at: string; body: string; comments: PrComment[] } | null;
+  status: PrState;      // the chip's state (sheet C)
+  draft: boolean;       // a draft PR: never READY, says DRAFT
+}
+export interface PrStatus {
+  pr: PrInfo | null;    // null = no chip: no PR, no GitHub remote, gh missing or signed out
+  pinged: string[];     // alerts the bridge has pinged (failing:<sha>, changes:<by>:<at>)
+  checked: number;      // epoch s of the gh read behind this answer
+}
+
 export interface ProjectSettings {
   scripts: Record<string, string>;
   run_cmd: string | null;
@@ -381,6 +440,15 @@ export interface RivendellStatus {
   since?: number;               // epoch seconds of the last state change
   connected_since?: number | null;  // epoch seconds the current link came up
   last_event_at?: number | null;    // epoch seconds of the last request seen
+  // The current break (bridge/rivendell.py Worker._set_status): when it began,
+  // and when it was flagged — once per break, cleared when the link proves
+  // itself. alert_at drives the castle's dot and the bell.
+  down_since?: number | null;
+  alert_at?: number | null;
+  attempt?: number;                  // failed dials in a row
+  retry_at?: number | null;          // epoch seconds of the next dial
+  last_test?: RivendellTest | null;  // TEST LINK's last outcome
+  features?: string[];   // what its hello said it understands (progress, result-details, ping)
 }
 export interface RivendellInstance {
   id: string;
@@ -449,7 +517,41 @@ export interface RivendellTask {
     completedAt: string | null;
   };
   instance_id: string;       // the connection it came from — IMPLEMENT goes back there
-  session_id: string | null; // the session running its request on this bridge
+  session_id: string | null; // the session that ran (or runs) its request on this bridge
+  stale?: boolean;           // its instance failed: the last good answer, shown dimmed
+  run?: RivendellRun | null; // what this bridge knows about its run, when it ran here
+}
+/** TEST LINK's outcome (POST /local/rivendell/test). ok null = re-dialing a
+ *  parked token; the chip shows how that went. */
+export interface RivendellTest {
+  ok: boolean | null;
+  rtt_ms: number | null;
+  detail: string;
+  at: number;                // epoch seconds
+  via?: "job";               // SEND TEST JOB (a ping job round trip), not TEST LINK
+}
+/** One connection's state on the RIVENDELL tab: its instance and its status. */
+export type RivendellLink = RivendellStatus & { instance_id: string; instance: string };
+/** A question a Rivendell run is held on (bridge/rivendell.py live_view). */
+export interface RivendellAsk {
+  job_id: string;            // answer with api.respond(job_id, …)
+  request_id: string;
+  at: number | null;         // when it started waiting
+  question: string;
+  header: string;            // the AnswerSelection header
+  options: string[];
+  simple: boolean;           // one single-choice question: its options can be buttons
+}
+/** What this bridge knows about the run behind a card (bridge/rivendell.py _run_view). */
+export interface RivendellRun {
+  live?: { line: string; steps: number; todos: { done: number; total: number } | null };
+  ask?: RivendellAsk | null;
+  result?: {
+    wall_s: number;
+    tokens: { in: number; out: number } | null;
+    pr: { number: number; url: string; checks?: "pass" | "fail" | "pending" | null } | null;
+    outcome: { code: string; label: string; detail: string } | null;
+  } | null;
 }
 export interface RivendellTasks {
   slug: string | null;       // the checkout's origin; null = no GitHub origin, nothing asked
@@ -462,6 +564,7 @@ export interface RivendellTasks {
     error: "token_rejected" | "not_deployed" | "refused" | "unreachable";
     detail: string;
   }[];
+  links?: RivendellLink[];  // each connection's state, for the chip and banner
 }
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
@@ -678,6 +781,10 @@ export interface EnrichedSession {
   total_tokens: number | null; // null = no turn reported usage (unknown, not free)
   last_activity: number;
   models: string[];
+  // The session's run picks, as on a brief: a session opened from History is
+  // seeded from this row (openFromHistory), and its composer loads them.
+  model?: string | null;
+  permission_mode?: string;
 }
 /** One tool's share of a session's wall clock. `union_s` counts overlapping calls
  *  once; `naive_s` just adds durations. Equal values mean the tool never ran
@@ -1047,6 +1154,15 @@ async function req<T>(
   return (await res.json()) as T;
 }
 
+/** Fired on window after a successful push from any dashboard button (the GIT
+ *  tab, the footer chain, FILES, OPEN PR). The PR chip re-reads on it rather
+ *  than waiting for its next minute. */
+export const PUSHED_EVENT = "hud:pushed";
+const pushed = (project: string, branch?: string) => <T extends { ok: boolean }>(r: T): T => {
+  if (r.ok) window.dispatchEvent(new CustomEvent(PUSHED_EVENT, { detail: { project, branch: branch ?? "" } }));
+  return r;
+};
+
 export interface RunBody {
   prompt: string;
   images: string[];
@@ -1054,7 +1170,7 @@ export interface RunBody {
   session_id: string;
   model?: string;
   effort?: string;
-  permission_mode?: string; // per-message operating mode; omit to use the session's
+  permission_mode?: string; // the picker's mode — the run saves it to the session; omit to keep the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
   agent?: string; // who runs it: 'claude:<slot>' | 'opencode:<provider>'; omit for the ambient login
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
@@ -1219,6 +1335,12 @@ export const api = {
     req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(id)}/policy`, {
       method: "POST",
       body: { policy },
+    }),
+  // A model/mode pick for a session: saved, and applied to its running turn.
+  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; pick: RunPick }) =>
+    req<RunSettings>("/local/session/settings", {
+      method: "POST",
+      body: { session_id: id, ...body },
     }),
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.
@@ -1443,7 +1565,7 @@ export const api = {
     req<{ ok: boolean; output: string }>("/local/git/push", {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
-    }),
+    }).then(pushed(project, branch)),
   gitPull: (project: string, branch?: string) =>
     req<{ ok: boolean; output: string }>("/local/git/pull", {
       method: "POST",
@@ -1523,6 +1645,12 @@ export const api = {
       method: "POST",
       body: { project, title, body },
     }),
+  // The chat header's PR chip. `force` (focus, a push) still has a 10s floor
+  // in the bridge. `session` is only used for the Telegram ping's button.
+  prStatus: (project: string, branch: string, session?: string, force = false) =>
+    req<PrStatus>(
+      `/local/github/pr/status?project=${encodeURIComponent(project)}&branch=${encodeURIComponent(branch)}${
+        session ? `&session=${encodeURIComponent(session)}` : ""}${force ? "&force=1" : ""}`),
   // --- task trackers ---
   trackers: () => req<{ connections: TrackerConnection[] }>("/local/trackers"),
   addTracker: (body: { kind: "teamwork" | "jira"; name: string; site: string; email?: string; token: string }) =>
@@ -1556,6 +1684,10 @@ export const api = {
     req<{ ok: boolean; request: { id: string; status: string } }>("/local/rivendell/implement", {
       method: "POST", body: { instance_id, task_id },
     }),
+  // TEST LINK: a ping/pong round trip on the live socket, or a re-dial of a
+  // parked token (bridge/rivendell.py Worker.test_link). 409 when it's off.
+  rivendellTest: (instance_id: string, job = false) =>
+    req<RivendellTest>("/local/rivendell/test", { method: "POST", body: { instance_id, job } }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>
@@ -1635,7 +1767,7 @@ export const api = {
     req<{ ok: boolean; url: string; number: number | null; output: string }>(
       "/local/github/pr",
       { method: "POST", body: { project, head, base, title, body } },
-    ),
+    ).then(pushed(project, head)),
   createProject: (name: string, prompt: string) =>
     req<{ project: Project; session: SessionBrief; job_id: string | null }>(
       "/local/projects/create",
@@ -1650,7 +1782,7 @@ export const api = {
   queueEnqueue: (body: {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
-    model?: string; effort?: string; permission_mode?: string; surface?: string;
+    effort?: string; surface?: string; // no model/mode: it runs on the session's
     agent?: string; // same picker as /local/run — a queued prompt keeps your agent
   }) => req<QueueSnapshot & { item_id: string }>(
     "/local/queue/enqueue", { method: "POST", body }),

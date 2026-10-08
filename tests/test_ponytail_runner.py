@@ -29,8 +29,12 @@ def test_normalize_invalid_levels():
         assert runner.normalize_ponytail(bad) is None
 
 
-def test_run_env_inherits_when_unset():
-    assert runner._run_env(None) is None
+def test_run_env_lets_background_agents_finish():
+    """-p kills background agents 10 min after the turn's result. The watchdog
+    is the hang brake here, so the CLI's work cap is switched off."""
+    env = runner._run_env(None)
+    assert env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "0"
+    assert env["PATH"] == os.environ["PATH"]
 
 
 def test_run_env_sets_mode():
@@ -43,7 +47,8 @@ def test_run_env_sets_mode():
 
 def test_run_env_inherits_for_the_default_account():
     """Slot 1 is the ambient ~/.claude login — nothing to override."""
-    assert runner._run_env(None, account_slot=1) is None
+    env = runner._run_env(None, account_slot=1)
+    assert env.get("CLAUDE_CONFIG_DIR") == os.environ.get("CLAUDE_CONFIG_DIR")
 
 
 def test_run_env_points_claude_at_a_chosen_account():
@@ -84,4 +89,4 @@ def test_run_blocking_passes_env(monkeypatch):
     runner.run_blocking(555, "hi", ponytail="ultra")
     assert captured["env"]["PONYTAIL_DEFAULT_MODE"] == "ultra"
     runner.run_blocking(555, "hi")
-    assert captured["env"] is None
+    assert captured["env"].get("PONYTAIL_DEFAULT_MODE") == os.environ.get("PONYTAIL_DEFAULT_MODE")

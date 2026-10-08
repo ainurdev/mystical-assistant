@@ -40,6 +40,45 @@ export function modelOptions(models?: ModelOption[]): ModelOption[] {
   return models && models.length ? models : FALLBACK;
 }
 
+/** "claude-fable-5-1" -> "fable": the first id segment after `claude-`, so a
+ *  full id and its CLI alias share a family. By id, not label — family() below
+ *  reads labels, which differ between the server's alias fallback ("Fable")
+ *  and the live list ("Claude Fable 5.1"). */
+export function familyOf(id: string): string {
+  return id.replace(/^claude-/, "").split("-")[0];
+}
+
+/**
+ * The model to show when `pick` isn't one the server offers, or null to leave it
+ * be. Nothing snaps until the server's own list is in: snapping against the
+ * pre-load FALLBACK is what turned every stored full id into Opus on reload. A
+ * pick then keeps its family — the alias list a cold Models API cache serves and
+ * the full-id list once it warms name the same models — and only a family the
+ * server doesn't offer falls to Opus, then to the first model.
+ */
+export function snapModel(pick: string, list?: ModelOption[]): string | null {
+  if (!list?.length || list.some((m) => m.id === pick)) return null;
+  const of = (f: string) => list.find((m) => familyOf(m.id) === f);
+  return (of(familyOf(pick)) ?? of("opus") ?? list[0]).id;
+}
+
+/**
+ * The model + mode the composer shows for a session. One that has run from a
+ * composer has a model and carries both picks; one that hasn't (fresh, or
+ * started by the bot or VS Code) starts from this device's — or a new session
+ * would quietly show the bridge's new-session mode over the one you keep
+ * picking. A device mode of "" (the retired "Session" option) defers to the
+ * session's own.
+ */
+export function runPicks(
+  s: { model?: string | null; permission_mode?: string | null },
+  device: { model: string; perm: string },
+): { model: string; perm: string } {
+  return s.model
+    ? { model: s.model, perm: s.permission_mode || device.perm }
+    : { model: device.model, perm: device.perm || s.permission_mode || "" };
+}
+
 /** "Claude Opus 4.8" -> "opus". Everything after the family word is version. */
 function family(label: string): string {
   const words = label.replace(/claude/i, "").trim().split(/[\s-]+/);

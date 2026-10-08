@@ -42,7 +42,7 @@ import sys
 
 from bridge import (config, devserver, dream, envsettings, landing, limits,
                     native_activity, onboard, pubsub, recovery, report,
-                    rivendell, selfupdate, state, store, toolsets, tunnel)
+                    rivendell, runner, selfupdate, state, store, toolsets, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -103,22 +103,39 @@ def _on_stop_signal(signum, frame):
     # Flag first, then unwind: runner threads watching their Claude child die must
     # already see shutting_down, or they'd record the killed turn as an error and
     # startup recovery would find nothing to resume.
+    if state.shutting_down:
+        # Already unwinding: a second signal (two RESTART clicks) raising inside
+        # _shutdown would skip the rest of it and the re-exec, and systemd counts
+        # a SIGINT death as clean, so Restart=on-failure would leave us down.
+        return
     state.shutting_down = True
     raise KeyboardInterrupt
 
 
 def _shutdown():
     state.shutting_down = True
-    if config.RIVENDELL_ENABLE:
-        rivendell.stop()
-    native_activity.stop()
-    devserver.stop_all()      # every registered dev server, not just the primary
+    # Whatever can start a run goes first (start_streaming_job refuses from here
+    # on too), so no claude spawns after stop_children's snapshot, and the
+    # RESTART overlay stops getting answers from this dying process.
+    # Unconditional, like start(): PLUGINS-tab instances run without RIVENDELL_ENABLE.
+    rivendell.stop()
     if config.MINIAPP_ENABLE:
         from bridge.miniapp import server as miniapp
         miniapp.stop()
     if config.DASH_ENABLE:
         from bridge.dashboard import server as dash
         dash.stop()
+    # Then the streaming runs' Claude children, by us: with KillMode=mixed the stop
+    # signal reaches this process alone, so each dies after the flag is up and its
+    # runner thread leaves the turn for boot recovery. It also covers selfupdate's
+    # in-place re-exec, which nothing else stops them for — recovery would resume
+    # sessions their old claude was still writing. Only runs in runner._jobs: a
+    # free agent's opencode and run_blocking's one-shots (bot turns, titles,
+    # commit messages) aren't there. systemd SIGKILLs those once we exit, and an
+    # in-place re-exec leaves them running.
+    runner.stop_children()
+    native_activity.stop()
+    devserver.stop_all()      # every registered dev server, not just the primary
     landing.stop()
     pubsub.shutdown()
     if state.miniapp_tunnel_proc and state.miniapp_tunnel_proc.poll() is None:

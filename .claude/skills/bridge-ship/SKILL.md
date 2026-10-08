@@ -29,8 +29,9 @@ shares its cgroup**:
 cat /proc/self/cgroup     # .../app.slice/mystical-assistant.service
 ```
 
-The unit is `KillMode=control-group`, so `systemctl --user stop` kills every
-process in that cgroup. That includes your session — and it includes any
+The unit is `KillMode=mixed`: `systemctl --user stop` SIGTERMs the bridge, which
+stops its own Claude children, then SIGKILLs every process left in the cgroup
+once the bridge has exited. That includes your session — and it includes any
 `setsid` child you spawn to do the restart, because `setsid` escapes the process
 group, not the cgroup. Restart naively and you get: bridge stopped, restarter
 dead, nothing comes back up.

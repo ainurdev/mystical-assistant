@@ -388,7 +388,7 @@ export interface HudSettings {
   model: string; // model id, or a short CLI alias
   allModels: boolean; // false = pickers show only the newest of each family
   effort: string; // "" = auto
-  perm: string; // "" = the session's own mode
+  perm: string; // the last mode picked here — what a never-run session starts on ("" = the bridge's)
   ponytail: string; // "" = default
   // Who runs the turn: 'claude:<slot>' (a login) or 'opencode:<provider>' (a
   // free agent). "" = the ambient login, same as claude:1.

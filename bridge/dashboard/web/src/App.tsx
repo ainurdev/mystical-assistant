@@ -14,13 +14,15 @@ import {
   type GitStatus,
   type Lifecycle,
   type ModelId,
+  type RunPick,
   type SessionBrief,
   type SessionStatus,
   type UsageInfo,
   type AccountInfo,
   type FreeAgentInfo,
+  type RivendellInstance,
 } from "./api";
-import { modelOptions, latestPerFamily, type AgentOption } from "./models";
+import { modelOptions, latestPerFamily, runPicks, snapModel, type AgentOption } from "./models";
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
@@ -73,7 +75,9 @@ import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { shellCols } from "./lib/shell";
-import { notify, setNoticeSound } from "./components/hud/Notifications";
+import { dismiss, notify, setNoticeSound } from "./components/hud/Notifications";
+import { openSettings } from "./lib/opensettings";
+import { linkAlertText } from "./lib/rivendelltasks";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
@@ -278,15 +282,16 @@ export function App() {
   // Which tab the next open lands on, when something asked for one by name
   // (lib/opensettings) — cleared on close, so the menus keep their default.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
-  // The composer's four run knobs live in settings so they survive a reload —
-  // the SESSION tab and the composer's dropdowns write the same state.
-  const model = settings.model as ModelId;
+  // Effort and ponytail are this browser's: settings, so they survive a reload.
+  // Model and mode belong to the open session — its row is the source of truth
+  // (bridge store.set_run_settings), loaded by the effect beside the model
+  // picker below. settings.model/perm only remember the last pick made here,
+  // which is what a session that never ran from a composer starts on (runPicks).
+  const [model, setModelState] = useState<ModelId>(() => settings.model as ModelId);
+  const [permMode, setPermState] = useState<string>(() => settings.perm);
   const effort = settings.effort as EffortLevel | "";
-  const permMode = settings.perm;
   const ponytail = settings.ponytail;
-  const setModel = (m: ModelId) => patchSettings({ model: m });
   const setEffort = (e: EffortLevel | "") => patchSettings({ effort: e });
-  const setPermMode = (m: string) => patchSettings({ perm: m });
   const setPonytail = (p: string) => patchSettings({ ponytail: p });
   const [analyzeProject, setAnalyzeProject] = useState<string | null>(null);
   // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
@@ -328,6 +333,33 @@ export function App() {
   // a send() awaiting its relevance check must know whether you're still here.
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
+  // A pick: shown now, remembered as this browser's default, and saved to the
+  // open session as the pair the picker shows — a fresh session would otherwise
+  // keep the bridge's mode under a picker showing yours. `half` is what you
+  // actually picked, and the only half a running turn is switched to
+  // (runner.apply_run_settings): a model pick must not carry a mode the picker
+  // merely shows into a live turn, and turn Bypass on there. A bridge too old
+  // for the route 404s; the pick still rides the next /local/run, as before.
+  const pickRun = (m: ModelId, p: string, half: RunPick) => {
+    setModelState(m);
+    setPermState(p);
+    patchSettings({ model: m, perm: p });
+    const sid = sessionIdRef.current;
+    if (sid) void api.setRunSettings(sid, { model: m, permission_mode: p || undefined, pick: half }).catch(() => {});
+  };
+  const setModel = (m: ModelId) => pickRun(m, permMode, "model");
+  const setPermMode = (p: string) => pickRun(model, p, "permission_mode");
+  // The SESSION tab's MODEL/MODE (and a PROFILE's APPLY) are the composer's
+  // knobs, so they show and pick for the open session too; the rest is ours.
+  const settingsView = useMemo(() => ({ ...settings, model, perm: permMode }), [settings, model, permMode]);
+  const patchFromSettings = (p: Partial<HudSettings>) => {
+    const { model: m, perm: pm, ...rest } = p;
+    // One pick per half that changes: a PROFILE's APPLY can change both.
+    const nm = m || model, np = pm || permMode;
+    if (nm !== model) pickRun(nm, np, "model");
+    if (np !== permMode) pickRun(nm, np, "permission_mode");
+    if (Object.keys(rest).length) patchSettings(rest);
+  };
   // openBlank drops the open session on purpose while POST /session is in
   // flight. The restore below reads that as "nothing open" and races the mint —
   // when the session list wins you get a flash of the chat you just left before
@@ -603,7 +635,16 @@ export function App() {
         // takes — every panel reads the *session's* repo, and a run carries it
         // in the request — so a page load leaves the bridge's own selection
         // (which Telegram shares) alone.
-        const was = ss.find((s) => s.id === lastOpen())
+        // ?s=<id> — a link that names a session (Rivendell's dashboardUrl)
+        // wins over the one you had open.
+        const asked = new URLSearchParams(location.search).get("s");
+        if (asked) {
+          // Used once: a reload or a bookmark of this tab mustn't keep reopening it.
+          const u = new URL(location.href);
+          u.searchParams.delete("s");
+          history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+        }
+        const was = ss.find((s) => s.id === asked) ?? ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
         if (was) openSession(was.id);
         // Nothing to reopen (or the list never landed) — say so, or the intro
@@ -1055,12 +1096,15 @@ export function App() {
   // check blocks for ~10s, and you're free to open another session meanwhile —
   // so `sid` (not the open session) decides where the run, the queue fallback,
   // the held card and the optimistic turn all land.
+  // Resolves true once the prompt ran or was queued, false if it didn't go
+  // (held as different work, or the request failed). Review notes are dropped
+  // only on true.
   async function send(
     text: string, images: string[],
     opts?: { force?: boolean; sessionId?: string; project?: string },
-  ) {
+  ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
-    if (!sid) return;
+    if (!sid) return false;
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
     // this only records what the session is for.
@@ -1070,10 +1114,11 @@ export function App() {
         const { goal } = await api.setGoal(sid, goalCmd[1].trim());
         setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, goal } : s)));
         notify("info", goal ? `Goal set — ${goal.objective}` : "Goal cleared.");
+        return true;
       } catch (e) {
         notify("error", (e as Error).message);
+        return false;
       }
-      return;
     }
     // The prompt's own session decides the project too — `opts.project` covers a
     // session just created, which this render's `sessions` doesn't know about.
@@ -1082,17 +1127,23 @@ export function App() {
       ?? state?.project?.rel ?? undefined;
     const sessionName = () =>
       sessions.find((s) => s.id === sid)?.title || "another session";
-    const enqueue = () => queue.enqueue({
-      text, prompt: text, images, project,
-      model, effort: effort || undefined, permission_mode: permMode || undefined,
-      agent: settings.agent || undefined,
-    }, sid);
+    // No model or mode: a queued prompt runs on the session's when it starts,
+    // so a pick made while it waits still applies. Resolves whether the prompt
+    // got into the queue; a miss says so here.
+    const enqueue = async () => {
+      const ok = await queue.enqueue({
+        text, prompt: text, images, project, effort: effort || undefined,
+        agent: settings.agent || undefined,
+      }, sid);
+      if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
+      return ok;
+    };
     // Sending by hand is the un-pause: otherwise the prompt joins a held queue and
-    // sits there looking sent.
-    queue.resumeIfPaused();
+    // sits there looking sent. The prompt's own session, not the open one.
+    queue.resumeIfPaused(sid);
     // A turn is already in flight for this session — queue the prompt to run
     // after it (and any earlier queued prompts) instead of blocking on STOP.
-    if (running && !opts?.sessionId) { enqueue(); return; }
+    if (running && !opts?.sessionId) return await enqueue();
     setCheckingFor(sid, text);
     try {
       const res = await api.run({
@@ -1112,9 +1163,14 @@ export function App() {
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
-        return;
+        return false;
       }
       setHeldMap((m) => omit(m, sid));
+      // The run saved these picks to the session (/local/run); mirror that here,
+      // or a session minted for this prompt reads as never-run until the next
+      // poll and the picker flips to this browser's defaults meanwhile.
+      setSessions((prev) => prev.map((s) => (s.id === sid
+        ? { ...s, model, permission_mode: permMode || s.permission_mode } : s)));
       liveTurns.current.add(res.job_id);
       markWorking(res.session_id || sid);
       // Only paint the turn if that session is still the one on screen; if you
@@ -1122,7 +1178,7 @@ export function App() {
       // picks it up when you go back.
       if (sessionIdRef.current !== sid) {
         notify("info", `Started in “${sessionName()}” — the session you sent it from.`);
-        return;
+        return true;
       }
       // Your own prompt pulls you down to it — but only from nearby. More than a
       // screen up the transcript you're reading something; a jump to the bottom
@@ -1141,11 +1197,13 @@ export function App() {
           // So the prompt's clock is stamped the moment you send it, not a poll later.
           started: Date.now() / 1000 },
       ]);
+      return true;
     } catch (e) {
       // Lost the race: the run slot filled between our check and the request.
       // Queue it rather than surfacing a "busy" error.
-      if ((e as Error).message === "busy") enqueue();
-      else notify("error", (e as Error).message);
+      if ((e as Error).message === "busy") return await enqueue();
+      notify("error", (e as Error).message);
+      return false;
     } finally {
       setCheckingFor(sid, null);
     }
@@ -1286,18 +1344,19 @@ export function App() {
   async function startIn(
     project: string, prompt: string,
     opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string },
-  ) {
+  ): Promise<boolean> {
     openBlank();
     try {
       const { session } = await api.createSession(project, opts?.cwd, opts?.title);
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       toChat();
-      await send(prompt, opts?.images ?? [],
-                 { sessionId: session.id, project, force: opts?.force });
+      return await send(prompt, opts?.images ?? [],
+                        { sessionId: session.id, project, force: opts?.force });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);
+      return false;
     }
   }
 
@@ -1515,13 +1574,38 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [ai.learn]);
   const unreadLessons = lessonKeys.filter((k) => !lessonsRead.has(k)).length;
-  // The RIVENDELL tab exists only with a Rivendell connection to ask. Re-read
-  // whenever SETTINGS closes — that is where one is added or removed.
-  const [rivendellOn, setRivendellOn] = useState(false);
+  // The RIVENDELL tab exists only with a Rivendell connection to ask. Polled,
+  // not only re-read when SETTINGS closes (where one is added or removed): a
+  // link breaks with no dashboard event to say so, and the castle's dot and the
+  // bell follow each connection's break (bridge/rivendell.py, alert_at — set
+  // once per break, cleared when the link proves itself).
+  const [rivendell, setRivendell] = useState<RivendellInstance[]>([]);
   useEffect(() => {
     if (settingsOpen) return;
-    api.rivendell().then((r) => setRivendellOn(r.instances.length > 0)).catch(() => { /* ignore */ });
+    const tick = () => api.rivendell().then((r) => setRivendell(r.instances)).catch(() => { /* ignore */ });
+    void tick();
+    const id = setInterval(tick, 10000);
+    return () => clearInterval(id);
   }, [settingsOpen]);
+  const rivendellOn = rivendell.length > 0;
+  const rivendellDown = rivendell.some((i) => i.enable && !!i.status?.alert_at);
+  // One bell entry per break, gone when the link is back. Telegram's one
+  // message per break is the bridge's to send (Worker._alert_broken).
+  const linkNotices = useRef<Record<string, { at: number; id: number }>>({});
+  useEffect(() => {
+    const shown = linkNotices.current;
+    for (const i of rivendell) {
+      const at = i.status?.alert_at ?? null;
+      const cur = shown[i.id];
+      if (at && cur?.at !== at) {
+        if (cur) dismiss(cur.id);
+        shown[i.id] = { at, id: notify("error", linkAlertText(i), () => openSettings("plugins", i.id)) };
+      } else if (!at && cur) {
+        dismiss(cur.id);
+        delete shown[i.id];
+      }
+    }
+  }, [rivendell]);
   // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
   // and what its rail badge counts. sessionGit is per-worktree, so two branches
   // of the same repo get their own number; gitBadges is only keyed by project,
@@ -1579,7 +1663,8 @@ export function App() {
       render: () => <QueuePanel project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />,
     },
     ...(rivendellOn ? [{
-      id: "rivendell", label: "Rivendell tasks", icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const,
+      id: "rivendell", label: rivendellDown ? "Rivendell tasks — link broken" : "Rivendell tasks",
+      icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       render: () => (
         <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />
       ),
@@ -1601,12 +1686,23 @@ export function App() {
     () => (settings.allModels ? modelOpts : latestPerFamily(modelOpts, model)),
     [modelOpts, settings.allModels, model],
   );
-  // Once the live list loads, snap the selection to an available model (prefer
-  // Opus) if the current one isn't offered — the old default was a fixed alias.
+  // A pick the server's list doesn't offer (aliases while the Models API cache
+  // is cold, full ids once it warms) moves to its family's model — on screen
+  // only: neither the session nor settings is rewritten. Nothing snaps before
+  // /local/state lands; modelOpts' pre-load FALLBACK is not a list to snap to.
   useEffect(() => {
-    if (!modelOpts.length || modelOpts.some((m) => m.id === model)) return;
-    setModel((modelOpts.find((m) => m.id.includes("opus")) ?? modelOpts[0]).id);
-  }, [modelOpts, model]);
+    const to = snapModel(model, state?.models);
+    if (to) setModelState(to);
+  }, [state?.models, model]);
+  // The open session's picks load when it opens and follow the 5s session poll
+  // when another device changes them. Keyed on the values, so a poll that left
+  // before a pick made here can't put the old one back.
+  useEffect(() => {
+    if (!selected) return;
+    const r = runPicks(selected, { model: settings.model, perm: settings.perm });
+    setModelState(r.model);
+    setPermState(r.perm);
+  }, [sessionId, selected?.model, selected?.permission_mode]);
 
   // AGENT picker — which platform runs the turn. Claude logins first (the
   // ambient one leads), then every ready free-agent rung. Option ids are the
@@ -1966,6 +2062,18 @@ export function App() {
     if (sessionId) setSessionToolsFor(sessionId, rules);
   };
 
+  // MERGED ▸ ARCHIVE SESSION (PrChip). Unlike setLifecycle this keeps the
+  // chat on the session: the popover's REMOVE WORKTREE is the other half of
+  // the cleanup, and loadSessions keeps the open session listed until you
+  // leave it.
+  async function archiveOpen(id: string) {
+    try {
+      await api.archiveSession(id);
+      await loadSessions();
+      notify("info", "Archived. HISTORY keeps it.");
+    } catch (e) { notify("error", (e as Error).message); }
+  }
+
   async function setLifecycle(id: string, state: Lifecycle | null) {
     try {
       await api.setLifecycle(id, state);
@@ -2086,6 +2194,11 @@ export function App() {
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}
+                // PR chip: SEND FAILURE / SEND n COMMENTS go to this session, queued
+                // behind a running turn. force skips the relevance hold: the PR
+                // is this session's own work.
+                onSendText={(text) => void send(text, [], { force: true })}
+                onArchive={() => { if (sessionId) void archiveOpen(sessionId); }}
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={settings.rightOpen ? undefined : strip}
@@ -2187,6 +2300,17 @@ export function App() {
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); toChat(); }}
                 onWorktreeSession={(rel, branch, create, parent, firstPrompt) => { void worktreeSession(rel, branch, create, parent, firstPrompt); setAnalyzeProject(null); }}
+                // GIT tab review notes. The chat goes to where they went, so you
+                // see the agent pick them up. A session mid-turn queues them.
+                onSendTo={(text, to) => {
+                  const project = analyzeProject;
+                  setAnalyzeProject(null);
+                  if ("cwd" in to) return startIn(project, text, { cwd: to.cwd || undefined, force: true });
+                  const s = sessions.find((x) => x.id === to.session);
+                  if (s) selectSession(s);
+                  toChat();
+                  return send(text, [], { sessionId: to.session, project, force: true });
+                }}
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
@@ -2201,7 +2325,7 @@ export function App() {
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
-                settings={settings} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchSettings}
+                settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}
                 models={modelOpts} agents={agentOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
                 station={radio.station} onStation={radio.setStation} onFeed={feed}
                 sessionTools={selected?.disabled_tools ?? []}

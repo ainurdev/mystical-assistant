@@ -25,6 +25,7 @@ miniapp_tunnel_proc = None                 # subprocess.Popen for the Mini App t
 # True once the bridge is stopping (SIGINT/SIGTERM/shutdown). Runner threads that
 # see their Claude child die while this is set treat it as the restart killing the
 # turn — they leave it 'running' so startup recovery resumes it — not as an error.
+# No new run starts once it is set (runner.start_streaming_job).
 shutting_down = False
 
 

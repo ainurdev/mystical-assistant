@@ -159,3 +159,20 @@ def test_no_token_sends_nothing(monkeypatch):
     monkeypatch.setattr(telegram, "urlopen", boom)
     assert telegram.tg("sendMessage", chat_id=1, text="hi") is None
     telegram.send(1, "hi")                # the fallback path must stay quiet too
+
+
+def test_send_returns_the_message_that_carries_the_buttons():
+    """A NEEDS YOU ping is matched to the reply that answers it by message id,
+    so send() hands back the message Telegram accepted — the last chunk's, the
+    one carrying the buttons."""
+    sent = []
+
+    def fake_tg(method, **params):
+        sent.append(params)
+        return {"message_id": len(sent)}
+    telegram.tg, real = fake_tg, telegram.tg
+    try:
+        got = telegram.send(1, "\n".join(f"line {i}" for i in range(2000)), {"inline_keyboard": []})
+    finally:
+        telegram.tg = real
+    assert len(sent) > 1 and got == {"message_id": len(sent)}

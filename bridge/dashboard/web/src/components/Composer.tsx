@@ -20,14 +20,13 @@ export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "xhigh", label: "XHigh" },
   { id: "max", label: "Max" },
 ];
-// Per-message operating mode ("" keeps the session's). These are Claude Code's
-// own permission modes — the ids and titles the CLI itself uses, in its own
-// least-authority-first order — so the picker can't offer a posture `claude
-// --permission-mode` would reject, or name one something Claude doesn't. The
-// CLI also takes "manual", but that is just its alias for "default". Each row's
-// tooltip is Claude's own one-line description of the mode.
+// The session's operating mode. These are Claude Code's own permission modes —
+// the ids and titles the CLI itself uses, in its own least-authority-first
+// order — so the picker can't offer a posture `claude --permission-mode` would
+// reject, or name one something Claude doesn't. The CLI also takes "manual", but
+// that is just its alias for "default". Each row's tooltip is Claude's own
+// one-line description of the mode.
 export const PERMS: { id: string; label: string; title?: string }[] = [
-  { id: "", label: "Session", title: "Keep the mode this session was started with." },
   { id: "plan", label: "Plan", title: "Planning mode, no actual tool execution." },
   { id: "default", label: "Manual", title: "Standard behavior, prompts for dangerous operations." },
   { id: "dontAsk", label: "Don't Ask", title: "Don't prompt for permissions, deny if not pre-approved." },
@@ -41,7 +40,6 @@ export const PERMS: { id: string; label: string; title?: string }[] = [
 // would name four postures opencode cannot take. Keep in step with
 // freeagent.FREE_MODES.
 export const FREE_PERMS: { id: string; label: string; title?: string }[] = [
-  { id: "", label: "Session", title: "Keep the mode this session was started with." },
   { id: "plan", label: "Plan", title: "opencode's plan agent: reads and plans, edits denied." },
   { id: "bypassPermissions", label: "Full Auto", title: "`opencode run --auto` — approves every tool call it makes." },
 ];
@@ -113,8 +111,17 @@ function MenuRows<T extends string>({ options, value, onPick }: {
   );
 }
 
+/** How a mode reads when the list on show lacks it: its own Claude label (a
+ *  free agent's two-row list lacks most of the modes a session can carry), the
+ *  raw id if even Claude has none, and "Session" for no mode at all (the
+ *  session's own, before its picks load or on an older bridge). Never another
+ *  mode's row: falling back to the list's first read a "default" session as Plan. */
+function modeRow(id: string): { id: string; label: string; title?: string } {
+  return PERMS.find((o) => o.id === id) ?? { id, label: id || "Session" };
+}
+
 function Drop<T extends string>({
-  label, code, value, options, open, onToggle, onPick, minWidth = 78, align = "left",
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title,
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -128,6 +135,8 @@ function Drop<T extends string>({
   // of rows sharing it; icon → a glyph ahead of the label (a provider's logo);
   // tail → right-aligned decoration (the usage meters)
   options: { id: T; label: string; short?: string; group?: string; icon?: ReactNode; tail?: ReactNode; title?: string }[];
+  // What the chip shows when `value` isn't in `options` (default: the first row).
+  fallback?: { id: string; label: string; short?: string };
   open: boolean;
   onToggle: () => void;
   onPick: (id: T) => void;
@@ -135,8 +144,13 @@ function Drop<T extends string>({
   // Which edge the menu hangs from. "right" for a chip at the row's far end,
   // whose menu would otherwise run off the column.
   align?: "left" | "right";
+  // The chip's hover box, when the field needs explaining (default: the field
+  // and its value). A plain title, so NativeTips draws it: fixed, and nudged in
+  // off the window's edge. A <Tip> around the chip was clipped by the column
+  // and came up alongside this title's box.
+  title?: string;
 }) {
-  const cur = options.find((o) => o.id === value) ?? options[0];
+  const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
   // min-width rides a custom property so the tight end of the layout ladder can
   // drop it to 0 (inline styles win over any stylesheet rule otherwise).
@@ -150,7 +164,7 @@ function Drop<T extends string>({
   };
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
-      <button className="drop-btn" onClick={onToggle} title={`${label} — ${cur.label}`} style={btn}>
+      <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
         {code && <span className="ctrl-fld">{code}</span>}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
         <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
@@ -225,8 +239,8 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
  *  effort, which the default layout spreads over three chips. The model is what
  *  you come here for, so it is the headline; the mode rides beside it smaller;
  *  effort is almost always AUTO, so it is a stepped slider below rather than a
- *  menu. The trigger names only what differs from the default: the model
- *  always, the mode and effort only once they are set. Lists open inline, so
+ *  menu. The trigger names the model and the session's mode always, effort only
+ *  once it is set. Lists open inline, so
  *  the popover never stacks a second floating menu over the transcript. */
 function RunPopover<M extends string>({
   open, onToggle, model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, freeLabel,
@@ -249,7 +263,7 @@ function RunPopover<M extends string>({
   useEffect(() => { if (!open) setSub(""); }, [open]);
   const cur = modelOpts.find((o) => o.id === model) ?? modelOpts[0];
   const modelName = freeLabel ?? (cur ? cur.short ?? cur.label : String(model));
-  const permRow = permOpts.find((o) => o.id === perm) ?? permOpts[0];
+  const permRow = permOpts.find((o) => o.id === perm) ?? modeRow(perm);
   const effIdx = Math.max(0, EFFORTS.findIndex((e) => e.id === effort));
   const effRow = EFFORTS[effIdx];
   const dim: CSSProperties = { fontStyle: "italic", color: "var(--txl)", fontSize: "var(--t95)" };
@@ -719,11 +733,10 @@ export function Composer({
       onPick={(id) => { onAgent(id); setOpenDrop(""); }} />
   );
   const ponyDrop = (right: boolean) => showPonytail && (
-    <Tip text={PONYTAIL_TIP} pin={false}>
-      <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
-        onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
-        onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
-    </Tip>
+    <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
+      title={PONYTAIL_TIP}
+      onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
+      onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
   );
   const verbMenu = openDrop === "verbs" && (
     <div style={{
@@ -948,7 +961,7 @@ export function Composer({
                   onPick={(id) => { onEffort(id); setOpenDrop(""); }} />
               </>
             )}
-            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} open={openDrop === "mode"} minWidth={104}
+            <Drop label="MODE" code={<ShieldHalf size={12} />} value={perm} options={activeAgent?.free ? FREE_PERMS : PERMS} fallback={modeRow(perm)} open={openDrop === "mode"} minWidth={104}
               onToggle={() => setOpenDrop((d) => (d === "mode" ? "" : "mode"))}
               onPick={(id) => { onPerm(id); setOpenDrop(""); }} />
             {ponyDrop(false)}

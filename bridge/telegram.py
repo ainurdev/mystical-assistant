@@ -129,10 +129,14 @@ def panel_kb(chat_id: int, session_id: str | None = None,
 
 
 def send(chat_id: int, text: str, reply_markup: dict | None = None):
+    """Send `text` (split on lines past TG_MAX), buttons on the last chunk.
+    Returns the last message Telegram accepted — the one carrying the buttons,
+    which a later reply or edit refers to — or None."""
     text = text or "(empty)"
     extra = {"reply_markup": json.dumps(reply_markup)} if reply_markup else {}
     # Margin under TG_MAX: escaping and tags only ever grow the text.
     chunks = _chunks(text, config.TG_MAX - 512) or [text]
+    sent = None
     for i, raw in enumerate(chunks):
         html = _md_to_html(raw)
         params = dict(chat_id=chat_id, disable_web_page_preview="true",
@@ -141,9 +145,10 @@ def send(chat_id: int, text: str, reply_markup: dict | None = None):
         # Whatever outgrew the hard limit, or that Telegram rejects as malformed
         # HTML, goes as the plain markdown it sent before parse_mode existed:
         # unformatted is a worse message, dropped is a lost one.
-        if len(html) > config.TG_MAX or not tg("sendMessage", text=html,
-                                               parse_mode="HTML", **params):
-            tg("sendMessage", text=raw[:config.TG_MAX], **params)
+        sent = ((len(html) <= config.TG_MAX
+                 and tg("sendMessage", text=html, parse_mode="HTML", **params))
+                or tg("sendMessage", text=raw[:config.TG_MAX], **params))
+    return sent
 
 
 def edit(chat_id: int, message_id: int, text: str, reply_markup: dict | None = None):

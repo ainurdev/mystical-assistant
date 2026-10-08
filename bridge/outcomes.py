@@ -41,6 +41,16 @@ announces itself in its own error message anyway.
 Message classification is `bridge/limits.py`'s: it already reads Anthropic's error
 text for the parked-session ladder, and a second set of regexes over the same
 strings would drift from it. Stdlib only.
+
+One row fact outranks an unrecognised message: an error turn with no `elapsed`.
+Only `store.claim_orphaned_turns` leaves one — the runner skipped `finish_turn`
+because the bridge was going down, and boot recovery took the turn over — so
+whatever the child said while dying is the restart's doing, not a crash. 22 of
+the 54 failures in the 30 days to 2026-10-06 ended "claude exited 143" (the
+stop's SIGTERM) and read CRASHED. The same exit on a turn the runner did finish
+stays CRASHED: since runner._stopping, the runner finishes one itself only when
+the bridge stayed up. So does -9, which used to read RESTARTED whatever the row
+said: finished by the runner, it is the OOM killer or a `kill -9`.
 """
 
 from bridge import limits
@@ -58,8 +68,8 @@ _SAYS = {
                 "No output for RUN_TIMEOUT, so the watchdog killed it. Whatever "
                 "it had done is in the transcript."),
     "restarted": ("BRIDGE RESTARTED",
-                  "The bridge restarted and took its Claude child with it "
-                  "(exit -9). Not an out-of-memory kill."),
+                  "The bridge restarted and took its Claude child with it. Not "
+                  "a crash, and not an out-of-memory kill."),
     "auth": ("COULD NOT START",
              "Claude never got going — the binary or the login. Check ACCOUNTS."),
     "limit": ("USAGE LIMIT",
@@ -139,8 +149,6 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
             # hung" (runner.py:1901) and a blocking one-shot says "Timed out
             # after N min" (runner.py:449).
             code = "timeout"
-        elif "exited -9" in msg:
-            code = "restarted"
         elif limits.is_auth_error(msg) or "not found on PATH" in msg:
             code = "auth"
         elif limits.is_limit_error(msg):
@@ -153,6 +161,10 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
             code = "outdated"
         elif limits.is_context_error(msg):
             code = "context"
+        elif turn.get("elapsed") is None:
+            # The boot-time orphan flip's row (see the module docstring): the
+            # bridge went down mid-turn, so this is its exit, not a crash.
+            code = "restarted"
         else:
             code = "crashed"
     elif signals.get("stopped"):

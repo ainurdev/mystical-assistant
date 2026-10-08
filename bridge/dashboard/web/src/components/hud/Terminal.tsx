@@ -15,6 +15,7 @@ import { FreshPanel } from "../FreshPanel";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
+import { PrChip } from "./PrChip";
 import { ChatChromeContext } from "../../lib/chatchrome";
 
 /** The header is an island this far in from the chat column's top and sides;
@@ -201,7 +202,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow,
+  onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow, onSendText, onArchive,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -260,6 +261,10 @@ export function Terminal({
   /** The shell grid rows the chat spans — the footer track too, when nothing
    *  sits under it. */
   gridRow?: string;
+  /** The PR chip's SEND buttons: a message to this session, queued if it's mid-turn. */
+  onSendText?: (text: string) => void;
+  /** The PR chip's ARCHIVE SESSION, after a merge. */
+  onArchive?: () => void;
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
   const tint = projectTint(sessionProject);
@@ -515,6 +520,12 @@ export function Terminal({
                 <span style={{ color: "var(--purple-g)" }}>⎇</span>{branch}
               </button>
             </>
+          )}
+          {/* The branch's PR (review loop B/C). Draws nothing, hairline included,
+              until the bridge reports one. */}
+          {branch && sessionId && sessionProject && onSendText && onArchive && (
+            <PrChip project={sessionProject} branch={branch} sessionId={sessionId} title={selected?.title ?? ""}
+              inWorktree={!!selected?.worktree} busy={!!activeId} onSend={onSendText} onArchive={onArchive} />
           )}
           {run && (
             <>

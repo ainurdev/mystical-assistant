@@ -145,6 +145,28 @@ def test_explain_truncates(monkeypatch, tmp_path):
     assert len(out) < 4000 and out.endswith("…(truncated)")
 
 
+def test_explain_never_hands_graphify_an_option(monkeypatch, tmp_path):
+    """The dashboard's GET /local/graph/explain takes `q` from any page that can
+    reach localhost. graphify's explain reads argv[2] as the node verbatim, so
+    `--` would itself become the node; a query that looks like a flag is
+    refused instead, which holds under any future graphify parser too."""
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    d = _mkrepo(tmp_path)
+    _write_graph(d, _head8(d))
+    calls = []
+
+    class FakeProc:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+    monkeypatch.setattr(graphmap.subprocess, "run", lambda argv, **k: calls.append(argv) or FakeProc())
+    assert graphmap.explain(d, "--graph=/etc/passwd") != "ok"
+    assert graphmap.explain(d, "-h") != "ok"
+    assert calls == []
+    assert graphmap.explain(d, "Handler") == "ok"
+    assert calls == [["/usr/bin/graphify", "explain", "Handler"]]
+
+
 # --- update / exclude / refresh ---------------------------------------------
 
 _real_subprocess_run = subprocess.run  # Save before any monkeypatching

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   logStream,
@@ -17,10 +17,17 @@ import {
   type Worktree,
 } from "../../api";
 import { useAiFeatures } from "../../lib/ai";
+import { parseDiff, type DiffRow } from "../../lib/diff";
 import { branchForIssue, branchForTask, keyFromBranch } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
+import {
+  countByPath, loadNotes, noteRange, notesKey, notesMessage, reanchor, saveNotes,
+  type Note, type NoteDraft, type SendTo,
+} from "../../lib/reviewnotes";
 import { ago, projectName, projectTint, setProjectTint } from "../../lib/surfaces";
 import { CommitGraph } from "../CommitGraph";
+import { askConfirm } from "../ui/Ask";
+import { NoteEditor, NoteThread, SendBar } from "./DiffNotes";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { LearnTab } from "./LearnTab";
 import { MapTab } from "./MapTab";
@@ -60,6 +67,8 @@ interface Props {
       were looking at — that is what makes SHIP IT one press instead of four. */
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string,
                       firstPrompt?: string) => void;
+  /** GIT tab review notes → a session on the branch, or a new one in its tree. */
+  onSendTo: SendTo;
 }
 
 const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
@@ -324,7 +333,9 @@ export function AnalyzeModal(props: Props) {
         <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: tab === "editor" || tab === "terminal" ? 0 : 18 }}>
           {tab === "changes" && (
             <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
-              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile} />
+              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile}
+              sessions={props.sessions} activeSession={props.activeSession} worktrees={worktrees}
+              onSendTo={props.onSendTo} />
           )}
           {tab === "worktrees" && (
             <WorktreesTab project={project} sessions={props.sessions} worktrees={worktrees}
@@ -366,45 +377,18 @@ export function AnalyzeModal(props: Props) {
 
 /* ---------------- GIT (changes): working-tree master-detail + commit/push (design 656–728) ---------------- */
 
-interface DiffLine {
-  ln: string;
-  mark: string;
-  kind: "add" | "del" | "ctx" | "hunk";
-  text: string;
-}
-
-const DIFF_VIEW: Record<DiffLine["kind"], { bg: string; sign: string; color: string }> = {
+const DIFF_VIEW: Record<DiffRow["kind"], { bg: string; sign: string; color: string }> = {
   add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", sign: "var(--ok)", color: "var(--ok)" },
   del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", sign: "var(--err)", color: "var(--err)" },
   ctx: { bg: "transparent", sign: "var(--txg)", color: "var(--txd)" },
   hunk: { bg: "color-mix(in srgb, var(--acc) 6%, transparent)", sign: "var(--acc)", color: "var(--acc)" },
 };
 
-/* Unified diff → numbered design rows (sequential numbers from each hunk's
-   new-file start, matching the mock's numbering). */
-function parseDiffRows(diff: string): DiffLine[] {
-  const out: DiffLine[] = [];
-  let n = 0;
-  let inHunk = false;
-  for (const ln of diff.split("\n")) {
-    if (ln.startsWith("@@")) {
-      const m = /\+(\d+)/.exec(ln);
-      if (m) n = parseInt(m[1], 10);
-      inHunk = true;
-      out.push({ ln: "", mark: "@@", kind: "hunk", text: ` ${ln}` });
-      continue;
-    }
-    if (!inHunk) continue;
-    if (ln.startsWith("+")) out.push({ ln: String(n++), mark: "+", kind: "add", text: ln.slice(1) });
-    else if (ln.startsWith("-")) out.push({ ln: String(n++), mark: "-", kind: "del", text: ln.slice(1) });
-    else out.push({ ln: String(n++), mark: "", kind: "ctx", text: ln.startsWith(" ") ? ln.slice(1) : ln });
-  }
-  return out;
-}
-
-function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile }: {
+function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile,
+                      sessions, activeSession, worktrees, onSendTo }: {
   project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void;
   onRefreshGit: () => void; initialFile?: string;
+  sessions: SessionBrief[]; activeSession?: string | null; worktrees: Worktree[]; onSendTo: SendTo;
 }) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
@@ -447,7 +431,9 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   // mismatch and show nothing rather than another branch's changes.
   const wrongTree = !!(st?.is_repo && branch && st.branch !== branch);
   const files = wrongTree ? [] : st?.files ?? [];
-  const selName = sel ?? files[0]?.path ?? null;
+  // A focused file that left the list (committed since) gives way to the first
+  // one: its notes are listed with the others that have no changes now.
+  const selName = (sel && files.some((f) => f.path === sel) ? sel : files[0]?.path) ?? null;
   const allChecked = files.length > 0 && checked.size === files.length;
   const toggleCheck = (p: string) =>
     setChecked((prev) => { const n = new Set(prev); if (n.has(p)) n.delete(p); else n.add(p); return n; });
@@ -462,8 +448,81 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
     return () => { live = false; };
   }, [selName, project, branch]);
 
-  const rows = useMemo(() => parseDiffRows(diff), [diff]);
+  const rows = useMemo(() => parseDiff(diff), [diff]);
   const selFile = files.find((f) => f.path === selName);
+
+  // Review notes (lib/reviewnotes.ts): drafts on this branch's diff, kept in
+  // localStorage until SEND or CLEAR.
+  const nkey = notesKey(project, branch);
+  const [notes, setNotesState] = useState<Note[]>(() => loadNotes(nkey));
+  const [editor, setEditor] = useState<NoteDraft | null>(null);
+  const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
+  const [sendTo, setSendTo] = useState("");   // "" = the branch's own session, "new" = a new one
+  const [sending, setSending] = useState(false);
+  const setNotes = (next: Note[]) => { setNotesState(next); saveNotes(nkey, next); };
+  useEffect(() => { setNotesState(loadNotes(nkey)); setSendTo(""); }, [nkey]);
+  useEffect(() => { setEditor(null); }, [nkey, selName]);
+  const fileNotes = notes.filter((x) => x.path === selName);
+  const noteCount = useMemo(() => countByPath(notes), [notes]);
+  // The open session if it's on this branch, else the branch's newest; none = a new one.
+  const onBranch = useMemo(() => sessions.filter((s) => s.branch === branch).sort((a, b) => b.updated - a.updated), [sessions, branch]);
+  const target = sendTo === "new" ? null
+    : onBranch.find((s) => s.id === sendTo) ?? onBranch.find((s) => s.id === activeSession) ?? onBranch[0] ?? null;
+  // Notes on a file with no uncommitted change now (committed since, so the
+  // tree may even be clean) still go on SEND: they're listed with their path,
+  // and the send bar stays, so they can always be sent or dropped.
+  const stray = notes.filter((x) => !files.some((f) => f.path === x.path));
+  const sendBar = notes.length > 0 && (
+    <SendBar count={notes.length} targets={onBranch} target={target} tint={projectTint(project).color}
+      busy={sending} sendable={!wrongTree} onPick={setSendTo} onClear={() => void clearNotes()} onSend={() => void sendNotes()} />
+  );
+
+  // A drag down the line numbers ends where the mouse is let go. That is
+  // caught on the window, so letting go outside the diff still opens the editor.
+  useEffect(() => {
+    if (!drag) return;
+    const up = () => {
+      const r = noteRange(rows, drag.a, drag.b);
+      setDrag(null);
+      if (r && selName) setEditor({ path: selName, ...r, text: "" });
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, [drag, rows, selName]);
+
+  function saveNote(text: string) {
+    if (!editor || !text.trim()) return;
+    const kept = notes.filter((x) => x.id !== editor.id);
+    setNotes([...kept, { ...editor, id: editor.id ?? crypto.randomUUID(), text: text.trim(), at: Date.now() }]);
+    setEditor(null);
+  }
+
+  async function clearNotes() {
+    if (await askConfirm(`Drop ${notes.length} review note${notes.length === 1 ? "" : "s"} on ${branch}?`)) setNotes([]);
+  }
+
+  async function sendNotes() {
+    // Storage, not this tab's state: another tab may have sent or cleared them.
+    const current = loadNotes(nkey);
+    if (sending || !current.length) { setNotesState(current); return; }
+    setSending(true);
+    try {
+      // Line numbers are the working tree's at the moment of SEND: each noted
+      // file is read again and each note found again by its line's text.
+      const paths = [...new Set(current.map((x) => x.path))];
+      const files = await Promise.all(paths.map((p) => api.fileRead(project, p, branch || undefined)
+        .then((f) => (f.ok && !f.binary && !f.too_large ? (f.content ?? "").split("\n") : null))
+        .catch(() => null)));
+      const text = notesMessage(branch, current.map((x) => reanchor(x, files[paths.indexOf(x.path)])));
+      const cwd = worktrees.find((w) => w.branch === branch)?.path ?? "";
+      // Dropped only once the message ran or was queued: a failed send keeps them.
+      // Only the notes that went: another tab may have added one meanwhile.
+      if (await onSendTo(text, target ? { session: target.id } : { cwd })) {
+        const sent = new Set(current.map((x) => x.id));
+        setNotes(loadNotes(nkey).filter((x) => !sent.has(x.id)));
+      }
+    } finally { setSending(false); }
+  }
 
   async function genMsg() {
     if (genBusy || !checked.size) return;
@@ -548,6 +607,16 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
             : "Working tree clean."}
         </div>
       )}
+      {view === "tree" && st && files.length === 0 && stray.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", minHeight: 0, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)" }}>
+          <div className="mscroll" style={{ overflowY: "auto", minHeight: 0, padding: "6px 0" }}>
+            {stray.map((x) => (
+              <NoteThread key={x.id} note={x} path={x.path} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+            ))}
+          </div>
+          {sendBar}
+        </div>
+      )}
       {/* Fills the modal body (not min-height): the file list and diff then
           scroll inside their columns, keeping the commit box pinned at the
           bottom instead of pushing it below the modal's own scroll. */}
@@ -571,6 +640,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
                       style={{ accentColor: "var(--acc)", cursor: "pointer", flex: "none", width: 13, height: 13, margin: 0 }} />
                     <span style={{ fontSize: "var(--t11)", fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
                     <span style={{ fontSize: "var(--t11)", color: on ? "var(--txb)" : isChecked ? "var(--txm)" : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
+                    {noteCount[f.path] > 0 && <span title={`${noteCount[f.path]} review note${noteCount[f.path] === 1 ? "" : "s"}`} style={{ fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple)", flex: "none" }}>◆{noteCount[f.path]}</span>}
                     <span style={{ fontSize: "var(--t10)", flex: "none", display: "flex", gap: 5 }}><span style={{ color: "var(--ok)" }}>+{f.add}</span><span style={{ color: "var(--err)" }}>−{f.del}</span></span>
                   </div>
                 );
@@ -614,15 +684,53 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
             <div className="mscroll" style={{ flex: 1, overflow: "auto", minHeight: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", lineHeight: 1.7 }}>
               {rows.map((d, i) => {
                 const v = DIFF_VIEW[d.kind];
+                const ln = d.ln ? Number(d.ln) : 0;   // 0: a deleted line or a hunk header takes no note
+                const noted = ln > 0 && fileNotes.some((x) => ln >= x.start && ln <= x.end);
+                const dragged = !!drag && ln > 0 && i >= Math.min(drag.a, drag.b) && i <= Math.max(drag.a, drag.b);
+                const grab = ln > 0 ? (e: { button: number; preventDefault: () => void }) => {
+                  if (e.button !== 0) return;
+                  e.preventDefault();               // no text selection while dragging a range
+                  setDrag({ a: i, b: i });
+                } : undefined;
                 return (
-                  <div key={i} style={{ display: "flex", background: v.bg }}>
-                    <span style={{ width: 36, flex: "none", textAlign: "right", paddingRight: 9, color: "var(--txg)", userSelect: "none", borderRight: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)" }}>{d.ln}</span>
-                    <span style={{ width: 14, flex: "none", textAlign: "center", color: v.sign }}>{d.mark}</span>
-                    <span style={{ color: v.color, whiteSpace: "pre", flex: 1 }}>{d.text || " "}</span>
-                  </div>
+                  <Fragment key={i}>
+                    <div className="dnote-row" onMouseEnter={drag && ln > 0 ? () => setDrag({ ...drag, b: i }) : undefined}
+                      style={{ display: "flex", background: v.bg, boxShadow: dragged ? "inset 0 0 0 1px color-mix(in srgb, var(--acc) 45%, transparent)" : undefined }}>
+                      {/* The note gutter: ◆ on a noted line, + on the hovered one (index.css .dnote-plus). */}
+                      <span onMouseDown={grab} style={{ width: 18, flex: "none", display: "flex", alignItems: "center", justifyContent: "center", userSelect: "none", cursor: grab ? "pointer" : undefined }}>
+                        {noted ? <span style={{ color: "var(--purple)", fontSize: "var(--t9)" }}>◆</span>
+                          : grab ? <span className="dnote-plus" title="note this line, or drag down the numbers for a range"
+                              style={{ width: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--acc)", color: "var(--acc-on)", fontWeight: 700, lineHeight: 1 }}>+</span>
+                          : null}
+                      </span>
+                      <span onMouseDown={grab} style={{ width: 36, flex: "none", textAlign: "right", paddingRight: 9, color: noted ? "var(--purple-h)" : "var(--txg)", userSelect: "none", borderRight: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", cursor: grab ? "pointer" : undefined }}>{d.ln}</span>
+                      <span style={{ width: 14, flex: "none", textAlign: "center", color: v.sign }}>{d.mark}</span>
+                      <span style={{ color: v.color, whiteSpace: "pre", flex: 1 }}>{d.text || " "}</span>
+                    </div>
+                    {ln > 0 && fileNotes.filter((x) => x.end === ln && x.id !== editor?.id).map((x) => (
+                      <NoteThread key={x.id} note={x} onEdit={() => setEditor({ ...x })}
+                        onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+                    ))}
+                    {ln > 0 && editor && editor.path === selName && editor.end === ln && (
+                      // Keyed: two notes ending on one line share this spot, and the
+                      // editor's typed text must not carry from one to the other.
+                      <NoteEditor key={editor.id ?? `new:${editor.start}`}
+                        start={editor.start} end={editor.end} initial={editor.text} isNew={!editor.id}
+                        onCancel={() => setEditor(null)} onSave={saveNote} />
+                    )}
+                  </Fragment>
                 );
               })}
+              {/* A note whose line has left the diff (the code changed since) still
+                  goes on SEND, so it stays here where it can be seen and deleted. */}
+              {fileNotes.filter((x) => !rows.some((r) => r.ln === String(x.end))).map((x) => (
+                <NoteThread key={x.id} note={x} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+              ))}
+              {stray.map((x) => (
+                <NoteThread key={x.id} note={x} path={x.path} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
+              ))}
             </div>
+            {sendBar}
           </div>
         </div>
       )}

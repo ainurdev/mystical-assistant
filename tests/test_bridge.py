@@ -5,13 +5,17 @@ Claude stream-json event parsing. Run directly: `python tests/test_bridge.py`
 
 import hashlib
 import hmac
+import io
 import json
 import os
+import signal
 import sys
 import tempfile
 import threading
 import time
 import urllib.parse
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -446,7 +450,7 @@ def test_session_brief_shape(monkeypatch):
                       "origin", "cwd", "branch", "fallback_policy", "goal",
                       "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
-                      "worktree"}
+                      "worktree", "model", "permission_mode"}
     assert b["id"] == s["id"] and b["project"] == "p6"
     assert b["ctx_tokens"] is None        # nothing measured until a turn runs
     assert b["autocompact"] is None       # claude's own default until chosen
@@ -1245,6 +1249,297 @@ def test_a_failed_turn_hands_the_queue_its_error(monkeypatch):
     runner._run_streaming(job, "p", [], config.BASE_PATH)
     it = q.snapshot(sid)["items"][0]
     assert (it["status"], it["error"]) == ("failed", "tests red")
+
+
+# --- restart-safe runs: a stop signal is the restart, not a crash -------------
+
+def _child(rc, stderr=""):
+    """A claude that prints nothing on stdout and exits `rc`."""
+    class Child:
+        def __init__(self, cmd, **kw):
+            self.stdin, self.stdout = io.StringIO(), io.StringIO("")
+            self.stderr = io.StringIO(stderr)
+            self.returncode = rc
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            pass
+    return Child
+
+
+def _dying_turn(monkeypatch, project, rc, stderr=""):
+    """A started turn whose child exits `rc` the moment it spawns. Every tool
+    switched on, so the run never asks toolsets (or `claude mcp list`) for a
+    default deny list."""
+    from bridge import tailstate, toolsets
+    sid = store.create_session(555, project)["id"]
+    store.set_disabled_tools(sid, [])
+    job = runner.Job(f"j-{project}", 555, sid)
+    store.start_turn(sid, job.id, "p", [])
+    monkeypatch.setattr(runner.subprocess, "Popen", _child(rc, stderr))
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    return sid, job
+
+
+def _row(sid):
+    return store.transcript(sid)["turns"][0]
+
+
+def _errors(job):
+    return [e for e in job.events if e["type"] == "error"]
+
+
+def test_a_child_the_stop_killed_is_left_for_recovery_without_an_error(monkeypatch):
+    """Flag already up: the turn stays 'running' for boot recovery and journals no
+    error. The error event is what made restart casualties read CRASHED."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-flag", 143)
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+def test_a_child_that_dies_before_the_flag_rises_is_still_the_restart(monkeypatch):
+    """The stop signal can reach the bridge and its child together, and the child
+    can die a beat before the main thread raises shutting_down."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-race", 143)
+    monkeypatch.setattr(state, "shutting_down", False)
+    flag = threading.Timer(0.3, setattr, (state, "shutting_down", True))
+    flag.start()
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    flag.join()   # never let the flag rise after monkeypatch has put it back
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+def test_a_stop_killed_child_that_spoke_on_stderr_is_still_the_restart(monkeypatch):
+    """The call is the exit code's, not the message's: whatever a dying child
+    prints must not turn the restart back into a crash."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-noise", 143,
+                           stderr="MCP server goals: connection closed\n")
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+@pytest.mark.parametrize("rc", [130, -2])
+def test_a_child_sigint_took_down_is_the_restart_too(monkeypatch, rc):
+    """SIGINT (Ctrl-C under `mystical run`, `mystical stop`'s group signal) is a
+    stop signal like SIGTERM: the death waits for the flag the same way."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, f"p-stop-int{rc}", rc)
+    monkeypatch.setattr(state, "shutting_down", False)
+    flag = threading.Timer(0.3, setattr, (state, "shutting_down", True))
+    flag.start()
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    flag.join()   # never let the flag rise after monkeypatch has put it back
+    assert _errors(job) == []
+    assert _row(sid)["status"] == "running"
+
+
+def test_a_watchdog_kill_during_shutdown_stays_killed_as_hung(monkeypatch):
+    """The hang brake outranks the restart: a run the watchdog killed is still
+    recorded as hung with the bridge going down, so it keeps reading KILLED AS
+    HUNG instead of passing for a restart casualty."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-hung-stop", -9)
+    job.timed_out = True                  # what _watchdog sets before proc.kill()
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert "killed as hung" in (job.error_msg or "")
+    row = _row(sid)
+    assert row["status"] == "error" and row["elapsed"] is not None
+
+
+def test_a_sigterm_with_the_bridge_staying_up_is_an_honest_crash(monkeypatch):
+    """Nobody is stopping: after the grace it is recorded and finished like any
+    crash, with an elapsed, which is what keeps outcomes saying CRASHED."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-stop-real", 143)
+    monkeypatch.setattr(state, "shutting_down", False)
+    monkeypatch.setattr(runner, "STOP_GRACE", 0.2)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert job.error_msg == "claude exited 143"
+    row = _row(sid)
+    assert row["status"] == "error" and row["elapsed"] is not None
+
+
+def test_an_oom_kill_is_recorded_at_once(monkeypatch):
+    """SIGKILL from the kernel is a crash with the bridge up: no wait for a flag
+    that is not coming."""
+    from bridge import state
+    sid, job = _dying_turn(monkeypatch, "p-oom", -9)
+    monkeypatch.setattr(state, "shutting_down", False)
+    t0 = time.time()
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert time.time() - t0 < runner.STOP_GRACE
+    assert job.error_msg == "claude exited -9"
+    assert _row(sid)["status"] == "error"
+
+
+def test_the_stop_grace_rides_out_a_wall_clock_step(monkeypatch):
+    """The grace is a duration, so it runs on the monotonic clock: a wall clock
+    stepped forward mid-wait (WSL resyncing after the host slept) must not cut
+    it short and turn the restart back into a crash."""
+    from bridge import state
+
+    class Stepping:
+        """The time module, its wall clock an hour further on at every read."""
+        steps = 0
+
+        def __getattr__(self, name):
+            return getattr(time, name)
+
+        def time(self):
+            self.steps += 1
+            return time.time() + 3600 * self.steps
+
+    monkeypatch.setattr(runner, "time", Stepping())
+    monkeypatch.setattr(state, "shutting_down", False)
+    flag = threading.Timer(0.3, setattr, (state, "shutting_down", True))
+    flag.start()
+    try:
+        assert runner._stopping(143)
+    finally:
+        flag.join()   # never let the flag rise after monkeypatch has put it back
+
+
+def test_shutdown_stops_the_children_after_raising_the_flag(monkeypatch):
+    """KillMode=mixed sends the stop signal to the bridge alone, and selfupdate's
+    in-place re-exec sends none: either way the bridge takes its children down
+    itself, after shutting_down is up, so each runner thread reads the death as
+    the restart."""
+    import claude_telegram_bridge as entry
+    from bridge import devserver, landing, native_activity, pubsub, rivendell, state
+    seen = []
+    monkeypatch.setattr(state, "shutting_down", False)
+    monkeypatch.setattr(runner, "stop_children", lambda: seen.append(state.shutting_down))
+    for mod, name in ((rivendell, "stop"), (native_activity, "stop"),
+                      (devserver, "stop_all"), (landing, "stop"), (pubsub, "shutdown")):
+        monkeypatch.setattr(mod, name, lambda: None)
+    for flag in ("RIVENDELL_ENABLE", "MINIAPP_ENABLE", "DASH_ENABLE"):
+        monkeypatch.setattr(config, flag, False)
+    monkeypatch.setattr(state, "miniapp_tunnel_proc", None)
+    entry._shutdown()
+    assert seen == [True]
+
+
+def test_shutdown_stops_whatever_starts_runs_before_the_children(monkeypatch):
+    """Rivendell and both servers go first: a run started after stop_children
+    took its snapshot would outlive it, and the RESTART overlay would reload
+    into a dashboard still answering from the dying process."""
+    import claude_telegram_bridge as entry
+    from bridge import devserver, landing, native_activity, rivendell, state
+    from bridge.dashboard import server as dash
+    from bridge.miniapp import server as miniapp
+    calls = []
+    monkeypatch.setattr(state, "shutting_down", False)
+    for mod, name, label in ((rivendell, "stop", "rivendell"), (miniapp, "stop", "miniapp"),
+                             (dash, "stop", "dash"), (runner, "stop_children", "children"),
+                             (native_activity, "stop", "native"),
+                             (devserver, "stop_all", "devserver"),
+                             (landing, "stop", "landing"), (pubsub, "shutdown", "pubsub")):
+        monkeypatch.setattr(mod, name, lambda label=label: calls.append(label))
+    for flag in ("RIVENDELL_ENABLE", "MINIAPP_ENABLE", "DASH_ENABLE"):
+        monkeypatch.setattr(config, flag, True)
+    monkeypatch.setattr(state, "miniapp_tunnel_proc", None)
+    entry._shutdown()
+    assert calls.index("children") > max(calls.index(s)
+                                         for s in ("rivendell", "miniapp", "dash"))
+
+
+def test_shutdown_stops_rivendell_without_the_env_flag(monkeypatch):
+    """Instances enabled in the PLUGINS tab run without RIVENDELL_ENABLE: start()
+    reconciles from the instance store at every boot. A worker the stop skipped
+    would keep claiming requests through the shutdown that it can't run."""
+    import claude_telegram_bridge as entry
+    from bridge import devserver, landing, native_activity, rivendell, state
+    calls = []
+    monkeypatch.setattr(state, "shutting_down", False)
+    for mod, name, label in ((rivendell, "stop", "rivendell"),
+                             (runner, "stop_children", "children"),
+                             (native_activity, "stop", "native"),
+                             (devserver, "stop_all", "devserver"),
+                             (landing, "stop", "landing"), (pubsub, "shutdown", "pubsub")):
+        monkeypatch.setattr(mod, name, lambda label=label: calls.append(label))
+    for flag in ("RIVENDELL_ENABLE", "MINIAPP_ENABLE", "DASH_ENABLE"):
+        monkeypatch.setattr(config, flag, False)
+    monkeypatch.setattr(state, "miniapp_tunnel_proc", None)
+    entry._shutdown()
+    assert "rivendell" in calls and calls.index("rivendell") < calls.index("children")
+
+
+def test_no_run_starts_once_the_bridge_is_stopping(monkeypatch):
+    """Nothing may spawn a claude once _shutdown has begun: stop_children has
+    taken its snapshot, and an in-place re-exec would leave that child running
+    beside the session boot recovery resumes."""
+    from bridge import state
+
+    def no_session(*a, **k):
+        raise AssertionError("a stopping bridge must not even resolve a session")
+
+    monkeypatch.setattr(state, "shutting_down", True)
+    monkeypatch.setattr(runner, "_resolve_session", no_session)
+    assert runner.start_streaming_job(555, "p", [], project=config.BASE_PATH) is None
+
+
+def test_a_second_stop_signal_cannot_abort_the_shutdown(monkeypatch):
+    """Two RESTART clicks each schedule a SIGINT. The first unwinds into
+    _shutdown; a second that raised there too would skip the rest of it and the
+    re-exec, and systemd counts a death by SIGINT as clean, so
+    Restart=on-failure would leave the bridge down."""
+    import claude_telegram_bridge as entry
+    from bridge import state
+    monkeypatch.setattr(state, "shutting_down", False)
+    with pytest.raises(KeyboardInterrupt):
+        entry._on_stop_signal(signal.SIGINT, None)
+    assert state.shutting_down
+    try:
+        entry._on_stop_signal(signal.SIGINT, None)      # mid-_shutdown: ignored
+    except KeyboardInterrupt:
+        raise AssertionError("a second stop signal aborted the shutdown") from None
+
+
+def test_stop_children_gives_them_one_deadline_not_one_each(monkeypatch):
+    """Three children that ignore SIGTERM cost STOP_WAIT in all, not three
+    times it: stop_children is one step of a shutdown systemd times out."""
+    monkeypatch.setattr(runner, "STOP_WAIT", 0.3)
+    waited = []
+
+    class Stuck:
+        killed = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            waited.append(timeout)
+            time.sleep(timeout)
+            raise runner.subprocess.TimeoutExpired("claude", timeout)
+
+        def kill(self):
+            self.killed = True
+
+    jobs = [runner.Job(f"j-stuck-{i}", 555) for i in range(3)]
+    for j in jobs:
+        j.proc = Stuck()
+        monkeypatch.setitem(runner._jobs, j.id, j)
+    runner.stop_children()
+    assert sum(waited) <= runner.STOP_WAIT + 0.05
+    assert all(j.proc.killed for j in jobs)
 
 
 def test_midrun_crash_auto_resumes_capped(monkeypatch):

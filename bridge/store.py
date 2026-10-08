@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   lifecycle         TEXT,
   fork_from         TEXT,
   ctx_tokens        INTEGER,
-  autocompact       TEXT
+  autocompact       TEXT,
+  model             TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -181,6 +182,22 @@ def init() -> None:
         # working in its own checkout, which is the normal case.
         if "work_cwd" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN work_cwd TEXT")
+        # The model last picked for this session, on any surface
+        # (set_run_settings). NULL = never picked: a run passes no --model. Rows
+        # from before the column take their latest turn that recorded one.
+        if "model" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
+            c.execute("UPDATE sessions SET model=(SELECT t.model FROM turns t "
+                      "WHERE t.session_id=sessions.id AND t.model IS NOT NULL "
+                      "ORDER BY t.seq DESC LIMIT 1)")
+        # A plugin run's handle on the job that started it — "<instance id>:<request
+        # id>" for a Rivendell request (bridge/rivendell.py Worker._track), the key a
+        # queue-mode batch already tags its turns with. NULL = not a plugin run. It
+        # is how a RIVENDELL card finds the session of a run that has ended, after a
+        # restart too.
+        if "ref" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN ref TEXT")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_ref ON sessions(ref)")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'opencode:<provider>').
         if "runtime" not in cols:
@@ -364,6 +381,20 @@ def set_permission_mode(session_id: str, mode: str | None) -> None:
         c.execute("UPDATE sessions SET permission_mode=? WHERE id=?", (mode, session_id))
 
 
+def set_run_settings(session_id: str, model: "str | None" = None,
+                     permission_mode: "str | None" = None) -> None:
+    """Save a model and/or permission-mode pick to the session — the row every
+    surface's next run reads (runner.start_streaming_job, handle_task). None
+    leaves that half alone; there is no clearing a pick. Only people's picks
+    land here (the /run and settings routes): internal callers run their own
+    values without writing them. Validated by the servers'
+    normalize_model_effort / normalize_permission_mode, not here."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET model=COALESCE(?, model), "
+                  "permission_mode=COALESCE(?, permission_mode) WHERE id=?",
+                  (model, permission_mode, session_id))
+
+
 def set_fallback_policy(session_id: str, policy: str | None) -> None:
     """What to do when this session's turn dies on a usage limit; None = the
     configured default. Validated by ladder.policy_for, not here."""
@@ -401,6 +432,27 @@ def set_work_cwd(session_id: str, path: "str | None") -> None:
     stores."""
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET work_cwd=? WHERE id=?", (path, session_id))
+
+
+def set_ref(session_id: str, ref: str) -> None:
+    """File a plugin run's session under the job that started it (see init)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET ref=? WHERE id=?", (ref, session_id))
+
+
+def sessions_for_refs(refs: list[str]) -> dict[str, str]:
+    """ref -> the newest session filed under it. A request run again (a catch-up
+    after a restart re-claims it) gets a second session; the newest is the one
+    whose work the request now shows.
+    ponytail: one IN (…) bind per ref — a tab lists one repo's open tasks, far
+    under SQLite's variable limit; chunk it if a caller ever passes thousands."""
+    if not refs:
+        return {}
+    with closing(_connect()) as c:
+        rows = c.execute(
+            f"SELECT ref, id FROM sessions WHERE ref IN ({','.join('?' * len(refs))}) "
+            "ORDER BY created, rowid", list(refs)).fetchall()
+    return {r["ref"]: r["id"] for r in rows}
 
 
 def parse_goal(raw: "str | None") -> dict | None:
@@ -841,9 +893,9 @@ def duplicate(session_id: str) -> dict | None:
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         c.execute("UPDATE sessions SET title=?, title_source=?, fork_from=?, "
-                  "fallback_policy=?, updated=? WHERE id=?",
+                  "fallback_policy=?, model=?, updated=? WHERE id=?",
                   (title, "manual", src.get("claude_session_id"),
-                   src.get("fallback_policy"), now, copy["id"]))
+                   src.get("fallback_policy"), src.get("model"), now, copy["id"]))
         # New turn ids so the two sessions' turns never collide; events follow
         # their turn through the same map.
         idmap = {}
@@ -906,9 +958,13 @@ def history(chat_id: int, include_archived: bool = False,
     Time and tokens rather than dollars: 9f612a4 removed the dollar readouts
     because the CLI prices these runs off API list rates while they go through a
     subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
-    a session that predates the columns is unknown, not free."""
+    a session that predates the columns is unknown, not free.
+
+    Each row also carries the session's run picks, as a brief does (model, and
+    the mode a run would get): a session opened from here — archived, or past the
+    session list's age — is seeded from this row, and its composer loads them."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, "
+         "s.lifecycle, s.model, s.permission_mode, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
@@ -932,6 +988,7 @@ def history(chat_id: int, include_archived: bool = False,
         for r in c.execute(q, params).fetchall():
             d = dict(r)
             d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
+            d["permission_mode"] = d["permission_mode"] or config.MINIAPP_PERMISSION_MODE
             rows.append(d)
     return rows
 
@@ -1028,6 +1085,25 @@ def turn_metrics(session_id: str) -> list[dict]:
             (session_id,)).fetchall()]
 
 
+def last_turn(session_id: str) -> "dict | None":
+    """A session's newest turn and how it ended: `result`, the text of its last
+    result event ("" when none came), and `outcome` (bridge/outcomes.py) when it
+    failed. For a readout that wants one run's ending without paying for its
+    whole transcript — a RIVENDELL card reads it on every poll."""
+    with closing(_connect()) as c:
+        t = _row(c.execute("SELECT * FROM turns WHERE session_id=? ORDER BY seq DESC LIMIT 1",
+                           (session_id,)).fetchone())
+        if t is None:
+            return None
+        r = c.execute("SELECT payload FROM events WHERE session_id=? AND turn_id=? "
+                      "AND type='result' ORDER BY seq DESC LIMIT 1",
+                      (session_id, t["id"])).fetchone()
+        sig = _outcome_signals(c, session_id, {t["id"]}) if t["status"] == "error" else {}
+    t["result"] = str(json.loads(r["payload"]).get("result") or "") if r else ""
+    t["outcome"] = outcomes.outcome(t, sig[t["id"]]) if sig else None
+    return t
+
+
 def timed_events(session_id: str) -> list[dict]:
     """Every event that carries a duration, with the ts it ended at: `tool` (to
     name a call), `tool_done` (ms) and `thinking` (ms). The rows a wall-clock
@@ -1062,10 +1138,12 @@ def running_session_ids(chat_id: int) -> list[str]:
 
 
 def claim_orphaned_turns() -> list[dict]:
-    """Turns left 'running' at startup were orphaned by a restart (the bridge
-    group-SIGKILLs its Claude child on stop). Atomically flip them to 'error' and
-    return them joined to their session, so the recovery step can resume each on
-    its own Claude session. Idempotent: a second call returns []."""
+    """Turns left 'running' at startup were orphaned by a restart: a run whose
+    Claude child died while the bridge was going down skips finish_turn
+    (runner._restart_killed), and a bridge killed outright never got to it.
+    Atomically flip them to 'error' and return them joined to their session, so
+    the recovery step can resume each on its own Claude session. Idempotent: a
+    second call returns []."""
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         rows = c.execute(

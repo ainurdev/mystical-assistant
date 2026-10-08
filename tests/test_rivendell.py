@@ -43,6 +43,13 @@ def acks(monkeypatch):
     return sent
 
 
+@pytest.fixture(autouse=True)
+def no_link_alerts(monkeypatch):
+    """A rejected token (or a long outage) pings Telegram once per break
+    (Worker._alert_broken); no test here may reach the network for it."""
+    monkeypatch.setattr(rivendell.Worker, "_alert_broken", lambda self: None)
+
+
 def _http_error(code, path="/x"):
     return urllib.error.HTTPError(f"http://api{path}", code, "err", None, None)
 
@@ -1463,7 +1470,7 @@ def test_tasks_names_the_session_running_a_request_here(workers):
 
 def test_tasks_with_no_running_instance_says_so(workers):
     assert rivendell.tasks("acme/app") == {
-        "instances": 0, "projects": [], "tasks": [], "errors": []}
+        "instances": 0, "projects": [], "tasks": [], "errors": [], "links": []}
 
 
 def test_implement_asks_the_instance_to_create_the_request(workers):

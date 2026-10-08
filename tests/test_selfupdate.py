@@ -179,6 +179,26 @@ def test_claude_update_stops_live_claude_children_before_it_runs():
     assert not job.interrupted
 
 
+def test_a_second_restart_request_arms_nothing(monkeypatch):
+    """One restart is already on its way: a second SIGINT would land in the
+    middle of the shutdown the first one started."""
+    import types
+    armed = []
+
+    class Timer:
+        def __init__(self, delay, fn):
+            armed.append(delay)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(selfupdate, "threading", types.SimpleNamespace(Timer=Timer))
+    monkeypatch.setattr(selfupdate, "restart_requested", False)
+    selfupdate.restart()
+    selfupdate.restart()
+    assert len(armed) == 1 and selfupdate.restart_requested
+
+
 def test_no_upstream_yields_nothing():
     d = tempfile.mkdtemp()
     subprocess.run(["git", "init", "-q", d], check=True)

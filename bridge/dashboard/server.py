@@ -32,7 +32,7 @@ import re
 
 from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
-                    models, native, preview_detect, project_config,
+                    models, native, preview_detect, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
                     share,
@@ -41,6 +41,7 @@ from bridge import (agents, attribution, browser, config, devserver, fmt, git,
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort, normalize_permission_mode,
+                                   save_run_settings,
                                    transcript_for)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -236,6 +237,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._share(path[len("/share/"):])
             if not self._host_ok():
                 return self._json({"error": "bad host"}, 403)
+            # Backstop for every /local/ read: GETs carry no token, so an <img>
+            # on any page could fire one at localhost. A browser marks those
+            # with Sec-Fetch-Site; this dashboard's own fetches, streams and
+            # sockets are same-origin, a typed URL is "none", and non-browser
+            # callers (curl, agents via MYSTICAL_DASH, the probe) send none.
+            if path.startswith("/local/") and self.headers.get(
+                    "Sec-Fetch-Site") not in (None, "same-origin", "none"):
+                return self._json({"error": "cross-site request"}, 403)
             if path == "/local/ws/terminal":
                 return self._terminal_ws(qs)
             if path.startswith("/local/stream/"):
@@ -507,6 +516,16 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(github.issues(abs_p))
+        if path == "/local/github/pr/status":
+            # The chat header's PR chip (bridge/prstatus.py). The bridge caches it
+            # for each (repo, branch), so every open tab polling it costs one gh call.
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(prstatus.snapshot(
+                abs_p, (qs.get("branch", [""])[0] or "").strip(),
+                force=qs.get("force", ["0"])[0] == "1",
+                session=(qs.get("session", [""])[0] or "").strip()))
         if path == "/local/trackers":
             return self._json({"connections": trackers.connections()})
         if path == "/local/rivendell":
@@ -642,6 +661,11 @@ class Handler(BaseHTTPRequestHandler):
             base = (qs.get("base", ["main"])[0] or "main").strip()
             head = (qs.get("head", [""])[0] or git.current_branch(abs_p)).strip()
             three_dot = (qs.get("dots", ["3"])[0] or "3").strip() != "2"
+            # Only real branches, as /local/git/diff: any page can fire this GET,
+            # and `base=--output=<path>` once made git diff overwrite that file.
+            refs = set(git.branches(abs_p)) | {git.default_branch(abs_p)}
+            if base not in refs or head not in refs:
+                return self._json({"error": "invalid ref"}, 400)
             return self._json(git.compare(abs_p, base, head, three_dot))
         if path == "/local/agents":
             sid = qs.get("session", [""])[0]
@@ -1017,6 +1041,14 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": "autocompact must be 'auto' or 100000-1000000"}, 400)
             store.set_autocompact(sid, value)
             return self._json({"ok": True, "autocompact": value})
+        if path == "/local/session/settings":
+            # A model/mode pick for a session: saved, and applied to its running
+            # turn. Same body and answer as the Mini App's (save_run_settings).
+            sid = (body.get("session_id") or "").strip()
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json(*save_run_settings(s, body))
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")
@@ -1324,6 +1356,14 @@ class Handler(BaseHTTPRequestHandler):
             except rivendell.TasksError as e:
                 return self._json({"error": str(e), "code": e.code},
                                   502 if e.code == "unreachable" else 400)
+        if path == "/local/rivendell/test":
+            # TEST LINK (Settings ▸ PLUGINS, and the RIVENDELL tab's TOKEN
+            # REJECTED banner): a round trip on the live socket, or a re-dial.
+            res = rivendell.test_link((body.get("instance_id") or "").strip(),
+                                      job=bool(body.get("job")))
+            if res is None:
+                return self._json({"error": "that Rivendell connection is off"}, 409)
+            return self._json(res)
         if path == "/local/tracker/update":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:
@@ -1589,6 +1629,11 @@ class Handler(BaseHTTPRequestHandler):
         if job is None:
             runner._cleanup_uploads(job_id)
             return self._json({"error": "busy"}, 409)
+        # The picks this prompt was sent with are the session's now, on every
+        # surface. After the start, so the row is the one the run resolved for
+        # this chat (a fresh session is created by this very call).
+        store.set_run_settings(job.store_session_id, model=model,
+                               permission_mode=permission_mode)
         self._json({"job_id": job.id, "session_id": job.store_session_id})
 
     def _respond(self, job_id, body):
@@ -1626,10 +1671,9 @@ class Handler(BaseHTTPRequestHandler):
             images = body.get("images") or []
             if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
                 return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
-            ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
-            if not ok:
-                return self._json({"error": "invalid model"}, 400)
-            permission_mode = normalize_permission_mode(body.get("permission_mode"))
+            # No model or mode: a queued prompt runs on the session's when it
+            # starts, so a pick made while it waits still applies.
+            _ok, _model, effort = normalize_model_effort(None, body.get("effort"))
             agent = (body.get("agent") or "").strip()
             try:
                 from bridge import ladder
@@ -1648,8 +1692,8 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 width = 0
             item_id = queue_manager.enqueue(
-                sid, text=(text or prompt), prompt=prompt, images=paths, model=model,
-                effort=effort, permission_mode=permission_mode, width=width, sel=sel,
+                sid, text=(text or prompt), prompt=prompt, images=paths, model=None,
+                effort=effort, permission_mode=None, width=width, sel=sel,
                 surface=(body.get("surface") or "dashboard"), chat_id=chat,
                 project=_abs_project(body.get("project")), run_job_id=run_job_id,
                 agent=agent or None)

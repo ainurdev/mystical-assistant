@@ -246,6 +246,28 @@ def test_fire_resumes_only_due_entries_and_rearms():
         _reset_limits()
 
 
+def test_a_reset_that_fires_while_the_bridge_stops_stays_parked(monkeypatch):
+    """start_streaming_job refuses runs once the bridge is stopping, and _fire
+    reads a refused run as "the user moved on" and drops the park. Left pending,
+    and on disk, boot() re-arms it after the restart instead."""
+    from bridge import state
+    _reset_limits()
+    saved = config.ALLOWED_CHAT_IDS
+    config.ALLOWED_CHAT_IDS = {CHAT}
+    try:
+        limits.defer_server("s-stopping", CHAT, None)          # attempt 1 → due now
+        monkeypatch.setattr(state, "shutting_down", True)
+        run = _Rec(job=None)
+        limits._fire(run=run, notify=_Rec())
+        assert run.calls == []
+        assert "s-stopping" in limits._pending
+        with open(limits._path()) as f:
+            assert "s-stopping" in json.load(f)                # what boot() re-arms
+    finally:
+        config.ALLOWED_CHAT_IDS = saved
+        _reset_limits()
+
+
 def test_boot_keeps_backoff_due_time():
     _reset_limits()
     import json

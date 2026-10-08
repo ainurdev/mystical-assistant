@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -160,12 +161,16 @@ def normalize_ponytail(level) -> "str | None":
 
 
 def _run_env(ponytail: "str | None",
-             account_slot: "int | None" = None) -> "dict | None":
-    """Env for the claude subprocess: None (inherit) unless a run picked a
-    ponytail intensity or a non-default Claude account. The account arrives as
-    CLAUDE_CONFIG_DIR, which is the whole multi-account mechanism -- every turn
-    is still the official binary, just pointed at one login's profile."""
+             account_slot: "int | None" = None) -> dict:
+    """Env for the claude subprocess: the inherited env plus a run's ponytail
+    intensity and Claude account. The account arrives as CLAUDE_CONFIG_DIR,
+    which is the whole multi-account mechanism -- every turn is still the
+    official binary, just pointed at one login's profile."""
     over = accounts.env_for(account_slot)
+    # Once a turn's result is out, -p waits for its background agents only 10
+    # min, then kills them mid-work and exits -- the report they were running
+    # for never arrives. Hangs are _watchdog's job (silence, not work).
+    over["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
     # Switched off in the AI tab, the level is not just skipped but overridden:
     # an absent PONYTAIL_DEFAULT_MODE means the plugin's own default (full), so
     # "off" is the only way to actually not get ponytail.
@@ -178,8 +183,6 @@ def _run_env(ponytail: "str | None",
         # The inspector is a pass-through proxy in front of api.anthropic.com;
         # off (the default) this is None and the child talks to the API directly.
         over["ANTHROPIC_BASE_URL"] = base
-    if not over:
-        return None
     return {**os.environ, **over}
 
 
@@ -226,10 +229,17 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
-    """Inline --mcp-config JSON for the bridge's own tool servers, plus any
+    """Path to the --mcp-config file for the bridge's own tool servers, plus any
     external servers this session left switched on. PYTHONPATH pins the repo root
     so `-m bridge.*` imports regardless of the run's cwd. Ours go in last: a
-    user server named `goals` must not shadow the goal tools."""
+    user server named `goals` must not shadow the goal tools.
+
+    A file, not the inline JSON it used to be: it carries the dashboard token and
+    whatever the external servers authenticate with (a GitHub PAT or a Rivendell
+    bearer in a header, a Railway key in an env block), and argv is
+    world-readable (`ps`, /proc/<pid>/cmdline) where a 0600 file in a 0700 dir
+    is the user's alone. One fresh dir per call, so concurrent runs never share
+    a file; _run_streaming removes it once the child that read it is gone."""
     env = {"PYTHONPATH": _REPO_ROOT,
            "MYSTICAL_CLAUDE_SESSION_ID": claude_session_id,
            # The Run tool starts dev servers in the *bridge* process (its registry
@@ -237,13 +247,23 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
            # localhost API — same token any browser tab uses.
            "MYSTICAL_DASH": f"http://127.0.0.1:{config.DASH_PORT}",
            "MYSTICAL_DASH_TOKEN": config.DASH_TOKEN}
-    return json.dumps({"mcpServers": {
-        **(extra or {}),
-        "goals": {"command": sys.executable,
-                  "args": ["-m", "bridge.goal_mcp"], "env": env},
-        "verify": {"command": sys.executable,
-                   "args": ["-m", "bridge.verify_mcp"], "env": env},
-    }})
+    d = tempfile.mkdtemp(prefix="mystical-mcp-")
+    path = os.path.join(d, "mcp.json")
+    try:
+        # O_EXCL: created here at 0600, never written through something already there.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"mcpServers": {
+                **(extra or {}),
+                "goals": {"command": sys.executable,
+                          "args": ["-m", "bridge.goal_mcp"], "env": env},
+                "verify": {"command": sys.executable,
+                           "args": ["-m", "bridge.verify_mcp"], "env": env},
+            }}, f)
+    except BaseException:
+        shutil.rmtree(d, ignore_errors=True)   # half-written can already hold a token
+        raise
+    return path
 
 
 def _configured_mcp_servers(cwd: "str | None") -> dict:
@@ -311,6 +331,24 @@ def _external_mcp(disabled_tools: "list[str] | None",
     return extra, strict
 
 
+def _with_mode(args: list[str], mode: "str | None") -> list[str]:
+    """`args` (EXTRA_CLAUDE_ARGS) with `mode` in place of the permission flags
+    they carry: --permission-mode in either spelling, and the
+    --dangerously-skip-permissions that is Bypass by another name. No mode:
+    unchanged."""
+    if not mode:
+        return args
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif a == "--permission-mode":
+            skip = True                  # and its value
+        elif not (a.startswith("--permission-mode=") or a == "--dangerously-skip-permissions"):
+            out.append(a)
+    return out + ["--permission-mode", mode]
+
+
 def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               interactive: bool = False, model: str | None = None,
               effort: str | None = None, permission_mode: str | None = None,
@@ -324,7 +362,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     protocol: the prompt is delivered on stdin (not as an arg), permissions are
     routed back to us via `--permission-prompt-tool stdio`, and we run in an
     asking permission mode so tool use surfaces Allow/Deny cards. The bot's
-    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS.
+    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS — with its
+    session's mode, when it carries one, in place of their permission flag
+    (handle_task, _with_mode).
 
     model/effort (interactive only) map to `--model`/`--effort`; the server
     validates them before they reach here.
@@ -344,6 +384,18 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         cmd += ["--input-format", "stream-json",
                 "--permission-mode", permission_mode or config.MINIAPP_PERMISSION_MODE,
                 "--permission-prompt-tool", "stdio"]
+        if os.getuid() != 0 or os.environ.get("IS_SANDBOX") == "1":
+            # Bypass on offer, not on: this flag only permits a switch to
+            # bypassPermissions. The mode above is what runs until the user
+            # picks another mid-turn (Job.set_run_settings), and claude
+            # 2.1.280 refuses that switch on a child launched without this
+            # ("not launched with --dangerously-skip-permissions"). Only the
+            # bridge writes this child's stdin, so only the settings routes
+            # can use it. Not as root outside a sandbox: claude exits at
+            # startup there (its own process.getuid() check, IS_SANDBOX=1
+            # the opt-out), so the flag would fail every turn — a root
+            # install just can't switch a running turn to Bypass.
+            cmd.append("--allow-dangerously-skip-permissions")
         if claude_session_id:
             # Goal + verify tools, on interactive runs only, alongside whichever
             # external servers this session left switched on — re-declared here
@@ -394,14 +446,17 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # free, since --tools "" already denies their tools, and it takes ~0.9s
         # off each one-shot (5.33s -> 4.45s, mean of 3). Several run per turn.
         cmd += ["--tools", "", "--strict-mcp-config"]
-    elif not interactive and permission_mode:
+    elif not interactive and permission_mode and skip_pack:
         # An internal one-shot that must *read* the repo (the next-up scout).
         # Its own permission mode instead of EXTRA_CLAUDE_ARGS: 'plan' leaves the
         # read tools available and takes editing and shell off the table. Still an
         # internal one-shot, so it skips MCP for the same second it saves above.
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
-    elif not interactive and config.EXTRA_CLAUDE_ARGS.strip():
-        cmd += shlex.split(config.EXTRA_CLAUDE_ARGS)
+    elif not interactive:
+        # The bot chat: EXTRA_CLAUDE_ARGS, with its session's mode, when it has
+        # one (handle_task), in place of the permission flag those carry; the
+        # rest (--add-dir, --allowedTools...) is still the user's.
+        cmd += _with_mode(shlex.split(config.EXTRA_CLAUDE_ARGS), permission_mode)
     if disabled_tools is None and "--strict-mcp-config" not in cmd:
         # No per-session choice on this run (a Telegram one-shot, a sessionless
         # job): same answer a never-configured session gets above — no external
@@ -477,20 +532,29 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
 
 
 def handle_task(chat_id: int, prompt: str, session: dict):
-    """Runs in a thread; the caller already claimed `session`'s run slot."""
+    """Runs in a thread; the caller already claimed `session`'s run slot.
+
+    Runs on the session's own model and mode, the last ones picked for it on any
+    surface. A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a session created
+    as bypassPermissions (the dashboard and Mini App default) runs unattended
+    here too: the same allow-listed user can already do that from the Mini App.
+    An asking mode can't show a card in a chat, so the tools it would ask about
+    are denied, as under acceptEdits. A session the bot started has no mode and
+    keeps EXTRA_CLAUDE_ARGS."""
     try:
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
         job_id = uuid.uuid4().hex
-        store.start_turn(session["id"], job_id, prompt, [],
+        store.start_turn(session["id"], job_id, prompt, [], model=session.get("model"),
                          sha=git.head_sha(state.project_dir(chat_id)))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
-            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork)
+            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
+            model=session.get("model"), permission_mode=session.get("permission_mode"))
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,
@@ -588,6 +652,11 @@ class Job:
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
+        self.model: str | None = None     # what the child runs on; a live switch moves it
+        # Our set_model / set_permission_mode requests the CLI hasn't answered
+        # yet: request_id -> (subtype, value). See control_answered.
+        self._controls: dict[str, tuple[str, str]] = {}
+        self._held: dict[str, str] = {}   # a pick made before the child existed
         self.texts: list[str] = []       # assistant text this turn
         self.ctx_tokens: int | None = None  # window fill on the last request (see _ctx_of)
         # What the turn spent: the same four counters, summed instead of last-wins.
@@ -607,6 +676,10 @@ class Job:
         # The latest TodoWrite list, so a clip can be shown against the plan it
         # is evidence for. Last write wins: that is what the plan *is*.
         self.todos: list = []
+        # The plan as the task tools keep it — what claude 2.1.280 -p offers
+        # instead of TodoWrite: task id -> its latest status (TaskCreate's result
+        # names the id, TaskUpdate moves it). The RIVENDELL card's todo bar.
+        self.task_status: dict[str, str] = {}
         # tool_use id -> {notes, resolves} from a Record/Attach call, held until
         # its result comes back with the file.
         self.clip_meta: dict[str, dict] = {}
@@ -629,18 +702,21 @@ class Job:
         with self._lock:
             self.pending = []
 
-    def _write_stdin(self, obj: dict):
-        """Write one JSON line to the live process's stdin (control channel)."""
+    def _write_stdin(self, obj: dict) -> bool:
+        """Write one JSON line to the live process's stdin (control channel).
+        False when nothing took it: no child yet, or its stdin is gone (closed
+        at the turn's `result`, or the child exited)."""
         proc = self.proc
         if proc is None or proc.stdin is None:
-            return
+            return False
         line = json.dumps(obj) + "\n"
         with self._stdin_lock:
             try:
                 proc.stdin.write(line)
                 proc.stdin.flush()
             except (BrokenPipeError, ValueError, OSError):
-                pass
+                return False
+        return True
 
     def close_stdin(self):
         proc = self.proc
@@ -718,6 +794,87 @@ class Job:
             "subtype": "success", "request_id": request_id, "response": resp}})
         return True
 
+    def set_run_settings(self, model: "str | None" = None,
+                         permission_mode: "str | None" = None) -> bool:
+        """Switch the live child's model and/or permission mode mid-turn, over
+        the stream-json control channel interrupt() uses: claude 2.1.280's
+        `set_model` / `set_permission_mode` control requests (bypass needs the
+        offer _base_cmd makes at spawn). Returns whether anything reached the
+        child; False means the caller's saved row is all the next turn gets.
+
+        Written is not switched. The CLI answers each request on stdout, and only
+        its success (control_answered) moves Job.model or, for a switch to
+        bypassPermissions, approves the permission cards already waiting —
+        "stop asking" has to cover the one on screen. A refusal (a managed
+        disableBypassPermissionsMode, an unknown model) becomes an error row
+        (_handle_event), changes nothing live, and the saved pick still stands.
+        Questions (AskUserQuestion) stay open either way: they ask for a
+        decision, not a permission.
+
+        A pick that lands while the child is still being spawned (job.proc is
+        None while the MCP health check, the graph pack and the task digest
+        build its argv) is held, and _run_streaming writes it the moment the
+        child exists, ahead of the prompt (release_held). A free agent has no
+        claude child to hold it for.
+
+        ponytail: a can_use_tool the CLI emits after its success answer (a check
+        that began before the switch) still shows its card; it's answerable."""
+        with self._lock:
+            if self.proc is None:
+                if self.exited.is_set() or (self.runtime or "").startswith("opencode:"):
+                    return False
+                if model:
+                    self._held["model"] = model
+                if permission_mode:
+                    self._held["permission_mode"] = permission_mode
+                return bool(model or permission_mode)
+        sent = False
+        for subtype, key, value in (("set_model", "model", model),
+                                    ("set_permission_mode", "mode", permission_mode)):
+            if not value:
+                continue
+            rid = uuid.uuid4().hex
+            with self._lock:          # before the write: the answer can beat us back
+                self._controls[rid] = (subtype, value)
+            if self._write_stdin({"type": "control_request", "request_id": rid,
+                                  "request": {"subtype": subtype, key: value}}):
+                sent = True
+            else:
+                with self._lock:
+                    self._controls.pop(rid, None)
+        return sent
+
+    def release_held(self) -> None:
+        """Write the picks set_run_settings held while the child was spawning.
+        _run_streaming calls it right after job.proc is set, before the prompt;
+        the lock orders it after any hold that saw no child yet."""
+        with self._lock:
+            held, self._held = self._held, {}
+        if held:
+            self.set_run_settings(**held)
+
+    def control_answered(self, request_id: "str | None", ok: bool) -> None:
+        """The CLI's answer to one of set_run_settings' requests. Its success is
+        the moment the switch is real: the model moves, and a switch to
+        bypassPermissions approves the permission cards already waiting —
+        except what Bypass itself would still ask about (_bypass_still_asks),
+        and nothing at all on a tracker update, whose --settings ask rule
+        (extra_args) is there so you confirm every call on its server.
+        Answers to anything else (interrupt) are not ours to act on."""
+        with self._lock:
+            sent = self._controls.pop(request_id, None)
+        if not ok or sent is None:
+            return
+        subtype, value = sent
+        if subtype == "set_model":
+            self.model = value
+        elif value == "bypassPermissions" and not self.extra_args:
+            with self._lock:
+                waiting = [p["request_id"] for p in self.pending
+                           if p.get("kind") == "permission" and not _bypass_still_asks(p)]
+            for rid in waiting:
+                self.respond(rid, behavior="allow")
+
     def snapshot(self, cursor: int) -> dict:
         with self._lock:
             out = {
@@ -767,17 +924,22 @@ def get_job(job_id: str) -> Job | None:
         return _jobs.get(job_id)
 
 
+STOP_WAIT = 10.0   # how long stop_children gives its children, all of them together
+
+
 def stop_children() -> None:
-    """SIGTERM every live child and wait for it (SIGKILL after 10s). Not
+    """SIGTERM every live child, then SIGKILL whatever is still alive STOP_WAIT
+    later: one deadline for all of them, so stuck children don't add up. Not
     Job.stop(): that marks the turn user-stopped, and turns a restart stops
     must stay resumable."""
     with _jobs_lock:
         procs = [j.proc for j in _jobs.values() if j.proc and j.proc.poll() is None]
     for p in procs:
         p.terminate()
+    end = time.monotonic() + STOP_WAIT
     for p in procs:
         try:
-            p.wait(timeout=10)
+            p.wait(timeout=max(0.0, end - time.monotonic()))
         except subprocess.TimeoutExpired:
             p.kill()
 
@@ -827,6 +989,25 @@ def boot_phase(session_id: str) -> "str | None":
         job = next((j for j in _jobs.values()
                     if j.store_session_id == session_id and j.status == "running"), None)
     return job.boot if job else None
+
+
+def apply_run_settings(session_id: str, model: "str | None" = None,
+                       permission_mode: "str | None" = None) -> bool:
+    """Switch a session's in-flight turn to a pick its row already holds (the
+    settings routes save first). False when nothing live took it. The newest
+    job is the only one that can still be live; whether it is, is
+    Job.set_run_settings' call (a closed stdin says no)."""
+    job = _latest_jobs().get(session_id)
+    return job.set_run_settings(model=model, permission_mode=permission_mode) if job else False
+
+
+def live_job(session_id: str) -> "Job | None":
+    """The session's in-flight job, or None — what the RIVENDELL tab and the
+    Rivendell worker read a run's live state off. Same lookup as steer() and
+    boot_phase(): a session has at most one running job."""
+    with _jobs_lock:
+        return next((j for j in _jobs.values()
+                     if j.store_session_id == session_id and j.status == "running"), None)
 
 
 def awaiting_input() -> list[dict]:
@@ -1087,6 +1268,17 @@ def _session_kb(chat_id: int | None, session_id: str | None,
     return panel_kb(chat_id, session_id, sess.get("project") if sess else None, label)
 
 
+def _plugin_session(session_id: str | None) -> bool:
+    """A Rivendell run's session. Its worker pings once per JOB
+    (rivendell.Worker._ping_done), so the per-turn pings stay quiet for it —
+    a queue-mode batch would otherwise ping once per step, and an autonomous
+    run's closing question is for its requester, in Rivendell.
+    ponytail: by origin, so a turn you later send by hand in such a session
+    pings nothing either; tell them apart if that ever matters."""
+    sess = store.get_session(session_id) if session_id else None
+    return bool(sess) and config.is_plugin_origin(sess.get("origin"))
+
+
 def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> None:
     """Ping when a streaming run blocks on you (a question or an approval)."""
     what = "a question" if kind == "question" else "your approval"
@@ -1096,6 +1288,8 @@ def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> N
 
 def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool) -> None:
     """Ping when a streaming run finishes (or errors), so you can step away."""
+    if _plugin_session(session_id):
+        return
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}",
             _session_kb(chat_id, session_id, "🛠 Open session"))
@@ -1105,6 +1299,8 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
     """Ping when a turn *ended* on something only you can answer. Carries the ask
     itself: it's read off a lock screen, and acting on it shouldn't cost opening
     the transcript to find out what was asked (bridge/tailstate.py)."""
+    if _plugin_session(session_id):
+        return
     _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}",
             _session_kb(chat_id, session_id, "❓ Answer in Panel"))
 
@@ -1113,9 +1309,12 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
 # Auto-resume: only the user may stop a turn
 # ---------------------------------------------------------------------------
 # Five non-user ways a turn dies, five answers:
-#   - The bridge is restarting (group SIGINT/SIGKILL takes the Claude child down):
-#     leave the turn 'running' so startup recovery (bridge/recovery.py) claims and
-#     resumes it on the next boot.
+#   - The bridge is restarting (its own stop_children, or a stop signal that
+#     reached the child too, takes the Claude child down): leave the turn
+#     'running', with no error event, so startup recovery (bridge/recovery.py)
+#     claims and resumes it on the next boot and it reads INTERRUPTED. A child
+#     can die a beat before the main thread raises shutting_down; _stopping
+#     waits that beat out.
 #   - The account hit a usage limit: an immediate resume can only fail again, so
 #     the session is parked in bridge/limits.py, which resumes it when the limit
 #     resets.
@@ -1160,6 +1359,27 @@ def _restart_killed(job: "Job") -> bool:
     child, not a real failure — the turn must stay 'running' for boot recovery."""
     return (state.shutting_down and job.status == "error"
             and not job.interrupted and not job.timed_out)
+
+
+# How a child dies of a stop signal: SIGTERM (systemd stopping the unit, or
+# stop_children) or SIGINT (Ctrl-C, `mystical stop` signalling the process
+# group) — raw as -N, or as the CLI's own 128+N exit once it handled the signal.
+_STOP_EXITS = (-15, 143, -2, 130)
+# How long a child that died of one waits for the bridge to say it is stopping.
+STOP_GRACE = 3.0
+
+
+def _stopping(rc: "int | None") -> bool:
+    """Is the bridge going down with this child? The stop signal can reach both
+    at once, and Python runs the bridge's handler on the main thread only, so a
+    runner thread can see its child die before shutting_down is up. A death by a
+    stop signal waits up to STOP_GRACE for the flag; any other exit doesn't."""
+    # ponytail: polls a bool every 50 ms for at most STOP_GRACE. An Event would
+    # wake at once; this only runs for a child that died of a stop signal.
+    end = time.monotonic() + (STOP_GRACE if rc in _STOP_EXITS else 0)
+    while not state.shutting_down and time.monotonic() < end:
+        time.sleep(0.05)
+    return state.shutting_down
 
 
 def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
@@ -1392,6 +1612,36 @@ def _mcp_detail(inp) -> str:
     return "\n".join(parts)[:4000]
 
 
+# A can_use_tool request's reason fields (claude 2.1.280's schema).
+_ASK_WHY = ("requires_user_interaction", "decision_reason_type", "matched_ask_rule",
+            "classifier_approvable")
+# Reason types claude's own bypassPermissions just runs (2.1.280's permission
+# check): no reason (a plain ask), the default/plan mode asking, the auto-mode
+# classifier, a path outside the working dirs, and the generic "other". Every
+# other type — an ask rule, a safety check (.git/, settings files...), a sandbox
+# override, a compound command hiding either, a hook that asked, and anything a
+# newer CLI adds — leaves its card for you.
+_BYPASS_RUNS = {None, "mode", "classifier", "workingDir", "other"}
+
+
+def _bypass_still_asks(card: dict) -> bool:
+    """Would claude's own bypassPermissions still ask about this permission
+    card? Then a switch to Bypass leaves it for you. Read from 2.1.280's
+    permission check: a tool that needs you in any mode (ExitPlanMode:
+    requires_user_interaction), a matched ask rule, a safety check (its
+    classifier_approvable says one is in the reason), a reason type outside
+    _BYPASS_RUNS, and an MCP tool an org policy caps at "ask" (type "other").
+    A plain ask and the auto-mode classifier's are what Bypass just runs —
+    those it approves."""
+    why = card.get("decision_reason_type")
+    return bool(card.get("tool_name") == "ExitPlanMode"
+                or card.get("requires_user_interaction")
+                or card.get("matched_ask_rule") is not None
+                or card.get("classifier_approvable") is not None
+                or why not in _BYPASS_RUNS
+                or (why == "other" and str(card.get("tool_name", "")).startswith("mcp__")))
+
+
 def _handle_control_request(job: Job, obj: dict):
     """A `can_use_tool` request: queue it as pending and surface a transcript
     event (a permission card, or a question card for AskUserQuestion)."""
@@ -1403,12 +1653,19 @@ def _handle_control_request(job: Job, obj: dict):
     if tool == "AskUserQuestion":
         questions = (req.get("input") or {}).get("questions", [])
         job.add_pending({"request_id": rid, "kind": "question",
-                         "tool_name": tool, "questions": questions})
+                         "tool_name": tool, "questions": questions,
+                         "at": time.time()})    # since when: the card's "ASKS · 3m ago"
         job.add({"type": "question", "request_id": rid, "questions": questions})
+        from bridge import rivendell  # local import: rivendell reaches runner lazily too
+        if rivendell.ping_question(job, rid, questions):
+            return    # a Rivendell run's own ping carries the options as buttons
     else:
         summary = _summarize_tool(tool, req.get("input", {}))
+        # Why the CLI asked, in its own fields: a switch to Bypass approves
+        # only what Bypass itself wouldn't ask about (_bypass_still_asks).
         job.add_pending({"request_id": rid, "kind": "permission", "tool_name": tool,
-                         "summary": summary, "input": req.get("input", {})})
+                         "summary": summary, "input": req.get("input", {}),
+                         **{k: req.get(k) for k in _ASK_WHY}})
         ev = {"type": "permission", "request_id": rid, "tool_name": tool, "summary": summary}
         if tool.startswith("mcp__"):
             # The whole call, not 120 chars of it: an MCP write (a tracker
@@ -1574,6 +1831,10 @@ def _handle_event(job: Job, d: dict):
                     _note_work_cwd(job, inp.get("command") or "")
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
+                elif name == "TaskUpdate" and inp.get("taskId"):
+                    tid = str(inp["taskId"])
+                    job.task_status[tid] = str(inp.get("status")
+                                               or job.task_status.get(tid, "pending"))
                 elif name.endswith(("__Record", "__Attach")):
                     job.clip_meta[b.get("id")] = _clip_meta(job, inp)
                 job.open_tools[b.get("id")] = (name, time.time())
@@ -1587,6 +1848,10 @@ def _handle_event(job: Job, d: dict):
             if isinstance(b, dict) and b.get("type") == "tool_result":
                 rid = b.get("tool_use_id")
                 name, t0 = job.open_tools.pop(rid, (None, 0.0))
+                made = d.get("tool_use_result") if name == "TaskCreate" else None
+                if (isinstance(made, dict) and isinstance(made.get("task"), dict)
+                        and made["task"].get("id")):
+                    job.task_status.setdefault(str(made["task"]["id"]), "pending")
                 ms = int((time.time() - t0) * 1000) if t0 else 0
                 ev = transcript_jsonl.tool_done(
                     rid, name, ms, b, d.get("tool_use_result"))
@@ -1605,6 +1870,16 @@ def _handle_event(job: Job, d: dict):
                 job.add(ev)
     elif t == "system" and d.get("subtype") == "hook_response":
         _hook_log(job, d)
+    elif t == "control_response":
+        # The CLI's answer to one of ours (interrupt, set_model,
+        # set_permission_mode). Only a refusal earns a row: the pick it carried
+        # is saved either way, and the next turn spawns with it. A success is
+        # when a switch takes effect (Job.control_answered).
+        r = d.get("response") or {}
+        if r.get("subtype") == "error":
+            job.add({"type": "log", "src": "control", "error": True,
+                     "text": str(r.get("error") or "control request refused")[:_LOG_MAX]})
+        job.control_answered(r.get("request_id"), r.get("subtype") == "success")
     elif t == "result":
         job.result = d.get("result", "") or d.get("error", "")
         job.cost = d.get("total_cost_usd")
@@ -1845,6 +2120,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                    model: str | None = None, effort: str | None = None,
                    permission_mode: str | None = None, ponytail: str | None = None):
     proc = None
+    mcp_dir = None
     job.cwd = cwd
     try:
         if (job.runtime or "").startswith("opencode:"):
@@ -1868,6 +2144,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         new_session=job.new_session, disabled_tools=denied,
                         autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None, project=job.project)
+        if "--mcp-config" in cmd:
+            # Its file holds tokens (see _mcp_config); it goes with the child.
+            mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
         cmd += job.extra_args
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
@@ -1879,6 +2158,9 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.status = "error"
             return
         job.proc = proc
+        # A model/mode pick made while the argv was being built: ahead of the
+        # prompt, so the turn starts on it.
+        job.release_held()
         # Claude is up but still building its context — connecting MCP servers and
         # loading the transcript — which is most of the wait on a resumed session.
         job.boot = "starting Claude"
@@ -1945,13 +2227,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             job.add({"type": "stopped"})
         elif job.status == "running":
             # No terminal result event — surface the timeout / stderr / exit code.
-            err = "".join(stderr_tail).strip()
-            if job.timed_out:
-                msg = f"⏱️ No output for {(job.hang_timeout or config.RUN_TIMEOUT) // 60} min — killed as hung."
-            else:
-                msg = err[:1500] or f"claude exited {proc.returncode}"
-            job.error_msg = msg
-            job.add({"type": "error", "message": msg})
+            # Unless the bridge's own stop took the child down: then say nothing,
+            # so the turn boot recovery resumes reads INTERRUPTED, not CRASHED.
+            if job.timed_out or not _stopping(proc.returncode):
+                err = "".join(stderr_tail).strip()
+                if job.timed_out:
+                    msg = f"⏱️ No output for {(job.hang_timeout or config.RUN_TIMEOUT) // 60} min — killed as hung."
+                else:
+                    msg = err[:1500] or f"claude exited {proc.returncode}"
+                job.error_msg = msg
+                job.add({"type": "error", "message": msg})
             job.status = "error"
     except Exception as e:  # noqa: BLE001
         job.add({"type": "error", "message": str(e)})
@@ -1970,6 +2255,14 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 proc.wait(timeout=5)
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 pass
+        # Read back off argv, so held to the one shape _mcp_config makes: nothing
+        # else on a command line is ever rmtree'd.
+        if mcp_dir and os.path.basename(mcp_dir).startswith("mystical-mcp-"):
+            # ponytail: a run cut off by the bridge's own death (killed outright,
+            # or its interpreter exiting before this thread gets here) leaves its
+            # dir in /tmp: 0700, readable only by this user, wiped at boot. Sweep
+            # mystical-mcp-* at startup if that ever matters.
+            shutil.rmtree(mcp_dir, ignore_errors=True)
         if job.elapsed is None:
             job.elapsed = int(time.time() - job.started)
         restart_killed = _restart_killed(job)   # freeze: the flag can flip mid-finally
@@ -2003,13 +2296,17 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 except Exception:  # noqa: BLE001 — never let the queue break a run
                     pass
         job.exited.set()
-        resumed = not restart_killed and _maybe_auto_resume(job, cwd, model, effort)
+        # job.model, not `model`: a live switch (Job.set_run_settings) moves it,
+        # and the resume and a limit park must run what the turn ended on, not
+        # what it started on.
+        resumed = not restart_killed and _maybe_auto_resume(job, cwd, job.model, effort)
         if not resumed and not restart_killed:
             # An active goal queues its own next turn. After auto-resume, so a
             # limit-parked turn is picked up by the ladder rather than raced by
-            # a nudge that would run against the same exhausted account.
+            # a nudge that would run against the same exhausted account. The
+            # nudge reads the session's model and mode when it starts.
             from bridge import goals  # local import: runner<->* cycle
-            resumed = goals.continue_after_turn(job, model, effort) or resumed
+            resumed = goals.continue_after_turn(job, effort) or resumed
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
@@ -2105,8 +2402,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
-    with its own permission posture; --resume continuity comes from that session's
-    claude_session_id. `origin` marks where a newly-created session started.
+    with its own model and permission posture (an explicit model/permission_mode
+    wins for this run and is not written back); --resume continuity comes from
+    that session's claude_session_id. `origin` marks where a newly-created
+    session started.
 
     account_slot picks which Claude login runs the turn (None = the ambient one);
     runtime is set instead when a fallback-ladder free agent takes over. Both are
@@ -2115,7 +2414,12 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
 
     Claims only THIS session's run slot, so a run in another project/session keeps
-    going; returns None only if this very session already has an in-flight turn."""
+    going; returns None only if this very session already has an in-flight turn,
+    or once the bridge is going down."""
+    if state.shutting_down:
+        # _shutdown stops the children it can see: a claude spawned now would
+        # miss that, and outlive an in-place re-exec beside its resumed session.
+        return None
     project_dir = project or state.project_dir(chat_id)
     session = _resolve_session(chat_id, project_dir, session_id=session_id,
                                permission_mode=permission_mode, origin=origin)
@@ -2124,7 +2428,12 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     try:
         session, cwd, perm = _finalize_run_context(
             session, project_dir, permission_mode=permission_mode, origin=origin)
+        # The session's own model unless the caller brought one: the /run routes
+        # save theirs to the row; internal callers (Rivendell, trackers, goals)
+        # run theirs without writing it. Neither = no --model, the CLI default.
+        model = model or session.get("model")
         job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
+        job.model = model
         job.resume_id, job.new_session, job.fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         job.account_slot = account_slot

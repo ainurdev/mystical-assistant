@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type SessionBreakdown, type ToolSpend } from "../../api";
+import { kilo } from "../../lib/surfaces";
 
 /** Header button + dropdown: where this session's wall clock and tokens went.
  *
@@ -17,12 +18,6 @@ function secs(s: number): string {
   if (s < 1) return "0s";
   if (s < 90) return `${Math.round(s)}s`;
   return `${(s / 60).toFixed(1)}m`;
-}
-
-function kilo(n: number): string {
-  if (n < 1000) return `${n}`;
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 type Row = { label: string; secs: number; tint: string; note?: string; title?: string };
