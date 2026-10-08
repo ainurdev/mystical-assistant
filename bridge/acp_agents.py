@@ -48,17 +48,26 @@ from bridge import config
 
 PRESETS = (
     # codex-acp runs OpenAI's own `codex app-server`; pin bumped deliberately.
+    # 2.1.1 depends on @openai/codex ^0.159.1 and runs that bundled binary (its
+    # README: "The npm package includes a compatible @openai/codex dependency"),
+    # so only npx is needed, and login goes through the same npm package
+    # (`codex login --device-auth`: OpenAI's auth docs, headless sign-in).
     {"id": "codex", "label": "Codex", "cmd": ["npx", "-y", "@agentclientprotocol/codex-acp@2.1.1"],
      "key_env": "OPENAI_API_KEY", "home_env": "CODEX_HOME", "key_required": False,
-     "login": "codex login --device-auth", "install": "npm i -g @openai/codex",
+     "login": "npx -y @openai/codex login --device-auth", "install": "Node.js 18+ (for npx)",
      "env": {}},
     {"id": "opencode", "label": "opencode", "cmd": ["opencode", "acp"],
      "key_env": None, "home_env": "XDG_DATA_HOME", "key_required": False,
      "login": "opencode auth login",
      "install": "curl -fsSL https://opencode.ai/install | bash",
      # opencode ships allow-all; ask for anything that writes or reaches out (rule 7).
+     # Checked in 1.18.10: the binary JSON.parses OPENCODE_PERMISSION and merges it
+     # over config.permission; defaults are "*":"allow"; websearch is its own key
+     # (opencode.ai/docs/permissions). A live edit turn raised the card.
      "env": {"OPENCODE_DISABLE_AUTOUPDATE": "1",
-             "OPENCODE_PERMISSION": json.dumps({"edit": "ask", "bash": "ask", "webfetch": "ask"})}},
+             "OPENCODE_PERMISSION": json.dumps({"edit": "ask", "bash": "ask", "webfetch": "ask",
+                                                "websearch": "ask"})}},
+    # --acp checked in @google/gemini-cli 0.63.0 (yargs: --experimental-acp "deprecated, use --acp").
     {"id": "gemini", "label": "Gemini CLI", "cmd": ["gemini", "--acp"],
      "key_env": "GEMINI_API_KEY", "home_env": "GEMINI_CLI_HOME", "key_required": True,
      "login": None, "install": "npm i -g @google/gemini-cli",

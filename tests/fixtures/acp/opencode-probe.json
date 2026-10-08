@@ -1,0 +1,62 @@
+{
+  "recorded": "opencode 1.18.10, 2026-10-08, acp.probe with the opencode preset, no stored credentials",
+  "agent": {
+    "name": "OpenCode",
+    "version": "1.18.10"
+  },
+  "options": [
+    {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opencode/big-pickle",
+      "options": [
+        {
+          "value": "opencode/big-pickle",
+          "name": "OpenCode Zen/Big Pickle"
+        },
+        {
+          "value": "opencode/hy3-free",
+          "name": "OpenCode Zen/Hy3 Free"
+        },
+        {
+          "value": "opencode/mimo-v2.5-free",
+          "name": "OpenCode Zen/MiMo V2.5 Free"
+        },
+        {
+          "value": "opencode/muse-spark-1.2-contributor-free",
+          "name": "OpenCode Zen/Muse Spark 1.2 Free"
+        },
+        {
+          "value": "opencode/nemotron-3-ultra-free",
+          "name": "OpenCode Zen/Nemotron 3 Ultra Free"
+        },
+        {
+          "value": "opencode/nemotron-3.5-lightning-free",
+          "name": "OpenCode Zen/Nemotron 3.5 Lightning Free"
+        }
+      ]
+    },
+    {
+      "id": "mode",
+      "name": "Session Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "build",
+      "options": [
+        {
+          "value": "build",
+          "name": "build",
+          "description": "The default agent. Executes tools based on configured permissions."
+        },
+        {
+          "value": "plan",
+          "name": "plan",
+          "description": "Plan mode. Disallows all edit tools."
+        }
+      ]
+    }
+  ],
+  "modes": null
+}

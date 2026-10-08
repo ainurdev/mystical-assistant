@@ -54,7 +54,7 @@ def test_create_home_account_says_how_to_sign_it_in():
                {"action": "create", "agent": "codex", "label": "alt", "kind": "home"})
     a = box["obj"]["account"]
     assert box["code"] == 200
-    assert box["obj"]["login_hint"].endswith(f"CODEX_HOME={acp_agents.home_dir(a['id'])} codex login --device-auth")
+    assert box["obj"]["login_hint"].endswith(f"CODEX_HOME={acp_agents.home_dir(a['id'])} npx -y @openai/codex login --device-auth")
 
 
 def test_delete_unknown_account_is_404():
