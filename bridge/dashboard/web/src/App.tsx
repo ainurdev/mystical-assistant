@@ -24,7 +24,7 @@ import {
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, type AgentOption } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
-import { agentPickers, NO_PICKS, setAgentLabels } from "./lib/agents";
+import { agentPickers, NO_PICKS, sendPicks, setAgentLabels } from "./lib/agents";
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
@@ -370,10 +370,17 @@ export function App() {
   const setModel = (m: ModelId) => pickRun(m, permMode, effort, "model");
   const setPermMode = (p: string) => pickRun(model, p, effort, "permission_mode");
   const setEffort = (e: EffortLevel | "") => pickRun(model, permMode, e, "effort");
+  const selected = sessions.find((s) => s.id === sessionId) ?? null;
+  // The open session runs on another agent: its pickers are that agent's own
+  // options (lib/agents), and this device's Claude picks never reach it.
+  const agentPick = agentPickers(selected?.agent, selected?.account, acp);
   // The SESSION tab's MODEL/MODE/EFFORT are the composer's knobs, so they show
-  // and pick for the open session too; the rest is ours.
-  const settingsView = useMemo(() => ({ ...settings, model, perm: permMode, effort }), [settings, model, permMode, effort]);
+  // and pick for the open session too; the rest is ours. Not on another agent's
+  // session: its ids aren't Claude's, so the tab is this device's defaults there.
+  const settingsView = useMemo(() => (agentPick ? settings : { ...settings, model, perm: permMode, effort }),
+    [settings, model, permMode, effort, !!agentPick]);
   const patchFromSettings = (p: Partial<HudSettings>) => {
+    if (agentPick) { patchSettings(p); return; }
     const { model: m, perm: pm, effort: ef, ...rest } = p;
     // One pick per knob that changes.
     const nm = m || model, np = pm || permMode, ne = (ef ?? effort) as EffortLevel | "";
@@ -461,10 +468,6 @@ export function App() {
   const active = activeOf(turns);
   const running = active !== null;
   const pendingCount = active?.pending.length ?? 0;
-  const selected = sessions.find((s) => s.id === sessionId) ?? null;
-  // The open session runs on another agent: its pickers are that agent's own
-  // options (lib/agents), and this device's Claude picks never reach it.
-  const agentPick = agentPickers(selected?.agent, selected?.account, acp);
   const activeProject = state?.project?.rel ?? null;
   // Everything the composer shows is scoped to the open session — a check or a
   // held card belonging to another one stays with that one.
@@ -1169,7 +1172,9 @@ export function App() {
   // only on true.
   async function send(
     text: string, images: string[],
-    opts?: { force?: boolean; sessionId?: string; project?: string },
+    // newAgent: the agent of a session minted for this prompt (startIn), which
+    // this render's `sessions` doesn't know yet.
+    opts?: { force?: boolean; sessionId?: string; project?: string; newAgent?: string },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
@@ -1195,17 +1200,17 @@ export function App() {
       ?? state?.project?.rel ?? undefined;
     const sessionName = () =>
       sessions.find((s) => s.id === sid)?.title || "another session";
-    // The composer's picks are the open session's; one on the other kind of
-    // agent (a Claude model to an agent, say) would be refused, so it runs on its own.
-    const agentRun = (sessions.find((s) => s.id === sid)?.agent ?? "claude") !== "claude";
-    const knobs = agentRun === !!agentPick;
+    // The composer's picks are the open session's agent's (lib/agents sendPicks):
+    // anywhere else they'd be refused or mean nothing, so the session runs on its own.
+    const targetAgent = opts?.newAgent ?? sessions.find((s) => s.id === sid)?.agent;
+    const knobs = sendPicks(targetAgent, agentPick?.agent, opts?.newAgent !== undefined);
     // No model or mode: a queued prompt runs on the session's when it starts,
     // so a pick made while it waits still applies. Resolves whether the prompt
     // got into the queue; a miss says so here.
     const enqueue = async () => {
       const ok = await queue.enqueue({
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
-        text, prompt: text, images, project, effort: (!agentRun && knobs && effort) || undefined,
+        text, prompt: text, images, project, effort: (!agentPick && knobs && effort) || undefined,
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1423,7 +1428,7 @@ export function App() {
       openSession(session.id);
       toChat();
       return await send(prompt, opts?.images ?? [],
-                        { sessionId: session.id, project, force: opts?.force });
+                        { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude" });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);

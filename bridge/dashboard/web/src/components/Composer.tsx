@@ -265,7 +265,7 @@ function RunPopover<M extends string>({
   const modelName = agent && !model ? agent.label : cur ? cur.short ?? cur.label : String(model);
   const permRow = permOpts.find((o) => o.id === perm) ?? modeRow(perm);
   const effIdx = Math.max(0, EFFORTS.findIndex((e) => e.id === effort));
-  const effRow = agent ? agent.effort?.find((o) => o.id === effort) ?? { id: effort, label: effort } : EFFORTS[effIdx];
+  const effRow = agent ? agent.effort?.find((o) => o.id === effort) ?? { id: effort, label: effort || "AGENT DEFAULT" } : EFFORTS[effIdx];
   const dim: CSSProperties = { fontStyle: "italic", color: "var(--txl)", fontSize: "var(--t95)" };
   const list: CSSProperties = {
     marginTop: 8, maxHeight: 232, overflowY: "auto",
@@ -315,7 +315,7 @@ function RunPopover<M extends string>({
               style={{ appearance: "none", border: 0, padding: 0, background: "transparent", fontFamily: "inherit",
                        cursor: "pointer", fontSize: "var(--t10)", letterSpacing: ".4px", flex: "none",
                        color: sub === "effort" ? "var(--acc)" : "var(--txl)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              {effRow.label || "Effort"}
+              {effRow.label}
               <span aria-hidden style={{ fontSize: "var(--t8)" }}>▾</span>
             </button>}
           </div>
@@ -974,14 +974,14 @@ export function Composer({
             {profileDrop(false)}
             {agentPick && agentChip}
             {modelOpts.length > 0 && (
-              <Drop label="MODEL" code={<Brain size={12} />} value={model} options={modelOpts} fallback={agentPick ? { id: model, label: model } : undefined}
+              <Drop label="MODEL" code={<Brain size={12} />} value={model} options={modelOpts} fallback={agentPick ? { id: model, label: model || "AGENT DEFAULT" } : undefined}
                 open={openDrop === "model"} dot={own("model")}
                 onToggle={() => setOpenDrop((d) => (d === "model" ? "" : "model"))}
                 onPick={(id) => { onModel(id); setOpenDrop(""); }} />
             )}
             {(!agentPick || agentPick.effort) && (
               <Drop<string> label="EFFORT" code={<Gauge size={12} />} value={effort} options={agentPick?.effort ?? EFFORTS}
-                fallback={agentPick ? { id: effort, label: effort } : undefined} open={openDrop === "effort"} dot={own("effort")}
+                fallback={agentPick ? { id: effort, label: effort || "AGENT DEFAULT" } : undefined} open={openDrop === "effort"} dot={own("effort")}
                 onToggle={() => setOpenDrop((d) => (d === "effort" ? "" : "effort"))}
                 onPick={(id) => { onEffort(id as EffortLevel | ""); setOpenDrop(""); }} />
             )}

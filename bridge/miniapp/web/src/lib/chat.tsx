@@ -621,7 +621,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     text: string,
     attachments: Attachment[],
     onSent?: () => void,
-    opts?: { force?: boolean; sessionId?: string },
+    // agent: a session just created for this prompt, whose brief no list has yet.
+    opts?: { force?: boolean; sessionId?: string; agent?: string },
   ) {
     const sid = opts?.sessionId ?? sessionId;
     if (!text || !sid) return;
@@ -632,7 +633,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     // refuses a Claude model there) and runs on its own profile's.
     const target = briefsQ.data?.sessions.find((s) => s.id === sid) ?? sessions.find((s) => s.id === sid)
       ?? (sid === sessionId ? brief : undefined);
-    const claude = (target?.agent ?? "claude") === "claude";
+    const claude = (opts?.agent ?? target?.agent ?? "claude") === "claude";
     try {
       const res = await api.run(
         text,
@@ -705,7 +706,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       await runPrompt(h.text, h.attachments, clearDraft,
-                      { force: true, sessionId: session.id });
+                      { force: true, sessionId: session.id, agent: session.agent ?? "claude" });
     } catch {
       setSendError(new ApiError(0, "Failed to start a new session."));
     } finally {

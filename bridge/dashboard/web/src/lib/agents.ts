@@ -54,3 +54,13 @@ export function agentPickers(agent: string | undefined, account: string | undefi
   return { agent, label: agentLabel(agent), model: optionRows(o?.model), mode: optionRows(o?.mode),
            effort: optionRows(o?.effort) };
 }
+
+/** Whether a run to a session carries the composer's model/mode/effort. They
+ *  are the open session's agent's picks, so only a session on that same agent
+ *  takes them; a Claude model on an agent is refused, an agent's ids mean
+ *  nothing to Claude or to another agent. A session minted for this prompt
+ *  (`fresh`) on another agent runs on its profile's own. */
+export function sendPicks(targetAgent: string | undefined, openAgent: string | undefined, fresh = false): boolean {
+  const t = targetAgent || "claude";
+  return t === (openAgent || "claude") && !(fresh && t !== "claude");
+}

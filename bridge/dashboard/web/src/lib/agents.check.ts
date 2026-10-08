@@ -3,7 +3,7 @@
 // from the agent's own options — never Claude's lists or this device's Claude
 // picks, which the bridge would refuse on an agent turn.
 import type { AcpAgentsInfo } from "../api.ts";
-import { agentLabel, agentPickers, NO_PICKS, runtimeBadge, setAgentLabels } from "./agents.ts";
+import { agentLabel, agentPickers, NO_PICKS, runtimeBadge, sendPicks, setAgentLabels } from "./agents.ts";
 import { runPicks } from "../models.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -11,7 +11,7 @@ const ok = (cond: boolean, what: string) => {
   console.log(`ok - ${what}`);
 };
 const eq = (got: unknown, want: unknown, what: string) =>
-  ok(JSON.stringify(got) === JSON.stringify(want), `${what} — got ${JSON.stringify(got)}`);
+ok(JSON.stringify(got) === JSON.stringify(want), `${what} — got ${JSON.stringify(got)}`);
 
 // --- runtime label --------------------------------------------------------------
 eq(runtimeBadge("acp:codex").text, "◇ CODEX", "before the presets load, the id upper-cased");
@@ -50,4 +50,13 @@ eq(runPicks({ profile_id: "p" }, NO_PICKS, { model: "o4", mode: "auto", effort: 
   { model: "o4", perm: "auto", effort: "" }, "an agent profile's own ids show through");
 eq(runPicks({ profile_id: "p" }, device, { model: "", mode: "", effort: "" }).model, "claude-opus-5-5",
   "(contrast) a Claude session does fall back to the device's model");
+// Which runs carry the composer's picks (App send()).
+ok(sendPicks("claude", undefined) && sendPicks(undefined, undefined), "Claude to Claude: the picks go");
+ok(sendPicks("codex", "codex"), "the open agent session: its own picks go");
+ok(!sendPicks("codex", undefined), "a Claude model never goes to an agent session");
+ok(!sendPicks("claude", "codex"), "an agent's ids never go to a Claude session");
+ok(!sendPicks("opencode", "codex"), "nor one agent's ids to another");
+ok(!sendPicks("codex", "codex", true), "a session minted for this prompt on an agent runs on its profile's");
+ok(sendPicks("claude", undefined, true), "a fresh Claude session still gets this device's picks");
+ok(!sendPicks("codex", undefined, true), "the create-then-send path: an agent-default new session gets no Claude model");
 console.log("agents.check: all ok");
