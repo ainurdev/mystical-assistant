@@ -52,6 +52,8 @@ ${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the brid
   ${c_b}📜${c_0} mystical ${c_c}logs${c_0}      follow the log (Ctrl-C to stop following)
   ${c_b}⚡${c_0} mystical ${c_c}run${c_0}       run in the foreground (live logs, Ctrl-C to quit)
   ${c_b}🔗${c_0} mystical ${c_c}design-link${c_0} <rel> <id>  link a repo to a Claude Design project
+  ${c_b}📦${c_0} mystical ${c_c}export${c_0}    pack repos, MCPs, settings and history into one file for a new machine
+  ${c_b}📥${c_0} mystical ${c_c}import${c_0} <file> [--dry-run]  replay that file on the new machine
 EOF
 }
 
@@ -308,6 +310,12 @@ import sys
 from bridge import project_config
 project_config.set_design_project(sys.argv[1], sys.argv[2])
 ' "$2" "$3"
+    ;;
+  export|import)
+    # Moving to another machine (bridge/move.py). .env is loaded the way run.sh
+    # loads it, because bridge.config reads BASE_PATH and BRIDGE_DB from it.
+    set -a; . "$ENV_FILE"; set +a
+    PYTHONPATH="$REPO" exec python3 -m bridge.move "$@"
     ;;
   -h|--help|help)   usage ;;
   *)                die "unknown command: $1"$'\n'"$(usage)" ;;

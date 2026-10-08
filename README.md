@@ -313,7 +313,31 @@ mystical status --json   the same, as one line of JSON for scripts
 mystical doctor     check prerequisites
 mystical logs       follow the log
 mystical run        run in the foreground (Ctrl-C to quit)
+mystical export     pack this machine up for a new one (one file)
+mystical import F   replay that file on the new machine (--dry-run to preview)
 ```
+
+**Moving to a new machine**
+
+Your repos, MCP servers, `~/.claude` settings and skills, chat history and the
+bridge's own settings live on the old machine's disk and nowhere else. GitHub
+only has what you pushed. So the move is one file:
+
+```bash
+# old machine
+git -C ~/projects/mystical-assistant pull && mystical export
+# new machine, after ./setup.sh
+mystical import ~/mystical-move-<host>-<time>.tar.gz --dry-run   # look first
+mystical import ~/mystical-move-<host>-<time>.tar.gz
+```
+
+Repos are cloned again from their remotes. Work no remote has (local branches,
+stashes, uncommitted changes, untracked files, `.env`s) rides along and lands
+exactly where it was. History is rewritten to the new paths, so it shows up in
+History and resumes. Settings merge: whatever the new machine already has wins.
+Logins, the bot token and the Rivendell link stay behind, and Rivendell arrives
+switched off. Turn it on once the old bridge is stopped, because two linked
+bridges would both run every job. The file holds secrets, so delete it after.
 
 **If something's off**
 
