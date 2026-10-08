@@ -23,7 +23,8 @@ by refusing it (below):
     task-implementation-request        |  -> POST .../<id>/ack  received | queued
     project-todolist-request           |  (the first into an idle queue is
     task-description-request           |   auto-accepted; the rest ping Telegram)
-    changelog-request                  v  ACCEPT (dashboard PLUGINS tab / Telegram)
+    changelog-request                  |
+    deck-request                       v  ACCEPT (dashboard PLUGINS tab / Telegram)
           -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
           -> runner.start_streaming_job(...)            (bypassPermissions,
@@ -55,12 +56,13 @@ rivendell-api parses it by the request's kind — and only uses the step to labe
 the request in the log, the Telegram ping and the dashboard queue.
 
 Reviews and implementations need a local checkout of the named repository;
-todolists, task descriptions and changelogs need none — the whole project/task
-context (for a changelog: the tasks, pull requests and commits the user picked) is
+todolists, task descriptions, changelogs and deck drafts need none — the whole project/task
+context (for a changelog: the tasks, pull requests and commits the user picked; for a
+deck: its slides and the project's work of a period) is
 rendered into the prompt server-side, so they run in the worker's workdir like a
 generic read task (rivendell-api writes a task description back onto the Teamwork
 task itself; the bridge only returns the generated text). The exception is a
-claim that names the project's repositories (todolists and changelogs, from a
+claim that names the project's repositories (todolists, changelogs and deck drafts, from a
 rivendell-api that sends them): it runs in the folder holding this machine's
 checkouts of those repos, matched on any git remote (_project_dir), so its
 session lands under that project rather than BASE_PATH's root.
@@ -105,7 +107,7 @@ also return IN_PROGRESS requests, so a run interrupted mid-flight by a restart
 comes back into the queue for a fresh accept rather than sticking IN_PROGRESS
 forever — except a queue-mode batch, which re-attaches to its persisted turns
 instead (below). In-process duplicates are prevented by each worker's _seen set (keys
-"review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>",
+"review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>" / "deck:<id>",
 since the request kinds have separate id spaces). A refused request leaves
 _seen (catch-up no longer lists it, so that costs no rescan per reconnect);
 on an older API a dismissed one is claimed+FAILED, so catch-up never
@@ -799,6 +801,11 @@ class Worker:
                 self._apply_policy(self._enqueue("news", item["id"], item.get("userName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: news catch-up failed: {e}")
+        try:
+            for item in self._api("/plugin/deck-requests"):
+                self._apply_policy(self._enqueue("deck", item["id"], item.get("siteTitle")))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: deck catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
@@ -975,6 +982,11 @@ class Worker:
             print(f"rivendell[{self.name}]: newspaper of {obj.get('editionDate', '?')} "
                   f"requested for {user.get('name', '?')}")
             return self._enqueue("news", obj["requestId"], user.get("name"))
+        if obj.get("type") == "deck-request" and obj.get("requestId"):
+            site = obj.get("site") or {}
+            print(f"rivendell[{self.name}]: deck draft requested for "
+                  f"{site.get('title', '?')}")
+            return self._enqueue("deck", obj["requestId"], site.get("title"))
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -1445,6 +1457,12 @@ class Worker:
         parsed server-side. Only the reader's own bridge is ever sent one."""
         self._run_in_workdir("newspaper", "news", request_id, reader, mcp_on="rivendell")
 
+    def _run_deck(self, request_id: str, title: "str | None") -> None:
+        """A slide deck drafted from its project's work — no checkout (see
+        _run_in_workdir). The JSON returned becomes the deck's next revision in
+        rivendell; one that doesn't fit the slides fails there, with why."""
+        self._run_in_workdir("deck", "deck", request_id, title)
+
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None", mcp_on: "str | None" = None) -> None:
         """Run a request that needs NO checkout: its whole context is rendered
@@ -1484,6 +1502,7 @@ class Worker:
         "taskdesc": "task-description-requests",
         "changelog": "changelog-requests",
         "news": "news-requests",
+        "deck": "deck-requests",
     }
 
     # -- Telegram ping for queued (non-auto-accepted) requests --
@@ -1494,6 +1513,7 @@ class Worker:
         "taskdesc": "task description",
         "changelog": "changelog",
         "news": "newspaper",
+        "deck": "deck draft",
     }
 
     def _label(self, item: dict) -> str:
@@ -1638,6 +1658,8 @@ class Worker:
                 self._run_changelog(request_id, slug)
             elif kind == "news":
                 self._run_news(request_id, slug)
+            elif kind == "deck":
+                self._run_deck(request_id, slug)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run
