@@ -3843,6 +3843,7 @@ function ProfilesPanel({
   settings,
   sessionTools,
   onChanged,
+  onPatch,
 }: {
   info: ProfilesInfo | null; // null = still loading, or the load failed (error)
   available: boolean; // false = a bridge older than profiles
@@ -3851,6 +3852,7 @@ function ProfilesPanel({
   settings: HudSettings; // the open session's picks seed a new profile
   sessionTools: string[];
   onChanged: () => void;
+  onPatch: (patch: Partial<HudSettings>) => void; // retires the old AGENT pick
 }) {
   // The profile in the form: id "" = a new one. null = no form open.
   const [form, setForm] = useState<Profile | null>(null);
@@ -3875,9 +3877,16 @@ function ProfilesPanel({
     onChanged();
   }, []);
   // The browser-only profiles this replaced move onto the bridge once, after
-  // the list is in (a clash with one already there gets " (old)").
+  // the list is in (a clash with one already there gets " (old)"), and so does
+  // the retired AGENT pick: cleared once moved, so it's never asked about again.
   useEffect(() => {
-    if (info) void importLegacy(info.profiles, api.profileWrite).then((any) => { if (any) onChanged(); });
+    if (!info) return;
+    void importLegacy(info.profiles, api.profileWrite, settings.agent).then((r) => {
+      if (!r) return;
+      if (r.landed) onChanged();
+      if (settings.agent) onPatch({ agent: "" });
+      if (r.picked) notify("info", `Your AGENT pick is now profile '${r.picked}' — pick it in PROFILE`);
+    });
   }, [info]);
 
   const set = (patch: Partial<Profile>) => setForm((f) => f && { ...f, ...patch });
@@ -4616,6 +4625,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     settings={settings}
                     sessionTools={sessionTools}
                     onChanged={onProfilesChanged}
+                    onPatch={onPatch}
                   />
                 </Section>
               </>

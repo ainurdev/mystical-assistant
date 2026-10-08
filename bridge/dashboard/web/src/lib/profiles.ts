@@ -41,24 +41,33 @@ let imported = false; // StrictMode runs a mount effect twice in dev: import onc
 
 /** Move the browser-only profiles onto the bridge, once: `write` (the POST)
  *  each, then forget them. Best-effort and silent — one the bridge refuses (a
- *  login since removed, say) is dropped. Resolves whether any landed, so the
- *  caller knows to reload the list. */
+ *  login since removed, say) is dropped. The retired composer AGENT pick
+ *  (`agentPick`, HudSettings.agent) comes along: "claude:N" for a login other
+ *  than 1 becomes a profile "Account N" (kept if one by that name exists), as
+ *  nothing reads that pick any more. Resolves null on a second call this page,
+ *  else whether any landed (so the caller reloads the list) and the profile
+ *  name the AGENT pick now lives under (so the caller says so, once). */
 export async function importLegacy(
-  existing: Profile[], write: (body: ProfileWrite) => Promise<unknown>,
-): Promise<boolean> {
-  if (imported) return false;
+  existing: Profile[], write: (body: ProfileWrite) => Promise<unknown>, agentPick = "",
+): Promise<{ landed: boolean; picked: string | null } | null> {
+  if (imported) return null;
   imported = true;
-  let raw: unknown;
-  try {
-    raw = JSON.parse(localStorage.getItem(LEGACY) || "null");
-  } catch {
-    return false;
-  }
-  if (!Array.isArray(raw)) return false;
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
   const taken = new Set(existing.map((p) => p.name));
+  const slot = /^claude:(\d+)$/.exec(agentPick)?.[1];
+  const picked = slot && slot !== "1" ? `Account ${slot}` : null;
+  const create = !!picked && !taken.has(picked);
+  const pickWrite = slot && picked && create
+    ? write({ action: "create", name: picked, agent: "claude", account: slot,
+      model: "", mode: "", effort: "", tools: null })
+    : Promise.resolve();
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(localStorage.getItem(LEGACY) || "null");
+  } catch { /* unreadable: nothing to move */ }
+  const list = Array.isArray(raw) ? raw : [];
   const settled = await Promise.allSettled(
-    raw.filter((p) => p && typeof p === "object" && str(p.name).trim()).map((p) => {
+    list.filter((p) => p && typeof p === "object" && str(p.name).trim()).map((p) => {
       const name = str(p.name).trim().slice(0, NAME_MAX);
       return write({
         action: "create",
@@ -74,8 +83,14 @@ export async function importLegacy(
       });
     }),
   );
-  try {
-    localStorage.removeItem(LEGACY);
-  } catch { /* private mode: it just stays behind, unread */ }
-  return settled.some((r) => r.status === "fulfilled");
+  const pickOk = await pickWrite.then(() => true, () => false);
+  if (Array.isArray(raw)) {
+    try {
+      localStorage.removeItem(LEGACY);
+    } catch { /* private mode: it just stays behind, unread */ }
+  }
+  return {
+    landed: settled.some((r) => r.status === "fulfilled") || (create && pickOk),
+    picked: pickOk ? picked : null,
+  };
 }

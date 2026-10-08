@@ -45,7 +45,31 @@ eq(sent[0], { action: "create", name: "Work (old)", agent: "claude", account: "2
   "an entry maps onto a Claude profile: its login slot, its mode, its tool switches; a clash is marked");
 eq([sent[1].account, sent[1].tools], ["", []], "a free-agent pick becomes the default login");
 ok(sent.length === 3, "a nameless entry is skipped, the rest are all sent");
-ok(landed, "any that landed says so, so the list reloads");
+ok(!!landed?.landed && landed.picked === null, "any that landed says so, so the list reloads");
 ok(keyWhilePosting !== undefined && !box.has("hud-profiles"), "the old list goes only after every POST settled");
-ok(!(await importLegacy([], async () => {})), "once per page: a second mount imports nothing");
+ok((await importLegacy([], async () => {}, "claude:3")) === null,
+  "once per page: a second mount imports nothing, the AGENT pick included");
+
+// The retired composer AGENT pick ("claude:N") becomes a profile "Account N".
+async function pickRun(pick: string, existing: Profile[], refuse = false) {
+  const mod = await import(`./profiles.ts?pick=${pick}-${existing.length}-${refuse}`);
+  const got: ProfileWrite[] = [];
+  const r = await mod.importLegacy(existing, async (b: ProfileWrite) => {
+    got.push(b);
+    if (refuse) throw new Error("no usable Claude account");
+  }, pick);
+  return { r, got };
+}
+let run = await pickRun("claude:2", []);
+eq(run.got, [{ action: "create", name: "Account 2", agent: "claude", account: "2", model: "", mode: "",
+  effort: "", tools: null }], "an AGENT pick of claude:2 becomes profile 'Account 2' on that login");
+eq(run.r, { landed: true, picked: "Account 2" }, "and the caller learns its name, to say so once");
+run = await pickRun("claude:2", [P({ name: "Account 2" })]);
+eq([run.got.length, run.r?.picked], [0, "Account 2"], "a profile by that name already there is kept, not duplicated");
+run = await pickRun("claude:1", []);
+eq([run.got.length, run.r?.picked], [0, null], "login 1 is the default: nothing to move");
+run = await pickRun("opencode:groq", []);
+eq([run.got.length, run.r?.picked], [0, null], "a non-Claude pick is not a login slot");
+run = await pickRun("claude:4", [], true);
+eq(run.r, { landed: false, picked: null }, "a pick the bridge refuses is dropped, not announced");
 console.log("profiles.check: all ok");
