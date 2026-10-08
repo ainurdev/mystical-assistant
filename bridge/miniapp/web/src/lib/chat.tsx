@@ -221,6 +221,10 @@ export interface ChatContextValue {
   // profiles.brief) — model | permission_mode | effort. [] when unbound or
   // nothing overridden; the composer dots the matching pill.
   overrides: string[];
+  // Who runs the open session: "claude", or another agent's preset id (its
+  // profile's). Another agent's model/mode/effort ids are its own, so the
+  // composer hides Claude's pickers and nothing of theirs is sent.
+  sessionAgent: string;
   sessions: SessionBrief[];
   sessionId: string | null;
   selectSession: (id: string) => void;
@@ -367,6 +371,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // merely shows into a live turn, and turn Bypass on there. A bridge too old
   // for the route 404s; the pick still rides the next /api/run, as before.
   function pickRun(m: ModelId, p: string, e: EffortLevel | "", half: RunPick) {
+    if (sessionAgent !== "claude") return;   // no pickers there; never a Claude pick on an agent
     setModelState(m);
     setPermState(p);
     setEffortState(e);
@@ -575,6 +580,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ?? (transcriptQ.data?.session?.id === sessionId ? transcriptQ.data?.session : undefined);
   // The open session's profile, which the pickers read through (runPicks).
   const boundProfile = profilesQ.data?.profiles.find((p) => p.id === brief?.profile_id) ?? null;
+  const sessionAgent = brief?.agent ?? "claude";
   useEffect(() => {
     if (!brief) return;
     const r = runPicks(brief, { model: defModel, perm: defPerm, effort: defEffort }, boundProfile);
@@ -622,15 +628,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (!opts?.sessionId && (isRunning || pending.length > 0)) return;
     setSendError(null);
     setChecking(true);
+    // This phone's picks are Claude's: an agent session gets none (the bridge
+    // refuses a Claude model there) and runs on its own profile's.
+    const target = briefsQ.data?.sessions.find((s) => s.id === sid) ?? sessions.find((s) => s.id === sid)
+      ?? (sid === sessionId ? brief : undefined);
+    const claude = (target?.agent ?? "claude") === "claude";
     try {
       const res = await api.run(
         text,
         attachments.map((a) => a.dataUrl ?? "").filter(Boolean),
         project ?? undefined,
         sid,
-        model,
-        effort || undefined,
-        perm || undefined,
+        claude ? model : undefined,
+        (claude && effort) || undefined,
+        (claude && perm) || undefined,
         opts?.force,
       );
       // Held: this looks like different work from the session it would resume.
@@ -808,6 +819,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     pickProfile,
     profilesError: pickProfileErr ?? profilesLoadErr,
     overrides: brief?.overrides ?? [],
+    sessionAgent,
     sessions,
     sessionId,
     selectSession,

@@ -101,7 +101,7 @@ function dotSelected<T extends { id: string; label: string; title?: string }>(
 // pill. Mirrors bridge/dashboard/web/src/lib/profiles.ts describe() (hand-kept
 // copy — the two web apps don't share source).
 function describeProfile(p: Profile): string {
-  const bits = [p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
+  const bits = [p.agent !== "claude" ? `◇ ${p.agent}` : p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
     p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
   return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
 }
@@ -133,8 +133,10 @@ export function Composer() {
     pickProfile,
     profilesError,
     overrides,
+    sessionAgent,
     sessionId,
   } = useChat();
+  const onAgent = sessionAgent !== "claude";
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -205,8 +207,9 @@ export function Composer() {
         // A screenshot queues with its prompt — otherwise it sat in the tray
         // while the prompt that needed it ran without it.
         images: draftAttachments.map((a) => a.dataUrl ?? "").filter(Boolean),
-        // No model or mode: it runs on the session's when it starts.
-        effort: effort || undefined,
+        // No model or mode: it runs on the session's when it starts. Nor
+        // effort on another agent, whose ids aren't this phone's.
+        effort: (!onAgent && effort) || undefined,
       });
       setDraft("");
       draftAttachments.forEach((a) => removeAttachment(a.id));
@@ -218,7 +221,7 @@ export function Composer() {
   // "Claude Opus 5" is the header of a menu, not a chip — the chip says Opus 5,
   // then only what you've moved off default.
   const modelLabel = (models.find((m) => m.id === model)?.label ?? model).replace(/^Claude /, "");
-  const settingsLabel = [
+  const settingsLabel = onAgent ? `◇ ${sessionAgent.toUpperCase()}` : [
     modelLabel,
     effort && EFFORTS.find((e) => e.id === effort)?.label,
     perm && PERMS.find((p) => p.id === perm)?.label,
@@ -364,9 +367,11 @@ export function Composer() {
                   ]}
                   onPick={(v) => void pickProfile(v)}
                 />
-                <DropdownMenuSeparator />
+                {!onAgent && <DropdownMenuSeparator />}
               </>
             )}
+            {/* Another agent's models and modes are its own: picked on the dashboard. */}
+            {!onAgent && <>
             <OptionRow
               label="MODEL"
               value={model}
@@ -390,6 +395,7 @@ export function Composer() {
               options={dotSelected(PERMS, perm, overrides.includes("permission_mode"))}
               onPick={setPerm}
             />
+            </>}
           </DropdownMenuContent>
         </DropdownMenu>
 
