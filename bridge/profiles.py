@@ -158,6 +158,13 @@ def update(pid: str, fields: dict) -> dict:
         # Every bound session would switch agents at once, past bind()'s 409.
         if str(merged.get("agent") or CLAUDE).strip() != (rows[i].get("agent") or CLAUDE):
             raise ValueError("A profile's agent can't change; make a new profile")
+        # An agent keeps its sessions under the account's home: another account
+        # can't resume them. Refused rather than left to fail at the next turn.
+        if (rows[i].get("agent") or CLAUDE) != CLAUDE \
+                and str(merged.get("account") or "").strip() != (rows[i].get("account") or "") \
+                and store.profile_has_agent_session(pid):
+            raise ValueError("Sessions on this profile already ran under its account; "
+                             "make a new profile for the other account")
         rows[i] = {"id": pid, **_clean(merged, keep_id=pid)}
         _save(rows)
         return rows[i]
@@ -218,6 +225,12 @@ def brief(session: dict) -> dict:
             "disabled_tools": tools_for(session), "overrides": e["overrides"]}
 
 
+def history(chat_id: int, include_archived: bool = False) -> list:
+    """store.history rows with each session's run settings as brief() gives
+    them, so a session opened from History shows its profile's values."""
+    return [{**r, **brief(r)} for r in store.history(chat_id, include_archived=include_archived)]
+
+
 def save_pick(session: dict, field: str, value: "str | None") -> None:
     """Save a person's pick for one knob, keeping the profile live. Unbound, a
     blank model or mode keeps the old pick (no picker offers one), but a blank
@@ -246,8 +259,15 @@ def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
         return {"error": "no such profile"}, 404
     eff = effective(session)
     new_agent = (new or {}).get("agent") or CLAUDE
-    if eff["agent"] != new_agent and store.count_turns(session["id"]):
+    history = (store.count_turns(session["id"]) or session.get("claude_session_id")
+               or session.get("agent_session_id"))
+    if eff["agent"] != new_agent and history:
         return {"error": "This session already ran on another agent. Start a "
+                         "new session with that profile."}, 409
+    # Same agent, other account: the agent's saved session lives in the old
+    # account's home, so the next turn couldn't resume it.
+    if session.get("agent_session_id") and ((new or {}).get("account") or "") != eff["account"]:
+        return {"error": "This session already ran under another account. Start a "
                          "new session with that profile."}, 409
     store.set_session_field(session["id"], "profile_id", pid)
     freeze = pid is None and eff["agent"] == CLAUDE

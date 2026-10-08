@@ -429,6 +429,13 @@ def count_turns(session_id: str) -> int:
                          (session_id,)).fetchone()[0]
 
 
+def profile_has_agent_session(pid: str) -> bool:
+    """Has any session bound to this profile opened an agent session yet?"""
+    with closing(_connect()) as c:
+        return c.execute("SELECT 1 FROM sessions WHERE profile_id=? AND agent_session_id "
+                         "IS NOT NULL LIMIT 1", (pid,)).fetchone() is not None
+
+
 def unbind_profile(pid: str, model: "str | None", mode: "str | None",
                    effort: "str | None", tools_json: "str | None",
                    clear: bool = False) -> None:
@@ -1017,11 +1024,12 @@ def history(chat_id: int, include_archived: bool = False,
     subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
     a session that predates the columns is unknown, not free.
 
-    Each row also carries the session's run picks, as a brief does (model, and
-    the mode a run would get): a session opened from here — archived, or past the
-    session list's age — is seeded from this row, and its composer loads them."""
+    Each row also carries the session's raw run-setting columns; the routes
+    serve profiles.history(), which turns them into what a run would get, as a
+    brief does: a session opened from here — archived, or past the session
+    list's age — is seeded from that row, and its composer loads them."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, s.model, s.permission_mode, "
+         "s.lifecycle, s.model, s.permission_mode, s.effort, s.profile_id, s.disabled_tools, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
@@ -1045,7 +1053,6 @@ def history(chat_id: int, include_archived: bool = False,
         for r in c.execute(q, params).fetchall():
             d = dict(r)
             d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
-            d["permission_mode"] = d["permission_mode"] or config.MINIAPP_PERMISSION_MODE
             rows.append(d)
     return rows
 

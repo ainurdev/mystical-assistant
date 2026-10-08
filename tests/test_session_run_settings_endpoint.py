@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bridge import config, models, queue_manager, relevance, runner, store
+from bridge import config, models, profiles, queue_manager, relevance, runner, store
 from bridge.dashboard import server as dash
 from bridge.miniapp import server as mini
 from bridge.queue_manager import PreviewQueue
@@ -274,7 +274,7 @@ def test_history_rows_carry_the_sessions_picks():
     store.set_run_settings(picked["id"], model="claude-fable-5-1")
     store.archive(picked["id"])
     bot = store.create_session(CHAT, "/srs-hist-bot")
-    rows = {r["id"]: r for r in store.history(CHAT, include_archived=True)}
+    rows = {r["id"]: r for r in profiles.history(CHAT, include_archived=True)}
     assert (rows[picked["id"]]["model"], rows[picked["id"]]["permission_mode"]) == (
         "claude-fable-5-1", "default")
     assert rows[bot["id"]]["model"] is None

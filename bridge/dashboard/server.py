@@ -304,7 +304,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
-            return self._json({"sessions": store.history(chat, include_archived=archived)})
+            return self._json({"sessions": profiles.history(chat, include_archived=archived)})
         if path == "/local/running":
             return self._json(runner.running_snapshot(chat))
         if path == "/local/queue":
@@ -1098,12 +1098,12 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
-            state = body.get("lifecycle") or None
-            if state is not None and state not in store.LIFECYCLES:
+            lc = body.get("lifecycle") or None
+            if lc is not None and lc not in store.LIFECYCLES:
                 return self._json(
                     {"error": f"lifecycle must be one of {store.LIFECYCLES}"}, 400)
-            store.set_lifecycle(sid, state)
-            return self._json({"ok": True, "lifecycle": state})
+            store.set_lifecycle(sid, lc)
+            return self._json({"ok": True, "lifecycle": lc})
         if path.startswith("/local/sessions/") and path.endswith("/retitle"):
             sid = path[len("/local/sessions/"):-len("/retitle")]
             s = store.get_session(sid)

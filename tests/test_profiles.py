@@ -265,3 +265,32 @@ def test_a_duplicate_keeps_its_profile_but_never_the_agents_session_id(fake_agen
     copy = store.duplicate(s["id"])
     assert copy["profile_id"] == p["id"]
     assert copy["agent_session_id"] is None and copy["fork_from"] is None
+
+
+# Final review minors 2 and 3.
+
+def test_a_native_session_with_no_bridge_turns_still_cannot_go_to_an_agent(fake_agent):
+    fake = profiles.create({"name": "F", "agent": "fake"})
+    s = store.create_session(CHAT, "/pf-native")
+    store.set_claude_session_id(s["id"], "c-native-1")
+    assert store.count_turns(s["id"]) == 0
+    assert profiles.bind(store.get_session(s["id"]), fake["id"])[1] == 409
+
+
+def test_an_agent_session_cannot_move_to_another_account(fake_agent):
+    acp_agents._save([{"id": "a_1", "agent": "fake", "label": "one", "kind": "home"},
+                      {"id": "a_2", "agent": "fake", "label": "two", "kind": "home"}])
+    one = profiles.create({"name": "One", "agent": "fake", "account": "a_1"})
+    two = profiles.create({"name": "Two", "agent": "fake", "account": "a_2"})
+    s = store.create_session(CHAT, "/pf-acct", profile_id=one["id"])
+    assert profiles.bind(store.get_session(s["id"]), two["id"])[1] == 200   # no history yet
+    assert profiles.bind(store.get_session(s["id"]), one["id"])[1] == 200
+    # Editing the account is fine until a bound session has opened an agent session.
+    assert profiles.update(one["id"], {"account": "a_2"})["account"] == "a_2"
+    profiles.update(one["id"], {"account": "a_1"})
+    store.set_session_field(s["id"], "agent_session_id", "s-123")
+    j, code = profiles.bind(store.get_session(s["id"]), two["id"])
+    assert code == 409 and "another account" in j["error"]
+    j, code = profiles.api_write({"action": "update", "id": one["id"], "account": "a_2"})
+    assert code == 400 and "already ran under its account" in j["error"]
+    assert profiles.update(one["id"], {"effort": "high"})["effort"] == "high"   # other knobs still edit

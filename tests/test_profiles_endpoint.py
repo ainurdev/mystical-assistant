@@ -176,3 +176,20 @@ def test_profile_bot_command_lists_binds_and_unbinds(monkeypatch):
 
     dispatch.handle_profile_command(CHAT, "/profile nope")
     assert sent[-1] == "No profile named 'nope'. /profile lists them."
+
+
+def test_history_rows_carry_the_profile_on_both_servers(monkeypatch):
+    """Final review minor 4: a session opened from History seeds from its row."""
+    from bridge import native
+    monkeypatch.setattr(native, "refresh", lambda chat: None)
+    p = _p()
+    sid = store.create_session(config.DASH_CHAT_ID, "/pe-hist", profile_id=p["id"])["id"]
+    h, box = _handler(dash)
+    h._get_api("/local/history", {})
+    m, mbox = _handler(mini)
+    m._api_history(config.DASH_CHAT_ID, {})
+    for rows in (box["obj"]["sessions"], mbox["obj"]["sessions"]):
+        row = next(r for r in rows if r["id"] == sid)
+        assert (row["profile_id"], row["agent"], row["model"], row["permission_mode"],
+                row["effort"], row["overrides"]) == (
+            p["id"], "claude", "claude-fable-5-1", "plan", "high", [])

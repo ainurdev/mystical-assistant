@@ -623,7 +623,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_history(self, chat_id: int, qs):
         native.refresh(chat_id)            # surface VSCode sessions in the history view
         archived = qs.get("archived", ["0"])[0] == "1"
-        self._json({"sessions": store.history(chat_id, include_archived=archived)})
+        self._json({"sessions": profiles.history(chat_id, include_archived=archived)})
 
     def _api_running(self, chat_id: int):
         self._json(runner.running_snapshot(chat_id))
