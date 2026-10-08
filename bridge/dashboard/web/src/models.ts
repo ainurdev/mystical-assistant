@@ -13,11 +13,10 @@ export interface ModelRow extends ModelOption {
   title?: string;   // every window that applies, for the row's tooltip
 }
 
-/** Who runs a turn: a Claude login, or a free-agent provider. */
+/** A Claude login that can run a turn (another agent: lib/agents). */
 export interface AgentOption {
-  id: string; // 'claude:<slot>' | 'opencode:<provider>' — a turn's runtime tag
-  label: string; // the footer meter's tooltip, a free agent's chip
-  free: boolean; // true = not Claude, so no subscription quota applies
+  id: string; // 'claude:<slot>' — a turn's runtime tag
+  label: string; // the footer meter's tooltip
   def: boolean; // the ambient ~/.claude login
   left: number | null; // % of this account's tighter usage window unspent
 }

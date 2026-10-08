@@ -9,8 +9,8 @@
 export interface Profile {
   id: string;
   name: string;
-  agent: string; // "claude" — agents other than Claude come with ACP
-  account: string; // a Claude login slot, as a string; "" = the default login
+  agent: string; // "claude", or an ACP preset id ("codex"); fixed once created
+  account: string; // Claude: a login slot as a string; an agent: its account id. "" = the default login
   model: string; // "" = not set, so the composer's pick applies
   mode: string; // permission mode; "" = not set
   effort: string; // "" = not set
@@ -28,9 +28,10 @@ export type ProfileWrite = Partial<Profile> & { action: "create" | "update" | "d
 const NAME_MAX = 32; // bridge/profiles.py NAME_MAX
 
 /** "A2 · FABLE-5-1 · ACCEPT EDITS · HIGH · 3 OFF" — what a session bound to it
- *  runs with. A knob the profile leaves unset is left out. */
+ *  runs with. A knob the profile leaves unset is left out. Another agent leads
+ *  with "◇ CODEX" (its account ids mean nothing on a row). */
 export function describe(p: Profile): string {
-  const bits = [p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
+  const bits = [p.agent !== "claude" ? `◇ ${p.agent}` : p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
     p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
   return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
 }

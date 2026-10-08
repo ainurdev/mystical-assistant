@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefOb
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api, type AnswerSelection, type TurnOutcome } from "../api";
+import { runtimeBadge } from "../lib/agents";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
@@ -52,24 +53,20 @@ function Attachments({ items }: { items: string[] }) {
 }
 
 /** Which runtime ran this turn — shown only when it wasn't the default Claude
- *  account, so fallback-ladder work (another login, a free agent) stays visible. */
+ *  account: another login after a usage limit, or another agent (lib/agents). */
 function RuntimeBadge({ runtime }: { runtime: string }) {
-  const [kind, arg] = runtime.split(":", 2);
-  const free = kind === "opencode";
-  const label = free ? `FREE AGENT · ${(arg || "?").toUpperCase()}` : `ACCOUNT ${arg}`;
+  const b = runtimeBadge(runtime);
   return (
     <div className="ml-[var(--rail)] flex">
       <span
         className="border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{
-          color: free ? "var(--warn)" : "var(--acc)",
+          color: b.agent ? "var(--warn)" : "var(--acc)",
           borderColor: "color-mix(in srgb, currentColor 40%, transparent)",
         }}
-        title={free
-          ? "Ran on a free agent (opencode) after a usage limit — weaker model, review its work"
-          : "Ran on another Claude account after a usage limit"}
+        title={b.title}
       >
-        {free ? "⚡ " : "⇄ "}{label}
+        {b.text}
       </span>
     </div>
   );

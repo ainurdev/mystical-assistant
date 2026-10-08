@@ -25,9 +25,10 @@ import {
   type AgentConfigTool,
   type AiFeature,
   type EnvSetting,
-  type FreeAgentInfo,
+  type AcpAccount,
+  type AcpAgentsInfo,
+  type AcpPreset,
   type HooksInfo,
-  type FreeAgents,
   type McpInfo,
   type RivendellInstance,
   type RivendellInput,
@@ -59,6 +60,8 @@ import {
   type ThemeKey,
 } from "../../lib/theme";
 import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
+import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib/agents";
+import { notify } from "./Notifications";
 import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
@@ -220,7 +223,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "hooks", sec: "RECENT EVENTS", terms: "webhook feed received events history inbound log" },
   { tab: "accounts", sec: "ON USAGE LIMIT", terms: "policy wait switch fallback reset quota" },
   { tab: "accounts", sec: "CLAUDE LOGINS", terms: "account add sign in oauth profile" },
-  { tab: "accounts", sec: "FREE AGENTS", terms: "api key gemini openai provider fallback handover" },
+  { tab: "accounts", sec: "AGENTS", terms: "agent acp codex opencode gemini api key login install test other agent" },
   { tab: "plugins", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout" },
   { tab: "plugins", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
@@ -411,7 +414,7 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "ADD A SERVER": Server,
   "ON USAGE LIMIT": Gauge,
   "CLAUDE LOGINS": KeyRound,
-  "FREE AGENTS": Handshake,
+  AGENTS: Handshake,
   BRIDGE: Network,
   STARTUP: Power,
   "HTTP INSPECTOR": Activity,
@@ -457,7 +460,7 @@ const SEC_DESC: Record<string, string> = {
   "RECENT EVENTS": "What your hooks received lately, newest first.",
   "ON USAGE LIMIT": "What a chat does when its login runs out: ask you, fall back on its own, or wait.",
   "CLAUDE LOGINS": "The Claude accounts runs can use, and how much of each is left.",
-  "FREE AGENTS": "Other providers that take the turn when every Claude login is spent.",
+  AGENTS: "Other coding agents a profile can run a session on, and the accounts they use.",
   BRIDGE: "The address this dashboard is talking to.",
   STARTUP: "Install the dashboard as its own app, and start it when you log in.",
   "HTTP INSPECTOR": "Watch every API request a run makes, live.",
@@ -710,15 +713,20 @@ function PickCell({
   value,
   options,
   onPick,
+  disabled,
+  title,
 }: {
   label: string;
   value: string;
   options: { id: string; label: string }[];
   onPick: (v: string) => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <Cell label={label}>
-      <select value={value} onChange={(e) => onPick(e.target.value)} style={{ ...field, width: "100%" }}>
+      <select value={value} onChange={(e) => onPick(e.target.value)} disabled={disabled} title={title}
+        style={{ ...field, width: "100%", opacity: disabled ? 0.6 : 1 }}>
         {options.map((o) => (
           <option key={o.id} value={o.id}>
             {o.label}
@@ -1763,7 +1771,7 @@ const POLICY_OPTS: { label: string; value: string }[] = [
 ];
 
 const POLICY_BLURB: Record<string, string> = {
-  ask: "Offer the choices (other account · free agent · wait) and stay parked until you pick.",
+  ask: "Offer the choices (other account · wait) and stay parked until you pick.",
   auto: "Take the best fallback immediately and report which one it landed on.",
   wait: "Only wait for the window to reset — the behaviour before the ladder existed.",
 };
@@ -1880,7 +1888,7 @@ function AiPanel() {
   return (
     <Section
       title="MODEL-SPENDING EXTRAS"
-      info="Anything that runs without you pressing something is off by default. A switch here beats the matching environment setting and applies to the next turn — nothing to restart. Everything a feature adds to the dashboard is hidden again the moment you switch it off. The next-up board also prefers a free provider (ACCOUNTS tab) over spending Claude quota. The token figure is what one unit burns, in and out together, as a median of real runs. Even the smallest one-shot costs tens of thousands: every headless run carries the CLI's own system prompt and tool schemas before it reads a word of yours. Most of that is read from cache, so it is cheaper than the number looks — but it is not free, and the ones that fire on their own are the ones that add up."
+      info="Anything that runs without you pressing something is off by default. A switch here beats the matching environment setting and applies to the next turn — nothing to restart. Everything a feature adds to the dashboard is hidden again the moment you switch it off. The token figure is what one unit burns, in and out together, as a median of real runs. Even the smallest one-shot costs tens of thousands: every headless run carries the CLI's own system prompt and tool schemas before it reads a word of yours. Most of that is read from cache, so it is cheaper than the number looks — but it is not free, and the ones that fire on their own are the ones that add up."
     >
       <div style={{ fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txd)", marginBottom: 11 }}>
         {on} OF {rows.length} SPENDING
@@ -3296,7 +3304,6 @@ function HooksPanel() {
 function AccountsPanel() {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
   const [policy, setPolicy] = useState("ask");
-  const [free, setFree] = useState<FreeAgents>({ installed: false, providers: [] });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // A sign-in in flight: the CLI is parked on its "paste the code" prompt in a
@@ -3309,11 +3316,6 @@ function AccountsPanel() {
       .then((r) => {
         setRows(r.accounts);
         setPolicy(r.default_policy);
-        // A bridge still running the pre-setup build answers with a bare list of
-        // labels; show no rungs rather than throwing until it restarts.
-        setFree(
-          Array.isArray(r.free_agents?.providers) ? r.free_agents : { installed: false, providers: [] },
-        );
         if (r.pending_login?.url)
           setLogin({ slot: r.pending_login.slot, url: r.pending_login.url });
       })
@@ -3484,36 +3486,18 @@ function AccountsPanel() {
       </Section>
 
       <Section
-        title="FREE AGENTS"
+        title="AGENTS"
         top
         info={
           <>
-            A free agent takes the turn when every Claude account is spent — a different provider on
-            a fresh session, briefed with the task so far. Keys are saved to{" "}
-            <span style={{ color: "var(--txd)" }}>~/.mystical/freeagents.json</span> and take effect
-            on the next handover; no restart. A key already in the bridge&apos;s environment wins and
-            shows as FROM ENV.
+            A profile can run its sessions on one of these instead of Claude, over the Agent Client
+            Protocol. Each runs under the machine&apos;s own login for that CLI, a pasted API key, or a
+            separate login kept in its own folder. TEST starts the agent once and remembers the models
+            and modes it offers — that is what the profile editor and the composer list.
           </>
         }
       >
-        <div style={CARD}>
-          {!free.installed && (
-            <div style={{ fontSize: "var(--t105)", color: "var(--txl)", marginBottom: 13 }}>
-              <span style={{ color: "var(--warn)" }}>opencode is not installed</span> — the rungs
-              below stay unusable until it is. Install it with{" "}
-              <code style={CODE}>curl -fsSL https://opencode.ai/install | bash</code>
-            </div>
-          )}
-          {free.providers.map((p, i) => (
-            <FreeAgentRow
-              key={p.provider}
-              p={p}
-              first={i === 0}
-              installed={free.installed}
-              onSave={(v) => api.setFreeAgent(p.env, v).then((r) => setFree(r.free_agents))}
-            />
-          ))}
-        </div>
+        <AgentsSection />
       </Section>
     </>
   );
@@ -3608,70 +3592,199 @@ function LoginFlow({
   );
 }
 
-/** One free-agent rung with the box that configures it. */
-function FreeAgentRow({
-  p,
-  first,
-  installed,
-  onSave,
-}: {
-  p: FreeAgentInfo;
-  first: boolean;
-  installed: boolean;
-  onSave: (value: string) => Promise<unknown>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState(p.needs === "model" ? p.model : "");
-  const [busy, setBusy] = useState(false);
+type TestState = { busy: true } | { ok: true; n: number } | { ok: false; error: string };
 
-  async function save(v: string) {
+function copyText(text: string) {
+  void navigator.clipboard?.writeText(text)
+    .then(() => notify("info", "Copied."), () => notify("error", "Clipboard refused the copy."));
+}
+
+/** The vetted non-Claude agents (bridge/acp_agents.py PRESETS): installed or
+ *  not, the accounts each runs under, and a TEST per account. A pasted key goes
+ *  to the bridge in a POST body and is dropped here once saved: the list only
+ *  ever holds the masked form the bridge sends back. */
+function AgentsSection() {
+  const [info, setInfo] = useState<AcpAgentsInfo | null>(null);
+  const [gone, setGone] = useState(false); // a bridge older than agents (404)
+  const [err, setErr] = useState<string | null>(null);
+  const load = () => api.acpAgents()
+    .then((r) => { setInfo(r); setGone(false); setErr(null); setAgentLabels(r.presets); })
+    .catch((e) => { if ((e as Error).message === "not found") setGone(true); else setErr((e as Error).message); });
+  useEffect(() => { void load(); }, []);
+
+  const note = (
+    <div style={NOTE}>
+      Only vetted agents are offered. Logins happen in each CLI&apos;s own sign-in; the bridge stores only API keys you paste here.
+    </div>
+  );
+  if (gone) return <div style={CARD}><div style={KEY_TX}>Restart the bridge to use other agents.</div></div>;
+  if (!info) {
+    return (
+      <div style={CARD}>
+        {err ? <div style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>Couldn&apos;t load agents — {err}</div>
+          : <div style={KEY_TX}>LOADING…</div>}
+      </div>
+    );
+  }
+  return (
+    <>
+      <div style={CARD}>
+        {info.presets.map((p, i) => (
+          <AgentRow key={p.id} p={p} first={i === 0} accounts={info.accounts.filter((a) => a.agent === p.id)}
+            onChanged={() => void load()} />
+        ))}
+      </div>
+      {note}
+    </>
+  );
+}
+
+/** One preset: install state, its accounts with TEST and ✕, and the forms that
+ *  add a key or a separate login. */
+function AgentRow({ p, first, accounts, onChanged }: {
+  p: AcpPreset;
+  first: boolean;
+  accounts: AcpAccount[];
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState<"" | "key" | "home">("");
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+  const [tests, setTests] = useState<Record<string, TestState>>({});
+
+  function open(kind: "" | "key" | "home") {
+    setAdding(kind);
+    setLabel("");
+    setKey("");
+    setErr(null);
+  }
+  async function create() {
+    if (busy || !label.trim() || (adding === "key" && !key.trim())) return;
     setBusy(true);
-    await onSave(v).catch(() => {});
-    setBusy(false);
-    setOpen(false);
-    setValue("");
+    setErr(null);
+    try {
+      const r = await api.acpAccount({
+        action: "create", agent: p.id, label: label.trim(), kind: adding as "key" | "home",
+        ...(adding === "key" ? { key: key.trim() } : {}),
+      });
+      setHint(r.login_hint ?? null);
+      open("");          // drops the pasted key: from here on only its masked form exists
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(id: string) {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.acpAccount({ action: "delete", id });
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function test(acct: string) {
+    setTests((t) => ({ ...t, [acct]: { busy: true } }));
+    let r: TestState;
+    try {
+      const res = await api.acpTest(p.id, acct);
+      r = res.ok ? { ok: true, n: res.options?.model.length ?? 0 } : { ok: false, error: res.error ?? "failed" };
+      if (res.ok) onChanged();   // its options are cached now: the pickers can list them
+    } catch (e) {
+      r = { ok: false, error: (e as Error).message };
+    }
+    setTests((t) => ({ ...t, [acct]: r }));
   }
 
-  const state = p.ready ? "READY" : p.configured ? "NEEDS OPENCODE" : "NOT SET";
+  const result = (acct: string) => {
+    const t = tests[acct];
+    if (!t || "busy" in t) return null;
+    return t.ok
+      ? <span style={{ fontSize: "var(--t10)", color: "var(--ok)" }}>✓ {t.n} MODEL{t.n === 1 ? "" : "S"}</span>
+      : <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>✕</span>;
+  };
+  const why = (acct: string) => {
+    const t = tests[acct];
+    return t && "ok" in t && !t.ok
+      ? <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 4, lineHeight: 1.6, overflowWrap: "anywhere" }}>{t.error}</div>
+      : null;
+  };
+  const testBtn = (acct: string) => {
+    const t = tests[acct];
+    return (
+      <MiniBtn disabled={!p.installed || (!!t && "busy" in t)} onClick={() => void test(acct)}
+        title={p.installed ? "Start it once and list what it offers (up to two minutes)" : "Install it first"}>
+        {t && "busy" in t ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "TEST"}
+      </MiniBtn>
+    );
+  };
+  const line = (acct: string, name: ReactNode, extra?: ReactNode) => (
+    <div key={acct || "machine"} style={{ padding: "7px 0 0 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span style={{ fontSize: "var(--t10)", color: "var(--tx)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+        <span style={{ flex: 1 }} />
+        {result(acct)}
+        {testBtn(acct)}
+        {extra}
+      </div>
+      {why(acct)}
+    </div>
+  );
+  const input = (v: string, set: (v: string) => void, placeholder: string, secret = false) => (
+    <input value={v} onChange={(e) => set(e.target.value)} placeholder={placeholder}
+      type={secret ? "password" : "text"} autoComplete={secret ? "new-password" : "off"} spellCheck={false}
+      onKeyDown={(e) => e.key === "Enter" && void create()} style={FIELD} />
+  );
+
   return (
-    <div style={{ marginTop: first ? 0 : 13 }}>
+    <div style={{ marginTop: first ? 0 : 14, paddingTop: first ? 0 : 12, borderTop: first ? undefined : RULE }}>
       <div style={KV}>
-        <span style={{ fontSize: "var(--t11)", color: p.ready ? "var(--tx)" : "var(--txl)" }}>{p.label}</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
-          <span style={{ fontSize: "var(--t10)", color: p.ready ? "var(--ok)" : "var(--txd)" }}>
-            {p.source === "env" ? "FROM ENV" : state}
-          </span>
-          {p.source !== "env" && (
-            <MiniBtn disabled={busy} onClick={() => setOpen(!open)}>
-              {p.configured ? "CHANGE" : "SET UP"}
-            </MiniBtn>
-          )}
-          {p.source === "saved" && (
-            <MiniBtn disabled={busy} danger onClick={() => void save("")}>
-              CLEAR
-            </MiniBtn>
-          )}
+        <span style={{ fontSize: "var(--t11)", color: p.installed ? "var(--txb)" : "var(--txl)" }}>{p.label.toUpperCase()}</span>
+        <span style={{ fontSize: "var(--t10)", letterSpacing: 1, color: p.installed ? "var(--ok)" : "var(--txd)" }}>
+          {p.installed ? "INSTALLED" : "NOT INSTALLED"}
         </span>
       </div>
-      {open && (
-        <div style={{ display: "flex", gap: 8, marginTop: 9 }}>
-          <input
-            value={value}
-            autoFocus
-            type={p.needs === "key" ? "password" : "text"}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && value.trim() && void save(value.trim())}
-            placeholder={p.needs === "key" ? `${p.env} — paste the API key` : "model name, e.g. qwen2.5-coder"}
-            style={FIELD}
-          />
-          <MiniBtn disabled={busy || !value.trim()} onClick={() => void save(value.trim())}>
-            {busy ? "…" : "SAVE"}
-          </MiniBtn>
+      {!p.installed && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+          <code style={{ ...CODE, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.install}</code>
+          <MiniBtn onClick={() => copyText(p.install)} title="Copy the install command">COPY</MiniBtn>
         </div>
       )}
-      {!open && p.ready && (
-        <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 4 }}>{p.model}</div>
+      {!p.key_required && line("", <>MACHINE LOGIN{p.login && <span style={{ color: "var(--txd)" }}> · {p.login}</span>}</>)}
+      {accounts.map((a) => line(a.id,
+        <>{a.label} <span style={{ color: "var(--txd)" }}>· {a.kind === "key" ? `API KEY ${a.key ?? ""}` : "SEPARATE LOGIN"}</span></>,
+        <MiniBtn danger disabled={busy} onClick={() => void remove(a.id)} title={`Remove ${a.label}`}>✕</MiniBtn>))}
+      {hint && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+          <code style={{ ...CODE, minWidth: 0, overflowWrap: "anywhere" }}>{hint}</code>
+          <MiniBtn onClick={() => copyText(hint.replace(/^Run once in a terminal: /, ""))} title="Copy the sign-in command">COPY</MiniBtn>
+          <MiniBtn onClick={() => setHint(null)} title="Dismiss">✕</MiniBtn>
+        </div>
       )}
+      {adding ? (
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          {input(label, setLabel, "label, e.g. work")}
+          {adding === "key" && input(key, setKey, `${p.key_env} — paste the API key`, true)}
+          <MiniBtn disabled={busy || !label.trim() || (adding === "key" && !key.trim())} onClick={() => void create()}>
+            {busy ? "…" : "SAVE"}
+          </MiniBtn>
+          <MiniBtn disabled={busy} onClick={() => open("")}>CANCEL</MiniBtn>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          {p.key_env && <MiniBtn disabled={busy} onClick={() => open("key")}>+ API KEY</MiniBtn>}
+          {p.home_env && !p.key_required && <MiniBtn disabled={busy} onClick={() => open("home")}>+ SEPARATE LOGIN</MiniBtn>}
+        </div>
+      )}
+      {err && <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 8 }}>{err}</div>}
     </div>
   );
 }
@@ -3747,10 +3860,16 @@ function ProfilesPanel({
   const [busy, setBusy] = useState(false);
   const [logins, setLogins] = useState<AccountInfo[]>([]);
   const [loginsErr, setLoginsErr] = useState<string | null>(null);
+  // Other agents, their accounts and cached options. null = not loaded or a
+  // bridge older than them (404): the AGENT select then offers Claude alone.
+  const [acp, setAcp] = useState<AcpAgentsInfo | null>(null);
+  const [testing, setTesting] = useState(false);
+  const loadAcp = () => api.acpAgents().then(setAcp).catch(() => {});
 
   useEffect(() => {
     void api.accounts().then((r) => setLogins(r.accounts.filter((a) => !a.disabled)))
       .catch((e) => setLoginsErr((e as Error).message));
+    void loadAcp();
     // Opening the panel re-reads the list: a failed load, or a bridge that has
     // been restarted since it 404'd, gets another go without a page reload.
     onChanged();
@@ -3789,6 +3908,26 @@ function ProfilesPanel({
   const keep = (opts: { id: string; label: string }[], v: string, label = v.toUpperCase()) =>
     opts.some((o) => o.id === v) ? opts : [...opts, { id: v, label }];
   const NOT_SET = { id: "", label: "NOT SET" };
+  const isAgent = !!form && form.agent !== "claude";
+  // An agent's pickers: what it advertised for this account (a TEST or a turn
+  // cached it), AGENT DEFAULT first. Nothing cached yet → a TEST right here.
+  const cached = form && isAgent ? acp?.options[`${form.agent}|${form.account}`] : undefined;
+  const agentRows = (list: { value: string; name: string }[] | undefined, v: string) =>
+    keep(optionRows(list) ?? [AGENT_DEFAULT], v);
+  async function testHere() {
+    if (!form) return;
+    setTesting(true);
+    setErr(null);
+    try {
+      const r = await api.acpTest(form.agent, form.account);
+      if (r.ok) await loadAcp();
+      else setErr(r.error ?? "the agent didn't start");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  }
 
   if (!available) {
     return <div style={CARD}><div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>Restart the bridge to use profiles.</div></div>;
@@ -3826,32 +3965,68 @@ function ProfilesPanel({
               style={{ flex: "1 1 auto", minWidth: 0, maxWidth: 340, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }} />
           </div>
           <div style={LINE}>
-            <PickCell label="AGENT" value={form.agent} options={[{ id: "claude", label: "CLAUDE" }]} onPick={(agent) => set({ agent })} />
-            <PickCell label="ACCOUNT" value={form.account}
-              options={keep([{ id: "", label: "DEFAULT LOGIN" },
-                ...logins.map((a) => ({ id: String(a.slot), label: `A${a.slot} · ${a.email ?? "unknown"}` }))],
-                form.account, `A${form.account}`)}
-              onPick={(account) => set({ account })} />
+            {/* A profile keeps its agent (the bridge refuses a change): an
+                agent can't read another's history, and sessions are bound to it. */}
+            <PickCell label="AGENT" value={form.agent} disabled={!!form.id}
+              title={form.id ? "A profile keeps its agent — make a new profile for another" : undefined}
+              options={keep([{ id: "claude", label: "CLAUDE" },
+                ...(acp?.presets ?? []).filter((p) => p.installed).map((p) => ({ id: p.id, label: p.label.toUpperCase() }))],
+                form.agent, agentLabel(form.agent))}
+              // Claude's ids mean nothing to another agent, and back: switching starts the knobs over.
+              onPick={(agent) => set(agent === "claude"
+                ? { agent, account: "", model: settings.model, mode: settings.perm, effort: settings.effort }
+                : { agent, account: "", model: "", mode: "", effort: "" })} />
+            {isAgent ? (
+              <PickCell label="ACCOUNT" value={form.account}
+                options={keep([{ id: "", label: "MACHINE LOGIN" },
+                  ...(acp?.accounts ?? []).filter((a) => a.agent === form.agent)
+                    .map((a) => ({ id: a.id, label: `${a.label.toUpperCase()} · ${a.kind === "key" ? "API KEY" : "OWN LOGIN"}` }))],
+                  form.account)}
+                onPick={(account) => set({ account, model: "", mode: "", effort: "" })} />
+            ) : (
+              <PickCell label="ACCOUNT" value={form.account}
+                options={keep([{ id: "", label: "DEFAULT LOGIN" },
+                  ...logins.map((a) => ({ id: String(a.slot), label: `A${a.slot} · ${a.email ?? "unknown"}` }))],
+                  form.account, `A${form.account}`)}
+                onPick={(account) => set({ account })} />
+            )}
           </div>
-          {loginsErr && <div style={{ marginTop: 6 }}>{warn(`Couldn't list the Claude logins — ${loginsErr}`)}</div>}
-          <div style={LINE}>
-            <PickCell label="MODEL" value={form.model}
-              options={keep([NOT_SET, ...models.map((m) => ({ id: m.id, label: m.label.toUpperCase() }))], form.model)}
-              onPick={(model) => set({ model })} />
-            <PickCell label="MODE" value={form.mode} options={[NOT_SET, ...PERMS]} onPick={(mode) => set({ mode })} />
-            <PickCell label="EFFORT" value={form.effort} options={[NOT_SET, ...EFFORTS.filter((e) => e.id)]}
-              onPick={(effort) => set({ effort })} />
-          </div>
-          <div style={ROW}>
-            <span style={KEY_TX}>USE THIS SESSION&apos;S TOOL SWITCHES</span>
-            {useTools && <span style={{ ...CAPTION, width: "auto" }}>{sessionTools.length} OFF</span>}
-            <span style={{ flex: 1 }} />
-            <Switch on={useTools} onClick={() => setUseTools(!useTools)} />
-          </div>
+          {loginsErr && !isAgent && <div style={{ marginTop: 6 }}>{warn(`Couldn't list the Claude logins — ${loginsErr}`)}</div>}
+          {isAgent ? (
+            <div style={{ ...LINE, alignItems: "flex-end" }}>
+              <PickCell label="MODEL" value={form.model} options={agentRows(cached?.model, form.model)} onPick={(model) => set({ model })} />
+              <PickCell label="MODE" value={form.mode} options={agentRows(cached?.mode, form.mode)} onPick={(mode) => set({ mode })} />
+              <PickCell label="EFFORT" value={form.effort} options={agentRows(cached?.effort, form.effort)} onPick={(effort) => set({ effort })} />
+              {!cached?.model.length && !cached?.mode.length && !cached?.effort.length && (
+                <button disabled={testing} onClick={() => void testHere()} style={btn("var(--acc)")}
+                  title="Start the agent once and list its models and modes (up to two minutes)">
+                  {testing ? "TESTING…" : "TEST"}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div style={LINE}>
+              <PickCell label="MODEL" value={form.model}
+                options={keep([NOT_SET, ...models.map((m) => ({ id: m.id, label: m.label.toUpperCase() }))], form.model)}
+                onPick={(model) => set({ model })} />
+              <PickCell label="MODE" value={form.mode} options={[NOT_SET, ...PERMS]} onPick={(mode) => set({ mode })} />
+              <PickCell label="EFFORT" value={form.effort} options={[NOT_SET, ...EFFORTS.filter((e) => e.id)]}
+                onPick={(effort) => set({ effort })} />
+            </div>
+          )}
+          {/* Tool switches are Claude's --disallowedTools; another agent asks its own way. */}
+          {!isAgent && (
+            <div style={ROW}>
+              <span style={KEY_TX}>USE THIS SESSION&apos;S TOOL SWITCHES</span>
+              {useTools && <span style={{ ...CAPTION, width: "auto" }}>{sessionTools.length} OFF</span>}
+              <span style={{ flex: 1 }} />
+              <Switch on={useTools} onClick={() => setUseTools(!useTools)} />
+            </div>
+          )}
           <div style={{ ...ROW, flexWrap: "wrap" }}>
             <button disabled={busy || !form.name.trim()} style={btn("var(--ok)")}
               onClick={() => {
-                const { id, ...fields } = { ...form, tools: useTools ? sessionTools : null };
+                const { id, ...fields } = { ...form, tools: useTools && !isAgent ? sessionTools : null };
                 void write(id ? { action: "update", id, ...fields } : { action: "create", ...fields }, () => setForm(null));
               }}>SAVE</button>
             <button onClick={() => { setForm(null); setErr(null); }} style={btn("var(--txm)")}>CANCEL</button>

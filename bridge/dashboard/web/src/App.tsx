@@ -19,11 +19,12 @@ import {
   type SessionStatus,
   type UsageInfo,
   type AccountInfo,
-  type FreeAgentInfo,
+  type AcpAgentsInfo,
   type RivendellInstance,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, type AgentOption } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
+import { agentPickers, NO_PICKS, setAgentLabels } from "./lib/agents";
 import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
@@ -237,9 +238,10 @@ export function App() {
   const [gitNonce, setGitNonce] = useState(0);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
-  // Free-agent rungs that are ready to run right now (configured + opencode
-  // installed) — the non-Claude half of agentOpts.
-  const [freeAgents, setFreeAgents] = useState<FreeAgentInfo[]>([]);
+  // Non-Claude agents: their labels and the options each last advertised,
+  // which an agent session's pickers offer. null = not loaded, or a bridge
+  // older than them (404) — an agent session then shows no pickers.
+  const [acp, setAcp] = useState<AcpAgentsInfo | null>(null);
   // Server-side profiles and each project's default (bridge/profiles.py). null
   // until the first load; profilesAvailable false = a bridge older than them;
   // profilesError = why the last load failed otherwise (null once one lands).
@@ -350,10 +352,13 @@ export function App() {
     setModelState(m);
     setPermState(p);
     setEffortState(e);
-    patchSettings({ model: m, perm: p, effort: e });
+    // An agent's ids are its own: they'd be nonsense as this browser's Claude
+    // defaults. Blank there is AGENT DEFAULT, sent so it clears an override.
+    if (!agentPick) patchSettings({ model: m, perm: p, effort: e });
     const sid = sessionIdRef.current;
     if (!sid) return;
-    void api.setRunSettings(sid, { model: m, permission_mode: p || undefined, effort: e, pick: half })
+    void api.setRunSettings(sid, agentPick ? { model: m, permission_mode: p, effort: e, pick: half }
+      : { model: m, permission_mode: p || undefined, effort: e, pick: half })
       // Auto (blank) on a session bound to a profile follows the profile's
       // effort: show what will run, not the pick.
       .then((r) => {
@@ -457,6 +462,9 @@ export function App() {
   const running = active !== null;
   const pendingCount = active?.pending.length ?? 0;
   const selected = sessions.find((s) => s.id === sessionId) ?? null;
+  // The open session runs on another agent: its pickers are that agent's own
+  // options (lib/agents), and this device's Claude picks never reach it.
+  const agentPick = agentPickers(selected?.agent, selected?.account, acp);
   const activeProject = state?.project?.rel ?? null;
   // Everything the composer shows is scoped to the open session — a check or a
   // held card belonging to another one stays with that one.
@@ -1040,9 +1048,15 @@ export function App() {
         const a = await api.accounts();
         if (!live) return;
         setAccounts(a.accounts);
-        setFreeAgents((a.free_agents?.providers ?? []).filter((p) => p.ready));
         markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
       } catch { markBoot("auth", "fail", "NO LOGIN"); }
+      // ponytail: options a TEST or a turn just cached reach the composer on this 60s tick, not at once.
+      try {
+        const g = await api.acpAgents();
+        if (!live) return;
+        setAgentLabels(g.presets);
+        setAcp(g);
+      } catch { /* a bridge older than agents: none to show */ }
     };
     void tick();
     const id = setInterval(tick, 60000);
@@ -1181,12 +1195,17 @@ export function App() {
       ?? state?.project?.rel ?? undefined;
     const sessionName = () =>
       sessions.find((s) => s.id === sid)?.title || "another session";
+    // The composer's picks are the open session's; one on the other kind of
+    // agent (a Claude model to an agent, say) would be refused, so it runs on its own.
+    const agentRun = (sessions.find((s) => s.id === sid)?.agent ?? "claude") !== "claude";
+    const knobs = agentRun === !!agentPick;
     // No model or mode: a queued prompt runs on the session's when it starts,
     // so a pick made while it waits still applies. Resolves whether the prompt
     // got into the queue; a miss says so here.
     const enqueue = async () => {
       const ok = await queue.enqueue({
-        text, prompt: text, images, project, effort: effort || undefined,
+        // An agent's effort id isn't Claude's: the session's own applies when it runs.
+        text, prompt: text, images, project, effort: (!agentRun && knobs && effort) || undefined,
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1201,8 +1220,8 @@ export function App() {
     try {
       const res = await api.run({
         prompt: text, images, project,
-        session_id: sid, model, effort: effort || undefined,
-        permission_mode: permMode || undefined, ponytail: ponytail || undefined,
+        session_id: sid, model: (knobs && model) || undefined, effort: (knobs && effort) || undefined,
+        permission_mode: (knobs && permMode) || undefined, ponytail: ponytail || undefined,
         force: opts?.force || undefined,
       });
       // Held: this looks like different work from the session it would resume.
@@ -1221,7 +1240,7 @@ export function App() {
       // The run saved these picks to the session (/local/run); mirror that here,
       // or a session minted for this prompt reads as never-run until the next
       // poll and the picker flips to this browser's defaults meanwhile.
-      setSessions((prev) => prev.map((s) => (s.id === sid
+      if (knobs) setSessions((prev) => prev.map((s) => (s.id === sid
         ? { ...s, model, permission_mode: permMode || s.permission_mode, effort: effort || null } : s)));
       liveTurns.current.add(res.job_id);
       markWorking(res.session_id || sid);
@@ -1743,9 +1762,9 @@ export function App() {
   // only: neither the session nor settings is rewritten. Nothing snaps before
   // /local/state lands; modelOpts' pre-load FALLBACK is not a list to snap to.
   useEffect(() => {
-    const to = snapModel(model, state?.models);
+    const to = agentPick ? null : snapModel(model, state?.models);   // an agent's ids aren't Claude's
     if (to) setModelState(to);
-  }, [state?.models, model]);
+  }, [state?.models, model, !!agentPick]);
   // The open session's profile, which the pickers read through (runPicks).
   const boundProfile = profiles?.profiles.find((p) => p.id === selected?.profile_id) ?? null;
   // The open session's picks load when it opens and follow the 5s session poll
@@ -1753,29 +1772,22 @@ export function App() {
   // values, so a poll that left before a pick made here can't put the old one back.
   useEffect(() => {
     if (!selected) return;
-    const r = runPicks(selected, { model: settings.model, perm: settings.perm, effort: settings.effort },
-                       boundProfile);
+    const r = runPicks(selected, agentPick ? NO_PICKS
+                       : { model: settings.model, perm: settings.perm, effort: settings.effort }, boundProfile);
     setModelState(r.model);
     setPermState(r.perm);
     setEffortState(r.effort as EffortLevel | "");
-  }, [sessionId, selected?.model, selected?.permission_mode, selected?.effort, selected?.profile_id,
+  }, [sessionId, selected?.agent, selected?.model, selected?.permission_mode, selected?.effort, selected?.profile_id,
       selected?.overrides?.join(), boundProfile?.model, boundProfile?.mode, boundProfile?.effort]);
 
-  // Who can run a turn: Claude logins first (the ambient one leads), then every
-  // ready free-agent rung. Option ids are the strings the bridge stores as a
-  // turn's runtime, so the status bar and the transcript badge name the same thing.
-  const agentOpts = useMemo<AgentOption[]>(() => [
-    ...accounts.filter((a) => !a.disabled).map((a) => ({
-      id: `claude:${a.slot}`,
-      label: [`A${a.slot} · ${a.email ?? "unknown"}`, a.plan, a.default && "DEFAULT"].filter(Boolean).join(" · "),
-      free: false, def: a.default, left: a.left,
-    })),
-    ...freeAgents.map((p) => ({
-      id: `opencode:${p.provider}`,
-      label: `⚡ ${p.provider.toUpperCase()} · ${p.model}`,
-      free: true, def: false, left: null,
-    })),
-  ], [accounts, freeAgents]);
+  // The Claude logins that can run a turn, the ambient one leading. Option ids
+  // are the strings the bridge stores as a turn's runtime, so the status bar
+  // and the transcript badge name the same thing.
+  const agentOpts = useMemo<AgentOption[]>(() => accounts.filter((a) => !a.disabled).map((a) => ({
+    id: `claude:${a.slot}`,
+    label: [`A${a.slot} · ${a.email ?? "unknown"}`, a.plan, a.default && "DEFAULT"].filter(Boolean).join(" · "),
+    def: a.default, left: a.left,
+  })), [accounts]);
   // Who runs the open session's next turn: its profile's login, else the
   // ambient one — so the footer meter and the MODEL menu's are theirs.
   const account = selected?.account;
@@ -1868,7 +1880,7 @@ export function App() {
       const setPol = (v: string) => { void api.setPolicy(ctxMenu.id, v).then(() => void loadSessions()); };
       items.push({ icon: "◈", label: `On limit: ${pol === "auto" ? "auto-switch" : pol}`, children: [
         { icon: pol === "ask" ? "●" : "○", label: "Ask",
-          hint: "offer account/free-agent choices", onClick: () => setPol("ask") },
+          hint: "offer the other-account choices", onClick: () => setPol("ask") },
         { icon: pol === "auto" ? "●" : "○", label: "Auto-switch",
           hint: "take the best fallback silently", onClick: () => setPol("auto") },
         { icon: pol === "wait" ? "●" : "○", label: "Wait",
@@ -2275,7 +2287,7 @@ export function App() {
                         </div>
                       }
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={usage} effort={effort}
-                      agent={activeAgent} profile={selected?.profile_id ?? ""}
+                      agent={activeAgent} agentPick={agentPick} profile={selected?.profile_id ?? ""}
                       profiles={profilesAvailable ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
                       overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
@@ -2285,7 +2297,8 @@ export function App() {
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
-                      onSteer={(t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
+                      // An agent turn can't be steered (the bridge refuses): SEND queues instead.
+                      onSteer={agentPick ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
                       onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       paused={queue.paused} onTogglePause={queue.togglePause}
@@ -2316,7 +2329,7 @@ export function App() {
 
               <StatusBar
                 usedPct={usedPct} resetLabel={resetLabel}
-                agent={activeAgent} rightOpen={settings.rightOpen}
+                agent={activeAgent} agentLabel={agentPick?.label} rightOpen={settings.rightOpen}
                 // The footer reports the session you have open, not the bridge's
                 // active project — those differ while you read another session.
                 repo={sessionProject ?? "—"} git={sessionGit}

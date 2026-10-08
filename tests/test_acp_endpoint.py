@@ -48,6 +48,15 @@ def test_create_key_account_is_masked_with_no_raw_key():
     assert KEY not in json.dumps(box["obj"])
 
 
+def test_create_home_account_says_how_to_sign_it_in():
+    h, box = _handler()
+    h._post_api("/local/acp/accounts",
+               {"action": "create", "agent": "codex", "label": "alt", "kind": "home"})
+    a = box["obj"]["account"]
+    assert box["code"] == 200
+    assert box["obj"]["login_hint"].endswith(f"CODEX_HOME={acp_agents.home_dir(a['id'])} codex login --device-auth")
+
+
 def test_delete_unknown_account_is_404():
     h, box = _handler()
     h._post_api("/local/acp/accounts", {"action": "delete", "id": "a_nope"})

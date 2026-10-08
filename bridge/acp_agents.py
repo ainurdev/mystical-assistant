@@ -325,8 +325,10 @@ def api_account(body: dict) -> "tuple[dict, int]":
     action = body.get("action")
     try:
         if action == "create":
-            return {"ok": True, "account": add_account(
-                body.get("agent"), body.get("label"), body.get("kind"), body.get("key"))}, 200
+            a = add_account(body.get("agent"), body.get("label"), body.get("kind"), body.get("key"))
+            # A separate login is empty until its CLI signs in: say how, once.
+            hint = {"login_hint": login_hint(preset(a["agent"]), a["id"])} if a["kind"] == "home" else {}
+            return {"ok": True, "account": a, **hint}, 200
         if action == "delete":
             remove_account(str(body.get("id") or ""))
             return {"ok": True}, 200

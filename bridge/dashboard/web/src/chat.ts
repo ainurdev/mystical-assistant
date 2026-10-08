@@ -23,7 +23,7 @@ export interface Turn {
   // since the upload files are cleaned up after the run).
   attachments?: string[];
   // Which runtime produced the turn: null/undefined = the default Claude account,
-  // 'claude:<slot>' = another login, 'opencode:<provider>' = a free agent.
+  // 'claude:<slot>' = another login, 'acp:<agent>' = another agent (lib/agents).
   runtime?: string | null;
   // Commit HEAD was on when the turn started; undefined for client-sent turns
   // until the store echoes it back, null outside a repo.

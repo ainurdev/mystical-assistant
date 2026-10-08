@@ -89,7 +89,7 @@ export interface StoreTurn {
   cost: number | null;
   elapsed: number | null;
   started: number;
-  runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
+  runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'acp:<agent>'
   sha?: string | null;     // commit HEAD was on when the turn started (checkpoint drift)
   // What the turn spent. All four null = never reported (unknown, not zero).
   tok_in?: number | null;
@@ -838,20 +838,35 @@ export interface AccountInfo {
   logged_in: boolean; // false = the OAuth token is gone/expired; only a re-login fixes it
   plan: string | null; // "MAX 20x" / "TEAM 5x" / "PRO", off the login's own credentials
 }
-/** One free-agent rung — listed even unconfigured, since this is where you set it up. */
-export interface FreeAgentInfo {
-  provider: string;
+/** A vetted non-Claude agent the bridge can run over ACP (bridge/acp_agents.py
+ *  PRESETS). There is no custom command: this list is the whole menu. */
+export interface AcpPreset {
+  id: string;
   label: string;
-  env: string; // the variable that configures it — an API key, or a model name for Ollama
-  model: string;
-  needs: "key" | "model";
-  configured: boolean;
-  source: "env" | "saved" | null;
-  ready: boolean; // configured *and* opencode is installed
+  cmd: string[];
+  key_env: string | null; // set → it takes a pasted API key
+  home_env: string | null; // set (and not key_required) → it takes a separate login
+  key_required: boolean; // no machine login: an API key account is the only way in
+  login: string | null; // the CLI's own sign-in command
+  install: string;
+  installed: boolean;
 }
-export interface FreeAgents {
-  installed: boolean; // is the opencode binary there at all
-  providers: FreeAgentInfo[];
+/** An agent account. `key` arrives masked ("sk-…abcd"); the raw key never
+ *  comes back from the bridge. */
+export interface AcpAccount {
+  id: string;
+  agent: string;
+  label: string;
+  kind: "key" | "home";
+  key?: string;
+}
+export interface AcpOption { value: string; name: string }
+/** What an agent advertised for one account, as last seen by a turn or a TEST. */
+export interface AcpOptions { model: AcpOption[]; mode: AcpOption[]; effort: AcpOption[] }
+export interface AcpAgentsInfo {
+  presets: AcpPreset[];
+  accounts: AcpAccount[];
+  options: Record<string, AcpOptions>; // "<agent>|<account id or ''>"
 }
 /** One captured call to the Anthropic API. Bodies are summarized rather than
  *  stored: a request body is the whole conversation, which is already in the
@@ -948,7 +963,6 @@ export interface HooksInfo {
 export interface AccountsInfo {
   accounts: AccountInfo[];
   default_policy: string;
-  free_agents: FreeAgents;
   pending_login: { slot: number; url: string | null } | null;
 }
 /** One AI-powered extra. Everything here spends a model call nobody asked for,
@@ -1435,10 +1449,18 @@ export const api = {
       method: "POST",
       body: { action: "login_cancel", slot },
     }),
-  setFreeAgent: (name: string, value: string) =>
-    req<{ ok: boolean; free_agents: FreeAgents }>("/local/freeagents", {
-      method: "POST",
-      body: { name, value },
+  // Non-Claude agents (bridge/acp_agents.py). A bridge older than them 404s.
+  acpAgents: () => req<AcpAgentsInfo>("/local/acp/agents"),
+  /** create → the account, masked; a home login also gets the command to run
+   *  once in a terminal. The key travels in this body only, never a URL. */
+  acpAccount: (body: { action: "create"; agent: string; label: string; kind: "key" | "home"; key?: string }
+    | { action: "delete"; id: string }) =>
+    req<{ ok: boolean; account?: AcpAccount; login_hint?: string }>("/local/acp/accounts", { method: "POST", body }),
+  /** Starts the agent once (up to 120 s). A failed start is a 200 with ok:false
+   *  and the reason, so read `ok`, not the status. */
+  acpTest: (agent: string, account: string) =>
+    req<{ ok: boolean; options?: AcpOptions; error?: string }>("/local/acp/test", {
+      method: "POST", body: { agent, account },
     }),
   /** The AI-powered extras and whether each is switched on. All ship off. */
   aiFeatures: () => req<{ features: AiFeature[] }>("/local/aifeatures"),

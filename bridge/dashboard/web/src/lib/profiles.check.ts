@@ -18,6 +18,8 @@ eq(describe(P({ account: "2", model: "claude-fable-5-1", mode: "acceptEdits", ef
   "A2 · FABLE-5-1 · ACCEPT EDITS · HIGH · 3 OFF", "describe names every knob the profile sets");
 eq(describe(P({})), "DEFAULTS", "a profile that sets nothing says so");
 eq(describe(P({ tools: [] })), "0 OFF", "an empty deny list is a setting too (everything on)");
+eq(describe(P({ agent: "codex", account: "a_12ab34cd", model: "gpt-5.5" })), "◇ CODEX · GPT-5.5",
+  "another agent leads with its name, not its account id");
 
 const box = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = {
