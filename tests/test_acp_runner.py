@@ -291,3 +291,47 @@ def test_dashboard_run_refuses_a_claude_account_on_an_agent_session(monkeypatch)
     h._run(CHAT, {"prompt": "hi", "session_id": _session(), "agent": "claude:1"})
     assert box["code"] == 400 and not started
     assert box["obj"]["error"] == "This session runs on Fake; it can't be run on a Claude account."
+
+
+# Final review I-1: a key account signs in with ACP `authenticate`, in its own home.
+
+KEY = "sk-fake-abcdefghijklmnop"
+AUTH = {"auth_required": True, "auth_methods": [{"id": "api-key", "name": "API Key"}],
+        "turn": [CHUNK]}
+
+
+def _keyed(monkeypatch, kind="key"):
+    monkeypatch.setitem(acp_agents.PRESETS[0], "key_env", "OPENAI_API_KEY")
+    monkeypatch.setitem(acp_agents.PRESETS[0], "home_env", "CODEX_HOME")
+    monkeypatch.setitem(acp_agents.PRESETS[0], "auth_method", "api-key")
+    a = acp_agents.add_account("fake", "k", kind, key=KEY if kind == "key" else None)
+    p = profiles.create({"name": f"Keyed {kind}", "agent": "fake", "account": a["id"]})
+    return store.create_session(CHAT, "/acp-run", cwd=config.BASE_PATH, profile_id=p["id"])["id"]
+
+
+def _log(tmp_path, suffix=""):
+    return tmp_path / f"log.jsonl{suffix}"
+
+
+def test_a_key_account_turn_authenticates_in_its_own_home(monkeypatch, tmp_path):
+    sid = _keyed(monkeypatch)
+    job = _start(monkeypatch, sid, AUTH)
+    assert job.exited.wait(10)
+    assert job.status == "done", job.error_msg
+    sent = [json.loads(line) for line in _log(tmp_path).read_text().splitlines()]
+    auth = [m for m in sent if m.get("method") == "authenticate"]
+    assert auth and auth[0]["params"] == {"methodId": "api-key"}
+    env = json.loads(_log(tmp_path, ".env").read_text())
+    assert env["OPENAI_API_KEY"] == KEY
+    home = env["CODEX_HOME"]
+    assert os.path.commonpath([home, acp_agents.HOMES]) == acp_agents.HOMES
+    assert home != os.path.expanduser("~/.codex")
+
+
+def test_a_separate_login_is_never_authenticated_with_a_key(monkeypatch, tmp_path):
+    sid = _keyed(monkeypatch, kind="home")
+    job = _start(monkeypatch, sid, AUTH)
+    assert job.exited.wait(10)
+    assert job.status == "error" and "needs a login" in job.error_msg
+    sent = [json.loads(line) for line in _log(tmp_path).read_text().splitlines()]
+    assert "authenticate" not in [m.get("method") for m in sent]

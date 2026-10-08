@@ -111,3 +111,23 @@ def test_options_are_flattened_by_category_and_cached():
     assert got["model"] == [{"value": "a", "name": "A"}, {"value": "b", "name": "B"}]
     assert got["effort"] == [{"value": "high", "name": "High"}]
     assert got["mode"] == [{"value": "ask", "name": "Ask"}]       # legacy modes fill in
+
+
+def test_a_key_account_gets_its_own_home_and_loses_it_on_delete():
+    for agent, var in (("codex", "CODEX_HOME"), ("gemini", "GEMINI_CLI_HOME")):
+        a = acp_agents.add_account(agent, "k", "key", key="sk-abcdefghijklmnop")
+        home = acp_agents.env_for(acp_agents.preset(agent), a["id"])[var]
+        assert home == acp_agents.home_dir(a["id"]) and os.path.isdir(home)
+        assert acp_agents.auth_method(acp_agents.preset(agent), a["id"]) in ("api-key",
+                                                                             "gemini-api-key")
+        acp_agents.remove_account(a["id"])
+        assert not os.path.exists(home)
+    h = acp_agents.add_account("codex", "alt", "home")
+    assert acp_agents.auth_method(acp_agents.preset("codex"), h["id"]) is None
+    assert acp_agents.auth_method(acp_agents.preset("codex"), "") is None
+    assert "CODEX_HOME" not in acp_agents.env_for(acp_agents.preset("codex"), "")
+
+
+def test_the_unstable_models_field_fills_the_model_list():
+    got = acp_agents._shape([], None, {"availableModels": [{"modelId": "gpt-x", "name": "GPT X"}]})
+    assert got["model"] == [{"value": "gpt-x", "name": "GPT X"}]

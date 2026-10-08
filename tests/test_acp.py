@@ -30,13 +30,13 @@ class FakeJob:
     def types(self): return [e["type"] for e in self.events]
 
 
-def _run(tmp_path, script, *, sid=None, opts=None, job=None, background=False):
+def _run(tmp_path, script, *, sid=None, opts=None, job=None, background=False, **extra):
     log = tmp_path / "log.jsonl"
     env = {**os.environ, "FAKE_ACP": json.dumps(script), "FAKE_ACP_LOG": str(log)}
     job = job or FakeJob()
     kw = dict(argv=[sys.executable, FAKE], env=env, cwd=str(tmp_path), label="Fake",
               login_hint="run fake login", text="hello", agent_session_id=sid,
-              opts=opts or {}, on_session=lambda s: job.__dict__.setdefault("saved", s))
+              opts=opts or {}, on_session=lambda s: job.__dict__.setdefault("saved", s), **extra)
     if background:
         t = threading.Thread(target=acp.run_turn, args=(job,), kwargs=kw, daemon=True)
         t.start()
@@ -351,3 +351,44 @@ def test_a_leader_reaped_behind_our_back_is_never_signalled(tmp_path, monkeypatc
     monkeypatch.setattr(acp.os, "killpg", lambda pgid, sig: sent.append(sig))
     conn.close()
     assert sent == []
+
+
+# Final review I-1 and minor 1.
+
+def test_authenticate_runs_before_the_session_opens(tmp_path):
+    job, log = _run(tmp_path, {"auth_required": True, "auth_methods": [{"id": "api-key"}],
+                               "turn": []}, auth_method="api-key")
+    assert job.status == "done", job.error_msg
+    methods = [m.get("method") for m in _sent(log)]
+    assert methods[:3] == ["initialize", "authenticate", "session/new"]
+
+
+def test_a_method_the_agent_does_not_offer_fails_without_signing_in(tmp_path):
+    job, log = _run(tmp_path, {"auth_methods": [{"id": "oauth-personal"}], "turn": []},
+                    auth_method="gemini-api-key")
+    assert job.status == "error" and "doesn't offer API-key sign-in" in job.error_msg
+    assert "authenticate" not in [m.get("method") for m in _sent(log)]
+
+
+def test_probe_authenticates_a_key_account(tmp_path):
+    env = {**os.environ, "FAKE_ACP": json.dumps({"auth_required": True,
+                                                  "auth_methods": [{"id": "api-key"}]})}
+    assert not acp.probe(argv=[sys.executable, FAKE], env=env, label="Fake", login_hint="")["ok"]
+    assert acp.probe(argv=[sys.executable, FAKE], env=env, label="Fake", login_hint="",
+                     auth_method="api-key")["ok"]
+
+
+def test_stop_lands_when_a_setsid_child_keeps_stdout_open(tmp_path):
+    """The group kill can't reach a child in its own session: the reader never
+    sees EOF, so kill() itself must end the stream for the waiting prompt."""
+    job, _, t = _run(tmp_path, {"turn": [{"helper": 30, "keep_stdout": True, "setsid": True},
+                                         {"sleep": 30}], "ignore_cancel": True},
+                     background=True)
+    assert _wait(lambda: (tmp_path / "log.jsonl.helper").exists() and job.turn and job.turn.sid)
+    helper = int((tmp_path / "log.jsonl.helper").read_text())
+    try:
+        assert acp.cancel(job, grace=0.3)
+        t.join(8)
+        assert not t.is_alive() and job.types()[-1] == "stopped"
+    finally:
+        os.kill(helper, 9)

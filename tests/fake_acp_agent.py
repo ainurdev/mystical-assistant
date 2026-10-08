@@ -1,9 +1,12 @@
 """A scripted ACP v1 agent for tests/test_acp.py (a script, not a test module).
 
-Env FAKE_ACP scripts it: caps, new_error, prompt_error, options, modes, replay,
-open_delay, stop, ignore_cancel, and turn, a list of steps: update, permission,
-vendor, stdout, wait_cancel, sleep, exit, orphan (the leader exits, a child holds
-its stdout), helper (a child; stdout on /dev/null unless keep_stdout). Messages
+Env FAKE_ACP scripts it: caps, new_error, prompt_error, options, modes, models,
+replay, open_delay, stop, ignore_cancel, auth_methods (initialize's authMethods),
+auth_required (session/new|load|resume answer -32000 until `authenticate`
+arrives), and turn, a list of steps: update, permission, vendor, stdout,
+wait_cancel, sleep, exit, orphan (the leader exits, a child holds its stdout),
+helper (a child; stdout on /dev/null unless keep_stdout; setsid puts it in its
+own session, out of reach of the group kill). Messages
 received go to env FAKE_ACP_LOG as JSON lines, the environ to LOG + ".env".
 
 One reader (the main thread) dispatches every line: replies to its own requests,
@@ -21,7 +24,7 @@ import time
 S = json.loads(os.environ.get("FAKE_ACP") or "{}")
 LOG = os.environ.get("FAKE_ACP_LOG")
 cond = threading.Condition()
-replies, flags = {}, {"cancel": False}
+replies, flags = {}, {"cancel": False, "authed": False}
 wlock, ids = threading.Lock(), itertools.count(1)
 
 
@@ -53,7 +56,8 @@ def ask(method, params):
 
 
 def state():
-    return {k: S[v] for k, v in (("configOptions", "options"), ("modes", "modes")) if v in S}
+    return {k: S[v] for k, v in (("configOptions", "options"), ("modes", "modes"),
+                                 ("models", "models")) if v in S}
 
 
 def spawn(secs, name, **kw):
@@ -92,7 +96,7 @@ def prompt(rid, sid):
             spawn(step["orphan"], "child")
             os._exit(0)
         elif "helper" in step:
-            spawn(step["helper"], "helper",
+            spawn(step["helper"], "helper", start_new_session=bool(step.get("setsid")),
                   stdout=None if step.get("keep_stdout") else subprocess.DEVNULL)
     send(id=rid, result={"stopReason": "cancelled" if cancelled() else S.get("stop", "end_turn")})
 
@@ -100,9 +104,16 @@ def prompt(rid, sid):
 def handle(rid, method, p):
     if method in ("session/new", "session/load", "session/resume"):
         time.sleep(S.get("open_delay", 0))
+    if method in ("session/new", "session/load", "session/resume") \
+            and S.get("auth_required") and not flags["authed"]:
+        return send(id=rid, error={"code": -32000, "message": "Authentication required"})
     if method == "initialize":
         res = {"protocolVersion": 1, "agentCapabilities": S.get("caps", {"loadSession": True}),
-               "agentInfo": {"name": "fake", "version": "0"}}
+               "agentInfo": {"name": "fake", "version": "0"},
+               "authMethods": S.get("auth_methods", [])}
+    elif method == "authenticate":
+        flags["authed"] = True
+        res = {}
     elif method == "session/new":
         if S.get("new_error"):
             return send(id=rid, error=S["new_error"])

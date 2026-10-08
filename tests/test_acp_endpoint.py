@@ -108,3 +108,27 @@ def test_existing_subagent_route_is_not_shadowed():
     h, box = _handler()
     h._get_api("/local/agents", {"session": [sid]})
     assert box["code"] == 200
+
+
+def test_test_route_refuses_a_gemini_machine_login():
+    """Gemini is API key only (rule 5): TEST runs the turn's own checks first."""
+    h, box = _handler()
+    h._post_api("/local/acp/test", {"agent": "gemini", "account": ""})
+    assert box["code"] == 200 and box["obj"]["ok"] is False
+    assert "API key" in box["obj"]["error"]
+
+
+def test_test_route_signs_a_key_account_in(monkeypatch, tmp_path):
+    log = tmp_path / "probe.jsonl"
+    monkeypatch.setattr(acp_agents, "PRESETS", (
+        {"id": "fake", "label": "Fake", "cmd": [sys.executable, FAKE], "key_env": "FAKE_KEY",
+         "home_env": "FAKE_HOME", "key_required": True, "login": None, "install": "n/a",
+         "auth_method": "api-key",
+         "env": {"FAKE_ACP_LOG": str(log), "FAKE_ACP": json.dumps(
+             {"auth_required": True, "auth_methods": [{"id": "api-key"}]})}},))
+    monkeypatch.setattr(acp_agents, "_resolve", lambda name: name)
+    a = acp_agents.add_account("fake", "k", "key", key=KEY)
+    h, box = _handler()
+    h._post_api("/local/acp/test", {"agent": "fake", "account": a["id"]})
+    assert box["obj"]["ok"] is True, box["obj"]
+    assert "authenticate" in [json.loads(l).get("method") for l in log.read_text().splitlines()]

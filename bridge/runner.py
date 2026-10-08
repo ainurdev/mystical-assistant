@@ -2168,6 +2168,7 @@ def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
     acp.run_turn(
         job, argv=acp_agents.argv(p), env=acp_agents.env_for(p, job.acp_account), cwd=cwd,
         label=p["label"], login_hint=acp_agents.login_hint(p, job.acp_account),
+        auth_method=acp_agents.auth_method(p, job.acp_account),
         text=_with_images(prompt, image_paths),
         agent_session_id=(sess or {}).get("agent_session_id"),
         opts={"model": model, "permission_mode": permission_mode, "effort": effort},
@@ -2176,8 +2177,8 @@ def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
         # Never claude_session_id: Claude-only readers must not follow an agent's id.
         on_session=lambda sid: job.store_session_id and store.set_session_field(
             job.store_session_id, "agent_session_id", sid),
-        cache=lambda opts, modes: acp_agents.remember_options(agent, job.acp_account,
-                                                              opts, modes))
+        cache=lambda opts, modes, models: acp_agents.remember_options(
+            agent, job.acp_account, opts, modes, models))
 
 
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,

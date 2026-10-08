@@ -55,10 +55,12 @@ PRESETS = (
     {"id": "codex", "label": "Codex", "cmd": ["npx", "-y", "@agentclientprotocol/codex-acp@2.1.1"],
      "key_env": "OPENAI_API_KEY", "home_env": "CODEX_HOME", "key_required": False,
      "login": "npx -y @openai/codex login --device-auth", "install": "Node.js 18+ (for npx)",
-     "env": {}},
+     # Read off the 2.1.1 tarball (dist/index.js, ApiKeyAuthMethod): id "api-key",
+     # which reads OPENAI_API_KEY (or CODEX_API_KEY) and logs in to CODEX_HOME.
+     "auth_method": "api-key", "env": {}},
     {"id": "opencode", "label": "opencode", "cmd": ["opencode", "acp"],
      "key_env": None, "home_env": "XDG_DATA_HOME", "key_required": False,
-     "login": "opencode auth login",
+     "login": "opencode auth login", "auth_method": None,
      "install": "curl -fsSL https://opencode.ai/install | bash",
      # opencode ships allow-all; ask for anything that writes or reaches out (rule 7).
      # Checked in 1.18.10: the binary JSON.parses OPENCODE_PERMISSION and merges it
@@ -70,7 +72,9 @@ PRESETS = (
     # --acp checked in @google/gemini-cli 0.63.0 (yargs: --experimental-acp "deprecated, use --acp").
     {"id": "gemini", "label": "Gemini CLI", "cmd": ["gemini", "--acp"],
      "key_env": "GEMINI_API_KEY", "home_env": "GEMINI_CLI_HOME", "key_required": True,
-     "login": None, "install": "npm i -g @google/gemini-cli",
+     # Read off the 0.63.0 bundle (AuthType.USE_GEMINI); its authenticate()
+     # clears the cached Google credential and rewrites settings in its home.
+     "login": None, "install": "npm i -g @google/gemini-cli", "auth_method": "gemini-api-key",
      "env": {"GEMINI_CLI_NO_RELAUNCH": "true"}},
 )
 
@@ -204,9 +208,12 @@ def add_account(agent: str, label: str, kind: str, key: "str | None" = None) -> 
 def remove_account(acct_id: str) -> None:
     with _lock:
         rows = _load()
-        if not any(a["id"] == acct_id for a in rows):
+        gone = next((a for a in rows if a["id"] == acct_id), None)
+        if gone is None:
             raise KeyError(acct_id)
         _save([a for a in rows if a["id"] != acct_id])
+    if gone["kind"] == "key":   # its home holds the CLI's copy of the key login
+        shutil.rmtree(home_dir(acct_id), ignore_errors=True)
     # ponytail: a separate login's home dir is left on disk; it holds that
     # CLI's own login, which `rm -r` (or the CLI's logout) is the honest way to end.
 
@@ -224,9 +231,16 @@ def env_for(p: dict, acct_id) -> dict:
     if a and a["agent"] == p["id"]:
         if a["kind"] == "key" and p["key_env"]:
             env[p["key_env"]] = a["key"]
-        elif a["kind"] == "home" and p["home_env"]:
+        # A key account gets its own home too: `authenticate` writes the key
+        # login (and Gemini its settings) there, never over ~/.codex or ~/.gemini.
+        if p["home_env"] and a["kind"] in ("key", "home"):
             env[p["home_env"]] = _ensure_home(a["id"])
     return env
+
+
+def auth_method(p: dict, acct_id) -> "str | None":
+    """The ACP authenticate id a turn signs in with: only for a key account."""
+    return p.get("auth_method") if (account(acct_id) or {}).get("kind") == "key" else None
 
 
 def login_hint(p: dict, acct_id) -> str:
@@ -275,12 +289,18 @@ def _flat(opts) -> list:
     return out
 
 
-def _shape(config_options, modes) -> dict:
+def _shape(config_options, modes, models=None) -> dict:
     got = {"model": [], "mode": [], "effort": []}
     for o in config_options or []:
         cat = _CATEGORY.get((o or {}).get("category"))
         if cat and o.get("type", "select") == "select":
             got[cat] = _flat(o.get("options"))
+    # The unstable `models` field ({availableModels: [{modelId, name}]}), for
+    # agents that offer no model config option.
+    if not got["model"] and isinstance(models, dict):
+        got["model"] = [{"value": str(m.get("modelId")), "name": str(m.get("name") or m.get("modelId"))}
+                        for m in models.get("availableModels") or []
+                        if isinstance(m, dict) and m.get("modelId")]
     if not got["mode"] and isinstance(modes, dict):
         got["mode"] = [{"value": str(m.get("id")), "name": str(m.get("name") or m.get("id"))}
                        for m in modes.get("availableModes") or [] if isinstance(m, dict)]
@@ -304,8 +324,8 @@ def _load_options() -> None:
         pass
 
 
-def remember_options(agent: str, acct_id, config_options, modes) -> None:
-    shaped = _shape(config_options, modes)
+def remember_options(agent: str, acct_id, config_options, modes, models=None) -> None:
+    shaped = _shape(config_options, modes, models)
     with _lock:
         _load_options()
         _options[_key(agent, acct_id)] = shaped
@@ -356,9 +376,12 @@ def api_test(body: dict) -> "tuple[dict, int]":
     if p is None:
         return {"error": f"unknown agent {body.get('agent')!r}"}, 404
     acct = body.get("account") or None
+    problem = run_problem(p, acct, config.DASH_CHAT_ID, None)   # the turn's own rules
+    if problem:
+        return {"ok": False, "error": problem}, 200
     res = acp.probe(argv=argv(p), env=env_for(p, acct), label=p["label"],
-                    login_hint=login_hint(p, acct))
+                    login_hint=login_hint(p, acct), auth_method=auth_method(p, acct))
     if res.get("ok"):
-        remember_options(p["id"], acct, res.get("options"), res.get("modes"))
+        remember_options(p["id"], acct, res.get("options"), res.get("modes"), res.get("models"))
         return {"ok": True, "options": options_for(p["id"], acct)}, 200
     return res, 200

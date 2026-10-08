@@ -159,7 +159,7 @@ class Conn:
         for sig in (signal.SIGTERM, signal.SIGKILL):
             with self._klock:
                 if self.proc.returncode is not None:
-                    return
+                    break
                 try:
                     os.killpg(self.proc.pid, sig)
                 except OSError:
@@ -172,6 +172,12 @@ class Conn:
                 self.proc.wait(2)
             except (subprocess.TimeoutExpired, OSError):
                 pass
+        # A setsid'd child can still hold stdout, so the reader may never see
+        # EOF: the stream is over for us anyway, and nothing may wait on it.
+        with self._plock:
+            self._closed = True
+            for slot in self._pending.values():
+                slot[0].set()
 
     def close(self, grace=2.0):
         """Stdin closed, up to `grace` s for the agent to leave (a child still
@@ -186,7 +192,7 @@ class Conn:
 
     def _left(self):
         """The leader has exited and nothing holds its stdout any more."""
-        return self._closed and self._exited()
+        return self._exited() and self._closed
 
     def _exited(self):
         """Has the leader exited? Asked with WNOWAIT, so it stays an unreaped
@@ -509,6 +515,19 @@ def _why(e, conn, label, login_hint) -> str:
     return f"{head}\n{tail}" if tail else head
 
 
+def _authenticate(conn, init, method, label):
+    """Sign a key account in, every turn (each turn is a new process). The
+    method must be one the agent offers: never a fallback to whatever login
+    the CLI has (rule 5), so a missing one fails the turn."""
+    if not method:
+        return
+    ids = {m.get("id") for m in init.get("authMethods") or [] if isinstance(m, dict)}
+    if method not in ids:
+        raise AcpError(None, f"this version doesn't offer API-key sign-in ({method!r}); "
+                             "can't run a key account")
+    conn.request("authenticate", {"methodId": method}, 60)
+
+
 def _open(conn, turn, caps, cwd, sid, on_session):
     """Open the turn's session: new, else resume (no replay), else load with
     its replay dropped. Returns (sid, response); the response is None when the
@@ -545,9 +564,10 @@ def _finish(job, turn, stop):
 
 
 def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, opts,
-             on_spawn=None, on_session=None, cache=None) -> None:
+             on_spawn=None, on_session=None, cache=None, auth_method=None) -> None:
     """One prompt on a fresh agent process. Never raises: the job ends done,
-    stopped or error, with every card answered and the process group gone."""
+    stopped or error, with every card answered and the process group gone.
+    auth_method: the ACP authenticate id for a key account, None to skip."""
     turn = job.turn = Turn(job, label, _secrets(env))
     conn = None
     try:
@@ -556,6 +576,7 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
         if on_spawn:
             on_spawn(conn)
         init = conn.request("initialize", _INIT, 120)
+        _authenticate(conn, init, auth_method, label)
         sid, res = _open(conn, turn, init.get("agentCapabilities") or {}, cwd,
                          agent_session_id, on_session)
         if res is None:
@@ -564,7 +585,7 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
         turn.options, turn.modes = res.get("configOptions") or [], res.get("modes")
         if cache:
             try:
-                cache(turn.options, turn.modes)
+                cache(turn.options, turn.modes, res.get("models"))
             except Exception as e:  # noqa: BLE001 - a picker cache never fails a turn
                 print(f"[acp] options cache: {e!r}", file=sys.stderr)
         for knob, key in (("model", "model"), ("mode", "permission_mode"), ("effort", "effort")):
@@ -645,7 +666,7 @@ def set_options(job, model=None, mode=None, effort=None) -> bool:
     return done
 
 
-def probe(*, argv, env, label, login_hint, timeout=120) -> dict:
+def probe(*, argv, env, label, login_hint, timeout=120, auth_method=None) -> dict:
     """TEST: initialize and session/new in a scratch dir, then delete (or
     close) that session when the agent can. What options it offers."""
     tmp = tempfile.mkdtemp(prefix="mystical-acp-probe-")
@@ -653,6 +674,7 @@ def probe(*, argv, env, label, login_hint, timeout=120) -> dict:
     try:
         conn = Conn(argv, env=env, cwd=tmp, on_notify=lambda m, p: None, on_request=_refuse)
         init = conn.request("initialize", _INIT, timeout)
+        _authenticate(conn, init, auth_method, label)
         res = conn.request("session/new", {"cwd": tmp, "mcpServers": []}, timeout)
         caps = (init.get("agentCapabilities") or {}).get("sessionCapabilities") or {}
         drop = next((m for m in ("delete", "close") if caps.get(m) is not None), None)
@@ -662,7 +684,8 @@ def probe(*, argv, env, label, login_hint, timeout=120) -> dict:
             except (AcpError, AcpClosed):
                 pass
         return {"ok": True, "options": res.get("configOptions") or [],
-                "modes": res.get("modes"), "agent": init.get("agentInfo")}
+                "modes": res.get("modes"), "models": res.get("models"),
+                "agent": init.get("agentInfo")}
     except Exception as e:  # noqa: BLE001 - a TEST reports, never raises
         return {"ok": False, "error": _why(e, conn, label, login_hint),
                 "options": [], "modes": None}
