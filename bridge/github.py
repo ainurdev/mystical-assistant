@@ -70,6 +70,53 @@ def origin_slug(repo_dir: str) -> str | None:
     return _parse_slug(m.group(1)) if m else None
 
 
+_ISSUE_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)")
+_HEADING_RE = re.compile(r"^#{1,6}\s")
+_OPENING_MAX = 700
+
+
+def _opening(body: str) -> str:
+    """An issue body's opening, for a peek: its title heading dropped (the task
+    already shows the name), the rest up to the first section heading, cut at a
+    paragraph to stay under _OPENING_MAX."""
+    lines = body.strip().splitlines()
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    head = []
+    for ln in lines:
+        if _HEADING_RE.match(ln):
+            break
+        head.append(ln)
+    out = "\n".join(head).strip()
+    if len(out) <= _OPENING_MAX:
+        return out
+    cut = out.rfind("\n\n", 0, _OPENING_MAX)
+    return out[:cut if cut > 0 else _OPENING_MAX].rstrip() + "…"
+
+
+def issue_spec(text: "str | None") -> "dict | None":
+    """The first GitHub issue `text` links to, read with `gh`: its number, title,
+    state, url and opening. A Rivendell task whose description says "the spec
+    stays in #43" shows #43's words in the RIVENDELL tab's peek. gh failing (no
+    access, no network) keeps the link and nothing else."""
+    m = _ISSUE_RE.search(text or "")
+    if not m:
+        return None
+    slug, num = m.group(1), m.group(2)
+    url = f"https://github.com/{slug}/issues/{num}"
+    rc, out, _ = _run("gh", "issue", "view", num, "-R", slug,
+                      "--json", "number,title,state,url,body")
+    try:
+        d = json.loads(out) if rc == 0 else None
+    except ValueError:
+        d = None
+    if not isinstance(d, dict):
+        return {"number": int(num), "url": url, "title": None, "state": None, "body": None}
+    return {"number": d.get("number") or int(num), "url": d.get("url") or url,
+            "title": d.get("title"), "state": d.get("state"),
+            "body": _opening(d.get("body") or "")}
+
+
 def _count(slug: str, state: str) -> int:
     rc, out, _ = _run(
         "gh", "api",

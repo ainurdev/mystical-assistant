@@ -1383,11 +1383,14 @@ export function App() {
     if (cur) openSession(cur.id);
   }
 
-  async function newSession(project: string) {
+  /** A new session in `project`; `draft` waits in its composer, unsent (the
+   *  RIVENDELL tab's WORK ON IT). */
+  async function newSession(project: string, draft?: string) {
     openBlank();
     try {
       const { session } = await api.createSession(project);
       setSessions((prev) => [session, ...prev]);
+      if (draft) setDrafts((d) => ({ ...d, [session.id]: draft }));
       openSession(session.id);
     } catch { setLoadingSession(false); }
   }
@@ -1666,7 +1669,8 @@ export function App() {
       id: "rivendell", label: rivendellDown ? "Rivendell tasks — link broken" : "Rivendell tasks",
       icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       render: () => (
-        <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />
+        <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
+          onWorkOn={(text) => { if (sessionProject) { void newSession(sessionProject, text); toChat(); } }} />
       ),
     }] : []),
   ];

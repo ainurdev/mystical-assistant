@@ -1821,3 +1821,157 @@ def test_queue_mode_stopping_worker_leaves_a_reattached_batch_too(monkeypatch):
 if __name__ == "__main__":
     import subprocess
     raise SystemExit(subprocess.call(["pytest", "-q", os.path.abspath(__file__)]))
+
+
+# --- the tab's peek, NEXT UP, and IMPLEMENT's note -----------------------------
+
+def _mcp_answer(payload, is_error=False):
+    """Rivendell's /mcp envelope around one tool's answer (JSON in a text block)."""
+    text = payload if isinstance(payload, str) else json.dumps(payload)
+    return {"jsonrpc": "2.0", "id": 1,
+            "result": {"isError": is_error, "content": [{"type": "text", "text": text}]}}
+
+
+def _tool_call(name, args):
+    return ("/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                     "params": {"name": name, "arguments": args}})
+
+
+def test_task_detail_reads_get_task_and_follows_its_spec_link(workers, monkeypatch):
+    from bridge import github
+    calls, seen = [], []
+    w = _worker(id="a")
+    w._api = _answering(_mcp_answer({
+        "id": "t26", "name": "T26 — Moneybird OAuth",
+        "description": "From GitHub: [#43](https://github.com/o/r/issues/43).",
+        "tasklistName": "Phase 2 backlog", "createdBy": {"id": "1", "name": "Erfan Besharat"},
+        "createdAt": "2026-10-06T12:23:34Z", "estimateMinutes": 240,
+        "tags": [{"id": "x", "name": "Review", "color": "#4ecd97"}]}), calls)
+    workers["a"] = w
+    monkeypatch.setattr(github, "issue_spec", lambda text: seen.append(text) or {"number": 43})
+
+    out = rivendell.task_detail("a", "t26")
+
+    assert calls == [_tool_call("get_task", {"taskId": "t26"})]
+    assert seen == ["From GitHub: [#43](https://github.com/o/r/issues/43)."]
+    assert out == {"description": "From GitHub: [#43](https://github.com/o/r/issues/43).",
+                   "tasklist": "Phase 2 backlog", "createdBy": "Erfan Besharat",
+                   "createdAt": "2026-10-06T12:23:34Z", "estimateMinutes": 240,
+                   "tags": [{"name": "Review", "color": "#4ecd97"}], "spec": {"number": 43}}
+
+
+def test_task_detail_says_what_rivendell_said_when_it_cant(workers):
+    w = _worker(id="a")
+    w._api = _answering(_mcp_answer("Task not found.", is_error=True))
+    workers["a"] = w
+    with pytest.raises(rivendell.TasksError) as e:
+        rivendell.task_detail("a", "gone")
+    assert (e.value.code, str(e.value)) == ("refused", "Task not found.")
+
+
+def test_task_detail_on_a_rivendell_without_mcp_is_not_deployed(workers):
+    w = _worker(id="a")
+    w._api = _raise_http(404)
+    workers["a"] = w
+    with pytest.raises(rivendell.TasksError) as e:
+        rivendell.task_detail("a", "t26")
+    assert e.value.code == "not_deployed"
+
+
+def test_task_detail_on_an_unknown_instance_is_an_error(workers):
+    with pytest.raises(rivendell.TasksError) as e:
+        rivendell.task_detail("nope", "t1")
+    assert e.value.code == "no_instance"
+
+
+_TODO = {
+    "generatedAt": "2026-09-27T20:55:29.611Z", "progress": {"total": 3, "done": 1},
+    "items": [
+        {"id": "i1", "position": 0, "section": "High priority", "priority": "high",
+         "title": "Build the PR webhook", "done": False,
+         "links": [{"type": "TASK", "id": "t14", "label": "Create webhook", "url": "https://tw/t14",
+                    "taskProjectId": "p", "done": False}]},
+        {"id": "i2", "position": 1, "section": "High priority", "priority": "high",
+         "title": "Merge PR #21", "done": True, "links": []},
+        {"id": "i3", "position": 2, "section": "Medium priority", "priority": "medium",
+         "title": "Fix the hydration error", "done": False,
+         "links": [{"type": "SENTRY_ISSUE", "id": "org:1", "label": "FRONTEND-1 Hydration Error",
+                    "url": "https://sentry/1", "sentryOrg": "org", "done": None}]},
+    ],
+}
+
+
+def test_todolist_is_the_open_items_in_order_with_their_links(workers):
+    calls = []
+    w = _worker(id="a")
+    w._api = _answering(_mcp_answer(_TODO), calls)
+    workers["a"] = w
+
+    out = rivendell.todolist("a", "p1")
+
+    assert calls == [_tool_call("get_todolist", {"projectId": "p1"})]
+    assert out == {
+        "generatedAt": "2026-09-27T20:55:29.611Z", "progress": {"total": 3, "done": 1},
+        "items": [
+            {"id": "i1", "title": "Build the PR webhook", "priority": "high",
+             "links": [{"type": "TASK", "id": "t14", "label": "Create webhook", "url": "https://tw/t14"}]},
+            {"id": "i3", "title": "Fix the hydration error", "priority": "medium",
+             "links": [{"type": "SENTRY_ISSUE", "id": "org:1", "label": "FRONTEND-1 Hydration Error",
+                        "url": "https://sentry/1"}]},
+        ]}
+
+
+def test_todolist_of_a_project_without_one_is_none(workers):
+    w = _worker(id="a")
+    w._api = _answering(_mcp_answer("null"))
+    workers["a"] = w
+    assert rivendell.todolist("a", "p1") is None
+
+
+def test_implement_files_the_note_under_the_new_request(workers):
+    calls = []
+    w = _worker(id="a")
+    w._api = _answering({"id": "r7", "status": "PENDING"}, calls)
+    workers["a"] = w
+    assert rivendell.implement("a", "t1", "  Copy the TeamLeader module.  ") == {"id": "r7", "status": "PENDING"}
+    # Rivendell's own customPrompt would REPLACE its managed template, so the
+    # note never goes to Rivendell; this bridge adds it when the job arrives.
+    assert calls == [("/plugin/implementation-requests", {"taskId": "t1"})]
+    assert w._notes == {"r7": "Copy the TeamLeader module."}
+
+
+def test_implement_without_a_note_files_nothing(workers):
+    w = _worker(id="a")
+    w._api = _answering({"id": "r7", "status": "PENDING"})
+    workers["a"] = w
+    rivendell.implement("a", "t1", "   ")
+    assert w._notes == {}
+
+
+def test_run_implementation_appends_the_operators_note(monkeypatch):
+    w = _worker()
+    w._notes["r1"] = "Copy the TeamLeader module."
+    started = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid:
+                        {"prompt": "Implement T26.", "repositoryFullName": "acme/app"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/tmp")
+    monkeypatch.setattr(w, "_post_result", lambda *a: None)
+    monkeypatch.setattr(w, "_start_run", lambda prompt, *a, **k: started.append(prompt))
+    w._run_implementation("r1", "acme/app")
+    assert len(started) == 1
+    assert started[0].startswith("Implement T26.")
+    assert started[0].endswith("Copy the TeamLeader module.")
+    assert "operator" in started[0]
+    assert w._notes == {}, "a note is used once"
+
+
+def test_run_implementation_without_a_note_runs_rivendells_prompt_as_is(monkeypatch):
+    w = _worker()
+    started = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid:
+                        {"prompt": "Implement T26.", "repositoryFullName": "acme/app"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/tmp")
+    monkeypatch.setattr(w, "_post_result", lambda *a: None)
+    monkeypatch.setattr(w, "_start_run", lambda prompt, *a, **k: started.append(prompt))
+    w._run_implementation("r1", "acme/app")
+    assert started == ["Implement T26."]

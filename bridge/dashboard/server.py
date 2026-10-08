@@ -557,6 +557,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"slug": None, "instances": None,
                                    "projects": [], "tasks": [], "errors": []})
             return self._json({"slug": slug, **rivendell.tasks(slug)})
+        if path in ("/local/rivendell/task", "/local/rivendell/todolist"):
+            # The RIVENDELL tab's peek (one task in full, and the spec its
+            # description defers to) and NEXT UP (the project's todolist), both
+            # read off Rivendell's /mcp with this bridge's token.
+            iid = (qs.get("instance_id", [""])[0] or "").strip()
+            key = "task_id" if path.endswith("/task") else "project_id"
+            oid = (qs.get(key, [""])[0] or "").strip()
+            if not iid or not oid:
+                return self._json({"error": f"instance_id and {key} are required"}, 400)
+            try:
+                if path.endswith("/task"):
+                    return self._json(rivendell.task_detail(iid, oid))
+                return self._json({"todolist": rivendell.todolist(iid, oid)})
+            except rivendell.TasksError as e:
+                return self._json({"error": str(e), "code": e.code},
+                                  502 if e.code == "unreachable" else 400)
         if path == "/local/tracker/projects":
             try:
                 return self._json({"projects": trackers.projects((qs.get("conn", [""])[0] or "").strip())})
@@ -1346,13 +1362,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "op must be accept or reject"}, 400)
         if path == "/local/rivendell/implement":
             # IMPLEMENT on the RIVENDELL tab: Rivendell creates the request and
-            # sends it back to this bridge; the queue takes it from there.
+            # sends it back to this bridge; the queue takes it from there. An
+            # optional `note` rides along to the run (rivendell.implement).
             iid = (body.get("instance_id") or "").strip()
             tid = (body.get("task_id") or "").strip()
             if not iid or not tid:
                 return self._json({"error": "instance_id and task_id are required"}, 400)
             try:
-                return self._json({"ok": True, "request": rivendell.implement(iid, tid)})
+                return self._json({"ok": True, "request": rivendell.implement(
+                    iid, tid, str(body.get("note") or ""))})
             except rivendell.TasksError as e:
                 return self._json({"error": str(e), "code": e.code},
                                   502 if e.code == "unreachable" else 400)

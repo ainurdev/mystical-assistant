@@ -295,6 +295,10 @@ class Worker:
         self._q_lock = threading.Lock()      # guards _pending, _active_runs and _running
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
+        # Request id -> the note its IMPLEMENT carried (implement() below);
+        # _run_implementation appends it to Rivendell's prompt, once.
+        self._notes: "dict[str, str]" = {}
+        self._notes_lock = threading.Lock()
         # Request id -> the run in flight: the store session running it (the
         # RIVENDELL tab's OPEN SESSION, the QUEUE tab's RUNNING rows) and what to
         # call it. Memory only: a restart ends a one-turn run anyway, and a
@@ -1237,6 +1241,10 @@ class Worker:
             return
         prompt = resp["prompt"]
         slug = resp.get("repositoryFullName") or slug
+        with self._notes_lock:                   # implement() may still be filing it
+            note = self._notes.pop(request_id, None)
+        if note:
+            prompt += _NOTE_HEAD + note
 
         # No fallback here, unlike reviews: an autonomous bypassPermissions run
         # that WRITES code must never land in an unrelated directory. The claim
@@ -2085,14 +2093,90 @@ def tasks(slug: str) -> dict:
     return out
 
 
-def implement(instance_id: str, task_id: str) -> dict:
-    """Ask the instance to implement `task_id` as this bridge's token owner.
-    Returns the new request ({id, status, …}); raises TasksError."""
+def _worker(instance_id: str) -> Worker:
     with _manager_lock:
         w = _workers.get(instance_id)
     if w is None:
         raise TasksError("no_instance", "that Rivendell connection is off")
-    return _ask(w, "/plugin/implementation-requests", {"taskId": task_id})
+    return w
+
+
+def _tool(w: Worker, name: str, args: dict):
+    """One tool of Rivendell's own MCP (POST /mcp, JSON-RPC) with this bridge's
+    token. It is the same ApiTokenAuthGuard + LLM capability as /plugin/*, so the
+    tab reads a task in full, or a project's todolist, with no new Rivendell
+    route. The answer is JSON in the result's first text block. A tool error
+    ("Task not found.") is Rivendell's own words; a Rivendell from before /mcp
+    404s, which _explain already calls not_deployed."""
+    out = _ask(w, "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": name, "arguments": args}})
+    res = out.get("result") or {}
+    text = ((res.get("content") or [{}])[0] or {}).get("text") or ""
+    if "error" in out or res.get("isError"):
+        raise TasksError("refused", text or (out.get("error") or {}).get("message")
+                         or "Rivendell said no")
+    try:
+        return json.loads(text or "null")
+    except ValueError:
+        raise TasksError("refused", text) from None
+
+
+def task_detail(instance_id: str, task_id: str) -> dict:
+    """The tab's peek: one task in full (get_task), plus the GitHub issue its
+    description defers to, when it names one — IB Groups' tasks say only "the
+    spec stays in #43" (github.issue_spec)."""
+    from bridge import github                    # local import: subprocess-heavy
+    t = _tool(_worker(instance_id), "get_task", {"taskId": task_id}) or {}
+    return {
+        "description": t.get("description"),
+        "tasklist": t.get("tasklistName"),
+        "createdBy": (t.get("createdBy") or {}).get("name"),
+        "createdAt": t.get("createdAt"),
+        "estimateMinutes": t.get("estimateMinutes") or None,
+        "tags": [{"name": g["name"], "color": g.get("color")}
+                 for g in t.get("tags") or [] if isinstance(g, dict) and g.get("name")],
+        "spec": github.issue_spec(t.get("description")),
+    }
+
+
+def todolist(instance_id: str, project_id: str) -> "dict | None":
+    """NEXT UP: the project's prioritized todolist (get_todolist), as its open
+    items in Rivendell's order, each with the links the tab acts on: tasks
+    (the ids /plugin/tasks lists) and Sentry issues. None until Rivendell has
+    made one for the project."""
+    d = _tool(_worker(instance_id), "get_todolist", {"projectId": project_id})
+    if not d:
+        return None
+    return {"generatedAt": d.get("generatedAt"), "progress": d.get("progress"),
+            "items": [{"id": i.get("id"), "title": i.get("title"), "priority": i.get("priority"),
+                       "links": [{k: ln.get(k) for k in ("type", "id", "label", "url")}
+                                 for ln in i.get("links") or []]}
+                      for i in d.get("items") or [] if not i.get("done")]}
+
+
+_NOTE_HEAD = "\n\n---\nA note from the operator who started this run:\n\n"
+
+
+def implement(instance_id: str, task_id: str, note: str = "") -> dict:
+    """Ask the instance to implement `task_id` as this bridge's token owner.
+    Returns the new request ({id, status, …}); raises TasksError.
+
+    A `note` stays here instead of going to Rivendell: its customPrompt would
+    REPLACE the managed template, and the run happens on this bridge anyway.
+    _run_implementation appends the note to Rivendell's prompt when the job
+    arrives. The note is filed under _notes_lock because Rivendell can send the
+    job before this POST has answered.
+    ponytail: memory only. A restart between the click and the claim drops the
+    note, and so does the job being claimed by another of the owner's bridges."""
+    w = _worker(instance_id)
+    note = (note or "").strip()
+    if not note:
+        return _ask(w, "/plugin/implementation-requests", {"taskId": task_id})
+    with w._notes_lock:
+        r = _ask(w, "/plugin/implementation-requests", {"taskId": task_id})
+        if r.get("id"):
+            w._notes[r["id"]] = note
+    return r
 
 
 # Boot entry point (claude_telegram_bridge.py) and the settings save hook both
