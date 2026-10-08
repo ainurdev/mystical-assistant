@@ -483,6 +483,11 @@ class Worker:
                 self._apply_policy(self._enqueue("changelog", item["id"], item.get("projectName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: changelog catch-up failed: {e}")
+        try:
+            for item in self._api("/plugin/news-requests"):
+                self._apply_policy(self._enqueue("news", item["id"], item.get("userName")))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: news catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
@@ -642,6 +647,11 @@ class Worker:
             print(f"rivendell[{self.name}]: changelog requested for project "
                   f"{project.get('name', '?')}")
             return self._enqueue("changelog", obj["requestId"], project.get("name"))
+        if obj.get("type") == "news-request" and obj.get("requestId"):
+            user = obj.get("user") or {}
+            print(f"rivendell[{self.name}]: newspaper of {obj.get('editionDate', '?')} "
+                  f"requested for {user.get('name', '?')}")
+            return self._enqueue("news", obj["requestId"], user.get("name"))
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -829,17 +839,20 @@ class Worker:
             origin=self.origin, cwd=workdir, permission_mode="bypassPermissions")
         return session["id"]
 
-    def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None):
+    def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None,
+                   mcp_on: "str | None" = None):
         """One autonomous Claude run in `workdir` through the normal runner.
         `hang_timeout` is the silence the watchdog allows it (the kind's own
-        timeout for a review or an implementation). Returns the job, or None if
-        a run could not be started."""
+        timeout for a review or an implementation). `mcp_on` names an MCP
+        server the run must have whatever the operator's tool defaults say
+        (a newspaper is nothing without `rivendell`). Returns the job, or
+        None if a run could not be started."""
         from bridge import runner                # local import: heavy module
         return runner.start_streaming_job(
             config.DASH_CHAT_ID, prompt, [], project=workdir,
             model=self.model, permission_mode="bypassPermissions",
             session_id=self._new_session(workdir), origin=self.origin,
-            hang_timeout=hang_timeout)
+            mcp_on=mcp_on, hang_timeout=hang_timeout)
 
     def _run_review(self, request_id: str, slug: "str | None") -> None:
         resp = self._claim("review-requests", request_id)
@@ -1054,8 +1067,15 @@ class Worker:
         keeps it as the generator's history."""
         self._run_in_workdir("changelog", "changelog", request_id, project)
 
+    def _run_news(self, request_id: str, reader: "str | None") -> None:
+        """A reader's daily newspaper — no checkout (see _run_in_workdir). The
+        agent reads the reader's day through rivendell's MCP server, so that
+        server is forced on for the run; the JSON returned is the paper,
+        parsed server-side. Only the reader's own bridge is ever sent one."""
+        self._run_in_workdir("newspaper", "news", request_id, reader, mcp_on="rivendell")
+
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
-                        name: "str | None") -> None:
+                        name: "str | None", mcp_on: "str | None" = None) -> None:
         """Run a request that needs NO checkout: its whole context is rendered
         into the prompt server-side, read-only in spirit. A claim that names
         the project's repositories runs beside this machine's checkouts of them
@@ -1071,7 +1091,7 @@ class Worker:
         workdir = _project_dir(resp.get("repositories")) or self._workdir()
         print(f"rivendell[{self.name}]: {what} {request_id} "
               f"({name or '?'}) running in {workdir}")
-        job = self._start_run(prompt, workdir)
+        job = self._start_run(prompt, workdir, mcp_on=mcp_on) if mcp_on else self._start_run(prompt, workdir)
         if job is None:  # can't happen for a fresh session; never hang the queue
             self._post_result(kind_path, request_id, False,
                               "could not start a Claude run (session busy)")
@@ -1092,6 +1112,7 @@ class Worker:
         "todolist": "todolist-requests",
         "taskdesc": "task-description-requests",
         "changelog": "changelog-requests",
+        "news": "news-requests",
     }
 
     # -- Telegram ping for queued (non-auto-accepted) requests --
@@ -1101,6 +1122,7 @@ class Worker:
         "todolist": "todolist",
         "taskdesc": "task description",
         "changelog": "changelog",
+        "news": "newspaper",
     }
 
     def _label(self, item: dict) -> str:
@@ -1232,6 +1254,8 @@ class Worker:
                 self._run_taskdesc(request_id, slug)
             elif kind == "changelog":
                 self._run_changelog(request_id, slug)
+            elif kind == "news":
+                self._run_news(request_id, slug)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run

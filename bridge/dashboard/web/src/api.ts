@@ -410,14 +410,14 @@ export interface RivendellInput {
 }
 /** One request held PENDING in a worker's queue, awaiting accept/reject. The
  *  kinds match bridge/rivendell.py: a PR review, a task implementation, a project
- *  todolist, an AI task description, or a changelog. */
+ *  todolist, an AI task description, a changelog, or a reader's daily newspaper. */
 export interface RivendellQueueItem {
   instance_id: string;     // which worker holds it
   instance: string;        // that instance's display name
   key: string;             // "<kind>:<request_id>" — the accept/reject handle
-  kind: "review" | "impl" | "todolist" | "taskdesc" | "changelog";
+  kind: "review" | "impl" | "todolist" | "taskdesc" | "changelog" | "news";
   request_id: string;
-  slug: string | null;     // repo (review/impl), project (todolist/changelog) or task (taskdesc)
+  slug: string | null;     // repo (review/impl), project (todolist/changelog), task (taskdesc) or reader (news)
   /** A todolist's step: task recommendations first, then the todolist itself.
    *  Null when rivendell-api did not say (older API). */
   step?: "recommendations" | "todolist" | null;
