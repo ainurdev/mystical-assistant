@@ -40,12 +40,18 @@ os.environ["MCP_SERVERS"] = ""
 # is deterministic suite-wide (config.BASE_PATH is read once, at first import).
 # Tests that assert on containment should build fixtures under config.BASE_PATH.
 os.environ["BASE_PATH"] = tempfile.mkdtemp()
-# Same freeze-at-import rule for the two files that hold real credentials: a
-# test module importing bridge.accounts / bridge.freeagent before its own
-# preamble runs would otherwise write account profiles and provider API keys
-# into the developer's actual ~/.mystical.
+# Same freeze-at-import rule for the file that holds real credentials: a test
+# module importing bridge.accounts before its own preamble runs would
+# otherwise write account profiles into the developer's actual ~/.mystical.
 os.environ["ACCOUNTS_DIR"] = os.path.join(tempfile.mkdtemp(), "accounts")
-os.environ["FREEAGENTS_FILE"] = os.path.join(tempfile.mkdtemp(), "freeagents.json")
+# Backstop: a regression once reached the real `claude` binary during a test
+# run, against the developer's live login, and refreshed
+# ~/.claude/.credentials.json twice. Pin an absolute path that cannot exist:
+# runner.claude_bin() returns an absolute override as-is, unchecked
+# (bridge/runner.py ~206-226), so any test that regresses into spawning claude
+# fails fast with "`claude` not found" instead of running the real CLI.
+# toolsets._fill catches the OSError and returns [].
+os.environ["CLAUDE_BIN"] = os.path.join(tempfile.mkdtemp(), "no-real-claude")
 
 # Claude Code's live-session registry is a path frozen at import in bridge.machine,
 # with no env knob. native.scan() now indexes what that registry lists, so leave it
@@ -59,6 +65,16 @@ machine.SESSIONS_DIR = tempfile.mkdtemp()
 # Point it at a file that doesn't exist so the suite never reads the real one.
 from bridge import toolsets  # noqa: E402
 toolsets.CLAUDE_JSON = os.path.join(tempfile.mkdtemp(), "claude.json")
+
+# bridge/acp_agents.py freezes three paths in the developer's real home at
+# import time, with no env knob: ACCOUNTS_FILE, OPTIONS_FILE, HOMES. A test
+# that triggers remember_options()/add_account() without its own monkeypatch
+# would write agent accounts, options and homes into the real ~/.mystical.
+from bridge import acp_agents  # noqa: E402
+_acp_tmp = tempfile.mkdtemp()
+acp_agents.ACCOUNTS_FILE = os.path.join(_acp_tmp, "agent-accounts.json")
+acp_agents.OPTIONS_FILE = os.path.join(_acp_tmp, "acp-options.json")
+acp_agents.HOMES = os.path.join(_acp_tmp, "agent-homes")
 
 # An empty selection is not a failure. pytest counts session.testscollected AFTER
 # -k/-m deselection (_pytest/main.py:870), so a filter that matches nothing lands

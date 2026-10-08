@@ -77,6 +77,34 @@ def set_run_cmd(project: str, cmd: str, branch: "str | None" = None) -> "str | N
     return _set_field(project, branch, "run_cmd", cmd)
 
 
+def profile(project: str) -> "str | None":
+    """The profile new sessions in this project are bound to (bridge/profiles.py)."""
+    return _get_field(project, None, "profile")
+
+
+def set_profile(project: str, pid: "str | None") -> "str | None":
+    return _set_field(project, None, "profile", pid or "")
+
+
+def profiles_by_project() -> dict:
+    with _lock:
+        return {k: v["profile"] for k, v in _load().items()
+                if isinstance(v, dict) and v.get("profile")}
+
+
+def drop_profile(pid: str) -> None:
+    """Forget a deleted profile everywhere it was a project's default."""
+    with _lock:
+        data = _load()
+        for key in list(data):
+            entry = data[key]
+            if isinstance(entry, dict) and entry.get("profile") == pid:
+                entry.pop("profile")
+                if not entry:
+                    data.pop(key)
+        _save(data)
+
+
 def prod_url(project: str, branch: "str | None" = None) -> "str | None":
     """The configured production/deployed URL for a project (optionally branch)."""
     return _get_field(project, branch, "prod_url")

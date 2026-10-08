@@ -73,10 +73,10 @@ def test_a_save_writes_through_a_symlink(tmp_path, _homes):
 
 
 def test_opencode_is_listed_only_when_it_is_installed(monkeypatch):
-    monkeypatch.setattr(agentconfig.freeagent, "opencode_bin", lambda: None)
+    monkeypatch.setattr(agentconfig.acp_agents, "_resolve", lambda name: None)
     opencode = agentconfig.state()["tools"][1]
     assert not opencode["installed"] and opencode["files"] == []
 
-    monkeypatch.setattr(agentconfig.freeagent, "opencode_bin", lambda: "/usr/bin/opencode")
+    monkeypatch.setattr(agentconfig.acp_agents, "_resolve", lambda name: "/usr/bin/opencode")
     opencode = agentconfig.state()["tools"][1]
     assert opencode["installed"] and len(opencode["files"]) == 2

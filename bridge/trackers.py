@@ -589,14 +589,18 @@ def view(rel: str, session_id: "str | None" = None) -> dict:
 def start_update(chat_id: int, rel: str, abs_project: str, session_id: str, key: str,
                  status_id: str, status_name: str, note: str, origin: str) -> tuple:
     """Run the update turn in `session_id`. Returns (job, error): the job is
-    None when it could not start, and error says why in one line."""
-    from bridge import github, runner, store, toolsets
+    None when it could not start, and error says why in one line. Never in a
+    session on another agent: the turn is a Claude turn (manual mode, the ask
+    rule, its MCP server), and an agent would run it with none of them."""
+    from bridge import github, profiles, runner, store, toolsets
     lk = link(rel)
     if not lk:
         return None, "no tracker linked to this project"
     session = store.get_session(session_id or "")
     if not session or session.get("chat_id") != chat_id:
         return None, "unknown session"
+    if profiles.effective(session)["agent"] != profiles.CLAUDE:
+        return None, "Tracker updates need a Claude session"
     key = (key or "").strip() or _session_key(session, lk["conn"]["kind"])
     if not key:
         return None, "which task? this session's branch names none"

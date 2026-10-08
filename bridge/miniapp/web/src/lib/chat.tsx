@@ -14,6 +14,7 @@ import type {
   EffortLevel,
   ModelId,
   PendingRequest,
+  Profile,
   RunEvent,
   RunPick,
   SessionBrief,
@@ -208,6 +209,22 @@ export interface ChatContextValue {
   setEffort: (e: EffortLevel | "") => void;
   perm: string;
   setPerm: (p: string) => void;
+  // Server-side profiles (bridge/profiles.py). undefined = still loading, or a
+  // bridge too old for the route (its 404) — either way the PROFILE row hides.
+  profiles: Profile[] | undefined;
+  profileId: string;
+  pickProfile: (id: string) => Promise<void>;
+  // A non-404 profiles load failure, or the last pick's error (incl. a 409 —
+  // the session already ran on another agent). Cleared by the next success.
+  profilesError: string | null;
+  // Knobs set by hand in the open session, over its bound profile (bridge
+  // profiles.brief) — model | permission_mode | effort. [] when unbound or
+  // nothing overridden; the composer dots the matching pill.
+  overrides: string[];
+  // Who runs the open session: "claude", or another agent's preset id (its
+  // profile's). Another agent's model/mode/effort ids are its own, so the
+  // composer hides Claude's pickers and nothing of theirs is sent.
+  sessionAgent: string;
   sessions: SessionBrief[];
   sessionId: string | null;
   selectSession: (id: string) => void;
@@ -260,14 +277,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // The session resolver below hasn't settled yet, so "no turns" means "not
   // fetched", not "empty chat". Flips on failure too — never spin forever.
   const [resolving, setResolving] = useState(true);
-  // Model + mode belong to the open session: its row is the source of truth
-  // (bridge store.set_run_settings), loaded below when it opens and followed
-  // when another device picks for it. The persisted pair only remembers the last
-  // pick on this phone — what a session that never ran from a composer starts
-  // on (lib/models.runPicks). Effort stays this phone's.
+  // Model, mode and effort belong to the open session: its row is the source
+  // of truth (bridge profiles.brief), loaded below when it opens and followed
+  // when another device picks for it, or its profile is edited. The persisted
+  // triple only remembers the last pick on this phone — what a session that
+  // never ran from a composer starts on (lib/models.runPicks).
   const [defModel, setDefModel] = usePersistentState<ModelId>("miniapp:model:v1", "opus");
   const [model, setModelState] = useState<ModelId>(defModel);
-  const [effort, setEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
+  const [defEffort, setDefEffort] = usePersistentState<EffortLevel | "">("miniapp:effort:v1", "");
+  const [effort, setEffortState] = useState<EffortLevel | "">(defEffort);
   const [defPerm, setDefPerm] = usePersistentState<string>("miniapp:perm:v1", "");
   const [perm, setPermState] = useState<string>(defPerm);
   const fileIdRef = useRef(0);
@@ -320,24 +338,60 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     enabled: project !== null,
     refetchInterval: 5000,
   });
+  // Profiles change only on the dashboard (editing stays there) — polled on
+  // the same beat as the briefs, so a project default or an edit reaches the
+  // open composer without a reload. A bridge too old for the route 404s.
+  const profilesQ = useQuery({
+    queryKey: ["profiles"],
+    queryFn: () => api.profiles(),
+    refetchInterval: 5000,
+  });
+  const profilesLoadErr = profilesQ.error instanceof ApiError && profilesQ.error.status === 404
+    ? null : profilesQ.error instanceof Error ? profilesQ.error.message : null;
+  const [pickProfileErr, setPickProfileErr] = useState<string | null>(null);
+  // The open session's PROFILE pick. The bridge binds it whatever the session
+  // has run on before (another agent excepted: a 409, whose message says so)
+  // and answers with its new brief — the pickers follow from that.
+  async function pickProfile(pid: string) {
+    if (!sessionId) return;
+    const sid = sessionId;
+    try {
+      const { session } = await api.setSessionProfile(sid, pid);
+      setSessions((prev) => prev.map((s) => (s.id === sid ? session : s)));
+      setPickProfileErr(null);
+    } catch (e) {
+      setPickProfileErr(e instanceof Error ? e.message : "Failed to set profile.");
+    }
+  }
   // A pick: shown now, remembered as this phone's default, and saved to the
-  // open session as the pair the picker shows (a fresh session would otherwise
+  // open session as the triple the picker shows (a fresh session would otherwise
   // keep the bridge's mode under a picker showing yours). `half` is what you
   // actually picked, and the only half a running turn is switched to
   // (runner.apply_run_settings): a model pick must not carry a mode the picker
   // merely shows into a live turn, and turn Bypass on there. A bridge too old
   // for the route 404s; the pick still rides the next /api/run, as before.
-  function pickRun(m: ModelId, p: string, half: RunPick) {
+  function pickRun(m: ModelId, p: string, e: EffortLevel | "", half: RunPick) {
+    if (sessionAgent !== "claude") return;   // no pickers there; never a Claude pick on an agent
     setModelState(m);
     setPermState(p);
+    setEffortState(e);
     setDefModel(m);
     setDefPerm(p);
-    if (sessionId)
-      void api.setRunSettings(sessionId, { model: m, permission_mode: p || undefined, pick: half })
-        .catch(() => {});
+    setDefEffort(e);
+    if (!sessionId) return;
+    const sid = sessionId;
+    void api.setRunSettings(sid, { model: m, permission_mode: p || undefined, effort: e, pick: half })
+      // Auto (blank) on a session bound to a profile follows the profile's
+      // effort: show what will run, not the pick.
+      .then((r) => {
+        if (half === "effort" && r.effort !== undefined && sessionIdRef.current === sid)
+          setEffortState((r.effort ?? "") as EffortLevel | "");
+      })
+      .catch(() => {});
   }
-  const setModel = (m: ModelId) => pickRun(m, perm, "model");
-  const setPerm = (p: string) => pickRun(model, p, "permission_mode");
+  const setModel = (m: ModelId) => pickRun(m, perm, effort, "model");
+  const setPerm = (p: string) => pickRun(model, p, effort, "permission_mode");
+  const setEffort = (e: EffortLevel | "") => pickRun(model, perm, e, "effort");
 
   const lastTurn = turns.length ? turns[turns.length - 1] : null;
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;
@@ -524,12 +578,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const brief = briefsQ.data?.sessions.find((s) => s.id === sessionId)
     ?? sessions.find((s) => s.id === sessionId)
     ?? (transcriptQ.data?.session?.id === sessionId ? transcriptQ.data?.session : undefined);
+  // The open session's profile, which the pickers read through (runPicks).
+  const boundProfile = profilesQ.data?.profiles.find((p) => p.id === brief?.profile_id) ?? null;
+  const sessionAgent = brief?.agent ?? "claude";
   useEffect(() => {
     if (!brief) return;
-    const r = runPicks(brief, { model: defModel, perm: defPerm });
+    const r = runPicks(brief, { model: defModel, perm: defPerm, effort: defEffort }, boundProfile);
     setModelState(r.model);
     setPermState(r.perm);
-  }, [sessionId, brief?.model, brief?.permission_mode]);
+    setEffortState(r.effort as EffortLevel | "");
+  }, [sessionId, brief?.model, brief?.permission_mode, brief?.effort, brief?.profile_id,
+      brief?.overrides?.join(), boundProfile?.model, boundProfile?.mode, boundProfile?.effort]);
 
   // The very first fetch for this session — a poll refetch keeps the transcript
   // on screen, so only the load with nothing to show yet counts as loading. Each
@@ -562,22 +621,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     text: string,
     attachments: Attachment[],
     onSent?: () => void,
-    opts?: { force?: boolean; sessionId?: string },
+    // agent: a session just created for this prompt, whose brief no list has yet.
+    opts?: { force?: boolean; sessionId?: string; agent?: string },
   ) {
     const sid = opts?.sessionId ?? sessionId;
     if (!text || !sid) return;
     if (!opts?.sessionId && (isRunning || pending.length > 0)) return;
     setSendError(null);
     setChecking(true);
+    // This phone's picks are Claude's: an agent session gets none (the bridge
+    // refuses a Claude model there) and runs on its own profile's.
+    const target = briefsQ.data?.sessions.find((s) => s.id === sid) ?? sessions.find((s) => s.id === sid)
+      ?? (sid === sessionId ? brief : undefined);
+    const claude = (opts?.agent ?? target?.agent ?? "claude") === "claude";
     try {
       const res = await api.run(
         text,
         attachments.map((a) => a.dataUrl ?? "").filter(Boolean),
         project ?? undefined,
         sid,
-        model,
-        effort || undefined,
-        perm || undefined,
+        claude ? model : undefined,
+        (claude && effort) || undefined,
+        (claude && perm) || undefined,
         opts?.force,
       );
       // Held: this looks like different work from the session it would resume.
@@ -592,7 +657,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       // or a session minted for this prompt reads as never-run until the next
       // poll and the picker flips to this phone's defaults meanwhile.
       setSessions((prev) => prev.map((s) => (s.id === sid
-        ? { ...s, model, permission_mode: perm || s.permission_mode } : s)));
+        ? { ...s, model, permission_mode: perm || s.permission_mode, effort: effort || null } : s)));
       setTurns((prev) => [
         ...prev,
         {
@@ -641,7 +706,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       await runPrompt(h.text, h.attachments, clearDraft,
-                      { force: true, sessionId: session.id });
+                      { force: true, sessionId: session.id, agent: session.agent ?? "claude" });
     } catch {
       setSendError(new ApiError(0, "Failed to start a new session."));
     } finally {
@@ -750,6 +815,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setEffort,
     perm,
     setPerm,
+    profiles: profilesQ.data?.profiles,
+    profileId: brief?.profile_id ?? "",
+    pickProfile,
+    profilesError: pickProfileErr ?? profilesLoadErr,
+    overrides: brief?.overrides ?? [],
+    sessionAgent,
     sessions,
     sessionId,
     selectSession,

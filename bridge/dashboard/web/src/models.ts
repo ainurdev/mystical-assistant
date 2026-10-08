@@ -1,5 +1,4 @@
 import type { UsageInfo } from "./api";
-import type { UsageWindow } from "./lib/surfaces";
 
 export interface ModelOption {
   id: string; // full model id (e.g. "claude-opus-4-8"), or a short CLI alias
@@ -14,16 +13,12 @@ export interface ModelRow extends ModelOption {
   title?: string;   // every window that applies, for the row's tooltip
 }
 
-/** One entry in the AGENT picker: a Claude login, or a free-agent provider. */
+/** A Claude login that can run a turn (another agent: lib/agents). */
 export interface AgentOption {
-  id: string; // 'claude:<slot>' | 'opencode:<provider>' — a turn's runtime tag
-  short: string; // for the composer chip
-  label: string; // for the dropdown row and the settings picker
-  free: boolean; // true = not Claude, so no subscription quota applies
+  id: string; // 'claude:<slot>' — a turn's runtime tag
+  label: string; // the footer meter's tooltip
   def: boolean; // the ambient ~/.claude login
   left: number | null; // % of this account's tighter usage window unspent
-  wins?: UsageWindow[]; // a login's 5H and WK windows, drawn as meters in the AGENT menu
-  note?: string; // why a login has no windows: LOGIN EXPIRED | USAGE UNKNOWN
 }
 
 // Shown only until /local/state delivers the live list (Anthropic Models API,
@@ -63,20 +58,40 @@ export function snapModel(pick: string, list?: ModelOption[]): string | null {
 }
 
 /**
- * The model + mode the composer shows for a session. One that has run from a
- * composer has a model and carries both picks; one that hasn't (fresh, or
- * started by the bot or VS Code) starts from this device's — or a new session
- * would quietly show the bridge's new-session mode over the one you keep
- * picking. A device mode of "" (the retired "Session" option) defers to the
- * session's own.
+ * The model, mode and effort the composer shows for a session. Bound to a
+ * profile `p`: per knob, one set by hand in the session (its `overrides`), else
+ * the profile's, else this device's pick for a knob the profile leaves unset
+ * (read off the profile itself: the brief's mode is never blank, the bridge
+ * fills its default in). Bound but `p` not loaded: the brief's own values —
+ * they're the effective ones, where this device's would be pinned as
+ * overrides by the next send. Unbound: one that has run from a composer has a
+ * model and carries its picks, no effort being Auto; one that hasn't (fresh,
+ * or started by the bot or VS Code) starts from this device's — or a new
+ * session would quietly show the bridge's new-session mode over the one you
+ * keep picking. A device mode of "" (the retired "Session" option) defers to
+ * the session's own. A brief with no effort field (an older bridge) keeps
+ * this device's effort.
  */
 export function runPicks(
-  s: { model?: string | null; permission_mode?: string | null },
-  device: { model: string; perm: string },
-): { model: string; perm: string } {
+  s: { model?: string | null; permission_mode?: string | null; effort?: string | null; overrides?: string[];
+       profile_id?: string | null },
+  device: { model: string; perm: string; effort: string },
+  p?: { model: string; mode: string; effort: string } | null,
+): { model: string; perm: string; effort: string } {
+  if (p) {
+    const own = (k: string) => !!s.overrides?.includes(k);
+    return {
+      model: (own("model") && s.model) || p.model || device.model,
+      perm: (own("permission_mode") && s.permission_mode) || p.mode || device.perm || s.permission_mode || "",
+      effort: (own("effort") && s.effort) || p.effort || device.effort,
+    };
+  }
+  if (s.profile_id)
+    return { model: s.model || device.model, perm: s.permission_mode || device.perm || "", effort: s.effort || "" };
   return s.model
-    ? { model: s.model, perm: s.permission_mode || device.perm }
-    : { model: device.model, perm: device.perm || s.permission_mode || "" };
+    ? { model: s.model, perm: s.permission_mode || device.perm,
+        effort: s.effort === undefined ? device.effort : s.effort || "" }
+    : { model: device.model, perm: device.perm || s.permission_mode || "", effort: s.effort || device.effort };
 }
 
 /** "Claude Opus 4.8" -> "opus". Everything after the family word is version. */

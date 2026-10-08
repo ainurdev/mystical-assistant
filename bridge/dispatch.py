@@ -4,8 +4,8 @@ import os
 import sys
 import threading
 
-from bridge import (accounts, config, graphmap, ladder, limits, report, state,
-                    store, usage)
+from bridge import (accounts, config, graphmap, ladder, limits, profiles, report,
+                    state, store, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -26,6 +26,7 @@ HELP = (
     "/report — this week per project (time · tokens) · /report last\n"
     "/accounts — Claude logins and their usage · /accounts add\n"
     "/policy — what to do when a chat hits the usage limit\n"
+    "/profile [name|none] — show or set this chat's run profile\n"
     "/status — everything at a glance\n"
     "/help — this message")
 
@@ -267,6 +268,9 @@ def on_message(msg: dict):
         threading.Thread(target=handle_fallback_command, args=(chat_id, text),
                          daemon=True).start()
         return
+    if cmd0 == "/profile":
+        handle_profile_command(chat_id, text)
+        return
     if text == "/status":
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
@@ -282,7 +286,8 @@ def on_message(msg: dict):
 
     # Plain text -> prompt to Claude in the active project. Claim this session's
     # run slot; a run in another project/session is unaffected.
-    session = store.ensure_session(chat_id, state.project_key(chat_id))
+    key = state.project_key(chat_id)
+    session = store.ensure_session(chat_id, key, profile_id=profiles.project_default(key))
     if not state.acquire_run(session["id"], chat_id):
         send(chat_id, "⏳ Still working on this session — please wait.")
         return
@@ -292,9 +297,9 @@ def on_message(msg: dict):
 # --- fallback ladder: the usage-limit approval card + /accounts, /policy ------
 
 def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
-    """Buttons on the usage-limit card: fb:a:<sid>:<slot> | fb:f:<sid>:<provider>
-    | fb:w:<sid>. Owner-scoped — a card only spends the accounts of the chat whose
-    session it belongs to."""
+    """Buttons on the usage-limit card: fb:a:<sid>:<slot> | fb:w:<sid>.
+    Owner-scoped — a card only spends the accounts of the chat whose session it
+    belongs to."""
     parts = data.split(":", 3)
     sid = parts[2] if len(parts) > 2 else ""
     session = store.get_session(sid) if sid else None
@@ -309,9 +314,6 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     if kind == "a" and len(parts) == 4 and parts[3].isdigit():
         slot = int(parts[3])
         rung = {"kind": "account", "slot": slot, "label": f"account {slot}"}
-    elif kind == "f" and len(parts) == 4 and parts[3]:
-        rung = {"kind": "free", "provider": parts[3],
-                "label": f"free agent ({parts[3]})"}
     else:
         answer_cb(cb["id"])
         return
@@ -344,7 +346,7 @@ def _policy_text() -> str:
     return ("Usage-limit fallback: what happens when a chat hits the limit.\n\n"
             f"Current default: {ladder.default_policy()}\n\n"
             "/policy ask — offer the choices, stay parked until you pick\n"
-            "/policy auto — switch to the best account (or free agent) at once\n"
+            "/policy auto — switch to the best other account at once\n"
             "/policy wait — only wait for the reset\n\n"
             "Sets the active project's latest chat; new chats use the default.")
 
@@ -436,6 +438,32 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
     except ValueError as e:
         send(chat_id, f"⚠️ {e}")
     return True
+
+
+def handle_profile_command(chat_id: int, text: str) -> None:
+    """/profile — list profiles; /profile <name> — bind this chat's session;
+    /profile none — unbind (it keeps running what the profile gave it)."""
+    arg = text[len("/profile"):].strip()
+    s = store.latest_session(chat_id, state.project_key(chat_id))
+    rows = profiles.all_profiles()
+    if not arg:
+        cur = (s or {}).get("profile_id")
+        lines = [f"{'✅' if p['id'] == cur else '•'} {p['name']} — {p['agent']}"
+                 f"{' · ' + p['model'] if p['model'] else ''}" for p in rows]
+        send(chat_id, ("\n".join(lines) or "No profiles yet — make one in the dashboard.")
+             + "\n\n/profile <name> binds this chat's session · /profile none unbinds")
+        return
+    if not s:
+        send(chat_id, "No chat here yet — send a prompt first.")
+        return
+    pid = "" if arg.lower() == "none" else next(
+        (p["id"] for p in rows if p["name"].lower() == arg.lower()), None)
+    if pid is None:
+        send(chat_id, f"No profile named {arg!r}. /profile lists them.")
+        return
+    out, code = profiles.bind(s, pid)
+    send(chat_id, f"✅ {'Profile: ' + arg if pid else 'Profile removed'}" if code == 200
+         else f"⚠️ {out['error']}")
 
 
 def handle_callback(cb: dict):

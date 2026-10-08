@@ -1,3 +1,5 @@
+import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
+
 // The dashboard server hands out a per-process token in the URL the user opens
 // (http://127.0.0.1:8790/?token=...). We keep it and send it on every
 // state-changing request (X-Dash-Token) and on SSE streams (?token=). Cross-origin
@@ -44,21 +46,29 @@ export interface SessionBrief {
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
-  // The session's run picks (bridge store.set_run_settings), loaded into the
-  // composer. Absent from a bridge older than this field.
-  model?: string | null; // last model picked for it on any surface; null = none yet
-  permission_mode?: string; // the mode its next run gets: stored, else the bridge default
+  // What the session's next run gets (bridge profiles.brief): a knob set by
+  // hand in it, else its profile's, else the default. Loaded into the
+  // composer. Absent from a bridge older than these fields.
+  model?: string | null; // null = neither it nor its profile picked one yet
+  permission_mode?: string; // its own, else its profile's, else the bridge default
+  effort?: string | null; // null = none set (Auto)
+  profile_id?: string | null; // the profile it is bound to (lib/profiles); null = none
+  agent?: string; // who runs it: "claude" until agent profiles land
+  account?: string; // its profile's Claude login slot; "" = the default login
+  overrides?: string[]; // knobs set by hand in it, over its profile: model | permission_mode | effort | disabled_tools
 }
 
-/** Which half of the picker a settings POST was for: the only half a running
- *  turn is switched to (the pair is saved either way). */
-export type RunPick = "model" | "permission_mode";
+/** Which picker a settings POST was for: a running turn is switched only to
+ *  that one (all three are saved either way; effort waits for the next turn). */
+export type RunPick = "model" | "permission_mode" | "effort";
 
 /** What POST /local/session/settings saved (and switched a running turn to). */
 export interface RunSettings {
   ok: boolean;
   model: string | null;
   permission_mode: string;
+  effort?: string | null;
+  overrides?: string[];
 }
 
 /** Why a failed turn failed (bridge/outcomes.py) — derived server-side on every
@@ -79,7 +89,7 @@ export interface StoreTurn {
   cost: number | null;
   elapsed: number | null;
   started: number;
-  runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'opencode:<provider>'
+  runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'acp:<agent>'
   sha?: string | null;     // commit HEAD was on when the turn started (checkpoint drift)
   // What the turn spent. All four null = never reported (unknown, not zero).
   tok_in?: number | null;
@@ -853,20 +863,35 @@ export interface AccountInfo {
   logged_in: boolean; // false = the OAuth token is gone/expired; only a re-login fixes it
   plan: string | null; // "MAX 20x" / "TEAM 5x" / "PRO", off the login's own credentials
 }
-/** One free-agent rung — listed even unconfigured, since this is where you set it up. */
-export interface FreeAgentInfo {
-  provider: string;
+/** A vetted non-Claude agent the bridge can run over ACP (bridge/acp_agents.py
+ *  PRESETS). There is no custom command: this list is the whole menu. */
+export interface AcpPreset {
+  id: string;
   label: string;
-  env: string; // the variable that configures it — an API key, or a model name for Ollama
-  model: string;
-  needs: "key" | "model";
-  configured: boolean;
-  source: "env" | "saved" | null;
-  ready: boolean; // configured *and* opencode is installed
+  cmd: string[];
+  key_env: string | null; // set → it takes a pasted API key
+  home_env: string | null; // set (and not key_required) → it takes a separate login
+  key_required: boolean; // no machine login: an API key account is the only way in
+  login: string | null; // the CLI's own sign-in command
+  install: string;
+  installed: boolean;
 }
-export interface FreeAgents {
-  installed: boolean; // is the opencode binary there at all
-  providers: FreeAgentInfo[];
+/** An agent account. `key` arrives masked ("sk-…abcd"); the raw key never
+ *  comes back from the bridge. */
+export interface AcpAccount {
+  id: string;
+  agent: string;
+  label: string;
+  kind: "key" | "home";
+  key?: string;
+}
+export interface AcpOption { value: string; name: string }
+/** What an agent advertised for one account, as last seen by a turn or a TEST. */
+export interface AcpOptions { model: AcpOption[]; mode: AcpOption[]; effort: AcpOption[] }
+export interface AcpAgentsInfo {
+  presets: AcpPreset[];
+  accounts: AcpAccount[];
+  options: Record<string, AcpOptions>; // "<agent>|<account id or ''>"
 }
 /** One captured call to the Anthropic API. Bodies are summarized rather than
  *  stored: a request body is the whole conversation, which is already in the
@@ -963,7 +988,6 @@ export interface HooksInfo {
 export interface AccountsInfo {
   accounts: AccountInfo[];
   default_policy: string;
-  free_agents: FreeAgents;
   pending_login: { slot: number; url: string | null } | null;
 }
 /** One AI-powered extra. Everything here spends a model call nobody asked for,
@@ -1197,7 +1221,6 @@ export interface RunBody {
   effort?: string;
   permission_mode?: string; // the picker's mode — the run saves it to the session; omit to keep the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
-  agent?: string; // who runs it: 'claude:<slot>' | 'opencode:<provider>'; omit for the ambient login
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
 }
 
@@ -1361,11 +1384,30 @@ export const api = {
       method: "POST",
       body: { policy },
     }),
-  // A model/mode pick for a session: saved, and applied to its running turn.
-  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; pick: RunPick }) =>
+  // A model/mode/effort pick for a session: saved, and applied to its running
+  // turn. A blank effort is Auto.
+  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; effort?: string; pick: RunPick }) =>
     req<RunSettings>("/local/session/settings", {
       method: "POST",
       body: { session_id: id, ...body },
+    }),
+  // A bridge older than profiles answers these with its catch-all 404 "not found".
+  profiles: () => req<ProfilesInfo>("/local/profiles"),
+  /** create · update · delete. A refused field comes back as the bridge's message. */
+  profileWrite: (body: ProfileWrite) =>
+    req<{ ok: boolean; profile?: Profile }>("/local/profiles", { method: "POST", body }),
+  /** Bind the session to a profile ("" unbinds). A 409 means it already ran
+   *  on another agent. */
+  setSessionProfile: (id: string, profileId: string) =>
+    req<{ ok: boolean; profile_id: string | null; session: SessionBrief }>("/local/session/profile", {
+      method: "POST",
+      body: { session_id: id, profile_id: profileId },
+    }),
+  /** The profile new sessions in a project are bound to ("" = none). */
+  setProjectProfile: (project: string, profileId: string) =>
+    req<{ ok: boolean; project_defaults: Record<string, string> }>("/local/project/profile", {
+      method: "POST",
+      body: { project, profile_id: profileId },
     }),
   // The bridge health-checks every MCP server here, so the first call is slow
   // (seconds) and the rest are served from its 5-minute cache.
@@ -1432,10 +1474,18 @@ export const api = {
       method: "POST",
       body: { action: "login_cancel", slot },
     }),
-  setFreeAgent: (name: string, value: string) =>
-    req<{ ok: boolean; free_agents: FreeAgents }>("/local/freeagents", {
-      method: "POST",
-      body: { name, value },
+  // Non-Claude agents (bridge/acp_agents.py). A bridge older than them 404s.
+  acpAgents: () => req<AcpAgentsInfo>("/local/acp/agents"),
+  /** create → the account, masked; a home login also gets the command to run
+   *  once in a terminal. The key travels in this body only, never a URL. */
+  acpAccount: (body: { action: "create"; agent: string; label: string; kind: "key" | "home"; key?: string }
+    | { action: "delete"; id: string }) =>
+    req<{ ok: boolean; account?: AcpAccount; login_hint?: string }>("/local/acp/accounts", { method: "POST", body }),
+  /** Starts the agent once (up to 120 s). A failed start is a 200 with ok:false
+   *  and the reason, so read `ok`, not the status. */
+  acpTest: (agent: string, account: string) =>
+    req<{ ok: boolean; options?: AcpOptions; error?: string }>("/local/acp/test", {
+      method: "POST", body: { agent, account },
     }),
   /** The AI-powered extras and whether each is switched on. All ship off. */
   aiFeatures: () => req<{ features: AiFeature[] }>("/local/aifeatures"),
@@ -1814,7 +1864,6 @@ export const api = {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;
     effort?: string; surface?: string; // no model/mode: it runs on the session's
-    agent?: string; // same picker as /local/run — a queued prompt keeps your agent
   }) => req<QueueSnapshot & { item_id: string }>(
     "/local/queue/enqueue", { method: "POST", body }),
   queueOp: (op: QueueOp, body: Record<string, unknown>) =>

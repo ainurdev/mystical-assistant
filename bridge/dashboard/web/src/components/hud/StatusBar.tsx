@@ -34,6 +34,7 @@ export interface StatusBarProps {
   usedPct: number | null;      // null → usage unknown, shown as "—"
   resetLabel?: string | null;
   agent?: AgentOption | null;  // who runs the next turn — the meter is theirs
+  agentLabel?: string | null;  // the open session runs on another agent (lib/agents): its name, no Claude meter
   repo: string;
   changes: number;
   git?: GitStatus | null;      // open session's working tree; null while loading
@@ -56,10 +57,11 @@ const zlabel = (t: string): ReactNode => (
 /** The footer, as cells in the shell grid's bottom track rather than a row of
  *  its own: usage under SESSIONS, the branch chain and ⌘K under the right
  *  panel, and nothing under the chat, which runs to the bottom edge. Who runs
- *  the turn (and every login's windows) is the composer's AGENT picker; the
- *  context fill is its CTX lamps. */
+ *  the turn is the session's profile (the composer's PROFILE picker), every
+ *  login's windows are SETTINGS ▸ ACCOUNTS, and the context fill is the
+ *  composer's CTX lamps. */
 export function StatusBar(props: StatusBarProps) {
-  const { usedPct, resetLabel, agent, repo, changes, git, branch, onSynced, onPalette, rightOpen } = props;
+  const { usedPct, resetLabel, agent, agentLabel, repo, changes, git, branch, onSynced, onPalette, rightOpen } = props;
   const [hovered, setHovered] = useState(false);
 
   // A switch settles the session-scoped chips in the way the right panel's
@@ -76,7 +78,7 @@ export function StatusBar(props: StatusBarProps) {
   // The meter has to belong to whoever is actually running the turns. usedPct
   // is the *ambient* login's 5-hour window (from /local/usage), so it only
   // stands for the default account; another login reports its own headroom, and
-  // a free agent has no Claude quota to report at all.
+  // another agent has no Claude quota to report at all.
   const sync = git?.is_repo ? syncChip(git) : null;
   // Every link of the branch chain is the same box; .chain draws the hairline
   // between them, since inline styles can't say :first-child.
@@ -122,7 +124,6 @@ export function StatusBar(props: StatusBarProps) {
         busyLabel: "PULLING…",
         title: `Fast-forward ${git?.behind} commit${git?.behind === 1 ? "" : "s"} from ${git?.upstream}` }
     : null;
-  const free = agent?.free ?? false;
   const pct = !agent || agent.def ? usedPct
     : agent.left === null ? null : 100 - agent.left;
   const showReset = resetLabel && (!agent || agent.def);
@@ -208,9 +209,9 @@ export function StatusBar(props: StatusBarProps) {
       {/* L — the usage ledger, under SESSIONS. The track takes whatever the
           column leaves, which is less than the old centre zone had. */}
       <div style={{ ...foot, gridColumn: 1, gap: 11, padding: "0 12px", borderRight: "1px solid var(--border)", animation: enter }}>
-        {free ? (
-          <span style={{ color: "var(--warn)", flex: "none" }} title="Not your Claude subscription — no usage window to spend">
-            NO CLAUDE QUOTA
+        {agentLabel ? (
+          <span style={{ color: "var(--warn)", flex: "none" }} title="This session runs on another agent — no Claude usage window to spend">
+            ◇ {agentLabel}
           </span>
         ) : (
           <>

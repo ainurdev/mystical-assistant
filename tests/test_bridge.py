@@ -383,7 +383,15 @@ def test_interactive_base_cmd():
 
 
 def test_blocking_base_cmd_unchanged():
-    cmd = runner._base_cmd("hi", 555, stream=False)
+    # conftest pins config.CLAUDE_BIN to a path that can't resolve (a backstop
+    # against spawning the real CLI); override it here, like test_claude_bin.py
+    # does, so this test can still check the resolved basename.
+    prev_cfg, prev_cache = config.CLAUDE_BIN, runner._claude_bin
+    config.CLAUDE_BIN, runner._claude_bin = "claude", None
+    try:
+        cmd = runner._base_cmd("hi", 555, stream=False)
+    finally:
+        config.CLAUDE_BIN, runner._claude_bin = prev_cfg, prev_cache
     # cmd[0] is the resolved claude launcher (may be an absolute path), not the
     # literal "claude"; the contract is that -p and the prompt come next.
     assert os.path.basename(cmd[0]) == "claude"
@@ -450,7 +458,8 @@ def test_session_brief_shape(monkeypatch):
                       "origin", "cwd", "branch", "fallback_policy", "goal",
                       "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
-                      "worktree", "model", "permission_mode"}
+                      "worktree", "model", "permission_mode",
+                      "profile_id", "agent", "account", "effort", "overrides"}
     assert b["id"] == s["id"] and b["project"] == "p6"
     assert b["ctx_tokens"] is None        # nothing measured until a turn runs
     assert b["autocompact"] is None       # claude's own default until chosen

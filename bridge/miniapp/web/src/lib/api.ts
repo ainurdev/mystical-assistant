@@ -66,21 +66,48 @@ export interface SessionBrief {
   work_cwd?: string | null; // set when the shell moved into a worktree — branch came from there
   worktree?: string; // the linked worktree it runs in ("" = the project checkout)
   cwd?: string | null; // run dir — a linked worktree differs from the project dir
-  // The session's run picks (bridge store.set_run_settings), loaded into the
-  // composer. Absent from a bridge older than this field.
-  model?: string | null; // last model picked for it on any surface; null = none yet
-  permission_mode?: string; // the mode its next run gets: stored, else the bridge default
+  // The session's effective run settings (bridge profiles.brief): a knob set
+  // by hand in it, else its bound profile's, else the bridge default. Loaded
+  // into the composer. Absent from a bridge older than these fields.
+  model?: string | null; // null = neither it nor its profile picked one yet
+  permission_mode?: string; // its own, else its profile's, else the bridge default
+  effort?: string | null; // null = none set (Auto)
+  profile_id?: string | null; // the profile it is bound to (bridge/profiles.py); null = none
+  agent?: string; // who runs it: "claude" until agent profiles land
+  overrides?: string[]; // knobs set by hand in it, over its profile: model | permission_mode | effort
 }
 
 /** Which half of the picker a settings POST was for: the only half a running
- *  turn is switched to (the pair is saved either way). */
-export type RunPick = "model" | "permission_mode";
+ *  turn is switched to (the pair is saved either way; effort waits for the
+ *  next turn — runner.apply_run_settings takes no live effort switch). */
+export type RunPick = "model" | "permission_mode" | "effort";
 
 /** What POST /api/session/settings saved (and switched a running turn to). */
 export interface RunSettings {
   ok: boolean;
   model: string | null;
   permission_mode: string;
+  effort?: string | null;
+  overrides?: string[];
+}
+
+// A named, server-side bundle of agent/account/model/mode/effort/tool picks a
+// session can bind to (bridge/profiles.py). Editing stays on the dashboard —
+// the Mini App only lists and picks. Mirrors bridge/dashboard/web/src/lib/profiles.ts.
+export interface Profile {
+  id: string;
+  name: string;
+  agent: string;
+  account: string; // a Claude login slot, as a string; "" = the default login
+  model: string; // "" = not set, so the composer's pick applies
+  mode: string; // permission mode; "" = not set
+  effort: string; // "" = not set
+  tools: string[] | null; // deny rules; null = the bridge's defaults
+}
+
+export interface ProfilesInfo {
+  profiles: Profile[];
+  project_defaults: Record<string, string>; // project rel -> the profile its new sessions get
 }
 
 // Mirrors bridge/dashboard/web/src/api.ts (the two clients are separate apps
@@ -694,11 +721,22 @@ export const api = {
       method: "POST",
       body: { autocompact },
     }),
-  // A model/mode pick for a session: saved, and applied to its running turn.
-  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; pick: RunPick }) =>
+  // A model/mode/effort pick for a session: saved, and applied to its running
+  // turn. A blank effort is Auto.
+  setRunSettings: (id: string, body: { model?: string; permission_mode?: string; effort?: string; pick: RunPick }) =>
     request<RunSettings>("/api/session/settings", {
       method: "POST",
       body: { session_id: id, ...body },
+    }),
+
+  // A bridge older than profiles answers this with its catch-all 404 "not found".
+  profiles: () => request<ProfilesInfo>("/api/profiles"),
+  /** Bind (or "" unbind) a session's profile. A 409 means it already ran on
+   *  another agent. */
+  setSessionProfile: (id: string, profileId: string) =>
+    request<{ ok: boolean; profile_id: string | null; session: SessionBrief }>("/api/session/profile", {
+      method: "POST",
+      body: { session_id: id, profile_id: profileId },
     }),
 
   runStatus: (jobId: string, cursor: number) =>

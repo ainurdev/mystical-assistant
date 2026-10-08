@@ -39,18 +39,38 @@ export function snapModel(pick: string, list?: ModelOption[]): string | null {
 }
 
 /**
- * The model + mode the composer shows for a session. One that has run from a
- * composer has a model and carries both picks; one that hasn't (fresh, or
- * started by the bot or VS Code) starts from this phone's — or a new session
+ * The model, mode and effort the composer shows for a session. Bound to a
+ * profile `p`: per knob, one set by hand in the session (its `overrides`), else
+ * the profile's, else this phone's pick for a knob the profile leaves unset
+ * (read off the profile itself: the brief's mode is never blank, the bridge
+ * fills its default in). Bound but `p` not loaded: the brief's own values —
+ * they're the effective ones, where this phone's would be pinned as overrides
+ * by the next send. Unbound: one that has run from a composer has a model and
+ * carries its picks, no effort being Auto; one that hasn't (fresh, or started
+ * by the bot or another surface) starts from this phone's — or a new session
  * would quietly show the bridge's new-session mode over the one you keep
- * picking. A phone mode of "" (the retired "Session default") defers to the
- * session's own.
+ * picking. A phone mode of "" (the retired "Session" option) defers to the
+ * session's own. A brief with no effort field (an older bridge) keeps this
+ * phone's effort.
  */
 export function runPicks(
-  s: { model?: string | null; permission_mode?: string | null },
-  device: { model: string; perm: string },
-): { model: string; perm: string } {
+  s: { model?: string | null; permission_mode?: string | null; effort?: string | null; overrides?: string[];
+       profile_id?: string | null },
+  device: { model: string; perm: string; effort: string },
+  p?: { model: string; mode: string; effort: string } | null,
+): { model: string; perm: string; effort: string } {
+  if (p) {
+    const own = (k: string) => !!s.overrides?.includes(k);
+    return {
+      model: (own("model") && s.model) || p.model || device.model,
+      perm: (own("permission_mode") && s.permission_mode) || p.mode || device.perm || s.permission_mode || "",
+      effort: (own("effort") && s.effort) || p.effort || device.effort,
+    };
+  }
+  if (s.profile_id)
+    return { model: s.model || device.model, perm: s.permission_mode || device.perm || "", effort: s.effort || "" };
   return s.model
-    ? { model: s.model, perm: s.permission_mode || device.perm }
-    : { model: device.model, perm: device.perm || s.permission_mode || "" };
+    ? { model: s.model, perm: s.permission_mode || device.perm,
+        effort: s.effort === undefined ? device.effort : s.effort || "" }
+    : { model: device.model, perm: device.perm || s.permission_mode || "", effort: s.effort || device.effort };
 }

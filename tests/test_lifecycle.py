@@ -119,3 +119,12 @@ def test_endpoint_refuses_another_chats_session():
     h._post_api(f"/local/sessions/{sid}/lifecycle", {"lifecycle": "done"})     # noqa: SLF001
     assert box["code"] == 404
     assert _row(sid)["lifecycle"] is None
+
+
+def test_the_lifecycle_route_no_longer_shadows_the_state_module(monkeypatch):
+    """A local named `state` in _post_api made every `state.project_dir(chat)`
+    there (POST /local/shell) raise UnboundLocalError."""
+    monkeypatch.setattr(dash.shell, "run", lambda cwd, cmd: {"cwd": cwd, "cmd": cmd})
+    h, box = _handler()
+    h._post_api("/local/shell", {"command": "true"})
+    assert box["code"] == 200 and box["obj"]["cmd"] == "true"

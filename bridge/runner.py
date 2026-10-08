@@ -7,6 +7,11 @@ Two entry points share the same auth/session/permission setup:
 Each run claims its session's slot in state's per-session run registry, so two
 turns never hit the same Claude session at once, but different sessions run
 concurrently.
+
+A session whose profile names another agent runs its turn through AcpJob and
+bridge/acp.py instead of a claude child: same events, cards, Stop and
+watchdog, its own session id in sessions.agent_session_id, and none of the
+Claude-only paths (steer, auto-resume, the bot's blocking run).
 """
 
 import base64
@@ -24,9 +29,9 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, agents, aifeatures, config, devserver, git,
+from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver, git,
                     inspector, ladder, limits, machine, native_activity,
-                    pubsub, relevance, state, store, transcript_jsonl)
+                    profiles, pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
 
@@ -503,7 +508,7 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                  model: str | None = None, skip_pack: bool = False,
                  permission_mode: str | None = None,
                  ponytail: str | None = None, new_session: bool = False,
-                 fork: bool = False):
+                 fork: bool = False, account_slot: "int | None" = None):
     cmd = _base_cmd(prompt, chat_id, stream=False, claude_session_id=resume_id,
                     cwd=cwd, model=model, skip_pack=skip_pack,
                     permission_mode=permission_mode, new_session=new_session,
@@ -511,7 +516,7 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
     timeout = timeout or config.RUN_TIMEOUT
     try:
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
-                              text=True, timeout=timeout, env=_run_env(ponytail))
+                              text=True, timeout=timeout, env=_run_env(ponytail, account_slot))
     except subprocess.TimeoutExpired:
         return (f"⏱️ Timed out after {timeout // 60} min.", None, None, True)
     except FileNotFoundError:
@@ -534,19 +539,31 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
 def handle_task(chat_id: int, prompt: str, session: dict):
     """Runs in a thread; the caller already claimed `session`'s run slot.
 
-    Runs on the session's own model and mode, the last ones picked for it on any
-    surface. A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a session created
-    as bypassPermissions (the dashboard and Mini App default) runs unattended
-    here too: the same allow-listed user can already do that from the Mini App.
-    An asking mode can't show a card in a chat, so the tools it would ask about
-    are denied, as under acceptEdits. A session the bot started has no mode and
-    keeps EXTRA_CLAUDE_ARGS."""
+    Runs on the session's effective model and mode (its own picks, else its
+    bound profile's). A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a
+    session created as bypassPermissions (the dashboard and Mini App default)
+    runs unattended here too: the same allow-listed user can already do that
+    from the Mini App. An asking mode can't show a card in a chat, so the
+    tools it would ask about are denied, as under acceptEdits. A session the
+    bot started has no mode and keeps EXTRA_CLAUDE_ARGS. A profile bound to a
+    dead account slot refuses instead of running on another login. A session on
+    another agent is handed back: this path only runs claude, and an agent's
+    cards need a panel."""
     try:
+        eff = profiles.effective(session)
+        if eff["agent"] != profiles.CLAUDE:
+            send(chat_id, "This session runs on another agent — continue it in the "
+                          "Mini App or the dashboard.")
+            return
+        refusal = profiles.refusal(eff, chat_id)
+        if refusal:
+            send(chat_id, "⚠️ " + refusal)
+            return
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
         job_id = uuid.uuid4().hex
-        store.start_turn(session["id"], job_id, prompt, [], model=session.get("model"),
+        store.start_turn(session["id"], job_id, prompt, [], model=eff["model"],
                          sha=git.head_sha(state.project_dir(chat_id)))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
@@ -554,7 +571,8 @@ def handle_task(chat_id: int, prompt: str, session: dict):
             session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
             chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
-            model=session.get("model"), permission_mode=session.get("permission_mode"))
+            model=eff["model"], permission_mode=eff["permission_mode"],
+            account_slot=profiles.claude_slot(eff))
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
         # live, exactly like streaming-path events.
         _journal_one((session["id"], job_id,
@@ -651,7 +669,8 @@ class Job:
         self.tail_needs: str | None = None  # set when the closing ended needing the user
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
-        self.runtime: str | None = None   # 'opencode:<provider>' when a free agent runs it
+        self.refusal: str | None = None   # set before spawn: the bound profile can't run (see profiles.refusal)
+        self.runtime: str | None = None   # 'claude:<slot>' or 'acp:<agent>'; None = the default Claude login
         self.model: str | None = None     # what the child runs on; a live switch moves it
         # Our set_model / set_permission_mode requests the CLI hasn't answered
         # yet: request_id -> (subtype, value). See control_answered.
@@ -814,14 +833,13 @@ class Job:
         A pick that lands while the child is still being spawned (job.proc is
         None while the MCP health check, the graph pack and the task digest
         build its argv) is held, and _run_streaming writes it the moment the
-        child exists, ahead of the prompt (release_held). A free agent has no
-        claude child to hold it for.
+        child exists, ahead of the prompt (release_held).
 
         ponytail: a can_use_tool the CLI emits after its success answer (a check
         that began before the switch) still shows its card; it's answerable."""
         with self._lock:
             if self.proc is None:
-                if self.exited.is_set() or (self.runtime or "").startswith("opencode:"):
+                if self.exited.is_set():
                     return False
                 if model:
                     self._held["model"] = model
@@ -914,6 +932,54 @@ class Job:
         return {"state": "thinking", "label": "thinking…", "tools": tools}
 
 
+class AcpJob(Job):
+    """A turn run by a non-Claude agent over ACP (bridge/acp.py). Same events,
+    cards and Stop as a Claude job; the control channel is JSON-RPC, so every
+    stream-json write path is closed off: _write_stdin takes nothing, and
+    job.proc stays None (acp keeps the process in job.conn), which leaves
+    close_stdin, _escalate and _kill_if_alive nothing to act on. A pick is never
+    held (set_run_settings goes straight to the agent), so release_held has
+    nothing to send.
+
+    Lock order inside acp.py is turn._lock, then job._lock: never call
+    interrupt, respond or set_run_settings while holding job._lock."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.acp_account = ""            # the agent account id; "" = the CLI's own login
+        self.agent_session_id = None     # the agent's own session id, once it's open
+        self.conn = None                 # acp.Conn
+        self.turn = None                 # acp.Turn
+
+    def _write_stdin(self, obj):         # no stream-json stdin here
+        return False
+
+    def add(self, ev):
+        # A restart's kill is no failure: no error row, so the turn left for
+        # boot recovery reads INTERRUPTED, as a Claude one does (_stopping). No
+        # grace needed: an agent runs in its own session, so only stop_children
+        # reaches it, after shutting_down is up.
+        if (ev.get("type") == "error" and state.shutting_down
+                and not self.interrupted and not self.timed_out):
+            return
+        super().add(ev)
+
+    def awaiting(self, kind):
+        # acp's reader thread calls this: a Telegram send there would stall the
+        # agent's stdout, and a live switch waiting on its answer behind it.
+        threading.Thread(target=notify_awaiting, daemon=True,
+                         args=(self.chat_id, self.store_session_id, kind)).start()
+
+    def interrupt(self):
+        return acp.cancel(self, INTERRUPT_GRACE)
+
+    def respond(self, request_id, *, behavior="allow", message=None, answers=None):
+        return acp.answer(self, request_id, behavior == "allow")
+
+    def set_run_settings(self, model=None, permission_mode=None):
+        return acp.set_options(self, model=model, mode=permission_mode)
+
+
 _jobs: dict[str, Job] = {}
 _jobs_lock = threading.Lock()
 _JOBS_MAX = 20
@@ -931,9 +997,18 @@ def stop_children() -> None:
     """SIGTERM every live child, then SIGKILL whatever is still alive STOP_WAIT
     later: one deadline for all of them, so stuck children don't add up. Not
     Job.stop(): that marks the turn user-stopped, and turns a restart stops
-    must stay resumable."""
+    must stay resumable.
+
+    An agent turn has no job.proc: its group goes through Conn.kill(), never
+    through the Popen underneath (poll/wait there would reap the leader before
+    the sweep). Each kill is bounded (a few seconds), so they run side by side
+    inside the same deadline."""
     with _jobs_lock:
         procs = [j.proc for j in _jobs.values() if j.proc and j.proc.poll() is None]
+        conns = [j.conn for j in _jobs.values() if isinstance(j, AcpJob) and j.conn]
+    kills = [threading.Thread(target=c.kill, daemon=True) for c in conns]
+    for t in kills:
+        t.start()
     for p in procs:
         p.terminate()
     end = time.monotonic() + STOP_WAIT
@@ -942,6 +1017,8 @@ def stop_children() -> None:
             p.wait(timeout=max(0.0, end - time.monotonic()))
         except subprocess.TimeoutExpired:
             p.kill()
+    for t in kills:
+        t.join(max(0.0, end - time.monotonic()))
 
 
 def _with_images(prompt: str, image_paths: list[str] | None) -> str:
@@ -970,11 +1047,14 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
     Verified against claude 2.1.220: a turn with no tool call has no fold point,
     so a steer sent at the very end simply runs as a follow-up turn on the same
     process. Same job either way — nothing to clean up.
+
+    An agent turn (AcpJob) can't take one: ACP has no mid-turn message, so the
+    client queues instead.
     """
     with _jobs_lock:
         job = next((j for j in _jobs.values()
                     if j.store_session_id == session_id and j.status == "running"), None)
-    if job is None or job.proc is None:
+    if job is None or job.proc is None or isinstance(job, AcpJob):
         return False
     job._write_stdin({"type": "user", "message": {"role": "user",
                                                   "content": _with_images(text, image_paths)}})
@@ -1385,7 +1465,10 @@ def _stopping(rc: "int | None") -> bool:
 def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                        effort: str | None) -> bool:
     """Resume a session whose turn died without the user behind it. Returns True
-    when a resume run was started (the caller then skips the error notification)."""
+    when a resume run was started (the caller then skips the error notification).
+    Never an agent turn's (acp:): no parking, no resume for those (spec non-goal)."""
+    if (job.runtime or "").startswith("acp:"):
+        return False
     sid = job.store_session_id
     if not sid:
         return False
@@ -1409,8 +1492,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
             return False                          # kept failing past resets — stay stopped
         when, first = d
         # Parked (the safety net). Now see whether the fallback ladder can do
-        # better than waiting: another account, or a free agent. A taken rung
-        # unparks the session and announces itself, so we stay quiet then.
+        # better than waiting: another account. A taken rung unparks the
+        # session and announces itself, so we stay quiet then.
         if ladder.escalate(sess, job.chat_id, dead_slot=job.account_slot,
                            model=model, effort=effort):
             return True
@@ -2050,11 +2133,15 @@ def _watchdog(job: Job, proc) -> None:
     hang timeout (config.RUN_TIMEOUT unless the run set its own) while nothing
     waits on the user. A busy turn runs for as long as it takes — this is a
     hang detector, not a work cap (the cost brake is the auto-resume cap, see
-    _maybe_auto_resume)."""
+    _maybe_auto_resume).
+
+    proc is the claude child, or an agent turn's acp.Conn (its poll() never
+    reaps; its kill() sweeps the group). It stands down once the turn has
+    ended (job.exited): a descendant still holding an agent's stream must not
+    get a finished turn timed out and killed."""
     quiet_since = time.time()
     limit = job.hang_timeout or config.RUN_TIMEOUT
-    while proc.poll() is None:
-        time.sleep(1.0)
+    while proc.poll() is None and not job.exited.wait(1.0):
         if job.pending or job.interrupted:
             quiet_since = time.time()   # waiting on the user, or stopping: not a hang
             continue
@@ -2064,56 +2151,34 @@ def _watchdog(job: Job, proc) -> None:
             return
 
 
-def _consume_free_agent(job: Job, prompt: str, cwd: str,
-                        mode: "str | None" = None) -> None:
-    """Run one turn on a fallback-ladder free agent instead of Claude.
-
-    Blocking, not streamed: opencode is a different runtime with its own event
-    schema, so its stdout is captured and reported as the turn's single
-    assistant message. Everything after this (journaling, finish_turn, the
-    notification) is _run_streaming's shared finally block."""
-    from bridge import freeagent
-    want = (job.runtime or "").split(":", 1)[-1]
-    provider = next((p for p in freeagent.available()
-                     if p["provider"] == want), None)
-    if provider is None:
-        job.error_msg = (f"free agent {want!r} is not configured any more "
-                         f"(its API key or model went away)")
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    # No --session: job.resume_id is a *Claude* session id and means nothing to
-    # opencode. Continuity travels in the briefing prompt instead.
-    cmd = freeagent.build_cmd(prompt, provider, None, cwd, mode)
-    try:
-        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                              env=freeagent.run_env(),
-                              timeout=config.RUN_TIMEOUT)
-    except FileNotFoundError:
-        job.error_msg = "`opencode` not found on PATH."
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    except subprocess.TimeoutExpired:
-        job.timed_out = True
-        job.error_msg = "free agent timed out"
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    text = (proc.stdout or "").strip()
-    if proc.returncode != 0:
-        job.error_msg = (proc.stderr or "").strip() or f"opencode exited {proc.returncode}"
-        job.add({"type": "error", "message": job.error_msg})
-        job.status = "error"
-        return
-    if text:
-        job.texts.append(text)
-        job.add({"type": "text", "text": text})
-    job.result = text
-    job.status = "done"
-    job.elapsed = int(time.time() - job.started)
-    job.add({"type": "result", "result": job.result,
-             "cost": job.cost, "elapsed": job.elapsed})
+def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
+                 model: "str | None", effort: "str | None",
+                 permission_mode: "str | None") -> None:
+    """Run this turn on its ACP agent. Preconditions (owner, install, account,
+    no Claude model) end it with the reason before anything starts: checked
+    here, in the turn, so every caller is covered (safety rule 6). Everything
+    after (journaling, finish_turn, the slot) is _run_streaming's finally."""
+    agent = job.runtime.split(":", 1)[1]
+    p = acp_agents.preset(agent)
+    problem = acp_agents.run_problem(p, job.acp_account, job.chat_id, model)
+    if problem:
+        return acp._fail(job, problem)
+    sess = store.get_session(job.store_session_id) if job.store_session_id else None
+    job.boot = f"starting {p['label']}"
+    acp.run_turn(
+        job, argv=acp_agents.argv(p), env=acp_agents.env_for(p, job.acp_account), cwd=cwd,
+        label=p["label"], login_hint=acp_agents.login_hint(p, job.acp_account),
+        auth_method=acp_agents.auth_method(p, job.acp_account),
+        text=_with_images(prompt, image_paths),
+        agent_session_id=(sess or {}).get("agent_session_id"),
+        opts={"model": model, "permission_mode": permission_mode, "effort": effort},
+        on_spawn=lambda conn: threading.Thread(target=_watchdog, args=(job, conn),
+                                               daemon=True).start(),
+        # Never claude_session_id: Claude-only readers must not follow an agent's id.
+        on_session=lambda sid: job.store_session_id and store.set_session_field(
+            job.store_session_id, "agent_session_id", sid),
+        cache=lambda opts, modes, models: acp_agents.remember_options(
+            agent, job.acp_account, opts, modes, models))
 
 
 def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
@@ -2123,8 +2188,13 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
     mcp_dir = None
     job.cwd = cwd
     try:
-        if (job.runtime or "").startswith("opencode:"):
-            _consume_free_agent(job, prompt, cwd, permission_mode)
+        if job.refusal:
+            job.error_msg = job.refusal
+            job.add({"type": "error", "message": job.refusal})
+            job.status = "error"
+            return
+        if (job.runtime or "").startswith("acp:"):
+            _consume_acp(job, prompt, image_paths, cwd, model, effort, permission_mode)
             return
         full_prompt = _with_images(prompt, image_paths)
         # The gap before the first token is two waits, and an empty stream makes
@@ -2133,7 +2203,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         from bridge import toolsets  # local: toolsets imports runner
         job.boot = ("checking configured MCP servers"
                     if job.store_session_id and not toolsets.ready() else None)
-        denied = store.get_disabled_tools(job.store_session_id) if job.store_session_id else None
+        denied = (profiles.tools_for(store.get_session(job.store_session_id))
+                  if job.store_session_id else None)
         if job.mcp_on:
             # On for this turn only — the session's own toggles are not written.
             denied = [r for r in (store.default_disabled_tools() if denied is None else denied)
@@ -2346,12 +2417,17 @@ def _adopt_native(session: dict, origin: str | None) -> None:
 
 
 def _resolve_session(chat_id: int, project_dir: str, *, session_id: str | None,
-                     permission_mode: str | None, origin: str | None) -> dict:
-    """Just resolve/create the store session row (idempotent, lock-free) so its id
-    is known before we claim its run slot."""
+                     permission_mode: str | None, origin: str | None,
+                     profile_id: str | None = None) -> dict:
+    """Resolve/create the session row. A new one is bound to the profile the
+    caller named, else its project's default; a bound one gets no seeded mode,
+    so the profile's applies (spec: Creation and switching)."""
+    project = rel(project_dir)
+    pid = profile_id if profiles.get(profile_id) else profiles.project_default(project)
     return store.ensure_session(
-        chat_id, rel(project_dir), session_id, origin=origin, cwd=project_dir,
-        permission_mode=permission_mode or _surface_default_permission(origin))
+        chat_id, project, session_id, origin=origin, cwd=project_dir,
+        permission_mode=permission_mode or (None if pid else _surface_default_permission(origin)),
+        profile_id=pid)
 
 
 def _resolve_run_context(chat_id: int, project_dir: str, *, session_id: str | None,
@@ -2385,7 +2461,7 @@ def _finalize_run_context(session: dict, project_dir: str, *,
         cwd = project_dir
     if not session.get("cwd"):
         store.set_cwd(session["id"], cwd)
-    return session, cwd, permission_mode or session.get("permission_mode")
+    return session, cwd, permission_mode or profiles.effective(session)["permission_mode"]
 
 
 def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
@@ -2393,6 +2469,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         model: str | None = None, effort: str | None = None,
                         permission_mode: str | None = None,
                         session_id: str | None = None,
+                        profile_id: str | None = None,
                         origin: str | None = None, ponytail: str | None = None,
                         account_slot: int | None = None,
                         runtime: str | None = None,
@@ -2405,11 +2482,19 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     with its own model and permission posture (an explicit model/permission_mode
     wins for this run and is not written back); --resume continuity comes from
     that session's claude_session_id. `origin` marks where a newly-created
-    session started.
+    session started; `profile_id` binds a newly-created session to that profile
+    (else its project's default). A bound session's model/effort/permission and
+    Claude account follow the profile wherever the caller leaves them unset; a
+    profile whose account slot is gone or disabled refuses the run (job.refusal)
+    instead of silently running on another login.
 
-    account_slot picks which Claude login runs the turn (None = the ambient one);
-    runtime is set instead when a fallback-ladder free agent takes over. Both are
-    recorded on the turn so the transcript shows what produced it.
+    account_slot picks which Claude login runs the turn (None = the ambient one,
+    or the bound profile's); runtime is set instead when a fallback-ladder free
+    agent takes over. Both are recorded on the turn so the transcript shows what
+    produced it. A profile on another agent makes it runtime 'acp:<agent>': an
+    AcpJob with that profile's account in job.acp_account, and no claude
+    session id minted for it. Such a session never runs on a Claude account,
+    even one the caller names: that refuses the run.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
 
@@ -2422,7 +2507,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         return None
     project_dir = project or state.project_dir(chat_id)
     session = _resolve_session(chat_id, project_dir, session_id=session_id,
-                               permission_mode=permission_mode, origin=origin)
+                               permission_mode=permission_mode, origin=origin,
+                               profile_id=profile_id)
     if not state.acquire_run(session["id"], chat_id):
         return None
     try:
@@ -2431,11 +2517,34 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         # The session's own model unless the caller brought one: the /run routes
         # save theirs to the row; internal callers (Rivendell, trackers, goals)
         # run theirs without writing it. Neither = no --model, the CLI default.
-        model = model or session.get("model")
-        job = Job(job_id or uuid.uuid4().hex, chat_id, session["id"])
+        # Same for effort/account: the profile only fills what the caller didn't
+        # bring, and never overrides an explicit account_slot/runtime (an agent
+        # session refuses one instead, below).
+        eff = profiles.effective(session)
+        model = model or eff["model"]
+        effort = effort or eff["effort"]
+        refusal = profiles.refusal(eff, chat_id) if account_slot is None and runtime is None else None
+        if account_slot is None and runtime is None and not refusal:
+            account_slot = profiles.claude_slot(eff)
+        if eff["agent"] != profiles.CLAUDE:
+            # Its own agent or nothing: a caller's Claude account (or another
+            # runtime) would mint a claude id beside the agent's history.
+            if account_slot is not None or runtime not in (None, f"acp:{eff['agent']}"):
+                refusal = profiles.claude_account_refusal(eff["agent"])
+            account_slot, runtime = None, f"acp:{eff['agent']}"
+        is_acp = (runtime or "").startswith("acp:")
+        job = (AcpJob if is_acp else Job)(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.model = model
-        job.resume_id, job.new_session, job.fork = _claim_session_id(
-            session["id"], session["claude_session_id"])
+        job.refusal = refusal
+        if is_acp:
+            job.acp_account = eff["account"]   # and never a minted claude id
+        elif not refusal:
+            # A brand-new session's id is minted and PERSISTED here (before the
+            # child spawns). Skipped on a refusal: nothing will ever adopt it, so
+            # persisting it would brick the next (post-fix) attempt into
+            # --resume-ing a transcript that was never created.
+            job.resume_id, job.new_session, job.fork = _claim_session_id(
+                session["id"], session["claude_session_id"])
         job.account_slot = account_slot
         job.project = session.get("project")
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
 import { useChat } from "../lib/chat";
-import { api, type EffortLevel, type ModelId } from "../lib/api";
+import { api, type EffortLevel, type ModelId, type Profile } from "../lib/api";
 import { isExact, rankCommands, slashQuery } from "../lib/slash";
-import { Button } from "./ui";
+import { Banner, Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
 import { ImageLightbox, MediaThumb, isFileUrl } from "./ImageLightbox";
@@ -51,7 +51,7 @@ function OptionRow({
 }: {
   label: string;
   value: string;
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; title?: string }[];
   onPick: (id: string) => void;
 }) {
   return (
@@ -64,6 +64,7 @@ function OptionRow({
             type="button"
             role="radio"
             aria-checked={o.id === value}
+            title={o.title}
             onClick={() => onPick(o.id)}
             className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
               o.id === value
@@ -77,6 +78,32 @@ function OptionRow({
       </div>
     </div>
   );
+}
+
+// A knob set by hand in a session bound to a profile: its value wins over the
+// profile's until you pick the profile's own again (bridge profiles.save_pick).
+// Mirrors bridge/dashboard/web/src/components/Composer.tsx's OVERRIDE_TIP.
+const OVERRIDE_TIP = "set in this session; pick the profile's value to follow it again";
+
+/** Dots the selected option's label — the composer's only tell that a knob is
+ *  this session's own, over its bound profile's. `on` is whether the caller's
+ *  knob is listed in the session's `overrides`; untouched when false, so the
+ *  shared EFFORTS/PERMS arrays below are never mutated. */
+function dotSelected<T extends { id: string; label: string; title?: string }>(
+  options: T[], value: string, on: boolean,
+): T[] {
+  if (!on) return options;
+  return options.map((o) => (o.id === value ? { ...o, label: `${o.label} •`, title: OVERRIDE_TIP } : o));
+}
+
+// "FABLE-5-1 · PLAN · HIGH" — what a session bound to this profile runs with.
+// The chip's hover title: at 390px there's no room for a note line under each
+// pill. Mirrors bridge/dashboard/web/src/lib/profiles.ts describe() (hand-kept
+// copy — the two web apps don't share source).
+function describeProfile(p: Profile): string {
+  const bits = [p.agent !== "claude" ? `◇ ${p.agent}` : p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
+    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
+  return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
 }
 
 const chipClass =
@@ -101,8 +128,15 @@ export function Composer() {
     setEffort,
     perm,
     setPerm,
+    profiles,
+    profileId,
+    pickProfile,
+    profilesError,
+    overrides,
+    sessionAgent,
     sessionId,
   } = useChat();
+  const onAgent = sessionAgent !== "claude";
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -173,8 +207,9 @@ export function Composer() {
         // A screenshot queues with its prompt — otherwise it sat in the tray
         // while the prompt that needed it ran without it.
         images: draftAttachments.map((a) => a.dataUrl ?? "").filter(Boolean),
-        // No model or mode: it runs on the session's when it starts.
-        effort: effort || undefined,
+        // No model or mode: it runs on the session's when it starts. Nor
+        // effort on another agent, whose ids aren't this phone's.
+        effort: (!onAgent && effort) || undefined,
       });
       setDraft("");
       draftAttachments.forEach((a) => removeAttachment(a.id));
@@ -186,7 +221,7 @@ export function Composer() {
   // "Claude Opus 5" is the header of a menu, not a chip — the chip says Opus 5,
   // then only what you've moved off default.
   const modelLabel = (models.find((m) => m.id === model)?.label ?? model).replace(/^Claude /, "");
-  const settingsLabel = [
+  const settingsLabel = onAgent ? `◇ ${sessionAgent.toUpperCase()}` : [
     modelLabel,
     effort && EFFORTS.find((e) => e.id === effort)?.label,
     perm && PERMS.find((p) => p.id === perm)?.label,
@@ -320,26 +355,47 @@ export function Composer() {
             collisionPadding={12}
             className="max-h-[70vh] w-[min(23rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5"
           >
+            {profilesError && <Banner tone="error">{profilesError}</Banner>}
+            {profiles && (
+              <>
+                <OptionRow
+                  label="PROFILE"
+                  value={profileId}
+                  options={[
+                    { id: "", label: "NO PROFILE" },
+                    ...profiles.map((p) => ({ id: p.id, label: p.name, title: describeProfile(p) })),
+                  ]}
+                  onPick={(v) => void pickProfile(v)}
+                />
+                {!onAgent && <DropdownMenuSeparator />}
+              </>
+            )}
+            {/* Another agent's models and modes are its own: picked on the dashboard. */}
+            {!onAgent && <>
             <OptionRow
               label="MODEL"
               value={model}
-              options={models.map((m) => ({ id: m.id, label: m.label.replace(/^Claude /, "") }))}
+              options={dotSelected(
+                models.map((m) => ({ id: m.id, label: m.label.replace(/^Claude /, "") })),
+                model, overrides.includes("model"),
+              )}
               onPick={(v) => setModel(v as ModelId)}
             />
             <DropdownMenuSeparator />
             <OptionRow
               label="REASONING EFFORT"
               value={effort}
-              options={EFFORTS}
+              options={dotSelected(EFFORTS, effort, overrides.includes("effort"))}
               onPick={(v) => setEffort(v as EffortLevel | "")}
             />
             <DropdownMenuSeparator />
             <OptionRow
               label="OPERATING MODE"
               value={perm}
-              options={PERMS}
+              options={dotSelected(PERMS, perm, overrides.includes("permission_mode"))}
               onPick={setPerm}
             />
+            </>}
           </DropdownMenuContent>
         </DropdownMenu>
 

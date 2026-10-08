@@ -57,7 +57,7 @@ FEATURES = (
               "failure lets the prompt through."},
     {"key": "nextup", "env": "NEXTUP_ENABLE", "label": "NEXT-UP BOARD",
      "hint": "four questions about the repo you are in, and a machine-wide board",
-     "cost": "1 scout per question per changed repo, free rung first",
+     "cost": "1 scout per question per changed repo",
      "tokens": "~150k tokens",
      "about": "Looks at a repo's hard facts — dirty worktree, unpushed commits, "
               "open issues, sessions that stopped mid-task — and answers four "
@@ -66,9 +66,8 @@ FEATURES = (
               "design system. A new session's empty screen asks them one at a "
               "time, about its own repo only; the WORK tab keeps the ranked board "
               "across every repo you touched this week. Only a repo whose git "
-              "state moved is re-scouted, and a free provider is tried before "
-              "Claude quota. Off, nothing is scouted and the screen still shows "
-              "where the repo stands."},
+              "state moved is re-scouted. Off, nothing is scouted and the screen "
+              "still shows where the repo stands."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",

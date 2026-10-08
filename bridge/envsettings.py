@@ -190,9 +190,9 @@ SETTINGS = (
               "deliberately generous — at a tighter timeout every check fails open and "
               "the guard is a silent no-op. A failure always lets the prompt through."},
     {"key": "NEXTUP_MODEL", "type": "str", "live": True,
-     "group": "AI TUNING", "label": "SCOUT MODEL", "hint": "model for the next-up board's Claude rung",
-     "about": "Used only after the free-agent rung is unavailable, and only while the "
-              "AI tab's NEXT-UP BOARD is on."},
+     "group": "AI TUNING", "label": "SCOUT MODEL", "hint": "model for the next-up board's scout turn",
+     "about": "What every next-up scout turn runs on, while the AI tab's "
+              "NEXT-UP BOARD is on."},
     {"key": "NEXTUP_DAYS", "type": "int", "live": True, "min": 1, "max": 365, "unit": "days",
      "group": "AI TUNING", "label": "SCOUT WINDOW", "hint": "how far back activity counts",
      "about": "Repos with no session activity inside this window aren't scouted."},

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bridge import config, models, queue_manager, relevance, runner, store
+from bridge import config, models, profiles, queue_manager, relevance, runner, store
 from bridge.dashboard import server as dash
 from bridge.miniapp import server as mini
 from bridge.queue_manager import PreviewQueue
@@ -182,7 +182,8 @@ def test_a_mode_pick_is_saved_and_switches_only_the_mode(monkeypatch, surface):
                               "pick": "permission_mode"})
     assert box["code"] == 200
     assert box["obj"] == {"ok": True, "model": "claude-fable-5-1",
-                          "permission_mode": "bypassPermissions"}
+                          "permission_mode": "bypassPermissions",
+                          "effort": None, "overrides": []}
     row = store.get_session(s["id"])
     assert (row["model"], row["permission_mode"]) == ("claude-fable-5-1", "bypassPermissions")
     lines = job.proc.stdin.lines
@@ -200,7 +201,8 @@ def test_with_nothing_running_the_save_is_enough(monkeypatch, surface):
     s = store.create_session(CHAT, f"/srs-idle-{surface}")
     box = _settings(surface, {"session_id": s["id"], "permission_mode": "plan"})
     assert box["code"] == 200
-    assert box["obj"] == {"ok": True, "model": None, "permission_mode": "plan"}
+    assert box["obj"] == {"ok": True, "model": None, "permission_mode": "plan",
+                          "effort": None, "overrides": []}
     assert store.get_session(s["id"])["permission_mode"] == "plan"
 
 
@@ -272,7 +274,7 @@ def test_history_rows_carry_the_sessions_picks():
     store.set_run_settings(picked["id"], model="claude-fable-5-1")
     store.archive(picked["id"])
     bot = store.create_session(CHAT, "/srs-hist-bot")
-    rows = {r["id"]: r for r in store.history(CHAT, include_archived=True)}
+    rows = {r["id"]: r for r in profiles.history(CHAT, include_archived=True)}
     assert (rows[picked["id"]]["model"], rows[picked["id"]]["permission_mode"]) == (
         "claude-fable-5-1", "default")
     assert rows[bot["id"]]["model"] is None

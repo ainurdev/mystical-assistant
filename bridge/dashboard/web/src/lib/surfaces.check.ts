@@ -23,7 +23,7 @@ console.assert(both.join(" · ") === "5H 95% 0H31M · WK 70% 5D08H", `windows �
 console.assert(windowLabels({ five_hour: null, seven_day: null }).length === 0, "no meter → no labels");
 console.assert(windowLabels({}).length === 0, "absent buckets → no labels");
 
-// The AGENT menu's meters read the same windows as numbers, not labels.
+// The same windows as numbers, not labels — what windowLabels formats.
 const wins = usageWindows({
   five_hour: { percent: 5.4, resets_at: at(31 * 60_000 + 5_000), severity: "normal" },
   seven_day: { percent: 99.6, resets_at: at(128 * 3_600_000 + 3 * 60_000), severity: "critical" },

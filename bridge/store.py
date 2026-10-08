@@ -38,7 +38,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   fork_from         TEXT,
   ctx_tokens        INTEGER,
   autocompact       TEXT,
-  model             TEXT
+  model             TEXT,
+  profile_id        TEXT,
+  effort            TEXT,
+  agent_session_id  TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -190,6 +193,14 @@ def init() -> None:
             c.execute("UPDATE sessions SET model=(SELECT t.model FROM turns t "
                       "WHERE t.session_id=sessions.id AND t.model IS NOT NULL "
                       "ORDER BY t.seq DESC LIMIT 1)")
+        # The profile this session is bound to (bridge/profiles.py) and its
+        # hand-set effort. NULL = no profile / follow the profile. And a
+        # non-Claude agent's own session id (bridge/acp.py), kept apart from
+        # claude_session_id so the Claude-only readers (JSONL transcripts, the
+        # subagent viewer, native scan, recovery) never follow it.
+        for col in ("profile_id", "effort", "agent_session_id"):
+            if col not in scols:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
         # A plugin run's handle on the job that started it — "<instance id>:<request
         # id>" for a Rivendell request (bridge/rivendell.py Worker._track), the key a
         # queue-mode batch already tags its turns with. NULL = not a plugin run. It
@@ -199,7 +210,7 @@ def init() -> None:
             c.execute("ALTER TABLE sessions ADD COLUMN ref TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_ref ON sessions(ref)")
         # Which runtime produced a turn (NULL = the default Claude account,
-        # else 'claude:<slot>' or 'opencode:<provider>').
+        # else 'claude:<slot>' or 'acp:<agent>').
         if "runtime" not in cols:
             c.execute("ALTER TABLE turns ADD COLUMN runtime TEXT")
         # Commit HEAD pointed at when the turn started, so a checkpoint can show
@@ -235,16 +246,17 @@ def _row(r) -> dict | None:
 
 def create_session(chat_id: int, project: str, *, session_id: str | None = None,
                    origin: str | None = None, cwd: str | None = None,
-                   permission_mode: str | None = None) -> dict:
+                   permission_mode: str | None = None,
+                   profile_id: str | None = None) -> dict:
     sid = session_id or uuid.uuid4().hex
     now = time.time()
     with closing(_connect()) as c:
         c.execute(
             "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"
-            "created,updated,archived,origin,cwd,permission_mode) "
-            "VALUES(?,?,?,?,?,?,?,0,?,?,?)",
+            "created,updated,archived,origin,cwd,permission_mode,profile_id) "
+            "VALUES(?,?,?,?,?,?,?,0,?,?,?,?)",
             (sid, chat_id, project, None, None, now, now, origin, cwd,
-             permission_mode))
+             permission_mode, profile_id))
     return get_session(sid)
 
 
@@ -358,12 +370,15 @@ def resolve_session(chat_id: int, project: str,
 
 def ensure_session(chat_id: int, project: str, session_id: str | None = None, *,
                    origin: str | None = None, cwd: str | None = None,
-                   permission_mode: str | None = None) -> dict:
+                   permission_mode: str | None = None,
+                   profile_id: str | None = None) -> dict:
     """Resolve a session: a valid given id for this chat, else the latest for the
-    project, else a fresh one. The origin/cwd/permission_mode are applied ONLY
-    when a new session is created (resuming an existing one leaves it untouched)."""
+    project, else a fresh one. The origin/cwd/permission_mode/profile_id are
+    applied ONLY when a new session is created (resuming an existing one leaves
+    it untouched)."""
     return resolve_session(chat_id, project, session_id) or create_session(
-        chat_id, project, origin=origin, cwd=cwd, permission_mode=permission_mode)
+        chat_id, project, origin=origin, cwd=cwd, permission_mode=permission_mode,
+        profile_id=profile_id)
 
 
 def set_claude_session_id(session_id: str, claude_sid: str | None) -> None:
@@ -393,6 +408,52 @@ def set_run_settings(session_id: str, model: "str | None" = None,
         c.execute("UPDATE sessions SET model=COALESCE(?, model), "
                   "permission_mode=COALESCE(?, permission_mode) WHERE id=?",
                   (model, permission_mode, session_id))
+
+
+_SESSION_FIELDS = {"model", "permission_mode", "effort", "profile_id", "agent_session_id"}
+
+
+def set_session_field(session_id: str, field: str, value: "str | None") -> None:
+    """Write one run-setting column (or an agent turn's own session id), NULL
+    included — set_run_settings can't clear, and a profiled session's NULL
+    means 'follow the profile'."""
+    if field not in _SESSION_FIELDS:
+        raise ValueError(f"not a settable session field: {field}")
+    with closing(_connect()) as c:
+        c.execute(f"UPDATE sessions SET {field}=? WHERE id=?", (value, session_id))
+
+
+def count_turns(session_id: str) -> int:
+    with closing(_connect()) as c:
+        return c.execute("SELECT COUNT(*) FROM turns WHERE session_id=?",
+                         (session_id,)).fetchone()[0]
+
+
+def profile_has_agent_session(pid: str) -> bool:
+    """Has any session bound to this profile opened an agent session yet?"""
+    with closing(_connect()) as c:
+        return c.execute("SELECT 1 FROM sessions WHERE profile_id=? AND agent_session_id "
+                         "IS NOT NULL LIMIT 1", (pid,)).fetchone() is not None
+
+
+def unbind_profile(pid: str, model: "str | None", mode: "str | None",
+                   effort: "str | None", tools_json: "str | None",
+                   clear: bool = False) -> None:
+    """A deleted profile's sessions keep running what it gave them: each knob
+    they never set by hand takes the profile's value, then the binding goes.
+    clear (a non-Claude agent's profile): they fall back to Claude, where its
+    ids mean nothing, so model, mode and effort go to NULL, hand-set ones too."""
+    with closing(_connect()) as c:
+        if clear:
+            c.execute("UPDATE sessions SET model=NULL, permission_mode=NULL, effort=NULL, "
+                      "disabled_tools=COALESCE(disabled_tools, ?), profile_id=NULL "
+                      "WHERE profile_id=?", (tools_json, pid))
+            return
+        c.execute("UPDATE sessions SET model=COALESCE(model, ?), "
+                  "permission_mode=COALESCE(permission_mode, ?), "
+                  "effort=COALESCE(effort, ?), "
+                  "disabled_tools=COALESCE(disabled_tools, ?), profile_id=NULL "
+                  "WHERE profile_id=?", (model, mode, effort, tools_json, pid))
 
 
 def set_fallback_policy(session_id: str, policy: str | None) -> None:
@@ -881,14 +942,17 @@ def duplicate(session_id: str) -> dict | None:
     its own: its first run resumes that transcript with --fork-session, so claude
     mints a fresh id and the original is never appended to. Goal and lifecycle are
     deliberately NOT copied — a copy is a fresh line of work, not a second session
-    racing the same objective."""
+    racing the same objective. Its profile comes along; an agent's own session id
+    never does, so a copy of an agent session opens a fresh one (fork_from is
+    Claude's, and empty for it)."""
     src = get_session(session_id)
     if not src:
         return None
     title = (src.get("title") or "session")[:52] + " (copy)"
     copy = create_session(
         src["chat_id"], src["project"], origin=src.get("origin"),
-        cwd=src.get("cwd"), permission_mode=src.get("permission_mode"))
+        cwd=src.get("cwd"), permission_mode=src.get("permission_mode"),
+        profile_id=src.get("profile_id"))
     now = time.time()
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
@@ -960,11 +1024,12 @@ def history(chat_id: int, include_archived: bool = False,
     subscription. total_tokens is NULL, not 0, when no turn ever reported usage —
     a session that predates the columns is unknown, not free.
 
-    Each row also carries the session's run picks, as a brief does (model, and
-    the mode a run would get): a session opened from here — archived, or past the
-    session list's age — is seeded from this row, and its composer loads them."""
+    Each row also carries the session's raw run-setting columns; the routes
+    serve profiles.history(), which turns them into what a run would get, as a
+    brief does: a session opened from here — archived, or past the session
+    list's age — is seeded from that row, and its composer loads them."""
     q = ("SELECT s.id, s.title, s.project, s.origin, s.created, s.updated, s.archived, "
-         "s.lifecycle, s.model, s.permission_mode, "
+         "s.lifecycle, s.model, s.permission_mode, s.effort, s.profile_id, s.disabled_tools, "
          "COUNT(t.id) AS turn_count, "
          "COALESCE(SUM(t.elapsed), 0) AS total_elapsed, "
          "SUM(COALESCE(t.tok_in,0) + COALESCE(t.tok_out,0) "
@@ -988,7 +1053,6 @@ def history(chat_id: int, include_archived: bool = False,
         for r in c.execute(q, params).fetchall():
             d = dict(r)
             d["models"] = sorted(m for m in (d.pop("models") or "").split(",") if m)
-            d["permission_mode"] = d["permission_mode"] or config.MINIAPP_PERMISSION_MODE
             rows.append(d)
     return rows
 

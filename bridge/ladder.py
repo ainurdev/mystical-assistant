@@ -5,8 +5,7 @@ module is the *choosing* half: it reads the session's fallback policy and offers
 the rungs actually available right now,
 
   1. another Claude account   (accounts.pick — full fidelity, resumes the session)
-  2. a free agent             (freeagent — different provider, fresh session)
-  3. stay parked              (limits.py, always available, never removed)
+  2. stay parked              (limits.py, always available, never removed)
 
 The order at every limit-death site is park first, escalate second, so there is
 never a moment where a session is neither parked nor running. Kept out of
@@ -72,23 +71,16 @@ def policy_for(session: "dict | None") -> str:
     return p if p in POLICIES else default_policy()
 
 
-def _free_providers() -> list:
-    """Free-agent providers that are configured and reachable, best first.
-    Lazy import: freeagent probes for the opencode binary."""
-    from bridge import freeagent
-    return freeagent.available()
-
-
 def resolve_agent(spec: str) -> tuple:
     """A hand-picked rung -> (account_slot, runtime) for start_streaming_job.
 
-    Same vocabulary the ladder already stores on a turn ('claude:<slot>' /
-    'opencode:<provider>'), so a turn you routed yourself and one the ladder
-    handed off read identically in the transcript. "" = the ambient login.
+    Same vocabulary the ladder already stores on a turn ('claude:<slot>'), so a
+    turn you routed yourself and one the ladder handed off read identically in
+    the transcript. "" = the ambient login.
 
     Raises ValueError when the pick is not live any more (account removed or
-    disabled, provider key cleared) -- better a 400 than silently running the
-    turn on somebody else's account.
+    disabled) -- better a 400 than silently running the turn on somebody
+    else's account.
     """
     kind, _, arg = (spec or "").strip().partition(":")
     if not kind:
@@ -99,10 +91,6 @@ def resolve_agent(spec: str) -> tuple:
                    for a in accounts.list_accounts()):
             raise ValueError(f"no usable account in slot {arg!r}")
         return slot, None
-    if kind == "opencode":
-        if not any(p["provider"] == arg for p in _free_providers()):
-            raise ValueError(f"free agent {arg!r} is not configured")
-        return None, f"opencode:{arg}"
     raise ValueError(f"unknown agent {spec!r}")
 
 
@@ -132,10 +120,6 @@ def rungs(session: "dict | None", dead_slot: "int | None" = None,
         room = f" ({left}% left)" if left is not None else ""
         out.append({"kind": "account", "slot": slot,
                     "label": f"Account {slot}{room}"})
-    for p in _free_providers():
-        out.append({"kind": "free", "provider": p["provider"],
-                    "model": p.get("model"),
-                    "label": f"Free agent ({p.get('label') or p['provider']})"})
     return out
 
 
@@ -173,19 +157,6 @@ ACCOUNT_NUDGE = (
     "your recent transcript and continue exactly where you left off; finish the "
     "task you were doing. Don't start over.")
 
-def _handoff_prompt(session: dict) -> str:
-    """The briefing a free agent takes over with. Built from the session's own
-    stored prompts -- deliberately NOT an LLM summary, because the account that
-    would write it is the one that just ran out of quota."""
-    from bridge import freeagent, store
-    try:
-        recent = store.recent_prompts(session["id"], 4)   # newest first
-    except Exception:  # noqa: BLE001
-        recent = []
-    task = recent[0] if recent else "(continue the work already in progress)"
-    return freeagent.briefing(task, list(reversed(recent[1:])))
-
-
 def _offer(session: dict, chat_id: int, available: list, notify,
            model=None, effort=None) -> None:
     """Post the card. The session stays parked behind it, so an unanswered card
@@ -196,9 +167,6 @@ def _offer(session: dict, chat_id: int, available: list, notify,
         if r["kind"] == "account":
             rows.append([{"text": f"↪ Switch to {r['label']}",
                           "callback_data": f"fb:a:{sid}:{r['slot']}"}])
-        else:
-            rows.append([{"text": f"🆓 {r['label']}",
-                          "callback_data": f"fb:f:{sid}:{r['provider']}"}])
     rows.append([{"text": "⏳ Wait for reset", "callback_data": f"fb:w:{sid}"}])
     notify(chat_id, "⛔ Usage limit reached. This chat is parked until the "
                     "window resets — or something else can pick the work up now:",
@@ -210,6 +178,8 @@ def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
     """Hand the work to one rung and unpark the session. Returns the rung, or
     None when the handover could not be started (the park then stands)."""
     from bridge import limits
+    if rung.get("kind") != "account":
+        return None            # nothing else is on offer any more (a stale card)
     if run is None:
         from bridge import runner
         run = runner.start_streaming_job
@@ -217,16 +187,11 @@ def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
         from bridge import telegram
         notify = telegram.send
     kw = {"project": session.get("cwd"), "session_id": session["id"],
-          "model": model, "effort": effort}
-    if rung["kind"] == "account":
-        prompt, kw["account_slot"] = ACCOUNT_NUDGE, rung["slot"]
-    else:
-        prompt = _handoff_prompt(session)
-        kw["runtime"] = f"opencode:{rung['provider']}"
+          "model": model, "effort": effort, "account_slot": rung["slot"]}
     try:
-        job = run(chat_id, prompt, [], **kw)
+        job = run(chat_id, ACCOUNT_NUDGE, [], **kw)
     except Exception as e:  # noqa: BLE001
-        print(f"[ladder] {rung['kind']} handover failed: {e}", file=sys.stderr)
+        print(f"[ladder] account handover failed: {e}", file=sys.stderr)
         return None
     if job is None:
         return None          # session already running: the user moved on

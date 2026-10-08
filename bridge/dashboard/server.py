@@ -30,9 +30,9 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import re
 
-from bridge import (agents, attribution, browser, config, devserver, fmt, git,
+from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
-                    models, native, preview_detect, project_config, prstatus,
+                    models, native, preview_detect, profiles, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
                     share,
@@ -40,7 +40,7 @@ from bridge import (agents, attribution, browser, config, devserver, fmt, git,
                     usage, weather, wsutil)
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
-                                   normalize_model_effort, normalize_permission_mode,
+                                   normalize_model_effort,
                                    save_run_settings,
                                    transcript_for)
 
@@ -124,17 +124,6 @@ def _worktree_for_branch(abs_p: str, branch: str) -> "str | None":
         if w.get("branch") == branch:
             return _abs_within(w.get("path") or "")
     return None
-
-
-def _free_agents() -> dict:
-    """Every free-agent rung and what it still needs, for the Accounts tab. The
-    unconfigured ones are listed too: the tab is where you set them up, so it
-    has to show the rungs you don't have yet."""
-    try:
-        from bridge import freeagent
-        return freeagent.status()
-    except Exception:  # noqa: BLE001
-        return {"installed": False, "providers": []}
 
 
 def _worktree_cwd(project, branch) -> "str | None":
@@ -315,7 +304,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
-            return self._json({"sessions": store.history(chat, include_archived=archived)})
+            return self._json({"sessions": profiles.history(chat, include_archived=archived)})
         if path == "/local/running":
             return self._json(runner.running_snapshot(chat))
         if path == "/local/queue":
@@ -353,8 +342,9 @@ class Handler(BaseHTTPRequestHandler):
                 "accounts": [{**a, **accounts.meter(a["slot"])}
                              for a in accounts.list_accounts()],
                 "default_policy": ladder.default_policy(),
-                "pending_login": accounts.pending_login(),
-                "free_agents": _free_agents()})
+                "pending_login": accounts.pending_login()})
+        if path == "/local/profiles":
+            return self._json(profiles.api_list())
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
@@ -700,6 +690,11 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = 0
             return self._json(agents.agent_activity(s, qs.get("agent", [""])[0], cursor,
                                                     qs.get("workflow", [""])[0] or None))
+        # Non-Claude ACP agent presets/accounts (bridge/acp_agents.py). Named
+        # off "/local/agents" on purpose: that path above is the Claude
+        # subagent viewer, an unrelated feature this must not shadow.
+        if path == "/local/acp/agents":
+            return self._json(acp_agents.api_info())
         if path == "/local/graph/state":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -862,8 +857,13 @@ class Handler(BaseHTTPRequestHandler):
             cwd = (wt_abs if wt_abs and browser.within_base(wt_abs)
                    and os.path.isdir(wt_abs) else None) \
                 or _abs_project(project) or state.project_dir(chat)
+            # Bound to the project's default profile, as a session a run creates
+            # is (runner._resolve_session) — and then with no seeded mode, so
+            # the profile's applies.
+            pid = profiles.project_default(project)
             s = store.create_session(chat, project, origin="dashboard", cwd=cwd,
-                                     permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+                                     permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
+                                     profile_id=pid)
             s = _pre_title(s, body.get("title"))
             return self._json({"session": _session_brief(s)})
         if path.startswith("/local/sessions/") and path.endswith("/archive"):
@@ -1025,14 +1025,6 @@ class Handler(BaseHTTPRequestHandler):
             nextup.dismiss(item_id)
             return self._json({"ok": True, **nextup.board(
                 chat, body.get("project") or None, str(body.get("kind") or "next"))})
-        if path == "/local/freeagents":
-            from bridge import freeagent
-            try:
-                freeagent.set_setting(str(body.get("name") or ""),
-                                      body.get("value"))
-            except ValueError as e:
-                return self._json({"error": str(e)}, 400)
-            return self._json({"ok": True, "free_agents": _free_agents()})
         if path.startswith("/local/sessions/") and path.endswith("/policy"):
             from bridge import ladder
             sid = path[len("/local/sessions/"):-len("/policy")]
@@ -1065,6 +1057,16 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             return self._json(*save_run_settings(s, body))
+        if path == "/local/profiles":
+            return self._post_profiles(chat, body)
+        if path == "/local/session/profile":
+            return self._post_session_profile(chat, body)
+        if path == "/local/project/profile":
+            return self._post_project_profile(chat, body)
+        if path == "/local/acp/accounts":
+            return self._json(*acp_agents.api_account(body))
+        if path == "/local/acp/test":
+            return self._json(*acp_agents.api_test(body))
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")
@@ -1112,12 +1114,12 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
-            state = body.get("lifecycle") or None
-            if state is not None and state not in store.LIFECYCLES:
+            lc = body.get("lifecycle") or None
+            if lc is not None and lc not in store.LIFECYCLES:
                 return self._json(
                     {"error": f"lifecycle must be one of {store.LIFECYCLES}"}, 400)
-            store.set_lifecycle(sid, state)
-            return self._json({"ok": True, "lifecycle": state})
+            store.set_lifecycle(sid, lc)
+            return self._json({"ok": True, "lifecycle": lc})
         if path.startswith("/local/sessions/") and path.endswith("/retitle"):
             sid = path[len("/local/sessions/"):-len("/retitle")]
             s = store.get_session(sid)
@@ -1614,17 +1616,25 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
             return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
         project_path = _abs_project(body.get("project"))
-        ok, model, effort = normalize_model_effort(body.get("model"), body.get("effort"))
-        if not ok:
-            return self._json({"error": "invalid model"}, 400)
-        permission_mode = normalize_permission_mode(body.get("permission_mode"))
+        session_id = (body.get("session_id") or "").strip() or None
+        profile_id = (body.get("profile_id") or "").strip() or None
+        # Checked for the agent this run lands on: the session it would resume,
+        # else the profile a fresh one gets (profiles.agent_for).
+        proj = browser.rel(project_path or state.project_dir(chat))
+        agent = profiles.agent_for(store.resolve_session(chat, proj, session_id),
+                                   profile_id, proj)
+        err, model, permission_mode, effort = profiles.run_values(
+            body.get("model"), body.get("permission_mode"), body.get("effort"), agent)
+        if err:
+            return self._json({"error": err}, 400)
         ponytail = runner.normalize_ponytail(body.get("ponytail"))
         try:
             from bridge import ladder
             account_slot, runtime = ladder.resolve_agent(body.get("agent") or "")
         except ValueError as e:
             return self._json({"error": str(e)}, 400)
-        session_id = (body.get("session_id") or "").strip() or None
+        if agent != profiles.CLAUDE and (account_slot is not None or runtime):
+            return self._json({"error": profiles.claude_account_refusal(agent)}, 400)
         # Hold a prompt that doesn't belong in the session it would resume; the
         # client re-sends with force=true (or against a fresh session). Before
         # _save_images so a held prompt writes nothing.
@@ -1641,7 +1651,8 @@ class Handler(BaseHTTPRequestHandler):
         job = runner.start_streaming_job(chat, prompt, paths, project_path, job_id=job_id,
                                          model=model, effort=effort,
                                          permission_mode=permission_mode,
-                                         session_id=session_id, origin="dashboard",
+                                         session_id=session_id, profile_id=profile_id,
+                                         origin="dashboard",
                                          ponytail=ponytail, account_slot=account_slot,
                                          runtime=runtime)
         if job is None:
@@ -1649,10 +1660,36 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "busy"}, 409)
         # The picks this prompt was sent with are the session's now, on every
         # surface. After the start, so the row is the one the run resolved for
-        # this chat (a fresh session is created by this very call).
-        store.set_run_settings(job.store_session_id, model=model,
-                               permission_mode=permission_mode)
+        # this chat (a fresh session is created by this very call) — through
+        # save_pick, so a pick that matches the bound profile follows it
+        # instead of pinning an override.
+        s = store.get_session(job.store_session_id) or {"id": job.store_session_id}
+        for field, value in (("model", model), ("permission_mode", permission_mode),
+                             ("effort", effort)):
+            profiles.save_pick(s, field, value)
+            s = store.get_session(job.store_session_id) or s
         self._json({"job_id": job.id, "session_id": job.store_session_id})
+
+    def _post_profiles(self, chat, body):
+        self._json(*profiles.api_write(body))
+
+    def _post_session_profile(self, chat, body):
+        sid = (body.get("session_id") or "").strip()
+        s = store.get_session(sid) if sid else None
+        if not s or s["chat_id"] != chat:
+            return self._json({"error": "not found"}, 404)
+        out, code = profiles.bind(s, body.get("profile_id"))
+        if code == 200:
+            out["session"] = _session_brief(store.get_session(sid))
+        self._json(out, code)
+
+    def _post_project_profile(self, chat, body):
+        try:
+            profiles.set_project_default(str(body.get("project") or ""),
+                                         (body.get("profile_id") or "").strip() or None)
+        except ValueError as e:
+            return self._json({"error": str(e)}, 400)
+        self._json({"ok": True, "project_defaults": profiles.api_list()["project_defaults"]})
 
     def _respond(self, job_id, body):
         job = runner.get_job(job_id)
