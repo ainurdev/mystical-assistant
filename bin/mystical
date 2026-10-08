@@ -137,7 +137,7 @@ web_build() {   # $1 = "force" to build even when a bundle looks current
     fi
     command -v npm >/dev/null 2>&1 || { warn "the web UIs need a build but npm isn't installed."; break; }
     mkdir -p "$STATE_DIR"
-    say "  ${c_c}🔨${c_0} building the $name… ${c_d}(output: $LOG)${c_0}"
+    say "  ${c_c}🔨${c_0} building the ${name}… ${c_d}(output: $LOG)${c_0}"
     # npm writes node_modules/.package-lock.json to record the tree it installed,
     # so a lockfile newer than it means a pull changed deps. Without this, restart
     # built against the old node_modules — or failed on a module that was added.

@@ -105,3 +105,19 @@ def test_dirs_survives_an_unreadable_path(tmp_path):
 def test_dirs_counts_one_repo_in_the_singular(tmp_path):
     (tmp_path / "solo" / "only" / ".git").mkdir(parents=True)
     assert onboard._dirs(str(tmp_path)) == [("solo", "1 repo")]
+
+
+def test_get_updates_409_explains_and_keeps_polling(monkeypatch, capsys):
+    import io
+    from urllib.error import HTTPError
+
+    def conflict(token, method, **params):
+        raise HTTPError("u", 409, "Conflict", {}, io.BytesIO(
+            b'{"ok":false,"description":"Conflict: terminated by other getUpdates request"}'))
+
+    monkeypatch.setattr(onboard, "_call", conflict)
+    monkeypatch.setattr(onboard, "_conflict_told", False)
+    assert onboard._get_updates("tok") is None
+    assert onboard._get_updates("tok") is None
+    err = capsys.readouterr().err
+    assert err.count("terminated by other getUpdates") == 1

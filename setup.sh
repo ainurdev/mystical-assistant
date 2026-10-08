@@ -366,7 +366,7 @@ case "$(get_env MINIAPP_ENABLE)" in
 esac
 row() { printf '  %s  %s%-11s%s %s\n' "$1" "$c_d" "$2" "$c_0" "$3"; }
 if [ "$tg" = 1 ]; then
-  row 🤖 bot         "@$botname $c_d—$c_0 https://t.me/$botname"
+  row 🤖 bot         "@$botname ${c_d}—${c_0} https://t.me/$botname"
 else
   row 🤖 bot         "${c_d}skipped — dashboard only$c_0"
 fi
