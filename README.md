@@ -321,6 +321,20 @@ mystical app open   macOS: open it
 
 **On a Mac**
 
+New install: install Homebrew's Python (`brew install python`; macOS ships 3.9
+and the bridge needs 3.10+) and the Command Line Tools (`xcode-select --install`,
+for `swift`), then clone and run `./setup.sh` as above. If `python3 --version`
+still says 3.9, Homebrew isn't ahead of `/usr/bin` on your PATH: add
+`eval "$(/opt/homebrew/bin/brew shellenv)"` to `~/.zprofile` and open a new
+terminal. On a Mac, setup also asks whether to build the app and whether to
+start the bridge at login.
+
+Already installed: update (the dashboard's UPDATE button, or `git pull`), then
+re-run `./setup.sh`. It only asks what's missing, which is now those two Mac
+questions. Finish with `mystical restart` so launchd takes over the bridge. Or
+skip setup: `mystical app`, then turn on START AT LOGIN and OPEN THE WINDOW TOO
+in the dashboard's SYSTEM tab, then `mystical restart`.
+
 `mystical app` builds **Mystical.app** with the Swift that ships in the Command
 Line Tools (`xcode-select --install`; no Xcode, no developer account). It's the
 dashboard in its own window, plus what a browser tab can't do: a menu bar icon
