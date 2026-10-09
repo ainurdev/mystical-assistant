@@ -83,7 +83,9 @@ minus "started":
   the bridge comes back up.
 - **Titles** come from `jobs[].title`, as in the Mac app's `Running.swift`. They're
   remembered across polls, because a session that ends its turn on a question
-  leaves `jobs` but was in it while working. Fallback: the label, then "session".
+  leaves `jobs` but was in it while working. Fallback: the label, then "session" —
+  except for done, which skips the label: a working session's label is its activity,
+  and "✓ running Bash" reads as if Bash were what finished.
 - **When `watched` is true**, the tray still records the new state (so nothing
   replays later) but doesn't alert.
 
@@ -110,7 +112,8 @@ session they're looking at (`shouldPush`). The tray must not repeat it.
   answered, so a failed start still leaves a tray with Start in it):
   `start "" powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass
   -File "\\wsl$\<distro>\<repo>\windows\tray.ps1" -Port … -Distro … -User …
-  -Repo … -Browser … -Profile …`. The script runs from the checkout, so a
+  -Repo … -Browser … -BrowserProfile …` (not `-Profile`: `$PROFILE` is a PowerShell
+  automatic variable). The script runs from the checkout, so a
   `git pull` updates it. A repo under `/mnt/<drive>` uses its Windows path instead
   (`_win_path`). The hidden console flashes briefly at login.
 - **Icon:** `bridge/dashboard/web/public/icon-192.png`, scaled with System.Drawing;
@@ -129,14 +132,17 @@ session they're looking at (`shouldPush`). The tray must not repeat it.
 - **Polling never blocks the menu:** `WebClient.DownloadStringAsync` from the UI
   thread, with completion handled back on it, a 3 s timeout and `Proxy = $null`
   (a system proxy must not intercept localhost).
-- **Bridge commands:** `wsl.exe -d <distro> -u <user> -- bash -lic
-  '<repo>/bin/mystical start|stop|restart'`, through a login shell so it sees your
-  terminal's PATH. They run hidden, with output going to a temp file. A UI timer
+- **Bridge commands:** `wsl.exe -d <distro> -u <user> -e bash -lic
+  "'<repo>/bin/mystical' start|stop|restart"`, through a login+interactive shell so
+  it sees your terminal's PATH (nvm's npm, for a stale bundle). `-e`, not `--`: `--`
+  hands the line to the default shell, which re-parses the quoting. They run hidden, with output going to a temp file. A UI timer
   watches the process; a non-zero exit shows a MessageBox with the output's last
   lines.
 - **One instance:** a named mutex `Local\mystical-tray`. A second launch exits.
-- **Encoding:** saved as UTF-8 **with BOM**. Windows PowerShell 5.1 reads BOM-less
-  scripts as ANSI, which would mangle `⏸ ✓ ⏳`.
+- **Encoding:** **ASCII only**; every glyph (`⏸ ✓ ⏳ ● ○ …`) is built from its code
+  point (`[char]0x23F8`). Windows PowerShell 5.1 reads BOM-less scripts as ANSI, and
+  a BOM is one editor save away from being stripped; an ASCII file can't be misread.
+  A test pins it.
 
 ## Linux: `linux/tray.py`
 
@@ -153,13 +159,15 @@ session they're looking at (`shouldPush`). The tray must not repeat it.
   packages.
 - **Icon:** the same PNG. The count is shown with `set_label`, which Ubuntu's
   indicator shows and some panels ignore; the menu header carries it too.
-- **Menu and alerts:** same items as Windows. One `Notify.Notification` per
+- **Menu and alerts:** same items as Windows (AppIndicator gives a left click to the
+  menu, so a middle click opens the dashboard). One `Notify.Notification` per
   session, kept and updated by session id, so a chatty session replaces its own
   alert instead of stacking. The `default` action opens the session.
 - **Polling:** `urllib.request` on a worker thread, with the result handed to
   the UI through `GLib.idle_add`.
-- **Bridge commands:** `subprocess.Popen([<repo>/bin/mystical, cmd])`. A non-zero
-  exit shows a `Gtk.MessageDialog` with the output's last lines.
+- **Bridge commands:** `bash -lic "'<repo>/bin/mystical' <cmd>"` on a worker thread,
+  for the same reason as on Windows: a desktop session's PATH lacks nvm's npm. A
+  non-zero exit shows a `Gtk.MessageDialog` with the output's last lines.
 - **One instance:** `fcntl.flock` on `$XDG_RUNTIME_DIR/mystical-tray.lock`.
 - **GNOME** shows no tray icons without the AppIndicator extension, which Ubuntu
   ships and Fedora doesn't. Alerts still work without it. README says so.
@@ -172,7 +180,8 @@ session they're looking at (`shouldPush`). The tray must not repeat it.
   both removed. `state()["window"]` keeps reading the window entry.
 - `launch_tray()` starts it detached with the same arguments. On WSL that's
   `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` (Windows exes
-  aren't on a WSL PATH), on Linux `setsid /usr/bin/python3 linux/tray.py …`.
+  aren't on a WSL PATH), on Linux `/usr/bin/python3 linux/tray.py …` in a new session,
+  after `tray.py --check` passes, so `mystical app` can say which packages are missing.
 - The switch does **not** start the tray immediately. WSL interop from inside the
   systemd-run bridge is unverified, and the Mac switch doesn't launch the app
   either. It takes effect at next login, or now with `mystical app`.
@@ -180,10 +189,10 @@ session they're looking at (`shouldPush`). The tray must not repeat it.
   `mystical app open` stays macOS-only, and its error says what `mystical app`
   does here.
 - `setup.sh` doctor, on a Linux desktop (`XDG_CURRENT_DESKTOP` set, not WSL):
-  `/usr/bin/python3` can import the three bindings → ok "tray icon"; else warn,
+  `/usr/bin/python3 linux/tray.py --check` passes → ok "tray bindings"; else warn,
   naming the packages (`gir1.2-ayatanaappindicator3-0.1 gir1.2-notify-0.7` on
-  Debian/Ubuntu, `libayatana-appindicator-gtk3 libnotify` on Fedora). WSL needs
-  nothing.
+  Debian/Ubuntu, `libayatana-appindicator-gtk3 libnotify` on Fedora). The names live
+  in linux/tray.py alone. WSL needs nothing.
 
 ## Error handling
 
