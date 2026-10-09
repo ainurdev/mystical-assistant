@@ -118,9 +118,22 @@ def test_a_rerun_keeps_only_the_newest_attempt():
       "reviewRequests": [{"__typename": "User", "login": "mahdi"}]}, "review"),
     ({"statusCheckRollup": [_run("a")], "isDraft": True}, "review"),        # a draft is never READY
     ({"statusCheckRollup": [_run("a")], "isDraft": True, "reviewDecision": "APPROVED"}, "review"),
+    # Conflicts block the merge button whatever CI says, so they come before a red check.
+    ({"mergeable": "CONFLICTING", "statusCheckRollup": [_run("a", conclusion="FAILURE")]}, "conflicts"),
+    ({"mergeable": "CONFLICTING", "state": "MERGED"}, "merged"),
+    ({"mergeable": "UNKNOWN", "statusCheckRollup": [_run("a")]}, "ready"),   # GitHub still computing
 ])
 def test_chip_state_is_sheet_c(over, want):
     assert prstatus.normalize(_raw(**over))["status"] == want
+
+
+def test_conflicts_come_from_gh_mergeable():
+    """gh's mergeable: CONFLICTING is the one answer that means it. MERGEABLE,
+    UNKNOWN (GitHub computes it lazily) and a missing field are not conflicts."""
+    assert prstatus.normalize(_raw(mergeable="CONFLICTING"))["conflicts"] is True
+    for v in ("MERGEABLE", "UNKNOWN", None):
+        assert prstatus.normalize(_raw(mergeable=v))["conflicts"] is False
+    assert "mergeable" in prstatus.FIELDS.split(",")
 
 
 # --- failure_tail -------------------------------------------------------------

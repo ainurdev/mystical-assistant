@@ -202,7 +202,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow, onSendText, onArchive,
+  onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow, onSendText, onArchive, onStartHere,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -263,6 +263,8 @@ export function Terminal({
   gridRow?: string;
   /** The PR chip's SEND buttons: a message to this session, queued if it's mid-turn. */
   onSendText?: (text: string) => void;
+  /** PrChip's RESOLVE IN A NEW SESSION: a fresh session in this session's checkout. */
+  onStartHere?: (text: string) => void;
   /** The PR chip's ARCHIVE SESSION, after a merge. */
   onArchive?: () => void;
 }) {
@@ -523,9 +525,9 @@ export function Terminal({
           )}
           {/* The branch's PR (review loop B/C). Draws nothing, hairline included,
               until the bridge reports one. */}
-          {branch && sessionId && sessionProject && onSendText && onArchive && (
+          {branch && sessionId && sessionProject && onSendText && onArchive && onStartHere && (
             <PrChip project={sessionProject} branch={branch} sessionId={sessionId} title={selected?.title ?? ""}
-              inWorktree={!!selected?.worktree} busy={!!activeId} onSend={onSendText} onArchive={onArchive} />
+              inWorktree={!!selected?.worktree} busy={!!activeId} onSend={onSendText} onArchive={onArchive} onStartHere={onStartHere} />
           )}
           {run && (
             <>

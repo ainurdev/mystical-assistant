@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { api, PUSHED_EVENT, type PrStatus } from "../../api";
-import { TONE, chipLabel, commentsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine } from "../../lib/prchip";
+import { TONE, chipLabel, commentsMessage, conflictsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine } from "../../lib/prchip";
 import { initials } from "../../lib/rivendelltasks";
 import { hairline } from "../../lib/shell";
 import { ago } from "../../lib/surfaces";
@@ -34,7 +34,7 @@ function ringBell(project: string, branch: string, s: PrStatus) {
 const since = (sec: number) => { const a = ago(sec); return !a || a === "now" ? "just now" : `${a} ago`; };
 const sinceIso = (iso: string) => since(Date.parse(iso) / 1000);
 
-export function PrChip({ project, branch, sessionId, title, inWorktree, busy, onSend, onArchive }: {
+export function PrChip({ project, branch, sessionId, title, inWorktree, busy, onSend, onArchive, onStartHere }: {
   project: string;
   branch: string;
   sessionId: string;
@@ -45,6 +45,8 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   busy: boolean;
   onSend: (text: string) => void;
   onArchive: () => void;
+  /** RESOLVE IN A NEW SESSION: a fresh session in this session's checkout, `text` as its first prompt. */
+  onStartHere: (text: string) => void;
 }) {
   const [snap, setSnap] = useState<PrStatus | null>(null);
   const [open, setOpen] = useState(false);
@@ -169,6 +171,20 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
               </div>
             )}
           </div>
+
+          {pr.state === "OPEN" && pr.conflicts && (
+            <div style={sect}>
+              <div style={head}>
+                CONFLICTS <span style={{ color: "var(--err)" }}>· WITH {pr.base.toUpperCase()}</span>
+                <span style={{ marginLeft: "auto", letterSpacing: ".5px" }}>↻ {since(snap.checked)}</span>
+              </div>
+              <div style={{ fontSize: "var(--t105)", lineHeight: 1.5, color: "var(--txd)" }}>
+                GitHub can't merge this: <span style={{ color: "var(--txh)" }}>{pr.base}</span> has changes that collide with the branch.
+                A new session in this checkout merges {pr.base} in, resolves the conflicts, runs the tests, then pushes.
+              </div>
+              <button onClick={() => { onStartHere(conflictsMessage(pr)); setOpen(false); }} {...hp("resolve")} style={wide("var(--err)", "resolve")}>RESOLVE IN A NEW SESSION ▸</button>
+            </div>
+          )}
 
           {pr.state === "OPEN" && pr.total > 0 && (
             <div style={sect}>

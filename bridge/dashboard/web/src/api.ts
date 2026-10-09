@@ -348,7 +348,7 @@ export interface PrCheck {
   log?: string;       // a failing Actions job: its failed step's last ~60 lines
 }
 export interface PrComment { path: string; line: number | null; body: string }
-export type PrState = "running" | "failing" | "review" | "changes" | "ready" | "merged" | "closed";
+export type PrState = "running" | "failing" | "review" | "changes" | "ready" | "merged" | "closed" | "conflicts";
 export interface PrInfo {
   number: number;
   title: string;
@@ -373,6 +373,7 @@ export interface PrInfo {
   review: { by: string; at: string; body: string; comments: PrComment[] } | null;
   status: PrState;      // the chip's state (sheet C)
   draft: boolean;       // a draft PR: never READY, says DRAFT
+  conflicts?: boolean;  // GitHub's mergeable = CONFLICTING; absent on an older bridge
 }
 export interface PrStatus {
   pr: PrInfo | null;    // null = no chip: no PR, no GitHub remote, gh missing or signed out

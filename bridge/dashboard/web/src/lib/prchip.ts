@@ -4,12 +4,13 @@ import type { PrComment, PrInfo, PrState } from "../api";
  *  (components/hud/PrChip.tsx, review loop B/C). Pure, so prchip.check.ts
  *  can run it under node. */
 
-/** Sheet C in the app's tokens: --acc running, --err failing, --ok green
+/** Sheet C in the app's tokens: --acc running, --err failing and conflicts, --ok green
  *  (READY filled), --warn review comments, --purple merged. `ink` is the
  *  state's colour on the popover, where READY's fill would vanish. */
 export const TONE: Record<PrState, { fg: string; border: string; bg: string; num: string; ink: string; glyph: string }> = {
   running: { fg: "var(--acc)", border: "color-mix(in srgb, var(--acc) 40%, transparent)", bg: "color-mix(in srgb, var(--acc) 8%, transparent)", num: "var(--txh)", ink: "var(--acc)", glyph: "◌" },
   failing: { fg: "var(--err-hi)", border: "color-mix(in srgb, var(--err) 45%, transparent)", bg: "color-mix(in srgb, var(--err) 10%, transparent)", num: "var(--txh)", ink: "var(--err)", glyph: "✕" },
+  conflicts: { fg: "var(--err-hi)", border: "color-mix(in srgb, var(--err) 45%, transparent)", bg: "color-mix(in srgb, var(--err) 10%, transparent)", num: "var(--txh)", ink: "var(--err)", glyph: "✕" },
   review: { fg: "var(--ok)", border: "color-mix(in srgb, var(--ok) 35%, transparent)", bg: "transparent", num: "var(--txh)", ink: "var(--ok)", glyph: "✓" },
   changes: { fg: "var(--warn)", border: "color-mix(in srgb, var(--warn) 45%, transparent)", bg: "color-mix(in srgb, var(--warn) 9%, transparent)", num: "var(--txh)", ink: "var(--warn)", glyph: "◆" },
   ready: { fg: "var(--acc-on)", border: "var(--ok)", bg: "var(--ok)", num: "var(--acc-on)", ink: "var(--ok)", glyph: "✓" },
@@ -30,6 +31,7 @@ export function chipLabel(pr: PrInfo): { text: string; spin: boolean } {
   switch (pr.status) {
     case "running": return { text: `${pr.passed + pr.failed}/${pr.total}`, spin: true };
     case "failing": return { text: `✕ ${pr.failed} FAILING`, spin: false };
+    case "conflicts": return { text: "✕ CONFLICTS", spin: false };
     case "review": {
       const word = pr.draft ? "DRAFT" : "REVIEW";
       return { text: pr.total ? `✓ ${pr.passed}/${pr.total} · ${word}` : word, spin: false };
@@ -44,10 +46,11 @@ export function chipLabel(pr: PrInfo): { text: string; spin: boolean } {
   }
 }
 
-/** The popover's state words: OPEN, CHANGES REQUESTED, MERGED INTO MAIN. */
+/** The popover's state words: OPEN, CONFLICTS WITH MAIN, CHANGES REQUESTED, MERGED INTO MAIN. */
 export function stateLine(pr: PrInfo): string {
   if (pr.state === "MERGED") return `MERGED INTO ${pr.base.toUpperCase()}`;
   if (pr.state === "CLOSED") return "CLOSED";
+  if (pr.status === "conflicts") return `CONFLICTS WITH ${pr.base.toUpperCase()}`;
   if (pr.status === "changes") return "CHANGES REQUESTED";
   if (pr.draft) return "DRAFT";
   if (pr.status === "ready") return "READY";
@@ -87,6 +90,16 @@ export function commentsMessage(pr: PrInfo): string {
     for (const l of c.body.trim().split("\n")) out.push(`  ${l}`);
   }
   return out.join("\n");
+}
+
+/** RESOLVE IN A NEW SESSION: the first prompt of a fresh session in the
+ *  branch's checkout. Merge, not rebase: the branch is public. */
+export function conflictsMessage(pr: PrInfo): string {
+  return [
+    `PR #${pr.number} · ⎇ ${pr.head} → ${pr.base} has merge conflicts: ${pr.url}`,
+    `Merge origin/${pr.base} into ${pr.head} here — merge, not rebase, the branch is already on GitHub. ` +
+    "Resolve every conflict keeping both sides' intent, make sure the build and tests pass, commit the merge, then push so the PR can be merged.",
+  ].join("\n");
 }
 
 /** The bell's line for one of the bridge's alert keys. */

@@ -2259,6 +2259,9 @@ export function App() {
                 // is this session's own work.
                 onSendText={(text) => void send(text, [], { force: true })}
                 onArchive={() => { if (sessionId) void archiveOpen(sessionId); }}
+                // RESOLVE IN A NEW SESSION: a fresh session in this session's own
+                // checkout (its worktree, else the project), the prompt as its first turn.
+                onStartHere={(text) => { if (sessionProject) void startIn(sessionProject, text, { cwd: selected?.cwd ?? undefined, force: true }); }}
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={settings.rightOpen ? undefined : strip}

@@ -29,6 +29,11 @@ review decision. Why it is shaped like this:
   newest PR whose head is that branch, open or not. It ignores forks'
   same-named branches. Checked 2026-10-06 on a repo with a closed and a merged
   PR on one branch: it returned the merged, newer one.
+- **Conflicts.** `mergeable` is GitHub's own verdict: CONFLICTING means the
+  base moved under this branch and the merge button is off. For a few seconds
+  after a push it is UNKNOWN while GitHub recomputes, so a fresh head reads as
+  no conflict until the next poll. No ping: the branch didn't break, the base
+  moved. The popover's RESOLVE starts a session that merges the base in.
 - **Pings once.** Checks turning red ping Telegram once per head commit. A
   changes-requested review pings once per review, so pushing a fix doesn't
   ping again. Pings are remembered in the settings table, so a bridge restart
@@ -52,7 +57,7 @@ DONE_TTL = 600     # s: a merged or closed PR barely changes (a reopen waits thi
 LOG_LINES = 60
 FIELDS = ("number,title,state,url,baseRefName,headRefName,headRefOid,additions,"
           "deletions,createdAt,mergedAt,statusCheckRollup,reviewDecision,"
-          "reviewRequests,latestReviews,reviews,isDraft")
+          "reviewRequests,latestReviews,reviews,isDraft,mergeable")
 
 _PASS = {"SUCCESS", "NEUTRAL"}
 _SKIP = {"SKIPPED", "STALE"}
@@ -112,12 +117,15 @@ def _checks(rollup: list) -> "list[dict]":
 
 def chip_state(pr: dict) -> str:
     """Sheet C as one word. Merged and closed end it. Otherwise it is whatever
-    needs doing next: a red check comes before a review's comments, and both
-    come before waiting on CI."""
+    needs doing next: conflicts with the base come before a red check (GitHub
+    doesn't run pull_request workflows on a PR it can't merge), a red check
+    before a review's comments, and all of them before waiting on CI."""
     if pr["state"] == "MERGED":
         return "merged"
     if pr["state"] == "CLOSED":
         return "closed"
+    if pr["conflicts"]:
+        return "conflicts"  # the merge button is off whatever CI says
     if pr["failed"]:
         return "failing"
     if pr["decision"] == "CHANGES_REQUESTED":
@@ -168,6 +176,7 @@ def normalize(raw: dict) -> dict:
         "sha": raw.get("headRefOid") or "", "draft": bool(raw.get("isDraft")),
         "additions": raw.get("additions") or 0, "deletions": raw.get("deletions") or 0,
         "created": _ts(raw.get("createdAt")), "merged_at": _ts(raw.get("mergedAt")),
+        "conflicts": raw.get("mergeable") == "CONFLICTING",
         "checks": checks,
         "passed": sum(c["state"] == "pass" for c in checks),
         "failed": sum(c["state"] == "fail" for c in checks),

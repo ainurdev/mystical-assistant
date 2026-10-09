@@ -1,7 +1,7 @@
 // Run: node bridge/dashboard/web/src/lib/prchip.check.ts
 import type { PrInfo } from "../api.ts";
 import {
-  chipLabel, commentsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine,
+  chipLabel, commentsMessage, conflictsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine,
 } from "./prchip.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -33,6 +33,13 @@ ok(chipLabel(changes).text === "◆ 2 COMMENTS", "CHANGES REQUESTED counts the c
 ok(chipLabel(pr({ status: "changes", review: { by: "m", at: "", body: "", comments: [] } })).text === "◆ CHANGES", "a bare changes-requested still says so");
 ok(chipLabel(pr({ status: "ready" })).text === "✓ READY" && chipLabel(pr({ status: "merged" })).text === "MERGED", "READY and MERGED");
 ok(stateLine(pr({ state: "MERGED", status: "merged" })) === "MERGED INTO MAIN" && stateLine(changes) === "CHANGES REQUESTED" && stateLine(pr({ status: "failing" })) === "OPEN", "popover state words");
+const conflicts = pr({ status: "conflicts", conflicts: true, number: 70, head: "feat/todolist-actions", url: "https://github.com/acme/r/pull/70" });
+ok(chipLabel(conflicts).text === "✕ CONFLICTS" && !chipLabel(conflicts).spin, "CONFLICTS on the chip");
+ok(stateLine(conflicts) === "CONFLICTS WITH MAIN", "the popover names the base the branch conflicts with");
+ok(conflictsMessage(conflicts) === [
+  "PR #70 · ⎇ feat/todolist-actions → main has merge conflicts: https://github.com/acme/r/pull/70",
+  "Merge origin/main into feat/todolist-actions here — merge, not rebase, the branch is already on GitHub. Resolve every conflict keeping both sides' intent, make sure the build and tests pass, commit the merge, then push so the PR can be merged.",
+].join("\n"), "RESOLVE IN A NEW SESSION: the prompt names the PR, the base, and the push");
 
 // --- durations (sheet B) ------------------------------------------------------
 ok(duration("2026-10-06T12:00:00Z", "2026-10-06T12:02:14Z", 0) === "2m 14s", "2m 14s");
