@@ -10,6 +10,9 @@ import hashlib
 import json
 import os
 import tempfile
+import time
+
+import pytest
 
 from bridge import credentials
 
@@ -69,3 +72,69 @@ def test_on_macos_the_fresher_of_two_items_is_the_live_login(fake_keychain):
     fake_keychain.put(_hashed(home),
                       json.dumps({"claudeAiOauth": {"accessToken": "new", "expiresAt": 2}}))
     assert credentials.load(p)["claudeAiOauth"]["accessToken"] == "new"
+
+
+def test_on_macos_the_tokens_never_ride_in_an_argv(fake_keychain):
+    """Every process on the machine can read another's argv (`ps`). The CLI
+    hands `security` the tokens on stdin, hex-encoded, and so do we."""
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, ".credentials.json")
+    credentials.write(p, b'{"claudeAiOauth": {"accessToken": "sk-secret"}}')
+    assert "sk-secret" in fake_keychain.get(_hashed(d))
+    for argv in fake_keychain.argvs():
+        seen = " ".join(argv)
+        assert "sk-secret" not in seen and b"sk-secret".hex() not in seen
+
+
+def test_on_macos_the_default_login_is_written_where_the_cli_reads_it(fake_keychain, monkeypatch):
+    """~/.claude runs with no CLAUDE_CONFIG_DIR, and that CLI reads the plain
+    service name. Under the hashed one, nothing would ever read the item."""
+    monkeypatch.setenv("HOME", tempfile.mkdtemp())
+    home = os.path.expanduser("~/.claude")
+    credentials.write(os.path.join(home, ".credentials.json"),
+                      b'{"claudeAiOauth": {"accessToken": "t"}}')
+    assert fake_keychain.get("Claude Code-credentials") is not None
+    assert fake_keychain.get(_hashed(home)) is None
+
+
+def test_keychain_account_name_follows_the_cli(monkeypatch):
+    """The CLI files the item under $USER, or "claude-code-user" when the name
+    has a character outside [A-Za-z0-9._-]. Under any other name, the item is
+    invisible to whichever side used the wrong one."""
+    monkeypatch.setenv("USER", "first.last-2")
+    assert credentials._user() == "first.last-2"
+    monkeypatch.setenv("USER", "José")
+    assert credentials._user() == "claude-code-user"
+
+
+def test_update_holds_the_clis_lock_and_takes_over_a_dead_holders(monkeypatch):
+    """The CLI writes these tokens under <dir>/.storage-write.lock (a token
+    refresh among them). A merge outside it could undo a refresh that landed
+    between our read and our write."""
+    monkeypatch.setattr(credentials, "_LOCK_WAIT", 0.2)
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, ".credentials.json")
+    credentials.write(p, b'{"claudeAiOauth": {"accessToken": "t"}}')
+    lock = os.path.join(d, ".storage-write.lock")
+    add = lambda c: {**c, "mcpOAuth": {"x": {}}}  # noqa: E731
+
+    os.mkdir(lock)                                    # a claude mid-write
+    assert credentials.update(p, lambda c: None) is False, "nothing to do: no wait"
+    with pytest.raises(credentials.Busy):
+        credentials.update(p, add)
+    assert "mcpOAuth" not in credentials.load(p)
+
+    old = time.time() - 60
+    os.utime(lock, (old, old))                        # ...that died holding it
+    assert credentials.update(p, add) is True
+    assert credentials.load(p)["mcpOAuth"] == {"x": {}}
+    assert credentials.load(p)["claudeAiOauth"]["accessToken"] == "t"
+    assert not os.path.exists(lock), "released once written"
+
+
+def test_update_never_creates_a_login():
+    """No credentials can mean a sign-in in flight: writing some would read as
+    that sign-in succeeding."""
+    p = os.path.join(tempfile.mkdtemp(), ".credentials.json")
+    assert credentials.update(p, lambda c: {**c, "mcpOAuth": {}}) is False
+    assert credentials.read(p) == b""

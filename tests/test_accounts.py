@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -323,6 +324,37 @@ def test_ensure_profile_never_creates_credentials_for_a_pending_login():
     assert not os.path.exists(os.path.join(p, ".credentials.json"))
 
 
+def test_mcp_sync_leaves_a_slot_alone_while_its_claude_writes_the_tokens(monkeypatch):
+    """A claude refreshing this slot's login holds the CLI's storage lock. A
+    merge that went ahead anyway could write back the refresh token that
+    refresh just rotated out, and the account would log out at the next one.
+    The sync skips this spawn and catches up on the next."""
+    from bridge import credentials
+    monkeypatch.setattr(credentials, "_LOCK_WAIT", 0.2)
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity()
+    with open(os.path.join(home, ".credentials.json"), "w") as fh:
+        json.dump({"claudeAiOauth": {"accessToken": "ambient-token"},
+                   "mcpOAuth": {"notion|abc": {"accessToken": "n1", "expiresAt": 200}}}, fh)
+    p = accounts.ensure_profile(2)
+    creds = os.path.join(p, ".credentials.json")
+    with open(creds, "w") as fh:
+        json.dump({"claudeAiOauth": {"accessToken": "slot-token"}}, fh)
+    os.mkdir(os.path.join(p, ".storage-write.lock"))      # that claude, mid-write
+
+    accounts.ensure_profile(2)
+
+    with open(creds) as fh:
+        assert "mcpOAuth" not in json.load(fh)
+
+    os.rmdir(os.path.join(p, ".storage-write.lock"))
+    accounts.ensure_profile(2)
+
+    with open(creds) as fh:
+        assert json.load(fh)["mcpOAuth"]["notion|abc"]["accessToken"] == "n1"
+
+
 def test_env_for_a_slot_repairs_and_syncs_its_profile():
     """Every spawn self-heals: a server added to the ambient login after the
     slot was created still reaches the next turn run on that slot."""
@@ -343,32 +375,48 @@ def test_env_for_a_slot_repairs_and_syncs_its_profile():
 # covers the flow without a network round-trip.
 
 _FAKE_CLI = '''#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, time
 url = "https://claude.com/cai/oauth/authorize?code=true&client_id=x"
 # The CLI hyperlinks the URL, so it arrives as OSC-8 target *and* link text.
 sys.stdout.write("\\x1b]8;;%s\\x1b\\\\%s\\x1b]8;;\\x1b\\\\\\n" % (url, url))
 sys.stdout.write("Paste code here if prompted > ")
 sys.stdout.flush()
-code = sys.stdin.readline().strip()
+# A line that isn't CODE#STATE is turned down, and the CLI waits for another.
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        sys.exit(1)
+    code, _, state = line.strip().partition("#")
+    if code and state:
+        break
+    sys.stderr.write("Invalid code. Please make sure the full code was copied.\\n")
+    sys.stderr.flush()
 # No CLAUDE_CONFIG_DIR = the ambient login (slot 1): the real CLI writes ~/.claude.
 home = os.environ.get("CLAUDE_CONFIG_DIR") or os.environ["FAKE_CLAUDE_HOME"]
 if code != "good-code":
     sys.stdout.write("Login failed: Request failed with status code 400\\n")
     sys.exit(1)
+# The identity first and the tokens second, in the real CLI's order.
+with open(os.path.join(home, ".claude.json"), "w") as fh:
+    json.dump({"oauthAccount": {"emailAddress": "other@example.com"}}, fh)
 creds = {"claudeAiOauth": {"accessToken": "slot-token-%d" % os.getpid()}}
 if os.environ.get("FAKE_KEYCHAIN"):
     # On a Mac the real CLI keeps the login in the Keychain, under a service
-    # name hashed from the config dir, and never writes the file.
+    # name hashed from the config dir, and never writes the file. It hands
+    # `security -i` the command on stdin, the tokens hex-encoded.
     import getpass, hashlib, subprocess
     svc = "Claude Code-credentials-" + hashlib.sha256(home.encode()).hexdigest()[:8]
-    subprocess.run(["security", "add-generic-password", "-U", "-a",
-                    os.environ.get("USER") or getpass.getuser(), "-s", svc,
-                    "-w", json.dumps(creds)], check=True)
+    cmd = 'add-generic-password -U -a "%s" -s "%s" -X "%s"\\n' % (
+        os.environ.get("USER") or getpass.getuser(), svc, json.dumps(creds).encode().hex())
+    subprocess.run(["security", "-i"], input=cmd.encode(), check=True)
 else:
     with open(os.path.join(home, ".credentials.json"), "w") as fh:
         json.dump(creds, fh)
-with open(os.path.join(home, ".claude.json"), "w") as fh:
-    json.dump({"oauthAccount": {"emailAddress": "other@example.com"}}, fh)
+# What the real CLI still does once the tokens are stored: the org role, a
+# policy check, telemetry. The marker says it got to finish.
+time.sleep(float(os.environ.get("FAKE_CLI_WRAP_UP") or 0))
+open(os.path.join(home, "wrapped-up"), "w").close()
+sys.stdout.write("Login successful.\\n")
 '''
 
 
@@ -408,7 +456,7 @@ def test_a_sign_in_leaves_the_ambient_login_alone():
     before = open(os.path.join(home, ".credentials.json")).read()
     try:
         accounts.begin_login()
-        accounts.submit_login_code(2, "good-code", timeout=10)
+        accounts.submit_login_code(2, "good-code#state", timeout=10)
         assert open(os.path.join(home, ".credentials.json")).read() == before
     finally:
         undo()
@@ -421,7 +469,7 @@ def test_submit_login_code_registers_the_account_it_signed_in_as():
     undo = _fake_cli()
     try:
         accounts.begin_login()
-        done = accounts.submit_login_code(2, "good-code", timeout=10)
+        done = accounts.submit_login_code(2, "good-code#state", timeout=10)
         assert done["email"] == "other@example.com"
         listed = accounts.list_accounts()
         assert [a["slot"] for a in listed] == [1, 2]
@@ -439,7 +487,7 @@ def test_a_rejected_code_leaves_no_half_made_account():
     try:
         accounts.begin_login()
         try:
-            accounts.submit_login_code(2, "wrong-code", timeout=10)
+            accounts.submit_login_code(2, "wrong-code#state", timeout=10)
         except accounts.LoginFailed as e:
             assert "400" in str(e)
             assert "Paste code here" not in str(e), "the CLI's prompt is not an error"
@@ -452,6 +500,67 @@ def test_a_rejected_code_leaves_no_half_made_account():
         undo()
 
 
+def test_a_sign_in_gets_to_finish_after_its_tokens_land(monkeypatch):
+    """Storing the tokens isn't the CLI's last step: the org role, a policy
+    check and telemetry come after. The bridge used to kill it the moment the
+    tokens showed up, cutting all of that off midway."""
+    monkeypatch.setenv("FAKE_CLI_WRAP_UP", "1")
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("mine@example.com")
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        done = accounts.submit_login_code(2, "good-code#state", timeout=10)
+        assert done["email"] == "other@example.com"
+        assert os.path.exists(os.path.join(accounts.profile_dir(2), "wrapped-up"))
+    finally:
+        undo()
+
+
+def test_a_code_pasted_without_its_second_half_can_be_pasted_again():
+    """The CLI turns down a line that isn't CODE#STATE and waits for another.
+    The bridge used to sit out its whole 90s timeout on that and then kill the
+    sign-in, so a copy that missed half the code meant starting over."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("mine@example.com")
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        t0 = time.time()
+        try:
+            accounts.submit_login_code(2, "good-code", timeout=10)
+        except accounts.LoginFailed as e:
+            assert "#" in str(e)
+        else:
+            raise AssertionError("expected LoginFailed")
+        assert time.time() - t0 < 5, "a rejected paste is answered at once"
+        assert accounts.pending_login()["slot"] == 2, "the sign-in is still there"
+
+        done = accounts.submit_login_code(2, "good-code#state", timeout=10)
+
+        assert done["email"] == "other@example.com"
+        assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
+    finally:
+        undo()
+
+
+def test_whitespace_a_phone_adds_to_the_code_never_reaches_the_cli():
+    """A wrapped line or a stray space in the paste. A line break would have
+    reached the CLI as two lines, each half a code."""
+    _fresh_root()
+    _fake_claude_home()
+    _fake_identity("mine@example.com")
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        done = accounts.submit_login_code(2, " good-code\n#sta te ", timeout=10)
+        assert done["email"] == "other@example.com"
+    finally:
+        undo()
+
+
 def test_submit_login_code_refuses_an_account_already_in_a_slot():
     """Signing in as an account that already has a slot must not duplicate it."""
     _fresh_root()
@@ -460,10 +569,10 @@ def test_submit_login_code_refuses_an_account_already_in_a_slot():
     undo = _fake_cli()
     try:
         accounts.begin_login()
-        accounts.submit_login_code(2, "good-code", timeout=10)   # other@example.com
+        accounts.submit_login_code(2, "good-code#state", timeout=10)   # other@example.com
         accounts.begin_login()
         try:
-            accounts.submit_login_code(3, "good-code", timeout=10)  # same account
+            accounts.submit_login_code(3, "good-code#state", timeout=10)  # same account
         except accounts.LoginFailed as e:
             assert "other@example.com" in str(e) and "2" in str(e)
         else:
@@ -484,7 +593,7 @@ def test_submit_login_code_refuses_the_ambient_account():
     try:
         accounts.begin_login()
         try:
-            accounts.submit_login_code(2, "good-code", timeout=10)
+            accounts.submit_login_code(2, "good-code#state", timeout=10)
         except accounts.LoginFailed as e:
             assert "1" in str(e)
         else:
@@ -570,7 +679,7 @@ def test_on_macos_a_sign_in_is_seen_landing_in_the_keychain(fake_keychain):
     undo = _fake_cli()
     try:
         accounts.begin_login()
-        done = accounts.submit_login_code(2, "good-code", timeout=10)
+        done = accounts.submit_login_code(2, "good-code#state", timeout=10)
         assert done["email"] == "other@example.com"
         assert "slot-token" in fake_keychain.get(_keychain_service(accounts.profile_dir(2)))
         assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
@@ -771,12 +880,12 @@ def test_relogin_signs_the_same_slot_back_in_without_adding_a_row():
     undo = _fake_cli()
     try:
         accounts.begin_login()
-        accounts.submit_login_code(2, "good-code", timeout=10)
+        accounts.submit_login_code(2, "good-code#state", timeout=10)
         before = open(accounts.credentials_path(2)).read()
 
         began = accounts.begin_login(slot=2)
         assert began["slot"] == 2                       # not 3 — no new account
-        done = accounts.submit_login_code(2, "good-code", timeout=10)
+        done = accounts.submit_login_code(2, "good-code#state", timeout=10)
 
         assert done["relogin"] is True
         assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
@@ -794,7 +903,7 @@ def test_relogin_of_the_default_account_lands_in_the_ambient_login():
     undo = _fake_cli()
     try:
         assert accounts.begin_login(slot=1)["slot"] == 1
-        accounts.submit_login_code(1, "good-code", timeout=10)
+        accounts.submit_login_code(1, "good-code#state", timeout=10)
 
         assert "slot-token" in open(os.path.join(home, ".credentials.json")).read()
         assert not os.path.exists(accounts.profile_dir(1))   # still ambient-only
@@ -813,11 +922,11 @@ def test_a_failed_relogin_leaves_the_account_it_was_signing_in():
     undo = _fake_cli()
     try:
         accounts.begin_login()
-        accounts.submit_login_code(2, "good-code", timeout=10)
+        accounts.submit_login_code(2, "good-code#state", timeout=10)
 
         accounts.begin_login(slot=2)
         try:
-            accounts.submit_login_code(2, "nope", timeout=10)
+            accounts.submit_login_code(2, "nope#state", timeout=10)
             raise AssertionError("a bad code must fail the sign-in")
         except accounts.LoginFailed:
             pass
