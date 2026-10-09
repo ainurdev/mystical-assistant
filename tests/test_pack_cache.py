@@ -72,3 +72,35 @@ def test_stable_content_always_present(monkeypatch):
     sid = str(uuid.uuid4())
     _cmd(sid, new=True)
     assert runner._LOG_NOTE in _sysprompt(_cmd(sid))
+
+
+def test_repo_gets_self_ignoring_mystical_dir(tmp_path):
+    """The note sends files to .mystical/; a repo must have it, ignored by itself."""
+    (tmp_path / ".git").mkdir()
+    runner._base_cmd("hi", 555, stream=False, cwd=str(tmp_path), skip_pack=True)
+    assert (tmp_path / ".mystical" / ".gitignore").read_text() == "*\n"
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    runner._base_cmd("hi", 555, stream=False, cwd=str(plain), skip_pack=True)
+    assert not (plain / ".mystical").exists()
+
+
+def test_acp_first_prompt_carries_mystical_note(tmp_path, monkeypatch):
+    """ACP has no system prompt: a new agent session gets the note on its first
+    prompt, a resumed one doesn't, and the repo gets its .mystical/ either way."""
+    (tmp_path / ".git").mkdir()
+    sent = []
+    a = runner.acp_agents
+    monkeypatch.setattr(a, "preset", lambda agent: {"label": "Fake"})
+    monkeypatch.setattr(a, "run_problem", lambda *x: None)
+    for f in ("argv", "env_for", "login_hint", "auth_method"):
+        monkeypatch.setattr(a, f, lambda *x: None)
+    monkeypatch.setattr(runner.acp, "run_turn", lambda job, **kw: sent.append(kw["text"]))
+    for agent_sid in (None, "old"):
+        monkeypatch.setattr(runner.store, "get_session",
+                            lambda sid, v=agent_sid: {"agent_session_id": v})
+        job = runner.AcpJob("j", 555, store_session_id="s")
+        job.runtime = "acp:fake"
+        runner._consume_acp(job, "hi", [], str(tmp_path), None, None, None)
+    assert sent == [runner._MYSTICAL_NOTE + "\n\nhi", "hi"]
+    assert (tmp_path / ".mystical" / ".gitignore").read_text() == "*\n"

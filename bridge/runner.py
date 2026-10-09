@@ -77,13 +77,31 @@ def _drain_journal() -> None:
         _journal_one(item)
 
 
+# Agent (ACP) sessions get this on their first prompt; ACP has no system prompt.
+_MYSTICAL_NOTE = (
+    "Files this project needs for Mystical but git should never see — "
+    "screenshots, recordings, scratch scripts, drafts, reports — go in "
+    ".mystical/ in the project root. It ignores itself "
+    "(.mystical/.gitignore is `*`), so never add .mystical to the project's "
+    ".gitignore and never commit anything from it.")
+
 _LOG_NOTE = (
     "To run this project (dev server, `npm run dev`, anything long-lived the "
     "human will look at), use the Run tool — not Bash. The bridge owns what Run "
     "starts, so it outlives the turn and the human can follow its port and logs "
     "in the dashboard; a background Bash process is invisible to them. Its "
     f"output is also logged to {devserver.DEV_LOG_REL} in the project root — "
-    "read that file (e.g. tail it) to inspect dev-server logs.")
+    "read that file (e.g. tail it) to inspect dev-server logs.\n\n"
+    + _MYSTICAL_NOTE)
+
+
+def _ensure_mystical(cwd: "str | None") -> None:
+    """The note promises .mystical/; make it exist. Repos only, not every cwd."""
+    if cwd and os.path.exists(os.path.join(cwd, ".git")):
+        try:
+            devserver.mystical_dir(cwd)
+        except OSError:
+            pass
 
 
 def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
@@ -441,6 +459,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
                                          _dream_pack_for(chat_id, cwd)) if p)
         if claude_session_id:
             _packed_sessions.add(claude_session_id)
+    _ensure_mystical(cwd)
     cmd += ["--append-system-prompt", _compose_system_prompt(graph)]
     if skip_pack and not (permission_mode and not interactive):
         # Internal one-shots (titler/commit-msg) are pure text transforms
@@ -2193,12 +2212,15 @@ def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
         return acp._fail(job, problem)
     sess = store.get_session(job.store_session_id) if job.store_session_id else None
     job.boot = f"starting {p['label']}"
+    _ensure_mystical(cwd)
+    agent_sid = (sess or {}).get("agent_session_id")
     acp.run_turn(
         job, argv=acp_agents.argv(p), env=acp_agents.env_for(p, job.acp_account), cwd=cwd,
         label=p["label"], login_hint=acp_agents.login_hint(p, job.acp_account),
         auth_method=acp_agents.auth_method(p, job.acp_account),
-        text=_with_images(prompt, image_paths),
-        agent_session_id=(sess or {}).get("agent_session_id"),
+        text=(_with_images(prompt, image_paths) if agent_sid
+              else _MYSTICAL_NOTE + "\n\n" + _with_images(prompt, image_paths)),
+        agent_session_id=agent_sid,
         opts={"model": model, "permission_mode": permission_mode, "effort": effort},
         on_spawn=lambda conn: threading.Thread(target=_watchdog, args=(job, conn),
                                                daemon=True).start(),
