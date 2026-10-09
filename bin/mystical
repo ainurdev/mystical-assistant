@@ -357,6 +357,9 @@ cmd_app() {
     # windows/tray.ps1) runs from this checkout. This starts it now; OPEN THE
     # WINDOW TOO brings it back at every login.
     [ -z "${1:-}" ] || die "'mystical app $1' is macOS-only. Here the window is your browser's installed app, and 'mystical app' starts the tray."
+    # bridge.config reads the environment, which run.sh fills from .env; without
+    # it a custom DASH_PORT would hand the tray the default port.
+    if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
     PYTHONPATH="$REPO" python3 -c '
 import sys
 from bridge import startup

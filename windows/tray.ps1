@@ -82,7 +82,9 @@ function Get-Alerts($Prev, [hashtable]$Cur, [hashtable]$Titles) {
     }
   }
   foreach ($sid in @($Prev.Keys)) {
-    if ($Prev[$sid].state -ne 'working') { continue }
+    # Native (VS Code, terminal) sessions read working only within 3 s of a
+    # transcript write, so their every long tool call would look done.
+    if ($Prev[$sid].state -ne 'working' -or $Prev[$sid].source -eq 'native') { continue }
     $now = $null
     if ($Cur.ContainsKey($sid)) { $now = $Cur[$sid].state }
     if (@('working', 'awaiting', 'parked') -notcontains $now) {
@@ -113,6 +115,12 @@ function Step-Poll($Prev, $Running, [hashtable]$Titles) {
   $news = @()
   if (-not $Running.watched) { $news = Get-Alerts $Prev $status $Titles }
   return @{ news = $news; prev = $status; waiting = (Get-Waiting $status $Titles) }
+}
+
+function Get-BridgeUrl([int]$Port, [string]$Path) {
+  # The address the bridge binds. localhost can try ::1 first, and Windows
+  # takes about two seconds to refuse that; windows still open on localhost.
+  return "http://127.0.0.1:$Port$Path"
 }
 
 function Get-SessionUrl([int]$Port, [string]$StartUrl, [string]$Sid) {
@@ -312,13 +320,13 @@ function Start-Poll {
   }
   $state.inflight = $true
   $state.sentAt = Get-Date
-  $web.DownloadStringAsync([uri]"http://localhost:$Port/local/running")
+  $web.DownloadStringAsync([uri](Get-BridgeUrl $Port '/local/running'))
 }
 
 function Open-Dashboard([string]$Sid) {
   $start = $null
   try {
-    $req = [System.Net.HttpWebRequest]::Create("http://localhost:$Port/manifest.webmanifest")
+    $req = [System.Net.HttpWebRequest]::Create((Get-BridgeUrl $Port '/manifest.webmanifest'))
     $req.Proxy = $null
     $req.Timeout = 2000
     $resp = $req.GetResponse()

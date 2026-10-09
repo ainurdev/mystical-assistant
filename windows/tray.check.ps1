@@ -33,6 +33,12 @@ $cur = ConvertTo-Map (Poll '{"a":{"state":"awaiting"},"b":{"state":"parked"}}')
 $news = Get-Alerts $prev $cur @{}
 Assert-That ($news.Count -eq 2 -and -not ($news | Where-Object { $_.title.StartsWith($GlyphDone) })) 'into awaiting or parked is not done'
 
+$prev = ConvertTo-Map (Poll '{"n":{"state":"working","source":"native","label":"working"}}')
+$news = Get-Alerts $prev (ConvertTo-Map (Poll '{"n":{"state":"live","source":"native"}}')) @{}
+$gone = Get-Alerts $prev @{} @{}
+Assert-That ($news.Count -eq 0 -and $gone.Count -eq 0) 'a native session pausing is not done'
+Assert-That ((Get-BridgeUrl 8790 '/local/running') -eq 'http://127.0.0.1:8790/local/running') 'the bridge is called on the address it binds'
+
 $titles = @{}
 $r = Step-Poll $null (Poll '{"status":{"a":{"state":"working"}},"jobs":[]}') $titles
 $r = Step-Poll $r.prev (Poll '{"status":{"a":{"state":"awaiting"}},"jobs":[],"watched":true}') $titles

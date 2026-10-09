@@ -5,8 +5,11 @@ half is asserted by windows/tray.check.ps1 under pwsh.
 Run: python3 -m pytest tests/test_tray.py -q"""
 
 import importlib.util
+import io
 import os
 import re
+import shutil
+import subprocess
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location(
@@ -147,3 +150,51 @@ def test_startup_passes_only_parameters_the_windows_tray_declares():
     declared = set(re.findall(r"\$(\w+)", text.split("param(", 1)[1].split("\n)", 1)[0]))
     assert passed == {"Port", "Distro", "User", "Repo", "Browser", "BrowserProfile"}
     assert passed <= declared, passed - declared
+
+
+def test_a_native_session_pausing_is_not_done():
+    """A VS Code or terminal session reads `working` only within 3 s of its last
+    transcript write (native_activity.WORKING_WINDOW), so every long tool call
+    flips it to `live`. Counting that as done would alert on every pause."""
+    prev = {"n": {"state": "working", "source": "native", "label": "working…"}}
+    assert tray.alerts(prev, {"n": {"state": "live", "source": "native"}}, {}) == []
+    assert tray.alerts(prev, {}, {}) == []
+
+
+def test_the_trays_call_the_bridge_on_the_address_it_binds(monkeypatch):
+    """The server binds 127.0.0.1, while `localhost` can try ::1 first, and on
+    Windows a refused ::1 costs about two seconds before the fallback. Windows
+    still open on localhost: that's the installed app's origin."""
+    seen = []
+
+    class Answer:
+        def __enter__(self):
+            return io.BytesIO(b'{"ok": 1}')
+
+        def __exit__(self, *exc):
+            return False
+    monkeypatch.setattr(tray._HTTP, "open",
+                        lambda url, timeout: seen.append(url) or Answer())
+    assert tray.fetch(8790, "/local/running") == {"ok": 1}
+    assert seen == ["http://127.0.0.1:8790/local/running"]
+
+
+def test_mystical_app_hands_the_tray_the_port_from_env(tmp_path):
+    """bridge.config reads DASH_PORT from the environment, which run.sh fills from
+    .env; `mystical app` has to load .env too, or a custom port gets a tray
+    polling 8790. The real script, with uname saying Linux and a python3 that
+    reports the port it was handed."""
+    repo = tmp_path / "repo"
+    (repo / "bin").mkdir(parents=True)
+    shutil.copy(os.path.join(_ROOT, "bin", "mystical"), repo / "bin" / "mystical")
+    (repo / ".env").write_text('DASH_PORT="8899"\n')
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    for name, body in (("uname", "echo Linux"), ("python3", 'echo "port=$DASH_PORT"')):
+        (fake / name).write_text(f"#!/bin/bash\n{body}\n")
+        (fake / name).chmod(0o755)
+    env = {**os.environ, "PATH": f"{fake}:/usr/bin:/bin", "HOME": str(tmp_path / "home")}
+    env.pop("DASH_PORT", None)
+    p = subprocess.run([str(repo / "bin" / "mystical"), "app"], capture_output=True,
+                       text=True, env=env, timeout=30)
+    assert "port=8899" in p.stdout, p.stdout + p.stderr

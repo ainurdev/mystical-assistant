@@ -73,7 +73,9 @@ def alerts(prev: dict | None, cur: dict, titles: dict) -> list[dict]:
             out.append({"id": sid, "title": f"⏳ {name}",
                         "body": st.get("label") or "parked"})
     for sid, st in prev.items():
-        if (st.get("state") == "working"
+        # Native (VS Code, terminal) sessions read `working` only within 3 s of a
+        # transcript write, so their every long tool call would look done.
+        if (st.get("state") == "working" and st.get("source") != "native"
                 and (cur.get(sid) or {}).get("state") not in _IN_FLIGHT):
             # Not the label: a working session's label is its activity, and
             # "✓ running Bash" reads as if Bash were what finished.
@@ -114,9 +116,11 @@ def session_url(port: int, start_url: str | None, sid: str | None = None) -> str
 
 # --- the edges: HTTP, the lock, the bindings ----------------------------------
 def fetch(port: int, path: str) -> dict | None:
-    """GET a JSON path off the dashboard, or None when it doesn't answer."""
+    """GET a JSON path off the dashboard, or None when it doesn't answer. On
+    127.0.0.1, the address the bridge binds: `localhost` can try ::1 first.
+    Windows still open on localhost (session_url), the installed app's origin."""
     try:
-        with _HTTP.open(f"http://localhost:{port}{path}", timeout=3) as r:
+        with _HTTP.open(f"http://127.0.0.1:{port}{path}", timeout=3) as r:
             return json.load(r)
     except (OSError, ValueError):
         return None
